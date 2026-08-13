@@ -1,0 +1,23 @@
+# Конфигурация clippy для всего проекта.
+#
+# Крейты запрещают unwrap/expect/panic (crates/Cargo.toml, раздел 4.2 плана),
+# потому что паника в криптографическом коде — это отказ в обслуживании.
+# В тестах эти же конструкции необходимы и безопасны: паника там означает
+# провалившийся тест, а не отказ приложения у пользователя.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Порог сложности типов и функций
+too-many-arguments-threshold = 8
+type-complexity-threshold = 300
+
+# Слова, которые clippy не должен считать опечатками в doc-комментариях
+doc-valid-idents = [
+    "AEGIS", "PQXDH", "SPQR", "XEdDSA", "SQLCipher", "StrongBox",
+    "SecureEnclave", "UniFFI", "WebRTC", "SRTP", "AEAD", "HKDF",
+    "ChaCha20", "XChaCha20", "Poly1305", "Argon2id", "libsignal",
+    "DoS", "MITM", "TOFU", "APNs", "GMS",
+    "..",
+]

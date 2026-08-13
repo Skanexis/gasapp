@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "aegis-keystore"
+description = "Иерархия ключей, KEK/DEK, аппаратное хранилище"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+aegis-types.workspace = true
+zeroize.workspace = true
+hkdf.workspace = true
+sha2.workspace = true
+argon2.workspace = true
+rand_core.workspace = true
+thiserror.workspace = true
+async-trait = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.0"
+hex = "0.4"
