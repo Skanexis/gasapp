@@ -31,8 +31,8 @@ impl XEdDSAPublicKey {
     #[allow(clippy::result_unit_err)]
     pub fn from_bytes(bytes: PublicKeyBytes) -> Result<Self> {
         // For Ed25519, any 32-byte string is a valid public key
-        let verifying_key = VerifyingKey::from_bytes(bytes.as_bytes())
-            .map_err(|_| AegisError::Crypto)?;
+        let verifying_key =
+            VerifyingKey::from_bytes(bytes.as_bytes()).map_err(|_| AegisError::Crypto)?;
         Ok(XEdDSAPublicKey(verifying_key))
     }
 
@@ -48,8 +48,8 @@ impl XEdDSAPublicKey {
     /// подпись может проходить проверку под несколькими ключами
     /// (malleability), а на этом свойстве строятся атаки подмены отправителя.
     pub fn verify_strict(&self, message: &[u8], signature: &[u8]) -> Result<()> {
-        let sig_array = <[u8; SIGNATURE_LEN]>::try_from(signature)
-            .map_err(|_| AegisError::Crypto)?;
+        let sig_array =
+            <[u8; SIGNATURE_LEN]>::try_from(signature).map_err(|_| AegisError::Crypto)?;
 
         self.0
             .verify_strict(message, &Signature::from_bytes(&sig_array))
@@ -159,10 +159,8 @@ mod tests {
     /// с RFC ни в приватном ключе, ни в публичном, а «ожидаемая подпись» была
     /// дописана до 64 байт значениями `0xff` — то есть тест был подогнан под
     /// сломанную реализацию `sign`, вместо того чтобы её поймать.
-    const RFC8032_SECRET: &str =
-        "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
-    const RFC8032_PUBLIC: &str =
-        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+    const RFC8032_SECRET: &str = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+    const RFC8032_PUBLIC: &str = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
     const RFC8032_SIGNATURE: &str = concat!(
         "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155",
         "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
@@ -197,7 +195,10 @@ mod tests {
         let message = b"test message";
         let signature = alice.sign(message);
 
-        assert!(alice.public_key().verify_strict(message, &signature).is_ok());
+        assert!(alice
+            .public_key()
+            .verify_strict(message, &signature)
+            .is_ok());
         // Чужим ключом подпись проверяться не должна.
         assert!(bob.public_key().verify_strict(message, &signature).is_err());
     }
@@ -205,8 +206,8 @@ mod tests {
     /// Seed из RFC даёт ровно тот публичный ключ, что напечатан в RFC.
     #[test]
     fn rfc8032_public_key_matches() {
-        let key = XEdDSAPrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC8032_SECRET)))
-            .unwrap();
+        let key =
+            XEdDSAPrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC8032_SECRET))).unwrap();
 
         assert_eq!(
             key.public_key().as_bytes(),
@@ -220,8 +221,8 @@ mod tests {
     /// половину S и нули вместо R.
     #[test]
     fn rfc8032_signature_matches_and_verifies() {
-        let key = XEdDSAPrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC8032_SECRET)))
-            .unwrap();
+        let key =
+            XEdDSAPrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC8032_SECRET))).unwrap();
         let expected = hex64(RFC8032_SIGNATURE);
 
         let signature = key.sign(b"");
@@ -237,7 +238,10 @@ mod tests {
         let key = XEdDSAPrivateKey::generate(&mut csprng);
         let signature = key.sign(b"original");
 
-        assert!(key.public_key().verify_strict(b"tampered", &signature).is_err());
+        assert!(key
+            .public_key()
+            .verify_strict(b"tampered", &signature)
+            .is_err());
     }
 
     /// Приватный ключ затирается при уничтожении.

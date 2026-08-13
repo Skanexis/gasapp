@@ -138,11 +138,7 @@ pub trait ProtocolEngine: Send + Sync {
     /// [`AegisError::Crypto`] при сбое хеширования.
     ///
     /// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
-    fn fingerprint(
-        &self,
-        identity: &IdentityKey,
-        identifier: &[u8],
-    ) -> Result<Fingerprint>;
+    fn fingerprint(&self, identity: &IdentityKey, identifier: &[u8]) -> Result<Fingerprint>;
 
     /// Версия протокола, которую использует эта реализация.
     fn version(&self) -> ProtocolVersion {
