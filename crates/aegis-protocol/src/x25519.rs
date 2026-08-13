@@ -48,11 +48,16 @@ impl X25519PrivateKey {
     /// Creates a new X25519 private key from bytes.
     ///
     /// Returns `Err(AegisError::Crypto)` if the bytes do not represent a valid private key.
+    ///
+    /// # О клампинге
+    ///
+    /// Байты передаются в `StaticSecret::from` как есть, без предварительного
+    /// клампинга, и это правильно: `x25519-dalek` применяет клампинг внутри
+    /// самой операции DH (`decode_scalar` в RFC 7748), а не при хранении.
+    /// Клампить здесь дополнительно не нужно — и вредно, потому что тогда
+    /// `expose_secret` вернул бы не тот скаляр, который был записан.
     #[allow(clippy::result_unit_err)]
     pub fn from_bytes(bytes: PrivateKeyBytes) -> Result<Self> {
-        // The x25519-dalek library's StaticSecret::from expects the private key to be already clamped.
-        // However, the RFC 7748 test vectors provide unclamped private keys.
-        // After testing, it appears that the library performs internal clamping, so we pass the bytes directly.
         let static_secret = StaticSecret::from(*bytes.expose_secret());
         Ok(Self { static_secret })
     }
@@ -115,6 +120,38 @@ mod tests {
     use super::*;
     use rand_core::OsRng;
 
+    /// Официальные векторы RFC 7748, раздел 6.1.
+    ///
+    /// # Почему они заданы hex-строками, а не массивами байт
+    ///
+    /// Изначально эти векторы были набраны в код вручную массивами `0x..`,
+    /// и в приватном ключе Алисы оказались переставлены два байта:
+    /// `…b177fb5a1db92c2a` вместо `…b177fba51db92c2a`. Из-за одной перестановки
+    /// не сходились ни публичный ключ, ни общий секрет, и отладка ушла в поиск
+    /// несуществующей ошибки клампинга. Hex-строку можно посимвольно сверить
+    /// с текстом RFC, а колонки из 8 байт на строку — практически нет.
+    const RFC7748_ALICE_PRIVATE: &str =
+        "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a";
+    const RFC7748_ALICE_PUBLIC: &str =
+        "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a";
+    const RFC7748_BOB_PRIVATE: &str =
+        "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb";
+    const RFC7748_BOB_PUBLIC: &str =
+        "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f";
+    const RFC7748_SHARED: &str =
+        "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
+
+    /// Разбирает 64-символьную hex-строку в 32 байта.
+    fn hex32(s: &str) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        assert_eq!(s.len(), 64, "ожидалось 64 hex-символа");
+        for (i, byte) in out.iter_mut().enumerate() {
+            let pair = s.get(i * 2..i * 2 + 2).expect("длина проверена выше");
+            *byte = u8::from_str_radix(pair, 16).expect("не hex");
+        }
+        out
+    }
+
     #[test]
     fn test_x25519_keypair_generation() {
         let mut csprng = OsRng;
@@ -130,83 +167,78 @@ mod tests {
         assert_eq!(alice_shared, bob_shared);
     }
 
+    /// Скаляр из RFC даёт ровно тот публичный ключ, что напечатан в RFC.
     #[test]
-    fn test_x25519_from_bytes() {
-        // Test vector from RFC 7748, Section 6.1
-        let private_key_bytes = PrivateKeyBytes::new([
-            0x77, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d,
-            0x3c, 0x16, 0xc1, 0x72, 0x51, 0xb2, 0x66, 0x45,
-            0xdf, 0x4c, 0x2f, 0x87, 0xeb, 0xc0, 0x99, 0x2a,
-            0xb1, 0x77, 0xfb, 0x5a, 0x1d, 0xb9, 0x2c, 0x2a,
-        ]);
+    fn rfc7748_public_keys_match() {
+        for (private, expected_public) in [
+            (RFC7748_ALICE_PRIVATE, RFC7748_ALICE_PUBLIC),
+            (RFC7748_BOB_PRIVATE, RFC7748_BOB_PUBLIC),
+        ] {
+            let key = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(hex32(private))).unwrap();
 
-        let public_key_bytes = PublicKeyBytes::new([
-            0x85, 0x20, 0xf0, 0x09, 0x89, 0x30, 0xa7, 0x54,
-            0x74, 0x8b, 0x7d, 0xdc, 0xb4, 0x3e, 0xf7, 0x5a,
-            0x0d, 0xbf, 0x3a, 0x0d, 0x26, 0x38, 0x1a, 0xf4,
-            0xeb, 0xa3, 0xa8, 0xaa, 0x88, 0x1d, 0x4c, 0x8a,
-        ]);
-
-        let private_key = X25519PrivateKey::from_bytes(private_key_bytes).unwrap();
-        let public_key = private_key.public_key();
-
-        // Test that our public key matches the expected bytes
-        assert_eq!(public_key.as_bytes(), public_key_bytes);
-
-        // Test that the public key can be parsed back and matches
-        let parsed_public_key = X25519PublicKey::from_bytes(public_key_bytes).unwrap();
-        assert_eq!(public_key.as_bytes(), parsed_public_key.as_bytes());
+            assert_eq!(
+                key.public_key().as_bytes(),
+                PublicKeyBytes::new(hex32(expected_public)),
+                "публичный ключ разошёлся с RFC 7748 6.1"
+            );
+        }
     }
 
+    /// Публичный ключ переживает разбор из байт без изменений.
     #[test]
-    fn test_x25519_diffie_hellman() {
-        // Test vector from RFC 7748, Section 6.1
-        let private_key_bytes = PrivateKeyBytes::new([
-            0x77, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d,
-            0x3c, 0x16, 0xc1, 0x72, 0x51, 0xb2, 0x66, 0x45,
-            0xdf, 0x4c, 0x2f, 0x87, 0xeb, 0xc0, 0x99, 0x2a,
-            0xb1, 0x77, 0xfb, 0x5a, 0x1d, 0xb9, 0x2c, 0x2a,
-        ]);
+    fn public_key_roundtrips_through_bytes() {
+        let bytes = PublicKeyBytes::new(hex32(RFC7748_ALICE_PUBLIC));
 
-        let peer_public_key_bytes = PublicKeyBytes::new([
-            0xde, 0x9e, 0xdb, 0x7d, 0x7b, 0x80, 0xd1, 0xf6,
-            0x81, 0x86, 0x3a, 0x2a, 0x65, 0xbf, 0x4e, 0xba,
-            0xb9, 0x10, 0x24, 0x08, 0x0b, 0x2e, 0x8a, 0x8c,
-            0x65, 0xc7, 0xa5, 0x1d, 0x3b, 0x60, 0x32, 0x5c,
-        ]);
-
-        let private_key = X25519PrivateKey::from_bytes(private_key_bytes).unwrap();
-        let peer_public_key = X25519PublicKey::from_bytes(peer_public_key_bytes).unwrap();
-
-        let shared_secret = private_key.diffie_hellman(&peer_public_key);
-
-        let expected = [
-            0x4a, 0x5d, 0x9d, 0x5b, 0xa4, 0xce, 0x2d, 0xe1,
-            0x72, 0x8e, 0x3b, 0xf4, 0x80, 0x35, 0xf6, 0x2e,
-            0x0e, 0x5b, 0x27, 0x66, 0x56, 0x6c, 0x8b, 0xbf,
-            0x5d, 0x47, 0x6e, 0x38, 0x2d, 0x7a, 0xdf, 0x34,
-        ];
-
-        assert_eq!(shared_secret, expected);
+        assert_eq!(X25519PublicKey::from_bytes(bytes).unwrap().as_bytes(), bytes);
     }
 
+    /// Общий секрет совпадает с RFC и вычисляется одинаково с обеих сторон.
+    ///
+    /// Симметрия проверяется отдельно: односторонняя проверка пропустила бы
+    /// ошибку, при которой обе стороны считают по-разному, но одна случайно
+    /// совпала с вектором.
     #[test]
-    fn test_clamping_effect() {
-        let private_key_bytes = [0xFFu8; 32];
-        let mut clamped = private_key_bytes;
+    fn rfc7748_shared_secret_matches_and_is_symmetric() {
+        let alice = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(hex32(
+            RFC7748_ALICE_PRIVATE,
+        )))
+        .unwrap();
+        let bob =
+            X25519PrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC7748_BOB_PRIVATE))).unwrap();
+        let expected = hex32(RFC7748_SHARED);
+
+        let a_to_b = alice.diffie_hellman(&bob.public_key());
+        let b_to_a = bob.diffie_hellman(&alice.public_key());
+
+        assert_eq!(a_to_b, expected, "K(a,B) разошёлся с RFC 7748 6.1");
+        assert_eq!(b_to_a, expected, "K(b,A) разошёлся с RFC 7748 6.1");
+    }
+
+    /// Клампинг выполняет сама библиотека, внутри операции DH.
+    ///
+    /// Тест фиксирует именно это свойство, потому что на нём уже один раз
+    /// построили неверный вывод: `StaticSecret::from` хранит байты как есть,
+    /// поэтому `expose_secret` возвращает исходный, неклампленный скаляр —
+    /// но результат DH при этом соответствует RFC.
+    #[test]
+    fn library_clamps_inside_dh_not_on_storage() {
+        let raw = [0xFFu8; 32];
+        let key = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(raw)).unwrap();
+
+        assert_eq!(
+            key.expose_secret().expose_secret(),
+            &raw,
+            "хранение не должно менять скаляр"
+        );
+
+        // Клампленный вручную скаляр даёт тот же публичный ключ — доказательство,
+        // что клампинг всё-таки применяется, просто не на этапе хранения.
+        let mut clamped = raw;
         clamped[0] &= 248;
         clamped[31] &= 127;
         clamped[31] |= 64;
+        let clamped_key = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(clamped)).unwrap();
 
-        let static_secret_clamped = StaticSecret::from(clamped);
-        let public_key_clamped = PublicKey::from(&static_secret_clamped);
-
-        let static_secret_unclamped = StaticSecret::from(private_key_bytes);
-        let public_key_unclamped = PublicKey::from(&static_secret_unclamped);
-
-        println!("Clamped key: {:02x?}", clamped);
-        println!("Public key from clamped: {:02x?}", public_key_clamped.to_bytes());
-        println!("Public key from unclamped: {:02x?}", public_key_unclamped.to_bytes());
-        println!("Are they equal? {}", public_key_clamped.to_bytes() == public_key_unclamped.to_bytes());
+        assert_eq!(key.public_key().as_bytes(), clamped_key.public_key().as_bytes());
     }
 }
