@@ -2,9 +2,9 @@
 
 //! X25519 elliptic curve Diffie-Hellman operations.
 
-use aegis_types::{PublicKeyBytes, PrivateKeyBytes, Result, AegisError};
-use x25519_dalek::{PublicKey, StaticSecret};
+use aegis_types::{AegisError, PrivateKeyBytes, PublicKeyBytes, Result};
 use rand_core::{CryptoRng, RngCore};
+use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 /// X25519 public key.
@@ -138,8 +138,7 @@ mod tests {
         "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb";
     const RFC7748_BOB_PUBLIC: &str =
         "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f";
-    const RFC7748_SHARED: &str =
-        "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
+    const RFC7748_SHARED: &str = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
 
     /// Разбирает 64-символьную hex-строку в 32 байта.
     fn hex32(s: &str) -> [u8; 32] {
@@ -189,7 +188,10 @@ mod tests {
     fn public_key_roundtrips_through_bytes() {
         let bytes = PublicKeyBytes::new(hex32(RFC7748_ALICE_PUBLIC));
 
-        assert_eq!(X25519PublicKey::from_bytes(bytes).unwrap().as_bytes(), bytes);
+        assert_eq!(
+            X25519PublicKey::from_bytes(bytes).unwrap().as_bytes(),
+            bytes
+        );
     }
 
     /// Общий секрет совпадает с RFC и вычисляется одинаково с обеих сторон.
@@ -199,10 +201,9 @@ mod tests {
     /// совпала с вектором.
     #[test]
     fn rfc7748_shared_secret_matches_and_is_symmetric() {
-        let alice = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(hex32(
-            RFC7748_ALICE_PRIVATE,
-        )))
-        .unwrap();
+        let alice =
+            X25519PrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC7748_ALICE_PRIVATE)))
+                .unwrap();
         let bob =
             X25519PrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC7748_BOB_PRIVATE))).unwrap();
         let expected = hex32(RFC7748_SHARED);
@@ -239,6 +240,9 @@ mod tests {
         clamped[31] |= 64;
         let clamped_key = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(clamped)).unwrap();
 
-        assert_eq!(key.public_key().as_bytes(), clamped_key.public_key().as_bytes());
+        assert_eq!(
+            key.public_key().as_bytes(),
+            clamped_key.public_key().as_bytes()
+        );
     }
 }

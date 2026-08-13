@@ -118,6 +118,7 @@ dependencies = [
  "hmac",
  "ml-kem",
  "proptest",
+ "rand_core 0.10.1",
  "rand_core 0.6.4",
  "sha2",
  "subtle",

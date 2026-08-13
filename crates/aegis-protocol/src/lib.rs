@@ -27,10 +27,9 @@
 //
 pub mod engine;
 pub mod keys;
+pub mod mlkem;
 pub mod x25519;
 pub mod xeddsa;
-// pub mod mlkem1024;
-// pub mod mlkem768;
 // pub mod protocol_engine;
 // pub mod pqxdh;
 // pub mod double_ratchet;
@@ -45,13 +44,12 @@ pub use keys::{
     IdentityKey, IdentityKeyPair, KemPublicKey, PreKeyBundle, PreKeyId, SessionState,
     SignedKemPreKey, SignedPreKey,
 };
-// pub use mlkem1024::{MlKem1024PrivateKey, MlKem1024PublicKey};
-// pub use mlkem768::{MlKem768PrivateKey, MlKem768PublicKey};
 // pub use pqxdh::PqxdhEngine;
 // pub use double_ratchet::DoubleRatchetEngine;
 // pub use spqr::SpqrEngine;
-pub use xeddsa::{XEdDSAPrivateKey, XEdDSAPublicKey};
+pub use mlkem::{MlKem1024PrivateKey, MlKem1024PublicKey, MlKem768PrivateKey, MlKem768PublicKey};
 pub use version::ProtocolVersion;
+pub use xeddsa::{XEdDSAPrivateKey, XEdDSAPublicKey};
 
 /// Версия крейта, доступная во время выполнения.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
