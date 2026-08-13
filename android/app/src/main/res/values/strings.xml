@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <string name="app_name">AEGIS</string>
+
+    <!-- Экран проверки моста FFI (M1). Заменяется реальными экранами в M4. -->
+    <string name="ffi_core_version">Версия ядра: %1$s</string>
+    <string name="ffi_protocol_version">Версия протокола: %1$d</string>
+    <string name="ffi_safety_number">Safety number:\n%1$s</string>
+    <string name="ffi_error">Ошибка ядра</string>
+
+    <!-- Компоненты дизайн-системы -->
+    <string name="button_loading">Загрузка…</string>
+</resources>

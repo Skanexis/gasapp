@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Значения соответствуют design/aegis.tokens.json (см. design/generated/AegisTokens.kt).
+  Здесь продублирована только та часть палитры, что нужна теме приложения:
+  полный набор токенов доступен коду через AegisTokens.
+-->
+<resources>
+    <color name="bg_base">#FF0D0F12</color>
+    <color name="bg_raised">#FF15181D</color>
+    <color name="bg_card">#FF1C2128</color>
+
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FFB9C1CC</color>
+
+    <color name="accent_base">#FF37B8FF</color>
+    <color name="accent_pressed">#FF2AA3E8</color>
+    <color name="accent_on">#FF06121B</color>
+</resources>

@@ -4,6 +4,9 @@ plugins {
 }
 
 android {
+    // Обязателен начиная с AGP 8: пакет, в котором генерируется класс R.
+    // Без него конфигурация проекта падает ещё до сборки.
+    namespace = "org.aegis.app"
     compileSdk = 34
 
     defaultConfig {
@@ -14,15 +17,17 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
 
-        // Enable Java 8 language features
-        compileOptions {
-            sourceCompatibility JavaVersion.VERSION_1_8
-            targetCompatibility JavaVersion.VERSION_1_8
-        }
-        kotlinOptions {
-            jvmTarget = "1.8"
-        }
+    // compileOptions и kotlinOptions — блоки уровня `android`, а не
+    // `defaultConfig`. Вложенные внутрь defaultConfig они игнорировались.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     // Flavor dimensions
@@ -50,7 +55,6 @@ android {
         }
         debug {
             minifyEnabled false
-            debuggable true
         }
     }
 
@@ -78,16 +82,28 @@ android {
     }
 
     // Packaging options
-    packagingOptions {
+    packaging {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+
+    testOptions {
+        unitTests {
+            // Без этого флага Robolectric не видит ресурсы приложения:
+            // конструктор любого компонента падает на setBackgroundResource
+            // с Resources$NotFoundException, потому что selector'ы из
+            // res/drawable в classpath тестов не попадают.
+            includeAndroidResources = true
+
+            // Логи Android в JVM-тестах пишутся в stdout, а не глотаются.
+            returnDefaultValues = true
         }
     }
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0"
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.25'
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.10.0'
@@ -96,19 +112,30 @@ dependencies {
     implementation 'androidx.activity:activity-ktx:1.7.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 
-    // Flavor-specific dependencies
-    gmsImplementation 'com.google.android.gms:play-services-auth:20.4.1'
-    gmsImplementation 'com.google.firebase:firebase-messaging:23.2.1'
+    // JNA — обязательна для биндингов UniFFI: сгенерированный aegis.kt
+    // обращается к нативной библиотеке через com.sun.jna. Классификатор
+    // `@aar` важен: обычный jar не содержит нативных частей JNA под Android,
+    // и приложение падало бы при первом вызове ядра.
+    implementation 'net.java.dev.jna:jna:5.14.0@aar'
 
-    fossImplementation 'io.github.privacy-secure-webservices:open-keychain:4.4'
+    // Зависимости flavor'ов.
+    //
+    // ⚠️ Для gms они появятся в M4 вместе с реальным подключением FCM
+    // (`play-services-base`, `firebase-messaging`). Пока их нет намеренно:
+    // тянуть Play Services в сборку, которая ими не пользуется, значит
+    // раздувать APK и без нужды расширять поверхность доверия.
+    //
+    // Для foss зависимостей нет и не будет: этот flavor обязан оставаться
+    // свободным от проприетарных сервисов (раздел 18.2). Раньше здесь
+    // стояла координата `io.github.privacy-secure-webservices:open-keychain`,
+    // которой не существует в природе, — Gradle ни разу не запускался
+    // и не поймал это.
 
     testImplementation 'junit:junit:4.13.2'
+    // Robolectric — чтобы тесты вью выполнялись на JVM без эмулятора:
+    // компоненты дизайн-системы наследуют View и требуют Context.
+    testImplementation 'org.robolectric:robolectric:4.13'
+    testImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
-
-    // Snapshot-тесты. Paparazzi подключается плагином `app.cash.paparazzi`,
-    // а не как обычная зависимость: он рендерит вью на JVM без эмулятора.
-    // Раньше здесь стояла координата `com.github.paparoni:paparazzi`, которой
-    // не существует, — сборка Gradle ни разу не запускалась и не поймала это.
-    testImplementation 'app.cash.paparazzi:paparazzi:1.3.5'
 }

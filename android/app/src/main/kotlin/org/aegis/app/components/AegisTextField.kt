@@ -1,113 +1,56 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package org.aegis.app.components
 
 import android.content.Context
 import android.util.AttributeSet
-import android.widget.EditText
-import androidx.annotation.DrawableRes
-import androidx.core.content.ContextCompat
+import androidx.appcompat.widget.AppCompatEditText
+import org.aegis.app.R
 
 /**
- * AEGIS TextField component with visual states:
- * 1. Normal
- * 2. Focused
- * 3. Disabled
- * 4. Error
+ * Поле ввода дизайн-системы AEGIS.
+ *
+ * Состояния `enabled`, `focused` и `pressed` обрабатывает платформа через
+ * селектор `res/drawable/bg_aegis_text_field.xml`. Прикладное состояние
+ * «ошибка» добавляется через [onCreateDrawableState].
+ *
+ * # Про имя свойства
+ *
+ * Флаг ошибки называется [hasError], а не `error`: у `EditText` уже есть
+ * свойство `error` (текст всплывающей подсказки валидации). Прежняя версия
+ * объявляла своё `getError` и получала конфликт с методом супертипа.
  */
 class AegisTextField @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = 0
-) : EditText(context, attrs, defStyleAttr) {
+    defStyleAttr: Int = androidx.appcompat.R.attr.editTextStyle,
+) : AppCompatEditText(context, attrs, defStyleAttr) {
 
-    // State tracking
-    private var isError = false
-    private var errorText: CharSequence? = null
-
-    // Drawable resources for different states
-    private var normalBackground: Int = 0
-    private var focusedBackground: Int = 0
-    private var disabledBackground: Int = 0
-    private var errorBackground: Int = 0
+    /** Содержимое поля не прошло валидацию. */
+    var hasError: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            refreshDrawableState()
+        }
 
     init {
-        // Initialize with default background
-        updateBackgroundForState()
+        setBackgroundResource(R.drawable.bg_aegis_text_field)
     }
 
-    /**
-     * Set background resources for different states
-     */
-    fun setStateBackgrounds(
-        @DrawableRes normal: Int,
-        @DrawableRes focused: Int,
-        @DrawableRes disabled: Int,
-        @DrawableRes error: Int
-    ) {
-        normalBackground = normal
-        focusedBackground = focused
-        disabledBackground = disabled
-        errorBackground = error
-        updateBackgroundForState()
-    }
+    override fun onCreateDrawableState(extraSpace: Int): IntArray {
+        val state = super.onCreateDrawableState(extraSpace + EXTRA_STATES)
 
-    /**
-     * Show error state with optional error message
-     */
-    fun showError(errorMessage: CharSequence? = null) {
-        isError = true
-        errorText = errorMessage
-        // In a full implementation, we might show the error below the field
-        updateBackgroundForState()
-        // Optional: shake animation or other visual feedback
-    }
-
-    /**
-     * Clear error state
-     */
-    fun clearError() {
-        isError = false
-        errorText = null
-        updateBackgroundForState()
-    }
-
-    /**
-     * Update background based on current state
-     */
-    private fun updateBackgroundForState() {
-        val background = when {
-            isNotEnabled -> disabledBackground
-            isError -> errorBackground
-            isFocused -> focusedBackground
-            else -> normalBackground
+        if (hasError) {
+            mergeDrawableStates(state, STATE_ERROR)
         }
 
-        if (background != 0) {
-            setBackgroundResource(background)
-        }
+        return state
     }
 
-    // Override state change methods to update background
-    override fun setEnabled(enabled: Boolean) {
-        super.setEnabled(enabled)
-        updateBackgroundForState()
-    }
+    private companion object {
+        const val EXTRA_STATES = 1
 
-    override fun setFocused(focused: Boolean) {
-        super.setFocused(focused)
-        updateBackgroundForState()
-    }
-
-    /**
-     * Get error message if currently in error state
-     */
-    fun getError(): CharSequence? {
-        return if (isError) errorText else null
-    }
-
-    /**
-     * Check if field is in error state
-     */
-    fun isInErrorState(): Boolean {
-        return isError
+        val STATE_ERROR = intArrayOf(R.attr.state_error)
     }
 }

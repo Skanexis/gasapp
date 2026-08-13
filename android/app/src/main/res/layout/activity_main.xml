@@ -1,43 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Экран проверки моста FFI (задача M1 «Hello from Rust»).
+  Показывает значения, полученные из Rust-ядра через UniFFI.
+  Заменяется реальными экранами в M4.
+-->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/bg_base"
     tools:context=".MainActivity">
 
     <TextView
         android:id="@+id/core_version_text"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Core Version: Loading..."
-        android:textSize="16sp"
         android:padding="16dp"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="Версия ядра: 0.1.0" />
 
     <TextView
         android:id="@+id/protocol_version_text"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Protocol Version: Loading..."
-        android:textSize="16sp"
         android:padding="16dp"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/core_version_text" />
+        app:layout_constraintTop_toBottomOf="@id/core_version_text"
+        tools:text="Версия протокола: 1" />
 
+    <!--
+      Моноширинный шрифт обязателен: safety number сверяется человеком
+      по группам цифр, и в пропорциональном шрифте группы разъезжаются
+      (раздел 6.6 плана). Правильный атрибут — fontFamily; раньше здесь
+      стоял несуществующий android:monospace, из-за которого не
+      собирались ресурсы.
+    -->
     <TextView
         android:id="@+id/safety_number_text"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Safety Number: Loading..."
-        android:textSize="16sp"
+        android:fontFamily="monospace"
         android:padding="16dp"
-        android:monospace="true"
+        android:textColor="@color/text_secondary"
+        android:textSize="16sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/protocol_version_text" />
+        app:layout_constraintTop_toBottomOf="@id/protocol_version_text"
+        tools:text="12345 67890 12345" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

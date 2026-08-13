@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item android:state_enabled="false" android:drawable="@drawable/bg_field_disabled" />
+    <item app:state_error="true" android:drawable="@drawable/bg_field_error" />
+    <item android:state_focused="true" android:drawable="@drawable/bg_field_focused" />
+    <item android:drawable="@drawable/bg_field_normal" />
+</selector>
