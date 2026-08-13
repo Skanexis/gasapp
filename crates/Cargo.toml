@@ -9,7 +9,10 @@ members = [
     "aegis-net",
     "aegis-media",
     "aegis-backup",
-    "aegis-core",
+    # aegis-core: не компилируется, см. раздел 23.0.1 мастер-плана.
+    # Возвращается в workspace вместе с закрытием M2 (оркестрация опирается
+    # на движки протокола, которые сейчас в draft/).
+    # "aegis-core",
     "aegis-ffi",
 ]
 
