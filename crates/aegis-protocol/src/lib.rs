@@ -30,13 +30,29 @@ pub mod keys;
 pub mod mlkem;
 pub mod x25519;
 pub mod xeddsa;
-// pub mod protocol_engine;
-// pub mod pqxdh;
-// pub mod double_ratchet;
-// pub mod spqr;
 
 mod fingerprint;
 mod version;
+
+// Движки протокола (`pqxdh.rs`, `double_ratchet.rs`, `spqr.rs`,
+// `protocol_engine.rs`) НЕ подключены к сборке.
+//
+// Файлы остаются в дереве как черновик, но содержат дефекты, которые
+// компилятор поймать не может, и потому переживут любую починку сборки:
+//
+// * `pqxdh.rs` проверяет подписи предключей нашим собственным
+//   identity-ключом вместо ключа отправителя — аутентификация bundle
+//   не работает, сервер может подменить чужие предключи;
+// * `spqr.rs` не комбинирует классический и пост-квантовый секреты
+//   («in a full implementation, we would combine…»), то есть Triple
+//   Ratchet не является гибридным вопреки ADR-021;
+// * четыре типа реализуют `ProtocolEngine` с разными сигнатурами, хотя
+//   PQXDH, Double Ratchet и SPQR — этапы одного протокола, а не три
+//   взаимозаменяемых движка.
+//
+// Подключать их обратно по частям нельзя: получится код, который выглядит
+// работающим протоколом при неработающей аутентификации. Разбор — в разделе
+// 23.0.1 мастер-плана; M2 закрывается переписыванием, а не починкой.
 
 pub use engine::{Clock, InitialMessage, InitiatedSession, ProtocolEngine};
 pub use fingerprint::{Fingerprint, SafetyNumber, SAFETY_NUMBER_DIGITS};
@@ -44,9 +60,6 @@ pub use keys::{
     IdentityKey, IdentityKeyPair, KemPublicKey, PreKeyBundle, PreKeyId, SessionState,
     SignedKemPreKey, SignedPreKey,
 };
-// pub use pqxdh::PqxdhEngine;
-// pub use double_ratchet::DoubleRatchetEngine;
-// pub use spqr::SpqrEngine;
 pub use mlkem::{MlKem1024PrivateKey, MlKem1024PublicKey, MlKem768PrivateKey, MlKem768PublicKey};
 pub use version::ProtocolVersion;
 pub use xeddsa::{XEdDSAPrivateKey, XEdDSAPublicKey};
