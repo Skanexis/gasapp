@@ -1,83 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Корневой build-файл: объявляет плагины для всех модулей, но сам их
+// не применяет (`apply false`).
+//
+// ⚠️ Раньше здесь стоял блок `android { ... }`, дублировавший конфигурацию
+// из `app/build.gradle`. В корневом проекте, к которому не применён
+// android-плагин, такой блок не имеет смысла и ронял любую задачу Gradle —
+// в том числе `wrapper`, из-за чего wrapper так и не был сгенерирован,
+// а сборка Android ни разу не запускалась.
 plugins {
-    id 'com.android.application' version '8.1.0' apply false
-}
-
-android {
-    compileSdk = 34
-
-    defaultConfig {
-        applicationId = "org.aegis.app"
-        minSdk = 21
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-
-        // Flavor dimensions
-        flavorDimensions += "mode"
-    }
-
-    // Define product flavors
-    productFlavors {
-        gms {
-            dimension = "mode"
-            applicationIdSuffix = ".gms"
-        }
-
-        foss {
-            dimension = "mode"
-            applicationIdSuffix = ".foss"
-        }
-    }
-
-    // SourceSets configuration
-    sourceSets {
-        main {
-            manifest.srcFile 'src/main/AndroidManifest.xml'
-            java.srcDirs = ['src/main/java', 'src/main/kotlin']
-            res.srcDirs = ['src/main/res']
-            assets.srcDirs = ['src/main/assets']
-
-            // Include UniFFI bindings
-            java.srcDirs += ['android/app/src/main/kotlin']
-        }
-
-        // Flavor-specific source sets
-        gms {
-            java.srcDirs = ['src/gms/java', 'src/gms/kotlin']
-            res.srcDirs = ['src/gms/res']
-            assets.srcDirs = ['src/gms/assets']
-        }
-
-        foss {
-            java.srcDirs = ['src/foss/java', 'src/foss/kotlin']
-            res.srcDirs = ['src/foss/res']
-            assets.srcDirs = ['src/foss/assets']
-        }
-    }
-
-    // Build types
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile('proguard-android-optimize.txt'),
-                'proguard-rules.pro'
-            )
-        }
-        debug {
-            isMinifyEnabled = false
-        }
-    }
-
-    // Dependencies
-    dependencies {
-        implementation fileTree(dir: 'libs', include: ['*.jar'])
-        implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0"
-        implementation 'androidx.core:core-ktx:1.12.0'
-        implementation 'androidx.appcompat:appcompat:1.6.1'
-        implementation 'com.google.android.material:material:1.10.0'
-        implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-        implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
-        implementation 'androidx.activity:activity-ktx:1.7.2'
-    }
+    id 'com.android.application' version '8.7.3' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.25' apply false
 }

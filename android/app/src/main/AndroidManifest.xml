@@ -1,5 +1,9 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="org.aegis.app">
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Атрибут package= убран: начиная с AGP 8 он игнорируется и вызывает
+  предупреждение. Пакет задаётся через `namespace` в app/build.gradle.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

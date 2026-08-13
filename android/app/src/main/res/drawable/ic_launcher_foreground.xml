@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Щит — знак проекта из UI kit. Векторный, поэтому одинаково чёток
+     на любой плотности и не требует пяти растровых копий. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#37B8FF"
+        android:pathData="M54,28 L74,36 L74,54 C74,66 65,75 54,80 C43,75 34,66 34,54 L34,36 Z" />
+    <path
+        android:fillColor="#06121B"
+        android:pathData="M54,40 L64,44 L64,55 C64,62 59,68 54,70 C49,68 44,62 44,55 L44,44 Z" />
+</vector>

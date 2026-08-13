@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Тема приложения. Дизайн-система AEGIS тёмная по умолчанию (UI kit),
+  поэтому базой взята DayNight с принудительно тёмной палитрой, а не
+  светлая тема со «слоем» поверх.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Theme.AEGIS" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent_base</item>
+        <item name="colorPrimaryVariant">@color/accent_pressed</item>
+        <item name="colorOnPrimary">@color/accent_on</item>
+
+        <item name="android:colorBackground">@color/bg_base</item>
+        <item name="colorSurface">@color/bg_card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+
+        <item name="android:statusBarColor">@color/bg_base</item>
+        <item name="android:navigationBarColor">@color/bg_base</item>
+
+        <!--
+          🔐 Раздел 19.2 плана: содержимое приложения не должно попадать
+          в системный снимок экрана переключателя задач. Флаг ставится
+          в коде (FLAG_SECURE), здесь фиксируется только тёмный фон,
+          чтобы снимок не «мигал» белым до его установки.
+        -->
+        <item name="android:windowBackground">@color/bg_base</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    </style>
+
+</resources>

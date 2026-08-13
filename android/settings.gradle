@@ -1,1 +1,27 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Репозитории объявляются здесь, а не в build.gradle каждого модуля.
+// Централизованное объявление (режим по умолчанию с AGP 7) не даёт модулю
+// незаметно подтянуть артефакт из постороннего источника — это важно для
+// воспроизводимых сборок (ADR-020).
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    // FAIL_ON_PROJECT_REPOS: модуль, объявивший свой репозиторий, роняет
+    // сборку вместо того, чтобы тихо им воспользоваться.
+    repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'AEGIS'
+
 include ':app'

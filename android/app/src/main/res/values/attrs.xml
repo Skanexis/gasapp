@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Прикладные состояния компонентов, о которых платформа не знает.
+  Подмешиваются во View.onCreateDrawableState и обрабатываются
+  селекторами в res/drawable.
+-->
+<resources>
+    <attr name="state_loading" format="boolean" />
+    <attr name="state_error" format="boolean" />
+</resources>

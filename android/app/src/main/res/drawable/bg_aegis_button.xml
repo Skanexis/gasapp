@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Семь состояний кнопки (раздел 20.4 плана). Порядок важен: селектор
+  выбирает ПЕРВОЕ совпадение, поэтому исключающие состояния идут раньше
+  общих. disabled стоит первым — недоступная кнопка не должна выглядеть
+  нажатой или ошибочной.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item android:state_enabled="false" android:drawable="@drawable/bg_button_disabled" />
+    <item app:state_loading="true" android:drawable="@drawable/bg_button_disabled" />
+    <item app:state_error="true" android:drawable="@drawable/bg_button_error" />
+    <item android:state_pressed="true" android:drawable="@drawable/bg_button_pressed" />
+    <item android:state_focused="true" android:drawable="@drawable/bg_button_focused" />
+    <item android:state_hovered="true" android:drawable="@drawable/bg_button_hovered" />
+    <item android:drawable="@drawable/bg_button_normal" />
+</selector>
