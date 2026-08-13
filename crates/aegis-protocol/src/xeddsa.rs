@@ -6,10 +6,13 @@
 //! XEdDSA allows using the same key pair for both X25519 Diffie-Hellman
 //! and Ed25519 signatures.
 
-use aegis_types::{PublicKeyBytes, PrivateKeyBytes, Result, AegisError};
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, Signer, SecretKey};
+use aegis_types::{AegisError, PrivateKeyBytes, PublicKeyBytes, Result};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroize;
+
+/// Длина подписи Ed25519 в байтах: R (32) ‖ S (32).
+pub const SIGNATURE_LEN: usize = 64;
 
 /// XEdDSA public key (Ed25519 verifying key).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -38,36 +41,46 @@ impl XEdDSAPublicKey {
         PublicKeyBytes::new(self.0.to_bytes())
     }
 
-    /// Verifies a signature for the given message.
+    /// Проверяет подпись сообщения.
+    ///
+    /// Используется именно `verify_strict`, а не `verify`: строгий вариант
+    /// отвергает ключи и точки R малого порядка. Без этого одна и та же
+    /// подпись может проходить проверку под несколькими ключами
+    /// (malleability), а на этом свойстве строятся атаки подмены отправителя.
     pub fn verify_strict(&self, message: &[u8], signature: &[u8]) -> Result<()> {
-        if signature.len() != 64 {
-            return Err(AegisError::Crypto);
-        }
-        let sig_array = <[u8; 64]>::try_from(signature)
+        let sig_array = <[u8; SIGNATURE_LEN]>::try_from(signature)
             .map_err(|_| AegisError::Crypto)?;
-        let sig = Signature::from_bytes(&sig_array);
-        self.0.verify_strict(message, &sig)
-            .map_err(|_| AegisError::Crypto)?;
-        Ok(())
+
+        self.0
+            .verify_strict(message, &Signature::from_bytes(&sig_array))
+            .map_err(|_| AegisError::Crypto)
     }
 }
 
 impl XEdDSAPrivateKey {
     /// Generates a new random XEdDSA private key.
     pub fn generate<R: CryptoRng + RngCore>(csprng: &mut R) -> Self {
-        let secret_key = SecretKey::generate(csprng);
-        let signing_key = SigningKey::from(&secret_key);
+        let mut seed = [0u8; 32];
+        csprng.fill_bytes(&mut seed);
+        let signing_key = SigningKey::from_bytes(&seed);
+        seed.zeroize();
+
         Self { signing_key }
     }
 
     /// Creates a new XEdDSA private key from bytes.
     ///
-    /// Returns `Err(AegisError::Crypto)` if the bytes do not represent a valid Ed25519 private key.
+    /// Любые 32 байта — корректный seed Ed25519: приватный скаляр получается
+    /// из них хешированием, поэтому отказать здесь не в чем. `Result`
+    /// сохранён ради единообразия с [`X25519PrivateKey::from_bytes`]
+    /// и стабильности сигнатуры.
+    ///
+    /// [`X25519PrivateKey::from_bytes`]: crate::x25519::X25519PrivateKey::from_bytes
     #[allow(clippy::result_unit_err)]
     pub fn from_bytes(bytes: PrivateKeyBytes) -> Result<Self> {
-        let secret_key = SecretKey::from_bytes(bytes.expose_secret());
-        let signing_key = SigningKey::from(&secret_key);
-        Ok(Self { signing_key })
+        Ok(Self {
+            signing_key: SigningKey::from_bytes(bytes.expose_secret()),
+        })
     }
 
     /// Returns the raw bytes of the private key.
@@ -85,24 +98,26 @@ impl XEdDSAPrivateKey {
         XEdDSAPublicKey(VerifyingKey::from(&self.signing_key))
     }
 
-    /// Signs a message and returns the signature.
-    pub fn sign(&self, message: &[u8]) -> [u8; 64] {
-        let signature = self.signing_key.sign(message);
-        let mut result = [0u8; 64];
-        result.copy_from_slice(signature.s_bytes());
-        result
+    /// Подписывает сообщение.
+    ///
+    /// Возвращает полную подпись R ‖ S (64 байта). Ранее здесь копировалась
+    /// только половина S через `s_bytes()`, а старший полубуфер оставался
+    /// нулевым — такая «подпись» не проходит проверку никогда, и подпись
+    /// предключей в PQXDH была бы неработоспособна.
+    pub fn sign(&self, message: &[u8]) -> [u8; SIGNATURE_LEN] {
+        self.signing_key.sign(message).to_bytes()
     }
 }
 
-impl Zeroize for XEdDSAPrivateKey {
-    fn zeroize(&mut self) {
-        // Zeroize the inner secret key by zeroizing its bytes
-        let mut bytes = self.signing_key.to_bytes();
-        bytes.zeroize();
-        // Note: The SigningKey itself doesn't have a zeroize method, but we've zeroized
-        // the actual secret key material that it contains
-    }
-}
+// Ручной `impl Zeroize` здесь не нужен и был бы вреден.
+//
+// `ed25519_dalek::SigningKey`, собранный с фичей `zeroize`, реализует
+// `ZeroizeOnDrop` и затирает себя сам. Прежняя реализация в этом файле
+// копировала ключ во временный буфер и обнуляла *копию*, оставляя оригинал
+// в памяти нетронутым — то есть давала ровно ту гарантию, которой не давала.
+//
+// Тест `private_key_is_zeroize_on_drop` ниже фиксирует свойство на уровне
+// системы типов, чтобы смена версии зависимости не отменила его молча.
 
 impl From<XEdDSAPublicKey> for PublicKeyBytes {
     fn from(key: XEdDSAPublicKey) -> Self {
@@ -137,85 +152,117 @@ mod tests {
     use super::*;
     use rand_core::OsRng;
 
+    /// Официальный вектор RFC 8032, раздел 7.1, TEST 1 (пустое сообщение).
+    ///
+    /// Как и в [`crate::x25519`], значения заданы hex-строками для посимвольной
+    /// сверки с текстом RFC. Прежние массивы `0x..` в этом файле не совпадали
+    /// с RFC ни в приватном ключе, ни в публичном, а «ожидаемая подпись» была
+    /// дописана до 64 байт значениями `0xff` — то есть тест был подогнан под
+    /// сломанную реализацию `sign`, вместо того чтобы её поймать.
+    const RFC8032_SECRET: &str =
+        "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+    const RFC8032_PUBLIC: &str =
+        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+    const RFC8032_SIGNATURE: &str = concat!(
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155",
+        "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+    );
+
+    fn hex32(s: &str) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        assert_eq!(s.len(), 64, "ожидалось 64 hex-символа");
+        for (i, byte) in out.iter_mut().enumerate() {
+            let pair = s.get(i * 2..i * 2 + 2).expect("длина проверена выше");
+            *byte = u8::from_str_radix(pair, 16).expect("не hex");
+        }
+        out
+    }
+
+    fn hex64(s: &str) -> [u8; SIGNATURE_LEN] {
+        let mut out = [0u8; SIGNATURE_LEN];
+        assert_eq!(s.len(), 128, "ожидалось 128 hex-символов");
+        for (i, byte) in out.iter_mut().enumerate() {
+            let pair = s.get(i * 2..i * 2 + 2).expect("длина проверена выше");
+            *byte = u8::from_str_radix(pair, 16).expect("не hex");
+        }
+        out
+    }
+
     #[test]
     fn test_xeddsa_keypair_generation() {
         let mut csprng = OsRng;
         let alice = XEdDSAPrivateKey::generate(&mut csprng);
         let bob = XEdDSAPrivateKey::generate(&mut csprng);
 
-        let alice_public = alice.public_key();
-        let bob_public = bob.public_key();
-
-        // Test signing and verification
         let message = b"test message";
         let signature = alice.sign(message);
-        assert!(alice_public.verify_strict(message, &signature).is_ok());
-        // Bob's public key should fail to verify Alice's signature
-        assert!(bob_public.verify_strict(message, &signature).is_err());
+
+        assert!(alice.public_key().verify_strict(message, &signature).is_ok());
+        // Чужим ключом подпись проверяться не должна.
+        assert!(bob.public_key().verify_strict(message, &signature).is_err());
     }
 
+    /// Seed из RFC даёт ровно тот публичный ключ, что напечатан в RFC.
     #[test]
-    fn test_xeddsa_from_bytes() {
-        // Test vector from RFC 8032, Section 7.1
-        let private_key_bytes = PrivateKeyBytes::new([
-            0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60,
-            0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc1,
-            0x44, 0x4c, 0x5e, 0x50, 0x76, 0xb1, 0x0e, 0x59,
-            0x92, 0x7e, 0x9e, 0x1f, 0xb0, 0x36, 0x4a, 0x08,
-        ]);
+    fn rfc8032_public_key_matches() {
+        let key = XEdDSAPrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC8032_SECRET)))
+            .unwrap();
 
-        let public_key_bytes = PublicKeyBytes::new([
-            0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7,
-            0x1d, 0xd6, 0xb3, 0x92, 0x8b, 0x2d, 0x6a, 0x7e,
-            0x9f, 0x9a, 0x7d, 0x0b, 0x88, 0x5a, 0x01, 0x2d,
-            0x11, 0x59, 0x05, 0x58, 0x32, 0x95, 0xcb, 0x39,
-        ]);
-
-        let private_key = XEdDSAPrivateKey::from_bytes(private_key_bytes).unwrap();
-        let public_key = private_key.public_key();
-
-        // Test that our public key matches the expected bytes
-        assert_eq!(public_key.as_bytes(), public_key_bytes);
-
-        // Test that the public key can be parsed back and matches
-        let parsed_public_key = XEdDSAPublicKey::from_bytes(public_key_bytes).unwrap();
-        assert_eq!(public_key.as_bytes(), parsed_public_key.as_bytes());
+        assert_eq!(
+            key.public_key().as_bytes(),
+            PublicKeyBytes::new(hex32(RFC8032_PUBLIC))
+        );
     }
 
+    /// Подпись побайтово совпадает с RFC 8032 и проходит проверку.
+    ///
+    /// Тест поймал бы прежнюю реализацию `sign`, которая возвращала только
+    /// половину S и нули вместо R.
     #[test]
-    fn test_xeddsa_sign_verify() {
-        // Test vector from RFC 8032, Section 7.1
-        let private_key_bytes = PrivateKeyBytes::new([
-            0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60,
-            0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc1,
-            0x44, 0x4c, 0x5e, 0x50, 0x76, 0xb1, 0x0e, 0x59,
-            0x92, 0x7e, 0x9e, 0x1f, 0xb0, 0x36, 0x4a, 0x08,
-        ]);
+    fn rfc8032_signature_matches_and_verifies() {
+        let key = XEdDSAPrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC8032_SECRET)))
+            .unwrap();
+        let expected = hex64(RFC8032_SIGNATURE);
 
-        let public_key_bytes = PublicKeyBytes::new([
-            0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7,
-            0x1d, 0xd6, 0xb3, 0x92, 0x8b, 0x2d, 0x6a, 0x7e,
-            0x9f, 0x9a, 0x7d, 0x0b, 0x88, 0x5a, 0x01, 0x2d,
-            0x11, 0x59, 0x05, 0x58, 0x32, 0x95, 0xcb, 0x39,
-        ]);
+        let signature = key.sign(b"");
 
-        let message = b"";
-        let expected_signature = [
-            0xe5, 0x56, 0x43, 0x00, 0x3d, 0x62, 0x31, 0xb5,
-            0x02, 0x88, 0x5e, 0x4b, 0x24, 0x07, 0x3e, 0x4f,
-            0x49, 0xfd, 0x02, 0x41, 0x2d, 0x3b, 0x22, 0x6b,
-            0x8e, 0x01, 0x22, 0x6a, 0x00, 0x8a, 0x8d, 0x5d,
-            0x22, 0x62, 0x32, 0x28, 0xd4, 0x0f, 0x33, 0x3f,
-            0x47, 0x23, 0x07, 0x2d, 0x18, 0x19, 0x0a, 0x27,
-            0x4d, 0x29, 0x73, 0x23, 0xcb, 0x2e, 0xb8, 0x27,
-            0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        ];
+        assert_eq!(signature, expected, "подпись разошлась с RFC 8032 7.1");
+        assert!(key.public_key().verify_strict(b"", &signature).is_ok());
+    }
 
-        let private_key = XEdDSAPrivateKey::from_bytes(private_key_bytes).unwrap();
-        let public_key = private_key.public_key();
+    /// Подпись не должна проверяться для другого сообщения.
+    #[test]
+    fn signature_does_not_verify_for_different_message() {
+        let mut csprng = OsRng;
+        let key = XEdDSAPrivateKey::generate(&mut csprng);
+        let signature = key.sign(b"original");
 
-        let signature = private_key.sign(message);
-        assert_eq!(signature, expected_signature);
-        assert!(public_key.verify_strict(message, &signature).is_ok());
+        assert!(key.public_key().verify_strict(b"tampered", &signature).is_err());
+    }
+
+    /// Приватный ключ затирается при уничтожении.
+    ///
+    /// Проверка на уровне системы типов: если обновление `ed25519-dalek`
+    /// потеряет `ZeroizeOnDrop`, крейт перестанет компилироваться, а не
+    /// продолжит тихо оставлять ключи в памяти.
+    #[test]
+    fn private_key_is_zeroize_on_drop() {
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+        assert_zeroize_on_drop::<ed25519_dalek::SigningKey>();
+    }
+
+    /// Подпись неверной длины отвергается, а не паникует.
+    ///
+    /// Вход приходит из сети (подписи предключей в bundle), поэтому длина —
+    /// не инвариант, а недоверенные данные.
+    #[test]
+    fn malformed_signature_length_is_rejected() {
+        let mut csprng = OsRng;
+        let key = XEdDSAPrivateKey::generate(&mut csprng);
+        let public = key.public_key();
+
+        for bad in [vec![0u8; 0], vec![0u8; 63], vec![0u8; 65], vec![0u8; 128]] {
+            assert!(public.verify_strict(b"msg", &bad).is_err());
+        }
     }
 }
