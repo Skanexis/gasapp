@@ -37,7 +37,16 @@ expect_used = "deny"
 panic = "deny"
 
 [dependencies]
-aegis-core.workspace = true
+# ⚠️ `aegis-core` здесь пока НЕ подключён.
+#
+# Текущий FFI-контракт (`core_version`, `protocol_version`,
+# `check_protocol_version`, `format_safety_number`) обращается только
+# к `aegis-protocol` и `aegis-types` — в коде крейта нет ни одного
+# `use aegis_core`. Зависимость числилась в манифесте и тянула за собой
+# не компилирующийся `aegis-core`, из-за чего вся граница FFI не собиралась,
+# а с ней не собирались и биндинги для Android/iOS (задачи M1).
+#
+# Возвращается вместе с оркестрацией, когда `aegis-core` будет закрыт.
 aegis-protocol.workspace = true
 aegis-types.workspace = true
 thiserror.workspace = true

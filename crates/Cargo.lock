@@ -27,28 +27,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "aegis-core"
-version = "0.1.0"
-dependencies = [
- "aegis-backup",
- "aegis-keystore",
- "aegis-media",
- "aegis-net",
- "aegis-protocol",
- "aegis-storage",
- "aegis-types",
- "hex",
- "proptest",
- "thiserror",
- "tracing",
- "uniffi",
-]
-
-[[package]]
 name = "aegis-ffi"
 version = "0.1.0"
 dependencies = [
- "aegis-core",
  "aegis-protocol",
  "aegis-types",
  "thiserror",
