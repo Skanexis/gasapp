@@ -132,14 +132,15 @@ dependencies = [
 name = "aegis-storage"
 version = "0.1.0"
 dependencies = [
+ "aegis-protocol",
  "aegis-types",
  "hex",
  "proptest",
  "rusqlite",
- "serde",
- "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -55,6 +55,34 @@ Message key уничтожается сразу после использова�
 
 ---
 
+## Подготовка окружения: OpenSSL
+
+`aegis-storage` собирает SQLCipher из исходников (фича `bundled-sqlcipher`
+у `rusqlite`), а SQLCipher требует OpenSSL. Без указанных ниже переменных
+сборка падает на build-скрипте `libsqlite3-sys` с сообщением
+`Missing environment variable OPENSSL_DIR` — ещё до компиляции наших крейтов.
+
+**Linux / macOS** — обычно достаточно системного пакета
+(`libssl-dev` / `brew install openssl@3`); если путь не находится сам:
+
+```bash
+export OPENSSL_DIR=/usr/local/opt/openssl@3
+```
+
+**Windows** — установить OpenSSL (например, Win64 OpenSSL v3) и указать:
+
+```powershell
+$env:OPENSSL_DIR       = 'C:\Program Files\OpenSSL-Win64'
+$env:OPENSSL_LIB_DIR   = 'C:\Program Files\OpenSSL-Win64\lib\VC\x64\MD'
+$env:OPENSSL_INCLUDE_DIR = 'C:\Program Files\OpenSSL-Win64\include'
+$env:OPENSSL_STATIC    = '1'
+```
+
+> ⚠️ Фича `bundled-sqlcipher-vendored-openssl` собирает OpenSSL сама, но
+> требует Perl с модулем `Locale::Maketext::Simple`, которого нет в Perl
+> из состава Git for Windows. Поэтому по умолчанию используется системный
+> OpenSSL, а не vendored.
+
 ## Перед коммитом
 
 ```bash
