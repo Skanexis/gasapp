@@ -1,0 +1,41 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Сгенерировано tools/gen-tokens.mjs из design/secure-messenger-ui-kit.html.
+   НЕ РЕДАКТИРОВАТЬ ВРУЧНУЮ — правки будут затёрты при следующей генерации.
+   Источник правды по дизайну — UI kit (раздел 20 плана).
+*/
+:root {
+  --aegis-bg-base: #0D0F12;
+  --aegis-bg-raised: #15181D;
+  --aegis-bg-card: #1C2128;
+  --aegis-bg-hover: #252B33;
+  --aegis-line: #2E353E;
+  --aegis-text-primary: #FFFFFF;
+  --aegis-text-secondary: #B9C1CC;
+  --aegis-text-muted: #7C8796;
+  --aegis-text-disabled: #596170;
+  --aegis-accent-base: #37B8FF;
+  --aegis-accent-hover: #5CC6FF;
+  --aegis-accent-pressed: #2AA3E8;
+  --aegis-accent-on: #06121B;
+  --aegis-accent-dim: rgba(55,184,255,.12);
+  --aegis-accent-line: rgba(55,184,255,.38);
+  --aegis-status-success: #18C37A;
+  --aegis-status-warning: #E4B545;
+  --aegis-status-error: #E5484D;
+  --aegis-status-info: #37B8FF;
+  --aegis-status-successDim: rgba(24,195,122,.12);
+  --aegis-status-warningDim: rgba(228,181,69,.12);
+  --aegis-status-errorDim: rgba(229,72,77,.12);
+  --aegis-radius-input: 12px;
+  --aegis-radius-button: 14px;
+  --aegis-radius-card: 16px;
+  --aegis-radius-sheet: 24px;
+  --aegis-space-4: 4px;
+  --aegis-space-8: 8px;
+  --aegis-space-16: 16px;
+  --aegis-space-24: 24px;
+  --aegis-space-32: 32px;
+  --aegis-space-40: 40px;
+  --aegis-space-48: 48px;
+  --aegis-space-64: 64px;
+}

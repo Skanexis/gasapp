@@ -1,0 +1,62 @@
+AEGIS — Secure Messenger
+Copyright 2026 The AEGIS Authors
+
+================================================================================
+  КАРТА ЛИЦЕНЗИЙ  /  LICENSE MAP
+================================================================================
+
+Проект использует РАЗДЕЛЬНОЕ лицензирование (см. ADR-006 в AEGIS_MASTER_PLAN.md).
+This project uses SPLIT licensing (see ADR-006 in AEGIS_MASTER_PLAN.md).
+
+  crates/**            Apache License 2.0        → LICENSE-APACHE
+  ios/**               Apache License 2.0        → LICENSE-APACHE
+  android/**           Apache License 2.0        → LICENSE-APACHE
+  tools/**             Apache License 2.0        → LICENSE-APACHE
+  fuzz/**              Apache License 2.0        → LICENSE-APACHE
+
+  server/**            GNU AGPL v3.0             → LICENSE-AGPL
+
+  design/**            CC BY 4.0
+  docs/protocol/**     CC BY 4.0
+
+================================================================================
+  ПОЧЕМУ ТАК  /  RATIONALE
+================================================================================
+
+Клиентский код лицензирован под Apache-2.0, потому что условия Apple App Store
+несовместимы с лицензиями семейства GPL. Apache-2.0 также содержит явный
+патентный грант, что существенно для криптографического продукта.
+
+Серверный код лицензирован под AGPL-3.0, потому что он не распространяется через
+магазины приложений, а AGPL не позволяет хостить модифицированный закрытый форк.
+
+Client code is Apache-2.0 licensed because Apple App Store terms are incompatible
+with GPL-family licenses. Apache-2.0 also carries an explicit patent grant, which
+matters for a cryptographic product.
+
+Server code is AGPL-3.0 licensed because it is not distributed through app stores,
+and AGPL prevents hosting a modified closed-source fork.
+
+================================================================================
+  КРИТИЧЕСКОЕ ПРАВИЛО  /  CRITICAL RULE
+================================================================================
+
+  Крейты, используемые И клиентом, И сервером (aegis-types, aegis-proto),
+  ОБЯЗАНЫ быть Apache-2.0. Попадание AGPL-кода в клиентскую сборку делает
+  публикацию в App Store юридически невозможной.
+
+  Crates shared by BOTH client and server (aegis-types, aegis-proto) MUST be
+  Apache-2.0. AGPL code reaching a client build makes App Store publication
+  legally impossible.
+
+  Это проверяется автоматически: .github/workflows/security.yml
+  Enforced automatically by: .github/workflows/security.yml
+
+================================================================================
+  СТОРОННИЕ ЗАВИСИМОСТИ  /  THIRD-PARTY DEPENDENCIES
+================================================================================
+
+Полный перечень зависимостей и их лицензий генерируется командой:
+  cargo deny list
+
+Разрешённые лицензии зависимостей клиента задаются в deny.toml.

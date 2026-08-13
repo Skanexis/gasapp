@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "aegis-storage"
+description = "Зашифрованное локальное хранилище на SQLCipher"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+aegis-types.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rusqlite = { workspace = true, features = ["bundled-sqlcipher"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+hex.workspace = true

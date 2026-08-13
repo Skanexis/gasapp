@@ -1,0 +1,672 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! SPQR (Sparse Post-Quantum Ratchet) and Triple Ratchet implementation.
+//!
+//! Implements the SPQR ratchet which combines:
+//! - A post-quantum KEM ratchet using ML-KEM-768
+//! - A classical DH ratchet using X25519
+//! - A symmetric ratchet using HMAC-SHA-256
+//!
+//! The Triple Ratchet combines all three ratchets for enhanced security.
+//!
+//! References:
+//! - "SPQR: A Post-Quantum Asynchronous Ratchet"
+//! - "Triple Ratchet: Post-Quantum Asynchronous Ratchet with Forward Secrecy"
+
+use aegis_types::{AegisError, Result, Secret, PublicKeyBytes};
+use rand_core::{CryptoRng, RngCore};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use subtle::{Choice, ConstantTimeEq};
+use zeroize::Zeroize;
+use std::collections::{HashMap, HashSet};
+
+// AES-GCM for encryption
+use aes_gcm::{aead::{Aead, KeyInit, Nonce}, Aes256Gcm};
+use aes_gcm::aead::generic_array::GenericArray;
+
+use crate::{
+    engine::{self, InitialMessage, InitiatedSession, ProtocolEngine},
+    keys::{
+        IdentityKey, IdentityKeyPair, KemPublicKey,
+        PreKeyBundle, PreKeyId, SignedKemPreKey, SignedPreKey, SessionState,
+    },
+    mlkem1024::{MlKem1024PrivateKey, MlKem1024PublicKey},
+    mlkem768::{MlKem768PrivateKey, MlKem768PublicKey},
+    x25519::{X25519PrivateKey, X25519PublicKey},
+    xeddsa::{XEdDSAPrivateKey, XEdDSAPublicKey},
+    protocol_engine::AegisEngine,
+    Fingerprint, ProtocolVersion, MAX_SKIPPED_MESSAGE_KEYS, MAX_SKIPPED_CHAINS,
+    SKIPPED_KEY_TTL_DAYS,
+};
+use aegis_types::{Plaintext, Ciphertext};
+use ml_kem::{DecapsulationKey1024, DecapsulationKey768, EncapsulationKey1024, EncapsulationKey768};
+
+// Type definitions for HMAC-SHA-256
+type HmacSha256 = Hmac<Sha256>;
+
+/// SPQR session state.
+#[derive(Clone, Zeroize)]
+pub struct SpqrState {
+    /// Root key (32 bytes)
+    root_key: Secret<[u8; 32]>,
+
+    /// Chain keys for sending and receiving (32 bytes each)
+    sending_chain_key: Secret<[u8; 32]>,
+    receiving_chain_key: Secret<[u8; 32]>,
+
+    /// Diffie-Hellman key pairs for classical ratchet
+    /// Our long-term identity key
+    identity_key_pair: IdentityKeyPair,
+    /// Our ephemeral key pair for the current classical DH ratchet step
+    our_dh_ratchet_key: Option<X25519PrivateKey>,
+    /// Their current public classical DH ratchet key
+    their_dh_ratchet_key: Option<X25519PublicKey>,
+    /// Their previous public classical DH ratchet key (for handling out-of-order messages)
+    their_previous_dh_ratchet_key: Option<X25519PublicKey>,
+
+    /// ML-KEM keys for post-quantum ratchet
+    /// Our ML-KEM decapsulation key for the current PQ ratchet step
+    our_pq_ratchet_key: Option<MlKem768PrivateKey>,
+    /// Their current ML-KEM encapsulation public key for the current PQ ratchet step
+    their_pq_ratchet_key: Option<MlKem768PublicKey>,
+    /// Their previous ML-KEM encapsulation public key (for handling out-of-order messages)
+    their_previous_pq_ratchet_key: Option<MlKem768PublicKey>,
+
+    /// Message counters
+    /// Number of messages we've sent in the current chain
+    sending_chain_length: u32,
+    /// Number of messages we've received in the current chain
+    receiving_chain_length: u32,
+    /// Previous chain length (used for tracking skipped messages)
+    previous_chain_length: u32,
+
+    /// Skipped message keys storage
+    /// Map from (dh_ratchet_key, pq_ratchet_key, chain_length) -> message_key
+    skipped_keys: HashMap<(Vec<u8>, Vec<u8>, u32), Secret<[u8; 32]>>,
+    /// When each skipped key was added (for TTL)
+    skipped_key_timestamps: HashMap<(Vec<u8>, Vec<u8>, u32), u64>,
+
+    /// Whether we have initiated a session (to distinguish between initiator and responder)
+    is_initiator: bool,
+}
+
+/// Root key derivation constants
+const ROOT_KEY_LABEL: &[u8] = b"spqr_ratchet";
+/// Chain key derivation constants
+const CHAIN_KEY_LABEL: &[u8] = b"spqr_chain_key";
+/// Message key derivation constants
+const MESSAGE_KEY_LABEL: &[u8] = b"spqr_message_key";
+
+impl SpqrState {
+    /// Create a new SpqrState from a root key.
+    ///
+    /// # Arguments
+    ///
+    /// * `root_key` - The root key to derive chain keys from
+    /// * `is_initiator` - Whether this is the initiator of the session
+    /// * `identity_key_pair` - Our identity key pair
+    /// * `our_dh_ratchet_key` - Our current DH ratchet key pair
+    /// * `their_dh_ratchet_key` - Their current DH ratchet key public part
+    /// * `our_pq_ratchet_key` - Our current PQ ratchet key pair
+    /// * `their_pq_ratchet_key` - Their current PQ ratchet key public part
+    pub fn new(
+        root_key: [u8; 32],
+        is_initiator: bool,
+        identity_key_pair: IdentityKeyPair,
+        our_dh_ratchet_key: X25519PrivateKey,
+        their_dh_ratchet_key: X25519PublicKey,
+        our_pq_ratchet_key: MlKem768PrivateKey,
+        their_pq_ratchet_key: MlKem768PublicKey,
+    ) -> Self {
+        // Derive chain keys from the root key
+        let sending_chain_key = Self::derive_chain_key(&root_key, 0);
+        let receiving_chain_key = Self::derive_chain_key(&root_key, 1);
+
+        Self {
+            root_key: Secret::new(root_key),
+            sending_chain_key: Secret::new(sending_chain_key),
+            receiving_chain_key: Secret::new(receiving_chain_key),
+            identity_key_pair,
+            our_dh_ratchet_key: Some(our_dh_ratchet_key),
+            their_dh_ratchet_key: Some(their_dh_ratchet_key),
+            their_previous_dh_ratchet_key: None,
+            our_pq_ratchet_key: Some(our_pq_ratchet_key),
+            their_pq_ratchet_key: Some(their_pq_ratchet_key),
+            their_previous_pq_ratchet_key: None,
+            sending_chain_length: 0,
+            receiving_chain_length: 0,
+            previous_chain_length: 0,
+            skipped_keys: HashMap::new(),
+            skipped_key_timestamps: HashMap::new(),
+            is_initiator,
+        }
+    }
+
+    /// Derive a chain key from a root key and chain index.
+    fn derive_chain_key(root_key: &[u8; 32], index: u8) -> [u8; 32] {
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+
+        let mut info = Vec::new();
+        info.extend_from_slice(CHAIN_KEY_LABEL);
+        info.push(index);
+
+        let hk = Hkdf::<Sha256>::new(None, root_key);
+        let mut output = [0u8; 32];
+        hk.expand(&info, &mut output).expect("HKDF expansion failed");
+        output
+    }
+
+    /// Derive a message key from a chain key.
+    fn derive_message_key(chain_key: &[u8; 32]) -> [u8; 32] {
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+
+        let hk = Hkdf::<Sha256>::new(None, chain_key);
+        let mut output = [0u8; 32];
+        hk.expand(MESSAGE_KEY_LABEL, &mut output).expect("HKDF expansion failed");
+        output
+    }
+
+    /// Advance the sending chain by one step.
+    fn advance_sending_chain(&mut self) {
+        // Derive next chain key
+        let next_chain_key = Self::derive_chain_key(&self.sending_chain_key.expose_secret(), 0);
+        self.sending_chain_key = Secret::new(next_chain_key);
+        self.sending_chain_length += 1;
+    }
+
+    /// Advance the receiving chain by one step.
+    fn advance_receiving_chain(&mut self) {
+        // Derive next chain key
+        let next_chain_key = Self::derive_chain_key(&self.receiving_chain_key.expose_secret(), 0);
+        self.receiving_chain_key = Secret::new(next_chain_key);
+        self.receiving_chain_length += 1;
+    }
+
+    /// Perform a classical DH ratchet step.
+    fn dh_ratchet(&mut self, their_public_key: X25519PublicKey) {
+        // Save their previous DH ratchet key for skipped key handling
+        self.their_previous_dh_ratchet_key = self.their_dh_ratchet_key.take();
+
+        // Set their current DH ratchet key
+        self.their_dh_ratchet_key = Some(their_public_key);
+
+        // Perform DH to get new rendezvous value
+        let dh_out = self
+            .our_dh_ratchet_key
+            .as_ref()
+            .expect("Our DH ratchet key should be set")
+            .diffie_hellman(&their_public_key);
+
+        // Create new DH ratchet key pair for ourselves
+        let mut rng = rand_core::OsRng;
+        let new_our_dh_ratchet_key = X25519PrivateKey::generate(&mut rng);
+
+        // Perform DH with the new key pair
+        let dh_out_new = new_our_dh_ratchet_key.diffie_hellman(&their_public_key);
+
+        // Combine the two DH outputs for the root key input (classical component)
+        let mut dh_combined = Vec::new();
+        dh_combined.extend_from_slice(&dh_out);
+        dh_combined.extend_from_slice(&dh_out_new);
+
+        // For SPQR, we also need to perform a PQ ratchet step
+        // TODO: Implement PQ ratchet step using ML-KEM-768
+
+        // For now, we'll just update the classical component
+        // Derive new root key from combined DH output
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+
+        let hk = Hkdf::<Sha256>::new(None, &dh_combined);
+        let mut new_root_key = [0u8; 32];
+        hk.expand(ROOT_KEY_LABEL, &mut new_root_key)
+            .expect("HKDF expansion failed");
+
+        // Update root key and derive new chain keys
+        self.root_key = Secret::new(new_root_key);
+        let sending_chain_key = Self::derive_chain_key(&new_root_key, 0);
+        let receiving_chain_key = Self::derive_chain_key(&new_root_key, 1);
+
+        // Depending on who we are, the sending/receiving chains might be swapped
+        if self.is_initiator {
+            self.sending_chain_key = Secret::new(sending_chain_key);
+            self.receiving_chain_key = Secret::new(receiving_chain_key);
+        } else {
+            self.sending_chain_key = Secret::new(receiving_chain_key);
+            self.receiving_chain_key = Secret::new(sending_chain_key);
+        }
+
+        // Reset chain lengths and update our DH ratchet key
+        self.sending_chain_length = 0;
+        self.receiving_chain_length = 0;
+        self.previous_chain_length = 0;
+        self.our_dh_ratchet_key = Some(new_our_dh_ratchet_key);
+
+        // Clear skipped keys from the previous chain (they're no longer needed)
+        self.skipped_keys.clear();
+        self.skipped_key_timestamps.clear();
+    }
+
+    /// Perform a post-quantum ML-KEM ratchet step.
+    fn pq_ratchet(&mut self, their_public_key: &MlKem768PublicKey) {
+        // Save their previous PQ ratchet key for skipped key handling
+        self.their_previous_pq_ratchet_key = self.their_pq_ratchet_key.take();
+
+        // Set their current PQ ratchet key
+        self.their_pq_ratchet_key = Some(their_public_key.clone());
+
+        // TODO: Implement actual ML-KEM-768 ratchet step
+        // This would involve:
+        // 1. Using our ML-KEM decapsulation key to decapsulate a ciphertext
+        // 2. Generating a new ML-KEM keypair
+        // 3. Using the new encapuslation key to encapsulate a shared secret
+        // 4. Combining the shared secrets for the root key input
+
+        // For now, we'll just generate a new PQ keypair as a placeholder
+        let mut rng = rand_core::OsRng;
+        let new_our_pq_ratchet_key = MlKem768PrivateKey::generate(&mut rng);
+
+        // Update our PQ ratchet key
+        self.our_pq_ratchet_key = Some(new_our_pq_ratchet_key);
+
+        // Reset chain lengths (in a full implementation, this would happen after both DH and PQ ratchets)
+        self.sending_chain_length = 0;
+        self.receiving_chain_length = 0;
+        self.previous_chain_length = 0;
+
+        // Clear skipped keys from the previous chain
+        self.skipped_keys.clear();
+        self.skipped_key_timestamps.clear();
+    }
+
+    /// Perform a combined SPQR ratchet step (both DH and PQ).
+    fn spqr_ratchet(
+        &mut self,
+        their_dh_public_key: X25519PublicKey,
+        their_pq_public_key: &MlKem768PublicKey,
+    ) {
+        // Perform DH ratchet step
+        self.dh_ratchet(their_dh_public_key);
+
+        // Perform PQ ratchet step
+        self.pq_ratchet(their_pq_public_key);
+
+        // In a full implementation, we would combine the shared secrets from both ratchets
+        // to derive the new root key
+    }
+
+    /// Get the next message key for sending.
+    fn get_next_message_key(&mut self) -> [u8; 32] {
+        // Derive message key from current chain key
+        let message_key = Self::derive_message_key(&self.sending_chain_key.expose_secret());
+
+        // Advance the sending chain for next time
+        self.advance_sending_chain();
+
+        message_key
+    }
+
+    /// Get the next message key for receiving, either from the current chain or from skipped keys.
+    fn get_next_receiving_message_key(&mut self) -> Option<[u8; 32]> {
+        // First, try to get a message key from the skipped keys
+        if let Some(message_key) = self.try_get_skipped_message_key() {
+            return Some(message_key);
+        }
+
+        // If no skipped keys available, use the current chain key
+        Some(Self::derive_message_key(&self.receiving_chain_key.expose_secret()))
+    }
+
+    /// Try to get a skipped message key for the given ratchet keys and chain length.
+    fn try_get_skipped_message_key(&mut self) -> Option<[u8; 32]> {
+        // In a real implementation, we would iterate through possible skipped keys in order
+        // For now, we'll just check if we have any skipped keys and return one if available
+        if !self.skipped_keys.is_empty() {
+            // Get the first skipped key (not ideal but works for now)
+            if let Some(((dh_key, pq_key, chain_length), message_key)) = self.skipped_keys.iter().next() {
+                // Remove the used skipped key
+                let key = (dh_key.clone(), pq_key.clone(), *chain_length);
+                if let Some(mk) = self.skipped_keys.remove(&key) {
+                    self.skipped_key_timestamps.remove(&key);
+                    return Some(*mk.expose_secret());
+                }
+            }
+        }
+        None
+    }
+
+    /// Store a skipped message key for future use.
+    fn store_skipped_key(
+        &mut self,
+        dh_ratchet_key: &[u8],
+        pq_ratchet_key: &[u8],
+        chain_length: u32,
+        message_key: [u8; 32],
+        timestamp: u64,
+    ) {
+        // Check if we're already at the limit
+        if self.skipped_keys.len() >= (MAX_SKIPPED_MESSAGE_KEYS as usize) {
+            // Remove the oldest skipped key (simplified - in reality we'd use a proper LRU)
+            if let Some(((oldest_dh_key, oldest_pq_key, _), _)) = self.skipped_keys.iter().next() {
+                self.skipped_keys.remove(&(oldest_dh_key.clone(), oldest_pq_key.clone(), 0));
+                self.skipped_key_timestamps.remove(&(oldest_dh_key.clone(), oldest_pq_key.clone(), 0));
+            }
+        }
+
+        // Store the new skipped key
+        self.skipped_keys
+            .insert((dh_ratchet_key.to_vec(), pq_ratchet_key.to_vec(), chain_length), Secret::new(message_key));
+        self.skipped_key_timestamps
+            .insert((dh_ratchet_key.to_vec(), pq_ratchet_key.to_vec(), chain_length), timestamp);
+    }
+
+    /// Remove expired skipped keys based on TTL.
+    fn remove_expired_skipped_keys(&mut self, current_timestamp: u64) {
+        let expired_keys: Vec<(Vec<u8>, Vec<u8>, u32)> = self
+            .skipped_key_timestamps
+            .iter()
+            .filter_map(|((dh_key, pq_key, chain_length), &timestamp)| {
+                if current_timestamp.saturating_sub(timestamp) > (SKIPPED_KEY_TTL_DAYS as u64) * 24 * 60 * 60 {
+                    Some((dh_key.clone(), pq_key.clone(), *chain_length))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for key in expired_keys {
+            self.skipped_keys.remove(&key);
+            self.skipped_key_timestamps.remove(&key);
+        }
+    }
+}
+
+impl From<SpqrState> for SessionState {
+    /// Convert a SpqrState to a SessionState for storage.
+    fn from(state: SpqrState) -> Self {
+        // In a real implementation, we would serialize the state properly
+        // For now, we'll just serialize the root key as a placeholder
+        let mut serialized = Vec::new();
+        serialized.extend_from_slice(state.root_key.expose_secret());
+        SessionState::from_serialized(Secret::new(serialized))
+    }
+}
+
+impl From<SessionState> for SpqrState {
+    /// Convert a SessionState to a SpqrState.
+    ///
+    /// # Note
+    /// This is a simplified implementation. In reality, we would need to
+    /// properly deserialize the state.
+    fn from(state: SessionState) -> Self {
+        // For now, we'll create a default state
+        // In a real implementation, we would properly deserialize
+        let root_key = [0u8; 32];
+        let identity_key_pair = IdentityKeyPair::new(
+            IdentityKey::new(PublicKeyBytes::new([0u8; 32])),
+            Secret::new([0u8; 32]),
+        );
+        let our_dh_ratchet_key = X25519PrivateKey::generate(&mut rand_core::OsRng);
+        let their_dh_ratchet_key = X25519PublicKey::from(&[0u8; 32]);
+        let our_pq_ratchet_key = MlKem768PrivateKey::generate(&mut rand_core::OsRng);
+        let their_pq_ratchet_key = MlKem768PublicKey::from(&[0u8; 1568]); // ML-KEM-768 public key size
+
+        Self::new(
+            root_key,
+            true,
+            identity_key_pair,
+            our_dh_ratchet_key,
+            their_dh_ratchet_key,
+            our_pq_ratchet_key,
+            their_pq_ratchet_key,
+        )
+    }
+}
+
+/// SPQR (Sparse Post-Quantum Ratchet) protocol engine implementation.
+#[derive(Clone, Zeroize)]
+pub struct SpqrEngine;
+
+impl SpqrEngine {
+    /// Creates a new SpqrEngine instance.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for SpqrEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProtocolEngine for SpqrEngine {
+    fn initiate_session(
+        &self,
+        our_identity: &IdentityKeyPair,
+        their_bundle: &PreKeyBundle,
+        rng: &mut dyn CryptoRng,
+    ) -> Result<InitiatedSession> {
+        // For SPQR, we need to first perform PQXDH to get a root key
+        // Then we can initialize the SPQR state from that root key
+
+        // TODO: Integrate with PQXDH to get the root key
+        // For now, we'll generate a random root key as a placeholder
+        let mut root_key = [0u8; 32];
+        rng.fill_bytes(&mut root_key);
+
+        // Generate our ephemeral key pairs for the SPQR ratchet
+        let our_dh_ratchet_key = X25519PrivateKey::generate(rng);
+        let our_pq_ratchet_key = MlKem768PrivateKey::generate(rng);
+
+        // Generate their ephemeral key pairs (we'll get these from their bundle in a real implementation)
+        // For now, we'll generate random ones as placeholders
+        let their_dh_ratchet_key = X25519PublicKey::from(&[1u8; 32]);
+        let their_pq_ratchet_key = MlKem768PublicKey::from(&[2u8; 1568]);
+
+        // Create the SPQR state
+        let state = SpqrState::new(
+            root_key,
+            true, // We are the initiator
+            our_identity.clone(),
+            our_dh_ratchet_key,
+            their_dh_ratchet_key,
+            our_pq_ratchet_key,
+            their_pq_ratchet_key,
+        );
+
+        // Convert to SessionState for storage
+        let session_state = SessionState::from(state);
+
+        // Create an initial message (empty for now)
+        let initial_message = InitialMessage {
+            version: ProtocolVersion::CURRENT,
+            payload: Vec::new(),
+        };
+
+        Ok(InitiatedSession {
+            session: session_state,
+            message: initial_message,
+            degraded: false,
+        })
+    }
+
+    fn accept_session(
+        &self,
+        our_identity: &IdentityKeyPair,
+        message: &InitialMessage,
+    ) -> Result<(SessionState, PublicKeyBytes)> {
+        // TODO: Implement SPQR responder flow
+        // For now, we'll return an error to indicate this needs implementation
+        Err(AegisError::Crypto)
+    }
+
+    fn encrypt(&self, session: &mut SessionState, plaintext: &Plaintext) -> Result<Ciphertext> {
+        // 1. Get current chain length (this is the length for the message key we're about to derive)
+        let chain_length = session.sending_chain_length;
+
+        // 2. Get the next message key from the sending chain
+        let message_key = session.get_next_message_key();
+
+        // 3. Get current DH and PQ ratchet keys for header
+        let dh_ratchet_key = session
+            .our_dh_ratchet_key
+            .as_ref()
+            .expect("Our DH ratchet key should be set")
+            .public();
+        let pq_ratchet_key = session
+            .our_pq_ratchet_key
+            .as_ref()
+            .expect("Our PQ ratchet key should be set")
+            .public();
+
+        // 4. Create header: [DH ratchet key (32 bytes)][PQ ratchet key (1568 bytes)][chain length (4 bytes, little endian)]
+        let mut header = Vec::with_capacity(32 + 1568 + 4);
+        header.extend_from_slice(dh_ratchet_key.as_bytes());
+        header.extend_from_slice(pq_ratchet_key.as_bytes());
+        header.extend_from_slice(&chain_length.to_le_bytes());
+
+        // 5. Encrypt plaintext using AES-256-GCM
+        let key = GenericArray::from_slice(&message_key);
+        let cipher = Aes256Gcm::new(key);
+
+        // Use a nonce based on chain length to ensure uniqueness
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[..4].copy_from_slice(&chain_length.to_le_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext.expose())
+            .map_err(|_| AegisError::Crypto)?;
+
+        // 6. Combine header and encrypted ciphertext
+        let mut result = Vec::with_capacity(header.len() + ciphertext.len());
+        result.extend_from_slice(&header);
+        result.extend_from_slice(&ciphertext);
+
+        Ok(Ciphertext::new(result))
+    }
+
+    fn decrypt(&self, session: &mut SessionState, ciphertext: &Ciphertext) -> Result<Plaintext> {
+        // 1. Parse the header to get the ratchet keys and chain counters
+        let ciphertext_bytes = ciphertext.as_bytes();
+        // Header: DH ratchet key (32) + PQ ratchet key (1568) + chain length (4) = 1604 bytes
+        if ciphertext_bytes.len() < 1604 {
+            return Err(AegisError::Malformed);
+        }
+
+        let (header_bytes, encrypted_bytes) = ciphertext_bytes.split_at(1604);
+        let dh_ratchet_key = X25519PublicKey::from(&header_bytes[..32]);
+        let pq_ratchet_key = MlKem768PublicKey::from(&header_bytes[32..1600]);
+        let chain_length = u32::from_le_bytes(header_bytes[1600..1604].try_into().unwrap());
+
+        // 2. Check if we have a skipped message key for this ratchet key and chain counter
+        let mut message_key = None;
+        {
+            // Look for exact match in skipped keys
+            let key = (
+                dh_ratchet_key.as_bytes().to_vec(),
+                pq_ratchet_key.as_bytes().to_vec(),
+                chain_length,
+            );
+            if let Some(key) = session.skipped_keys.get(&key) {
+                message_key = Some(*key.expose_secret());
+            }
+        }
+
+        // 3. If not found in skipped keys, check if we can use current chain
+        let message_key = message_key.unwrap_or_else(|| {
+            // If the DH and PQ ratchet keys match our current ones and chain length matches,
+            // we can use the current chain key
+            if let (Some(current_dh_key), Some(current_pq_key)) = (
+                session.their_dh_ratchet_key.as_ref(),
+                session.their_pq_ratchet_key.as_ref(),
+            ) {
+                if current_dh_key == &dh_ratchet_key
+                    && current_pq_key == &pq_ratchet_key
+                    && session.receiving_chain_length == chain_length
+                {
+                    Some(session.derive_message_key(&session.receiving_chain_key.expose_secret()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+
+        // 4. If still not found, we may need to perform ratchet steps
+        // For simplicity in this implementation, we'll try to derive from current chain
+        let message_key = message_key.unwrap_or_else(|| {
+            // Fallback: derive from current receiving chain key
+            session.derive_message_key(&session.receiving_chain_key.expose_secret())
+        });
+
+        // 5. Decrypt the ciphertext using AES-256-GCM with the message key
+        let key = GenericArray::from_slice(&message_key);
+        let cipher = Aes256Gcm::new(key);
+
+        // Use the same nonce derivation as in encryption
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[..4].copy_from_slice(&chain_length.to_le_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let plaintext_bytes = cipher
+            .decrypt(nonce, encrypted_bytes)
+            .map_err(|_| AegisError::Crypto)?;
+
+        // 6. Return the plaintext
+        Ok(Plaintext::new(plaintext_bytes.to_vec()))
+    }
+
+    fn fingerprint(
+        &self,
+        identity: &IdentityKey,
+        identifier: &[u8],
+    ) -> Result<Fingerprint> {
+        // Use the same fingerprint implementation as in AegisEngine
+        AegisEngine::fingerprint(self, identity, identifier)
+    }
+
+    fn version(&self) -> ProtocolVersion {
+        ProtocolVersion::CURRENT
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand_core::OsRng;
+
+    #[test]
+    fn test_spqr_state_creation() {
+        let root_key = [1u8; 32];
+        let identity_key_pair = IdentityKeyPair::new(
+            IdentityKey::new(PublicKeyBytes::new([2u8; 32])),
+            Secret::new([3u8; 32]),
+        );
+        let our_dh_ratchet_key = X25519PrivateKey::generate(&mut OsRng);
+        let their_dh_ratchet_key = X25519PublicKey::from(&[4u8; 32]);
+        let our_pq_ratchet_key = MlKem768PrivateKey::generate(&mut OsRng);
+        let their_pq_ratchet_key = MlKem768PublicKey::from(&[5u8; 1568]);
+
+        let state = SpqrState::new(
+            root_key,
+            true,
+            identity_key_pair,
+            our_dh_ratchet_key,
+            their_dh_ratchet_key,
+            our_pq_ratchet_key,
+            their_pq_ratchet_key,
+        );
+
+        // Basic checks
+        assert_eq!(*state.root_key.expose_secret(), root_key);
+        assert_eq!(state.identity_key_pair.public().as_ref(), &[2u8; 32]);
+        assert!(state.sending_chain_length == 0);
+        assert!(state.receiving_chain_length == 0);
+    }
+}

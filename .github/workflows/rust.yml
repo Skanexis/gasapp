@@ -1,0 +1,94 @@
+name: rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  check:
+    name: fmt · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Версия продублирована из rust-toolchain.toml намеренно: action
+      # ставит тулчейн до того, как cargo прочитает файл. При обновлении
+      # версии правятся оба места — расхождение поймает шаг «toolchain pin
+      # matches CI» ниже.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: rustfmt
+        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+
+      - name: clippy
+        run: cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets --all-features
+
+      - name: tests
+        run: cargo test --manifest-path crates/Cargo.toml --workspace --all-features
+
+      - name: doc tests
+        run: cargo test --manifest-path crates/Cargo.toml --workspace --doc
+
+      # Cargo.lock обязан быть в репозитории и актуальным:
+      # без этого сборка не воспроизводима.
+      - name: Cargo.lock is committed and up to date
+        run: cargo metadata --manifest-path crates/Cargo.toml --locked --format-version 1 > /dev/null
+
+      # Версия тулчейна указана в двух местах — они не должны разъезжаться.
+      - name: toolchain pin matches CI
+        run: |
+          set -euo pipefail
+          pinned=$(grep -oP 'channel\s*=\s*"\K[^"]+' rust-toolchain.toml)
+          actual=$(rustc --version | awk '{print $2}')
+          if [ "$pinned" != "$actual" ]; then
+            echo "::error::rust-toolchain.toml pins $pinned but CI runs $actual"
+            exit 1
+          fi
+          echo "OK: toolchain $pinned"
+
+  cross-compile:
+    name: cross-compile ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-ios,       os: macos-latest }
+          - { target: aarch64-apple-ios-sim,   os: macos-latest }
+          - { target: aarch64-linux-android,   os: ubuntu-latest }
+          - { target: armv7-linux-androideabi, os: ubuntu-latest }
+          - { target: x86_64-linux-android,    os: ubuntu-latest }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+          key: ${{ matrix.target }}
+
+      - name: install cargo-ndk
+        if: contains(matrix.target, 'android')
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - name: build
+        run: cargo build --manifest-path crates/Cargo.toml --workspace --release --target ${{ matrix.target }}

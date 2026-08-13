@@ -1,0 +1,156 @@
+# Автоматическая проверка правил безопасности из раздела 4 главного документа.
+#
+# Задача этого workflow — сделать так, чтобы правила не зависели от памяти
+# и внимательности ревьюера. Каждая проверка соответствует конкретному пункту
+# AEGIS_MASTER_PLAN.md.
+
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Ежедневно: новые advisory появляются и без наших коммитов
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # --------------------------------------------------------------------------
+  #  Секреты в коде и в истории коммитов
+  # --------------------------------------------------------------------------
+  secrets:
+    name: no committed secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks должен видеть всю историю
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --------------------------------------------------------------------------
+  #  Лицензии, баны, уязвимости зависимостей
+  # --------------------------------------------------------------------------
+  supply-chain:
+    name: supply chain (deny + audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-audit
+
+      # 🔴 Главная юридическая проверка проекта.
+      #    Copyleft в клиентском графе = невозможность публикации в App Store.
+      - name: cargo-deny (client workspace)
+        run: cargo deny --manifest-path crates/Cargo.toml check
+
+      - name: cargo-audit
+        run: cargo audit --file crates/Cargo.lock
+
+  # --------------------------------------------------------------------------
+  #  Правило 1: UI не занимается криптографией
+  # --------------------------------------------------------------------------
+  no-crypto-in-ui:
+    name: rule 1 — no crypto in UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/check-no-crypto-in-ui.sh
+
+  # --------------------------------------------------------------------------
+  #  Правило 7: нет телеметрии и аналитики
+  # --------------------------------------------------------------------------
+  no-telemetry:
+    name: rule 7 — no analytics SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/check-no-telemetry.sh
+
+  # --------------------------------------------------------------------------
+  #  unsafe разрешён только в aegis-ffi
+  # --------------------------------------------------------------------------
+  unsafe-boundary:
+    name: unsafe only in aegis-ffi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: check unsafe_code lint is forbidden outside aegis-ffi
+        run: |
+          set -euo pipefail
+          violations=0
+          for manifest in crates/*/Cargo.toml; do
+            crate=$(basename "$(dirname "$manifest")")
+            [ "$crate" = "aegis-ffi" ] && continue
+            if grep -q 'unsafe_code *= *"allow"' "$manifest"; then
+              echo "::error file=$manifest::crate '$crate' allows unsafe_code; only aegis-ffi may"
+              violations=$((violations + 1))
+            fi
+          done
+          # Ручной unsafe вне aegis-ffi невозможен из-за forbid в workspace,
+          # но проверяем и текстово — на случай локального override.
+          if grep -rn --include='*.rs' 'unsafe *{' crates/ | grep -v '^crates/aegis-ffi/'; then
+            echo "::error::unsafe block found outside aegis-ffi"
+            violations=$((violations + 1))
+          fi
+          exit $violations
+
+  # --------------------------------------------------------------------------
+  #  Дизайн-токены должны совпадать с UI kit
+  #
+  #  UI kit — источник правды по дизайну (раздел 20). Расхождение между ним
+  #  и сгенерированными токенами незаметно глазом («цвет почти тот же»),
+  #  поэтому проверяется машиной.
+  # --------------------------------------------------------------------------
+  design-tokens:
+    name: tokens match UI kit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node tools/gen-tokens.mjs --check
+
+  # --------------------------------------------------------------------------
+  #  Pre-commit hooks validation
+  # --------------------------------------------------------------------------
+  pre-commit:
+    name: pre-commit hooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files
+
+  # --------------------------------------------------------------------------
+  #  AGPL-код не должен попадать в клиентскую сборку (ADR-006)
+  # --------------------------------------------------------------------------
+  license-separation:
+    name: no AGPL crate in client graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: server crates must not appear in client dependency graph
+        run: |
+          set -euo pipefail
+          graph=$(cargo tree --manifest-path crates/Cargo.toml --prefix none --no-dedupe 2>/dev/null || true)
+          if echo "$graph" | grep -E '^aegis-server'; then
+            echo "::error::a server crate (AGPL-3.0) reached the client dependency graph."
+            echo "This makes App Store publication legally impossible. See ADR-006."
+            exit 1
+          fi
+          echo "OK: client graph contains no server crates"

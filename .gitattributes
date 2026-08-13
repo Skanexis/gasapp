@@ -1,0 +1,30 @@
+# Нормализация переводов строк.
+# Важно для reproducible builds (ADR-020): различия CRLF/LF меняют хеши файлов.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.rs        text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.kt        text eol=lf
+*.kts       text eol=lf
+*.swift     text eol=lf
+*.proto     text eol=lf
+*.yml       text eol=lf
+*.sql       text eol=lf
+
+# Windows-специфичные файлы
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+
+# Бинарные файлы
+*.png       binary
+*.jpg       binary
+*.woff2     binary
+*.xcframework binary
+
+# UI kit — большой сгенерированный файл, не участвует в diff-просмотре
+design/secure-messenger-ui-kit.html linguist-generated=true -diff
+
+# Тестовые векторы менять вручную нельзя
+docs/protocol/test-vectors/** -diff
