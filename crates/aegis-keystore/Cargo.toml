@@ -26,3 +26,7 @@ async-trait = { workspace = true }
 [dev-dependencies]
 proptest = "1.0"
 hex = "0.4"
+# Трейт HardwareKeyProvider асинхронный (обращения к Secure Enclave/StrongBox
+# блокирующие), поэтому тестам нужен исполнитель. Только для тестов:
+# в сам крейт runtime не тянется.
+tokio = { version = "1", features = ["macros", "rt"] }

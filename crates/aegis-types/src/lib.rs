@@ -62,12 +62,26 @@ pub enum AegisError {
     Storage,
 
     /// Аппаратное хранилище ключей недоступно или ключ инвалидирован.
-    #[error("hardware key store unavailable")]
+    ///
+    /// Формулировка не содержит слова «key»: текст ошибки уходит в логи и
+    /// в UI, а правило раздела 4.1 запрещает намекать в них на ключевой
+    /// материал. Смысл при этом не теряется — вариант перечисления назван
+    /// явно, и код различает причину по нему, а не по строке.
+    #[error("secure hardware unavailable")]
     HardwareKeyStore,
 
     /// Приложение заблокировано, операция требует разблокировки.
     #[error("client is locked")]
     Locked,
+
+    /// Компонент используется до инициализации.
+    ///
+    /// Отделено от [`AegisError::Locked`] намеренно: «заблокировано» —
+    /// нормальное состояние, из которого выходят разблокировкой, а
+    /// «не инициализировано» означает ошибку в порядке вызовов и
+    /// чинится не пользователем, а кодом.
+    #[error("component is not initialized")]
+    Uninitialized,
 
     /// Сетевая ошибка.
     #[error("network error")]
@@ -85,22 +99,55 @@ pub type Result<T> = core::result::Result<T, AegisError>;
 mod tests {
     use super::*;
 
-    /// Ни один текст ошибки не должен намекать на содержимое данных.
-    #[test]
-    fn error_messages_do_not_leak_detail() {
-        let forbidden = ["key", "plaintext", "nonce", "tag", "password", "pin"];
-
-        for error in [
+    /// Полный перечень вариантов ошибки.
+    ///
+    /// Список составляется через `match` без ветки `_`, поэтому добавление
+    /// нового варианта в [`AegisError`] **ломает компиляцию этого теста** и
+    /// заставляет дописать вариант сюда. Прежний вариант с массивом-литералом
+    /// такой связи не давал: `HardwareKeyStore` в нём отсутствовал и молча
+    /// не проверялся.
+    fn all_error_variants() -> Vec<AegisError> {
+        let all = vec![
             AegisError::Crypto,
             AegisError::InvalidSignature,
             AegisError::SessionNotFound,
             AegisError::TooManySkippedMessages,
             AegisError::UnsupportedProtocolVersion,
             AegisError::Storage,
+            AegisError::HardwareKeyStore,
             AegisError::Locked,
+            AegisError::Uninitialized,
             AegisError::Network,
             AegisError::Malformed,
-        ] {
+        ];
+
+        // Проверка полноты: если в перечислении появится новый вариант,
+        // этот `match` перестанет компилироваться.
+        for error in &all {
+            match error {
+                AegisError::Crypto
+                | AegisError::InvalidSignature
+                | AegisError::SessionNotFound
+                | AegisError::TooManySkippedMessages
+                | AegisError::UnsupportedProtocolVersion
+                | AegisError::Storage
+                | AegisError::HardwareKeyStore
+                | AegisError::Locked
+                | AegisError::Uninitialized
+                | AegisError::Network
+                | AegisError::Malformed => {}
+            }
+        }
+
+        all
+    }
+
+    /// Ни один текст ошибки не должен намекать на содержимое данных.
+    #[test]
+    fn error_messages_do_not_leak_detail() {
+        let forbidden = ["key", "plaintext", "nonce", "tag", "password", "pin"];
+
+        for error in all_error_variants() {
             let text = error.to_string().to_lowercase();
             for word in forbidden {
                 assert!(
