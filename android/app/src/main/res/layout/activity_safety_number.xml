@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Экран сверки safety number.
+
+  Единственное место, где криптографическую проверку выполняет **человек**,
+  поэтому форма здесь — решение о безопасности, а не об оформлении
+  (ADR-022): 60 десятичных цифр, 12 групп по 5, моноширинный шрифт.
+
+  Hex из первой редакции UI kit заменён намеренно: при сверке голосом
+  и глазами путаются B/8 и D/0, а ошибка сверки означает, что пользователь
+  считает канал проверенным, когда он не проверен.
+-->
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/screen_padding">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/safety_number_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/safety_number_peer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            tools:text="Сверка с Lena Novak" />
+
+        <!--
+          Место под QR-код. Содержит protobuf {version, fingerprint_bytes,
+          identifier}; при сканировании сравнение выполняется
+          в constant-time (раздел 6.6).
+        -->
+        <ImageView
+            android:id="@+id/safety_number_qr"
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:layout_gravity="center"
+            android:layout_marginTop="20dp"
+            android:background="@color/bg_card"
+            android:contentDescription="@string/safety_number_qr_description"
+            android:padding="12dp" />
+
+        <!--
+          Цифры моноширинным шрифтом: при сверке глазами группы должны
+          выстраиваться в колонки, иначе сбивается счёт.
+        -->
+        <TextView
+            android:id="@+id/safety_number_digits"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@color/bg_card"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:letterSpacing="0.08"
+            android:lineSpacingExtra="6dp"
+            android:padding="16dp"
+            android:textColor="@color/text_primary"
+            android:textIsSelectable="true"
+            android:textSize="18sp"
+            tools:text="38679 09329 07961\n31636 68792 91538\n01705 09531 22053\n70951 53139 67810" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/safety_number_hint"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <!--
+          🔐 Отметка о сверке ставится вручную и только пользователем.
+          Автоматическая отметка обесценила бы верификацию: она означает
+          «я лично сверил», а не «приложение что-то посчитало».
+        -->
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/mark_verified"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/mark_verified" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/clear_verified"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/clear_verified" />
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Экран блокировки.
+
+  Раскладка следует UI kit («Complete Mobile Screens» → Enter PIN).
+
+  🔐 Про содержимое экрана. Здесь не показывается ничего, кроме запроса
+  PIN: ни имени пользователя, ни числа непрочитанных, ни превью. Всё это
+  видно на заблокированном устройстве кому угодно, а по числу
+  непрочитанных и имени контакта восстанавливается часть переписки.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="32dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/lock_icon"
+        android:textSize="48sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:text="@string/lock_title"
+        android:textColor="@color/text_primary"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/lock_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="@string/lock_subtitle"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp" />
+
+    <org.aegis.app.components.AegisTextField
+        android:id="@+id/pin_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        android:hint="@string/pin_hint"
+        android:importantForAutofill="no"
+        android:inputType="numberPassword"
+        android:letterSpacing="0.3"
+        android:maxLength="12"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_secondary"
+        android:textSize="20sp" />
+
+    <!--
+      🔐 Сообщение об ошибке не уточняет, что именно не так: «неверный
+      PIN» и «повреждено хранилище» выглядят одинаково. Разница помогла бы
+      подбирающему понять, попал ли он в правильную длину.
+    -->
+    <TextView
+        android:id="@+id/pin_error"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:text="@string/pin_error"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp"
+        android:visibility="invisible"
+        tools:visibility="visible" />
+
+    <org.aegis.app.components.AegisButton
+        android:id="@+id/unlock_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/unlock" />
+</LinearLayout>

@@ -8,7 +8,48 @@
     <string name="ffi_protocol_version">Версия протокола: %1$d</string>
     <string name="ffi_safety_number">Safety number:\n%1$s</string>
     <string name="ffi_error">Ошибка ядра</string>
+    <!-- Отправка заблокирована: у верифицированного контакта сменился
+         identity-ключ, нужна повторная сверка safety number. -->
+    <string name="send_blocked">🔒 Отправка заблокирована: ключ контакта сменился</string>
+    <string name="send_allowed">✓ Отправка разрешена</string>
 
     <!-- Компоненты дизайн-системы -->
     <string name="button_loading">Загрузка…</string>
+
+    <!-- ===== Экраны M4 ===== -->
+
+    <!-- Список чатов -->
+    <string name="chat_verified_mark">✓</string>
+    <string name="chat_list_empty">Пока нет переписок.
+Найдите собеседника по имени, чтобы начать.</string>
+    <string name="connection_offline">Нет соединения — сообщения уйдут позже</string>
+    <string name="security_center_description">Центр безопасности</string>
+
+    <!-- Чат -->
+    <string name="back">Назад</string>
+    <string name="back_arrow">←</string>
+    <string name="message_hint">Сообщение</string>
+    <string name="send">Отправить</string>
+    <string name="key_changed_title">🔒 Ключ контакта сменился</string>
+    <string name="key_changed_body">Вы ранее сверили safety number с этим контактом. Отправка заблокирована, пока вы не сверите его заново.</string>
+    <string name="verify_safety_number">Сверить safety number</string>
+
+    <!-- Блокировка -->
+    <string name="lock_icon">🔒</string>
+    <string name="lock_title">AEGIS заблокирован</string>
+    <string name="lock_subtitle">Введите PIN, чтобы расшифровать переписку</string>
+    <string name="pin_hint">PIN</string>
+    <string name="pin_error">Не удалось разблокировать</string>
+    <string name="unlock">Разблокировать</string>
+
+    <!-- Safety number -->
+    <string name="safety_number_title">Safety number</string>
+    <string name="safety_number_qr_description">QR-код safety number</string>
+    <string name="safety_number_hint">Сверьте эти 60 цифр с собеседником лично или по видеосвязи. Совпадают — переписка защищена от подмены.</string>
+    <string name="mark_verified">Отметить как сверенный</string>
+    <string name="clear_verified">Снять отметку</string>
+    <string name="safety_number_peer">Сверка с %1$s</string>
+    <string name="security_score">🛡 %1$d/%2$d</string>
+    <string name="chat_verified_state">✓ Верифицирован</string>
+    <string name="chat_unverified_state">Не верифицирован — сверьте safety number</string>
 </resources>

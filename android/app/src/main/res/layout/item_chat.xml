@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Строка списка чатов.
+
+  Раскладка следует UI kit (раздел «Complete Mobile Screens» → Chat List):
+  аватар слева, имя и превью в центре, время и статус справа.
+
+  🔐 Про превью последнего сообщения. Текст сюда попадает уже
+  расшифрованным, поэтому строка не должна переживать блокировку
+  приложения: адаптер очищает список при переходе в Locked. Хранить
+  превью в базе в открытом виде запрещено (раздел 11).
+-->
+<org.aegis.app.components.AegisListRow
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="@dimen/list_row_padding"
+    android:paddingVertical="@dimen/chat_row_padding_vertical">
+
+    <!--
+      Аватар. Инициал вместо фотографии по умолчанию: загрузка аватаров
+      с сервера раскрывала бы, кто с кем переписывается, по одному лишь
+      факту запроса картинки.
+    -->
+    <TextView
+        android:id="@+id/chat_avatar"
+        android:layout_width="@dimen/avatar_size"
+        android:layout_height="@dimen/avatar_size"
+        android:background="@drawable/bg_avatar"
+        android:gravity="center"
+        android:textColor="@color/accent_base"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        tools:text="A" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/chat_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            tools:text="Lena Novak" />
+
+        <TextView
+            android:id="@+id/chat_preview"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            tools:text="Последнее сообщение" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:gravity="end"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/chat_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            tools:text="14:32" />
+
+        <!--
+          🔐 Значок верификации. Показывается только когда пользователь
+          лично сверил safety number: иначе он превратился бы в украшение,
+          которому перестают верить.
+        -->
+        <TextView
+            android:id="@+id/chat_verified"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/chat_verified_mark"
+            android:textColor="@color/accent_base"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:visibility="visible" />
+    </LinearLayout>
+</org.aegis.app.components.AegisListRow>

@@ -10,8 +10,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.aegis.FfiException
+import uniffi.aegis.canSendToContact
+import uniffi.aegis.computeFingerprint
 import uniffi.aegis.coreVersion
 import uniffi.aegis.formatSafetyNumber
+import uniffi.aegis.generateIdentityPublicKey
 import uniffi.aegis.protocolVersion
 
 /**
@@ -53,15 +56,29 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
+                    // Настоящие identity-ключи, а не заглушки: ядро
+                    // генерирует пару и отдаёт наружу только публичную
+                    // часть — приватная границу FFI не пересекает.
+                    val localIdentity = generateIdentityPublicKey()
+                    val remoteIdentity = generateIdentityPublicKey()
+
+                    // Отпечатки считает ядро (итеративный SHA-512,
+                    // 5200 раундов). Повторять это в Kotlin значило бы
+                    // завести вторую реализацию, которая разойдётся
+                    // с первой.
+                    val localFingerprint = computeFingerprint(localIdentity, LOCAL_ID)
+                    val remoteFingerprint = computeFingerprint(remoteIdentity, REMOTE_ID)
+
                     CoreInfo(
                         coreVersion = coreVersion(),
                         protocolVersion = protocolVersion(),
-                        // Отпечатки по 30 байт — формат из ADR-022.
-                        // Здесь это заглушечные значения: настоящие
-                        // появятся вместе с сессиями в M4.
-                        safetyNumber = formatSafetyNumber(
-                            ByteArray(FINGERPRINT_LEN) { 0x11 },
-                            ByteArray(FINGERPRINT_LEN) { 0x22 },
+                        safetyNumber = formatSafetyNumber(localFingerprint, remoteFingerprint),
+                        // 🔐 Проверка блокировки отправки: у верифицированного
+                        // контакта сменился ключ — отправка запрещена до
+                        // повторной сверки safety number.
+                        blockedAfterKeyChange = !canSendToContact(
+                            identityChanged = true,
+                            wasVerified = true,
                         ),
                     )
                 }
@@ -84,8 +101,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun render(info: CoreInfo) {
         coreVersionText.text = getString(R.string.ffi_core_version, info.coreVersion)
-        protocolVersionText.text =
-            getString(R.string.ffi_protocol_version, info.protocolVersion.toInt())
+
+        // Состояние блокировки отправки показывается рядом с версией
+        // протокола: это то, что пользователь должен увидеть до того,
+        // как напишет сообщение контакту со сменившимся ключом.
+        val guardState = if (info.blockedAfterKeyChange) {
+            getString(R.string.send_blocked)
+        } else {
+            getString(R.string.send_allowed)
+        }
+
+        protocolVersionText.text = getString(
+            R.string.ffi_protocol_version,
+            info.protocolVersion.toInt(),
+        ) + "\n" + guardState
+
         safetyNumberText.text = getString(R.string.ffi_safety_number, info.safetyNumber)
     }
 
@@ -93,10 +123,14 @@ class MainActivity : AppCompatActivity() {
         val coreVersion: String,
         val protocolVersion: UByte,
         val safetyNumber: String,
+        val blockedAfterKeyChange: Boolean,
     )
 
     private companion object {
-        /** Длина отпечатка identity-ключа в байтах (ADR-022). */
-        const val FINGERPRINT_LEN = 30
+        /** Идентификатор локальной стороны для привязки отпечатка. */
+        val LOCAL_ID = "local".toByteArray()
+
+        /** Идентификатор удалённой стороны. */
+        val REMOTE_ID = "remote".toByteArray()
     }
 }
