@@ -72,6 +72,10 @@
         <activity
             android:name=".ContactsActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".OnboardingActivity"
+            android:exported="false" />
         <!-- FFI service bindings will be added here -->
 
     </application>

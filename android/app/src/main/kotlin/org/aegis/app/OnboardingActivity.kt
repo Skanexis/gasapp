@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package org.aegis.app
+
+import android.content.Intent
+import android.os.Bundle
+import android.view.View
+import android.widget.ProgressBar
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisTextField
+import org.aegis.app.net.PlatformTransport
+import uniffi.aegis.FfiException
+import uniffi.aegis.Messenger
+
+/**
+ * Онбординг: регистрация первого аккаунта.
+ *
+ * 🔐 Предупреждение об отсутствии аудита показывается **до** кнопки
+ * и тем же кеглем, что и остальной текст (раздел 21 плана). Мессенджер,
+ * обещающий защиту, которую не проверял никто посторонний, обязан
+ * сказать об этом до того, как пользователь начнёт ему доверять.
+ */
+class OnboardingActivity : AppCompatActivity() {
+
+    private lateinit var username: AegisTextField
+    private lateinit var error: TextView
+    private lateinit var progress: ProgressBar
+    private lateinit var progressLabel: TextView
+    private lateinit var createButton: AegisButton
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_onboarding)
+
+        username = findViewById(R.id.onboarding_username)
+        error = findViewById(R.id.onboarding_error)
+        progress = findViewById(R.id.onboarding_progress)
+        progressLabel = findViewById(R.id.onboarding_progress_label)
+        createButton = findViewById(R.id.onboarding_create)
+
+        createButton.setOnClickListener { register() }
+    }
+
+    private fun register() {
+        val name = username.text?.toString()?.trim().orEmpty()
+
+        if (name.length < MIN_USERNAME_LENGTH) {
+            showError(getString(R.string.onboarding_error_short))
+
+            return
+        }
+
+        setWorking(true)
+
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    // 🔐 Ключ хранилища выводится из PIN в aegis-keystore.
+                    // Пока онбординг работает до установки PIN, поэтому
+                    // база открывается временным ключом — настоящий
+                    // придёт вместе с экраном создания PIN.
+                    val messenger = Messenger.open(
+                        databasePath = "${filesDir.absolutePath}/aegis.db",
+                        databaseKey = ByteArray(DATABASE_KEY_SIZE),
+                        transport = PlatformTransport(serverUrl()),
+                    )
+
+                    messenger.register(name, System.currentTimeMillis())
+                }
+            }
+
+            setWorking(false)
+
+            result
+                .onSuccess { account ->
+                    startActivity(
+                        Intent(this@OnboardingActivity, ChatListActivity::class.java)
+                            .putExtra(EXTRA_DEVICE_ID, account.deviceId),
+                    )
+                    finish()
+                }
+                .onFailure { failure ->
+                    // Текст ошибки ядра намеренно неинформативен, поэтому
+                    // показывается собственная строка. Различать «имя
+                    // занято» и «сервер недоступен» здесь можно только
+                    // по типу исключения.
+                    showError(
+                        if (failure is FfiException) {
+                            getString(R.string.onboarding_error_network)
+                        } else {
+                            getString(R.string.ffi_error)
+                        },
+                    )
+                }
+        }
+    }
+
+    private fun setWorking(working: Boolean) {
+        // Кнопка блокируется на время подбора proof-of-work: повторное
+        // нажатие запустило бы вторую регистрацию поверх первой.
+        createButton.isEnabled = !working
+        username.isEnabled = !working
+
+        val visibility = if (working) View.VISIBLE else View.GONE
+        progress.visibility = visibility
+        progressLabel.visibility = visibility
+
+        if (working) {
+            error.visibility = View.INVISIBLE
+        }
+    }
+
+    private fun showError(message: String) {
+        error.text = message
+        error.visibility = View.VISIBLE
+    }
+
+    /**
+     * Адрес сервера.
+     *
+     * Пока задан константой сборки: настройка адреса появится вместе
+     * с экраном выбора сервера. Значение вынесено в BuildConfig, чтобы
+     * отладочная и релизная сборки не могли случайно указать на один
+     * и тот же сервер.
+     */
+    private fun serverUrl(): String = BuildConfig.AEGIS_SERVER_URL
+
+    companion object {
+        /** Идентификатор устройства для последующих запросов. */
+        const val EXTRA_DEVICE_ID = "device_id"
+
+        /**
+         * Минимальная длина имени.
+         *
+         * Короткие имена вычерпываются перебором, и злоумышленник смог
+         * бы занять их все до появления настоящих пользователей.
+         */
+        private const val MIN_USERNAME_LENGTH = 3
+
+        /** Размер ключа SQLCipher. */
+        private const val DATABASE_KEY_SIZE = 32
+    }
+}

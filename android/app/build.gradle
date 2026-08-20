@@ -13,6 +13,15 @@ android {
         applicationId = "org.aegis.app"
         minSdk = 21
         targetSdk = 34
+
+        // Адрес сервера как поле сборки.
+        //
+        // 🔐 Вынесено сюда, а не в код: отладочная и релизная сборки
+        // не должны иметь возможности случайно указать на один сервер.
+        // Значение по умолчанию — локальная сеть для проверки на двух
+        // устройствах; релиз обязан переопределить его.
+        buildConfigField "String", "AEGIS_SERVER_URL",
+                "\"${project.findProperty('aegisServerUrl') ?: 'http://10.0.2.2:8443'}\""
         versionCode = 1
         versionName = "1.0"
 
@@ -45,6 +54,13 @@ android {
             applicationIdSuffix = ".foss"
             // FOSS-specific dependencies will go here
         }
+    }
+
+    buildFeatures {
+        // buildConfig отключён по умолчанию начиная с AGP 8: без явного
+        // включения сгенерированный BuildConfig не появляется, и
+        // обращение к AEGIS_SERVER_URL не компилируется.
+        buildConfig = true
     }
 
     buildTypes {
