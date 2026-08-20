@@ -2,12 +2,15 @@
 
 package org.aegis.app.ui
 
+import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import org.aegis.app.R
 
@@ -105,16 +108,13 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.ViewHolder>() {
         private val bubble: LinearLayout = view.findViewById(R.id.message_bubble)
         private val text: TextView = view.findViewById(R.id.message_text)
         private val time: TextView = view.findViewById(R.id.message_time)
-        private val status: TextView = view.findViewById(R.id.message_status)
+        private val status: ImageView = view.findViewById(R.id.message_status)
 
         /** Заполняет пузырь данными сообщения. */
         fun bind(message: MessageItem) {
             text.text = message.text
             time.text = message.time
 
-            // Одна раскладка на обе стороны: гравитация и фон решают,
-            // где окажется пузырь. Два отдельных layout разошлись бы
-            // при первой же правке.
             container.gravity = if (message.outgoing) Gravity.END else Gravity.START
             bubble.setBackgroundResource(
                 if (message.outgoing) {
@@ -124,11 +124,14 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.ViewHolder>() {
                 },
             )
 
-            // Статус показывается только у исходящих: у входящих
-            // он не имеет смысла и сбивал бы с толку.
+            // Статус показывается только у исходящих: у входящих он
+            // не имеет смысла и сбивал бы с толку.
             if (message.outgoing) {
                 status.visibility = View.VISIBLE
-                status.text = markFor(message.status)
+                status.setImageResource(iconFor(message.status))
+                status.imageTintList = ColorStateList.valueOf(
+                    ContextCompat.getColor(itemView.context, tintFor(message.status)),
+                )
             } else {
                 status.visibility = View.GONE
             }
@@ -141,12 +144,24 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.ViewHolder>() {
          * которое выглядит отправленным, но не ушло, — худший исход,
          * потому что пользователь считает, что его прочитали.
          */
-        private fun markFor(status: DeliveryMark): String = when (status) {
-            DeliveryMark.Pending -> "🕐"
-            DeliveryMark.Sent -> "✓"
-            DeliveryMark.Delivered -> "✓✓"
-            DeliveryMark.Read -> "✓✓"
-            DeliveryMark.Failed -> "✕"
+        private fun iconFor(status: DeliveryMark): Int = when (status) {
+            DeliveryMark.Pending -> R.drawable.ic_tick_pending
+            DeliveryMark.Sent -> R.drawable.ic_tick_single
+            DeliveryMark.Delivered, DeliveryMark.Read -> R.drawable.ic_tick_double
+            DeliveryMark.Failed -> R.drawable.ic_tick_failed
+        }
+
+        /**
+         * Цвет значка.
+         *
+         * `Delivered` и `Read` используют одну форму и различаются
+         * только цветом — так же, как в макете и в мессенджерах,
+         * к которым пользователь привык.
+         */
+        private fun tintFor(status: DeliveryMark): Int = when (status) {
+            DeliveryMark.Read -> R.color.accent_base
+            DeliveryMark.Failed -> R.color.status_error
+            else -> R.color.text_quaternary
         }
     }
 }

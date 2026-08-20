@@ -1,97 +1,116 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Экран списка чатов — главный экран приложения.
+  Список чатов по UI kit: шапка с поиском, список, кнопка нового чата
+  и нижняя навигация.
 
-  Раскладка следует UI kit («Complete Mobile Screens» → Chat List).
+  FrameLayout снаружи нужен только ради FAB: он лежит поверх списка,
+  как в макете, и в линейной раскладке этого не добиться.
 -->
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_base"
-    android:orientation="vertical">
+    android:background="@color/bg_base">
 
-    <!-- Шапка: имя приложения и вход в Security Center. -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/bg_raised"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/screen_padding"
-        android:paddingVertical="14dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-        <TextView
-            android:layout_width="0dp"
+        <!-- Шапка -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/app_name"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/screen_padding"
+            android:paddingTop="14dp"
+            android:paddingEnd="@dimen/screen_padding"
+            android:paddingBottom="14dp">
+
+            <TextView
+                style="@style/AegisAppBarTitle"
+                android:layout_weight="1"
+                android:text="@string/nav_chats" />
+
+            <ImageView
+                android:id="@+id/chat_list_search"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/search"
+                android:src="@drawable/ic_search"
+                android:tint="@color/text_secondary" />
+
+            <ImageView
+                android:id="@+id/security_center_badge"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="18dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/security_center_description"
+                android:src="@drawable/ic_shield"
+                android:tint="@color/status_ok" />
+        </LinearLayout>
 
         <!--
-          🔐 Индикатор Security Center. Показывает счёт защищённости
-          и открывает список предупреждений: смена ключа контакта,
-          недоступность аппаратного хранилища, просроченный backup.
-          Значок всегда на виду, а не спрятан в меню — иначе о тревоге
-          узнают только те, кто и так осторожен.
+          Баннер соединения: по умолчанию скрыт.
+
+          Показывается только когда связи нет. Постоянный зелёный
+          индикатор «онлайн» приучает не смотреть на него, и в момент,
+          когда он действительно понадобится, его не заметят.
         -->
         <TextView
-            android:id="@+id/security_center_badge"
-            android:layout_width="wrap_content"
+            android:id="@+id/connection_banner"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_aegis_list_row"
-            android:contentDescription="@string/security_center_description"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="6dp"
-            android:textColor="@color/accent_base"
-            android:textSize="13sp"
-            tools:text="🛡 9/10" />
+            android:background="@color/status_warn_dim"
+            android:gravity="center"
+            android:padding="10dp"
+            android:text="@string/connection_offline"
+            android:textColor="@color/status_warn"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/chat_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="80dp"
+            tools:listitem="@layout/item_chat" />
+
+        <TextView
+            android:id="@+id/chat_list_empty"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:padding="@dimen/screen_padding"
+            android:text="@string/chat_list_empty"
+            android:textColor="@color/text_tertiary"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <include layout="@layout/view_bottom_nav" />
+
     </LinearLayout>
 
-    <!--
-      Состояние соединения. Показывается только когда связи нет:
-      постоянный зелёный индикатор «онлайн» приучает не смотреть на него,
-      и тогда пропадание связи остаётся незамеченным.
-    -->
-    <TextView
-        android:id="@+id/connection_banner"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/bg_card"
-        android:gravity="center"
-        android:paddingVertical="8dp"
-        android:text="@string/connection_offline"
-        android:textColor="@color/text_secondary"
-        android:textSize="13sp"
-        android:visibility="gone"
-        tools:visibility="visible" />
+    <!-- Кнопка нового чата: 52dp, отступ снизу 86dp по макету -->
+    <ImageView
+        android:id="@+id/new_chat_button"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="@dimen/screen_padding"
+        android:layout_marginBottom="86dp"
+        android:background="@drawable/bg_fab"
+        android:contentDescription="@string/new_chat"
+        android:padding="14dp"
+        android:src="@drawable/ic_edit"
+        android:tint="@color/accent_on" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/chat_list"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        tools:listitem="@layout/item_chat" />
-
-    <!--
-      Пустое состояние. Отдельный текст, а не пустой экран: пользователь
-      должен понимать, что приложение работает, а не сломалось.
-    -->
-    <TextView
-        android:id="@+id/chat_list_empty"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:padding="@dimen/screen_padding"
-        android:text="@string/chat_list_empty"
-        android:textColor="@color/text_secondary"
-        android:textSize="15sp"
-        android:visibility="gone"
-        tools:visibility="gone" />
-</LinearLayout>
+</FrameLayout>

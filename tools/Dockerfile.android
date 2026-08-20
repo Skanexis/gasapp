@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Сборка Rust-ядра под Android в Linux-контейнере.
+#
+# # Зачем контейнер
+#
+# Кросс-сборка с Windows-хоста упирается в OpenSSL, который нужен
+# SQLCipher: его Configure написан на Perl и требует Unix-путей, а
+# Windows-Perl их не даёт. Perl из MSYS даёт, но конфликтует версиями
+# библиотек и не считает `C:/...` абсолютным путём. Восемь попыток
+# обойти это ни к чему не привели.
+#
+# Linux-контейнер снимает проблему целиком: там и Perl, и пути, и
+# компилятор согласованы между собой. Так же собирается CI, поэтому
+# сборка разработчика и сборка на сервере перестают расходиться.
+
+FROM rust:1.90-bookworm
+
+ARG NDK_VERSION=r27c
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        unzip curl perl make pkg-config python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Android NDK: нужен clang для целевых архитектур.
+RUN curl -fsSL -o /tmp/ndk.zip \
+        "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" \
+    && unzip -q /tmp/ndk.zip -d /opt \
+    && rm /tmp/ndk.zip
+
+ENV ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}
+ENV PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
+
+RUN rustup target add \
+        aarch64-linux-android \
+        armv7-linux-androideabi \
+        x86_64-linux-android \
+        i686-linux-android \
+    && cargo install cargo-ndk --locked
+
+WORKDIR /work
