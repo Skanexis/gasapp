@@ -21,18 +21,21 @@ pub struct X25519PrivateKey {
 impl X25519PublicKey {
     /// Creates a new X25519 public key from bytes.
     ///
-    /// Returns `Err(AegisError::Crypto)` if the bytes do not represent a valid point on the curve.
+    /// # Errors
+    ///
+    /// Не возвращается никогда: для X25519 корректна любая 32-байтовая
+    /// строка. Проверка принадлежности точки нужной подгруппе не делается
+    /// здесь намеренно — некорректная точка даст несовпадающий общий
+    /// секрет, и обмен провалится на проверке аутентичности.
+    /// `Result` сохранён ради единообразия сигнатур.
     #[allow(clippy::result_unit_err)]
     pub fn from_bytes(bytes: PublicKeyBytes) -> Result<Self> {
-        // For X25519, any 32-byte string is a valid public key (after clamping)
-        // Validation of whether the point is on the correct subgroup is left to
-        // the cryptographic operations (which will produce invalid shared secrets
-        // for invalid points, which won't match in authenticating parties)
         let public_key = PublicKey::from(*bytes.as_bytes());
         Ok(X25519PublicKey(public_key))
     }
 
     /// Returns the raw bytes of the public key.
+    #[must_use]
     pub fn as_bytes(&self) -> PublicKeyBytes {
         PublicKeyBytes::new(self.0.to_bytes())
     }
@@ -47,7 +50,10 @@ impl X25519PrivateKey {
 
     /// Creates a new X25519 private key from bytes.
     ///
-    /// Returns `Err(AegisError::Crypto)` if the bytes do not represent a valid private key.
+    /// # Errors
+    ///
+    /// Не возвращается никогда: любые 32 байта — корректный приватный ключ
+    /// X25519. `Result` сохранён ради стабильности сигнатуры.
     ///
     /// # О клампинге
     ///
@@ -56,7 +62,7 @@ impl X25519PrivateKey {
     /// самой операции DH (`decode_scalar` в RFC 7748), а не при хранении.
     /// Клампить здесь дополнительно не нужно — и вредно, потому что тогда
     /// `expose_secret` вернул бы не тот скаляр, который был записан.
-    #[allow(clippy::result_unit_err)]
+    #[allow(clippy::result_unit_err, clippy::needless_pass_by_value)]
     pub fn from_bytes(bytes: PrivateKeyBytes) -> Result<Self> {
         let static_secret = StaticSecret::from(*bytes.expose_secret());
         Ok(Self { static_secret })
@@ -68,11 +74,13 @@ impl X25519PrivateKey {
     ///
     /// This function exposes secret key material. The caller must ensure
     /// that this material is properly protected and zeroized after use.
+    #[must_use]
     pub fn expose_secret(&self) -> PrivateKeyBytes {
         PrivateKeyBytes::new(*self.static_secret.as_bytes())
     }
 
     /// Returns the public key corresponding to this private key.
+    #[must_use]
     pub fn public_key(&self) -> X25519PublicKey {
         X25519PublicKey(PublicKey::from(&self.static_secret))
     }
@@ -81,6 +89,7 @@ impl X25519PrivateKey {
     /// and the given public key.
     ///
     /// Returns the shared secret as 32 bytes.
+    #[must_use]
     pub fn diffie_hellman(&self, peer_public: &X25519PublicKey) -> [u8; 32] {
         let shared_secret = self.static_secret.diffie_hellman(&peer_public.0);
         *shared_secret.as_bytes()
@@ -116,6 +125,14 @@ impl TryFrom<PrivateKeyBytes> for X25519PrivateKey {
 }
 
 #[cfg(test)]
+// Разбор hex-векторов и демонстрация клампинга работают с индексами и
+// битовыми масками из текста RFC. Послабления `allow-*-in-tests` из
+// `clippy.toml` на эти два правила не распространяются, поэтому они сняты
+// здесь — на тестовом модуле, а не на рабочем коде.
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::decimal_literal_representation
+)]
 mod tests {
     use super::*;
     use rand_core::OsRng;
@@ -235,9 +252,9 @@ mod tests {
         // Клампленный вручную скаляр даёт тот же публичный ключ — доказательство,
         // что клампинг всё-таки применяется, просто не на этапе хранения.
         let mut clamped = raw;
-        clamped[0] &= 248;
-        clamped[31] &= 127;
-        clamped[31] |= 64;
+        clamped[0] &= 0xF8;
+        clamped[31] &= 0x7F;
+        clamped[31] |= 0x40;
         let clamped_key = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(clamped)).unwrap();
 
         assert_eq!(

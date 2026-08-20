@@ -27,7 +27,9 @@ pub struct XEdDSAPrivateKey {
 impl XEdDSAPublicKey {
     /// Creates a new XEdDSA public key from bytes.
     ///
-    /// Returns `Err(AegisError::Crypto)` if the bytes do not represent a valid Ed25519 public key.
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — байты не являются корректной точкой Ed25519.
     #[allow(clippy::result_unit_err)]
     pub fn from_bytes(bytes: PublicKeyBytes) -> Result<Self> {
         // For Ed25519, any 32-byte string is a valid public key
@@ -37,6 +39,7 @@ impl XEdDSAPublicKey {
     }
 
     /// Returns the raw bytes of the public key.
+    #[must_use]
     pub fn as_bytes(&self) -> PublicKeyBytes {
         PublicKeyBytes::new(self.0.to_bytes())
     }
@@ -47,6 +50,11 @@ impl XEdDSAPublicKey {
     /// отвергает ключи и точки R малого порядка. Без этого одна и та же
     /// подпись может проходить проверку под несколькими ключами
     /// (malleability), а на этом свойстве строятся атаки подмены отправителя.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — подпись неверной длины либо не сходится
+    /// с ключом.
     pub fn verify_strict(&self, message: &[u8], signature: &[u8]) -> Result<()> {
         let sig_array =
             <[u8; SIGNATURE_LEN]>::try_from(signature).map_err(|_| AegisError::Crypto)?;
@@ -76,7 +84,11 @@ impl XEdDSAPrivateKey {
     /// и стабильности сигнатуры.
     ///
     /// [`X25519PrivateKey::from_bytes`]: crate::x25519::X25519PrivateKey::from_bytes
-    #[allow(clippy::result_unit_err)]
+    ///
+    /// # Errors
+    ///
+    /// Не возвращается никогда — см. описание выше.
+    #[allow(clippy::result_unit_err, clippy::needless_pass_by_value)]
     pub fn from_bytes(bytes: PrivateKeyBytes) -> Result<Self> {
         Ok(Self {
             signing_key: SigningKey::from_bytes(bytes.expose_secret()),
@@ -89,11 +101,13 @@ impl XEdDSAPrivateKey {
     ///
     /// This function exposes secret key material. The caller must ensure
     /// that this material is properly protected and zeroized after use.
+    #[must_use]
     pub fn expose_secret(&self) -> PrivateKeyBytes {
         PrivateKeyBytes::new(self.signing_key.to_bytes())
     }
 
     /// Returns the public key corresponding to this private key.
+    #[must_use]
     pub fn public_key(&self) -> XEdDSAPublicKey {
         XEdDSAPublicKey(VerifyingKey::from(&self.signing_key))
     }
@@ -104,6 +118,7 @@ impl XEdDSAPrivateKey {
     /// только половина S через `s_bytes()`, а старший полубуфер оставался
     /// нулевым — такая «подпись» не проходит проверку никогда, и подпись
     /// предключей в PQXDH была бы неработоспособна.
+    #[must_use]
     pub fn sign(&self, message: &[u8]) -> [u8; SIGNATURE_LEN] {
         self.signing_key.sign(message).to_bytes()
     }
@@ -147,7 +162,186 @@ impl TryFrom<PrivateKeyBytes> for XEdDSAPrivateKey {
     }
 }
 
+/// Подпись ключом X25519 — собственно XEdDSA.
+///
+/// # Зачем это нужно отдельно от Ed25519 выше
+///
+/// Типы [`XEdDSAPublicKey`] и [`XEdDSAPrivateKey`] работают с Ed25519:
+/// публичный ключ там — точка Эдвардса, и проверить ею подпись под
+/// X25519-ключом нельзя. Между тем протокол требует ровно этого:
+/// `IK` — ключ X25519 (им выполняется DH), и он же проверяет подписи
+/// предключей (раздел 6.2 плана, строка «Позволяет одной паре ключей
+/// и DH, и подпись»).
+///
+/// Схема XEdDSA решает это переносом ключа между двумя представлениями
+/// одной кривой Curve25519: подпись создаётся и проверяется в форме
+/// Эдвардса, а хранится и используется для DH — в форме Монтгомери.
+///
+/// # Знак точки
+///
+/// Координата Монтгомери `u` не определяет знак соответствующей точки
+/// Эдвардса: одному X25519-ключу отвечают две точки, различающиеся знаком.
+/// Подписывающая сторона приводит ключ к форме с нулевым знаком, а
+/// проверяющая восстанавливает точку с тем же соглашением — поэтому обе
+/// стороны получают одну и ту же точку. Это стандартное соглашение XEdDSA.
+pub mod montgomery {
+    // Арифметика здесь — групповая, на скалярах и точках Curve25519, а не на
+    // машинных целых: `+` и `*` реализуют операции конечного поля и
+    // переполниться не могут. Лимит `arithmetic_side_effects` рассчитан на
+    // целочисленное переполнение и к этим типам неприменим, поэтому снят
+    // точечно — на одном модуле, а не на крейте.
+    #![allow(clippy::arithmetic_side_effects)]
+
+    use super::{AegisError, PrivateKeyBytes, PublicKeyBytes, Result, SIGNATURE_LEN};
+    use curve25519_dalek::{montgomery::MontgomeryPoint, scalar::Scalar};
+    use ed25519_dalek::{Signature, VerifyingKey};
+    use sha2::{Digest, Sha512};
+    use zeroize::{Zeroize, Zeroizing};
+
+    /// Приводит байты приватного ключа к скаляру X25519.
+    ///
+    /// # Про клампинг
+    ///
+    /// X25519 применяет клампинг (`decode_scalar`, RFC 7748 §5) внутри самой
+    /// операции DH, а не при хранении ключа. Значит, DH фактически выполняется
+    /// на *подчищенном* скаляре, и подпись обязана использовать ровно его же —
+    /// иначе публичный ключ, выведенный здесь, не совпадёт с тем, который
+    /// участвует в DH, и стороны не сойдутся в общем секрете.
+    fn clamp(private: &PrivateKeyBytes) -> Scalar {
+        let mut bytes = *private.expose_secret();
+
+        // Обнуляем три младших бита, старший бит и выставляем предстарший —
+        // ровно то, что делает decode_scalar в RFC 7748.
+        if let Some(first) = bytes.first_mut() {
+            *first &= 0xF8;
+        }
+        if let Some(last) = bytes.last_mut() {
+            *last &= 0x7F;
+            *last |= 0x40;
+        }
+
+        let scalar = Scalar::from_bytes_mod_order(bytes);
+        bytes.zeroize();
+
+        scalar
+    }
+
+    /// Восстанавливает точку Эдвардса из публичного ключа X25519.
+    ///
+    /// Знак фиксируется нулём — тем же соглашением, что и при подписи.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — байты не являются корректной точкой кривой.
+    fn to_edwards(public: &PublicKeyBytes) -> Result<VerifyingKey> {
+        let point = MontgomeryPoint(*public.as_bytes())
+            .to_edwards(0)
+            .ok_or(AegisError::Crypto)?;
+
+        VerifyingKey::from_bytes(&point.compress().to_bytes()).map_err(|_| AegisError::Crypto)
+    }
+
+    /// Подписывает сообщение приватным ключом X25519.
+    ///
+    /// # Про источник случайности
+    ///
+    /// Подпись детерминированная: nonce выводится из приватного ключа и
+    /// сообщения, как в Ed25519 (RFC 8032). Отдельный CSPRNG не нужен, а
+    /// его отсутствие исключает целый класс отказов — повтор nonce при
+    /// плохой энтропии раскрывает приватный ключ.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — приватный ключ не даёт корректной точки.
+    pub fn sign(private: &PrivateKeyBytes, message: &[u8]) -> Result<[u8; SIGNATURE_LEN]> {
+        // Тот же скаляр, что участвует в DH, — см. `clamp`.
+        let scalar = clamp(private);
+
+        // Точка Эдвардса, отвечающая этому скаляру, и её каноническая
+        // (с нулевым знаком) кодировка — та же, что восстановит проверяющий.
+        let point = curve25519_dalek::constants::ED25519_BASEPOINT_TABLE * &scalar;
+        let compressed = point.compress();
+        let sign_bit = compressed.to_bytes().get(31).copied().unwrap_or(0) & 0x80;
+
+        // Приводим к соглашению «знак = 0»: если точка имеет установленный
+        // старший бит, берём противоположный скаляр.
+        let (scalar, point) = if sign_bit == 0 {
+            (scalar, point)
+        } else {
+            let negated = -scalar;
+            let negated_point = curve25519_dalek::constants::ED25519_BASEPOINT_TABLE * &negated;
+            (negated, negated_point)
+        };
+        let public_bytes = point.compress().to_bytes();
+
+        // Детерминированный nonce: SHA-512(префикс ‖ скаляр ‖ сообщение).
+        // Префикс отделяет его от хеша самой подписи ниже.
+        let mut nonce_hash = Sha512::new();
+        nonce_hash.update([0xFEu8; 32]);
+        nonce_hash.update(scalar.to_bytes());
+        nonce_hash.update(message);
+        let nonce = Zeroizing::new(Scalar::from_hash(nonce_hash));
+
+        let r_point = curve25519_dalek::constants::ED25519_BASEPOINT_TABLE * &*nonce;
+        let r_bytes = r_point.compress().to_bytes();
+
+        // Вызов (challenge) по правилам Ed25519: SHA-512(R ‖ A ‖ M).
+        let mut challenge_hash = Sha512::new();
+        challenge_hash.update(r_bytes);
+        challenge_hash.update(public_bytes);
+        challenge_hash.update(message);
+        let challenge = Scalar::from_hash(challenge_hash);
+
+        let s = *nonce + challenge * scalar;
+
+        let mut signature = [0u8; SIGNATURE_LEN];
+        let (r_half, s_half) = signature.split_at_mut(32);
+        r_half.copy_from_slice(&r_bytes);
+        s_half.copy_from_slice(&s.to_bytes());
+
+        Ok(signature)
+    }
+
+    /// Проверяет подпись публичным ключом X25519.
+    ///
+    /// Используется `verify_strict`: он отвергает ключи и точки `R` малого
+    /// порядка, на которых строятся атаки подмены отправителя.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — ключ не является точкой кривой либо подпись
+    /// имеет неверную длину.
+    ///
+    /// [`AegisError::InvalidSignature`] — подпись не сходится с ключом.
+    pub fn verify(public: &PublicKeyBytes, message: &[u8], signature: &[u8]) -> Result<()> {
+        let verifying_key = to_edwards(public)?;
+        let bytes = <[u8; SIGNATURE_LEN]>::try_from(signature).map_err(|_| AegisError::Crypto)?;
+
+        verifying_key
+            .verify_strict(message, &Signature::from_bytes(&bytes))
+            .map_err(|_| AegisError::InvalidSignature)
+    }
+
+    /// Публичный ключ X25519, соответствующий приватному.
+    ///
+    /// Вынесено сюда, чтобы тесты и вызывающий код не зависели от того,
+    /// каким именно способом выводится точка.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — приватный ключ некорректен.
+    pub fn public_key(private: &PrivateKeyBytes) -> Result<PublicKeyBytes> {
+        let scalar = clamp(private);
+        let point = curve25519_dalek::constants::ED25519_BASEPOINT_TABLE * &scalar;
+
+        Ok(PublicKeyBytes::new(point.to_montgomery().to_bytes()))
+    }
+}
+
 #[cfg(test)]
+// Разбор hex-векторов RFC 8032 идёт по индексам — см. пояснение
+// в тестовом модуле `crate::x25519`.
+#[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
     use rand_core::OsRng;
@@ -242,6 +436,101 @@ mod tests {
             .public_key()
             .verify_strict(b"tampered", &signature)
             .is_err());
+    }
+
+    /// 🔐 XEdDSA: подпись ключом X25519 проверяется тем же ключом.
+    ///
+    /// Основное свойство схемы. Без него подписи предключей в PQXDH
+    /// проверять нечем: `IK` — ключ X25519, а не Ed25519.
+    #[test]
+    fn xeddsa_signature_verifies_with_x25519_key() {
+        let private = PrivateKeyBytes::new(hex32(RFC8032_SECRET));
+        let public = montgomery::public_key(&private).unwrap();
+
+        let signature = montgomery::sign(&private, b"prekey material").unwrap();
+
+        assert!(montgomery::verify(&public, b"prekey material", &signature).is_ok());
+    }
+
+    /// 🔐 XEdDSA и X25519 согласованы в публичном ключе.
+    ///
+    /// Ключевой инвариант всей схемы: `IK` один, а ролей у него две — DH
+    /// и подпись. Если публичный ключ, выведенный для подписи, разойдётся
+    /// с тем, который использует X25519, стороны PQXDH не сойдутся в общем
+    /// секрете. Расхождение возникает при разном клампинге скаляра
+    /// (RFC 7748 §5), поэтому свойство закреплено тестом.
+    #[test]
+    fn xeddsa_public_key_matches_x25519() {
+        use crate::x25519::X25519PrivateKey;
+        use rand_core::OsRng;
+
+        for _ in 0..16 {
+            let private = X25519PrivateKey::generate(&mut OsRng);
+            let bytes = private.expose_secret();
+
+            assert_eq!(
+                montgomery::public_key(&bytes).unwrap(),
+                private.public_key().as_bytes(),
+                "публичный ключ XEdDSA разошёлся с X25519"
+            );
+        }
+    }
+
+    /// 🔐 XEdDSA: подпись не проходит для другого сообщения.
+    #[test]
+    fn xeddsa_signature_rejects_other_message() {
+        let private = PrivateKeyBytes::new(hex32(RFC8032_SECRET));
+        let public = montgomery::public_key(&private).unwrap();
+
+        let signature = montgomery::sign(&private, b"original").unwrap();
+
+        assert!(matches!(
+            montgomery::verify(&public, b"tampered", &signature),
+            Err(AegisError::InvalidSignature)
+        ));
+    }
+
+    /// 🔐 XEdDSA: подпись не проходит под чужим ключом.
+    #[test]
+    fn xeddsa_signature_rejects_other_key() {
+        let private = PrivateKeyBytes::new(hex32(RFC8032_SECRET));
+        let mut other_bytes = hex32(RFC8032_SECRET);
+        other_bytes[0] ^= 0xFF;
+        let other = PrivateKeyBytes::new(other_bytes);
+
+        let signature = montgomery::sign(&private, b"message").unwrap();
+        let other_public = montgomery::public_key(&other).unwrap();
+
+        assert!(matches!(
+            montgomery::verify(&other_public, b"message", &signature),
+            Err(AegisError::InvalidSignature)
+        ));
+    }
+
+    /// 🔐 XEdDSA: подпись детерминирована.
+    ///
+    /// Nonce выводится из ключа и сообщения, а не из CSPRNG: повтор nonce
+    /// при плохой энтропии раскрыл бы приватный ключ.
+    #[test]
+    fn xeddsa_signature_is_deterministic() {
+        let private = PrivateKeyBytes::new(hex32(RFC8032_SECRET));
+
+        let first = montgomery::sign(&private, b"message").unwrap();
+        let second = montgomery::sign(&private, b"message").unwrap();
+
+        assert_eq!(first, second);
+    }
+
+    /// 🔐 XEdDSA: подпись неверной длины отвергается, а не паникует.
+    #[test]
+    fn xeddsa_malformed_signature_is_rejected() {
+        let private = PrivateKeyBytes::new(hex32(RFC8032_SECRET));
+        let public = montgomery::public_key(&private).unwrap();
+
+        assert!(matches!(
+            montgomery::verify(&public, b"message", b"short"),
+            Err(AegisError::Crypto)
+        ));
     }
 
     /// Приватный ключ затирается при уничтожении.

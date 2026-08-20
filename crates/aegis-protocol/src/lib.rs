@@ -25,35 +25,33 @@
 //! Не более 3500 строк. Это бюджетное ограничение, а не стилистическое:
 //! стоимость внешнего аудита пропорциональна объёму криптографического кода.
 //
+pub mod aead;
+pub mod envelope;
+pub mod double_ratchet;
 pub mod engine;
 pub mod keys;
 pub mod mlkem;
+pub mod pqxdh;
+pub mod prekeys;
+pub mod protocol_engine;
+pub mod spqr;
 pub mod x25519;
 pub mod xeddsa;
 
 mod fingerprint;
 mod version;
 
-// Движки протокола (`pqxdh.rs`, `double_ratchet.rs`, `spqr.rs`,
-// `protocol_engine.rs`) НЕ подключены к сборке.
+// Все движки переписаны с нуля и подключены к сборке: `pqxdh.rs` (подписи
+// предключей проверяются ключом владельца bundle), `double_ratchet.rs`
+// (цепочка на HMAC с разными константами, заголовок аутентифицируется как
+// AAD), `spqr.rs` (гибридное комбинирование `HKDF(MK_classic ‖ MK_pq)`
+// по ADR-021) и `protocol_engine.rs` — единственная реализация
+// `ProtocolEngine`, собирающая три храповика в один движок.
 //
-// Файлы остаются в дереве как черновик, но содержат дефекты, которые
-// компилятор поймать не может, и потому переживут любую починку сборки:
-//
-// * `pqxdh.rs` проверяет подписи предключей нашим собственным
-//   identity-ключом вместо ключа отправителя — аутентификация bundle
-//   не работает, сервер может подменить чужие предключи;
-// * `spqr.rs` не комбинирует классический и пост-квантовый секреты
-//   («in a full implementation, we would combine…»), то есть Triple
-//   Ratchet не является гибридным вопреки ADR-021;
-// * четыре типа реализуют `ProtocolEngine` с разными сигнатурами, хотя
-//   PQXDH, Double Ratchet и SPQR — этапы одного протокола, а не три
-//   взаимозаменяемых движка.
-//
-// Подключать их обратно по частям нельзя: получится код, который выглядит
-// работающим протоколом при неработающей аутентификации. Разбор — в разделе
-// 23.0.1 мастер-плана; M2 закрывается переписыванием, а не починкой.
+// Черновики прежних редакций остаются в `draft/` для сверки; все пять
+// дефектов раздела 23.0.1 закрыты.
 
+pub use double_ratchet::RatchetState;
 pub use engine::{Clock, InitialMessage, InitiatedSession, ProtocolEngine};
 pub use fingerprint::{Fingerprint, SafetyNumber, SAFETY_NUMBER_DIGITS};
 pub use keys::{
@@ -61,6 +59,9 @@ pub use keys::{
     SignedKemPreKey, SignedPreKey,
 };
 pub use mlkem::{MlKem1024PrivateKey, MlKem1024PublicKey, MlKem768PrivateKey, MlKem768PublicKey};
+pub use pqxdh::{InitiatorOutput, KemPreKeyChoice, ResponderKeys, SharedSecret, SHARED_SECRET_LEN};
+pub use protocol_engine::AegisEngine;
+pub use spqr::{Chunk, ChunkAssembler, EpochId, PqRatchet, CHUNK_SIZE, MAX_CHUNKS};
 pub use version::ProtocolVersion;
 pub use xeddsa::{XEdDSAPrivateKey, XEdDSAPublicKey};
 

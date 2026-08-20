@@ -98,6 +98,11 @@ macro_rules! declare_ml_kem {
             /// Ключ приходит с сервера в составе prekey bundle, то есть это
             /// недоверенный вход: некорректная длина и некорректная кодировка
             /// отвергаются, а не приводят к панике.
+            ///
+            /// # Errors
+            ///
+            /// [`AegisError::Crypto`] — неверная длина либо некорректная
+            /// кодировка ключа.
             pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
                 let array =
                     ml_kem::array::Array::try_from(bytes).map_err(|_| AegisError::Crypto)?;
@@ -156,6 +161,10 @@ macro_rules! declare_ml_kem {
             }
 
             /// Разбирает приватный ключ из сохранённого seed.
+            ///
+            /// # Errors
+            ///
+            /// [`AegisError::Crypto`] — seed неверной длины.
             pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
                 let seed = <[u8; SEED_LEN]>::try_from(bytes).map_err(|_| AegisError::Crypto)?;
 
@@ -191,6 +200,10 @@ macro_rules! declare_ml_kem {
             /// выведенный из приватного ключа. Это свойство FIPS 203, а не
             /// упущение — различимый отказ дал бы оракул. Несовпадение
             /// обнаруживается позже, при провале аутентификации AEAD.
+            ///
+            /// # Errors
+            ///
+            /// [`AegisError::Crypto`] — шифротекст неверной длины.
             pub fn decapsulate(&self, ciphertext: &[u8]) -> Result<[u8; SHARED_SECRET_LEN]> {
                 use ml_kem::kem::Decapsulate as _;
 

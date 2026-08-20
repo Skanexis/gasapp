@@ -2,8 +2,37 @@
 
 //! HTTP и WebSocket клиент, cert pinning, offline-очередь.
 //!
-//! Крейт создан как скелет на этапе M0. Реализация — см. дорожную карту
-//! в `AEGIS_MASTER_PLAN.md`.
+//! # Состояние
+//!
+//! Реализована логика, не зависящая от транспорта: проверка пинов
+//! ([`pinning`]) и офлайн-очередь с экспоненциальным backoff ([`queue`]).
+//! Обе части чистые — не ходят в сеть, не берут системное время, — поэтому
+//! проверяются тестами детерминированно.
+//!
+//! HTTP- и WebSocket-транспорт появятся вместе с сервером: сейчас их не
+//! к чему подключать, а писать клиент к несуществующему API значило бы
+//! закреплять догадки о его форме.
+//!
+//! # Почему пиннинг и очередь написаны до транспорта
+//!
+//! Это две части, где ошибка обходится дороже всего. Неверная ротация
+//! пинов обрывает связь со всеми клиентами и чинится только обновлением
+//! через магазин приложений; отсутствие backoff превращает восстановление
+//! сервера в повторное падение под лавиной повторов. Обе достаточно
+//! самостоятельны, чтобы проверить их без сети.
+
+pub mod api;
+pub mod client;
+pub mod pinning;
+pub mod queue;
+
+pub use api::{
+    BundleResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest, RegisterRequest,
+    RegisterResponse, SendRequest,
+};
+pub use client::{ApiClient, HttpRequest, HttpResponse, Method, Transport};
+pub use pinning::{pin_from_spki, PinSet, MIN_PINS, PIN_LEN};
+pub use queue::{OfflineQueue, QueuedRequest, MAX_ATTEMPTS, MAX_QUEUE_LEN};
 
 /// Версия крейта, доступная во время выполнения.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
