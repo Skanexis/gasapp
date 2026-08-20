@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Онбординг: регистрация и честное предупреждение.
+
+  🔐 Предупреждение об отсутствии аудита стоит **до** кнопки и набрано
+  тем же кеглем, что и остальной текст (раздел 21 плана: «не в мелком
+  шрифте»). Мессенджер, обещающий защиту, которой не проверял никто
+  посторонний, обязан сказать об этом до того, как пользователь начнёт
+  ему доверять, — а не в сноске, которую никто не читает.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_marginTop="32dp"
+            android:background="@drawable/bg_shield_large"
+            android:contentDescription="@null"
+            android:padding="20dp"
+            android:src="@drawable/ic_shield"
+            android:tint="@color/accent_base" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/app_name"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:text="@string/onboarding_tagline"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <!--
+          🔐 Предупреждение об аудите. Красная рамка и полный кегль:
+          требование раздела 21 плана.
+        -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:background="@drawable/bg_warning_box"
+            android:padding="14dp"
+            android:text="@string/onboarding_audit_warning"
+            android:textColor="@color/status_error"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/onboarding_choose_username"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <org.aegis.app.components.AegisTextField
+            android:id="@+id/onboarding_username"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/onboarding_username_hint"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:maxLength="24"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_tertiary"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/onboarding_error"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/status_error"
+            android:textSize="12sp"
+            android:visibility="invisible"
+            tools:text="Имя уже занято"
+            tools:visibility="visible" />
+
+        <ProgressBar
+            android:id="@+id/onboarding_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:indeterminateTint="@color/accent_base"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <TextView
+            android:id="@+id/onboarding_progress_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:text="@string/onboarding_working"
+            android:textColor="@color/text_tertiary"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/onboarding_create"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:layout_marginBottom="16dp"
+            android:text="@string/onboarding_create" />
+
+    </LinearLayout>
+</ScrollView>

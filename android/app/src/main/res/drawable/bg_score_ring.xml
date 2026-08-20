@@ -10,9 +10,9 @@
 
     <item>
         <shape
-            android:innerRadiusRatio="2.6"
+            android:innerRadiusRatio="2.9"
             android:shape="ring"
-            android:thicknessRatio="11"
+            android:thicknessRatio="12"
             android:useLevel="false">
             <solid android:color="@color/bg_hover" />
         </shape>
@@ -23,9 +23,9 @@
             android:fromDegrees="270"
             android:toDegrees="270">
             <shape
-                android:innerRadiusRatio="2.6"
+                android:innerRadiusRatio="2.9"
                 android:shape="ring"
-                android:thicknessRatio="11"
+                android:thicknessRatio="12"
                 android:useLevel="true">
                 <solid android:color="@color/status_ok" />
             </shape>

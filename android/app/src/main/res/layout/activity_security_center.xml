@@ -54,8 +54,8 @@
         android:padding="16dp">
 
         <FrameLayout
-            android:layout_width="56dp"
-            android:layout_height="56dp">
+            android:layout_width="64dp"
+            android:layout_height="64dp">
 
             <ImageView
                 android:id="@+id/score_ring"
@@ -70,7 +70,7 @@
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:textColor="@color/status_ok"
-                android:textSize="13sp"
+                android:textSize="12sp"
                 android:textStyle="bold"
                 tools:text="9/10" />
         </FrameLayout>
