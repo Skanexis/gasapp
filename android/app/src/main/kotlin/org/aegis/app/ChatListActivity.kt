@@ -5,6 +5,7 @@ package org.aegis.app
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -42,8 +43,11 @@ class ChatListActivity : AppCompatActivity() {
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
 
-        findViewById<TextView>(R.id.security_center_badge).apply {
-            text = getString(R.string.security_score, SECURITY_SCORE, SECURITY_MAX)
+        // Щит в шапке ведёт в Security Center. Счёт (9/10) живёт
+        // на самом экране Security Center, а не в шапке: цифра без
+        // объяснения не говорит пользователю, что именно проверено.
+        findViewById<ImageView>(R.id.security_center_badge).setOnClickListener {
+            startActivity(Intent(this, SecurityCenterActivity::class.java))
         }
 
         render(demoChats())

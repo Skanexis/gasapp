@@ -1,87 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Экран блокировки.
+  Экран блокировки по UI kit: щит, шесть точек, цифровая клавиатура.
 
-  Раскладка следует UI kit («Complete Mobile Screens» → Enter PIN).
+  🔐 Здесь не показывается ничего, кроме запроса PIN: ни имени
+  пользователя, ни числа непрочитанных, ни превью. Всё это выдало бы
+  сведения о переписке тому, кто взял заблокированное устройство.
 
-  🔐 Про содержимое экрана. Здесь не показывается ничего, кроме запроса
-  PIN: ни имени пользователя, ни числа непрочитанных, ни превью. Всё это
-  видно на заблокированном устройстве кому угодно, а по числу
-  непрочитанных и имени контакта восстанавливается часть переписки.
+  Своя клавиатура, а не системное поле ввода: системная клавиатура
+  принадлежит другому приложению, которое на Android может быть
+  сторонним и видит каждое нажатие.
 -->
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_base"
     android:gravity="center"
     android:orientation="vertical"
-    android:padding="32dp">
+    android:padding="24dp">
+
+    <ImageView
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:background="@drawable/bg_shield_large"
+        android:contentDescription="@string/lock_icon"
+        android:padding="20dp"
+        android:src="@drawable/ic_shield"
+        android:tint="@color/accent_base" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/lock_icon"
-        android:textSize="48sp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:gravity="center"
+        android:layout_marginTop="22dp"
         android:text="@string/lock_title"
         android:textColor="@color/text_primary"
-        android:textSize="20sp"
+        android:textSize="17sp"
         android:textStyle="bold" />
 
     <TextView
         android:id="@+id/lock_subtitle"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:gravity="center"
         android:text="@string/lock_subtitle"
-        android:textColor="@color/text_secondary"
-        android:textSize="14sp" />
+        android:textColor="@color/text_tertiary"
+        android:textSize="12sp" />
 
-    <org.aegis.app.components.AegisTextField
-        android:id="@+id/pin_input"
-        android:layout_width="match_parent"
+    <!-- Шесть точек: показывают длину введённого, но не сам PIN -->
+    <LinearLayout
+        android:id="@+id/pin_dots"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:gravity="center"
-        android:hint="@string/pin_hint"
-        android:importantForAutofill="no"
-        android:inputType="numberPassword"
-        android:letterSpacing="0.3"
-        android:maxLength="12"
-        android:textColor="@color/text_primary"
-        android:textColorHint="@color/text_secondary"
-        android:textSize="20sp" />
+        android:layout_marginTop="22dp"
+        android:orientation="horizontal">
 
-    <!--
-      🔐 Сообщение об ошибке не уточняет, что именно не так: «неверный
-      PIN» и «повреждено хранилище» выглядят одинаково. Разница помогла бы
-      подбирающему понять, попал ли он в правильную длину.
-    -->
+        <View style="@style/AegisPinDot" />
+        <View style="@style/AegisPinDot" />
+        <View style="@style/AegisPinDot" />
+        <View style="@style/AegisPinDot" />
+        <View style="@style/AegisPinDot" />
+        <View style="@style/AegisPinDot" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/pin_error"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:gravity="center"
+        android:layout_marginTop="14dp"
         android:text="@string/pin_error"
-        android:textColor="@color/text_secondary"
-        android:textSize="13sp"
+        android:textColor="@color/status_error"
+        android:textSize="12sp"
         android:visibility="invisible"
         tools:visibility="visible" />
 
-    <org.aegis.app.components.AegisButton
-        android:id="@+id/unlock_button"
-        android:layout_width="match_parent"
+    <!-- Цифровая клавиатура: три колонки, клавиши 56dp по макету -->
+    <GridLayout
+        android:id="@+id/keypad"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="@string/unlock" />
+        android:layout_marginTop="18dp"
+        android:columnCount="3">
+
+        <TextView android:id="@+id/key_1" style="@style/AegisKeypadKey" android:text="1" />
+        <TextView android:id="@+id/key_2" style="@style/AegisKeypadKey" android:text="2" />
+        <TextView android:id="@+id/key_3" style="@style/AegisKeypadKey" android:text="3" />
+        <TextView android:id="@+id/key_4" style="@style/AegisKeypadKey" android:text="4" />
+        <TextView android:id="@+id/key_5" style="@style/AegisKeypadKey" android:text="5" />
+        <TextView android:id="@+id/key_6" style="@style/AegisKeypadKey" android:text="6" />
+        <TextView android:id="@+id/key_7" style="@style/AegisKeypadKey" android:text="7" />
+        <TextView android:id="@+id/key_8" style="@style/AegisKeypadKey" android:text="8" />
+        <TextView android:id="@+id/key_9" style="@style/AegisKeypadKey" android:text="9" />
+
+        <!-- Пустая клетка слева от нуля: в макете здесь биометрия,
+             она появится вместе с интеграцией BiometricPrompt -->
+        <Space
+            android:layout_width="72dp"
+            android:layout_height="56dp" />
+
+        <TextView android:id="@+id/key_0" style="@style/AegisKeypadKey" android:text="0" />
+
+        <ImageView
+            android:id="@+id/key_delete"
+            android:layout_width="72dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_keypad_key"
+            android:contentDescription="@string/delete_digit"
+            android:padding="16dp"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_tertiary" />
+    </GridLayout>
+
 </LinearLayout>

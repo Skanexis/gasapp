@@ -60,4 +60,24 @@
     <string name="new_chat">Новый чат</string>
     <string name="search">Поиск</string>
     <string name="more">Ещё</string>
+    <string name="delete_digit">Удалить цифру</string>
+    <string name="attempts_left">Осталось попыток: %1$d</string>
+    <!-- Настройки -->
+    <string name="show_my_qr">Показать мой QR-код</string>
+    <string name="settings_security">Безопасность</string>
+    <string name="settings_privacy">Приватность</string>
+    <string name="settings_notifications">Уведомления</string>
+    <string name="settings_devices">Устройства</string>
+    <string name="settings_about">О защите</string>
+    <string name="notifications_private">Приватные</string>
+    <!-- Security Center -->
+    <string name="security_center_title">Центр безопасности</string>
+    <string name="security_protected">Защищено</string>
+    <string name="security_needs_attention">%1$d пункт требует внимания</string>
+    <string name="security_all_clear">Все проверки пройдены</string>
+    <string name="security_keys">Ключи шифрования</string>
+    <string name="security_devices">Доверенные устройства</string>
+    <string name="security_recovery">Ключ восстановления</string>
+    <string name="security_blocked">Заблокированные</string>
+    <string name="e2e_encrypted">Сквозное шифрование</string>
 </resources>

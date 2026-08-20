@@ -7,6 +7,7 @@
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -109,6 +110,34 @@
             android:layout_marginTop="8dp"
             android:text="@string/verify_safety_number" />
     </LinearLayout>
+
+        <!--
+          🔐 Чип сквозного шифрования.
+
+          Показывается всегда, а не только при первом открытии чата:
+          он сообщает о состоянии защиты, и его исчезновение должно
+          означать, что защиты нет. Постоянная надпись, которую нельзя
+          убрать, — это и есть смысл: пользователь замечает не её
+          наличие, а её отсутствие.
+        -->
+        <TextView
+            android:id="@+id/e2e_chip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/bg_e2e_chip"
+            android:drawablePadding="6dp"
+            android:paddingStart="12dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="6dp"
+            android:text="@string/e2e_encrypted"
+            android:textColor="@color/accent_base"
+            android:textSize="11sp"
+            app:drawableStartCompat="@drawable/ic_lock"
+            app:drawableTint="@color/accent_base" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/message_list"
