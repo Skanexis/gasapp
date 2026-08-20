@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Точка входа сервера AEGIS.
+//!
+//! # Что делает сервер
+//!
+//! Раздаёт prekey bundle и переносит запечатанные конверты между
+//! устройствами. Содержимого сообщений он не видит и видеть не может:
+//! ключи никогда не покидают устройств.
+//!
+//! # Настройка
+//!
+//! Через переменные окружения, а не файл конфигурации: в контейнере
+//! это единственный способ, работающий одинаково везде.
+//!
+//! * `DATABASE_URL` — строка подключения к Postgres. Обязательна.
+//! * `AEGIS_BIND` — адрес прослушивания, по умолчанию `0.0.0.0:8443`.
+//!
+//! # Про логи
+//!
+//! Адреса клиентов не пишутся никуда, включая логи доступа. Это не
+//! упущение, а требование: журнал с адресами превращает сервер
+//! в инструмент слежки за собственными пользователями, доступный
+//! любому, кто получит к нему доступ (раздел 14.4 плана).
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use aegis_server_api::routes::{router, AppState};
+use rand::RngCore as _;
+use sqlx::postgres::PgPoolOptions;
+
+/// Адрес прослушивания по умолчанию.
+///
+/// `0.0.0.0`, а не `127.0.0.1`: сервер должен быть доступен телефонам
+/// в локальной сети, иначе проверить обмен между двумя устройствами
+/// невозможно.
+const DEFAULT_BIND: &str = "0.0.0.0:8443";
+
+/// Максимум соединений с базой.
+const MAX_DB_CONNECTIONS: u32 = 16;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "aegis_server_api=info,tower_http=warn".into()),
+        )
+        .init();
+
+    let database_url = std::env::var("DATABASE_URL")
+        .map_err(|_| "не задана переменная окружения DATABASE_URL")?;
+
+    let bind: SocketAddr = std::env::var("AEGIS_BIND")
+        .unwrap_or_else(|_| DEFAULT_BIND.to_owned())
+        .parse()?;
+
+    let pool = PgPoolOptions::new()
+        .max_connections(MAX_DB_CONNECTIONS)
+        .connect(&database_url)
+        .await?;
+
+    // Миграции применяются при старте: расхождение схемы с кодом
+    // проявилось бы как отказ произвольных запросов в бою, а не
+    // как внятная ошибка запуска.
+    sqlx::migrate!("../migrations").run(&pool).await?;
+
+    // Соль ограничителя частоты живёт только в памяти процесса.
+    // После перезапуска счётчики нельзя сопоставить с адресами даже
+    // по дампу памяти — сервер и не должен уметь этого делать.
+    let mut limiter_salt = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut limiter_salt);
+
+    let state = Arc::new(AppState::new(pool, limiter_salt));
+    let listener = tokio::net::TcpListener::bind(bind).await?;
+
+    tracing::info!(address = %bind, "сервер AEGIS слушает");
+
+    axum::serve(listener, router(state)).await?;
+
+    Ok(())
+}

@@ -44,6 +44,9 @@ panic = "deny"
 aegis-core.workspace = true
 aegis-protocol.workspace = true
 aegis-types.workspace = true
+aegis-net.workspace = true
+aegis-storage.workspace = true
+uuid.workspace = true
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
 thiserror.workspace = true
 uniffi = { version = "0.29", features = ["cli"] }

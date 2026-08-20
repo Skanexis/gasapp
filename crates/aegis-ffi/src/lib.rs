@@ -30,6 +30,8 @@ use aegis_types::{AegisError, PublicKeyBytes};
 
 uniffi::setup_scaffolding!();
 
+pub mod messenger;
+
 /// Длина отпечатка identity-ключа в байтах.
 const FINGERPRINT_LEN: usize = 30;
 
