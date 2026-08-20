@@ -68,6 +68,10 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".ContactsActivity"
+            android:exported="false" />
         <!-- FFI service bindings will be added here -->
 
     </application>
