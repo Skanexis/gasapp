@@ -290,3 +290,32 @@ async fn client_discovery_shape_matches() {
     assert!(response["account_id"].is_string());
     assert!(response["identity_key"].is_string());
 }
+
+/// 🔐 Клиентский и серверный proof-of-work считают один хеш.
+///
+/// Клиент под Apache-2.0, сервер под AGPL-3.0, поэтому общий крейт
+/// невозможен и код продублирован. Тест — единственное, что не даёт
+/// копиям разойтись: расхождение проявилось бы как отклонение **всех**
+/// регистраций без внятной причины.
+///
+/// Вектор зафиксирован байтами, а не вызовом клиентского крейта:
+/// линковка клиента в тесты сервера — ровно то смешение лицензий,
+/// которого требуется избежать.
+#[test]
+fn client_and_server_pow_agree() {
+    // Значения получены клиентской реализацией (aegis-net::pow).
+    let challenge = [0x42u8; 32];
+    let nonce = 12345u64;
+    let expected = [
+        0x23, 0xe0, 0x41, 0xf6, 0xcf, 0x4c, 0xc2, 0x6b,
+    ];
+
+    let actual = aegis_server_api::pow::hash(&challenge, nonce).expect("хеш");
+
+    assert_eq!(
+        actual.get(..8).expect("восемь байт"),
+        expected,
+        "клиентский и серверный proof-of-work разошлись: \
+         регистрация перестанет проходить"
+    );
+}

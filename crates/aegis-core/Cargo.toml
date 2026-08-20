@@ -25,5 +25,10 @@ sha2.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+tempfile = "3"
+serde_json = "1"
+rand_core = { workspace = true, features = ["getrandom"] }
+uuid = { workspace = true }
+aegis-net = { workspace = true }
 proptest.workspace = true
 hex.workspace = true

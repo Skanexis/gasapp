@@ -27,6 +27,7 @@
 //! определяется его API, а писать её вслепую значило бы закреплять
 //! догадки о форме, которой пока нет.
 
+pub mod client;
 pub mod session;
 pub mod events;
 pub mod lock;
