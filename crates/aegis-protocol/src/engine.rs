@@ -22,7 +22,7 @@
 //! полностью воспроизводимым (раздел 9.2 плана).
 
 use aegis_types::{Ciphertext, Plaintext, Result, Timestamp};
-use rand_core::CryptoRng;
+use rand_core::CryptoRngCore;
 
 use crate::{
     keys::{IdentityKey, IdentityKeyPair, PreKeyBundle, SessionState},
@@ -82,11 +82,16 @@ pub trait ProtocolEngine: Send + Sync {
     ///
     /// [`AegisError::InvalidSignature`]: aegis_types::AegisError::InvalidSignature
     /// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
+    /// Источник случайности принимается как [`CryptoRngCore`], а не
+    /// `&mut dyn CryptoRng`: последний бесполезен, потому что `CryptoRng` —
+    /// маркерный трейт без методов, и получить из него байты нельзя.
+    /// `CryptoRngCore` существует ровно для использования в виде
+    /// объекта трейта и даёт доступ к `RngCore`.
     fn initiate_session(
         &self,
         our_identity: &IdentityKeyPair,
         their_bundle: &PreKeyBundle,
-        rng: &mut dyn CryptoRng,
+        rng: &mut dyn CryptoRngCore,
     ) -> Result<InitiatedSession>;
 
     /// Устанавливает сессию как получатель по входящему PREKEY-сообщению.

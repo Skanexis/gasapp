@@ -9,10 +9,7 @@ members = [
     "aegis-net",
     "aegis-media",
     "aegis-backup",
-    # aegis-core: не компилируется, см. раздел 23.0.1 мастер-плана.
-    # Возвращается в workspace вместе с закрытием M2 (оркестрация опирается
-    # на движки протокола, которые сейчас в draft/).
-    # "aegis-core",
+    "aegis-core",
     "aegis-ffi",
 ]
 
@@ -25,7 +22,7 @@ argon2 = { version = "=0.6.0-rc.8" }
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
 thiserror = { version = "=2.0" }
 async-trait = { version = "=0.1.0" }
-tracing = { version = "=0.1.0" }
+tracing = { version = "=0.1.44" }
 aes-gcm = { version = "=0.10.3" }
 chacha20poly1305 = { version = "=0.10.0" }
 uuid = { version = "=1", features = ["v4", "serde"] }
@@ -61,3 +58,27 @@ repository = "https://github.com/aegis-messenger/aegis"
 homepage = "https://aegis.chat"
 
 [workspace.lints]
+# Правила раздела 4.2 плана. Секция была пустой: `clippy.toml` ссылался
+# на запрет unwrap/expect/panic, которого в сборке не существовало, — то есть
+# код проверялся пустым набором правил и любой `unwrap` проходил молча.
+#
+# Послабления для тестов заданы в `clippy.toml` (`allow-*-in-tests`): паника
+# в тесте означает провалившийся тест, а не отказ у пользователя.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+# Паника в криптографическом коде — отказ в обслуживании, а не «не должно
+# случиться». Каждый из вариантов ниже обязан быть заменён на `Result`.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+
+# Арифметика: переполнение счётчика сообщений или длины буфера меняет
+# криптографическое поведение, поэтому явные проверки обязательны.
+arithmetic_side_effects = "deny"
+integer_division = "deny"

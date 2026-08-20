@@ -1,0 +1,490 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Интеграционные тесты против настоящего Postgres.
+//!
+//! # Зачем нужна живая база
+//!
+//! Половина гарантий сервера живёт в схеме, а не в коде: каскадное
+//! удаление, ограничение размера конверта, уникальность имени,
+//! `FOR UPDATE SKIP LOCKED` при выдаче одноразовых ключей. Ни одну
+//! из них нельзя проверить моком — мок повторит предположения кода,
+//! а не поведение Postgres.
+//!
+//! # Как запускать
+//!
+//! ```text
+//! docker run -d --name aegis-postgres \
+//!     -e POSTGRES_PASSWORD=aegis-dev -e POSTGRES_USER=aegis \
+//!     -e POSTGRES_DB=aegis -p 5433:5432 postgres:16-alpine
+//!
+//! AEGIS_TEST_DATABASE_URL=postgres://aegis:aegis-dev@localhost:5433/aegis \
+//!     cargo test -p aegis-server-db
+//! ```
+//!
+//! Без переменной окружения тесты **пропускаются**, а не падают: база
+//! есть не на каждой машине, и красный прогон из-за её отсутствия
+//! приучает игнорировать красный прогон вообще.
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use aegis_server_db::repo::{self, RepoError};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+/// Подключается к тестовой базе, либо сообщает о пропуске.
+///
+/// # Про изоляцию тестов
+///
+/// Схема создаётся **один раз** на весь прогон, а не в каждом тесте:
+/// `cargo test` запускает тесты параллельно, и попытка пересоздать
+/// таблицы из нескольких потоков приводит к гонке в системном каталоге
+/// Postgres (`duplicate key ... pg_type_typname_nsp_index`).
+///
+/// Изоляция достигается иначе — уникальными именами аккаунтов
+/// ([`unique_name`]): тесты не пересекаются по данным, поэтому им
+/// незачем пересекаться по схеме.
+async fn pool() -> Option<PgPool> {
+    use std::sync::OnceLock;
+    use tokio::sync::Mutex;
+
+    static MIGRATED: OnceLock<Mutex<bool>> = OnceLock::new();
+
+    let url = std::env::var("AEGIS_TEST_DATABASE_URL").ok()?;
+    let pool = PgPool::connect(&url).await.ok()?;
+
+    let guard = MIGRATED.get_or_init(|| Mutex::new(false));
+    let mut applied = guard.lock().await;
+
+    if !*applied {
+        // `IF NOT EXISTS` в самой миграции нет: она рассчитана на пустую
+        // базу. Здесь схема готовится к прогону, поэтому прежняя сносится.
+        let _ = sqlx::raw_sql(
+            "DROP TABLE IF EXISTS envelopes, one_time_prekeys, signed_prekeys, devices, accounts CASCADE",
+        )
+        .execute(&pool)
+        .await;
+
+        sqlx::raw_sql(include_str!("../../migrations/0001_initial.sql"))
+            .execute(&pool)
+            .await
+            .expect("миграция применяется");
+
+        *applied = true;
+    }
+
+    Some(pool)
+}
+
+/// Пропускает тест, если базы нет.
+macro_rules! require_pool {
+    () => {
+        match pool().await {
+            Some(pool) => pool,
+            None => {
+                eprintln!("AEGIS_TEST_DATABASE_URL не задан — тест пропущен");
+                return;
+            }
+        }
+    };
+}
+
+fn unique_name(prefix: &str) -> String {
+    format!("{prefix}-{}", Uuid::new_v4())
+}
+
+#[tokio::test]
+async fn account_registers_with_first_device() {
+    let pool = require_pool!();
+    let username = unique_name("alice");
+
+    let (account_id, device_id) = repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+        .await
+        .expect("регистрация проходит");
+
+    let found = repo::find_by_username(&pool, &username)
+        .await
+        .expect("аккаунт находится");
+
+    assert_eq!(found.account_id, account_id);
+
+    let devices = repo::list_devices(&pool, account_id).await.unwrap();
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices.first().map(|d| d.device_id), Some(device_id));
+}
+
+/// 🔐 Имя занято — повторная регистрация отвергается.
+#[tokio::test]
+async fn duplicate_username_is_rejected() {
+    let pool = require_pool!();
+    let username = unique_name("bob");
+
+    repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+        .await
+        .unwrap();
+
+    let second = repo::register_account(&pool, &username, &[3u8; 32], &[4u8; 32]).await;
+
+    assert!(matches!(second, Err(RepoError::UsernameTaken)));
+}
+
+/// 🔐 Неудачная регистрация не оставляет частичных данных.
+///
+/// Аккаунт и устройство создаются в одной транзакции: аккаунт без
+/// устройства бесполезен и занимал бы имя навсегда.
+#[tokio::test]
+async fn failed_registration_leaves_nothing_behind() {
+    let pool = require_pool!();
+    let username = unique_name("carol");
+
+    repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+        .await
+        .unwrap();
+    let before = repo::find_by_username(&pool, &username).await.unwrap();
+
+    // Повторная попытка падает на уникальности имени.
+    let _ = repo::register_account(&pool, &username, &[9u8; 32], &[9u8; 32]).await;
+
+    let after = repo::find_by_username(&pool, &username).await.unwrap();
+    assert_eq!(before.account_id, after.account_id, "аккаунт подменился");
+
+    let devices = repo::list_devices(&pool, after.account_id).await.unwrap();
+    assert_eq!(devices.len(), 1, "осталось лишнее устройство");
+}
+
+/// 🔐 Несуществующее имя и скрытое неразличимы по ошибке.
+#[tokio::test]
+async fn unknown_username_is_not_found() {
+    let pool = require_pool!();
+
+    let result = repo::find_by_username(&pool, &unique_name("ghost")).await;
+
+    assert!(matches!(result, Err(RepoError::NotFound)));
+}
+
+#[tokio::test]
+async fn prekey_bundle_round_trips() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("dave"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    repo::publish_prekeys(
+        &pool,
+        device,
+        (1, &[0x11; 32], &[0xAA; 64]),
+        (2, &[0x22; 1568], &[0xBB; 64]),
+        &[(10, vec![0x33; 32])],
+        &[(20, vec![0x44; 1568], vec![0xCC; 64])],
+    )
+    .await
+    .unwrap();
+
+    let bundle = repo::take_prekey_bundle(&pool, device).await.unwrap();
+
+    assert_eq!(bundle.signed_key_id, 1);
+    assert_eq!(bundle.kem_key_id, 2);
+    assert_eq!(bundle.one_time.map(|(id, _)| id), Some(10));
+    assert_eq!(bundle.one_time_kem.map(|(id, _, _)| id), Some(20));
+}
+
+/// 🔐 Одноразовый предключ выдаётся ровно один раз.
+///
+/// Иначе две сессии получили бы один ключ, и он перестал бы быть
+/// одноразовым — то есть forward secrecy первого сообщения исчезла бы
+/// незаметно для обеих сторон.
+#[tokio::test]
+async fn one_time_prekey_is_consumed() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("erin"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    repo::publish_prekeys(
+        &pool,
+        device,
+        (1, &[0x11; 32], &[0xAA; 64]),
+        (2, &[0x22; 1568], &[0xBB; 64]),
+        &[(10, vec![0x33; 32])],
+        &[],
+    )
+    .await
+    .unwrap();
+
+    let first = repo::take_prekey_bundle(&pool, device).await.unwrap();
+    let second = repo::take_prekey_bundle(&pool, device).await.unwrap();
+
+    assert!(first.one_time.is_some(), "первый запрос без ключа");
+    assert!(second.one_time.is_none(), "одноразовый ключ выдан дважды");
+}
+
+/// Исчерпание пула — не отказ.
+///
+/// Bundle выдаётся без одноразового ключа, сессия помечается ослабленной.
+/// Отказ означал бы, что вычерпав чужой пул, атакующий полностью лишает
+/// контакт возможности принимать сообщения.
+#[tokio::test]
+async fn exhausted_pool_still_yields_a_bundle() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("frank"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    repo::publish_prekeys(
+        &pool,
+        device,
+        (1, &[0x11; 32], &[0xAA; 64]),
+        (2, &[0x22; 1568], &[0xBB; 64]),
+        &[],
+        &[],
+    )
+    .await
+    .unwrap();
+
+    let bundle = repo::take_prekey_bundle(&pool, device).await.unwrap();
+
+    assert!(bundle.one_time.is_none());
+    assert_eq!(bundle.signed_key_id, 1, "подписанный предключ обязан быть");
+}
+
+/// Счётчик оставшихся ключей уменьшается при выдаче.
+#[tokio::test]
+async fn prekey_count_decreases() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("grace"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    repo::publish_prekeys(
+        &pool,
+        device,
+        (1, &[0x11; 32], &[0xAA; 64]),
+        (2, &[0x22; 1568], &[0xBB; 64]),
+        &[(10, vec![0x33; 32]), (11, vec![0x34; 32])],
+        &[],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        repo::count_one_time_prekeys(&pool, device).await.unwrap(),
+        2
+    );
+
+    repo::take_prekey_bundle(&pool, device).await.unwrap();
+
+    assert_eq!(
+        repo::count_one_time_prekeys(&pool, device).await.unwrap(),
+        1
+    );
+}
+
+/// Пополнение добавляет ключи, а не заменяет пул.
+#[tokio::test]
+async fn refill_adds_to_the_pool() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("heidi"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    let signed = (1, &[0x11; 32][..], &[0xAA; 64][..]);
+    let kem = (2, &[0x22; 1568][..], &[0xBB; 64][..]);
+
+    repo::publish_prekeys(&pool, device, signed, kem, &[(10, vec![0x33; 32])], &[])
+        .await
+        .unwrap();
+    repo::publish_prekeys(&pool, device, signed, kem, &[(11, vec![0x34; 32])], &[])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        repo::count_one_time_prekeys(&pool, device).await.unwrap(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn envelope_round_trips() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("ivan"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    let envelope_id = repo::enqueue_envelope(&pool, device, b"opaque ciphertext", 3600)
+        .await
+        .unwrap();
+
+    let waiting = repo::fetch_envelopes(&pool, device, 10).await.unwrap();
+
+    assert_eq!(waiting.len(), 1);
+    let first = waiting.first().unwrap();
+    assert_eq!(first.envelope_id, envelope_id);
+    assert_eq!(first.ciphertext, b"opaque ciphertext");
+}
+
+/// 🔐 Время постановки в очередь округляется до часа.
+///
+/// Точная метка служила бы признаком для корреляции отправителя
+/// с получателем (раздел 15 плана).
+#[tokio::test]
+async fn queued_time_is_bucketed_to_the_hour() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("judy"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    repo::enqueue_envelope(&pool, device, b"payload", 3600)
+        .await
+        .unwrap();
+
+    let waiting = repo::fetch_envelopes(&pool, device, 10).await.unwrap();
+    let bucketed = waiting.first().map(|e| e.queued_at_bucketed).unwrap();
+
+    assert_eq!(bucketed % 3600, 0, "метка не округлена до часа");
+}
+
+/// 🔐 Подтверждение доставки удаляет конверт немедленно.
+///
+/// Раздел 14.4: доставленное хранится ноль секунд.
+#[tokio::test]
+async fn acknowledged_envelope_is_deleted() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("karl"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    let envelope_id = repo::enqueue_envelope(&pool, device, b"payload", 3600)
+        .await
+        .unwrap();
+
+    repo::acknowledge_envelope(&pool, device, envelope_id)
+        .await
+        .unwrap();
+
+    assert!(repo::fetch_envelopes(&pool, device, 10)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+/// 🔐 Чужое устройство не может удалить конверт.
+#[tokio::test]
+async fn foreign_device_cannot_acknowledge() {
+    let pool = require_pool!();
+    let (_a, first) = repo::register_account(&pool, &unique_name("liam"), &[1u8; 32], &[2u8; 32])
+        .await
+        .unwrap();
+    let (_b, second) = repo::register_account(&pool, &unique_name("mia"), &[3u8; 32], &[4u8; 32])
+        .await
+        .unwrap();
+
+    let envelope_id = repo::enqueue_envelope(&pool, first, b"payload", 3600)
+        .await
+        .unwrap();
+
+    repo::acknowledge_envelope(&pool, second, envelope_id)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        repo::fetch_envelopes(&pool, first, 10).await.unwrap().len(),
+        1,
+        "чужое устройство удалило конверт"
+    );
+}
+
+/// 🔐 Конверт сверх лимита отвергается.
+#[tokio::test]
+async fn oversized_envelope_is_rejected() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("nina"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    let too_big = vec![0u8; aegis_server_db::MAX_ENVELOPE_BYTES + 1];
+    let result = repo::enqueue_envelope(&pool, device, &too_big, 3600).await;
+
+    assert!(matches!(result, Err(RepoError::EnvelopeTooLarge)));
+}
+
+/// Просроченные конверты удаляются и не выдаются.
+#[tokio::test]
+async fn expired_envelopes_are_purged() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("olga"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    // Отрицательный TTL: конверт просрочен в момент создания.
+    repo::enqueue_envelope(&pool, device, b"stale", -1)
+        .await
+        .unwrap();
+
+    assert!(
+        repo::fetch_envelopes(&pool, device, 10)
+            .await
+            .unwrap()
+            .is_empty(),
+        "просроченный конверт выдан клиенту"
+    );
+
+    let purged = repo::purge_expired(&pool).await.unwrap();
+    assert!(purged >= 1, "просроченный конверт не удалён");
+}
+
+/// 🔐 Удаление аккаунта уносит устройства, ключи и конверты.
+///
+/// Каскад проверяется против настоящей базы: он живёт во внешних ключах
+/// схемы, и мок повторил бы предположения кода, а не поведение Postgres.
+#[tokio::test]
+async fn account_deletion_cascades() {
+    let pool = require_pool!();
+    let username = unique_name("peter");
+    let (account, device) = repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+        .await
+        .unwrap();
+
+    repo::publish_prekeys(
+        &pool,
+        device,
+        (1, &[0x11; 32], &[0xAA; 64]),
+        (2, &[0x22; 1568], &[0xBB; 64]),
+        &[(10, vec![0x33; 32])],
+        &[],
+    )
+    .await
+    .unwrap();
+    repo::enqueue_envelope(&pool, device, b"payload", 3600)
+        .await
+        .unwrap();
+
+    sqlx::query("DELETE FROM accounts WHERE account_id = $1")
+        .bind(account)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let devices: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM devices WHERE account_id = $1")
+        .bind(account)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let envelopes: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM envelopes WHERE destination_device_id = $1")
+            .bind(device)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(devices.0, 0, "устройства пережили удаление аккаунта");
+    assert_eq!(envelopes.0, 0, "конверты пережили удаление аккаунта");
+}

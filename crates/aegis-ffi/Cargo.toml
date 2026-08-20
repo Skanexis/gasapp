@@ -37,18 +37,14 @@ expect_used = "deny"
 panic = "deny"
 
 [dependencies]
-# ⚠️ `aegis-core` здесь пока НЕ подключён.
-#
-# Текущий FFI-контракт (`core_version`, `protocol_version`,
-# `check_protocol_version`, `format_safety_number`) обращается только
-# к `aegis-protocol` и `aegis-types` — в коде крейта нет ни одного
-# `use aegis_core`. Зависимость числилась в манифесте и тянула за собой
-# не компилирующийся `aegis-core`, из-за чего вся граница FFI не собиралась,
-# а с ней не собирались и биндинги для Android/iOS (задачи M1).
-#
-# Возвращается вместе с оркестрацией, когда `aegis-core` будет закрыт.
+# `aegis-core` подключён с 2026-08-14: крейт компилируется, и граница FFI
+# отдаёт наружу его типы состояния (`LockState`). Прежде он был исключён
+# из манифеста, потому что не собирался и ломал сборку биндингов вместе
+# с собой.
+aegis-core.workspace = true
 aegis-protocol.workspace = true
 aegis-types.workspace = true
+rand_core = { version = "=0.6.4", features = ["getrandom"] }
 thiserror.workspace = true
 uniffi = { version = "0.29", features = ["cli"] }
 

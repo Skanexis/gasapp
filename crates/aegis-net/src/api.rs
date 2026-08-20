@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Типы запросов и ответов сервера AEGIS.
+//!
+//! # Почему они продублированы, а не взяты из серверного крейта
+//!
+//! Клиент под Apache-2.0, сервер под AGPL-3.0 (ADR-006). Связать их
+//! зависимостью нельзя: клиент, линкующий AGPL-код, обязан открыться
+//! под AGPL, а это закрывает путь в App Store.
+//!
+//! Дублирование — осознанная плата. Расхождение форм ловится
+//! интеграционным тестом против настоящего сервера
+//! (`tests/against_server.rs`): он собирает JSON клиентскими типами
+//! и разбирает серверными, поэтому несовпадение поля роняет тест,
+//! а не остаётся до продакшена.
+//!
+//! # Про hex
+//!
+//! Все ключи и шифротексты передаются hex-строками, а не base64:
+//! их сверяют глазами при отладке, а hex читается посимвольно.
+//! Разница в объёме (33 %) на этих размерах несущественна.
+
+use serde::{Deserialize, Serialize};
+
+/// Запрос регистрации аккаунта.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterRequest {
+    /// Желаемое имя.
+    pub username: String,
+    /// Публичный identity-ключ аккаунта, hex.
+    pub identity_key: String,
+    /// Публичный identity-ключ первого устройства, hex.
+    pub device_identity_key: String,
+    /// Челлендж proof-of-work, hex.
+    pub pow_challenge: String,
+    /// Решение proof-of-work.
+    pub pow_nonce: u64,
+}
+
+/// Ответ на регистрацию.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterResponse {
+    /// Идентификатор аккаунта.
+    pub account_id: String,
+    /// Идентификатор первого устройства.
+    pub device_id: String,
+}
+
+/// Ответ discovery: аккаунт найден по имени.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryResponse {
+    /// Идентификатор аккаунта.
+    pub account_id: String,
+    /// Публичный identity-ключ, hex.
+    pub identity_key: String,
+}
+
+/// Публикация предключей устройства.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishKeysRequest {
+    /// Идентификатор подписанного предключа.
+    pub signed_key_id: i32,
+    /// Публичная часть подписанного предключа, hex.
+    pub signed_public: String,
+    /// Подпись подписанного предключа, hex.
+    pub signed_signature: String,
+    /// Идентификатор пост-квантового предключа.
+    pub kem_key_id: i32,
+    /// Публичная часть пост-квантового предключа, hex.
+    pub kem_public: String,
+    /// Подпись пост-квантового предключа, hex.
+    pub kem_signature: String,
+    /// Одноразовые предключи: идентификатор и публичная часть.
+    #[serde(default)]
+    pub one_time: Vec<(i32, String)>,
+    /// Одноразовые пост-квантовые: идентификатор, ключ, подпись.
+    #[serde(default)]
+    pub one_time_kem: Vec<(i32, String, String)>,
+}
+
+/// Prekey bundle, полученный с сервера.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleResponse {
+    /// Устройство, которому принадлежит набор.
+    pub device_id: String,
+    /// Identity-ключ устройства, hex.
+    pub identity_key: String,
+    /// Идентификатор подписанного предключа.
+    pub signed_key_id: i32,
+    /// Публичная часть подписанного предключа, hex.
+    pub signed_public: String,
+    /// Подпись, hex.
+    pub signed_signature: String,
+    /// Идентификатор пост-квантового предключа.
+    pub kem_key_id: i32,
+    /// Публичная часть пост-квантового предключа, hex.
+    pub kem_public: String,
+    /// Подпись пост-квантового предключа, hex.
+    pub kem_signature: String,
+    /// Одноразовый предключ, если пул не исчерпан.
+    pub one_time: Option<(i32, String)>,
+    /// Одноразовый пост-квантовый предключ.
+    pub one_time_kem: Option<(i32, String, String)>,
+    /// Ослаблена ли forward secrecy первого сообщения.
+    ///
+    /// Систематическое исчерпание пула может означать, что кто-то
+    /// намеренно вычерпывает предключи собеседника, поэтому флаг
+    /// показывается в Security Center, а не игнорируется.
+    pub degraded: bool,
+}
+
+/// Отправка конверта.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendRequest {
+    /// Устройство-получатель.
+    pub destination_device_id: String,
+    /// Шифротекст конверта, hex. Сервер его не разбирает.
+    pub ciphertext: String,
+}
+
+/// Конверт, ожидающий доставки.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvelopeResponse {
+    /// Идентификатор конверта.
+    pub envelope_id: String,
+    /// Шифротекст, hex.
+    pub ciphertext: String,
+    /// Время постановки в очередь, **округлённое до часа**.
+    ///
+    /// Точная метка не передаётся: она служила бы признаком для
+    /// корреляции отправителя с получателем (раздел 15 плана).
+    pub queued_at_bucketed: i64,
+}

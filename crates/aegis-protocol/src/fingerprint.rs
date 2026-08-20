@@ -18,11 +18,22 @@
 
 use core::fmt;
 
-use aegis_types::{AegisError, Result};
+use aegis_types::{AegisError, PublicKeyBytes, Result};
+use sha2::{Digest, Sha512};
 use subtle::{Choice, ConstantTimeEq};
 
 /// Количество байт отпечатка одной стороны.
 const FINGERPRINT_BYTES: usize = 30;
+
+/// Число раундов итеративного хеширования.
+///
+/// # Зачем их так много
+///
+/// Не ради криптостойкости — одного SHA-512 хватило бы. Раунды удорожают
+/// перебор «красивых» отпечатков: противник, подбирающий ключ, чей
+/// safety number визуально похож на настоящий, вынужден платить за каждую
+/// попытку в 5200 раз больше. Значение согласовано с Signal (раздел 6.6).
+const FINGERPRINT_ROUNDS: u32 = 5200;
 
 /// Байт на одну группу цифр.
 const BYTES_PER_GROUP: usize = 5;
@@ -61,6 +72,52 @@ impl Fingerprint {
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; FINGERPRINT_BYTES] {
         &self.0
+    }
+
+    /// Вычисляет отпечаток identity-ключа (раздел 6.6 плана).
+    ///
+    /// ```text
+    /// h₀ = SHA-512(0x00 ‖ 0x00 ‖ IK ‖ identifier)
+    /// hᵢ = SHA-512(hᵢ₋₁ ‖ IK)          — 5200 раундов
+    /// отпечаток = первые 30 байт h₅₂₀₀
+    /// ```
+    ///
+    /// # Про два нулевых байта в начале
+    ///
+    /// Это поле версии формата отпечатка. Оно входит в хеш, поэтому смена
+    /// версии полностью меняет отпечаток — отпечатки разных версий
+    /// невозможно принять друг за друга при сверке.
+    ///
+    /// # Про `identifier`
+    ///
+    /// Привязывает отпечаток к владельцу (обычно `AccountId`). Без него
+    /// один и тот же ключ давал бы одинаковый отпечаток в любом контексте,
+    /// и отпечаток нельзя было бы связать с конкретным собеседником.
+    #[must_use]
+    pub fn compute(identity: &PublicKeyBytes, identifier: &[u8]) -> Self {
+        let key = identity.as_bytes();
+
+        let mut hash = Sha512::new();
+        hash.update([0x00, 0x00]);
+        hash.update(key);
+        hash.update(identifier);
+        let mut current = hash.finalize();
+
+        for _ in 0..FINGERPRINT_ROUNDS {
+            let mut round = Sha512::new();
+            round.update(current);
+            round.update(key);
+            current = round.finalize();
+        }
+
+        let mut out = [0u8; FINGERPRINT_BYTES];
+        // SHA-512 даёт 64 байта, из которых берутся первые 30: срез
+        // заведомо короче выхода, поэтому копирование безопасно.
+        if let Some(prefix) = current.get(..FINGERPRINT_BYTES) {
+            out.copy_from_slice(prefix);
+        }
+
+        Self(out)
     }
 
     /// Преобразует отпечаток в 30 десятичных цифр (6 групп по 5).
@@ -243,6 +300,76 @@ impl fmt::Debug for SafetyNumber {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Отпечаток детерминирован: те же входы дают тот же результат.
+    #[test]
+    fn fingerprint_is_deterministic() {
+        let key = PublicKeyBytes::new([0x42; 32]);
+
+        assert_eq!(
+            Fingerprint::compute(&key, b"alice"),
+            Fingerprint::compute(&key, b"alice")
+        );
+    }
+
+    /// 🔐 Разные ключи дают разные отпечатки.
+    ///
+    /// Совпадение означало бы, что подмена identity-ключа не видна
+    /// пользователю при сверке — то есть верификация не работает.
+    #[test]
+    fn different_keys_give_different_fingerprints() {
+        let first = PublicKeyBytes::new([0x01; 32]);
+        let mut other = [0x01; 32];
+        other[31] ^= 0x01;
+        let second = PublicKeyBytes::new(other);
+
+        assert_ne!(
+            Fingerprint::compute(&first, b"alice"),
+            Fingerprint::compute(&second, b"alice"),
+            "смена одного бита ключа обязана менять отпечаток"
+        );
+    }
+
+    /// 🔐 Один ключ в разных контекстах даёт разные отпечатки.
+    ///
+    /// Без привязки к `identifier` отпечаток нельзя было бы связать
+    /// с конкретным собеседником.
+    #[test]
+    fn identifier_affects_the_fingerprint() {
+        let key = PublicKeyBytes::new([0x42; 32]);
+
+        assert_ne!(
+            Fingerprint::compute(&key, b"alice"),
+            Fingerprint::compute(&key, b"bob")
+        );
+    }
+
+    /// Обе стороны независимо получают одно и то же safety number.
+    ///
+    /// Это главное свойство сверки: Алиса и Боб вычисляют отпечатки
+    /// в противоположном порядке, но обязаны увидеть одинаковые 60 цифр.
+    #[test]
+    fn both_parties_compute_the_same_safety_number() {
+        let alice_key = PublicKeyBytes::new([0xAA; 32]);
+        let bob_key = PublicKeyBytes::new([0xBB; 32]);
+
+        let alice_fp = Fingerprint::compute(&alice_key, b"alice");
+        let bob_fp = Fingerprint::compute(&bob_key, b"bob");
+
+        // У Алисы local = свой, remote = чужой; у Боба наоборот.
+        assert_eq!(
+            SafetyNumber::new(&alice_fp, &bob_fp),
+            SafetyNumber::new(&bob_fp, &alice_fp)
+        );
+    }
+
+    /// Отпечаток занимает ровно 30 байт.
+    #[test]
+    fn fingerprint_has_expected_length() {
+        let key = PublicKeyBytes::new([0x7F; 32]);
+
+        assert_eq!(Fingerprint::compute(&key, b"id").as_bytes().len(), 30);
+    }
 
     #[test]
     fn safety_number_has_exactly_sixty_digits() {

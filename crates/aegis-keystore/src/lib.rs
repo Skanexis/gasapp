@@ -5,7 +5,7 @@
 //! Реализация иерархии ключей согласно разделу 7.1 дорожной карты:
 //! - Master Key (MK) -> Key Encryption Key (KEK) -> Data Encryption Key (DEK)
 //! - Использует HKDF-SHA-256 для производства ключей с domain separation
-//! - Поддерживает аппаратное хранение через HardwareKeyProvider trait
+//! - Поддерживает аппаратное хранение через трейт [`HardwareKeyProvider`]
 //! - Обеспечивает graceful degradation на устройствах без TEE
 
 use aegis_types::{AegisError, Result, Secret};
@@ -36,6 +36,11 @@ const INFO_DEK: &[u8] = b"AEGIS_DEK_DERIVATION";
 /// уничтожении (`ZeroizeOnDrop`). Прежние derive `Clone`/`Zeroize` в этой
 /// строке не компилировались именно по этой причине — ограничение сработало
 /// как задумано и было снято здесь, а не ослаблено в `aegis-types`.
+// Суффикс `_key` у всех трёх полей — не небрежность именования: это
+// MK/KEK/DEK из раздела 7.1 плана, и каждое поле названо ровно так, как
+// сущность называется в спецификации. Переименование ради снятия lint
+// рассогласовало бы код с документом, по которому его проверяет аудитор.
+#[allow(clippy::struct_field_names)]
 #[derive(Debug)]
 pub struct KeyHierarchy {
     /// Master Key (хранится в аппаратном хранилище или dérivруется из учетных данных)
@@ -52,19 +57,20 @@ impl KeyHierarchy {
     /// # Arguments
     /// * `master_key` - 32-байтовый мастер-ключ
     ///
-    /// # Returns
-    /// * `Result<Self>` - иерархия ключей или ошибка
-    pub fn from_master_key(master_key: [u8; KEY_SIZE]) -> Self {
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой вывода ключей через HKDF.
+    pub fn from_master_key(master_key: [u8; KEY_SIZE]) -> Result<Self> {
         // Выводим KEK из мастер-ключа с domain separation
-        let kek = Self::derive_key(&master_key, INFO_KEK);
+        let kek = Self::derive_key(&master_key, INFO_KEK)?;
         // Выводим DEK из мастер-ключа с domain separation (отдельно от KEK)
-        let dek = Self::derive_key(&master_key, INFO_DEK);
+        let dek = Self::derive_key(&master_key, INFO_DEK)?;
 
-        Self {
+        Ok(Self {
             master_key: Secret::new(master_key),
             key_encryption_key: Secret::new(kek),
             data_encryption_key: Secret::new(dek),
-        }
+        })
     }
 
     /// Выводит ключ из входного материала с использованием HKDF-SHA-256
@@ -73,27 +79,41 @@ impl KeyHierarchy {
     /// * `ikm` - входной ключевой материал
     /// * `info` - информация для domain separation
     ///
-    /// # Returns
-    /// * `[u8; KEY_SIZE]` - derived key
-    fn derive_key(ikm: &[u8; KEY_SIZE], info: &[u8]) -> [u8; KEY_SIZE] {
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой HKDF.
+    ///
+    /// Практически недостижимо: `expand` отказывает единственным способом —
+    /// когда запрошено больше 255 × 32 = 8160 байт, а здесь запрашивается
+    /// ровно [`KEY_SIZE`] = 32. Ошибка всё равно возвращается, а не
+    /// подавляется: на этом месте стоял `expect`, то есть недостижимая ветка
+    /// была записана как паника, что запрещено разделом 4.2 плана. Подменять
+    /// её нулевым ключом нельзя тем более — молча выведенный нулевой ключ
+    /// хуже и паники, и ошибки.
+    fn derive_key(ikm: &[u8; KEY_SIZE], info: &[u8]) -> Result<[u8; KEY_SIZE]> {
         let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), ikm);
         let mut okm = [0u8; KEY_SIZE];
-        hk.expand(info, &mut okm).expect("HKDF expansion failed");
-        okm
+
+        hk.expand(info, &mut okm).map_err(|_| AegisError::Crypto)?;
+
+        Ok(okm)
     }
 
     /// Возвращает ссылку на мастер-ключ
-    pub fn master_key(&self) -> &Secret<[u8; KEY_SIZE]> {
+    #[must_use]
+    pub const fn master_key(&self) -> &Secret<[u8; KEY_SIZE]> {
         &self.master_key
     }
 
     /// Возвращает ссылку на ключ шифрования ключей
-    pub fn kek(&self) -> &Secret<[u8; KEY_SIZE]> {
+    #[must_use]
+    pub const fn kek(&self) -> &Secret<[u8; KEY_SIZE]> {
         &self.key_encryption_key
     }
 
     /// Возвращает ссылку на ключ шифрования данных
-    pub fn dek(&self) -> &Secret<[u8; KEY_SIZE]> {
+    #[must_use]
+    pub const fn dek(&self) -> &Secret<[u8; KEY_SIZE]> {
         &self.data_encryption_key
     }
 }
@@ -190,6 +210,7 @@ impl SecureKeyStore {
     ///
     /// # Returns
     /// * `Self` - новое хранилище ключей
+    #[must_use]
     pub fn new(hardware_provider: Option<Box<dyn HardwareKeyProvider>>) -> Self {
         let using_fallback = hardware_provider
             .as_ref()
@@ -207,15 +228,16 @@ impl SecureKeyStore {
     /// # Arguments
     /// * `rng` - генератор случайных чисел
     ///
-    /// # Returns
-    /// * `Result<()>` - результат операции
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой вывода иерархии ключей через HKDF.
     pub async fn initialize<R: CryptoRng + RngCore>(&mut self, rng: &mut R) -> Result<()> {
         // Пытаемся загрузить существующий мастер-ключ
         if let Some(hw_provider) = &self.hardware_provider {
             if hw_provider.is_available() {
                 if let Ok(Some(master_key)) = hw_provider.get_master_key().await {
                     // Загружаем мастер-ключ из аппаратного хранилища
-                    let key_hierarchy = KeyHierarchy::from_master_key(master_key);
+                    let key_hierarchy = KeyHierarchy::from_master_key(master_key)?;
                     self.key_hierarchy = Some(key_hierarchy);
                     self.using_software_fallback = false;
                     return Ok(());
@@ -235,7 +257,7 @@ impl SecureKeyStore {
         }
 
         // Создаем иерархию ключей
-        let key_hierarchy = KeyHierarchy::from_master_key(master_key);
+        let key_hierarchy = KeyHierarchy::from_master_key(master_key)?;
         self.key_hierarchy = Some(key_hierarchy);
         self.using_software_fallback = self
             .hardware_provider
@@ -247,14 +269,17 @@ impl SecureKeyStore {
 
     /// Возвращает ссылку на иерархию ключей
     ///
-    /// # Returns
-    /// * `Result<&KeyHierarchy>` - ссылка на иерархию ключей или ошибка
+    /// # Errors
+    ///
+    /// [`AegisError::Uninitialized`] — хранилище используется до вызова
+    /// [`SecureKeyStore::initialize`].
     pub fn key_hierarchy(&self) -> Result<&KeyHierarchy> {
         self.key_hierarchy.as_ref().ok_or(AegisError::Uninitialized)
     }
 
     /// Проверяет, используется ли программный fallback
-    pub fn is_using_software_fallback(&self) -> bool {
+    #[must_use]
+    pub const fn is_using_software_fallback(&self) -> bool {
         self.using_software_fallback
     }
 
@@ -281,7 +306,12 @@ pub struct SoftwareKeyProvider;
 // Предупреждение о неиспользуемом времени жизни порождает сам макрос
 // `async_trait` при разворачивании, а не код в этом файле. Подавляется
 // точечно на импле, а не глобально в crate-lints.
-#[allow(clippy::extra_unused_lifetimes)]
+//
+// `unused_async` — по той же причине с другой стороны: сигнатуры заданы
+// трейтом [`HardwareKeyProvider`], где они асинхронны, потому что реальные
+// реализации (Secure Enclave, StrongBox) ходят в аппаратный модуль. То, что
+// программной заглушке ждать нечего, сигнатуру трейта не отменяет.
+#[allow(clippy::extra_unused_lifetimes, clippy::unused_async)]
 #[async_trait]
 impl HardwareKeyProvider for SoftwareKeyProvider {
     async fn generate_master_key(&self) -> Result<[u8; KEY_SIZE]> {
@@ -290,11 +320,13 @@ impl HardwareKeyProvider for SoftwareKeyProvider {
         Ok(key)
     }
 
-    async fn store_master_key(&self, _key: &[u8; KEY_SIZE]) -> Result<()> {
+    async fn store_master_key(&self, key: &[u8; KEY_SIZE]) -> Result<()> {
         // Программный fallback ничего не сохраняет между сессиями: класть
         // мастер-ключ на диск в открытом виде хуже, чем не иметь провайдера
         // вовсе. Ключ существует только в памяти текущего процесса —
         // отсюда же и `get_master_key`, всегда возвращающий `None`.
+        let _ = key;
+
         Ok(())
     }
 
@@ -329,10 +361,125 @@ mod tests {
     use super::*;
     use rand_core::OsRng;
 
+    /// Провайдер, изображающий устройство без TEE.
+    ///
+    /// `is_available` возвращает `false` — ровно так ведёт себя платформа,
+    /// на которой аппаратное хранилище отсутствует или недоступно.
+    #[derive(Debug, Default)]
+    struct UnavailableHardware;
+
+    #[allow(clippy::extra_unused_lifetimes, clippy::unused_async)]
+    #[async_trait]
+    impl HardwareKeyProvider for UnavailableHardware {
+        async fn generate_master_key(&self) -> Result<[u8; KEY_SIZE]> {
+            Err(AegisError::HardwareKeyStore)
+        }
+
+        async fn store_master_key(&self, key: &[u8; KEY_SIZE]) -> Result<()> {
+            let _ = key;
+
+            Err(AegisError::HardwareKeyStore)
+        }
+
+        async fn get_master_key(&self) -> Result<Option<[u8; KEY_SIZE]>> {
+            Err(AegisError::HardwareKeyStore)
+        }
+
+        async fn delete_master_key(&self) -> Result<()> {
+            Err(AegisError::HardwareKeyStore)
+        }
+
+        async fn derive_key_in_hardware(
+            &self,
+            input_key: &[u8; KEY_SIZE],
+            info: &[u8],
+        ) -> Result<[u8; KEY_SIZE]> {
+            let _ = (input_key, info);
+
+            Err(AegisError::HardwareKeyStore)
+        }
+
+        fn is_available(&self) -> bool {
+            false
+        }
+    }
+
+    /// 🔐 Graceful degradation: без TEE хранилище всё равно работает.
+    ///
+    /// Отсутствие аппаратного хранилища — не отказ, а ослабление: ключи
+    /// живут в памяти процесса вместо защищённого модуля. Приложение
+    /// обязано запуститься и явно сообщить о деградации, а не упасть.
+    #[test]
+    fn initializes_without_hardware_support() {
+        futures_lite_block_on(async {
+            let mut keystore = SecureKeyStore::new(Some(Box::new(UnavailableHardware)));
+
+            keystore
+                .initialize(&mut OsRng)
+                .await
+                .expect("без TEE инициализация обязана проходить");
+
+            assert!(
+                keystore.is_using_software_fallback(),
+                "деградация должна быть отмечена явно"
+            );
+            assert!(keystore.key_hierarchy().is_ok());
+        });
+    }
+
+    /// 🔐 Без провайдера вовсе — тоже программный fallback.
+    #[test]
+    fn initializes_without_any_provider() {
+        futures_lite_block_on(async {
+            let mut keystore = SecureKeyStore::new(None);
+
+            keystore.initialize(&mut OsRng).await.unwrap();
+
+            assert!(keystore.is_using_software_fallback());
+            assert!(keystore.key_hierarchy().is_ok());
+        });
+    }
+
+    /// С доступным аппаратным хранилищем деградация не отмечается.
+    #[test]
+    fn hardware_backed_store_is_not_marked_degraded() {
+        futures_lite_block_on(async {
+            let mut keystore = SecureKeyStore::new(Some(Box::new(SoftwareKeyProvider)));
+
+            keystore.initialize(&mut OsRng).await.unwrap();
+
+            // `SoftwareKeyProvider::is_available` возвращает `true`,
+            // поэтому путь считается «аппаратным» с точки зрения флага.
+            assert!(!keystore.is_using_software_fallback());
+        });
+    }
+
+    /// Минимальный исполнитель `async` без внешних зависимостей.
+    ///
+    /// Крейт не тянет `tokio` ради трёх тестов: трейт асинхронный, но
+    /// программные реализации ничего не ждут, поэтому достаточно
+    /// прокрутить future до готовности.
+    fn futures_lite_block_on<F: core::future::Future>(future: F) -> F::Output {
+        use core::task::{Context, Poll, Waker};
+
+        // `Waker::noop` из стандартной библиотеки: собственный vtable
+        // потребовал бы `unsafe`, запрещённого правилом 4.2.
+        let waker = Waker::noop().clone();
+        let mut context = Context::from_waker(&waker);
+        let mut future = core::pin::pin!(future);
+
+        loop {
+            match future.as_mut().poll(&mut context) {
+                Poll::Ready(value) => return value,
+                Poll::Pending => {}
+            }
+        }
+    }
+
     #[test]
     fn test_key_hierarchy_creation() {
         let master_key = [1u8; 32];
-        let hierarchy = KeyHierarchy::from_master_key(master_key);
+        let hierarchy = KeyHierarchy::from_master_key(master_key).unwrap();
 
         assert_eq!(*hierarchy.master_key().expose_secret(), master_key);
         // KEK и DEK должны быть разными и производными от мастер-ключа
@@ -366,8 +513,8 @@ mod tests {
     fn derivation_is_deterministic() {
         let master_key = [0x42u8; KEY_SIZE];
 
-        let first = KeyHierarchy::from_master_key(master_key);
-        let second = KeyHierarchy::from_master_key(master_key);
+        let first = KeyHierarchy::from_master_key(master_key).unwrap();
+        let second = KeyHierarchy::from_master_key(master_key).unwrap();
 
         assert_eq!(
             first.kek().expose_secret(),
@@ -380,11 +527,11 @@ mod tests {
     /// Разные мастер-ключи дают полностью независимые иерархии.
     #[test]
     fn different_master_keys_give_different_hierarchies() {
-        let first = KeyHierarchy::from_master_key([1u8; KEY_SIZE]);
+        let first = KeyHierarchy::from_master_key([1u8; KEY_SIZE]).unwrap();
         // Отличие ровно в одном бите — лавинный эффект HKDF должен его размазать.
         let mut other = [1u8; KEY_SIZE];
         other[0] ^= 1;
-        let second = KeyHierarchy::from_master_key(other);
+        let second = KeyHierarchy::from_master_key(other).unwrap();
 
         assert_ne!(first.kek().expose_secret(), second.kek().expose_secret());
         assert_ne!(first.dek().expose_secret(), second.dek().expose_secret());
@@ -397,7 +544,7 @@ mod tests {
     /// и выглядит она как полностью рабочий код.
     #[test]
     fn derived_keys_are_distinct_and_nonzero() {
-        let hierarchy = KeyHierarchy::from_master_key([7u8; KEY_SIZE]);
+        let hierarchy = KeyHierarchy::from_master_key([7u8; KEY_SIZE]).unwrap();
 
         let master = hierarchy.master_key().expose_secret();
         let kek = hierarchy.kek().expose_secret();
@@ -453,7 +600,12 @@ mod tests {
             .unwrap()
             .master_key()
             .expose_secret();
-        let hex: String = master.iter().map(|b| format!("{b:02x}")).collect();
+        let hex = master.iter().fold(String::new(), |mut acc, byte| {
+            use core::fmt::Write as _;
+
+            let _ = write!(acc, "{byte:02x}");
+            acc
+        });
         assert!(!rendered.contains(&hex));
     }
 }

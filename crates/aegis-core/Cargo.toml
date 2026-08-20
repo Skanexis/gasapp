@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "aegis-core"
+description = "Фасад для UI: оркестрация, состояние, поток событий"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+aegis-types.workspace = true
+aegis-protocol.workspace = true
+aegis-storage.workspace = true
+aegis-net.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rand_core.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+hex.workspace = true
