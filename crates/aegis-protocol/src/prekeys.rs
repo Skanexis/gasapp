@@ -928,7 +928,7 @@ mod tests {
         assert!(PreKeySecrets::from_bytes(&wrong_version).is_err());
 
         // Обрыв данных: повреждение базы не должно приводить к панике.
-        for cut in [1usize, 16, 64, bytes.len() / 2] {
+        for cut in [1usize, 16, 64, bytes.len().wrapping_div(2)] {
             let truncated = bytes.get(..cut).expect("срез в границах");
             assert!(
                 PreKeySecrets::from_bytes(truncated).is_err(),

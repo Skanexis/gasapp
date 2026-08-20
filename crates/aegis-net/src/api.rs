@@ -53,6 +53,12 @@ pub struct DiscoveryResponse {
     pub account_id: String,
     /// Публичный identity-ключ, hex.
     pub identity_key: String,
+    /// Устройства аккаунта.
+    ///
+    /// Prekey bundle и доставка адресуются по устройству, а не по
+    /// аккаунту, поэтому без этого списка первая отправка невозможна.
+    #[serde(default)]
+    pub device_ids: Vec<String>,
 }
 
 /// Публикация предключей устройства.

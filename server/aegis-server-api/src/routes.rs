@@ -160,6 +160,15 @@ pub struct DiscoveryResponse {
     pub account_id: Uuid,
     /// Публичный identity-ключ, hex.
     pub identity_key: String,
+    /// Устройства аккаунта.
+    ///
+    /// Без них клиент не может ни забрать prekey bundle, ни отправить
+    /// сообщение: и то и другое адресуется по устройству, а discovery
+    /// раньше отдавал только аккаунт — узнать устройство было неоткуда.
+    ///
+    /// Список, а не одно устройство: у аккаунта их несколько, и
+    /// сообщение доставляется каждому (раздел 13.1).
+    pub device_ids: Vec<Uuid>,
 }
 
 /// Публикация предключей.
@@ -362,9 +371,14 @@ async fn discovery(
 
     let account = repo::find_by_username(&state.pool, &username).await?;
 
+    // Устройства запрашиваются здесь же: отдельный маршрут означал бы
+    // второй round-trip перед каждой первой отправкой.
+    let devices = repo::list_devices(&state.pool, account.account_id).await?;
+
     Ok(Json(DiscoveryResponse {
         account_id: account.account_id,
         identity_key: hex::encode(account.identity_key),
+        device_ids: devices.into_iter().map(|device| device.device_id).collect(),
     }))
 }
 

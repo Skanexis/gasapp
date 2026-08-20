@@ -23,6 +23,7 @@
 
 pub mod api;
 pub mod client;
+pub mod pow;
 pub mod pinning;
 pub mod queue;
 
