@@ -11,6 +11,7 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.recyclerview.widget.RecyclerView
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -38,6 +39,10 @@ class ChatListScreenTest {
      * Строки списка содержат расшифрованный текст. Если бы они
      * оставались после ухода в фон, их показал бы снимок экрана
      * в переключателе задач.
+     *
+     * Проверка идёт по числу элементов адаптера, а не через Espresso:
+     * тот работает только с активностью в состоянии RESUMED, а здесь
+     * проверяется именно то, что происходит **после** ухода с экрана.
      */
     @Test
     fun previewsAreClearedWhenStopped() {
@@ -46,7 +51,15 @@ class ChatListScreenTest {
 
             scenario.moveToState(Lifecycle.State.CREATED)
 
-            onView(withText("Lena Novak")).check(doesNotExist())
+            var remaining = -1
+            scenario.onActivity { activity ->
+                val list = activity.findViewById<RecyclerView>(R.id.chat_list)
+                remaining = list.adapter?.itemCount ?: -1
+            }
+
+            assert(remaining == 0) {
+                "после ухода с экрана в списке осталось $remaining строк"
+            }
         }
     }
 
