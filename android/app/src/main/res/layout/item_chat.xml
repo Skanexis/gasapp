@@ -1,46 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Строка списка чатов.
+  Строка списка чатов по UI kit: аватар 48dp с точкой присутствия
+  и значком верификации, имя, превью, время и бейдж непрочитанных.
 
-  Раскладка следует UI kit (раздел «Complete Mobile Screens» → Chat List):
-  аватар слева, имя и превью в центре, время и статус справа.
-
-  🔐 Про превью последнего сообщения. Текст сюда попадает уже
-  расшифрованным, поэтому строка не должна переживать блокировку
-  приложения: адаптер очищает список при переходе в Locked. Хранить
-  превью в базе в открытом виде запрещено (раздел 11).
+  🔐 Аватар — буква имени, а не загруженное фото: запрос картинки
+  с сервера выдал бы оператору, кто с кем переписывается.
 -->
-<org.aegis.app.components.AegisListRow
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<org.aegis.app.components.AegisListRow xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/chat_row"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
-    android:paddingHorizontal="@dimen/list_row_padding"
-    android:paddingVertical="@dimen/chat_row_padding_vertical">
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/screen_padding"
+    android:paddingTop="@dimen/chat_row_padding_vertical"
+    android:paddingEnd="@dimen/screen_padding"
+    android:paddingBottom="@dimen/chat_row_padding_vertical">
 
-    <!--
-      Аватар. Инициал вместо фотографии по умолчанию: загрузка аватаров
-      с сервера раскрывала бы, кто с кем переписывается, по одному лишь
-      факту запроса картинки.
-    -->
-    <TextView
-        android:id="@+id/chat_avatar"
+    <!-- Аватар и его значки лежат в FrameLayout: точка и галочка
+         позиционируются поверх круга, как в макете. -->
+    <FrameLayout
         android:layout_width="@dimen/avatar_size"
-        android:layout_height="@dimen/avatar_size"
-        android:background="@drawable/bg_avatar"
-        android:gravity="center"
-        android:textColor="@color/accent_base"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        tools:text="A" />
+        android:layout_height="@dimen/avatar_size">
+
+        <TextView
+            android:id="@+id/chat_avatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_avatar"
+            android:gravity="center"
+            android:textColor="@color/accent_base"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            tools:text="LN" />
+
+        <View
+            android:id="@+id/chat_presence"
+            android:layout_width="13dp"
+            android:layout_height="13dp"
+            android:layout_gravity="bottom|end"
+            android:background="@drawable/bg_presence_dot"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <ImageView
+            android:id="@+id/chat_verified"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="bottom|end"
+            android:background="@drawable/bg_verified_badge"
+            android:contentDescription="@string/chat_verified_mark"
+            android:padding="3dp"
+            android:src="@drawable/ic_check"
+            android:tint="@color/accent_on"
+            android:visibility="gone"
+            tools:visibility="visible" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
         android:layout_marginStart="12dp"
+        android:layout_weight="1"
         android:orientation="vertical">
 
         <TextView
@@ -50,19 +73,20 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="@color/text_primary"
-            android:textSize="16sp"
+            android:textSize="15sp"
+            android:textStyle="bold"
             tools:text="Lena Novak" />
 
         <TextView
             android:id="@+id/chat_preview"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="3dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp"
-            tools:text="Последнее сообщение" />
+            android:textColor="@color/text_tertiary"
+            android:textSize="13sp"
+            tools:text="Проверим safety number?" />
     </LinearLayout>
 
     <LinearLayout
@@ -76,24 +100,26 @@
             android:id="@+id/chat_time"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textColor="@color/text_quaternary"
+            android:textSize="11sp"
             tools:text="14:32" />
 
-        <!--
-          🔐 Значок верификации. Показывается только когда пользователь
-          лично сверил safety number: иначе он превратился бы в украшение,
-          которому перестают верить.
-        -->
         <TextView
-            android:id="@+id/chat_verified"
+            android:id="@+id/chat_unread"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/chat_verified_mark"
-            android:textColor="@color/accent_base"
-            android:textSize="12sp"
+            android:layout_height="18dp"
+            android:layout_marginTop="5dp"
+            android:background="@drawable/bg_unread_badge"
+            android:gravity="center"
+            android:minWidth="18dp"
+            android:paddingStart="5dp"
+            android:paddingEnd="5dp"
+            android:textColor="@color/accent_on"
+            android:textSize="11sp"
+            android:textStyle="bold"
             android:visibility="gone"
+            tools:text="3"
             tools:visibility="visible" />
     </LinearLayout>
+
 </org.aegis.app.components.AegisListRow>

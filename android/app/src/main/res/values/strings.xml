@@ -52,4 +52,12 @@
     <string name="security_score">🛡 %1$d/%2$d</string>
     <string name="chat_verified_state">✓ Верифицирован</string>
     <string name="chat_unverified_state">Не верифицирован — сверьте safety number</string>
+    <!-- Нижняя навигация -->
+    <string name="nav_chats">Чаты</string>
+    <string name="nav_calls">Звонки</string>
+    <string name="nav_contacts">Контакты</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="new_chat">Новый чат</string>
+    <string name="search">Поиск</string>
+    <string name="more">Ещё</string>
 </resources>
