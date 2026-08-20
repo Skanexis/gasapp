@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Клавиша цифровой клавиатуры: круглая подсветка при нажатии. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/bg_hover">
+    <item android:id="@android:id/mask">
+        <shape android:shape="oval">
+            <solid android:color="@color/bg_hover" />
+        </shape>
+    </item>
+</ripple>

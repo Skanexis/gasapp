@@ -60,6 +60,14 @@
             android:name=".SafetyNumberActivity"
             android:exported="false" />
 
+
+        <activity
+            android:name=".SecurityCenterActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
         <!-- FFI service bindings will be added here -->
 
     </application>

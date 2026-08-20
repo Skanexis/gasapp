@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Настройки по UI kit: профиль с QR, затем разделы.
+
+  🔐 Раздел «Безопасность» выделен цветом акцента — он ведёт в
+  Security Center, где живут проверки, от которых зависит защита
+  переписки. Остальные разделы нейтральны.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <TextView
+        style="@style/AegisAppBarTitle"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingTop="14dp"
+        android:paddingEnd="@dimen/screen_padding"
+        android:paddingBottom="14dp"
+        android:text="@string/nav_settings" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- Профиль -->
+            <LinearLayout
+                android:id="@+id/profile_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/screen_padding"
+                android:paddingTop="12dp"
+                android:paddingEnd="@dimen/screen_padding"
+                android:paddingBottom="12dp">
+
+                <FrameLayout
+                    android:layout_width="@dimen/avatar_size"
+                    android:layout_height="@dimen/avatar_size">
+
+                    <TextView
+                        android:id="@+id/profile_avatar"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_avatar"
+                        android:gravity="center"
+                        android:textColor="@color/accent_base"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        tools:text="MK" />
+
+                    <ImageView
+                        android:id="@+id/profile_verified"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="bottom|end"
+                        android:background="@drawable/bg_verified_badge"
+                        android:contentDescription="@string/chat_verified_mark"
+                        android:padding="3dp"
+                        android:src="@drawable/ic_check"
+                        android:tint="@color/accent_on" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/profile_name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        tools:text="Maria Keller" />
+
+                    <TextView
+                        android:id="@+id/profile_username"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:textColor="@color/text_tertiary"
+                        android:textSize="13sp"
+                        tools:text="@maria.k" />
+                </LinearLayout>
+
+                <ImageView
+                    android:id="@+id/profile_qr"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@string/show_my_qr"
+                    android:src="@drawable/ic_qr"
+                    android:tint="@color/text_quaternary" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_security"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_privacy"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_notifications"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_devices"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_about"
+                layout="@layout/item_settings_row" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <include layout="@layout/view_bottom_nav" />
+
+</LinearLayout>

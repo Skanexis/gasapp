@@ -41,4 +41,25 @@
         <item name="android:textColor">@color/text_primary</item>
     </style>
 
+
+    <!-- Точка PIN: 14dp, промежуток 14dp по макету -->
+    <style name="AegisPinDot">
+        <item name="android:layout_width">14dp</item>
+        <item name="android:layout_height">14dp</item>
+        <item name="android:layout_marginStart">7dp</item>
+        <item name="android:layout_marginEnd">7dp</item>
+        <item name="android:background">@drawable/bg_pin_dot</item>
+    </style>
+
+    <!-- Клавиша цифровой клавиатуры -->
+    <style name="AegisKeypadKey">
+        <item name="android:layout_width">72dp</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:background">@drawable/bg_keypad_key</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
 </resources>

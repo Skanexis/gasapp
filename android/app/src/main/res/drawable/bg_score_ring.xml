@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Кольцевой индикатор счёта безопасности.
+
+  Слой-лист: серое кольцо-подложка и зелёная дуга поверх. Дуга
+  задаётся уровнем, который активность выставляет по счёту.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item>
+        <shape
+            android:innerRadiusRatio="2.6"
+            android:shape="ring"
+            android:thicknessRatio="11"
+            android:useLevel="false">
+            <solid android:color="@color/bg_hover" />
+        </shape>
+    </item>
+
+    <item>
+        <rotate
+            android:fromDegrees="270"
+            android:toDegrees="270">
+            <shape
+                android:innerRadiusRatio="2.6"
+                android:shape="ring"
+                android:thicknessRatio="11"
+                android:useLevel="true">
+                <solid android:color="@color/status_ok" />
+            </shape>
+        </rotate>
+    </item>
+
+</layer-list>

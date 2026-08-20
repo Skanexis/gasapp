@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Заполненная точка PIN.
+
+  🔐 Точки показывают только **количество** введённых цифр, но не сами
+  цифры: это единственное, что можно показать, не выдавая PIN тому,
+  кто смотрит через плечо.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/accent_base" />
+    <size android:width="14dp" android:height="14dp" />
+</shape>

@@ -31,7 +31,16 @@ RUN curl -fsSL -o /tmp/ndk.zip \
 ENV ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}
 ENV PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
 
-RUN rustup target add \
+# Версия тулчейна берётся из rust-toolchain.toml проекта.
+#
+# `rustup target add` без явной версии ставит std для тулчейна по
+# умолчанию, а cargo внутри /work переключается на закреплённый — и
+# std для целевой платформы оказывается не установлен. Ошибка выглядит
+# как «can't find crate for `core`» и на кросс-компиляцию не похожа.
+ARG RUST_TOOLCHAIN=1.97.1
+
+RUN rustup toolchain install ${RUST_TOOLCHAIN} --profile minimal \
+    && rustup target add --toolchain ${RUST_TOOLCHAIN} \
         aarch64-linux-android \
         armv7-linux-androideabi \
         x86_64-linux-android \

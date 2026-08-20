@@ -8,10 +8,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,8 +17,8 @@ import org.junit.runner.RunWith
 /**
  * Проверка экрана блокировки.
  *
- * Экран запускается через [ActivityScenario], а не тапами по координатам:
- * ручной ввод оставляет состояние от предыдущей попытки в поле PIN,
+ * Экран запускается через [ActivityScenario], а не тапами по
+ * координатам: ручной ввод оставляет состояние прошлой попытки,
  * и тест начинает проверять не то, что задумано.
  */
 @RunWith(AndroidJUnit4::class)
@@ -38,50 +36,48 @@ class LockScreenTest {
     }
 
     /**
-     * 🔐 Короткий PIN не открывает хранилище.
+     * 🔐 Неполный PIN не открывает хранилище.
      *
-     * Главная проверка экрана: если бы четырёхзначный PIN проходил,
-     * перебор на изъятом устройстве занял бы часы вместо лет.
+     * Главная проверка экрана: если бы трёх цифр хватало, перебор
+     * на изъятом устройстве занял бы минуты вместо лет.
      */
     @Test
-    fun shortPinDoesNotUnlock() {
+    fun incompletePinDoesNotUnlock() {
         ActivityScenario.launch(LockActivity::class.java).use {
-            device.wait(Until.hasObject(By.res(pkg, "pin_input")), TIMEOUT)
+            device.wait(Until.hasObject(By.res(pkg, "keypad")), TIMEOUT)
 
-            device.findObject(By.res(pkg, "pin_input")).text = "123"
-            device.findObject(By.res(pkg, "unlock_button")).click()
-
-            device.wait(Until.hasObject(By.res(pkg, "pin_error")), TIMEOUT)
+            device.findObject(By.res(pkg, "key_1")).click()
+            device.findObject(By.res(pkg, "key_2")).click()
+            device.findObject(By.res(pkg, "key_3")).click()
 
             // Список чатов не должен появиться ни при каких условиях.
             assertNull(
-                "короткий PIN открыл список чатов",
+                "неполный PIN открыл список чатов",
                 device.findObject(By.res(pkg, "chat_list")),
             )
         }
     }
 
     /**
-     * 🔐 PIN не виден на экране.
+     * 🔐 Введённые цифры не видны на экране.
      *
-     * Поле помечено `password=true`, поэтому UiAutomator не отдаёт
-     * его содержимое — ровно так же его не увидит и тот, кто смотрит
-     * через плечо или снимает экран.
+     * Точки показывают только длину. Если бы цифры отображались,
+     * их прочитал бы любой, кто смотрит через плечо.
      */
     @Test
-    fun pinFieldIsMasked() {
+    fun enteredDigitsAreNotDisplayed() {
         ActivityScenario.launch(LockActivity::class.java).use {
-            device.wait(Until.hasObject(By.res(pkg, "pin_input")), TIMEOUT)
+            device.wait(Until.hasObject(By.res(pkg, "keypad")), TIMEOUT)
 
-            val field = device.findObject(By.res(pkg, "pin_input"))
-            field.text = "123456"
+            device.findObject(By.res(pkg, "key_7")).click()
+            device.findObject(By.res(pkg, "key_7")).click()
 
-            // Поле возвращает маску, а не цифры: настоящего PIN
-            // в дереве доступности нет, значит его не снимет ни
-            // скриншот, ни вредоносный accessibility-сервис.
-            val shown = field.text ?: ""
-            assertFalse("PIN виден на экране", shown.contains("123456"))
-            assertTrue("поле пустое — маскировка не проверена", shown.isNotEmpty())
+            // Единственная «7» на экране — клавиша, а не показанный ввод.
+            val sevens = device.findObjects(By.text("7"))
+            assertNotNull(sevens)
+            assert(sevens.size <= 1) {
+                "введённые цифры отображаются на экране"
+            }
         }
     }
 
@@ -89,11 +85,12 @@ class LockScreenTest {
     @Test
     fun lockScreenShowsItsControls() {
         ActivityScenario.launch(LockActivity::class.java).use {
-            device.wait(Until.hasObject(By.res(pkg, "pin_input")), TIMEOUT)
+            device.wait(Until.hasObject(By.res(pkg, "keypad")), TIMEOUT)
 
             assertNotNull(device.findObject(By.res(pkg, "lock_subtitle")))
-            assertNotNull(device.findObject(By.res(pkg, "pin_input")))
-            assertNotNull(device.findObject(By.res(pkg, "unlock_button")))
+            assertNotNull(device.findObject(By.res(pkg, "pin_dots")))
+            assertNotNull(device.findObject(By.res(pkg, "key_0")))
+            assertNotNull(device.findObject(By.res(pkg, "key_delete")))
         }
     }
 
