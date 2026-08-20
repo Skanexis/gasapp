@@ -80,4 +80,10 @@
     <string name="security_recovery">Ключ восстановления</string>
     <string name="security_blocked">Заблокированные</string>
     <string name="e2e_encrypted">Сквозное шифрование</string>
+    <!-- Контакты -->
+    <string name="add_contact">Добавить контакт</string>
+    <string name="search_contacts">Поиск контактов</string>
+    <string name="contacts_empty">Контактов пока нет. Добавьте собеседника по имени пользователя.</string>
+    <string name="contact_verified">@%1$s · верифицирован</string>
+    <string name="contact_username">@%1$s</string>
 </resources>

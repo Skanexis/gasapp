@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Контакты по UI kit: поиск, буквенные секции, строки с @username.
+
+  🔐 Подпись «verified» ставится только тем, чей safety number сверен
+  вручную. Автоматической верификации не существует — она обесценила
+  бы саму проверку.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingTop="14dp"
+        android:paddingEnd="@dimen/screen_padding"
+        android:paddingBottom="14dp">
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_weight="1"
+            android:text="@string/nav_contacts" />
+
+        <ImageView
+            android:id="@+id/add_contact"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/add_contact"
+            android:src="@drawable/ic_plus"
+            android:tint="@color/text_secondary" />
+    </LinearLayout>
+
+    <org.aegis.app.components.AegisTextField
+        android:id="@+id/contact_search"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/screen_padding"
+        android:layout_marginEnd="@dimen/screen_padding"
+        android:hint="@string/search_contacts"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:maxLines="1"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_tertiary"
+        android:textSize="13sp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/contact_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="6dp"
+        android:layout_weight="1"
+        tools:listitem="@layout/item_chat" />
+
+    <TextView
+        android:id="@+id/contact_list_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="@dimen/screen_padding"
+        android:text="@string/contacts_empty"
+        android:textColor="@color/text_tertiary"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+    <include layout="@layout/view_bottom_nav" />
+
+</LinearLayout>

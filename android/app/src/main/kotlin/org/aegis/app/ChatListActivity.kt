@@ -51,6 +51,7 @@ class ChatListActivity : AppCompatActivity() {
         }
 
         render(demoChats())
+        bindNavigation()
     }
 
     /**
@@ -70,6 +71,24 @@ class ChatListActivity : AppCompatActivity() {
         render(demoChats())
     }
 
+
+    /**
+     * Связывает вкладки нижней навигации.
+     *
+     * `finish()` после перехода: вкладки — это разделы одного уровня,
+     * и накопление их в стеке заставляло бы жать «назад» столько раз,
+     * сколько было переключений.
+     */
+    private fun bindNavigation() {
+        findViewById<View>(R.id.nav_contacts).setOnClickListener {
+            startActivity(Intent(this, ContactsActivity::class.java))
+            finish()
+        }
+        findViewById<View>(R.id.nav_settings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            finish()
+        }
+    }
     private fun render(chats: List<ChatSummary>) {
         adapter.submit(chats)
 

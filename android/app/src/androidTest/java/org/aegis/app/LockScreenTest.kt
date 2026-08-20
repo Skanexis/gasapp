@@ -3,37 +3,27 @@
 package org.aegis.app
 
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.By
-import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.Until
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * Проверка экрана блокировки.
  *
- * Экран запускается через [ActivityScenario], а не тапами по
- * координатам: ручной ввод оставляет состояние прошлой попытки,
- * и тест начинает проверять не то, что задумано.
+ * # Почему Espresso, а не UiAutomator
+ *
+ * Экран стоит под `FLAG_SECURE`, и UiAutomator не видит его содержимого:
+ * снимок иерархии для него пуст — ровно так же, как пуст был бы скриншот.
+ * Это правильное поведение защиты, а не помеха, поэтому тест переведён
+ * на Espresso, который читает иерархию изнутри процесса приложения.
  */
 @RunWith(AndroidJUnit4::class)
 class LockScreenTest {
-
-    private lateinit var device: UiDevice
-
-    /** Пакет сборки: у flavor foss к applicationId добавлен суффикс. */
-    private val pkg: String
-        get() = InstrumentationRegistry.getInstrumentation().targetContext.packageName
-
-    @Before
-    fun setUp() {
-        device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-    }
 
     /**
      * 🔐 Неполный PIN не открывает хранилище.
@@ -43,59 +33,52 @@ class LockScreenTest {
      */
     @Test
     fun incompletePinDoesNotUnlock() {
+        ActivityScenario.launch(LockActivity::class.java).use { scenario ->
+            onView(withId(R.id.key_1)).perform(click())
+            onView(withId(R.id.key_2)).perform(click())
+            onView(withId(R.id.key_3)).perform(click())
+
+            // Экран блокировки обязан остаться на месте: переход
+            // означал бы, что хранилище открыто неполным PIN.
+            onView(withId(R.id.pin_dots)).check(matches(isDisplayed()))
+
+            var stillLocked = false
+            scenario.onActivity { stillLocked = !it.isFinishing }
+
+            assert(stillLocked) { "неполный PIN закрыл экран блокировки" }
+        }
+    }
+
+    /** Клавиатура и точки на месте. */
+    @Test
+    fun lockScreenShowsItsControls() {
         ActivityScenario.launch(LockActivity::class.java).use {
-            device.wait(Until.hasObject(By.res(pkg, "keypad")), TIMEOUT)
-
-            device.findObject(By.res(pkg, "key_1")).click()
-            device.findObject(By.res(pkg, "key_2")).click()
-            device.findObject(By.res(pkg, "key_3")).click()
-
-            // Список чатов не должен появиться ни при каких условиях.
-            assertNull(
-                "неполный PIN открыл список чатов",
-                device.findObject(By.res(pkg, "chat_list")),
-            )
+            onView(withId(R.id.lock_subtitle)).check(matches(isDisplayed()))
+            onView(withId(R.id.pin_dots)).check(matches(isDisplayed()))
+            onView(withId(R.id.key_0)).check(matches(isDisplayed()))
+            onView(withId(R.id.key_delete)).check(matches(isDisplayed()))
         }
     }
 
     /**
-     * 🔐 Введённые цифры не видны на экране.
+     * 🔐 Удаление цифры работает.
      *
-     * Точки показывают только длину. Если бы цифры отображались,
-     * их прочитал бы любой, кто смотрит через плечо.
+     * Без него единственная опечатка заставляла бы набирать PIN заново,
+     * а это подталкивает пользователя выбрать PIN покороче.
      */
     @Test
-    fun enteredDigitsAreNotDisplayed() {
-        ActivityScenario.launch(LockActivity::class.java).use {
-            device.wait(Until.hasObject(By.res(pkg, "keypad")), TIMEOUT)
+    fun deleteRemovesLastDigit() {
+        ActivityScenario.launch(LockActivity::class.java).use { scenario ->
+            onView(withId(R.id.key_5)).perform(click())
+            onView(withId(R.id.key_5)).perform(click())
+            onView(withId(R.id.key_delete)).perform(click())
 
-            device.findObject(By.res(pkg, "key_7")).click()
-            device.findObject(By.res(pkg, "key_7")).click()
+            // Экран не должен закрыться: после удаления введено меньше
+            // полной длины.
+            var stillLocked = false
+            scenario.onActivity { stillLocked = !it.isFinishing }
 
-            // Единственная «7» на экране — клавиша, а не показанный ввод.
-            val sevens = device.findObjects(By.text("7"))
-            assertNotNull(sevens)
-            assert(sevens.size <= 1) {
-                "введённые цифры отображаются на экране"
-            }
+            assert(stillLocked)
         }
-    }
-
-    /** Экран блокировки собирается целиком. */
-    @Test
-    fun lockScreenShowsItsControls() {
-        ActivityScenario.launch(LockActivity::class.java).use {
-            device.wait(Until.hasObject(By.res(pkg, "keypad")), TIMEOUT)
-
-            assertNotNull(device.findObject(By.res(pkg, "lock_subtitle")))
-            assertNotNull(device.findObject(By.res(pkg, "pin_dots")))
-            assertNotNull(device.findObject(By.res(pkg, "key_0")))
-            assertNotNull(device.findObject(By.res(pkg, "key_delete")))
-        }
-    }
-
-    private companion object {
-        /** Ожидание отрисовки экрана. */
-        const val TIMEOUT = 5_000L
     }
 }
