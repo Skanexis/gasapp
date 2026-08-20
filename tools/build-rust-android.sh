@@ -69,9 +69,16 @@ for abi in "${ABIS[@]}"; do
   TARGET_FLAGS+=(-t "$abi")
 done
 
-# shellcheck disable=SC2086
-cargo ndk "${TARGET_FLAGS[@]}" -P "$API_LEVEL" -o "$JNI_LIBS" \
-  build $CARGO_PROFILE_FLAG --manifest-path "$CRATES/Cargo.toml" -p aegis-ffi
+# `cargo ndk` читает Cargo.toml из текущего каталога, а не из
+# --manifest-path: тот передаётся дальше, во вложенный `cargo build`.
+# Без смены каталога сборка падает с «could not find Cargo.toml».
+(
+  cd "$CRATES" || exit 1
+
+  # shellcheck disable=SC2086
+  cargo ndk "${TARGET_FLAGS[@]}" -P "$API_LEVEL" -o "$JNI_LIBS" \
+    build $CARGO_PROFILE_FLAG -p aegis-ffi
+)
 
 # --- Генерация биндингов Kotlin ---------------------------------------------
 #

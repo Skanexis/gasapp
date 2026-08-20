@@ -20,7 +20,11 @@ aegis-types.workspace = true
 aegis-protocol.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-rusqlite = { workspace = true, features = ["bundled-sqlcipher"] }
+# `bundled-sqlcipher-vendored-openssl`, а не просто `bundled-sqlcipher`:
+# второй ждёт системный OpenSSL, которого в NDK нет — сборка под
+# Android падала на `openssl/crypto.h file not found`. Вендоринг
+# собирает OpenSSL из исходников вместе с SQLCipher.
+rusqlite = { workspace = true, features = ["bundled-sqlcipher-vendored-openssl"] }
 hex.workspace = true
 uuid.workspace = true
 
