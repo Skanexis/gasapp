@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Запрет переноса и облачного бэкапа данных приложения (Android 12+).
+
+  Хранилище зашифровано ключом из Argon2id над PIN, но бэкап всё равно
+  недопустим: копия базы в Google Drive переживает удаление приложения
+  и wipe устройства, а значит превращает «сообщения исчезли вместе
+  с телефоном» в неправду. Кроме того, сам факт наличия бэкапа AEGIS
+  в аккаунте выдаёт использование мессенджера по запросу к Google.
+
+  На Android 11 и ниже ту же роль играет android:allowBackup="false".
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </cloud-backup>
+
+    <!--
+      Перенос на новое устройство запрещён отдельно: сессии Double
+      Ratchet привязаны к устройству, и копия состояния на втором
+      устройстве привела бы к переиспользованию ключей.
+    -->
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

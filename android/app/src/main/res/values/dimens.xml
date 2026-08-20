@@ -3,4 +3,8 @@
 <!-- Отступы соответствуют шкале из design/aegis.tokens.json. -->
 <resources>
     <dimen name="list_row_padding">16dp</dimen>
+    <dimen name="chat_row_padding_vertical">12dp</dimen>
+    <dimen name="avatar_size">44dp</dimen>
+    <dimen name="screen_padding">16dp</dimen>
+    <dimen name="bubble_max_width">280dp</dimen>
 </resources>

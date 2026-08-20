@@ -719,6 +719,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -734,11 +742,19 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
-    fun uniffi_aegis_checksum_func_check_protocol_version(
+    fun uniffi_aegis_checksum_func_can_send_to_contact(
+): Short
+fun uniffi_aegis_checksum_func_check_protocol_version(
+): Short
+fun uniffi_aegis_checksum_func_compute_fingerprint(
 ): Short
 fun uniffi_aegis_checksum_func_core_version(
 ): Short
 fun uniffi_aegis_checksum_func_format_safety_number(
+): Short
+fun uniffi_aegis_checksum_func_generate_identity_public_key(
+): Short
+fun uniffi_aegis_checksum_func_identity_change_alert(
 ): Short
 fun uniffi_aegis_checksum_func_protocol_version(
 ): Short
@@ -787,11 +803,19 @@ internal interface UniffiLib : Library {
     }
 
     // FFI functions
-    fun uniffi_aegis_fn_func_check_protocol_version(`raw`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_aegis_fn_func_can_send_to_contact(`identityChanged`: Byte,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_aegis_fn_func_check_protocol_version(`raw`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_aegis_fn_func_compute_fingerprint(`identityKey`: RustBuffer.ByValue,`identifier`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_format_safety_number(`local`: RustBuffer.ByValue,`remote`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_identity_change_alert(`knownIdentity`: RustBuffer.ByValue,`presentedIdentity`: RustBuffer.ByValue,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_protocol_version(uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -921,13 +945,25 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_aegis_checksum_func_can_send_to_contact() != 43356.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_check_protocol_version() != 59473.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_compute_fingerprint() != 46253.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_core_version() != 35856.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_format_safety_number() != 12850.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_generate_identity_public_key() != 24630.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_identity_change_alert() != 8609.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_protocol_version() != 57124.toShort()) {
@@ -1032,6 +1068,52 @@ public object FfiConverterUByte: FfiConverter<UByte, Byte> {
 
     override fun write(value: UByte, buf: ByteBuffer) {
         buf.put(value.toByte())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4UL
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
+    override fun lift(value: Byte): Boolean {
+        return value.toInt() != 0
+    }
+
+    override fun read(buf: ByteBuffer): Boolean {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: Boolean): Byte {
+        return if (value) 1.toByte() else 0.toByte()
+    }
+
+    override fun allocationSize(value: Boolean) = 1UL
+
+    override fun write(value: Boolean, buf: ByteBuffer) {
+        buf.put(lower(value))
     }
 }
 
@@ -1185,6 +1267,238 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
     }
 
 }
+
+
+
+/**
+ * Состояние блокировки в терминах UI.
+ */
+
+enum class LockStatus {
+    
+    /**
+     * Приложение не настроено: нет аккаунта и ключей.
+     */
+    UNINITIALIZED,
+    /**
+     * Настроено, но заблокировано: нужен PIN или биометрия.
+     */
+    LOCKED,
+    /**
+     * Разблокировано и готово к работе.
+     */
+    UNLOCKED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLockStatus: FfiConverterRustBuffer<LockStatus> {
+    override fun read(buf: ByteBuffer) = try {
+        LockStatus.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: LockStatus) = 4UL
+
+    override fun write(value: LockStatus, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Предупреждение безопасности для Security Center.
+ */
+sealed class SecurityAlertKind {
+    
+    /**
+     * У контакта сменился identity-ключ.
+     */
+    data class IdentityKeyChanged(
+        /**
+         * Был ли контакт верифицирован до смены.
+         */
+        val `wasVerified`: kotlin.Boolean) : SecurityAlertKind() {
+        companion object
+    }
+    
+    /**
+     * Аппаратное хранилище ключей недоступно.
+     */
+    object HardwareProtectionUnavailable : SecurityAlertKind()
+    
+    
+    /**
+     * Резервная копия давно не обновлялась.
+     */
+    data class BackupOverdue(
+        /**
+         * Сколько дней прошло.
+         */
+        val `days`: kotlin.UInt) : SecurityAlertKind() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSecurityAlertKind : FfiConverterRustBuffer<SecurityAlertKind>{
+    override fun read(buf: ByteBuffer): SecurityAlertKind {
+        return when(buf.getInt()) {
+            1 -> SecurityAlertKind.IdentityKeyChanged(
+                FfiConverterBoolean.read(buf),
+                )
+            2 -> SecurityAlertKind.HardwareProtectionUnavailable
+            3 -> SecurityAlertKind.BackupOverdue(
+                FfiConverterUInt.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: SecurityAlertKind) = when(value) {
+        is SecurityAlertKind.IdentityKeyChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterBoolean.allocationSize(value.`wasVerified`)
+            )
+        }
+        is SecurityAlertKind.HardwareProtectionUnavailable -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is SecurityAlertKind.BackupOverdue -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterUInt.allocationSize(value.`days`)
+            )
+        }
+    }
+
+    override fun write(value: SecurityAlertKind, buf: ByteBuffer) {
+        when(value) {
+            is SecurityAlertKind.IdentityKeyChanged -> {
+                buf.putInt(1)
+                FfiConverterBoolean.write(value.`wasVerified`, buf)
+                Unit
+            }
+            is SecurityAlertKind.HardwareProtectionUnavailable -> {
+                buf.putInt(2)
+                Unit
+            }
+            is SecurityAlertKind.BackupOverdue -> {
+                buf.putInt(3)
+                FfiConverterUInt.write(value.`days`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteArray?> {
+    override fun read(buf: ByteBuffer): kotlin.ByteArray? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterByteArray.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.ByteArray?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterByteArray.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.ByteArray?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterByteArray.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeSecurityAlertKind: FfiConverterRustBuffer<SecurityAlertKind?> {
+    override fun read(buf: ByteBuffer): SecurityAlertKind? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeSecurityAlertKind.read(buf)
+    }
+
+    override fun allocationSize(value: SecurityAlertKind?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeSecurityAlertKind.allocationSize(value)
+        }
+    }
+
+    override fun write(value: SecurityAlertKind?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeSecurityAlertKind.write(value, buf)
+        }
+    }
+}
+        /**
+         * Можно ли отправлять сообщение контакту.
+         *
+         * # 🔐 Блокировка отправки при смене ключа
+         *
+         * Если у **верифицированного** контакта сменился identity-ключ,
+         * отправка блокируется до повторной сверки safety number. Пользователь
+         * лично подтвердил, что говорит с нужным человеком; молча продолжить
+         * переписку после смены ключа означало бы обесценить эту проверку —
+         * ровно в том случае, когда она важнее всего.
+         *
+         * Для неверифицированного контакта отправка разрешена: он ничего
+         * не подтверждал, и блокировка лишь помешала бы.
+         */ fun `canSendToContact`(`identityChanged`: kotlin.Boolean, `wasVerified`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_can_send_to_contact(
+        FfiConverterBoolean.lower(`identityChanged`),FfiConverterBoolean.lower(`wasVerified`),_status)
+}
+    )
+    }
+    
+
         /**
          * Проверяет номер версии протокола из входящего сообщения.
          *
@@ -1204,6 +1518,28 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_check_protocol_version(
         FfiConverterUByte.lower(`raw`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Вычисляет отпечаток identity-ключа.
+         *
+         * Отпечаток — то, что превращается в safety number и сверяется
+         * пользователем. Вычисление живёт в ядре: итеративный SHA-512
+         * на 5200 раундов (раздел 6.6), и повторять его в Kotlin/Swift
+         * значило бы завести вторую реализацию, которая разойдётся с первой.
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`], если ключ не равен 32 байтам.
+         */
+    @Throws(FfiException::class) fun `computeFingerprint`(`identityKey`: kotlin.ByteArray, `identifier`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_compute_fingerprint(
+        FfiConverterByteArray.lower(`identityKey`),FfiConverterByteArray.lower(`identifier`),_status)
 }
     )
     }
@@ -1239,6 +1575,56 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_format_safety_number(
         FfiConverterByteArray.lower(`local`),FfiConverterByteArray.lower(`remote`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Создаёт новую пару identity-ключей и возвращает **публичную** часть.
+         *
+         * # Почему возвращается только публичный ключ
+         *
+         * Приватная часть не пересекает границу FFI никогда (правило 2 этого
+         * крейта). Она остаётся в ядре и попадает в зашифрованное хранилище;
+         * платформенному коду она не нужна — он не выполняет криптографию.
+         *
+         * # Errors
+         *
+         * [`FfiError::Core`] при сбое вывода публичного ключа.
+         */
+    @Throws(FfiException::class) fun `generateIdentityPublicKey`(): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_generate_identity_public_key(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Решает, нужно ли предупредить о смене identity-ключа контакта.
+         *
+         * Возвращает `None`, когда тревожиться не о чем: ключ прежний либо
+         * контакт видится впервые.
+         *
+         * # Про порог тревоги
+         *
+         * Смена ключа у **неверифицированного** контакта — обычное дело
+         * (переустановил приложение). Тревожить при каждой означало бы приучить
+         * пользователя игнорировать предупреждения, а вместе с ними — настоящую
+         * подмену.
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`], если предъявленный ключ пуст.
+         */
+    @Throws(FfiException::class) fun `identityChangeAlert`(`knownIdentity`: kotlin.ByteArray?, `presentedIdentity`: kotlin.ByteArray, `wasVerified`: kotlin.Boolean): SecurityAlertKind? {
+            return FfiConverterOptionalTypeSecurityAlertKind.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_identity_change_alert(
+        FfiConverterOptionalByteArray.lower(`knownIdentity`),FfiConverterByteArray.lower(`presentedIdentity`),FfiConverterBoolean.lower(`wasVerified`),_status)
 }
     )
     }

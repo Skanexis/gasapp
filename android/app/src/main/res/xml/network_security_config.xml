@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Платформенная часть пиннинга (ADR-014, раздел 14.3 плана).
+
+  Проверку ведёт системный TLS-стек, а не приложение. Свой TLS-стек
+  внутри клиента обошёл бы настройки платформы — то есть отключил бы
+  и пиннинг, и системные отзывы сертификатов. Логика набора пинов
+  живёт в crates/aegis-net/src/pinning.rs и проверяется тестами
+  без сети; здесь — её включение на Android.
+-->
+<network-security-config>
+
+    <!--
+      cleartextTrafficPermitted="false" на весь трафик приложения.
+
+      Без этого запрета единственный HTTP-запрос (аналитика, картинка,
+      редирект) выдал бы факт использования AEGIS наблюдателю канала.
+    -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!--
+              Только системные корни. Пользовательские (user) намеренно
+              исключены: сертификат, установленный в профиль устройства
+              — штатный способ MITM в корпоративных и государственных
+              сетях, и доверять ему мессенджеру нельзя.
+            -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">aegis.invalid</domain>
+
+        <!--
+          Два пина: текущий ключ и следующий (правило MIN_PINS = 2).
+
+          Набор из одного пина выглядит рабочим ровно до ротации ключа,
+          после которой клиент теряет доверие к серверу и не может
+          получить ни новый пин, ни сообщение об ошибке — чинится
+          только обновлением через магазин.
+
+          expiration заставляет пиннинг «протухнуть», а не оборвать
+          связь навсегда, если про ротацию забыли: после этой даты
+          проверка отключается и остаётся обычная валидация по системным
+          корням. Полный отказ связи хуже, чем возврат к базовому TLS.
+        -->
+        <pin-set expiration="2027-01-01">
+            <pin digest="SHA-256">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</pin>
+            <pin digest="SHA-256">BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=</pin>
+        </pin-set>
+    </domain-config>
+
+</network-security-config>

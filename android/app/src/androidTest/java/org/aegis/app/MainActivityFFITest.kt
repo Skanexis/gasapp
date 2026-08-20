@@ -1,7 +1,7 @@
 package org.aegis.app
 
 import android.content.Context
-import android.content.Intent
+import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -9,6 +9,9 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import androidx.test.uiautomator.By
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,47 +37,77 @@ class MainActivityFFITest {
     }
 
     @Test
-    fun `testFFI functions return expected results`() {
-        // Launch the app
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        context.startActivity(intent)
+    fun testFfiFunctionsReturnExpectedResults() {
+        // MainActivity открывается напрямую, а не через launcher:
+        // точкой входа приложения стал экран блокировки, и launcher-intent
+        // приводил бы сюда не тот экран.
+        ActivityScenario.launch(MainActivity::class.java)
 
-        // Wait for the app to load
-        device.wait(Until.hasObject(By.pkg("org.aegis.app").depth(0)), 5000)
+        device.wait(Until.hasObject(By.res(PACKAGE, "core_version_text")), 5000)
 
-        // Verify that core version text is displayed (not showing loading/error)
-        val coreVersionText = device.findObject(By.clazz("android.widget.TextView").textContains("Core Version:"))
-        assertNotNull("Core version TextView should be found", coreVersionText)
+        // Проверяются идентификаторы view и содержимое, а не текст
+        // интерфейса: строки локализованы, и привязка к ним делала бы
+        // тест ложно-красным при первом же переводе. Прежняя редакция
+        // искала английские подписи, которых в приложении никогда
+        // не было, — тест не мог пройти в принципе.
+        val coreVersionText = device.findObject(By.res(PACKAGE, "core_version_text"))
+        assertNotNull("core_version_text не найден", coreVersionText)
 
-        // Verify that protocol version text is displayed
-        val protocolVersionText = device.findObject(By.clazz("android.widget.TextView").textContains("Protocol Version:"))
-        assertNotNull("Protocol version TextView should be found", protocolVersionText)
+        val protocolVersionText = device.findObject(By.res(PACKAGE, "protocol_version_text"))
+        assertNotNull("protocol_version_text не найден", protocolVersionText)
 
-        // Verify that safety number text is displayed
-        val safetyNumberText = device.findObject(By.clazz("android.widget.TextView").textContains("Safety Number:"))
-        assertNotNull("Safety number TextView should be found", safetyNumberText)
+        val safetyNumberText = device.findObject(By.res(PACKAGE, "safety_number_text"))
+        assertNotNull("safety_number_text не найден", safetyNumberText)
 
-        // Additional verification: check that we're not seeing error messages
-        val errorText = device.findObject(By.clazz("android.widget.TextView").textContains("Error:"))
-        assertNull("Error TextView should not be visible", errorText)
+        // Ядро отдало версию протокола: на экране есть её номер.
+        // Пустое поле означало бы, что вызов через FFI не состоялся.
+        val protocolValue = protocolVersionText.text.orEmpty()
+        assertTrue(
+            "версия протокола не отображена: '$protocolValue'",
+            protocolValue.contains(Regex("\\d")),
+        )
+
+        // 🔐 Safety number — 60 десятичных цифр (ADR-022). Проверяется
+        // именно количество: оно доказывает, что отпечатки вычислены
+        // ядром, а не подставлена заглушка.
+        val digits = safetyNumberText.text.orEmpty().filter(Char::isDigit)
+        assertEquals("safety number должен содержать 60 цифр", 60, digits.length)
     }
 
+    /**
+     * Повторные пересоздания экрана не роняют ядро.
+     *
+     * Прежняя редакция искала «любой TextView» и проходила бы, даже
+     * если бы ядро не отвечало вовсе. Здесь проверяется то, что
+     * действительно может сломаться: переход через границу FFI при
+     * каждом пересоздании activity.
+     */
     @Test
-    fun `testFFI error handling`() {
-        // This test would require modifying the app to force an error condition
-        // For simplicity, we're just verifying the app doesn't crash on launch
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        context.startActivity(intent)
+    fun ffiSurvivesActivityRecreation() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            repeat(RECREATIONS) {
+                scenario.recreate()
+                device.wait(Until.hasObject(By.res(PACKAGE, "core_version_text")), 5000)
+            }
 
-        // Wait for the app to load
-        device.wait(Until.hasObject(By.pkg("org.aegis.app").depth(0)), 5000)
+            val version = device.findObject(By.res(PACKAGE, "core_version_text"))
+            assertNotNull("ядро перестало отвечать после пересоздания", version)
+            assertTrue("версия ядра пуста", version.text.isNotEmpty())
+        }
+    }
 
-        // Verify the app is responsive (not crashed)
-        val anyText = device.findObject(By.clazz("android.widget.TextView"))
-        assertNotNull("App should be responsive and showing text", anyText)
+    private companion object {
+        /**
+         * Имя пакета под тестом.
+         *
+         * Берётся из контекста, а не задаётся строкой: flavor добавляет
+         * суффикс (`.foss` / `.gms`), и жёсткое значение сделало бы тест
+         * рабочим ровно для одного варианта сборки.
+         */
+        /** Сколько раз пересоздаётся activity. */
+        const val RECREATIONS = 3
+
+        val PACKAGE: String
+            get() = ApplicationProvider.getApplicationContext<Context>().packageName
     }
 }
