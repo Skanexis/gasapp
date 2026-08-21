@@ -211,4 +211,63 @@
     <string name="privacy_preview">Текст в уведомлениях</string>
     <string name="privacy_preview_hint">Показывать сообщение на заблокированном экране</string>
     <string name="privacy_limits_note">Блокировка снимков действует только на этом устройстве. Она не мешает сфотографировать экран другим телефоном и не ограничивает собеседника: он видел ваше сообщение и мог его сохранить.</string>
+
+    <!-- Уведомления. -->
+    <string name="notifications_section_content">Что показывать</string>
+    <string name="notifications_section_alerts">Как оповещать</string>
+    <string name="notifications_preview">Текст сообщения</string>
+    <string name="notifications_preview_hint">Показывать сообщение на заблокированном экране</string>
+    <string name="notifications_sender">Имя отправителя</string>
+    <string name="notifications_sender_hint">Показывать, от кого пришло сообщение</string>
+    <string name="notifications_sound">Звук</string>
+    <string name="notifications_vibrate">Вибрация</string>
+    <string name="notifications_content_note">Сервер присылает только сигнал «есть новое»: ни текста, ни отправителя, ни чата в уведомлении нет. Всё, что настраивается здесь, приложение подставляет само, уже расшифровав сообщение на устройстве.</string>
+
+    <!-- Внешний вид. -->
+    <string name="settings_appearance">Внешний вид</string>
+    <string name="appearance_section_theme">Тема</string>
+    <string name="appearance_section_text">Текст</string>
+    <string name="appearance_theme">Оформление</string>
+    <string name="appearance_theme_value">Тёмное</string>
+    <string name="appearance_theme_note">Приложение нарисовано под тёмный фон. Светлая тема означала бы вторую палитру и вторую возможность ошибиться в том, каким цветом показано состояние безопасности, — поэтому её нет.</string>
+    <string name="appearance_language">Язык</string>
+    <string name="appearance_language_value">Системный</string>
+    <string name="appearance_language_note">Язык берётся из настроек системы.</string>
+
+    <!-- Хранилище. -->
+    <string name="settings_storage">Хранилище</string>
+    <string name="storage_section_usage">Занято</string>
+    <string name="storage_section_cleanup">Очистка</string>
+    <string name="storage_messages">Сообщения</string>
+    <string name="storage_attachments">Вложения</string>
+    <string name="storage_purge_expired">Удалить истёкшие сообщения</string>
+    <string name="storage_clear_cache">Очистить загруженные файлы</string>
+    <string name="storage_cleanup_note">Удаление необратимо: сервер копий не хранит, и восстановить стёртое будет неоткуда.</string>
+    <string name="storage_purged">Удалено сообщений: %1$d</string>
+    <string name="storage_cleared">Загруженные файлы удалены</string>
+
+    <!-- Устройства. -->
+    <string name="devices_section_current">Это устройство</string>
+    <string name="devices_this">Текущее устройство</string>
+    <string name="devices_note">Каждое связанное устройство читает переписку целиком. Связывание появится вместе с синхронизацией между устройствами; пока аккаунт доступен только отсюда.</string>
+
+    <!-- О программе. -->
+    <string name="about_section_version">Версии</string>
+    <string name="about_section_legal">Лицензия</string>
+    <string name="about_app_version">Приложение</string>
+    <string name="about_core_version">Ядро</string>
+    <string name="about_protocol_version">Протокол</string>
+    <string name="about_license">Лицензия</string>
+    <string name="about_license_value">Apache-2.0</string>
+    <string name="about_source">Исходный код</string>
+    <string name="about_source_value">Открыт</string>
+    <string name="about_note">Версия протокола определяет совместимость: собеседник с более старой версией не прочитает сообщение. Клиент под Apache-2.0, сервер под AGPL-3.0.</string>
+
+    <!-- Security Center. -->
+    <string name="security_keys_title">Ключи шифрования</string>
+    <string name="security_devices_title">Доверенные устройства</string>
+    <string name="security_recovery_title">Ключ восстановления</string>
+    <string name="security_blocked_title">Заблокированные</string>
+    <string name="security_not_ready">Появится вместе с резервным копированием</string>
+    <string name="security_blocked_empty">Заблокированных нет</string>
 </resources>

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Внешний вид.
+
+  Тема только тёмная: приложение нарисовано под тёмный фон, и светлый
+  режим означал бы вторую палитру, вторую проверку контраста и вторую
+  возможность ошибиться в том, каким цветом показано состояние
+  безопасности.
+
+  Пункт оставлен видимым и объяснённым, а не спрятан: отсутствие
+  настройки без объяснения читается как недоделка.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/appearance_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/settings_appearance" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:text="@string/appearance_section_theme" />
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/appearance_theme"
+                    layout="@layout/item_settings_row" />
+            </LinearLayout>
+            <TextView
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_m"
+                android:text="@string/appearance_theme_note" />
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/appearance_section_text" />
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/appearance_language"
+                    layout="@layout/item_settings_row" />
+            </LinearLayout>
+            <TextView
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_m"
+                android:text="@string/appearance_language_note" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

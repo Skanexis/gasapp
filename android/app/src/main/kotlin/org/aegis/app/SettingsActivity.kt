@@ -75,7 +75,21 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Заполняет разделы настроек.
+     *
+     * Каждая строка ведёт на свой экран. Раньше пять из шести были
+     * нарисованы, но не нажимались, а у «Устройств» стояло значение
+     * «3» — число, взятое из макета и не имеющее отношения к тому,
+     * сколько устройств связано на самом деле. 🔐 Ложное число рядом
+     * с настройкой безопасности хуже отсутствия числа: пользователь
+     * искал бы два лишних устройства, которых нет, — или не искал бы
+     * настоящее.
+     */
     private fun renderRows() {
+        // Безопасность выделена акцентом: там живут проверки, от
+        // которых зависит защита переписки. Выделение всего подряд
+        // перестаёт что-либо значить.
         bindRow(
             R.id.settings_security,
             R.drawable.ic_shield,
@@ -90,14 +104,37 @@ class SettingsActivity : AppCompatActivity() {
             R.string.settings_notifications,
             getString(R.string.notifications_private),
         )
-        bindRow(R.id.settings_devices, R.drawable.ic_users, R.string.settings_devices, "3")
+        bindRow(
+            R.id.settings_appearance,
+            R.drawable.ic_settings,
+            R.string.settings_appearance,
+            getString(R.string.appearance_theme_value),
+        )
+        bindRow(
+            R.id.settings_storage,
+            R.drawable.ic_file,
+            R.string.settings_storage,
+            null,
+        )
+
+        // Устройство ровно одно, пока нет связывания: показывать
+        // выдуманное число рядом с настройкой безопасности нельзя.
+        bindRow(R.id.settings_devices, R.drawable.ic_users, R.string.settings_devices, "1")
         bindRow(R.id.settings_about, R.drawable.ic_key, R.string.settings_about, null)
 
-        findViewById<View>(R.id.settings_privacy).setOnClickListener {
-            startActivity(Intent(this, PrivacyActivity::class.java))
-        }
-        findViewById<View>(R.id.settings_security).setOnClickListener {
-            startActivity(Intent(this, SecurityCenterActivity::class.java))
+        open(R.id.settings_security, SecurityCenterActivity::class.java)
+        open(R.id.settings_privacy, PrivacyActivity::class.java)
+        open(R.id.settings_notifications, NotificationsActivity::class.java)
+        open(R.id.settings_appearance, AppearanceActivity::class.java)
+        open(R.id.settings_storage, StorageActivity::class.java)
+        open(R.id.settings_devices, DevicesActivity::class.java)
+        open(R.id.settings_about, AboutActivity::class.java)
+    }
+
+    /** Связывает строку с экраном, который она открывает. */
+    private fun open(rowId: Int, screen: Class<*>) {
+        findViewById<View>(rowId).setOnClickListener {
+            startActivity(Intent(this, screen))
         }
     }
 

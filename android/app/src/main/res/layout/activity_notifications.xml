@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Уведомления.
+
+  🔐 Само уведомление приходит без содержимого: сервер отправляет
+  только флаг «есть новое», а текста, отправителя и чата в нём нет
+  (ADR-014). Всё, что настраивается здесь, — что подставит приложение
+  уже на устройстве, после расшифровки.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/notifications_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/settings_notifications" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:text="@string/notifications_section_content" />
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/notifications_preview"
+                    layout="@layout/item_settings_toggle" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="@dimen/space_xs"
+                    android:background="@color/line" />
+
+                <include
+                    android:id="@+id/notifications_sender"
+                    layout="@layout/item_settings_toggle" />
+            </LinearLayout>
+            <TextView
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_m"
+                android:text="@string/notifications_content_note" />
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/notifications_section_alerts" />
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/notifications_sound"
+                    layout="@layout/item_settings_toggle" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="@dimen/space_xs"
+                    android:background="@color/line" />
+
+                <include
+                    android:id="@+id/notifications_vibrate"
+                    layout="@layout/item_settings_toggle" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

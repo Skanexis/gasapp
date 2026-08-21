@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Хранилище.
+
+  🔐 Всё, что показано здесь, лежит в зашифрованной базе на устройстве.
+  Освобождение места удаляет данные безвозвратно: восстановить их
+  из резервной копии сервера нельзя — сервер их не хранит.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/storage_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/settings_storage" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:text="@string/storage_section_usage" />
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/storage_messages"
+                    layout="@layout/item_settings_row" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="@dimen/space_xs"
+                    android:background="@color/line" />
+
+                <include
+                    android:id="@+id/storage_attachments"
+                    layout="@layout/item_settings_row" />
+            </LinearLayout>
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/storage_section_cleanup" />
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/storage_purge_expired"
+                    layout="@layout/item_settings_row" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="@dimen/space_xs"
+                    android:background="@color/line" />
+
+                <include
+                    android:id="@+id/storage_clear_cache"
+                    layout="@layout/item_settings_row" />
+            </LinearLayout>
+            <TextView
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_m"
+                android:text="@string/storage_cleanup_note" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

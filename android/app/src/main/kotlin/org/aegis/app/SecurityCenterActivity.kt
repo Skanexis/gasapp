@@ -2,9 +2,11 @@
 
 package org.aegis.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
+import android.widget.Toast
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import org.aegis.app.core.SecureWindow
@@ -33,6 +35,43 @@ class SecurityCenterActivity : AppCompatActivity() {
 
         renderScore()
         renderChecks()
+        bindActions()
+    }
+
+    /**
+     * Связывает строки центра безопасности.
+     *
+     * Раньше четыре строки были нарисованы, но не нажимались:
+     * пользователь видел «Ключи шифрования» и «Заблокированные»
+     * и не мог их открыть. 🔐 В центре безопасности это хуже, чем
+     * в другом месте: человек приходит сюда именно проверить
+     * состояние защиты, а получает список, который не отвечает.
+     *
+     * То, чего ещё нет, говорит об этом прямо, а не молчит.
+     */
+    private fun bindActions() {
+        // Ключи шифрования: свой профиль показывает identity-ключ
+        // и QR для передачи его собеседнику.
+        findViewById<View>(R.id.security_keys).setOnClickListener {
+            startActivity(Intent(this, ProfileActivity::class.java))
+        }
+
+        findViewById<View>(R.id.security_devices).setOnClickListener {
+            startActivity(Intent(this, DevicesActivity::class.java))
+        }
+
+        // 🔐 Резервное копирование появится в M6. Пока говорим об этом
+        // прямо: строка, молча ничего не делающая, читается как
+        // поломка, а обещание «скоро» в интерфейсе устаревает молча.
+        findViewById<View>(R.id.security_recovery).setOnClickListener {
+            Toast.makeText(this, R.string.security_not_ready, Toast.LENGTH_SHORT).show()
+        }
+
+        // Блокировка контактов появится вместе с работой над abuse.
+        // Пустой список — честный ответ, а не заглушка.
+        findViewById<View>(R.id.security_blocked).setOnClickListener {
+            Toast.makeText(this, R.string.security_blocked_empty, Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**

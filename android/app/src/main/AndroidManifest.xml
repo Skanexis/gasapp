@@ -133,6 +133,26 @@
         <activity
             android:name=".PrivacyActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".NotificationsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AppearanceActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".StorageActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".DevicesActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false" />
         <!-- FFI service bindings will be added here -->
 
     </application>
