@@ -6,6 +6,9 @@
 //! в `AEGIS_MASTER_PLAN.md`.
 
 /// Версия крейта, доступная во время выполнения.
+pub mod attachment;
+pub mod preview;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(test)]
