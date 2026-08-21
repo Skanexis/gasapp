@@ -230,3 +230,51 @@ fn server_database_holds_only_ciphertext() {
     // чтобы его можно было увидеть в базе.
     println!("канарейка отправлена, проверьте базу: {canary}");
 }
+
+/// 🔐 Приём сообщения: полный цикл между двумя клиентами.
+///
+/// Проверяет то, чего не покажет отправка: получатель действительно
+/// расшифровывает конверт и видит исходный текст.
+#[test]
+#[ignore = "нужен запущенный сервер: AEGIS_SERVER=http://127.0.0.1:8444"]
+fn message_is_received_and_decrypted() {
+    let (host, port) = server().expect("переменная AEGIS_SERVER не задана");
+    let dir = tempfile::tempdir().expect("каталог");
+
+    let sender_path = dir.path().join("s.db").to_string_lossy().into_owned();
+    let receiver_path = dir.path().join("r.db").to_string_lossy().into_owned();
+
+    let sender = Client::new(
+        LocalHttp { host: host.clone(), port },
+        Storage::new(&sender_path, &[0x31; 32]).expect("база"),
+    );
+    let receiver = Client::new(
+        LocalHttp { host, port },
+        Storage::new(&receiver_path, &[0x32; 32]).expect("база"),
+    );
+
+    let receiver_name = unique("recv");
+    sender.register(&unique("send"), now(), &mut OsRng).expect("отправитель");
+    let receiver_account = receiver
+        .register(&receiver_name, now(), &mut OsRng)
+        .expect("получатель");
+
+    let text = "сообщение прошло весь путь";
+    sender
+        .send_message(&receiver_name, text, now(), &mut OsRng)
+        .expect("отправка");
+
+    let count = receiver
+        .receive_messages(&receiver_account.device_id.to_string(), now())
+        .expect("приём");
+
+    assert_eq!(count, 1, "сообщение не принято");
+
+    let chats = receiver.chats().expect("чаты");
+    assert_eq!(chats.len(), 1, "чат не появился");
+
+    let messages = receiver.messages(&chats[0], 10).expect("сообщения");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].text, text, "текст не совпал после расшифровки");
+    assert!(!messages[0].outgoing, "входящее помечено исходящим");
+}
