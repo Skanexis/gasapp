@@ -31,6 +31,7 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
         method: String,
         path: String,
         body: String?,
+        binaryBody: ByteArray?,
         headers: List<FfiHeader>,
     ): FfiHttpResponse {
         val connection = openConnection(method, path)
@@ -46,6 +47,19 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.outputStream.use { it.write(body.toByteArray()) }
+            } else if (binaryBody != null) {
+                // Вложение уходит сырыми байтами: hex удвоил бы объём,
+                // и стомегабайтный файл занял бы двести мегабайт
+                // трафика и памяти.
+                //
+                // setFixedLengthStreamingMode обязателен: без него
+                // HttpURLConnection буферизует всё тело в памяти,
+                // чтобы посчитать Content-Length, и крупный файл
+                // кладёт приложение по нехватке памяти.
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/octet-stream")
+                connection.setFixedLengthStreamingMode(binaryBody.size)
+                connection.outputStream.use { it.write(binaryBody) }
             }
 
             val status = connection.responseCode
@@ -58,9 +72,23 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
                 connection.errorStream
             }
 
-            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
 
-            return FfiHttpResponse(status = status.toUShort(), body = text)
+            // Ответ отдаётся и текстом, и байтами: какой из них нужен,
+            // знает ядро — оно и решает по запросу. Разбирать здесь
+            // Content-Type значило бы дублировать это решение в месте,
+            // которое о запросе ничего не знает.
+            //
+            // Текстом читается только то, что заведомо текстовое:
+            // декодировать стомегабайтный блоб в строку значило бы
+            // сделать ровно то, чего эта ветка избегает.
+            val isBinary = binaryDownload(method, path) && status in 200..299
+
+            return FfiHttpResponse(
+                status = status.toUShort(),
+                body = if (isBinary) "" else bytes.toString(Charsets.UTF_8),
+                binaryBody = if (isBinary) bytes else ByteArray(0),
+            )
         } catch (error: IOException) {
             // Сбой сети — это исключение; отказ сервера (4xx/5xx) им
             // не является и возвращается выше как обычный ответ.
@@ -71,6 +99,18 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
             connection.disconnect()
         }
     }
+
+    /**
+     * Отдаёт ли этот запрос сырые байты.
+     *
+     * Скачивание вложения — единственный такой случай. Проверяется
+     * по методу и пути, а не по Content-Type ответа: заголовок
+     * приходит от сервера, и доверять ему в вопросе «читать ли это
+     * как текст» значило бы позволить серверу решать, сколько памяти
+     * потратит клиент.
+     */
+    private fun binaryDownload(method: String, path: String): Boolean =
+        method.equals("GET", ignoreCase = true) && path.startsWith("/v1/attachments/")
 
     private fun openConnection(method: String, path: String): HttpURLConnection {
         val url = URL("$baseUrl$path")

@@ -43,6 +43,7 @@ panic = "deny"
 # с собой.
 aegis-core.workspace = true
 aegis-keystore.workspace = true
+aegis-media.workspace = true
 aegis-protocol.workspace = true
 aegis-types.workspace = true
 aegis-net.workspace = true

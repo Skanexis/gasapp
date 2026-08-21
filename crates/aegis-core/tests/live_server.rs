@@ -95,7 +95,13 @@ fn parse_response(raw: &[u8]) -> Result<HttpResponse> {
         body.to_owned()
     };
 
-    Ok(HttpResponse { status, body })
+    Ok(HttpResponse {
+        status,
+        body,
+        // Поддельный сервер отдаёт только JSON: вложения проверяются
+        // тестами настоящего сервера, где есть база.
+        binary_body: Vec::new(),
+    })
 }
 
 /// Собирает тело из chunked-кодирования.

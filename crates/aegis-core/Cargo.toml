@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 aegis-types.workspace = true
+aegis-media.workspace = true
 aegis-protocol.workspace = true
 aegis-storage.workspace = true
 aegis-net.workspace = true

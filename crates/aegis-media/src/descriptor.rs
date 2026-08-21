@@ -222,6 +222,269 @@ impl AttachmentDescriptor {
     }
 }
 
+/// Версия формата описания.
+///
+/// Меняется при любом изменении раскладки полей. Получатель, увидев
+/// незнакомую версию, отказывается разбирать: угадывать раскладку
+/// значило бы прочитать ключ или размер не оттуда.
+const DESCRIPTOR_VERSION: u8 = 1;
+
+/// Метка присутствия необязательного поля.
+const PRESENT: u8 = 1;
+
+/// Метка отсутствия.
+const ABSENT: u8 = 0;
+
+impl AttachmentDescriptor {
+    /// Сериализует описание для отправки внутри сообщения.
+    ///
+    /// # Формат
+    ///
+    /// Ручная раскладка, а не `serde`: описание пересекает границу
+    /// версий, и молчаливое добавление поля сериализатором сломало бы
+    /// разбор у старого клиента. Явные длины и метки присутствия
+    /// делают несовместимость видимой сразу.
+    ///
+    /// Все длины — `u32` в сетевом порядке. Строки — UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — описание не проходит [`Self::validate`]
+    /// либо какое-то поле не помещается в `u32`.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        // Проверка перед отправкой, а не только при приёме: описание,
+        // собранное с ошибкой, лучше отвергнуть у себя, чем отправить
+        // собеседнику то, что он обязан будет отвергнуть.
+        self.validate()?;
+
+        let mut out = Vec::new();
+
+        out.push(DESCRIPTOR_VERSION);
+        out.push(self.kind.as_u8());
+
+        write_bytes(&mut out, self.location.as_bytes())?;
+        out.extend_from_slice(&self.key);
+        out.extend_from_slice(&self.size.to_be_bytes());
+
+        write_optional_str(&mut out, self.name.as_deref())?;
+        write_optional_str(&mut out, self.description.as_deref())?;
+
+        match self.duration_millis {
+            None => out.push(ABSENT),
+            Some(duration) => {
+                out.push(PRESENT);
+                out.extend_from_slice(&duration.to_be_bytes());
+            }
+        }
+
+        match &self.waveform {
+            None => out.push(ABSENT),
+            Some(waveform) => {
+                out.push(PRESENT);
+                write_bytes(&mut out, waveform)?;
+            }
+        }
+
+        match &self.preview {
+            None => out.push(ABSENT),
+            Some(preview) => {
+                out.push(PRESENT);
+                write_bytes(&mut out, preview.location.as_bytes())?;
+                out.extend_from_slice(&preview.key);
+            }
+        }
+
+        Ok(out)
+    }
+
+    /// Разбирает описание, пришедшее от собеседника.
+    ///
+    /// 🔐 Разбор придирчив по той же причине, что и [`Self::validate`]:
+    /// расшифровка доказывает, что сообщение прислал владелец ключа
+    /// сессии, но не то, что он добросовестен. Каждая длина сверяется
+    /// с остатком буфера до того, как по ней что-то читается.
+    ///
+    /// Лишние байты в хвосте — ошибка, а не мусор: они означают, что
+    /// отправитель имел в виду что-то ещё, чего этот разбор не понял.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — незнакомая версия, обрыв буфера,
+    /// лишний хвост либо поле вне допустимых границ.
+    pub fn from_bytes(raw: &[u8]) -> Result<Self> {
+        let mut cursor = Cursor { raw, offset: 0 };
+
+        if cursor.take_u8()? != DESCRIPTOR_VERSION {
+            return Err(AegisError::Malformed);
+        }
+
+        let kind = AttachmentKind::from_u8(cursor.take_u8()?)?;
+        let location =
+            String::from_utf8(cursor.take_bytes()?.to_vec()).map_err(|_| AegisError::Malformed)?;
+
+        let key: [u8; KEY_LEN] = cursor
+            .take_exact(KEY_LEN)?
+            .try_into()
+            .map_err(|_| AegisError::Malformed)?;
+
+        let size = u64::from_be_bytes(
+            cursor
+                .take_exact(8)?
+                .try_into()
+                .map_err(|_| AegisError::Malformed)?,
+        );
+
+        let name = cursor.take_optional_str()?;
+        let description = cursor.take_optional_str()?;
+
+        let duration_millis = match cursor.take_u8()? {
+            ABSENT => None,
+            PRESENT => Some(u32::from_be_bytes(
+                cursor
+                    .take_exact(4)?
+                    .try_into()
+                    .map_err(|_| AegisError::Malformed)?,
+            )),
+            _ => return Err(AegisError::Malformed),
+        };
+
+        let waveform = match cursor.take_u8()? {
+            ABSENT => None,
+            PRESENT => Some(cursor.take_bytes()?.to_vec()),
+            _ => return Err(AegisError::Malformed),
+        };
+
+        let preview = match cursor.take_u8()? {
+            ABSENT => None,
+            PRESENT => {
+                let location = String::from_utf8(cursor.take_bytes()?.to_vec())
+                    .map_err(|_| AegisError::Malformed)?;
+                let key: [u8; KEY_LEN] = cursor
+                    .take_exact(KEY_LEN)?
+                    .try_into()
+                    .map_err(|_| AegisError::Malformed)?;
+
+                Some(PreviewRef { location, key })
+            }
+            _ => return Err(AegisError::Malformed),
+        };
+
+        // Хвост означает, что отправитель имел в виду что-то ещё.
+        if !cursor.is_empty() {
+            return Err(AegisError::Malformed);
+        }
+
+        let descriptor = Self {
+            kind,
+            location,
+            key,
+            size,
+            name,
+            description,
+            duration_millis,
+            waveform,
+            preview,
+        };
+
+        // 🔐 Границы проверяются после разбора: разбор отвечает
+        // за форму, validate — за смысл.
+        descriptor.validate()?;
+
+        Ok(descriptor)
+    }
+}
+
+/// Дописывает блок с длиной впереди.
+fn write_bytes(out: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
+    let length = u32::try_from(bytes.len()).map_err(|_| AegisError::Malformed)?;
+
+    out.extend_from_slice(&length.to_be_bytes());
+    out.extend_from_slice(bytes);
+
+    Ok(())
+}
+
+/// Дописывает необязательную строку.
+fn write_optional_str(out: &mut Vec<u8>, value: Option<&str>) -> Result<()> {
+    match value {
+        None => {
+            out.push(ABSENT);
+
+            Ok(())
+        }
+        Some(text) => {
+            out.push(PRESENT);
+
+            write_bytes(out, text.as_bytes())
+        }
+    }
+}
+
+/// Чтение по буферу с проверкой границ на каждом шаге.
+///
+/// 🔐 Существует ради того, чтобы ни одно чтение не полагалось
+/// на длину, пришедшую от собеседника, без сверки с остатком буфера.
+struct Cursor<'a> {
+    raw: &'a [u8],
+    offset: usize,
+}
+
+impl Cursor<'_> {
+    /// Остались ли непрочитанные байты.
+    fn is_empty(&self) -> bool {
+        self.offset >= self.raw.len()
+    }
+
+    /// Читает один байт.
+    fn take_u8(&mut self) -> Result<u8> {
+        let byte = *self.raw.get(self.offset).ok_or(AegisError::Malformed)?;
+        self.offset = self.offset.saturating_add(1);
+
+        Ok(byte)
+    }
+
+    /// Читает ровно `count` байт.
+    fn take_exact(&mut self, count: usize) -> Result<&[u8]> {
+        let end = self.offset.checked_add(count).ok_or(AegisError::Malformed)?;
+
+        let slice = self
+            .raw
+            .get(self.offset..end)
+            .ok_or(AegisError::Malformed)?;
+
+        self.offset = end;
+
+        Ok(slice)
+    }
+
+    /// Читает блок с длиной впереди.
+    fn take_bytes(&mut self) -> Result<&[u8]> {
+        let length = u32::from_be_bytes(
+            self.take_exact(4)?
+                .try_into()
+                .map_err(|_| AegisError::Malformed)?,
+        );
+
+        let count = usize::try_from(length).map_err(|_| AegisError::Malformed)?;
+
+        self.take_exact(count)
+    }
+
+    /// Читает необязательную строку.
+    fn take_optional_str(&mut self) -> Result<Option<String>> {
+        match self.take_u8()? {
+            ABSENT => Ok(None),
+            PRESENT => {
+                let text = String::from_utf8(self.take_bytes()?.to_vec())
+                    .map_err(|_| AegisError::Malformed)?;
+
+                Ok(Some(text))
+            }
+            _ => Err(AegisError::Malformed),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,6 +501,118 @@ mod tests {
             waveform: None,
             preview: None,
         }
+    }
+
+
+    /// Описание переживает круг сериализации.
+    #[test]
+    fn descriptor_round_trips() {
+        let mut original = document();
+        original.description = Some("скан договора".to_owned());
+        original.preview = Some(PreviewRef {
+            location: "blob-preview".to_owned(),
+            key: [0x99; KEY_LEN],
+        });
+
+        let restored =
+            AttachmentDescriptor::from_bytes(&original.to_bytes().expect("сериализация"))
+                .expect("разбор");
+
+        assert_eq!(restored.kind, original.kind);
+        assert_eq!(restored.location, original.location);
+        assert_eq!(restored.key, original.key);
+        assert_eq!(restored.size, original.size);
+        assert_eq!(restored.name, original.name);
+        assert_eq!(restored.description, original.description);
+        assert_eq!(
+            restored.preview.map(|preview| preview.location),
+            Some("blob-preview".to_owned())
+        );
+    }
+
+    /// Голосовое с огибающей и длительностью переживает круг.
+    #[test]
+    fn voice_descriptor_round_trips() {
+        let mut original = document();
+        original.kind = AttachmentKind::Voice;
+        original.name = None;
+        original.duration_millis = Some(7_500);
+        original.waveform = Some((0..64u8).collect());
+
+        let restored =
+            AttachmentDescriptor::from_bytes(&original.to_bytes().expect("сериализация"))
+                .expect("разбор");
+
+        assert_eq!(restored.duration_millis, Some(7_500));
+        assert_eq!(restored.waveform, original.waveform);
+        assert!(restored.name.is_none());
+    }
+
+    /// 🔐 Обрыв на любом байте отвергается, а не читается частично.
+    ///
+    /// Обрезанное описание приходит по сети от собеседника; чтение
+    /// «сколько получится» дало бы ключ или размер, взятые не оттуда.
+    #[test]
+    fn truncation_at_every_offset_is_rejected() {
+        let encoded = document().to_bytes().expect("сериализация");
+
+        for length in 0..encoded.len() {
+            assert!(
+                AttachmentDescriptor::from_bytes(&encoded[..length]).is_err(),
+                "обрезка до {length} байт прошла разбор"
+            );
+        }
+    }
+
+    /// 🔐 Лишний хвост отвергается.
+    ///
+    /// Он означает, что отправитель имел в виду что-то ещё, чего
+    /// этот разбор не понял.
+    #[test]
+    fn trailing_bytes_are_rejected() {
+        let mut encoded = document().to_bytes().expect("сериализация");
+        encoded.push(0);
+
+        assert!(AttachmentDescriptor::from_bytes(&encoded).is_err());
+    }
+
+    /// 🔐 Незнакомая версия отвергается.
+    ///
+    /// Угадывать раскладку значило бы прочитать ключ не оттуда.
+    #[test]
+    fn unknown_version_is_rejected() {
+        let mut encoded = document().to_bytes().expect("сериализация");
+        encoded[0] = DESCRIPTOR_VERSION.saturating_add(1);
+
+        assert!(AttachmentDescriptor::from_bytes(&encoded).is_err());
+    }
+
+    /// 🔐 Длина, обещающая больше, чем есть, отвергается.
+    ///
+    /// Иначе разбор попытался бы прочитать за пределами буфера
+    /// по числу, которое назвал собеседник.
+    #[test]
+    fn oversized_length_prefix_is_rejected() {
+        let mut encoded = document().to_bytes().expect("сериализация");
+
+        // Длина адреса блоба лежит сразу после версии и типа.
+        encoded[2] = 0xFF;
+        encoded[3] = 0xFF;
+
+        assert!(AttachmentDescriptor::from_bytes(&encoded).is_err());
+    }
+
+    /// 🔐 Описание, нарушающее границы, не сериализуется.
+    ///
+    /// Отправить то, что собеседник обязан отвергнуть, — значит
+    /// показать пользователю доставленное сообщение, которого
+    /// на той стороне нет.
+    #[test]
+    fn invalid_descriptor_is_not_serialized() {
+        let mut descriptor = document();
+        descriptor.name = Some("../../etc/passwd".to_owned());
+
+        assert!(descriptor.to_bytes().is_err());
     }
 
     #[test]

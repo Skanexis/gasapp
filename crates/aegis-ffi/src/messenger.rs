@@ -47,6 +47,7 @@ pub trait HttpTransport: Send + Sync {
         method: String,
         path: String,
         body: Option<String>,
+        binary_body: Option<Vec<u8>>,
         headers: Vec<FfiHeader>,
     ) -> Result<FfiHttpResponse, FfiError>;
 }
@@ -71,6 +72,16 @@ pub struct FfiHttpResponse {
     pub status: u16,
     /// Тело ответа.
     pub body: String,
+    /// Тело ответа в сырых байтах — для скачанных вложений.
+    ///
+    /// Пусто для обычных ответов: они текстовые, и держать копию
+    /// каждого JSON в байтах значило бы удваивать память на ровном
+    /// месте.
+    ///
+    /// 🔐 Для вложений передаётся именно так, а не в hex: hex удваивает
+    /// объём, и стомегабайтный файл занял бы двести мегабайт памяти
+    /// на границе FFI.
+    pub binary_body: Vec<u8>,
 }
 
 /// Мост между колбэком платформы и внутренним трейтом транспорта.
@@ -86,6 +97,7 @@ impl Transport for ForeignTransport {
                 request.method.as_str().to_owned(),
                 request.path.clone(),
                 request.body.clone(),
+                request.binary_body.clone(),
                 request
                     .headers
                     .iter()
@@ -103,6 +115,7 @@ impl Transport for ForeignTransport {
         Ok(HttpResponse {
             status: response.status,
             body: response.body,
+            binary_body: response.binary_body,
         })
     }
 }
@@ -694,4 +707,139 @@ fn parse_message_id(raw: &str) -> Result<MessageId, FfiError> {
     let uuid = uuid::Uuid::parse_str(raw).map_err(|_| FfiError::InvalidArgument)?;
 
     Ok(MessageId::from_uuid(uuid))
+}
+
+/// Вложения: голосовые, фото, видео, документы.
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum FfiAttachmentKind {
+    /// Изображение.
+    Image,
+    /// Видео.
+    Video,
+    /// Голосовое сообщение.
+    Voice,
+    /// Произвольный файл.
+    Document,
+}
+
+impl From<FfiAttachmentKind> for aegis_media::descriptor::AttachmentKind {
+    fn from(kind: FfiAttachmentKind) -> Self {
+        match kind {
+            FfiAttachmentKind::Image => Self::Image,
+            FfiAttachmentKind::Video => Self::Video,
+            FfiAttachmentKind::Voice => Self::Voice,
+            FfiAttachmentKind::Document => Self::Document,
+        }
+    }
+}
+
+/// Файл, который пользователь отправляет вложением.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAttachmentFile {
+    /// Тип: от него зависит поведение получателя.
+    ///
+    /// Определяется приложением, а не расширением имени: имя выбирает
+    /// отправитель, и «отчёт.jpg», который на деле исполняемый файл,
+    /// не должен открываться как картинка.
+    pub kind: FfiAttachmentKind,
+    /// Содержимое файла в открытом виде.
+    pub bytes: Vec<u8>,
+    /// Имя файла.
+    ///
+    /// 🔐 Уходит зашифрованным вместе с описанием: «результаты
+    /// анализов.jpg» говорит о человеке больше, чем сам факт отправки.
+    pub name: Option<String>,
+    /// Описание для незрячих пользователей.
+    pub description: Option<String>,
+    /// Длительность — для голосовых и видео.
+    pub duration_millis: Option<u32>,
+    /// Огибающая громкости — для голосовых.
+    pub waveform: Option<Vec<u8>>,
+}
+
+impl From<FfiAttachmentFile> for aegis_core::client::AttachmentFile {
+    fn from(file: FfiAttachmentFile) -> Self {
+        Self {
+            kind: file.kind.into(),
+            bytes: file.bytes,
+            name: file.name,
+            description: file.description,
+            duration_millis: file.duration_millis,
+            waveform: file.waveform,
+        }
+    }
+}
+
+#[uniffi::export]
+impl Messenger {
+    /// Отправляет файл вложением.
+    ///
+    /// # Что происходит внутри
+    ///
+    /// Файл шифруется случайным ключом, режется на чанки по 64 КБ
+    /// и уходит на сервер. Описание — адрес, ключ, имя, тип —
+    /// отправляется **внутри сообщения**, под сквозным шифрованием.
+    ///
+    /// 🔐 Сервер получает только байты и их длину. Ни имени файла,
+    /// ни получателя, ни ключа он не видит.
+    ///
+    /// # Про поток
+    ///
+    /// Вызывать в фоне: шифрование стомегабайтного файла и его
+    /// загрузка занимают секунды, и держать на них главный поток
+    /// нельзя.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — файл больше предела, описание не проходит
+    /// проверку либо отправка не удалась.
+    pub fn send_attachment(
+        &self,
+        peer_username: String,
+        device_id: String,
+        file: FfiAttachmentFile,
+        body: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let file = aegis_core::client::AttachmentFile::from(file);
+
+        guard(|| {
+            client.send_attachment(
+                &peer_username,
+                &device_id,
+                &file,
+                &body,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Скачивает и расшифровывает вложение по его описанию.
+    ///
+    /// `descriptor` — те самые байты, что пришли внутри сообщения.
+    ///
+    /// 🔐 Расшифровка проверяет тег каждого чанка: подменённый сервером
+    /// файл вернёт ошибку, а не покажется пользователю содержимым.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — описание не разбирается, скачивание
+    /// не удалось либо блоб подменён.
+    pub fn fetch_attachment(
+        &self,
+        device_id: String,
+        descriptor: Vec<u8>,
+        now_millis: i64,
+    ) -> Result<Vec<u8>, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            let descriptor =
+                aegis_media::descriptor::AttachmentDescriptor::from_bytes(&descriptor)?;
+
+            client.fetch_attachment(&device_id, &descriptor, Timestamp::from_millis(now_millis))
+        })
+    }
 }
