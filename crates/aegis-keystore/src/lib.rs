@@ -7,6 +7,7 @@
 //! - Использует HKDF-SHA-256 для производства ключей с domain separation
 //! - Поддерживает аппаратное хранение через трейт [`HardwareKeyProvider`]
 //! - Обеспечивает graceful degradation на устройствах без TEE
+pub mod pin;
 
 use aegis_types::{AegisError, Result, Secret};
 use async_trait::async_trait;
