@@ -16,6 +16,7 @@ import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
 import uniffi.aegis.FfiException
+import uniffi.aegis.deriveStorageKey
 
 /**
  * Онбординг: регистрация первого аккаунта.
@@ -28,6 +29,7 @@ import uniffi.aegis.FfiException
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var username: AegisTextField
+    private lateinit var pin: AegisTextField
     private lateinit var error: TextView
     private lateinit var progress: ProgressBar
     private lateinit var progressLabel: TextView
@@ -38,6 +40,7 @@ class OnboardingActivity : AppCompatActivity() {
         setContentView(R.layout.activity_onboarding)
 
         username = findViewById(R.id.onboarding_username)
+        pin = findViewById(R.id.onboarding_pin)
         error = findViewById(R.id.onboarding_error)
         progress = findViewById(R.id.onboarding_progress)
         progressLabel = findViewById(R.id.onboarding_progress_label)
@@ -48,9 +51,16 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun register() {
         val name = username.text?.toString()?.trim().orEmpty()
+        val pinValue = pin.text?.toString().orEmpty()
 
         if (name.length < MIN_USERNAME_LENGTH) {
             showError(getString(R.string.onboarding_error_short))
+
+            return
+        }
+
+        if (pinValue.length < MIN_PIN_LENGTH) {
+            showError(getString(R.string.onboarding_error_pin_short))
 
             return
         }
@@ -60,13 +70,18 @@ class OnboardingActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    // 🔐 Ключ хранилища выводится из PIN в aegis-keystore.
-                    // Пока онбординг работает до установки PIN, поэтому
-                    // база открывается временным ключом — настоящий
-                    // придёт вместе с экраном создания PIN.
+                    // 🔐 Ключ хранилища выводится из PIN через Argon2id.
+                    // Это занимает около секунды и происходит в фоновом
+                    // потоке: задержка здесь — цена того, что перебор
+                    // PIN на изъятом устройстве занимает годы.
+                    val key = deriveStorageKey(
+                        pinValue,
+                        Core.salt(this@OnboardingActivity),
+                    )
+
                     // Общий экземпляр: второй открыл бы ту же базу
                     // повторно, и состояния Double Ratchet разошлись бы.
-                    Core.messenger(this@OnboardingActivity)
+                    Core.open(this@OnboardingActivity, key)
                         .register(name, System.currentTimeMillis())
                 }
             }
@@ -142,6 +157,15 @@ class OnboardingActivity : AppCompatActivity() {
          * бы занять их все до появления настоящих пользователей.
          */
         private const val MIN_USERNAME_LENGTH = 3
+
+        /**
+         * Минимальная длина PIN.
+         *
+         * Совпадает с проверкой в ядре: шесть символов вместе
+         * с растягиванием Argon2id делают перебор изъятого устройства
+         * делом лет, а не часов.
+         */
+        private const val MIN_PIN_LENGTH = 6
 
         /** Размер ключа SQLCipher. */
         private const val DATABASE_KEY_SIZE = 32
