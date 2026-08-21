@@ -312,3 +312,55 @@ impl Messenger {
             .collect())
     }
 }
+
+/// Дополнительные операции хранилища.
+#[uniffi::export]
+impl Messenger {
+    /// Удаляет истёкшие сообщения.
+    ///
+    /// 🔐 Вызывать **сразу после открытия** хранилища и затем
+    /// периодически. Таймер в приложении работает, только пока оно
+    /// запущено: сообщение с часовым сроком, полученное перед тем,
+    /// как телефон убрали на неделю, пережило бы свой срок в семь раз.
+    /// Изъятие устройства показало бы переписку, которую пользователь
+    /// считает исчезнувшей.
+    ///
+    /// Возвращает число удалённых сообщений.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — удаление не удалось.
+    pub fn purge_expired(&self, now_millis: i64) -> Result<u32, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let removed = guard(|| client.purge_expired(Timestamp::from_millis(now_millis)))?;
+
+        u32::try_from(removed).map_err(|_| FfiError::InvalidArgument)
+    }
+
+    /// Задаёт таймер исчезающих сообщений для чата.
+    ///
+    /// `seconds` равное нулю выключает таймер.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разбирается;
+    /// [`FfiError::Core`] — запись не удалась.
+    pub fn set_disappearing_timer(
+        &self,
+        chat_id: String,
+        seconds: u32,
+    ) -> Result<(), FfiError> {
+        let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.set_disappearing_timer(
+                &ChatId::from_uuid(parsed),
+                // Ноль означает «выключить»: отдельный флаг здесь был бы
+                // лишним состоянием, которое можно рассогласовать.
+                if seconds == 0 { None } else { Some(seconds) },
+            )
+        })
+    }
+}
