@@ -125,6 +125,10 @@
         <activity
             android:name=".ContactProfileActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".CallsActivity"
+            android:exported="false" />
         <!-- FFI service bindings will be added here -->
 
     </application>

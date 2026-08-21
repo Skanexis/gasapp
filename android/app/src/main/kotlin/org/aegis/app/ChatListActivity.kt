@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
 
@@ -56,6 +57,7 @@ class ChatListActivity : AppCompatActivity() {
         }
 
         bindNavigation()
+        BottomNav.highlight(this, BottomNav.Tab.Chats)
 
         findViewById<ImageView>(R.id.chat_list_search).setOnClickListener {
             startActivity(Intent(this, SearchActivity::class.java))
@@ -133,6 +135,10 @@ class ChatListActivity : AppCompatActivity() {
      * сколько было переключений.
      */
     private fun bindNavigation() {
+        findViewById<View>(R.id.nav_calls).setOnClickListener {
+            startActivity(Intent(this, CallsActivity::class.java))
+            finish()
+        }
         findViewById<View>(R.id.nav_contacts).setOnClickListener {
             startActivity(Intent(this, ContactsActivity::class.java))
             finish()

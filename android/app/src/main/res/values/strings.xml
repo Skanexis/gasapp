@@ -157,4 +157,15 @@
     <string name="contact_profile_unverified_hint">Пока ключ не сверен, нельзя быть уверенным, что переписка идёт с тем, кем представился собеседник.</string>
     <string name="contact_profile_open_chat">Открыть переписку</string>
     <string name="contact_profile_key">Identity-ключ</string>
+
+    <!-- Журнал звонков. -->
+    <string name="calls_filter_all">Все</string>
+    <string name="calls_filter_missed">Пропущенные</string>
+    <string name="calls_empty">Звонков пока нет</string>
+    <string name="calls_encrypted_note">Все звонки защищены сквозным шифрованием</string>
+    <string name="call_back">Позвонить</string>
+    <string name="call_incoming">Входящий · %1$s</string>
+    <string name="call_outgoing">Исходящий · %1$s</string>
+    <string name="call_missed">Пропущенный · %1$s</string>
+    <string name="call_video">Видео · %1$s</string>
 </resources>
