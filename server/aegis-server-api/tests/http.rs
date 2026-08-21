@@ -504,6 +504,7 @@ async fn notification_crosses_nodes_through_postgres() {
     let listener = tokio::spawn(aegis_server_api::hub::listen(
         pool.clone(),
         std::sync::Arc::clone(&node_b),
+        std::sync::Arc::new(aegis_server_api::health::HealthState::new()),
     ));
 
     // Слушателю нужно время на подписку: NOTIFY до LISTEN теряется.
@@ -521,4 +522,57 @@ async fn notification_crosses_nodes_through_postgres() {
     assert!(delivered.is_some(), "канал закрылся вместо доставки");
 
     listener.abort();
+}
+
+/// 🔐 Ручка здоровья не выдаёт метаданных о пользователях.
+///
+/// Главная проверка мониторинга. Число подключённых устройств, размер
+/// очереди или количество аккаунтов выглядят безобидными метриками,
+/// а на деле описывают поведение людей: когда сообщество активно,
+/// растёт ли оно, когда случаются всплески. Собранные за месяц, они
+/// дают ровно то, ради чего наблюдают за мессенджерами.
+///
+/// Тест перечисляет запрещённые поля явно, а не проверяет «нет лишнего»:
+/// так видно, что именно решено не отдавать, и добавление такого поля
+/// потребует осознанной правки теста.
+#[tokio::test]
+async fn health_reveals_no_user_metadata() {
+    let Some(state) = state().await else {
+        eprintln!("пропущено: нет DATABASE_URL");
+
+        return;
+    };
+
+    let app = aegis_server_api::routes::router(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .expect("запрос"),
+        )
+        .await
+        .expect("ответ");
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("тело");
+    let text = String::from_utf8_lossy(&body);
+
+    for forbidden in [
+        "devices",       // сколько людей сейчас в сети
+        "connections",   // то же самое другими словами
+        "accounts",      // размер сообщества и его рост
+        "envelopes",     // сколько сейчас переписываются
+        "queue",         // то же самое
+        "messages",      // объём трафика
+        "requests",      // суточный ритм активности
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "ручка здоровья отдаёт «{forbidden}» — это метаданные о пользователях, \
+             а не о работоспособности узла"
+        );
+    }
 }
