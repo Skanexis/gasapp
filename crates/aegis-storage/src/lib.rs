@@ -195,6 +195,15 @@ pub struct StoredMessage {
     pub status: MessageStatus,
     /// Тип сообщения: текст, вложение, системное.
     pub message_type: u8,
+
+    /// Момент истечения в миллисекундах.
+    ///
+    /// `None` — сообщение не исчезает. Заполняется из таймера чата
+    /// при сохранении: хранить срок в самом сообщении надёжнее, чем
+    /// вычислять его при чтении, — смена таймера чата не должна
+    /// задним числом продлевать или сокращать жизнь уже полученных
+    /// сообщений.
+    pub expires_at: Option<Timestamp>,
 }
 
 /// Метаданные вложения.
@@ -287,6 +296,14 @@ impl Storage {
         // Выполняем миграции схемы базы данных
         Self::migrate_schema(&connection, Self::SCHEMA_VERSION)?;
 
+        // 🔐 Истёкшие сообщения удаляются вызывающей стороной сразу
+        // после открытия — см. `purge_expired`.
+        //
+        // Не здесь, потому что крейт не обращается к системным часам:
+        // это условие воспроизводимости тестов (раздел 9.2 плана).
+        // Время приходит снаружи, поэтому и чистку запускает тот, кто
+        // им располагает. Пропустить этот вызов — значит оставить
+        // на диске переписку, которую пользователь считает исчезнувшей.
         Ok(Storage {
             connection: Mutex::new(connection),
             initialized: RwLock::new(true),
@@ -629,7 +646,14 @@ impl Storage {
                 content BLOB NOT NULL,
                 status INTEGER NOT NULL,
                 message_type INTEGER NOT NULL,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+
+                -- 🔐 Момент, после которого сообщение подлежит удалению.
+                --
+                -- NULL означает «не истекает». Поле в самой таблице,
+                -- а не в отдельной: удаление должно быть одним запросом,
+                -- иначе часть сообщений переживёт сбой посреди чистки.
+                expires_at INTEGER
             )
             ",
                 [],
@@ -985,8 +1009,8 @@ impl Storage {
                 "
             INSERT OR REPLACE INTO messages
                 (message_id, chat_id, sender_id, timestamp, content, status,
-                 message_type, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 message_type, created_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
                 params![
                     message.id.as_bytes(),
@@ -997,6 +1021,7 @@ impl Storage {
                     i64::from(message.status.as_u8()),
                     i64::from(message.message_type),
                     message.timestamp.as_millis(),
+                    message.expires_at.map(Timestamp::as_millis),
                 ],
             )
             .map_err(storage_error)?;
@@ -1019,7 +1044,7 @@ impl Storage {
             .prepare(
                 "
             SELECT message_id, chat_id, sender_id, timestamp, content,
-                   status, message_type
+                   status, message_type, expires_at
             FROM messages
             WHERE chat_id = ?
             ORDER BY timestamp ASC, rowid ASC
@@ -1038,13 +1063,14 @@ impl Storage {
                     row.get::<_, Vec<u8>>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
                 ))
             })
             .map_err(storage_error)?;
 
         let mut messages = Vec::new();
         for row in rows {
-            let (id, chat, sender, timestamp, content, status, kind) =
+            let (id, chat, sender, timestamp, content, status, kind, expires) =
                 row.map_err(storage_error)?;
 
             messages.push(StoredMessage {
@@ -1055,6 +1081,7 @@ impl Storage {
                 content: Ciphertext::new(content),
                 status: MessageStatus::from_u8(u8::try_from(status).unwrap_or(0)),
                 message_type: u8::try_from(kind).unwrap_or(0),
+                expires_at: expires.map(Timestamp::from_millis),
             });
         }
 
@@ -1083,6 +1110,69 @@ impl Storage {
     ///
     /// Физическое удаление, а не пометка: `PRAGMA secure_delete = ON`
     /// перезаписывает освобождённые страницы, поэтому содержимое
+
+    /// Удаляет истёкшие сообщения.
+    ///
+    /// # 🔐 Почему при открытии базы, а не по таймеру
+    ///
+    /// Таймер в памяти работает, только пока приложение запущено.
+    /// Сообщение с часовым сроком, полученное перед тем, как телефон
+    /// убрали в ящик на неделю, пережило бы этот срок в семь раз —
+    /// и лежало бы на диске всё это время. Изъятие устройства
+    /// показало бы переписку, которую пользователь считает исчезнувшей.
+    ///
+    /// Поэтому чистка происходит при каждом открытии хранилища,
+    /// а таймер в приложении лишь дополняет её для уже открытой базы.
+    ///
+    /// # Про `VACUUM`
+    ///
+    /// Не вызывается: он перестраивает файл целиком и на большой базе
+    /// занимает секунды, а `secure_delete = ON` (см. PRAGMA при
+    /// открытии) уже затирает освобождённые страницы нулями.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — удаление не удалось.
+    pub fn purge_expired(&self, now: Timestamp) -> Result<usize> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        // Одним запросом: чистка по одному сообщению пережила бы сбой
+        // посреди себя, оставив часть истёкших на диске.
+        let removed = conn
+            .execute(
+                "DELETE FROM messages WHERE expires_at IS NOT NULL AND expires_at <= ?",
+                params![now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
+        Ok(removed)
+    }
+
+    /// Вычисляет момент истечения по таймеру чата.
+    ///
+    /// Возвращает `None`, если у чата нет таймера.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение таймера не удалось.
+    pub fn expiry_for_chat(
+        &self,
+        chat_id: &ChatId,
+        now: Timestamp,
+    ) -> Result<Option<Timestamp>> {
+        let Some(seconds) = self.get_disappearing_timer(chat_id)? else {
+            return Ok(None);
+        };
+
+        // Отсчёт от момента получения, а не от отправки: часы
+        // отправителя могут отставать или спешить, и сообщение
+        // исчезло бы у получателя раньше, чем тот успел его прочитать.
+        let millis = i64::from(seconds).saturating_mul(1_000);
+
+        Ok(Some(Timestamp::from_millis(
+            now.as_millis().saturating_add(millis),
+        )))
+    }
     /// не остаётся в файле (раздел 11.3 плана).
     ///
     /// # Errors
@@ -1623,6 +1713,7 @@ mod tests {
             content: Ciphertext::new(b"encrypted blob".to_vec()),
             status: MessageStatus::Sent,
             message_type: 0,
+            expires_at: None,
         };
 
         storage.save_message(&message).unwrap();
@@ -1652,6 +1743,7 @@ mod tests {
                     content: Ciphertext::new(vec![u8::try_from(offset).unwrap_or(0)]),
                     status: MessageStatus::Sent,
                     message_type: 0,
+                    expires_at: None,
                 })
                 .unwrap();
         }
@@ -1681,6 +1773,7 @@ mod tests {
                     content: Ciphertext::new(vec![0]),
                     status: MessageStatus::Pending,
                     message_type: 0,
+                    expires_at: None,
                 })
                 .unwrap();
         }
@@ -1705,6 +1798,7 @@ mod tests {
                     content: Ciphertext::new(vec![1]),
                     status: MessageStatus::Sent,
                     message_type: 0,
+                    expires_at: None,
                 })
                 .unwrap();
         }
@@ -1728,6 +1822,7 @@ mod tests {
                 content: Ciphertext::new(vec![1]),
                 status: MessageStatus::Pending,
                 message_type: 0,
+                expires_at: None,
             })
             .unwrap();
 
@@ -1758,6 +1853,7 @@ mod tests {
                 content: Ciphertext::new(vec![1]),
                 status: MessageStatus::Sent,
                 message_type: 0,
+                expires_at: None,
             })
             .unwrap();
 
@@ -1907,6 +2003,7 @@ mod tests {
                 content: Ciphertext::new(vec![1]),
                 status: MessageStatus::Sent,
                 message_type: 0,
+                expires_at: None,
             })
             .unwrap();
 
@@ -1946,6 +2043,7 @@ mod tests {
                 content: Ciphertext::new(CANARY.as_bytes().to_vec()),
                 status: MessageStatus::Sent,
                 message_type: 0,
+                expires_at: None,
             })
             .unwrap();
         storage
@@ -2112,5 +2210,125 @@ mod tests {
         // искать новое сообщение прокруткой.
         assert_eq!(chats[0].chat_id, newer);
         assert_eq!(chats[1].chat_id, older);
+    }
+
+    /// 🔐 Истёкшие сообщения удаляются после холодного старта.
+    ///
+    /// Требование раздела M5. Таймер в памяти работает, только пока
+    /// приложение запущено: сообщение с часовым сроком, полученное
+    /// перед тем, как телефон убрали в ящик на неделю, пережило бы
+    /// свой срок в семь раз. Изъятие устройства показало бы переписку,
+    /// которую пользователь считает исчезнувшей.
+    #[test]
+    fn expired_messages_are_purged_after_cold_start() {
+        let key = test_key();
+        let (storage, _dir, path) = open_temp(&key);
+
+        let chat = ChatId::generate();
+        let expiring = MessageId::generate();
+        let permanent = MessageId::generate();
+
+        let sent = Timestamp::from_millis(1_000);
+
+        storage
+            .save_message(&StoredMessage {
+                id: expiring,
+                chat_id: chat,
+                sender_id: AccountId::generate(),
+                timestamp: sent,
+                content: Ciphertext::new(b"disappears".to_vec()),
+                status: MessageStatus::Delivered,
+                message_type: 0,
+                expires_at: Some(Timestamp::from_millis(2_000)),
+            })
+            .expect("сообщение сохранено");
+
+        storage
+            .save_message(&StoredMessage {
+                id: permanent,
+                chat_id: chat,
+                sender_id: AccountId::generate(),
+                timestamp: sent,
+                content: Ciphertext::new(b"stays".to_vec()),
+                status: MessageStatus::Delivered,
+                message_type: 0,
+                expires_at: None,
+            })
+            .expect("сообщение сохранено");
+
+        // Холодный старт: приложение закрыли и открыли позже срока.
+        drop(storage);
+
+        let reopened = Storage::new(&path, &key).expect("база открывается");
+        let removed = reopened
+            .purge_expired(Timestamp::from_millis(3_000))
+            .expect("чистка");
+
+        assert_eq!(removed, 1, "удалено не одно сообщение");
+
+        let remaining = reopened.load_messages(&chat, 10).expect("чтение");
+
+        assert_eq!(remaining.len(), 1, "истёкшее сообщение пережило чистку");
+        assert_eq!(remaining[0].id, permanent);
+    }
+
+    /// Сообщение, срок которого ещё не наступил, остаётся.
+    #[test]
+    fn unexpired_message_survives_purge() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let chat = ChatId::generate();
+
+        storage
+            .save_message(&StoredMessage {
+                id: MessageId::generate(),
+                chat_id: chat,
+                sender_id: AccountId::generate(),
+                timestamp: now(),
+                content: Ciphertext::new(b"later".to_vec()),
+                status: MessageStatus::Delivered,
+                message_type: 0,
+                expires_at: Some(Timestamp::from_millis(10_000)),
+            })
+            .expect("сообщение сохранено");
+
+        let removed = storage
+            .purge_expired(Timestamp::from_millis(5_000))
+            .expect("чистка");
+
+        assert_eq!(removed, 0);
+        assert_eq!(storage.load_messages(&chat, 10).expect("чтение").len(), 1);
+    }
+
+    /// Срок отсчитывается от момента получения, а не отправки.
+    ///
+    /// Часы отправителя могут спешить, и сообщение исчезло бы
+    /// у получателя раньше, чем тот успел его прочитать.
+    #[test]
+    fn expiry_counts_from_receipt() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let chat = ChatId::generate();
+
+        storage
+            .set_disappearing_timer(&chat, Some(60))
+            .expect("таймер установлен");
+
+        let received = Timestamp::from_millis(100_000);
+        let expiry = storage
+            .expiry_for_chat(&chat, received)
+            .expect("вычисление")
+            .expect("таймер задан");
+
+        assert_eq!(expiry.as_millis(), 160_000);
+    }
+
+    /// У чата без таймера сообщения не истекают.
+    #[test]
+    fn chat_without_timer_has_no_expiry() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        assert!(storage
+            .expiry_for_chat(&ChatId::generate(), now())
+            .expect("вычисление")
+            .is_none());
     }
 }
