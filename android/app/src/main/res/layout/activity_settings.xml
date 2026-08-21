@@ -60,6 +60,18 @@
                         android:fontFamily="@font/inter_semibold"
                         tools:text="MK" />
 
+                    <!--
+                      🔐 Значок сверки на **своём** профиле скрыт.
+
+                      В макете он нарисован, но означать здесь ему
+                      нечего: сверяют чужой ключ, а не свой, и галочка
+                      рядом с собственным именем — утверждение
+                      о безопасности, которое никто не делал.
+
+                      Элемент оставлен на месте: он понадобится, когда
+                      появится подтверждение аккаунта, и тогда его
+                      покажет код, а не разметка.
+                    -->
                     <ImageView
                         android:id="@+id/profile_verified"
                         android:layout_width="18dp"
@@ -69,7 +81,9 @@
                         android:contentDescription="@string/chat_verified_mark"
                         android:padding="3dp"
                         android:src="@drawable/ic_check"
-                        android:tint="@color/accent_on" />
+                        android:tint="@color/accent_on"
+                        android:visibility="gone"
+                        tools:visibility="visible" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -141,6 +155,29 @@
 
             <include
                 android:id="@+id/settings_devices"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_appearance"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_storage"
                 layout="@layout/item_settings_row" />
 
             <View
