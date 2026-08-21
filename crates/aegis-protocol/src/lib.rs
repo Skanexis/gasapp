@@ -27,6 +27,7 @@
 //
 pub mod aead;
 pub mod envelope;
+pub mod content;
 pub mod double_ratchet;
 pub mod engine;
 pub mod keys;
