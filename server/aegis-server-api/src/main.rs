@@ -73,11 +73,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     rand::rngs::OsRng.fill_bytes(&mut limiter_salt);
 
     let state = Arc::new(AppState::new(pool, limiter_salt));
-    let listener = tokio::net::TcpListener::bind(bind).await?;
+    let app = router(state);
 
-    tracing::info!(address = %bind, "сервер AEGIS слушает");
+    // TLS обязателен: клиент запрещает открытый трафик через
+    // network_security_config.xml. Сертификат и ключ задаются путями
+    // в окружении — самоподписанный для локальной проверки,
+    // выданный удостоверяющим центром в бою.
+    match (std::env::var("AEGIS_TLS_CERT"), std::env::var("AEGIS_TLS_KEY")) {
+        (Ok(cert), Ok(key)) => {
+            let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+                .await
+                .map_err(|error| format!("не удалось прочитать сертификат: {error}"))?;
 
-    axum::serve(listener, router(state)).await?;
+            tracing::info!(address = %bind, "сервер AEGIS слушает по TLS");
+
+            axum_server::bind_rustls(bind, config)
+                .serve(app.into_make_service())
+                .await?;
+        }
+        _ => {
+            // Открытый HTTP оставлен только для интеграционных тестов,
+            // где сертификат не нужен, и сопровождается предупреждением:
+            // молчаливый откат к незашифрованному каналу — худший вид
+            // отказа защиты.
+            tracing::warn!(
+                address = %bind,
+                "AEGIS_TLS_CERT и AEGIS_TLS_KEY не заданы: сервер слушает БЕЗ ШИФРОВАНИЯ"
+            );
+
+            let listener = tokio::net::TcpListener::bind(bind).await?;
+            axum::serve(listener, app).await?;
+        }
+    }
 
     Ok(())
 }

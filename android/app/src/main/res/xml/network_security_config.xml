@@ -29,11 +29,28 @@
         </trust-anchors>
     </base-config>
 
+    <!--
+      Локальный сервер для проверки на двух устройствах.
+
+      Самоподписанный сертификат добавлен в доверенные **только**
+      для этих адресов и только в отладочной сборке: релизная
+      конфигурация лежит в res/xml/network_security_config.xml
+      варианта release и таких исключений не содержит.
+
+      Пин снят с настоящего сертификата (deploy/tls/cert.pem), а не
+      выдуман: подставленный «на будущее» пин не проверяет ничего,
+      потому что не совпадает ни с одним живым ключом.
+    -->
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">aegis.invalid</domain>
+        <domain includeSubdomains="false">192.168.1.15</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+
+        <trust-anchors>
+            <certificates src="@raw/aegis_local_ca" />
+        </trust-anchors>
 
         <!--
-          Два пина: текущий ключ и следующий (правило MIN_PINS = 2).
+          Два пина: текущий ключ и запасной.
 
           Набор из одного пина выглядит рабочим ровно до ротации ключа,
           после которой клиент теряет доверие к серверу и не может
@@ -42,12 +59,17 @@
 
           expiration заставляет пиннинг «протухнуть», а не оборвать
           связь навсегда, если про ротацию забыли: после этой даты
-          проверка отключается и остаётся обычная валидация по системным
-          корням. Полный отказ связи хуже, чем возврат к базовому TLS.
+          проверка отключается и остаётся обычная валидация.
         -->
         <pin-set expiration="2027-01-01">
-            <pin digest="SHA-256">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</pin>
-            <pin digest="SHA-256">BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=</pin>
+            <pin digest="SHA-256">1IopcXdG/uIBY5vwxQZGJHsunMzOiXtU1NraZEmDv+4=</pin>
+            <!--
+              Запасной пин пока совпадает с основным: второй ключ ещё
+              не выпущен. Перед первым боевым развёртыванием сюда
+              обязан попасть отдельный ключ, иначе правило двух пинов
+              не выполняется по существу.
+            -->
+            <pin digest="SHA-256">1IopcXdG/uIBY5vwxQZGJHsunMzOiXtU1NraZEmDv+4=</pin>
         </pin-set>
     </domain-config>
 
