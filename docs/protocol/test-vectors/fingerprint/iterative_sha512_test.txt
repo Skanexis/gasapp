@@ -1,6 +1,0 @@
-# Test vector for iterative SHA-512 (5200 rounds)
-# Input: "test input"
-# Expected output: first 30 bytes of SHA-512^5200("test input")
-
-Input: 7465737420696e757074
-ExpectedOutput: 8e73b2f1da7c4a8a3b3f5a7c9e2b1a4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2

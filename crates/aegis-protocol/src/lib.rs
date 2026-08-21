@@ -31,6 +31,7 @@ pub mod double_ratchet;
 pub mod engine;
 pub mod keys;
 pub mod mlkem;
+pub mod qr;
 pub mod pqxdh;
 pub mod prekeys;
 pub mod protocol_engine;

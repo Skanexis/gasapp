@@ -11,7 +11,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import uniffi.aegis.FfiException
+import android.widget.ImageView
+import org.aegis.app.ui.QrDrawable
 import uniffi.aegis.computeFingerprint
+import uniffi.aegis.safetyNumberQr
 import uniffi.aegis.formatSafetyNumber
 import uniffi.aegis.generateIdentityPublicKey
 
@@ -72,7 +75,13 @@ class SafetyNumberActivity : AppCompatActivity() {
             }
 
             result
-                .onSuccess { digits.text = it }
+                .onSuccess { number ->
+                    digits.text = number
+
+                    // QR строится из тех же цифр, что показаны рядом:
+                    // разойтись они не могут, потому что источник один.
+                    renderQr(number)
+                }
                 // FfiException ловится отдельно: текст ошибки ядра
                 // намеренно неинформативен, поэтому в UI показывается
                 // собственная строка, а не `e.message`.
@@ -86,6 +95,24 @@ class SafetyNumberActivity : AppCompatActivity() {
         }
     }
 
+
+    /**
+     * Рисует QR-код рядом с цифрами.
+     *
+     * Ошибка построения не показывается: цифры уже на экране, и сверить
+     * можно ими. Пустой QR лучше сообщения об ошибке, которое ничего
+     * не говорит пользователю о том, что делать.
+     */
+    private fun renderQr(number: String) {
+        val matrix = runCatching { safetyNumberQr(number.filter { it.isDigit() }) }
+            .getOrNull()
+            ?: return
+
+        val view = findViewById<ImageView>(R.id.safety_number_qr)
+        val side = view.width.takeIf { it > 0 } ?: QR_FALLBACK_PX
+
+        view.setImageBitmap(QrDrawable.render(matrix, side))
+    }
     companion object {
         /** Имя собеседника для подписи экрана. */
         const val EXTRA_PEER_NAME = "peer_name"
@@ -95,5 +122,13 @@ class SafetyNumberActivity : AppCompatActivity() {
 
         /** Идентификатор удалённой стороны. */
         private val REMOTE_ID = "remote".toByteArray()
+
+        /**
+         * Сторона QR, если разметка ещё не измерена.
+         *
+         * Нужна при первой отрисовке: view сообщает ширину только
+         * после укладки, а код строится сразу.
+         */
+        private const val QR_FALLBACK_PX = 660
     }
 }
