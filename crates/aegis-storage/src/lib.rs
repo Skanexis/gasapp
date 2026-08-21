@@ -161,7 +161,13 @@ pub struct OwnKeys {
     /// Сериализованные секреты предключей.
     pub prekey_secrets: Vec<u8>,
     /// Идентификатор устройства, выданный сервером при регистрации.
-    pub device_id: u32,
+    ///
+    /// Строка, потому что сервер выдаёт UUID. Прежде поле было `u32`
+    /// и при регистрации в него писался литеральный ноль — то есть
+    /// идентификатор не сохранялся вовсе, и после перезапуска
+    /// приложение не могло ни забрать очередь, ни работать
+    /// с вложениями: обе ручки адресуются по устройству.
+    pub device_id: Option<String>,
     /// Занятое имя пользователя, если оно уже зарегистрировано.
     pub username: Option<String>,
 }
@@ -260,7 +266,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 2;
+    const SCHEMA_VERSION: i32 = 3;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -434,6 +440,47 @@ impl Storage {
                         "ALTER TABLE known_contacts ADD COLUMN username TEXT",
                         "ALTER TABLE known_contacts ADD COLUMN chat_id BLOB",
                         "ALTER TABLE known_contacts ADD COLUMN added_at INTEGER",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
+                    }
+                }
+                // 2 → 3: идентификатор устройства становится строкой.
+                //
+                // 🔐 Сервер выдаёт UUID, а столбец был INTEGER, и при
+                // регистрации в него писался литеральный ноль. То есть
+                // идентификатор не сохранялся вовсе: после перезапуска
+                // приложение не могло забрать очередь сообщений —
+                // ручка адресуется по устройству.
+                //
+                // SQLite не умеет менять тип столбца, поэтому таблица
+                // пересоздаётся. Значение переносится как NULL, а не
+                // как «0»: нуля-устройства не существует, и строка
+                // «0» выглядела бы настоящим идентификатором,
+                // с которым все запросы получали бы 404 вместо
+                // внятного «устройство неизвестно».
+                3 => {
+                    for statement in [
+                        "ALTER TABLE own_keys RENAME TO own_keys_v2",
+                        "
+                        CREATE TABLE own_keys (
+                            id INTEGER PRIMARY KEY CHECK (id = 1),
+                            identity_private BLOB NOT NULL,
+                            identity_public BLOB NOT NULL,
+                            prekey_secrets BLOB NOT NULL,
+                            device_id TEXT,
+                            username TEXT,
+                            updated_at INTEGER NOT NULL
+                        )
+                        ",
+                        "
+                        INSERT INTO own_keys
+                            (id, identity_private, identity_public,
+                             prekey_secrets, device_id, username, updated_at)
+                        SELECT id, identity_private, identity_public,
+                               prekey_secrets, NULL, username, updated_at
+                        FROM own_keys_v2
+                        ",
+                        "DROP TABLE own_keys_v2",
                     ] {
                         transaction.execute(statement, []).map_err(storage_error)?;
                     }
@@ -874,7 +921,7 @@ impl Storage {
         identity_private: &[u8],
         identity_public: &[u8],
         prekey_secrets: &[u8],
-        device_id: u32,
+        device_id: Option<&str>,
         username: Option<&str>,
         now: Timestamp,
     ) -> Result<()> {
@@ -2480,7 +2527,7 @@ mod tests {
                 &[0x11; 32],
                 &[0x22; 32],
                 &[0x33; 64],
-                7,
+                Some("11111111-2222-3333-4444-555555555555"),
                 Some("alice"),
                 now(),
             )
@@ -2497,7 +2544,10 @@ mod tests {
         assert_eq!(loaded.identity_private, vec![0x11; 32]);
         assert_eq!(loaded.identity_public, vec![0x22; 32]);
         assert_eq!(loaded.prekey_secrets, vec![0x33; 64]);
-        assert_eq!(loaded.device_id, 7);
+        assert_eq!(
+            loaded.device_id.as_deref(),
+            Some("11111111-2222-3333-4444-555555555555")
+        );
         assert_eq!(loaded.username.as_deref(), Some("alice"));
     }
 
@@ -2523,7 +2573,7 @@ mod tests {
         // она найдётся в файле как есть.
         let private = [0xABu8; 32];
         storage
-            .save_own_keys(&private, &[0x22; 32], &[0x33; 64], 1, None, now())
+            .save_own_keys(&private, &[0x22; 32], &[0x33; 64], None, None, now())
             .expect("ключи сохраняются");
 
         drop(storage);
@@ -3006,5 +3056,120 @@ mod tests {
         assert_eq!(contacts.len(), 1, "контакт потерян при миграции");
         assert!(contacts[0].username.is_none());
         assert_eq!(contacts[0].identity_key, vec![0x44; 32]);
+    }
+    /// База версии 2 мигрирует, не теряя ключей.
+    ///
+    /// 🔐 Потеря `own_keys` означала бы потерю личности: identity-пара
+    /// не восстанавливается ниоткуда, и обновление приложения
+    /// оставило бы человека без переписки и без возможности доказать
+    /// собеседникам, что это он.
+    #[test]
+    fn version_two_database_migrates_keeping_keys() {
+        let directory = tempfile::tempdir().expect("каталог");
+        let path = directory
+            .path()
+            .join("v2.db")
+            .to_string_lossy()
+            .into_owned();
+        let key = test_key();
+
+        // Готовим базу так, как её оставила бы версия схемы 2:
+        // device_id — целое число, версия — двойка.
+        {
+            let storage = Storage::new(&path, &key).expect("база создана");
+            let connection = storage.connection.lock().expect("соединение");
+
+            for statement in [
+                "DROP TABLE own_keys",
+                "
+                CREATE TABLE own_keys (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    identity_private BLOB NOT NULL,
+                    identity_public BLOB NOT NULL,
+                    prekey_secrets BLOB NOT NULL,
+                    device_id INTEGER NOT NULL,
+                    username TEXT,
+                    updated_at INTEGER NOT NULL
+                )
+                ",
+                "UPDATE schema_version SET version = 2 WHERE id = 1",
+            ] {
+                connection.execute(statement, []).expect("откат схемы");
+            }
+
+            connection
+                .execute(
+                    "
+                    INSERT INTO own_keys
+                        (id, identity_private, identity_public, prekey_secrets,
+                         device_id, username, updated_at)
+                    VALUES (1, ?, ?, ?, 0, ?, ?)
+                    ",
+                    params![
+                        &[0xAAu8; 32][..],
+                        &[0xBBu8; 32][..],
+                        &[0xCCu8; 64][..],
+                        "alice",
+                        now().as_millis()
+                    ],
+                )
+                .expect("старые ключи");
+        }
+
+        let migrated = Storage::new(&path, &key).expect("база мигрирована");
+        let keys = migrated
+            .load_own_keys()
+            .expect("чтение")
+            .expect("ключи на месте");
+
+        assert_eq!(keys.identity_private, vec![0xAA; 32]);
+        assert_eq!(keys.identity_public, vec![0xBB; 32]);
+        assert_eq!(keys.username.as_deref(), Some("alice"));
+
+        // Прежний ноль не переносится: устройства с таким
+        // идентификатором не существует, и строка «0» выглядела бы
+        // настоящим, с которым все запросы получали бы 404.
+        assert!(
+            keys.device_id.is_none(),
+            "литеральный ноль перенесён как настоящий идентификатор"
+        );
+    }
+
+    /// 🔐 Идентификатор устройства переживает перезапуск.
+    ///
+    /// Это и была суть ошибки: в столбец писался литеральный ноль,
+    /// поэтому после перезапуска приложение не знало своего устройства
+    /// и не могло забрать очередь сообщений — ручка адресуется
+    /// по устройству.
+    #[test]
+    fn device_id_survives_reopen() {
+        let key = test_key();
+        let (storage, _dir, path) = open_temp(&key);
+
+        let device = "9f1c2b3a-4d5e-6f70-8192-a3b4c5d6e7f8";
+
+        storage
+            .save_own_keys(
+                &[0x11; 32],
+                &[0x22; 32],
+                &[0x33; 64],
+                Some(device),
+                Some("alice"),
+                now(),
+            )
+            .expect("ключи сохранены");
+
+        drop(storage);
+
+        let reopened = Storage::new(&path, &key).expect("та же база");
+
+        assert_eq!(
+            reopened
+                .load_own_keys()
+                .expect("чтение")
+                .and_then(|keys| keys.device_id)
+                .as_deref(),
+            Some(device)
+        );
     }
 }
