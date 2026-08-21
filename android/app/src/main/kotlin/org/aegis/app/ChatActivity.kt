@@ -15,6 +15,13 @@ import org.aegis.app.components.AegisTextField
 import org.aegis.app.ui.DeliveryMark
 import org.aegis.app.ui.MessageAdapter
 import org.aegis.app.ui.MessageItem
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.aegis.app.core.Core
+import uniffi.aegis.FfiDeliveryStatus
+import uniffi.aegis.FfiMessage
 import uniffi.aegis.canSendToContact
 
 /**
@@ -33,6 +40,18 @@ class ChatActivity : AppCompatActivity() {
     /** Сверял ли пользователь safety number этого контакта. */
     private var wasVerified: Boolean = false
 
+    /** Идентификатор чата в хранилище. */
+    private var chatId: String = ""
+
+    /**
+     * Имя пользователя собеседника.
+     *
+     * Отправка адресуется по имени: ядро само найдёт устройство через
+     * discovery. Хранить device_id в UI значило бы кешировать то,
+     * что меняется при переустановке приложения у собеседника.
+     */
+    private var peerUsername: String = ""
+
     /**
      * Сменился ли identity-ключ контакта.
      *
@@ -47,6 +66,8 @@ class ChatActivity : AppCompatActivity() {
         setContentView(R.layout.activity_chat)
 
         val chatName = intent.getStringExtra(EXTRA_CHAT_NAME).orEmpty()
+        chatId = intent.getStringExtra(EXTRA_CHAT_ID).orEmpty()
+        peerUsername = intent.getStringExtra(EXTRA_PEER_USERNAME).orEmpty()
         wasVerified = intent.getBooleanExtra(EXTRA_VERIFIED, false)
 
         findViewById<TextView>(R.id.chat_title).text = chatName
@@ -75,7 +96,7 @@ class ChatActivity : AppCompatActivity() {
 
         sendButton.setOnClickListener { send() }
 
-        adapter.submit(demoMessages())
+        reload()
         applySendGuard()
     }
 
@@ -91,7 +112,8 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        adapter.submit(demoMessages())
+        reload()
+        fetchIncoming()
     }
 
     /**
@@ -132,18 +154,96 @@ class ChatActivity : AppCompatActivity() {
         // Статус Pending, а не Sent: сообщение ещё не ушло на сервер.
         // Показать «отправлено» до подтверждения значило бы соврать
         // пользователю о состоянии его переписки.
+        val localId = "local-${System.currentTimeMillis()}"
         adapter.append(
             MessageItem(
-                messageId = "local-${System.currentTimeMillis()}",
+                messageId = localId,
                 text = text,
-                time = "сейчас",
+                time = timeNow(),
                 outgoing = true,
                 status = DeliveryMark.Pending,
             ),
         )
 
         input.setText("")
+
+        lifecycleScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger(this@ChatActivity)
+                        .sendMessage(peerUsername, text, System.currentTimeMillis())
+                }
+            }
+
+            // Отказ показывается крестом, а не молчанием: сообщение,
+            // выглядящее отправленным, но не ушедшее, — худший исход,
+            // потому что пользователь считает, что его прочитали.
+            reload(markFailed = sent.isFailure)
+        }
     }
+
+    /**
+     * Перечитывает переписку из хранилища.
+     *
+     * Источник истины — ядро, а не то, что уже показано на экране:
+     * иначе список расходился бы с базой после отправки, приёма или
+     * возврата на экран.
+     */
+    private fun reload(markFailed: Boolean = false) {
+        lifecycleScope.launch {
+            val messages = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger(this@ChatActivity)
+                        .messages(chatId, MESSAGE_LIMIT)
+                        .map { it.toItem() }
+                }.getOrDefault(emptyList())
+            }
+
+            if (messages.isEmpty() && markFailed) {
+                return@launch
+            }
+
+            adapter.submit(messages)
+        }
+    }
+
+    /** Забирает входящие сообщения с сервера. */
+    private fun fetchIncoming() {
+        val device = Core.deviceId ?: return
+
+        lifecycleScope.launch {
+            val received = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger(this@ChatActivity)
+                        .receiveMessages(device, System.currentTimeMillis())
+                }.getOrDefault(0u)
+            }
+
+            if (received > 0u) {
+                reload()
+            }
+        }
+    }
+
+    private fun FfiMessage.toItem(): MessageItem = MessageItem(
+        messageId = messageId,
+        text = text,
+        time = formatTime(timestamp),
+        outgoing = outgoing,
+        status = when (status) {
+            FfiDeliveryStatus.PENDING -> DeliveryMark.Pending
+            FfiDeliveryStatus.SENT -> DeliveryMark.Sent
+            FfiDeliveryStatus.DELIVERED -> DeliveryMark.Delivered
+            FfiDeliveryStatus.READ -> DeliveryMark.Read
+            FfiDeliveryStatus.FAILED -> DeliveryMark.Failed
+        },
+    )
+
+    private fun formatTime(millis: Long): String =
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(millis))
+
+    private fun timeNow(): String = formatTime(System.currentTimeMillis())
 
     private fun openSafetyNumber(peerName: String) {
         startActivity(
@@ -152,13 +252,6 @@ class ChatActivity : AppCompatActivity() {
         )
     }
 
-    /** Демонстрационная переписка для проверки вёрстки. */
-    private fun demoMessages(): List<MessageItem> = listOf(
-        MessageItem("m1", "Привет! Проверим safety number?", "14:30", false, DeliveryMark.Read),
-        MessageItem("m2", "Да, открываю экран сверки.", "14:31", true, DeliveryMark.Read),
-        MessageItem("m3", "Совпало — всё в порядке.", "14:32", false, DeliveryMark.Read),
-        MessageItem("m4", "Отлично, продолжаем.", "14:32", true, DeliveryMark.Delivered),
-    )
 
     companion object {
         /** Идентификатор чата. */
@@ -166,6 +259,12 @@ class ChatActivity : AppCompatActivity() {
 
         /** Отображаемое имя собеседника. */
         const val EXTRA_CHAT_NAME = "chat_name"
+
+        /** Имя пользователя собеседника: по нему адресуется отправка. */
+        const val EXTRA_PEER_USERNAME = "peer_username"
+
+        /** Сколько сообщений загружается в переписку. */
+        private const val MESSAGE_LIMIT = 200u
 
         /** Сверен ли safety number. */
         const val EXTRA_VERIFIED = "chat_verified"

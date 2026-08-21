@@ -14,9 +14,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisTextField
-import org.aegis.app.net.PlatformTransport
+import org.aegis.app.core.Core
 import uniffi.aegis.FfiException
-import uniffi.aegis.Messenger
 
 /**
  * Онбординг: регистрация первого аккаунта.
@@ -65,13 +64,10 @@ class OnboardingActivity : AppCompatActivity() {
                     // Пока онбординг работает до установки PIN, поэтому
                     // база открывается временным ключом — настоящий
                     // придёт вместе с экраном создания PIN.
-                    val messenger = Messenger.open(
-                        databasePath = "${filesDir.absolutePath}/aegis.db",
-                        databaseKey = ByteArray(DATABASE_KEY_SIZE),
-                        transport = PlatformTransport(serverUrl()),
-                    )
-
-                    messenger.register(name, System.currentTimeMillis())
+                    // Общий экземпляр: второй открыл бы ту же базу
+                    // повторно, и состояния Double Ratchet разошлись бы.
+                    Core.messenger(this@OnboardingActivity)
+                        .register(name, System.currentTimeMillis())
                 }
             }
 
@@ -79,6 +75,10 @@ class OnboardingActivity : AppCompatActivity() {
 
             result
                 .onSuccess { account ->
+                    // Устройство запоминается для приёма: конверты
+                    // адресуются по нему, а не по аккаунту.
+                    Core.rememberDevice(account.deviceId)
+
                     startActivity(
                         Intent(this@OnboardingActivity, ChatListActivity::class.java)
                             .putExtra(EXTRA_DEVICE_ID, account.deviceId),

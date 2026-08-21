@@ -52,6 +52,8 @@ class ChatListActivity : AppCompatActivity() {
 
         render(demoChats())
         bindNavigation()
+
+        findViewById<ImageView>(R.id.new_chat_button).setOnClickListener { promptNewChat() }
     }
 
     /**
@@ -88,6 +90,45 @@ class ChatListActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
             finish()
         }
+    }
+
+    /**
+     * Спрашивает имя собеседника и открывает переписку.
+     *
+     * Поиск по имени, а не по номеру телефона: номер связывает аккаунт
+     * с личностью и с записной книжкой всех, у кого он записан
+     * (ADR-007). Имя пользователь выбирает сам и может сменить.
+     */
+    private fun promptNewChat() {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.onboarding_username_hint)
+            setSingleLine()
+            setTextColor(getColor(R.color.text_primary))
+            setHintTextColor(getColor(R.color.text_tertiary))
+            setPadding(48, 32, 48, 32)
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.new_chat)
+            .setMessage(R.string.new_chat_hint)
+            .setView(input)
+            .setPositiveButton(R.string.new_chat_open) { _, _ ->
+                val username = input.text?.toString()?.trim().orEmpty()
+                if (username.isNotEmpty()) {
+                    openChatWith(username)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun openChatWith(username: String) {
+        startActivity(
+            Intent(this, ChatActivity::class.java)
+                .putExtra(ChatActivity.EXTRA_CHAT_NAME, username)
+                .putExtra(ChatActivity.EXTRA_PEER_USERNAME, username)
+                .putExtra(ChatActivity.EXTRA_VERIFIED, false),
+        )
     }
     private fun render(chats: List<ChatSummary>) {
         adapter.submit(chats)
