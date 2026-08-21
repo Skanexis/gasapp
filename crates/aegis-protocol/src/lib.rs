@@ -36,6 +36,7 @@ pub mod qr;
 pub mod pqxdh;
 pub mod prekeys;
 pub mod protocol_engine;
+pub mod sender_key;
 pub mod spqr;
 pub mod x25519;
 pub mod xeddsa;
