@@ -68,6 +68,20 @@
                 android:textSize="12sp"
                 tools:text="Не верифицирован — сверьте safety number" />
         </LinearLayout>
+
+        <!--
+          Меню чата: сверка, таймер исчезновения, присутствие.
+
+          Отдельная кнопка, а не длинное нажатие на заголовок:
+          действия над чатом должны быть видимы, а не найдены
+          случайно.
+        -->
+        <ImageView
+            android:id="@+id/chat_menu"
+            style="@style/AegisIconButton"
+            android:contentDescription="@string/chat_menu"
+            android:src="@drawable/ic_more"
+            android:tint="@color/text_secondary" />
     </LinearLayout>
 
     <!--

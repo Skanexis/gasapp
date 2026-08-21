@@ -74,5 +74,52 @@
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
         <item name="colorAccent">@color/accent_base</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
+        <item name="android:windowBackground">@drawable/bg_dialog</item>
+        <item name="buttonBarPositiveButtonStyle">@style/AegisDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/AegisDialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/AegisDialogButton</item>
+        <item name="android:textAppearanceMedium">@style/AegisText.Body</item>
+    </style>
+
+    <!--
+      Кнопка диалога.
+
+      Текст акцентом и без капитализации — как в остальном приложении.
+      Заглавные буквы, которые платформа ставит по умолчанию,
+      выглядят чужеродно рядом с кнопками AEGIS.
+    -->
+    <style name="AegisDialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">@dimen/text_button</item>
+        <item name="android:textColor">@color/accent_base</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!--
+      Окно нижней панели.
+
+      Прозрачный фон и отсутствие анимации окна: панель рисует себя
+      сама, а системная рамка добавила бы вокруг неё лишний слой.
+    -->
+    <style name="AegisSheetDialog" parent="Theme.MaterialComponents.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowAnimationStyle">@style/AegisSheetAnimation</item>
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <!--
+      Появление панели: выезд снизу.
+
+      200 мс — базовая длительность из токенов. Быстрее выглядит
+      рывком, медленнее — задержкой перед действием.
+    -->
+    <style name="AegisSheetAnimation">
+        <item name="android:windowEnterAnimation">@anim/sheet_enter</item>
+        <item name="android:windowExitAnimation">@anim/sheet_exit</item>
     </style>
 </resources>

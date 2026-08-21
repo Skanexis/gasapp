@@ -57,6 +57,16 @@ data class MessageItem(
      * зашифрованным и загружается по нажатию.
      */
     val attachment: AttachmentPreview? = null,
+
+    /**
+     * Правлено ли сообщение после отправки.
+     *
+     * 🔐 Пометка обязательна: правка не скрывает исходный текст —
+     * получатель уже видел его, — но без пометки отправитель мог бы
+     * переписать разговор задним числом, и собеседник не заметил бы
+     * подмены.
+     */
+    val edited: Boolean = false,
 )
 
 /**
@@ -119,6 +129,15 @@ class MessageAdapter(
      * решил его открывать.
      */
     private val onAttachmentClick: ((AttachmentPreview) -> Unit)? = null,
+
+    /**
+     * Долгое нажатие на сообщение: открывает меню действий.
+     *
+     * Долгое, а не обычное: обычное нажатие в переписке ничего
+     * не делает, и превращать его в меню значило бы открывать список
+     * каждый раз, когда человек промахнулся мимо прокрутки.
+     */
+    private val onMessageLongClick: ((MessageItem) -> Unit)? = null,
 ) : RecyclerView.Adapter<MessageAdapter.ViewHolder>() {
 
     private val messages = mutableListOf<MessageItem>()
@@ -153,7 +172,7 @@ class MessageAdapter(
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_message, parent, false)
 
-        return ViewHolder(view, onAttachmentClick)
+        return ViewHolder(view, onAttachmentClick, onMessageLongClick)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -166,6 +185,7 @@ class MessageAdapter(
     class ViewHolder(
         view: View,
         private val onAttachmentClick: ((AttachmentPreview) -> Unit)?,
+        private val onMessageLongClick: ((MessageItem) -> Unit)?,
     ) : RecyclerView.ViewHolder(view) {
         /** Показывает или прячет строку вложения. */
         private fun bindAttachment(attachment: AttachmentPreview?) {
@@ -222,17 +242,29 @@ class MessageAdapter(
         private val attachmentIcon: ImageView = view.findViewById(R.id.attachment_icon)
         private val attachmentName: TextView = view.findViewById(R.id.attachment_name)
         private val attachmentSize: TextView = view.findViewById(R.id.attachment_size)
+        private val editedMark: TextView = view.findViewById(R.id.message_edited)
 
         /** Заполняет пузырь данными сообщения. */
         fun bind(message: MessageItem) {
             text.text = message.text
             time.text = message.time
 
+            bubble.setOnLongClickListener {
+                onMessageLongClick?.invoke(message)
+
+                // true: событие обработано, и обычное нажатие после
+                // него не сработает — иначе меню открывалось бы
+                // вместе с другим действием.
+                onMessageLongClick != null
+            }
+
             // Пустая подпись прячется: пузырь с вложением и без текста
             // иначе оставлял бы пустую строку над файлом.
             text.visibility = if (message.text.isEmpty()) View.GONE else View.VISIBLE
 
             bindAttachment(message.attachment)
+
+            editedMark.visibility = if (message.edited) View.VISIBLE else View.GONE
 
             container.gravity = if (message.outgoing) Gravity.END else Gravity.START
             bubble.setBackgroundResource(

@@ -168,4 +168,34 @@
     <string name="call_outgoing">Исходящий · %1$s</string>
     <string name="call_missed">Пропущенный · %1$s</string>
     <string name="call_video">Видео · %1$s</string>
+
+    <!-- Действия над сообщением. -->
+    <string name="message_edited">изменено</string>
+    <string name="message_actions">Действия</string>
+    <string name="message_react">Реакция</string>
+    <string name="message_reply">Ответить</string>
+    <string name="message_edit">Изменить</string>
+    <string name="message_copy">Копировать</string>
+    <string name="message_delete">Удалить у всех</string>
+    <string name="message_copied">Скопировано</string>
+    <string name="message_edit_title">Изменить сообщение</string>
+    <string name="message_edit_hint">Новый текст</string>
+    <string name="message_delete_title">Удалить у всех?</string>
+    <string name="message_delete_body">Сообщение исчезнет у вас сразу. У собеседника — когда дойдёт запрос: он уже видел текст и мог его запомнить.</string>
+    <string name="message_action_failed">Не удалось выполнить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_delete">Удалить</string>
+
+    <!-- Меню чата. -->
+    <string name="chat_menu">Меню чата</string>
+    <string name="chat_verify">Сверить safety number</string>
+    <string name="chat_disappearing">Исчезающие сообщения</string>
+    <string name="chat_presence">Индикаторы присутствия</string>
+    <string name="disappearing_off">Выключено</string>
+    <string name="disappearing_hour">Через час</string>
+    <string name="disappearing_day">Через сутки</string>
+    <string name="disappearing_week">Через неделю</string>
+    <string name="presence_enable">Включить: собеседник увидит, когда вы печатаете и читаете</string>
+    <string name="presence_disable">Выключить</string>
 </resources>

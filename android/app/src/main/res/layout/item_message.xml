@@ -101,6 +101,26 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!--
+              🔐 Пометка «изменено» стоит перед временем и не прячется.
+
+              Правка не скрывает исходный текст: получатель уже видел
+              его. Но без пометки отправитель мог бы переписать
+              разговор задним числом так, что собеседник не заметил бы.
+            -->
+            <TextView
+                android:id="@+id/message_edited"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/space_xs"
+                android:fontFamily="@font/inter_regular"
+                android:includeFontPadding="false"
+                android:text="@string/message_edited"
+                android:textColor="@color/text_disabled"
+                android:textSize="10sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
             <TextView
                 android:id="@+id/message_time"
                 android:layout_width="wrap_content"

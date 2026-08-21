@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Фон диалога: карточка с рамкой и скруглением 16.
+  Те же метрики, что у панелей — диалог не должен выглядеть
+  элементом другой системы.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="@dimen/space_l">
+    <shape android:shape="rectangle">
+        <solid android:color="@color/bg_card" />
+        <stroke android:width="1dp" android:color="@color/line" />
+        <corners android:radius="@dimen/radius_card" />
+    </shape>
+</inset>
