@@ -101,4 +101,30 @@
     <string name="onboarding_choose_pin">Придумайте PIN — им шифруется переписка на устройстве</string>
     <string name="onboarding_pin_hint">не менее 6 цифр</string>
     <string name="onboarding_error_pin_short">PIN должен быть не короче 6 символов</string>
+
+    <!-- Экран профиля: QR и ссылка для обмена контактами. -->
+    <string name="profile_title">Мой профиль</string>
+    <string name="profile_no_username">Имя не задано</string>
+    <string name="profile_qr_description">QR-код профиля: покажите его собеседнику, чтобы он добавил вас</string>
+    <string name="profile_link_hint">Покажите код рядом стоящему собеседнику или отправьте ссылку. Ключ передаётся мимо сервера.</string>
+    <string name="profile_copy">Скопировать ссылку</string>
+    <string name="profile_share">Отправить ссылку</string>
+    <string name="profile_copied">Ссылка скопирована</string>
+
+    <!-- Добавление контакта по ссылке. -->
+    <string name="add_contact_title">Добавить контакт</string>
+    <string name="add_contact_hint">Вставьте ссылку вида aegis://contact/…</string>
+    <string name="add_contact_confirm">Добавить</string>
+    <string name="add_contact_added">Контакт добавлен: %1$s</string>
+    <string name="add_contact_added_unnamed">Контакт добавлен</string>
+    <string name="add_contact_invalid">Ссылка не подходит: она не является ссылкой AEGIS либо имя в ней принадлежит другому ключу</string>
+    <string name="add_contact_key_changed">У этого контакта уже известен другой ключ. Добавление отклонено: подтвердите смену ключа сверкой safety number.</string>
+    <string name="add_contact_review">Проверьте, кого добавляете. Ссылка не подтверждает имя — его называет тот, кто её сделал.</string>
+
+    <!-- Поиск по переписке. -->
+    <string name="search_title">Поиск</string>
+    <string name="search_hint">Найти в переписке</string>
+    <string name="search_empty">Ничего не найдено</string>
+    <string name="contact_no_username">Без имени</string>
+    <string name="contacts_empty_real">Контактов пока нет. Добавьте по QR или ссылке.</string>
 </resources>

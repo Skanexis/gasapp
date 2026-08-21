@@ -438,6 +438,19 @@ impl Messenger {
         guard(|| client.own_contact_link())
     }
 
+    /// Возвращает собственное имя пользователя.
+    ///
+    /// [`None`] означает, что регистрация ещё не прошла.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn own_username(&self) -> Result<Option<String>, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.own_username())
+    }
+
     /// Перечисляет контакты, недавно добавленные первыми.
     ///
     /// # Errors

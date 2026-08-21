@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Добавление контакта по ссылке.
+
+  Экран показывает, кого именно собирается добавить пользователь, и
+  требует подтверждения. Добавление без подтверждения было бы опасно:
+  ссылка приходит откуда угодно — из чужого чата, с наклейки, от
+  незнакомца, — и нажатие на неё не должно молча заводить контакт.
+-->
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/screen_padding">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/add_contact_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <org.aegis.app.components.AegisTextField
+            android:id="@+id/add_contact_link"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:hint="@string/add_contact_hint"
+            android:inputType="textUri"
+            android:textColor="@color/text_primary" />
+
+        <!--
+          Предупреждение стоит над кнопкой, а не под ней: его читают
+          до нажатия, а не после.
+        -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/add_contact_review"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/add_contact_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            tools:text="Контакт добавлен: bob" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/add_contact_confirm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/add_contact_confirm" />
+
+    </LinearLayout>
+
+</ScrollView>
