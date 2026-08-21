@@ -477,3 +477,48 @@ async fn unknown_device_and_bad_signature_look_alike() {
     );
     assert_eq!(unknown_status, StatusCode::UNAUTHORIZED);
 }
+
+/// 🔐 Уведомление проходит между узлами через базу.
+///
+/// Главная проверка распределённого хаба: без неё сообщение, отправленное
+/// через один узел, не разбудило бы получателя на другом — и приходило бы
+/// только при следующем открытии чата.
+///
+/// Два хаба здесь изображают два узла: они не знают друг о друге и
+/// связаны только каналом `LISTEN/NOTIFY`.
+#[tokio::test]
+async fn notification_crosses_nodes_through_postgres() {
+    let Some(state) = state().await else {
+        eprintln!("пропущено: нет DATABASE_URL");
+
+        return;
+    };
+
+    let device = uuid::Uuid::new_v4();
+
+    // Узел B: слушает канал и держит соединение устройства.
+    let node_b = std::sync::Arc::new(aegis_server_api::hub::Hub::new());
+    let mut receiver = node_b.connect_for_test(device).await;
+
+    let pool = state.pool.clone();
+    let listener = tokio::spawn(aegis_server_api::hub::listen(
+        pool.clone(),
+        std::sync::Arc::clone(&node_b),
+    ));
+
+    // Слушателю нужно время на подписку: NOTIFY до LISTEN теряется.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    // Узел A: рассылает уведомление, ничего не зная о узле B.
+    aegis_server_api::hub::broadcast(&pool, device)
+        .await
+        .expect("рассылка");
+
+    let delivered = tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv())
+        .await
+        .expect("уведомление не дошло между узлами за пять секунд");
+
+    assert!(delivered.is_some(), "канал закрылся вместо доставки");
+
+    listener.abort();
+}

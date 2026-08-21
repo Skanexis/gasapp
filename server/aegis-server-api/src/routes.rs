@@ -61,7 +61,7 @@ pub struct AppState {
     /// Живёт в состоянии, а не глобально: тесты поднимают несколько
     /// экземпляров сервера в одном процессе, и общий хаб связал бы
     /// их между собой.
-    pub hub: crate::hub::Hub,
+    pub hub: Arc<crate::hub::Hub>,
 }
 
 impl AppState {
@@ -74,7 +74,7 @@ impl AppState {
             message_limiter: Mutex::new(RateLimiter::new(rate_limit::MESSAGES_PER_MINUTE)),
             limiter_salt,
             pow_difficulty: pow::DEFAULT_DIFFICULTY,
-            hub: crate::hub::Hub::new(),
+            hub: Arc::new(crate::hub::Hub::new()),
         }
     }
 }
@@ -517,7 +517,19 @@ async fn send_message(
     // Уведомление после успешной постановки в очередь, а не до:
     // при обратном порядке клиент пришёл бы за конвертом, которого
     // ещё нет, и решил, что уведомление ложное.
-    state.hub.notify(request.destination_device_id).await;
+    //
+    // Рассылка идёт всем узлам кластера: получатель почти всегда
+    // подключён к другому узлу, чем отправитель. Локальный хаб
+    // получит своё уведомление тем же путём — через LISTEN, — поэтому
+    // отдельного вызова notify здесь нет: он привёл бы к двойному
+    // уведомлению на своём узле.
+    //
+    // Ошибка рассылки не отменяет отправку: конверт уже в очереди,
+    // и получатель заберёт его при следующем запросе. Молчаливо
+    // терять сообщение из-за сбоя уведомления было бы хуже.
+    if let Err(error) = crate::hub::broadcast(&state.pool, request.destination_device_id).await {
+        tracing::warn!(%error, "не удалось разослать уведомление");
+    }
     Ok(Json(envelope_id))
 }
 
