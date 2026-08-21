@@ -62,6 +62,12 @@ pub struct AppState {
     /// экземпляров сервера в одном процессе, и общий хаб связал бы
     /// их между собой.
     pub hub: Arc<crate::hub::Hub>,
+    /// Отправитель push-уведомлений.
+    ///
+    /// По умолчанию не делает ничего: сервер обязан работать без
+    /// ключей Apple и Google. Разворачивающий инстанс для друзей
+    /// не должен ради этого регистрироваться в Firebase.
+    pub push: Arc<dyn crate::push::PushProvider>,
 }
 
 impl AppState {
@@ -75,6 +81,7 @@ impl AppState {
             limiter_salt,
             pow_difficulty: pow::DEFAULT_DIFFICULTY,
             hub: Arc::new(crate::hub::Hub::new()),
+            push: Arc::new(crate::push::NoPush),
         }
     }
 }
@@ -178,6 +185,15 @@ pub struct DiscoveryResponse {
     pub device_ids: Vec<Uuid>,
 }
 
+
+/// Регистрация токена push-уведомлений.
+#[derive(Debug, Deserialize)]
+pub struct PushTokenRequest {
+    /// Провайдер: `fcm`, `apns` или `unified`.
+    pub provider: String,
+    /// Токен, выданный провайдером.
+    pub token: String,
+}
 /// Публикация предключей.
 #[derive(Debug, Deserialize)]
 pub struct PublishKeysRequest {
@@ -283,6 +299,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         // момент отправки с присутствием получателя, а это ровно та
         // корреляция, которую собирают при наблюдении за трафиком.
         .route("/v1/ws/:device_id", get(crate::hub::websocket_handler))
+        // Токен push: клиент присылает его после регистрации
+        // и при каждой смене — провайдеры их отзывают.
+        .route("/v1/push/:device_id", put(register_push_token))
         .route(
             "/v1/messages/:device_id/:envelope_id",
             axum::routing::delete(ack_message),
@@ -530,9 +549,46 @@ async fn send_message(
     if let Err(error) = crate::hub::broadcast(&state.pool, request.destination_device_id).await {
         tracing::warn!(%error, "не удалось разослать уведомление");
     }
+
+    // Пробуждение устройства, если оно не подключено сокетом.
+    //
+    // 🔐 Уходит только флаг «есть новое»: ни текста, ни отправителя,
+    // ни чата. Всё, что попало бы в нагрузку, увидели бы Apple
+    // и Google — а мессенджер, отдающий посреднику имя собеседника,
+    // перестаёт быть тем, за что его выбрали (ADR-014).
+    //
+    // Ошибки подавляются внутри: провал push означает задержку,
+    // а не потерю — конверт уже в очереди.
+    crate::push::wake_device(
+        &state.pool,
+        state.push.as_ref(),
+        request.destination_device_id,
+    )
+    .await;
     Ok(Json(envelope_id))
 }
 
+
+/// Регистрация токена push-уведомлений.
+///
+/// 🔐 Требует подпись устройства: без неё любой мог бы привязать свой
+/// токен к чужому устройству и получать сигнал о каждом входящем
+/// сообщении — то есть наблюдать активность собеседника, не читая
+/// переписки.
+async fn register_push_token(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+    Json(request): Json<PushTokenRequest>,
+) -> Result<StatusCode, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
+    repo::save_push_token(&state.pool, device_id, &request.provider, &request.token).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
 /// Выдача ожидающих конвертов.
 ///
 /// 🔐 Требует подпись устройства: конверты зашифрованы, но их выдача
