@@ -22,6 +22,20 @@
     <color name="text_quaternary">#FF596170</color>
 
     <!-- Акцент -->
+    <!--
+      Имена из design/aegis.tokens.json.
+      
+      Палитра в проекте сложилась раньше токенов и назвала те же цвета
+      иначе. Синонимы, а не переименование: правка сотни ссылок
+      в раскладках ради имени — риск пропустить одну и получить
+      несобираемый ресурс, тогда как значения совпадают до байта.
+    -->
+    <color name="text_muted">@color/text_tertiary</color>
+    <color name="text_disabled">@color/text_quaternary</color>
+    <color name="status_success">@color/status_ok</color>
+    <color name="status_warning">@color/status_warn</color>
+    <color name="accent_line">#6137B8FF</color>
+
     <color name="accent_base">#FF37B8FF</color>
     <color name="accent_hover">#FF5CC6FF</color>
     <color name="accent_pressed">#FF2AA3E8</color>

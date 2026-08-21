@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Типографская шкала из design/aegis.tokens.json.
+
+  Девять ступеней, каждая с тремя свойствами: кегль, интерлиньяж и вес.
+  В макете они заданы вместе, и брать из них только кегль — самая
+  частая причина, по которой вёрстка «похожа, но не та»: строки
+  сходятся по размеру и разъезжаются по высоте.
+
+  # Про lineSpacingExtra
+
+  Android задаёт добавку к строке, а не саму высоту строки. Значения
+  ниже — это (lineHeight − size) из токенов, посчитанное вручную:
+  например, body 15/22 даёт добавку 7sp.
+
+  # Про вес
+
+  fontFamily указывает на семейство `inter`, а textFontWeight выбирает
+  начертание. На API ниже 26 системе доступен только вес по умолчанию,
+  поэтому там же явно задаётся конкретный файл шрифта — иначе
+  заголовки на старых телефонах теряли бы жирность.
+-->
+<resources>
+
+    <!-- Базовый стиль: всё остальное наследуется от него. -->
+    <style name="AegisText">
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <!-- Display 32/40/700 -->
+    <style name="AegisText.Display">
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:textSize">@dimen/text_display</item>
+        <item name="android:lineSpacingExtra">8sp</item>
+    </style>
+
+    <!-- H1 28/36/700 -->
+    <style name="AegisText.H1">
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:textSize">@dimen/text_h1</item>
+        <item name="android:lineSpacingExtra">8sp</item>
+    </style>
+
+    <!-- H2 24/32/600 -->
+    <style name="AegisText.H2">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">@dimen/text_h2</item>
+        <item name="android:lineSpacingExtra">8sp</item>
+    </style>
+
+    <!-- H3 20/28/600 -->
+    <style name="AegisText.H3">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">@dimen/text_h3</item>
+        <item name="android:lineSpacingExtra">8sp</item>
+    </style>
+
+    <!-- H4 17/24/600 -->
+    <style name="AegisText.H4">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">@dimen/text_h4</item>
+        <item name="android:lineSpacingExtra">7sp</item>
+    </style>
+
+    <!-- Body 15/22/400 -->
+    <style name="AegisText.Body">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:lineSpacingExtra">7sp</item>
+    </style>
+
+    <!-- Body вторичного цвета: подписи под заголовками, превью строк. -->
+    <style name="AegisText.Body.Secondary">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Caption 13/18/400 -->
+    <style name="AegisText.Caption">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:lineSpacingExtra">5sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Caption приглушённого цвета: время, счётчики, служебные пометки. -->
+    <style name="AegisText.Caption.Muted">
+        <item name="android:textColor">@color/text_muted</item>
+    </style>
+
+    <!-- Button 15/16/600 -->
+    <style name="AegisText.Button">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">@dimen/text_button</item>
+        <item name="android:lineSpacingExtra">1sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!-- Label 12/16/600 -->
+    <style name="AegisText.Label">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">@dimen/text_label</item>
+        <item name="android:lineSpacingExtra">4sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!--
+      Моноширинный текст: safety number, ключи, ссылки.
+
+      🔐 Не оформление, а требование к сверке: пропорциональный шрифт
+      сливает похожие знаки, а ошибка сверки означает, что пользователь
+      считает канал проверенным, когда он не проверен.
+    -->
+    <style name="AegisText.Mono">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:lineSpacingExtra">7sp</item>
+    </style>
+
+</resources>
