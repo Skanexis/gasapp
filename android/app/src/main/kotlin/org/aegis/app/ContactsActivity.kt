@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
+import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
@@ -52,6 +53,12 @@ class ContactsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_contacts)
 
         list = findViewById(R.id.contact_list)

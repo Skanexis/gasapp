@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
+import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.QrDrawable
 import uniffi.aegis.FfiException
 
@@ -43,6 +44,12 @@ class ProfileActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_profile)
 
         linkView = findViewById(R.id.profile_link)

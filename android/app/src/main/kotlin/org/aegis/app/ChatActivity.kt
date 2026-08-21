@@ -9,9 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.TextWatcher
-import android.provider.OpenableColumns
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -19,26 +19,27 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.AegisTextField
+import org.aegis.app.core.Core
+import org.aegis.app.core.SecureWindow
+import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.AttachmentKindMark
 import org.aegis.app.ui.AttachmentPreview
 import org.aegis.app.ui.DeliveryMark
 import org.aegis.app.ui.MessageAdapter
 import org.aegis.app.ui.MessageItem
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.aegis.app.core.Core
-import org.aegis.app.net.NotificationSocket
-import uniffi.aegis.FfiDeliveryStatus
-import uniffi.aegis.FfiMessage
 import uniffi.aegis.FfiAttachmentFile
 import uniffi.aegis.FfiAttachmentKind
+import uniffi.aegis.FfiDeliveryStatus
+import uniffi.aegis.FfiMessage
 import uniffi.aegis.canSendToContact
 
 /**
@@ -100,6 +101,12 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_chat)
 
         val chatName = intent.getStringExtra(EXTRA_CHAT_NAME).orEmpty()

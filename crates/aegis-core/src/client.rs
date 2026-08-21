@@ -1064,6 +1064,47 @@ impl<T: Transport> Client<T> {
         Ok(plaintext)
     }
 
+    /// Читает булеву настройку приложения.
+    ///
+    /// 🔐 Умолчание задаёт вызывающий и всегда указывает явно: оно
+    /// разное у разных настроек. Блокировка снимков экрана включена
+    /// по умолчанию, передача присутствия выключена — общий ответ
+    /// означал бы, что одна из них защищает не так, как задумано.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn setting_bool(&self, key: &str, default: bool) -> Result<bool> {
+        self.storage.setting_bool(key, default)
+    }
+
+    /// Записывает булеву настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn set_setting_bool(&self, key: &str, enabled: bool) -> Result<()> {
+        self.storage.set_setting_bool(key, enabled)
+    }
+
+    /// Читает числовую настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn setting_int(&self, key: &str, default: i64) -> Result<i64> {
+        self.storage.setting_int(key, default)
+    }
+
+    /// Записывает числовую настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn set_setting_int(&self, key: &str, value: i64) -> Result<()> {
+        self.storage.set_setting_int(key, value)
+    }
+
     /// Возвращает идентификатор этого устройства.
     ///
     /// [`None`] означает, что регистрация ещё не проходила: устройство

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Строка настройки с переключателем: значок, название, пояснение,
+  переключатель.
+
+  Пояснение под названием обязательно там, где настройка меняет
+  поведение безопасности: «Индикаторы присутствия» само по себе
+  не говорит, что собеседник узнает, когда человек у телефона.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/list_row_min"
+    android:orientation="horizontal"
+    android:paddingTop="@dimen/space_s"
+    android:paddingBottom="@dimen/space_s">
+
+    <ImageView
+        android:id="@+id/toggle_icon"
+        android:layout_width="@dimen/icon_m"
+        android:layout_height="@dimen/icon_m"
+        android:contentDescription="@null"
+        android:tint="@color/text_secondary"
+        tools:src="@drawable/ic_lock" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_m"
+        android:layout_marginEnd="@dimen/space_m"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/toggle_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/inter_regular"
+            android:includeFontPadding="false"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/text_body"
+            tools:text="Блокировать снимки экрана" />
+
+        <TextView
+            android:id="@+id/toggle_hint"
+            style="@style/AegisCaption"
+            android:layout_marginTop="2dp"
+            android:visibility="gone"
+            tools:text="Содержимое не попадёт в переключатель задач"
+            tools:visibility="visible" />
+    </LinearLayout>
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/toggle_switch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clickable="false"
+        android:focusable="false"
+        android:thumb="@drawable/bg_switch_thumb"
+        app:track="@drawable/bg_switch_track" />
+
+</LinearLayout>

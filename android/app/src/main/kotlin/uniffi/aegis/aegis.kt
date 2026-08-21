@@ -816,6 +816,14 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -908,6 +916,14 @@ fun uniffi_aegis_checksum_method_messenger_send_typing(
 fun uniffi_aegis_checksum_method_messenger_set_disappearing_timer(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_set_presence_sharing(
+): Short
+fun uniffi_aegis_checksum_method_messenger_set_setting_bool(
+): Short
+fun uniffi_aegis_checksum_method_messenger_set_setting_int(
+): Short
+fun uniffi_aegis_checksum_method_messenger_setting_bool(
+): Short
+fun uniffi_aegis_checksum_method_messenger_setting_int(
 ): Short
 fun uniffi_aegis_checksum_constructor_messenger_open(
 ): Short
@@ -1021,6 +1037,14 @@ fun uniffi_aegis_fn_method_messenger_set_disappearing_timer(`ptr`: Pointer,`chat
 ): Unit
 fun uniffi_aegis_fn_method_messenger_set_presence_sharing(`ptr`: Pointer,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_aegis_fn_method_messenger_set_setting_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_set_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`value`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_setting_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_aegis_fn_method_messenger_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Long
 fun uniffi_aegis_fn_func_can_send_to_contact(`identityChanged`: Byte,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_check_protocol_version(`raw`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1292,6 +1316,18 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_set_presence_sharing() != 38130.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_set_setting_bool() != 40291.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_set_setting_int() != 1175.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_setting_bool() != 48572.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_setting_int() != 23735.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_constructor_messenger_open() != 35547.toShort()) {
@@ -2417,6 +2453,46 @@ public interface MessengerInterface {
      */
     fun `setPresenceSharing`(`enabled`: kotlin.Boolean)
     
+    /**
+     * Записывает булеву настройку приложения.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    fun `setSettingBool`(`key`: kotlin.String, `enabled`: kotlin.Boolean)
+    
+    /**
+     * Записывает числовую настройку приложения.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    fun `setSettingInt`(`key`: kotlin.String, `value`: kotlin.Long)
+    
+    /**
+     * Читает булеву настройку приложения.
+     *
+     * 🔐 Умолчание указывает приложение: оно разное у разных
+     * настроек, и общий ответ означал бы, что какая-то из них
+     * защищает не так, как задумано.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `settingBool`(`key`: kotlin.String, `default`: kotlin.Boolean): kotlin.Boolean
+    
+    /**
+     * Читает числовую настройку приложения.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `settingInt`(`key`: kotlin.String, `default`: kotlin.Long): kotlin.Long
+    
     companion object
 }
 
@@ -3061,6 +3137,88 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 }
     }
     
+    
+
+    
+    /**
+     * Записывает булеву настройку приложения.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `setSettingBool`(`key`: kotlin.String, `enabled`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_setting_bool(
+        it, FfiConverterString.lower(`key`),FfiConverterBoolean.lower(`enabled`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Записывает числовую настройку приложения.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `setSettingInt`(`key`: kotlin.String, `value`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_setting_int(
+        it, FfiConverterString.lower(`key`),FfiConverterLong.lower(`value`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Читает булеву настройку приложения.
+     *
+     * 🔐 Умолчание указывает приложение: оно разное у разных
+     * настроек, и общий ответ означал бы, что какая-то из них
+     * защищает не так, как задумано.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `settingBool`(`key`: kotlin.String, `default`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_setting_bool(
+        it, FfiConverterString.lower(`key`),FfiConverterBoolean.lower(`default`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Читает числовую настройку приложения.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `settingInt`(`key`: kotlin.String, `default`: kotlin.Long): kotlin.Long {
+            return FfiConverterLong.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_setting_int(
+        it, FfiConverterString.lower(`key`),FfiConverterLong.lower(`default`),_status)
+}
+    }
+    )
+    }
     
 
     

@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.aegis.app.core.SecureWindow
 
 /**
  * Центр безопасности.
@@ -20,6 +21,12 @@ class SecurityCenterActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_security_center)
 
         findViewById<ImageView>(R.id.security_back).setOnClickListener { finish() }

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Чекбокс: 22dp, радиус 6, рамка 2.
+  Метрики из UI kit (.cbx).
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:state_checked="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/accent_base" />
+            <stroke android:width="2dp" android:color="@color/accent_base" />
+            <corners android:radius="6dp" />
+            <size android:width="22dp" android:height="22dp" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <stroke android:width="2dp" android:color="@color/text_disabled" />
+            <corners android:radius="6dp" />
+            <size android:width="22dp" android:height="22dp" />
+        </shape>
+    </item>
+
+</selector>
