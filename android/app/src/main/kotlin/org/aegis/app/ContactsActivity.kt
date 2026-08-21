@@ -43,9 +43,6 @@ class ContactsActivity : AppCompatActivity() {
     private lateinit var list: RecyclerView
     private lateinit var empty: TextView
 
-    /** Чат по идентификатору контакта — для перехода к переписке. */
-    private val chatOf = mutableMapOf<String, String>()
-
     /** Последний прочитанный из ядра список — источник для фильтра. */
     private var loaded: List<FfiContact> = emptyList()
 
@@ -96,7 +93,6 @@ class ContactsActivity : AppCompatActivity() {
         super.onStop()
 
         adapter.clear()
-        chatOf.clear()
         loaded = emptyList()
     }
 
@@ -123,8 +119,6 @@ class ContactsActivity : AppCompatActivity() {
     }
 
     private fun render(contacts: List<FfiContact>) {
-        chatOf.clear()
-
         val visible = when {
             filter.isEmpty() -> contacts
             // Контакт без имени фильтру не соответствует никогда:
@@ -137,8 +131,6 @@ class ContactsActivity : AppCompatActivity() {
         }
 
         val items = visible.map { contact ->
-            contact.chatId?.let { chatOf[contact.accountId] = it }
-
             val name = contact.username ?: getString(R.string.contact_no_username)
 
             ChatSummary(
@@ -162,20 +154,17 @@ class ContactsActivity : AppCompatActivity() {
     }
 
     /**
-     * Открывает переписку с контактом.
+     * Открывает профиль контакта.
      *
-     * Контакт без чата открыть нельзя: чат заводится при добавлении
-     * по ссылке, а контакт, известный только по входящему сообщению,
-     * своего чата ещё не имеет.
+     * Профиль, а не сразу переписку: на нём видно состояние ключа,
+     * и это единственное место, откуда ведёт путь к сверке. Открывать
+     * чат в один шаг значило бы прятать сверку глубже, чем отправку
+     * сообщения — при том что она важнее.
      */
     private fun openChat(contact: ChatSummary) {
-        val chatId = chatOf[contact.chatId] ?: return
-
         startActivity(
-            Intent(this, ChatActivity::class.java)
-                .putExtra(ChatActivity.EXTRA_CHAT_ID, chatId)
-                .putExtra(ChatActivity.EXTRA_CHAT_NAME, contact.name)
-                .putExtra(ChatActivity.EXTRA_VERIFIED, contact.verified),
+            Intent(this, ContactProfileActivity::class.java)
+                .putExtra(ContactProfileActivity.EXTRA_ACCOUNT_ID, contact.chatId),
         )
     }
 

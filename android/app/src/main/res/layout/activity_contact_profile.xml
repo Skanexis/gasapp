@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Профиль контакта.
+
+  Главное на экране — состояние ключа, а не имя и аватар. Имя контакт
+  называет сам, и оно ничем не подтверждено; сверенный ключ —
+  единственное, что говорит, с кем на самом деле идёт переписка.
+-->
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/screen_padding">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/contact_profile_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/contact_profile_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            tools:text="alex.v" />
+
+        <!--
+          Состояние ключа. Цвет задаётся кодом: зелёный только после
+          личной сверки, иначе нейтральный.
+
+          🔐 Несверенный контакт не помечается красным: тревожный цвет
+          на состоянии по умолчанию быстро перестают замечать, и тогда
+          он не сработает там, где действительно важен — при смене
+          ключа.
+        -->
+        <TextView
+            android:id="@+id/contact_profile_verified"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_pill_warn"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:textSize="13sp"
+            tools:text="Ключ не сверен" />
+
+        <TextView
+            android:id="@+id/contact_profile_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/contact_profile_unverified_hint"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/contact_profile_key"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <!--
+          Ключ моноширинным шрифтом: его сверяют посимвольно, а
+          пропорциональный шрифт сливает похожие знаки.
+        -->
+        <TextView
+            android:id="@+id/contact_profile_key"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@color/bg_card"
+            android:fontFamily="monospace"
+            android:padding="12dp"
+            android:textColor="@color/text_primary"
+            android:textIsSelectable="true"
+            android:textSize="12sp"
+            tools:text="A1B2 C3D4 E5F6" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/contact_profile_verify"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/contact_profile_verify" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/contact_profile_open_chat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/contact_profile_open_chat" />
+
+    </LinearLayout>
+
+</ScrollView>

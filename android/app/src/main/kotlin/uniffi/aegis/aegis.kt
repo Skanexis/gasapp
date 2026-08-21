@@ -810,6 +810,12 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -847,6 +853,8 @@ fun uniffi_aegis_checksum_func_generate_storage_salt(
 ): Short
 fun uniffi_aegis_checksum_func_identity_change_alert(
 ): Short
+fun uniffi_aegis_checksum_func_parse_attachment_descriptor(
+): Short
 fun uniffi_aegis_checksum_func_parse_contact_link(
 ): Short
 fun uniffi_aegis_checksum_func_protocol_version(
@@ -856,6 +864,8 @@ fun uniffi_aegis_checksum_func_safety_number_qr(
 fun uniffi_aegis_checksum_method_httptransport_execute(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_add_contact_from_link(
+): Short
+fun uniffi_aegis_checksum_method_messenger_attachments_of(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_chats(
 ): Short
@@ -870,6 +880,8 @@ fun uniffi_aegis_checksum_method_messenger_fetch_attachment(
 fun uniffi_aegis_checksum_method_messenger_messages(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_own_contact_link(
+): Short
+fun uniffi_aegis_checksum_method_messenger_own_device_id(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_own_username(
 ): Short
@@ -965,6 +977,8 @@ fun uniffi_aegis_fn_constructor_messenger_open(`databasePath`: RustBuffer.ByValu
 ): Pointer
 fun uniffi_aegis_fn_method_messenger_add_contact_from_link(`ptr`: Pointer,`uri`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_attachments_of(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_chats(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_contacts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -978,6 +992,8 @@ fun uniffi_aegis_fn_method_messenger_fetch_attachment(`ptr`: Pointer,`deviceId`:
 fun uniffi_aegis_fn_method_messenger_messages(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_own_contact_link(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_own_device_id(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_own_username(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1026,6 +1042,8 @@ fun uniffi_aegis_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRust
 fun uniffi_aegis_fn_func_generate_storage_salt(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_identity_change_alert(`knownIdentity`: RustBuffer.ByValue,`presentedIdentity`: RustBuffer.ByValue,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_parse_attachment_descriptor(`descriptor`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_parse_contact_link(`uri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1192,6 +1210,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_identity_change_alert() != 8609.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_parse_attachment_descriptor() != 56964.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_parse_contact_link() != 15431.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1205,6 +1226,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_add_contact_from_link() != 19449.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_attachments_of() != 49186.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_chats() != 582.toShort()) {
@@ -1226,6 +1250,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_own_contact_link() != 26497.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_own_device_id() != 3530.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_own_username() != 61347.toShort()) {
@@ -1510,6 +1537,29 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 
     override fun write(value: UInt, buf: ByteBuffer) {
         buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterULong: FfiConverter<ULong, Long> {
+    override fun lift(value: Long): ULong {
+        return value.toULong()
+    }
+
+    override fun read(buf: ByteBuffer): ULong {
+        return lift(buf.getLong())
+    }
+
+    override fun lower(value: ULong): Long {
+        return value.toLong()
+    }
+
+    override fun allocationSize(value: ULong) = 8UL
+
+    override fun write(value: ULong, buf: ByteBuffer) {
+        buf.putLong(value.toLong())
     }
 }
 
@@ -2080,6 +2130,20 @@ public interface MessengerInterface {
     fun `addContactFromLink`(`uri`: kotlin.String, `nowMillis`: kotlin.Long): FfiContact
     
     /**
+     * Возвращает описания вложений сообщения.
+     *
+     * Каждое — те самые байты, что принимает [`Self::fetch_attachment`].
+     * Пусто, если вложений нет.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `attachmentsOf`(`messageId`: kotlin.String): List<kotlin.ByteArray>
+    
+    /**
      * Перечисляет чаты в порядке последней активности.
      *
      * # Errors
@@ -2162,6 +2226,22 @@ public interface MessengerInterface {
      * для ссылки.
      */
     fun `ownContactLink`(): kotlin.String
+    
+    /**
+     * Возвращает идентификатор этого устройства.
+     *
+     * [`None`] означает, что регистрация ещё не проходила.
+     *
+     * Нужен приложению для приёма сообщений и работы с вложениями:
+     * обе ручки адресуются по устройству. Читается из хранилища,
+     * а не держится в памяти приложения: после перезапуска память
+     * пуста, и очередь сообщений осталась бы незабранной.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `ownDeviceId`(): kotlin.String?
     
     /**
      * Возвращает собственное имя пользователя.
@@ -2463,6 +2543,31 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Возвращает описания вложений сообщения.
+     *
+     * Каждое — те самые байты, что принимает [`Self::fetch_attachment`].
+     * Пусто, если вложений нет.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `attachmentsOf`(`messageId`: kotlin.String): List<kotlin.ByteArray> {
+            return FfiConverterSequenceByteArray.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_attachments_of(
+        it, FfiConverterString.lower(`messageId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Перечисляет чаты в порядке последней активности.
      *
      * # Errors
@@ -2613,6 +2718,33 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_own_contact_link(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Возвращает идентификатор этого устройства.
+     *
+     * [`None`] означает, что регистрация ещё не проходила.
+     *
+     * Нужен приложению для приёма сообщений и работы с вложениями:
+     * обе ручки адресуются по устройству. Читается из хранилища,
+     * а не держится в памяти приложения: после перезапуска память
+     * пуста, и очередь сообщений осталась бы незабранной.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `ownDeviceId`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_own_device_id(
         it, _status)
 }
     }
@@ -3113,6 +3245,72 @@ public object FfiConverterTypeFfiAttachmentFile: FfiConverterRustBuffer<FfiAttac
             FfiConverterOptionalString.write(value.`description`, buf)
             FfiConverterOptionalUInt.write(value.`durationMillis`, buf)
             FfiConverterOptionalByteArray.write(value.`waveform`, buf)
+    }
+}
+
+
+
+/**
+ * Разобранное описание вложения.
+ *
+ * 🔐 Всё здесь пришло от собеседника внутри сообщения. Ядро уже
+ * проверило границы каждого поля при разборе, но имя остаётся тем,
+ * что назвал отправитель: показывать его можно, доверять — нет.
+ */
+data class FfiAttachmentInfo (
+    /**
+     * Тип вложения.
+     */
+    var `kind`: FfiAttachmentKind, 
+    /**
+     * Имя файла, если отправитель его передал.
+     */
+    var `name`: kotlin.String?, 
+    /**
+     * Размер открытого файла в байтах.
+     */
+    var `size`: kotlin.ULong, 
+    /**
+     * Описание для незрячих пользователей.
+     */
+    var `description`: kotlin.String?, 
+    /**
+     * Длительность в миллисекундах — у голосовых и видео.
+     */
+    var `durationMillis`: kotlin.UInt?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAttachmentInfo: FfiConverterRustBuffer<FfiAttachmentInfo> {
+    override fun read(buf: ByteBuffer): FfiAttachmentInfo {
+        return FfiAttachmentInfo(
+            FfiConverterTypeFfiAttachmentKind.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAttachmentInfo) = (
+            FfiConverterTypeFfiAttachmentKind.allocationSize(value.`kind`) +
+            FfiConverterOptionalString.allocationSize(value.`name`) +
+            FfiConverterULong.allocationSize(value.`size`) +
+            FfiConverterOptionalString.allocationSize(value.`description`) +
+            FfiConverterOptionalUInt.allocationSize(value.`durationMillis`)
+    )
+
+    override fun write(value: FfiAttachmentInfo, buf: ByteBuffer) {
+            FfiConverterTypeFfiAttachmentKind.write(value.`kind`, buf)
+            FfiConverterOptionalString.write(value.`name`, buf)
+            FfiConverterULong.write(value.`size`, buf)
+            FfiConverterOptionalString.write(value.`description`, buf)
+            FfiConverterOptionalUInt.write(value.`durationMillis`, buf)
     }
 }
 
@@ -3983,6 +4181,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
 /**
  * @suppress
  */
+public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.ByteArray>> {
+    override fun read(buf: ByteBuffer): List<kotlin.ByteArray> {
+        val len = buf.getInt()
+        return List<kotlin.ByteArray>(len) {
+            FfiConverterByteArray.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.ByteArray>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterByteArray.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.ByteArray>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterByteArray.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiContact: FfiConverterRustBuffer<List<FfiContact>> {
     override fun read(buf: ByteBuffer): List<FfiContact> {
         val len = buf.getInt()
@@ -4335,6 +4561,26 @@ public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_identity_change_alert(
         FfiConverterOptionalByteArray.lower(`knownIdentity`),FfiConverterByteArray.lower(`presentedIdentity`),FfiConverterBoolean.lower(`wasVerified`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Разбирает описание вложения для показа.
+         *
+         * Принимает те же байты, что отдаёт [`Messenger::attachments_of`].
+         *
+         * # Errors
+         *
+         * [`FfiError::Core`] — описание не разбирается либо какое-то поле
+         * вне допустимых границ.
+         */
+    @Throws(FfiException::class) fun `parseAttachmentDescriptor`(`descriptor`: kotlin.ByteArray): FfiAttachmentInfo {
+            return FfiConverterTypeFfiAttachmentInfo.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_parse_attachment_descriptor(
+        FfiConverterByteArray.lower(`descriptor`),_status)
 }
     )
     }

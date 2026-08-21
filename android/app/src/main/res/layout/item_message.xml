@@ -29,6 +29,62 @@
         android:paddingEnd="12dp"
         android:paddingBottom="7dp">
 
+        <!--
+          Строка вложения.
+
+          Скрыта у обычных сообщений. Показывает имя файла и его размер
+          — то, что человек решает по одному взгляду: открывать сейчас
+          или подождать сети.
+
+          🔐 Ни превью, ни содержимого до нажатия: файл лежит на сервере
+          зашифрованным, и загружать его автоматически значило бы
+          подтверждать отправителю, что сообщение открыли.
+        -->
+        <LinearLayout
+            android:id="@+id/message_attachment"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_card_rounded"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="8dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/attachment_icon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="@string/attachment_document"
+                android:src="@drawable/ic_file"
+                android:tint="@color/accent_base" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/attachment_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="middle"
+                    android:maxWidth="200dp"
+                    android:singleLine="true"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    tools:text="договор.pdf" />
+
+                <TextView
+                    android:id="@+id/attachment_size"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    tools:text="2,4 МБ" />
+            </LinearLayout>
+        </LinearLayout>
+
         <TextView
             android:id="@+id/message_text"
             android:layout_width="wrap_content"

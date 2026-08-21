@@ -150,12 +150,23 @@
 
     <!-- Строка ввода. -->
     <LinearLayout
+        android:id="@+id/input_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/bg_raised"
         android:gravity="bottom"
         android:orientation="horizontal"
         android:padding="8dp">
+
+        <ImageView
+            android:id="@+id/attach_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/attach"
+            android:padding="8dp"
+            android:src="@drawable/ic_paperclip"
+            android:tint="@color/text_secondary" />
 
         <org.aegis.app.components.AegisTextField
             android:id="@+id/message_input"
@@ -172,7 +183,7 @@
             android:id="@+id/send_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="4dp"
             android:text="@string/send" />
     </LinearLayout>
 </LinearLayout>
