@@ -96,4 +96,6 @@
     <string name="onboarding_error_short">Имя слишком короткое</string>
     <string name="onboarding_error_taken">Это имя уже занято</string>
     <string name="onboarding_error_network">Сервер недоступен. Проверьте соединение.</string>
+    <string name="new_chat_hint">Введите имя пользователя собеседника</string>
+    <string name="new_chat_open">Открыть</string>
 </resources>
