@@ -87,6 +87,34 @@
             android:textColorHint="@color/text_tertiary"
             android:textSize="15sp" />
 
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/onboarding_choose_pin"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <!--
+          🔐 PIN шифрует хранилище: он растягивается Argon2id и даёт
+          ключ базы. Отдельного «пароля от аккаунта» нет и не будет —
+          пароль, который проверяет сервер, ничего не защищал бы
+          на изъятом устройстве.
+        -->
+        <org.aegis.app.components.AegisTextField
+            android:id="@+id/onboarding_pin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/onboarding_pin_hint"
+            android:importantForAutofill="no"
+            android:inputType="numberPassword"
+            android:maxLength="12"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_tertiary"
+            android:textSize="15sp" />
         <TextView
             android:id="@+id/onboarding_error"
             android:layout_width="match_parent"

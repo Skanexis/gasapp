@@ -196,7 +196,7 @@ class ChatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val sent = withContext(Dispatchers.IO) {
                 runCatching {
-                    Core.messenger(this@ChatActivity)
+                    Core.messenger()
                         .sendMessage(peerUsername, text, System.currentTimeMillis())
                 }
             }
@@ -219,7 +219,7 @@ class ChatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val messages = withContext(Dispatchers.IO) {
                 runCatching {
-                    Core.messenger(this@ChatActivity)
+                    Core.messenger()
                         .messages(chatId, MESSAGE_LIMIT)
                         .map { it.toItem() }
                 }.getOrDefault(emptyList())
@@ -240,7 +240,7 @@ class ChatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val received = withContext(Dispatchers.IO) {
                 runCatching {
-                    Core.messenger(this@ChatActivity)
+                    Core.messenger()
                         .receiveMessages(device, System.currentTimeMillis())
                 }.getOrDefault(0u)
             }
