@@ -397,11 +397,25 @@ async fn discovery(
 }
 
 /// Публикация предключей устройства.
+///
+/// 🔐 Требует подпись устройства: без неё любой мог бы заменить чужие
+/// предключи своими и получать адресованные другому сообщения.
 async fn publish_keys(
     State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
     Path(device_id): Path<Uuid>,
     Json(request): Json<PublishKeysRequest>,
 ) -> Result<StatusCode, ApiError> {
+    // 🔐 Подписавший обязан быть тем, о чьих ключах речь.
+    //
+    // Извлекатель берёт устройство из того же пути, поэтому
+    // расхождение здесь невозможно — проверка стоит как защита
+    // от будущей правки, которая возьмёт идентификатор откуда-то
+    // ещё и незаметно откроет подмену чужих предключей.
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
     let signed_public = decode_hex(&request.signed_public)?;
     let signed_signature = decode_hex(&request.signed_signature)?;
     let kem_public = decode_hex(&request.kem_public)?;
@@ -508,10 +522,19 @@ async fn send_message(
 }
 
 /// Выдача ожидающих конвертов.
+///
+/// 🔐 Требует подпись устройства: конверты зашифрованы, но их выдача
+/// удаляет их из очереди — без проверки любой лишал бы адресата
+/// переписки, просто запросив её первым.
 async fn fetch_messages(
     State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
     Path(device_id): Path<Uuid>,
 ) -> Result<Json<Vec<EnvelopeResponse>>, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
     let envelopes = repo::fetch_envelopes(&state.pool, device_id, 100).await?;
 
     Ok(Json(
@@ -527,17 +550,25 @@ async fn fetch_messages(
 }
 
 /// Подтверждение доставки: конверт удаляется немедленно.
+///
+/// 🔐 Требует подпись устройства: без неё любой мог бы удалять чужие
+/// неполученные сообщения, зная только идентификаторы.
 async fn ack_message(
     State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
     Path((device_id, envelope_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
     repo::acknowledge_envelope(&state.pool, device_id, envelope_id).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Разбирает hex, отвергая мусор.
-fn decode_hex(input: &str) -> Result<Vec<u8>, ApiError> {
+pub(crate) fn decode_hex(input: &str) -> Result<Vec<u8>, ApiError> {
     hex::decode(input).map_err(|_| ApiError::BadRequest)
 }
 
@@ -546,7 +577,7 @@ fn decode_hex(input: &str) -> Result<Vec<u8>, ApiError> {
 /// Единственное место, где серверный слой берёт системные часы:
 /// ограничителю нужно текущее время, а протаскивать его через HTTP-слой
 /// значило бы усложнить каждый обработчик ради одной величины.
-fn now_millis() -> i64 {
+pub(crate) fn now_millis() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     SystemTime::now()

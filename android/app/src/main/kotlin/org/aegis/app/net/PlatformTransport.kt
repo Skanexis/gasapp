@@ -6,6 +6,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import uniffi.aegis.FfiException
+import uniffi.aegis.FfiHeader
 import uniffi.aegis.FfiHttpResponse
 import uniffi.aegis.HttpTransport
 
@@ -30,10 +31,17 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
         method: String,
         path: String,
         body: String?,
+        headers: List<FfiHeader>,
     ): FfiHttpResponse {
         val connection = openConnection(method, path)
 
         try {
+            // 🔐 Заголовки подписи ставит ядро: приватный ключ живёт
+            // там и в UI не попадает. Транспорт их только переносит.
+            for (header in headers) {
+                connection.setRequestProperty(header.name, header.value)
+            }
+
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")

@@ -22,6 +22,7 @@
 //! самостоятельны, чтобы проверить их без сети.
 
 pub mod api;
+pub mod auth;
 pub mod client;
 pub mod pow;
 pub mod pinning;

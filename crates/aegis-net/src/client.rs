@@ -63,6 +63,12 @@ pub struct HttpRequest {
     pub path: String,
     /// Тело в формате JSON. `None` для запросов без тела.
     pub body: Option<String>,
+    /// Дополнительные заголовки: имя и значение.
+    ///
+    /// Нужны для подписи запроса. Список, а не карта: заголовков
+    /// два, и порядок их отправки значения не имеет — карта здесь
+    /// была бы структурой ради структуры.
+    pub headers: Vec<(String, String)>,
 }
 
 /// Ответ сервера.
@@ -142,11 +148,17 @@ impl<T: Transport> ApiClient<T> {
     ///
     /// [`AegisError::Network`] при сбое, [`AegisError::Malformed`]
     /// при отказе сервера.
-    pub fn publish_keys(&self, device_id: &str, request: &PublishKeysRequest) -> Result<()> {
-        let response = self.send(
+    pub fn publish_keys(
+        &self,
+        device_id: &str,
+        request: &PublishKeysRequest,
+        auth: Vec<(String, String)>,
+    ) -> Result<()> {
+        let response = self.send_signed(
             Method::Put,
             format!("/v1/keys/{device_id}"),
             Some(to_json(request)?),
+            auth,
         )?;
 
         check_status(&response)
@@ -201,8 +213,17 @@ impl<T: Transport> ApiClient<T> {
     /// # Errors
     ///
     /// [`AegisError::Network`] при сбое соединения.
-    pub fn fetch_envelopes(&self, device_id: &str) -> Result<Vec<EnvelopeResponse>> {
-        let response = self.send(Method::Get, format!("/v1/messages/{device_id}"), None)?;
+    pub fn fetch_envelopes(
+        &self,
+        device_id: &str,
+        auth: Vec<(String, String)>,
+    ) -> Result<Vec<EnvelopeResponse>> {
+        let response = self.send_signed(
+            Method::Get,
+            format!("/v1/messages/{device_id}"),
+            None,
+            auth,
+        )?;
 
         parse(&response)
     }
@@ -212,21 +233,34 @@ impl<T: Transport> ApiClient<T> {
     /// # Errors
     ///
     /// [`AegisError::Network`] при сбое соединения.
-    pub fn acknowledge(&self, device_id: &str, envelope_id: &str) -> Result<()> {
-        let response = self.send(
-            Method::Delete,
-            format!("/v1/messages/{device_id}/{envelope_id}"),
-            None,
-        )?;
+pub fn acknowledge(        &self,        device_id: &str,        envelope_id: &str,        auth: Vec<(String, String)>,    ) -> Result<()> {        let response = self.send_signed(            Method::Delete,            format!("/v1/messages/{device_id}/{envelope_id}"),            None,            auth,        )?;
 
         check_status(&response)
     }
 
     /// Выполняет запрос и переводит код ответа в ошибку домена.
     fn send(&self, method: Method, path: String, body: Option<String>) -> Result<HttpResponse> {
-        let response = self
-            .transport
-            .execute(&HttpRequest { method, path, body })?;
+        self.send_signed(method, path, body, Vec::new())
+    }
+
+    /// Выполняет запрос с дополнительными заголовками.
+    ///
+    /// Заголовки собирает вызывающая сторона: подпись требует
+    /// приватного ключа, а сетевой клиент его не видит и видеть
+    /// не должен — ключи живут в ядре и не покидают его.
+    fn send_signed(
+        &self,
+        method: Method,
+        path: String,
+        body: Option<String>,
+        headers: Vec<(String, String)>,
+    ) -> Result<HttpResponse> {
+        let response = self.transport.execute(&HttpRequest {
+            method,
+            path,
+            body,
+            headers,
+        })?;
 
         check_status(&response)?;
 
@@ -415,7 +449,7 @@ mod tests {
             r#"[{"envelope_id":"env-1","ciphertext":"aabb","queued_at_bucketed":1700000000}]"#;
         let client = ApiClient::new(FakeTransport::with(200, body));
 
-        let envelopes = client.fetch_envelopes("dev-1").unwrap();
+        let envelopes = client.fetch_envelopes("dev-1", Vec::new()).unwrap();
 
         assert_eq!(envelopes.len(), 1);
         assert_eq!(
@@ -430,7 +464,7 @@ mod tests {
         let body = r#"[{"envelope_id":"e","ciphertext":"aa","queued_at_bucketed":1699999200}]"#;
         let client = ApiClient::new(FakeTransport::with(200, body));
 
-        let envelopes = client.fetch_envelopes("dev-1").unwrap();
+        let envelopes = client.fetch_envelopes("dev-1", Vec::new()).unwrap();
         let bucketed = envelopes.first().map_or(1, |e| e.queued_at_bucketed);
 
         assert_eq!(bucketed % 3600, 0);
@@ -440,7 +474,7 @@ mod tests {
     fn acknowledge_uses_delete_with_both_ids() {
         let client = ApiClient::new(FakeTransport::with(204, ""));
 
-        client.acknowledge("dev-1", "env-1").unwrap();
+        client.acknowledge("dev-1", "env-1", Vec::new()).unwrap();
 
         let sent = client.transport.last_request();
         assert_eq!(sent.method, Method::Delete);
@@ -462,7 +496,7 @@ mod tests {
             one_time_kem: Vec::new(),
         };
 
-        client.publish_keys("dev-1", &request).unwrap();
+        client.publish_keys("dev-1", &request, Vec::new()).unwrap();
 
         let sent = client.transport.last_request();
         assert_eq!(sent.method, Method::Put);
