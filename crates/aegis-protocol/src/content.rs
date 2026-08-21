@@ -61,6 +61,12 @@ const KIND_EDIT: u8 = 4;
 /// Тип: удаление для всех.
 const KIND_DELETE: u8 = 5;
 
+/// Тип: индикатор набора текста.
+const KIND_TYPING: u8 = 6;
+
+/// Тип: квитанция о прочтении.
+const KIND_READ_RECEIPT: u8 = 7;
+
 /// Длина идентификатора сообщения.
 const MESSAGE_ID_LEN: usize = 16;
 
@@ -122,6 +128,38 @@ pub enum Content {
         /// Удаляемое сообщение.
         target: [u8; MESSAGE_ID_LEN],
     },
+
+    /// Индикатор набора текста.
+    ///
+    /// 🔐 Отправляется только при явно включённой настройке.
+    /// Индикатор сообщает собеседнику, что человек сейчас у телефона
+    /// и печатает, — то есть выдаёт присутствие с точностью до секунд.
+    /// Для переписки, где важна анонимность, это существеннее
+    /// содержимого: собеседник узнаёт распорядок дня.
+    ///
+    /// По умолчанию выключен: privacy-функция, требующая отключения,
+    /// защищает только тех, кто нашёл настройку.
+    Typing {
+        /// Печатает ли пользователь сейчас.
+        ///
+        /// `false` отправляется при остановке: без него индикатор
+        /// висел бы до таймаута, показывая активность, которой нет.
+        active: bool,
+    },
+
+    /// Квитанция о прочтении.
+    ///
+    /// 🔐 Тоже opt-in и по той же причине: квитанция сообщает
+    /// отправителю, что человек открыл переписку именно сейчас.
+    ///
+    /// Отправляется не за каждое сообщение, а с указанием последнего
+    /// прочитанного: иначе открытие чата с сотней непрочитанных
+    /// породило бы сто сообщений, и по их числу собеседник узнал бы,
+    /// сколько всего накопилось.
+    ReadReceipt {
+        /// Последнее прочитанное сообщение.
+        until: [u8; MESSAGE_ID_LEN],
+    },
 }
 
 impl Content {
@@ -177,6 +215,14 @@ impl Content {
             Self::Delete { target } => {
                 out.push(KIND_DELETE);
                 out.extend_from_slice(target);
+            }
+            Self::Typing { active } => {
+                out.push(KIND_TYPING);
+                out.push(u8::from(*active));
+            }
+            Self::ReadReceipt { until } => {
+                out.push(KIND_READ_RECEIPT);
+                out.extend_from_slice(until);
             }
         }
 
@@ -242,6 +288,18 @@ impl Content {
             },
             KIND_DELETE => Self::Delete {
                 target: reader.take_id()?,
+            },
+            KIND_TYPING => Self::Typing {
+                active: match reader.take_u8()? {
+                    0 => false,
+                    1 => true,
+                    // Иное значение означает чужую реализацию:
+                    // булев флаг имеет ровно два состояния.
+                    _ => return Err(AegisError::Malformed),
+                },
+            },
+            KIND_READ_RECEIPT => Self::ReadReceipt {
+                until: reader.take_id()?,
             },
             _ => return Err(AegisError::Malformed),
         };
@@ -563,5 +621,37 @@ mod tests {
         bytes.push(0);
 
         assert!(Content::from_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn typing_round_trips() {
+        for active in [true, false] {
+            let content = Content::Typing { active };
+            let bytes = content.to_bytes().expect("сериализация");
+
+            assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+        }
+    }
+
+    #[test]
+    fn read_receipt_round_trips() {
+        let content = Content::ReadReceipt { until: id(11) };
+        let bytes = content.to_bytes().expect("сериализация");
+
+        assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+    }
+
+    /// Булев флаг имеет ровно два состояния.
+    ///
+    /// Иное значение означает чужую реализацию, и принимать его
+    /// как «истину» значило бы молча согласиться с чужим форматом.
+    #[test]
+    fn invalid_typing_flag_is_rejected() {
+        let bytes = vec![CONTENT_VERSION, KIND_TYPING, 2];
+
+        assert!(matches!(
+            Content::from_bytes(&bytes),
+            Err(AegisError::Malformed)
+        ));
     }
 }
