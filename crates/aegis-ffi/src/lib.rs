@@ -522,3 +522,39 @@ pub fn derive_storage_key(pin: String, salt: Vec<u8>) -> Result<Vec<u8>, FfiErro
 pub fn generate_storage_salt() -> Vec<u8> {
     aegis_keystore::pin::generate_salt(&mut rand_core::OsRng).to_vec()
 }
+
+/// QR-код safety number.
+///
+/// Матрица модулей, а не картинка: отрисовка зависит от платформы,
+/// а размер модуля — от экрана. Ядро не знает ни того, ни другого.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiQrMatrix {
+    /// Сторона матрицы в модулях.
+    pub size: u32,
+    /// Модули построчно: `size * size` значений, `true` — чёрный.
+    pub modules: Vec<bool>,
+}
+
+/// Строит QR-код для сверки safety number.
+///
+/// # Зачем это нужно
+///
+/// Сверка вручную проваливается там, где утомляет: шестьдесят цифр
+/// читают невнимательно, сверяя края и пропуская середину. Атака
+/// на этом и строится. QR убирает человека из сравнения — устройство
+/// сверяет все цифры само.
+///
+/// # Errors
+///
+/// [`FfiError::InvalidArgument`] — строка содержит не только цифры.
+/// Форматированный номер с пробелами сюда передавать нельзя: сканер
+/// получит не то, что показывает второе устройство.
+#[uniffi::export]
+pub fn safety_number_qr(digits: String) -> Result<FfiQrMatrix, FfiError> {
+    let matrix = guard(|| aegis_protocol::qr::safety_number_qr(&digits))?;
+
+    Ok(FfiQrMatrix {
+        size: u32::try_from(matrix.size).map_err(|_| FfiError::InvalidArgument)?,
+        modules: matrix.modules,
+    })
+}

@@ -2,6 +2,22 @@
 
 This document specifies the AEGIS protocol version 1.0, which combines post-quantum cryptography with modern ratchet-based encryption to provide forward secrecy, post-compromise security, and resistance to quantum attacks.
 
+> **Status: draft, reconciled with the implementation on 2026-08-14.**
+>
+> Every construction below corresponds to code in `crates/aegis-protocol`
+> that compiles and passes its tests. An earlier revision of this document
+> described a design that did not: it specified the AEAD nonce as derived
+> from the message counter and chain keys as derived through HKDF with a
+> single shared label. Both are unsafe — the first repeats the (key, nonce)
+> pair on the first message of every chain, the second links the message key
+> to the next chain key — and both were corrected in the implementation
+> before this document was updated to match.
+>
+> **The specification is not independently verified.** No reference vectors
+> exist for PQXDH, the Double Ratchet or SPQR (§11), so agreement between
+> this text and the code does not establish that either is correct. Read
+> §11 before relying on this document for an audit.
+
 ## Table of Contents
 1. [Introduction](#1-introduction)
 2. [Protocol Overview](#2-protocol-overview)
@@ -53,7 +69,15 @@ AEGIS v1.0 uses the following cryptographic primitives:
 - **HMAC-SHA-256**: Hash-based Message Authentication Code (RFC 2104)
 - **SHA-512**: Secure Hash Algorithm 512-bit (FIPS 180-4)
 - **AES-256-GCM**: Advanced Encryption Standard in Galois/Counter Mode (NIST SP 800-38D)
-- **XEdDSA**: Extended Edwards-curve Digital Signature Algorithm (based on Ed25519)
+- **XEdDSA**: signatures made **with an X25519 key**, by transporting the
+  point between its Montgomery and Edwards representations. This is what
+  lets a single key pair serve both Diffie-Hellman and signing. Note that
+  plain Ed25519 cannot verify a signature under an X25519 public key: the
+  encodings differ, and conflating them yields an implementation whose
+  bundle verification can never succeed. The signing scalar is clamped
+  exactly as X25519 clamps it (RFC 7748 §5), so the public key derived for
+  signing equals the one used for DH; signatures are deterministic
+  (nonce derived from key and message, never from an RNG)
 
 ## 4. PQXDH Key Exchange
 
@@ -78,34 +102,57 @@ Upon receiving the PQXDH message, both parties compute the shared secret as:
 
 ```
 SK = HKDF-SHA-256(
-    0xFF || 
-    DH1 || 
-    DH2 || 
-    DH3 || 
-    DH4 || 
-    SS_pq,
-    "AEGIS_PQXDH_v1_25519_MLKEM1024"
+    salt = 32 zero bytes,
+    IKM  = F || DH1 || DH2 || DH3 || [DH4] || SS_pq,
+    info = "AEGIS_PQXDH_v1_X25519_MLKEM1024"
 )
 ```
 
 Where:
-- `0xFF`: 32 bytes of 0xFF for domain separation
-- `DH1 = IK_A || SPK_B` (Diffie-Hellman between initiator identity and responder signed pre-key)
-- `DH2 = EK_A || IK_B` (Diffie-Hellman between initiator ephemeral and responder identity)
-- `DH3 = EK_A || SPK_B` (Diffie-Hellman between initiator ephemeral and responder signed pre-key)
-- `DH4 = EK_A || OPK_B` (Diffie-Hellman between initiator ephemeral and responder one-time pre-key, if available)
-- `SS_pq`: ML-KEM-1024 shared secret derived from encapsulating to responder's PQSPK
+- `F`: 32 bytes of 0xFF for domain separation
+- `DH1 = DH(IK_A, SPK_B)` — authenticates the initiator
+- `DH2 = DH(EK_A, IK_B)` — authenticates the responder
+- `DH3 = DH(EK_A, SPK_B)` — forward secrecy
+- `DH4 = DH(EK_A, OPK_B)` — forward secrecy for the first message; present
+  only while the one-time pool is not exhausted
+- `SS_pq`: ML-KEM-1024 shared secret, encapsulated to PQOPK_B when
+  available and to PQSPK_B otherwise
+
+**DH1 and DH2 are not interchangeable.** Swapping them would make the
+exchange symmetric, and an initiator's message indistinguishable from a
+responder's.
+
+**An absent DH4 is omitted, not zero-filled.** Substituting a zero block
+would make an exhausted pool indistinguishable from an exchange whose DH4
+computed to zero — and a zero X25519 output indicates a small-order point,
+i.e. an attack.
 
 ### 4.3. PreKey Bundle
 
 Each party publishes a PreKeyBundle containing:
-- Identity key (IK)
-- Signed pre-key (SPK) with signature
-- One-time pre-key (OPK) (optional)
-- Signed post-quantum pre-key (PQSPK)
-- One-time post-quantum pre-key (PQOPK) (optional)
 
-All keys are signed with XEdDSA to prevent substitution attacks.
+| Field | Type | Rotation | Signed |
+|---|---|---|---|
+| Identity key (IK) | X25519, long-term | never | — |
+| Signed pre-key (SPK) | X25519 | every 7 days | yes |
+| One-time pre-key (OPK) | X25519, pool of 100 | on use | no |
+| Signed PQ pre-key (PQSPK) | ML-KEM-1024 | every 7 days | yes |
+| One-time PQ pre-key (PQOPK) | ML-KEM-1024, pool of 100 | on use | yes |
+
+Signatures use XEdDSA and MUST be verified **with the bundle owner's
+identity key** before any cryptographic operation on the bundle. A failed
+verification aborts session establishment; there is no degraded mode.
+
+OPK carries no signature because substituting it gains an attacker nothing:
+the shared secret still includes SPK, which is signed, so a substituted OPK
+only causes the secrets to disagree. PQOPK is signed because the
+post-quantum contribution is singular — substituting it would nullify
+quantum resistance.
+
+A bundle missing either one-time key is usable but **degraded**: forward
+secrecy of the first message is weakened. Implementations MUST surface this
+rather than fail, and SHOULD record it, since systematic pool exhaustion may
+indicate an attacker draining a peer's pre-keys.
 
 ## 5. Double Ratchet
 
@@ -119,18 +166,24 @@ The Double Ratchet consists of two ratchets:
 
 ### 5.2. Key Derivation
 
-Root keys and chain keys are derived using HKDF-SHA-256:
-- New root key: `HKDF-SHA-256(current_root_key, DH_output)`
-- Chain key: `HKDF-SHA-256(current_chain_key, 0x01)` for sending
-- Chain key: `HKDF-SHA-256(current_chain_key, 0x02)` for receiving
-- Message key: `HKDF-SHA-256(chain_key, 0x03)` or `HKDF-SHA-256(chain_key, 0x04)`
+See §8 for the normative definitions. In summary:
+- New root key and chain key: `HKDF-SHA-256(salt=root_key, IKM=DH_output)`,
+  64-byte output split in half
+- Chain advancement: `HMAC-SHA-256(chain_key, 0x02)`
+- Message key: `HMAC-SHA-256(chain_key, 0x01)`
 
 ### 5.3. Message Header
 
-Each message includes a header containing:
-- DH public key (32 bytes)
-- Previous chain length (4 bytes, little-endian)
-- Current chain length (4 bytes, little-endian)
+Each message includes a 40-byte header, transmitted in the clear and
+authenticated as AEAD associated data:
+- DH ratchet public key (32 bytes)
+- Previous chain length (4 bytes, **big-endian**)
+- Message number in the current chain (4 bytes, **big-endian**)
+
+**The header MUST be authenticated.** It selects the decryption key at the
+receiver, so an unauthenticated header would let an attacker alter the
+message number and force the receiver to derive and store an arbitrary
+number of skipped keys.
 
 ## 6. SPQR Ratchet
 
@@ -145,68 +198,106 @@ SPQR adds a post-quantum ratchet step:
 
 ### 6.2. Key Derivation
 
-Root keys are derived from both classical and post-quantum components:
-- New root key: `HKDF-SHA-256(current_root_key, DH_output || PQ_output)`
-- Chain keys and message keys derived as in Double Ratchet
+The post-quantum ratchet maintains its own root, advanced on each completed
+PQ step with the ML-KEM shared secret:
+```
+pq_root = HKDF-SHA-256(salt=pq_root, IKM=kem_shared_secret)["AEGIS_SPQR_v1_PQ_ROOT"]
+```
+The current `pq_root` is combined with the classical message key as
+specified in §8.3. The two ratchets advance independently: the classical one
+on every message, the post-quantum one only when a full KEM exchange
+completes.
 
-### 6.3. Message Header
+### 6.3. Post-Quantum Material
 
-Each SPQR message includes a header containing:
-- DH public key (32 bytes)
-- PQ public key (ML-KEM-768 ciphertext, 1568 bytes)
-- Previous chain length (4 bytes, little-endian)
-- Current chain length (4 bytes, little-endian)
+SPQR does not extend the message header. Post-quantum material travels as
+chunks alongside messages (§6.4), because an ML-KEM-768 encapsulation key is
+1184 bytes and a ciphertext 1088 bytes — attaching either to every message
+would roughly triple traffic. This is what "sparse" denotes.
+
+Until a PQ step completes, the session continues under the current
+post-quantum secret; it is never left without one.
 
 ### 6.4. Chunking
 
-ML-KEM-768 ciphertexts are chunked for transmission:
-- Each chunk is ~1088 bytes
-- Chunks are numbered and include the total count
-- Receiver reassembles chunks before processing
+ML-KEM material is split for transmission:
+- Chunk payload: 128 bytes (encapsulation key spans 10 chunks, ciphertext 9)
+- Each chunk carries: epoch (4 bytes), index (2), total (2), payload
+- Maximum 32 chunks per epoch, bounding receiver memory
+
+Reassembly tolerates loss, duplication and out-of-order arrival: chunks are
+stored by index and released only when all are present. Chunks of a stale
+epoch are discarded so that material from adjacent steps cannot mix.
 
 ## 7. Message Encryption Format
 
-AEGIS messages use AES-256-GCM for encryption:
+AEGIS messages use AES-256-GCM:
 
 ```
-Ciphertext = Header || Nonce || Ciphertext || AuthTag
+Message = Header (40 bytes) || Ciphertext || AuthTag (16 bytes)
 ```
 
 Where:
-- **Header**: Contains ratchet information (DH key, PQ key for SPQR, chain lengths)
-- **Nonce**: 12 bytes, derived from chain length to ensure uniqueness
-- **Ciphertext**: Encrypted plaintext
-- **AuthTag**: 16-byte authentication tag
+- **Header**: DH ratchet key, previous chain length, message number (§5.3).
+  Sent in the clear and passed to AEAD as associated data
+- **Ciphertext**: encrypted plaintext
+- **AuthTag**: 16-byte GCM tag covering both ciphertext and header
+
+The nonce is **not transmitted**: both parties derive it from the message
+key (§7.1). Sending it would waste 12 bytes per message and offer an
+attacker a field to manipulate.
 
 ### 7.1. Nonce Generation
 
-Nonces are generated as:
+The AEAD nonce is derived from the **message key**, not from a counter:
 ```
-Nonce = first_12_bytes(SHA-256(chain_length || fixed_string))
+Nonce = first_12_bytes(HKDF-SHA-256(salt=none, IKM=message_key)["AEGIS_AEAD_v1_NONCE"])
 ```
-Where `fixed_string` is "AEGIS_MESSAGE_NONCE_V1".
+
+**Rationale.** A counter-derived nonce is unsafe here: the message counter
+resets to zero on every DH ratchet step, so the (key, nonce) pair would
+repeat on the first message of every new chain. In AES-GCM a repeated
+(key, nonce) pair reveals the XOR of both plaintexts and permits tag
+forgery. Message keys are unique by construction, so deriving the nonce
+from the key makes nonce collision exactly as unlikely as key collision.
 
 ## 8. Key Derivation Functions
 
-AEGIS uses HKDF-SHA-256 for all key derivation with appropriate domain separation:
+AEGIS uses HKDF-SHA-256 (RFC 5869) for key derivation and HMAC-SHA-256 for
+symmetric chain advancement, with domain separation by distinct labels.
 
 ### 8.1. Root Key Derivation
+
+On each DH ratchet step the previous root key acts as the HKDF salt and the
+Diffie-Hellman output as input key material:
 ```
-HKDF-SHA-256(salt, IKM)[info]
+(new_root_key, chain_key) = HKDF-SHA-256(salt=root_key, IKM=dh_output)["AEGIS_DR_v1_ROOT"]
 ```
-Where salt is optionally provided, IKM is input key material, and info specifies the purpose.
+The 64-byte output is split: first 32 bytes become the new root key, the
+remaining 32 the chain key.
 
 ### 8.2. Chain Key Derivation
+
+Chain advancement uses **HMAC with distinct constants**, not HKDF:
 ```
-HKDF-SHA-256(current_chain_key, 0x01)  # sending chain
-HKDF-SHA-256(current_chain_key, 0x02)  # receiving chain
+next_chain_key = HMAC-SHA-256(chain_key, 0x02)
+message_key    = HMAC-SHA-256(chain_key, 0x01)
 ```
 
-### 8.3. Message Key Derivation
+**Rationale.** The two outputs must be independent: knowledge of a message
+key must not yield the next chain key, or forward secrecy fails. Distinct
+constants under the same HMAC key provide that independence. Deriving both
+through HKDF with a single shared label — as an earlier draft of this
+document specified — makes them related and breaks the property.
+
+### 8.3. Hybrid Message Key (Triple Ratchet)
+
+The final message key combines the classical and post-quantum halves:
 ```
-HKDF-SHA-256(chain_key, 0x03)  # message key for encryption
-HKDF-SHA-256(chain_key, 0x04)  # message key for authentication
+message_key = HKDF-SHA-256(salt=none, IKM=MK_classic || MK_pq)["AEGIS_TripleRatchet_v1"]
 ```
+Both inputs are mandatory. An adversary holding only one of them cannot
+derive the message key (see §10.4).
 
 ## 9. Fingerprint Calculation
 
@@ -238,13 +329,30 @@ Result = H_5199
 ## 10. Security Considerations
 
 ### 10.1. Forward Secrecy
-Compromise of long-term keys does not compromise past session keys due to the DH ratchet.
+Past messages remain secret after a state compromise. The property comes
+from the **symmetric ratchet**: each message key is consumed and destroyed
+immediately, and HMAC is one-way, so a captured chain key yields no earlier
+key.
 
 ### 10.2. Post-Compromise Security
-Compromise of current state does not compromise future messages due to the symmetric ratchet.
+Secrecy is restored after a state compromise, but **not immediately**. The
+property comes from the **DH ratchet**, and healing completes only once both
+parties have introduced a fresh ratchet key — that is, after a full exchange
+in both directions. Messages sent inside that window remain readable to an
+adversary holding the captured state. Implementations MUST NOT describe PCS
+as instantaneous.
 
 ### 10.3. Quantum Resistance
-The ML-KEM components provide security against quantum computers.
+PQXDH protects the initial exchange, SPQR the remainder of the session.
+Because the message key derives from both halves (§8.3), an adversary must
+break **both** X25519 and ML-KEM. If ML-KEM were broken classically — as
+happened to the SIKE and Rainbow candidates — security degrades to the
+Double Ratchet level rather than collapsing; symmetrically, ML-KEM covers
+the arrival of a quantum computer.
+
+Protocol version 1 mandates the post-quantum ratchet. Version 0 is rejected
+outright, and no version negotiation exists — negotiation is itself the
+channel through which downgrade attacks are mounted.
 
 ### 10.4. Deniability
 Messages do not contain signatures that bind them to a specific sender.
@@ -257,12 +365,40 @@ All implementations should use constant-time algorithms for security-critical op
 
 ## 11. Test Vectors
 
-Test vectors for AEGIS v1.0 are located in `docs/protocol/test-vectors/` and include:
-- PQXDH key exchange vectors
-- Double Ratchet encryption/decryption vectors
-- SPQR encryption/decryption vectors
-- Fingerprint calculation vectors
-- Key derivation function vectors
+Test vectors live in `docs/protocol/test-vectors/`. Their README distinguishes
+two kinds, and the distinction matters:
+
+**Reference vectors** — from an independent source. Agreement demonstrates
+*interoperability*.
+
+| Primitive | Source | Status |
+|---|---|---|
+| X25519 | RFC 7748 §6.1 | present |
+| Ed25519 | RFC 8032 §7.1 | present |
+| ML-KEM-768/1024 | FIPS 203 | present |
+| HKDF-SHA-256 | RFC 5869 Appendix A | present |
+| SHA-512 | FIPS 180-4 | present |
+
+**Regression vectors** — produced by this implementation and pinned to
+detect unintended change. They do *not* demonstrate interoperability: an
+error present from the outset would be pinned rather than exposed.
+
+| Component | Status |
+|---|---|
+| Fingerprint | present (regression only) |
+
+**Absent: reference vectors for the protocol itself** — PQXDH, Double
+Ratchet, SPQR. Their only source is the libsignal reference implementation,
+which is AGPL-3.0 and can be neither linked nor copied here (ADR-005). The
+sanctioned route is to run it in an isolated container and commit the
+resulting **vectors** — data, not code.
+
+Until that exists, the protocol layers are verified only against
+themselves. An error made symmetrically in both the sending and receiving
+paths would pass every current test while breaking interoperability with
+any other implementation. This is the largest open verification gap in
+AEGIS v1.0 and is stated here so that no reader mistakes the present test
+suite for proof of correctness.
 
 ## 12. Implementation Notes
 

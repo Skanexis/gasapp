@@ -1,0 +1,113 @@
+name: fuzz
+
+# Фаззинг идёт по ночам, а не на каждый push: один осмысленный прогон
+# занимает часы, и держать на нём пайплайн пул-реквестов бессмысленно.
+#
+# На пул-реквестах выполняется только сборка таргетов (job `build`) —
+# она ловит самое частое: таргет перестал компилироваться после правки
+# API и потому молча не запускался бы ночью.
+on:
+  schedule:
+    # 03:00 UTC ежедневно.
+    - cron: "0 3 * * *"
+  pull_request:
+    paths:
+      - "fuzz/**"
+      - "crates/aegis-protocol/**"
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: "Секунд на таргет"
+        required: false
+        default: "300"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Быстрая проверка: таргеты собираются. Идёт на пул-реквестах.
+  build:
+    name: targets build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # libFuzzer требует nightly: санитайзеры и `-C passes=sancov-module`
+      # на стабильном канале недоступны.
+      #
+      # На Linux этого достаточно. На Windows MSVC сборка падает на
+      # линковке — x64-библиотеки ASan отсутствуют в Build Tools 2019,
+      # поэтому локально прогон идёт через `fuzz/Dockerfile`
+      # (см. `fuzz/README.md`). В CI контейнер не нужен.
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: build all targets
+        run: cargo fuzz build --fuzz-dir fuzz
+
+  # Ночной прогон. Каждый таргет фаззится независимо, поэтому падение
+  # одного не отменяет остальные.
+  run:
+    name: "fuzz · ${{ matrix.target }}"
+    # На пул-реквестах не запускается: только по расписанию и вручную.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - chunk_reassembly
+          - parse_message
+          - decrypt_session
+          - parse_prekey_bundle
+          - parse_session_state
+          - parse_safety_number
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # Корпус кэшируется между прогонами: накопленные интересные входы
+      # дают следующему прогону стартовать не с нуля. Ключ включает номер
+      # запуска, restore-keys подхватывают последний доступный корпус.
+      - name: restore corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_number }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: run
+        env:
+          DURATION: ${{ github.event.inputs.duration_seconds || '3600' }}
+        run: |
+          cargo fuzz run --fuzz-dir fuzz "${{ matrix.target }}" -- \
+            -max_total_time="$DURATION" \
+            -rss_limit_mb=4096
+
+      # Артефакт сохраняется только при падении: это вход, воспроизводящий
+      # краш, и он нужен для отладки. При успехе сохранять нечего.
+      - name: upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore

@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "aegis-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Крейт намеренно вне workspace `crates/`: он собирается только nightly
+# с санитайзерами libFuzzer, и включение его в общий workspace ломало бы
+# `cargo build --workspace` на стабильном компиляторе.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+aegis-protocol = { path = "../crates/aegis-protocol" }
+aegis-types = { path = "../crates/aegis-types" }
+# Версия совпадает с той, что использует `aegis-protocol`: иначе типы
+# источника случайности окажутся разными и не подойдут по трейтам.
+rand_core = { version = "=0.6.4", features = ["getrandom"] }
+
+[[bin]]
+name = "chunk_reassembly"
+path = "fuzz_targets/chunk_reassembly.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_message"
+path = "fuzz_targets/parse_message.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decrypt_session"
+path = "fuzz_targets/decrypt_session.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_prekey_bundle"
+path = "fuzz_targets/parse_prekey_bundle.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_session_state"
+path = "fuzz_targets/parse_session_state.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_safety_number"
+path = "fuzz_targets/parse_safety_number.rs"
+test = false
+doc = false
