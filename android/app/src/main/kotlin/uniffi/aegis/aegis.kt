@@ -655,7 +655,7 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
 internal interface UniffiCallbackInterfaceHttpTransportMethod0 : com.sun.jna.Callback {
-    fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+    fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
 }
 @Structure.FieldOrder("execute", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceHttpTransport(
@@ -673,6 +673,10 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
     }
 
 }
+
+
+
+
 
 
 
@@ -861,6 +865,8 @@ fun uniffi_aegis_checksum_method_messenger_delete_for_everyone(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_edit_message(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_fetch_attachment(
+): Short
 fun uniffi_aegis_checksum_method_messenger_messages(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_own_contact_link(
@@ -876,6 +882,8 @@ fun uniffi_aegis_checksum_method_messenger_receive_messages(
 fun uniffi_aegis_checksum_method_messenger_register(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_search(
+): Short
+fun uniffi_aegis_checksum_method_messenger_send_attachment(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_send_message(
 ): Short
@@ -947,7 +955,7 @@ fun uniffi_aegis_fn_free_httptransport(`ptr`: Pointer,uniffi_out_err: UniffiRust
 ): Unit
 fun uniffi_aegis_fn_init_callback_vtable_httptransport(`vtable`: UniffiVTableCallbackInterfaceHttpTransport,
 ): Unit
-fun uniffi_aegis_fn_method_httptransport_execute(`ptr`: Pointer,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_aegis_fn_method_httptransport_execute(`ptr`: Pointer,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_clone_messenger(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
@@ -965,6 +973,8 @@ fun uniffi_aegis_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUse
 ): Unit
 fun uniffi_aegis_fn_method_messenger_edit_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_aegis_fn_method_messenger_fetch_attachment(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`descriptor`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_messages(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_own_contact_link(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -981,6 +991,8 @@ fun uniffi_aegis_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuf
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_send_attachment(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`file`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_send_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_send_reaction(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`emoji`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1189,7 +1201,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_safety_number_qr() != 62446.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 38406.toShort()) {
+    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 53468.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_add_contact_from_link() != 19449.toShort()) {
@@ -1205,6 +1217,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_fetch_attachment() != 47811.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_messages() != 55576.toShort()) {
@@ -1229,6 +1244,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_search() != 52611.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_send_attachment() != 8050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_send_message() != 14514.toShort()) {
@@ -1735,7 +1753,7 @@ public interface HttpTransport {
      *
      * [`FfiError::Core`] при сбое соединения.
      */
-    fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `headers`: List<FfiHeader>): FfiHttpResponse
+    fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>): FfiHttpResponse
     
     companion object
 }
@@ -1840,12 +1858,12 @@ open class HttpTransportImpl: Disposable, AutoCloseable, HttpTransport
      *
      * [`FfiError::Core`] при сбое соединения.
      */
-    @Throws(FfiException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `headers`: List<FfiHeader>): FfiHttpResponse {
+    @Throws(FfiException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>): FfiHttpResponse {
             return FfiConverterTypeFfiHttpResponse.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_httptransport_execute(
-        it, FfiConverterString.lower(`method`),FfiConverterString.lower(`path`),FfiConverterOptionalString.lower(`body`),FfiConverterSequenceTypeFfiHeader.lower(`headers`),_status)
+        it, FfiConverterString.lower(`method`),FfiConverterString.lower(`path`),FfiConverterOptionalString.lower(`body`),FfiConverterOptionalByteArray.lower(`binaryBody`),FfiConverterSequenceTypeFfiHeader.lower(`headers`),_status)
 }
     }
     )
@@ -1864,13 +1882,14 @@ open class HttpTransportImpl: Disposable, AutoCloseable, HttpTransport
 // Put the implementation in an object so we don't pollute the top-level namespace
 internal object uniffiCallbackInterfaceHttpTransport {
     internal object `execute`: UniffiCallbackInterfaceHttpTransportMethod0 {
-        override fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+        override fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
             val uniffiObj = FfiConverterTypeHttpTransport.handleMap.get(uniffiHandle)
             val makeCall = { ->
                 uniffiObj.`execute`(
                     FfiConverterString.lift(`method`),
                     FfiConverterString.lift(`path`),
                     FfiConverterOptionalString.lift(`body`),
+                    FfiConverterOptionalByteArray.lift(`binaryBody`),
                     FfiConverterSequenceTypeFfiHeader.lift(`headers`),
                 )
             }
@@ -2110,6 +2129,21 @@ public interface MessengerInterface {
     fun `editMessage`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
+     * Скачивает и расшифровывает вложение по его описанию.
+     *
+     * `descriptor` — те самые байты, что пришли внутри сообщения.
+     *
+     * 🔐 Расшифровка проверяет тег каждого чанка: подменённый сервером
+     * файл вернёт ошибку, а не покажется пользователю содержимым.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — описание не разбирается, скачивание
+     * не удалось либо блоб подменён.
+     */
+    fun `fetchAttachment`(`deviceId`: kotlin.String, `descriptor`: kotlin.ByteArray, `nowMillis`: kotlin.Long): kotlin.ByteArray
+    
+    /**
      * Возвращает сообщения чата.
      *
      * # Errors
@@ -2201,6 +2235,31 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
     fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<FfiSearchHit>
+    
+    /**
+     * Отправляет файл вложением.
+     *
+     * # Что происходит внутри
+     *
+     * Файл шифруется случайным ключом, режется на чанки по 64 КБ
+     * и уходит на сервер. Описание — адрес, ключ, имя, тип —
+     * отправляется **внутри сообщения**, под сквозным шифрованием.
+     *
+     * 🔐 Сервер получает только байты и их длину. Ни имени файла,
+     * ни получателя, ни ключа он не видит.
+     *
+     * # Про поток
+     *
+     * Вызывать в фоне: шифрование стомегабайтного файла и его
+     * загрузка занимают секунды, и держать на них главный поток
+     * нельзя.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — файл больше предела, описание не проходит
+     * проверку либо отправка не удалась.
+     */
+    fun `sendAttachment`(`peerUsername`: kotlin.String, `deviceId`: kotlin.String, `file`: FfiAttachmentFile, `body`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
      * Отправляет сообщение контакту по имени.
@@ -2495,6 +2554,32 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Скачивает и расшифровывает вложение по его описанию.
+     *
+     * `descriptor` — те самые байты, что пришли внутри сообщения.
+     *
+     * 🔐 Расшифровка проверяет тег каждого чанка: подменённый сервером
+     * файл вернёт ошибку, а не покажется пользователю содержимым.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — описание не разбирается, скачивание
+     * не удалось либо блоб подменён.
+     */
+    @Throws(FfiException::class)override fun `fetchAttachment`(`deviceId`: kotlin.String, `descriptor`: kotlin.ByteArray, `nowMillis`: kotlin.Long): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_fetch_attachment(
+        it, FfiConverterString.lower(`deviceId`),FfiConverterByteArray.lower(`descriptor`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Возвращает сообщения чата.
      *
      * # Errors
@@ -2672,6 +2757,41 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     }
     )
     }
+    
+
+    
+    /**
+     * Отправляет файл вложением.
+     *
+     * # Что происходит внутри
+     *
+     * Файл шифруется случайным ключом, режется на чанки по 64 КБ
+     * и уходит на сервер. Описание — адрес, ключ, имя, тип —
+     * отправляется **внутри сообщения**, под сквозным шифрованием.
+     *
+     * 🔐 Сервер получает только байты и их длину. Ни имени файла,
+     * ни получателя, ни ключа он не видит.
+     *
+     * # Про поток
+     *
+     * Вызывать в фоне: шифрование стомегабайтного файла и его
+     * загрузка занимают секунды, и держать на них главный поток
+     * нельзя.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — файл больше предела, описание не проходит
+     * проверку либо отправка не удалась.
+     */
+    @Throws(FfiException::class)override fun `sendAttachment`(`peerUsername`: kotlin.String, `deviceId`: kotlin.String, `file`: FfiAttachmentFile, `body`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_send_attachment(
+        it, FfiConverterString.lower(`peerUsername`),FfiConverterString.lower(`deviceId`),FfiConverterTypeFfiAttachmentFile.lower(`file`),FfiConverterString.lower(`body`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
     
 
     
@@ -2923,6 +3043,82 @@ public object FfiConverterTypeFfiAccount: FfiConverterRustBuffer<FfiAccount> {
 
 
 /**
+ * Файл, который пользователь отправляет вложением.
+ */
+data class FfiAttachmentFile (
+    /**
+     * Тип: от него зависит поведение получателя.
+     *
+     * Определяется приложением, а не расширением имени: имя выбирает
+     * отправитель, и «отчёт.jpg», который на деле исполняемый файл,
+     * не должен открываться как картинка.
+     */
+    var `kind`: FfiAttachmentKind, 
+    /**
+     * Содержимое файла в открытом виде.
+     */
+    var `bytes`: kotlin.ByteArray, 
+    /**
+     * Имя файла.
+     *
+     * 🔐 Уходит зашифрованным вместе с описанием: «результаты
+     * анализов.jpg» говорит о человеке больше, чем сам факт отправки.
+     */
+    var `name`: kotlin.String?, 
+    /**
+     * Описание для незрячих пользователей.
+     */
+    var `description`: kotlin.String?, 
+    /**
+     * Длительность — для голосовых и видео.
+     */
+    var `durationMillis`: kotlin.UInt?, 
+    /**
+     * Огибающая громкости — для голосовых.
+     */
+    var `waveform`: kotlin.ByteArray?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAttachmentFile: FfiConverterRustBuffer<FfiAttachmentFile> {
+    override fun read(buf: ByteBuffer): FfiAttachmentFile {
+        return FfiAttachmentFile(
+            FfiConverterTypeFfiAttachmentKind.read(buf),
+            FfiConverterByteArray.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+            FfiConverterOptionalByteArray.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAttachmentFile) = (
+            FfiConverterTypeFfiAttachmentKind.allocationSize(value.`kind`) +
+            FfiConverterByteArray.allocationSize(value.`bytes`) +
+            FfiConverterOptionalString.allocationSize(value.`name`) +
+            FfiConverterOptionalString.allocationSize(value.`description`) +
+            FfiConverterOptionalUInt.allocationSize(value.`durationMillis`) +
+            FfiConverterOptionalByteArray.allocationSize(value.`waveform`)
+    )
+
+    override fun write(value: FfiAttachmentFile, buf: ByteBuffer) {
+            FfiConverterTypeFfiAttachmentKind.write(value.`kind`, buf)
+            FfiConverterByteArray.write(value.`bytes`, buf)
+            FfiConverterOptionalString.write(value.`name`, buf)
+            FfiConverterOptionalString.write(value.`description`, buf)
+            FfiConverterOptionalUInt.write(value.`durationMillis`, buf)
+            FfiConverterOptionalByteArray.write(value.`waveform`, buf)
+    }
+}
+
+
+
+/**
  * Контакт для показа в интерфейсе.
  */
 data class FfiContact (
@@ -3089,7 +3285,19 @@ data class FfiHttpResponse (
     /**
      * Тело ответа.
      */
-    var `body`: kotlin.String
+    var `body`: kotlin.String, 
+    /**
+     * Тело ответа в сырых байтах — для скачанных вложений.
+     *
+     * Пусто для обычных ответов: они текстовые, и держать копию
+     * каждого JSON в байтах значило бы удваивать память на ровном
+     * месте.
+     *
+     * 🔐 Для вложений передаётся именно так, а не в hex: hex удваивает
+     * объём, и стомегабайтный файл занял бы двести мегабайт памяти
+     * на границе FFI.
+     */
+    var `binaryBody`: kotlin.ByteArray
 ) {
     
     companion object
@@ -3103,17 +3311,20 @@ public object FfiConverterTypeFfiHttpResponse: FfiConverterRustBuffer<FfiHttpRes
         return FfiHttpResponse(
             FfiConverterUShort.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterByteArray.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiHttpResponse) = (
             FfiConverterUShort.allocationSize(value.`status`) +
-            FfiConverterString.allocationSize(value.`body`)
+            FfiConverterString.allocationSize(value.`body`) +
+            FfiConverterByteArray.allocationSize(value.`binaryBody`)
     )
 
     override fun write(value: FfiHttpResponse, buf: ByteBuffer) {
             FfiConverterUShort.write(value.`status`, buf)
             FfiConverterString.write(value.`body`, buf)
+            FfiConverterByteArray.write(value.`binaryBody`, buf)
     }
 }
 
@@ -3263,6 +3474,53 @@ public object FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer<FfiSearchHit>
             FfiConverterTypeFfiMessage.write(value.`message`, buf)
     }
 }
+
+
+
+/**
+ * Вложения: голосовые, фото, видео, документы.
+ */
+
+enum class FfiAttachmentKind {
+    
+    /**
+     * Изображение.
+     */
+    IMAGE,
+    /**
+     * Видео.
+     */
+    VIDEO,
+    /**
+     * Голосовое сообщение.
+     */
+    VOICE,
+    /**
+     * Произвольный файл.
+     */
+    DOCUMENT;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAttachmentKind: FfiConverterRustBuffer<FfiAttachmentKind> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiAttachmentKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiAttachmentKind) = 4UL
+
+    override fun write(value: FfiAttachmentKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -3534,6 +3792,38 @@ public object FfiConverterTypeSecurityAlertKind : FfiConverterRustBuffer<Securit
 }
 
 
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalUInt: FfiConverterRustBuffer<kotlin.UInt?> {
+    override fun read(buf: ByteBuffer): kotlin.UInt? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterUInt.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.UInt?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterUInt.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.UInt?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterUInt.write(value, buf)
+        }
+    }
+}
 
 
 

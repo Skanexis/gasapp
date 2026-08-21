@@ -30,6 +30,7 @@ dependencies = [
 name = "aegis-core"
 version = "0.1.0"
 dependencies = [
+ "aegis-media",
  "aegis-net",
  "aegis-protocol",
  "aegis-storage",
@@ -51,6 +52,7 @@ version = "0.1.0"
 dependencies = [
  "aegis-core",
  "aegis-keystore",
+ "aegis-media",
  "aegis-net",
  "aegis-protocol",
  "aegis-storage",

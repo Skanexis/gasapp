@@ -63,6 +63,15 @@ pub struct HttpRequest {
     pub path: String,
     /// Тело в формате JSON. `None` для запросов без тела.
     pub body: Option<String>,
+    /// Тело из сырых байтов — для вложений.
+    ///
+    /// Отдельное поле, а не hex в [`body`](Self::body): hex удваивает
+    /// объём, и стомегабайтный файл занял бы двести мегабайт трафика
+    /// и памяти на разбор с обеих сторон.
+    ///
+    /// Заполнено не более одного из двух полей. Оба сразу означали бы
+    /// вопрос «какое отправлять», на который у транспорта нет ответа.
+    pub binary_body: Option<Vec<u8>>,
     /// Дополнительные заголовки: имя и значение.
     ///
     /// Нужны для подписи запроса. Список, а не карта: заголовков
@@ -78,6 +87,12 @@ pub struct HttpResponse {
     pub status: u16,
     /// Тело ответа.
     pub body: String,
+    /// Тело ответа в сырых байтах — для скачанных вложений.
+    ///
+    /// Пусто для обычных ответов: они текстовые, и заводить копию
+    /// каждого JSON в байтах значило бы удваивать память на ровном
+    /// месте.
+    pub binary_body: Vec<u8>,
 }
 
 /// Транспорт, выполняющий запрос.
@@ -233,7 +248,18 @@ impl<T: Transport> ApiClient<T> {
     /// # Errors
     ///
     /// [`AegisError::Network`] при сбое соединения.
-pub fn acknowledge(        &self,        device_id: &str,        envelope_id: &str,        auth: Vec<(String, String)>,    ) -> Result<()> {        let response = self.send_signed(            Method::Delete,            format!("/v1/messages/{device_id}/{envelope_id}"),            None,            auth,        )?;
+    pub fn acknowledge(
+        &self,
+        device_id: &str,
+        envelope_id: &str,
+        auth: Vec<(String, String)>,
+    ) -> Result<()> {
+        let response = self.send_signed(
+            Method::Delete,
+            format!("/v1/messages/{device_id}/{envelope_id}"),
+            None,
+            auth,
+        )?;
 
         check_status(&response)
     }
@@ -259,12 +285,91 @@ pub fn acknowledge(        &self,        device_id: &str,        envelope_id: &s
             method,
             path,
             body,
+            binary_body: None,
             headers,
         })?;
 
         check_status(&response)?;
 
         Ok(response)
+    }
+
+    /// Отправляет запрос с телом из сырых байтов.
+    ///
+    /// Отдельно от [`Self::send_signed`], потому что тело здесь
+    /// не JSON: hex удваивал бы объём, а стомегабайтное вложение
+    /// заняло бы двести мегабайт памяти на каждой стороне.
+    fn send_binary(
+        &self,
+        method: Method,
+        path: String,
+        payload: Vec<u8>,
+        headers: Vec<(String, String)>,
+    ) -> Result<HttpResponse> {
+        let response = self.transport.execute(&HttpRequest {
+            method,
+            path,
+            body: None,
+            binary_body: Some(payload),
+            headers,
+        })?;
+
+        check_status(&response)?;
+
+        Ok(response)
+    }
+
+    /// Загружает зашифрованное вложение.
+    ///
+    /// Возвращает адрес блоба: он попадает в описание вложения внутри
+    /// сообщения, то есть уходит получателю под сквозным шифрованием.
+    ///
+    /// 🔐 Сервер получает только байты. Ни имени файла, ни получателя,
+    /// ни ключа он не видит: описание с ними едет в самом сообщении.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] при сбое соединения;
+    /// [`AegisError::Malformed`] — сервер вернул не адрес.
+    pub fn upload_attachment(
+        &self,
+        device_id: &str,
+        payload: Vec<u8>,
+        auth: Vec<(String, String)>,
+    ) -> Result<String> {
+        let response = self.send_binary(
+            Method::Post,
+            format!("/v1/attachments/{device_id}"),
+            payload,
+            auth,
+        )?;
+
+        parse(&response)
+    }
+
+    /// Скачивает зашифрованное вложение.
+    ///
+    /// Возвращает шифроблоб как есть: расшифровка — дело вызывающего,
+    /// у которого есть ключ из описания.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] при сбое соединения;
+    /// [`AegisError::NotFound`] — вложения нет либо срок истёк.
+    pub fn download_attachment(
+        &self,
+        device_id: &str,
+        attachment_id: &str,
+        auth: Vec<(String, String)>,
+    ) -> Result<Vec<u8>> {
+        let response = self.send_signed(
+            Method::Get,
+            format!("/v1/attachments/{device_id}/{attachment_id}"),
+            None,
+            auth,
+        )?;
+
+        Ok(response.binary_body)
     }
 }
 
@@ -319,6 +424,7 @@ mod tests {
         fn with(status: u16, body: &str) -> Self {
             Self {
                 responses: RefCell::new(vec![HttpResponse {
+                    binary_body: Vec::new(),
                     status,
                     body: body.to_owned(),
                 }]),

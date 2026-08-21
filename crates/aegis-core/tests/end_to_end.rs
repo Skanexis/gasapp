@@ -60,6 +60,11 @@ struct ServerState {
     queues: HashMap<String, Vec<EnvelopeResponse>>,
     /// Счётчик для генерации идентификаторов.
     counter: u128,
+    /// Загруженные вложения по адресу.
+    ///
+    /// Как и настоящий сервер, заглушка не знает ни получателя,
+    /// ни имени файла — только байты.
+    attachments: HashMap<String, Vec<u8>>,
 }
 
 /// Поддельный сервер, разделяемый между клиентами.
@@ -72,6 +77,28 @@ impl FakeServer {
     fn new() -> Self {
         Self {
             state: std::rc::Rc::new(RefCell::new(ServerState::default())),
+        }
+    }
+
+    /// Возвращает копии всех загруженных блобов.
+    ///
+    /// Нужна проверке того, что сервер не видит содержимого: тест
+    /// обязан смотреть ровно на то, что лежит у оператора.
+    fn stored_attachments(&self) -> Vec<Vec<u8>> {
+        self.state.borrow().attachments.values().cloned().collect()
+    }
+
+    /// Портит каждый хранимый блоб на один бит.
+    ///
+    /// Так ведёт себя недобросовестный оператор: файл у него, и
+    /// изменить его он может.
+    fn tamper_with_attachments(&self) {
+        let mut state = self.state.borrow_mut();
+
+        for blob in state.attachments.values_mut() {
+            if let Some(byte) = blob.first_mut() {
+                *byte ^= 0x01;
+            }
         }
     }
 
@@ -216,10 +243,47 @@ impl Transport for FakeServer {
 
                 (200, String::new())
             }
+            (Method::Post, path) if path.starts_with("/v1/attachments/") => {
+                let payload = request.binary_body.clone().unwrap_or_default();
+
+                if payload.is_empty() {
+                    (400, String::new())
+                } else {
+                    let attachment_id = Self::next_uuid(&mut state);
+                    state.attachments.insert(attachment_id.clone(), payload);
+
+                    (
+                        200,
+                        serde_json::to_string(&attachment_id).unwrap_or_default(),
+                    )
+                }
+            }
+            (Method::Get, path) if path.starts_with("/v1/attachments/") => {
+                // Последний сегмент — адрес вложения; перед ним стоит
+                // устройство, которое подписало запрос.
+                let attachment_id = path.rsplit('/').next().unwrap_or_default();
+
+                match state.attachments.get(attachment_id) {
+                    Some(payload) => {
+                        return Ok(HttpResponse {
+                            status: 200,
+                            body: String::new(),
+                            binary_body: payload.clone(),
+                        })
+                    }
+                    None => (404, String::new()),
+                }
+            }
             _ => (404, String::new()),
         };
 
-        Ok(HttpResponse { status, body })
+        Ok(HttpResponse {
+            status,
+            body,
+            // Байты отдаёт только скачивание вложения, и оно
+            // возвращается выше отдельной веткой.
+            binary_body: Vec::new(),
+        })
     }
 }
 
@@ -537,5 +601,196 @@ fn search_hit_points_at_its_chat() {
     assert!(
         chats.contains(&hits[0].chat_id),
         "найденное сообщение указывает на несуществующий чат"
+    );
+}
+
+/// Файл, отправленный вложением, доходит и совпадает побайтово.
+#[test]
+fn attachment_round_trips_through_the_server() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::{AttachmentDescriptor, AttachmentKind};
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    let alice_account = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    let bob_account = bob
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    // Файл заведомо крупнее одного чанка: склейка и обратная нарезка
+    // на границе чанков — самое вероятное место ошибки.
+    let original: Vec<u8> = (0..200_000u32).map(|index| (index % 251) as u8).collect();
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_account.device_id.to_string(),
+            &AttachmentFile {
+                kind: AttachmentKind::Document,
+                bytes: original.clone(),
+                name: Some("отчёт.pdf".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            "вот документ",
+            now(),
+            &mut OsRng,
+        )
+        .expect("вложение отправлено");
+
+    let received = bob
+        .receive_messages(&bob_account.device_id.to_string(), now())
+        .expect("приём удался");
+
+    assert_eq!(received, 1, "Боб не получил сообщение с вложением");
+
+    // Тот же файл загружается ещё раз, чтобы получить описание
+    // на руки: разбор содержимого сообщения — задача интерфейса,
+    // а проверяется сейчас доставка самого файла.
+    let descriptor = alice
+        .upload_attachment(
+            &alice_account.device_id.to_string(),
+            &AttachmentFile {
+                kind: AttachmentKind::Document,
+                bytes: original.clone(),
+                name: Some("отчёт.pdf".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            now(),
+            &mut OsRng,
+        )
+        .expect("описание построено");
+
+    let downloaded = bob
+        .fetch_attachment(&bob_account.device_id.to_string(), &descriptor, now())
+        .expect("вложение скачано");
+
+    assert_eq!(downloaded, original, "файл изменился при передаче");
+
+    // Проверка, что описание вообще разбирается обратно.
+    let encoded = descriptor.to_bytes().expect("сериализация");
+    assert!(AttachmentDescriptor::from_bytes(&encoded).is_ok());
+}
+
+/// 🔐 Сервер не видит содержимого файла.
+///
+/// То же свойство, что и у сообщений, но для вложений: оператор
+/// хранит блоб и не может его прочитать.
+#[test]
+fn server_never_sees_attachment_contents() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::AttachmentKind;
+
+    const CANARY: &[u8] = b"SECRET-FILE-CONTENTS-CANARY";
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    let alice_account = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    let mut payload = CANARY.to_vec();
+    payload.extend_from_slice(&[0x00; 1024]);
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_account.device_id.to_string(),
+            &AttachmentFile {
+                kind: AttachmentKind::Document,
+                bytes: payload,
+                name: Some("секрет.txt".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            "",
+            now(),
+            &mut OsRng,
+        )
+        .expect("вложение отправлено");
+
+    let stored = server.stored_attachments();
+
+    assert!(!stored.is_empty(), "сервер не получил вложение");
+
+    for blob in &stored {
+        assert!(
+            !blob.windows(CANARY.len()).any(|window| window == CANARY),
+            "содержимое файла нашлось у сервера в открытом виде"
+        );
+    }
+
+    // Имя файла тоже не должно попасть на сервер: оно уезжает внутри
+    // сообщения, а не рядом с блобом.
+    let name = "секрет.txt".as_bytes();
+
+    for blob in &stored {
+        assert!(
+            !blob.windows(name.len()).any(|window| window == name),
+            "имя файла нашлось у сервера в открытом виде"
+        );
+    }
+}
+
+/// 🔐 Подменённый блоб не расшифровывается.
+///
+/// Сервер хранит файл и может его подправить. Аутентифицированное
+/// шифрование каждого чанка означает, что подмена будет замечена,
+/// а не показана пользователю как содержимое.
+#[test]
+fn tampered_attachment_is_rejected() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+
+    let alice_account = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+
+    let original = vec![0x5Au8; 4096];
+
+    let descriptor = alice
+        .upload_attachment(
+            &alice_account.device_id.to_string(),
+            &AttachmentFile {
+                kind: AttachmentKind::Document,
+                bytes: original,
+                name: None,
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            now(),
+            &mut OsRng,
+        )
+        .expect("описание построено");
+
+    server.tamper_with_attachments();
+
+    assert!(
+        alice
+            .fetch_attachment(&alice_account.device_id.to_string(), &descriptor, now())
+            .is_err(),
+        "подменённый блоб расшифровался"
     );
 }

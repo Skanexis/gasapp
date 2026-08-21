@@ -31,6 +31,8 @@ use aegis_net::api::{
     BundleResponse, PublishKeysRequest, RegisterRequest, SendRequest,
 };
 use aegis_net::client::{ApiClient, Transport};
+use aegis_media::attachment::{self, AttachmentKey};
+use aegis_media::descriptor::{AttachmentDescriptor, AttachmentKind};
 use aegis_protocol::contact_link::ContactLink;
 use aegis_protocol::content::Content;
 use aegis_net::pow;
@@ -106,6 +108,31 @@ pub struct SearchHit {
     pub chat_id: ChatId,
     /// Само сообщение.
     pub message: ChatMessage,
+}
+
+/// Файл, который пользователь отправляет вложением.
+///
+/// Байты целиком в памяти: телефон всё равно читает файл перед
+/// отправкой, а потоковая загрузка потребовала бы держать соединение
+/// открытым через границу FFI — то есть отдать управление сетью
+/// платформе, которая её и так предоставляет одним вызовом.
+#[derive(Debug, Clone)]
+pub struct AttachmentFile {
+    /// Тип: от него зависит поведение получателя.
+    pub kind: AttachmentKind,
+    /// Содержимое файла в открытом виде.
+    pub bytes: Vec<u8>,
+    /// Имя файла.
+    ///
+    /// 🔐 Уходит зашифрованным: «результаты анализов.jpg» говорит
+    /// о человеке больше, чем сам факт отправки.
+    pub name: Option<String>,
+    /// Описание для незрячих пользователей.
+    pub description: Option<String>,
+    /// Длительность — для голосовых и видео.
+    pub duration_millis: Option<u32>,
+    /// Огибающая громкости — для голосовых.
+    pub waveform: Option<Vec<u8>>,
 }
 
 /// Клиент AEGIS.
@@ -762,6 +789,174 @@ impl<T: Transport> Client<T> {
         .to_uri()
     }
 
+    /// Отправляет файл вложением.
+    ///
+    /// # Что происходит по шагам
+    ///
+    /// 1. Файл шифруется случайным ключом и режется на чанки по 64 КБ.
+    /// 2. Шифроблоб уходит на сервер и получает адрес.
+    /// 3. Описание — адрес, ключ, имя, тип — уходит **внутри
+    ///    сообщения**, то есть под сквозным шифрованием.
+    ///
+    /// 🔐 Ключ вложения не покидает сообщения. Сервер, хранящий блоб,
+    /// расшифровать его не может: у него есть только байты и их длина.
+    ///
+    /// # Про порядок
+    ///
+    /// Сначала загрузка, потом сообщение. При обратном порядке
+    /// получатель увидел бы описание файла, которого на сервере ещё
+    /// нет, и открыл бы его ошибкой.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — файл больше предела либо описание
+    /// не проходит проверку;
+    /// [`AegisError::Network`] — загрузка или отправка не удалась;
+    /// прочие — те же, что у [`Client::send_message`].
+    pub fn send_attachment<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        device_id: &str,
+        file: &AttachmentFile,
+        body: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let descriptor = self.upload_attachment(device_id, file, now, rng)?;
+
+        self.send_content(
+            peer_username,
+            &Content::Attachments {
+                body: body.to_owned(),
+                descriptors: vec![descriptor.to_bytes()?],
+                reply_to: None,
+            },
+            now,
+            rng,
+        )
+    }
+
+    /// Шифрует файл и кладёт его на сервер.
+    ///
+    /// Возвращает описание, готовое уехать внутри сообщения.
+    ///
+    /// Публичный, а не внутренний шаг [`Client::send_attachment`]:
+    /// вложение к нескольким получателям загружается один раз,
+    /// а описание рассылается всем — иначе один файл занимал бы
+    /// на сервере столько места, сколько у него адресатов.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — файл больше предела;
+    /// [`AegisError::Network`] — загрузка не удалась.
+    pub fn upload_attachment<R: RngCore + CryptoRng>(
+        &self,
+        device_id: &str,
+        file: &AttachmentFile,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<AttachmentDescriptor> {
+        let size = u64::try_from(file.bytes.len()).map_err(|_| AegisError::Malformed)?;
+
+        if size > MAX_ATTACHMENT_BYTES {
+            return Err(AegisError::Malformed);
+        }
+
+        let key = AttachmentKey::generate(rng);
+
+        // Чанки склеиваются в один блоб: сервер хранит его целиком,
+        // а получатель режет обратно по известному размеру чанка.
+        // Отдельная загрузка каждого чанка означала бы тысячу запросов
+        // на стомегабайтный файл.
+        let mut payload = Vec::new();
+
+        for (index, chunk) in file.bytes.chunks(attachment::CHUNK_SIZE).enumerate() {
+            let index = u32::try_from(index).map_err(|_| AegisError::Malformed)?;
+
+            payload.extend_from_slice(&attachment::seal_chunk(&key, index, chunk)?);
+        }
+
+        let (identity, _) = self.load_identity()?;
+        let location = self.api.upload_attachment(
+            device_id,
+            payload,
+            auth_headers(
+                &identity,
+                "POST",
+                &format!("/v1/attachments/{device_id}"),
+                now,
+            )?,
+        )?;
+
+        let descriptor = AttachmentDescriptor {
+            kind: file.kind,
+            location,
+            key: *key.expose(),
+            size,
+            name: file.name.clone(),
+            description: file.description.clone(),
+            duration_millis: file.duration_millis,
+            waveform: file.waveform.clone(),
+            preview: None,
+        };
+
+        descriptor.validate()?;
+
+        Ok(descriptor)
+    }
+
+    /// Скачивает и расшифровывает вложение по описанию.
+    ///
+    /// # 🔐 Почему размер проверяется до расшифровки
+    ///
+    /// Блоб приходит с сервера, а его длину называет описание,
+    /// пришедшее от собеседника. Расхождение означает, что одно
+    /// из двух подменили; продолжать расшифровку значило бы выделять
+    /// память по числу, которому нет доверия.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] — скачивание не удалось;
+    /// [`AegisError::Crypto`] — блоб не расшифровывается: подменён
+    /// либо ключ не тот;
+    /// [`AegisError::Malformed`] — длина блоба не сходится с описанием.
+    pub fn fetch_attachment(
+        &self,
+        device_id: &str,
+        descriptor: &AttachmentDescriptor,
+        now: Timestamp,
+    ) -> Result<Vec<u8>> {
+        descriptor.validate()?;
+
+        let (identity, _) = self.load_identity()?;
+        let path = format!("/v1/attachments/{device_id}/{}", descriptor.location);
+
+        let payload = self.api.download_attachment(
+            device_id,
+            &descriptor.location,
+            auth_headers(&identity, "GET", &path, now)?,
+        )?;
+
+        // Длина блоба однозначно следует из размера файла: столько-то
+        // полных чанков плюс остаток, и на каждый — свой тег.
+        let expected = expected_payload_len(descriptor.size)?;
+
+        if payload.len() != expected {
+            return Err(AegisError::Malformed);
+        }
+
+        let key = AttachmentKey::from_bytes(descriptor.key);
+        let mut plaintext = Vec::new();
+
+        for (index, chunk) in payload.chunks(attachment::ENCRYPTED_CHUNK_SIZE).enumerate() {
+            let index = u32::try_from(index).map_err(|_| AegisError::Malformed)?;
+
+            plaintext.extend_from_slice(&attachment::open_chunk(&key, index, chunk)?);
+        }
+
+        Ok(plaintext)
+    }
+
     /// Возвращает собственное имя пользователя, если оно занято.
     ///
     /// [`None`] означает, что регистрация ещё не прошла: имя выдаёт
@@ -987,6 +1182,30 @@ impl<T: Transport> Client<T> {
 
 /// Сколько чатов перебирается при поиске подходящей сессии.
 const MAX_CHATS_TO_PROBE: u32 = 256;
+
+/// Предел размера вложения в байтах.
+///
+/// Совпадает с пределом `aegis-media` и с ограничением серверной
+/// схемы: расхождение означало бы отказ уже после того, как
+/// стомегабайтный файл ушёл по сети.
+const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
+
+/// Сколько байт занимает зашифрованный файл заданного размера.
+///
+/// Каждый полный чанк даёт `CHUNK_SIZE + TAG_LEN`; остаток — свою
+/// длину плюс тег. Пустой файл вложением не отправляется, поэтому
+/// нулевой размер сюда не приходит.
+fn expected_payload_len(size: u64) -> Result<usize> {
+    let size = usize::try_from(size).map_err(|_| AegisError::Malformed)?;
+    let chunks = attachment::chunk_count(size)?;
+    let chunks = usize::try_from(chunks).map_err(|_| AegisError::Malformed)?;
+
+    let tags = chunks
+        .checked_mul(attachment::TAG_LEN)
+        .ok_or(AegisError::Malformed)?;
+
+    size.checked_add(tags).ok_or(AegisError::Malformed)
+}
 
 /// Сколько контактов отдаётся списку.
 ///
