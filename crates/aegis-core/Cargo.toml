@@ -32,3 +32,8 @@ uuid = { workspace = true }
 aegis-net = { workspace = true }
 proptest.workspace = true
 hex.workspace = true
+
+[features]
+# Проброс: сборка под Android требует вендоринга OpenSSL,
+# а флаг задаётся на уровне собираемого крейта.
+vendored-openssl = ["aegis-storage/vendored-openssl"]

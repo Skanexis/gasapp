@@ -20,21 +20,31 @@ aegis-types.workspace = true
 aegis-protocol.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-# SQLCipher с вендорингом OpenSSL.
+# SQLCipher: вендоринг OpenSSL включается флагом, а не всегда.
 #
-# `bundled-sqlcipher` (без вендоринга) ждёт системный OpenSSL. Его нет
-# ни в NDK — сборка под Android падает на `openssl/crypto.h file not
-# found`, — ни на Windows-хосте. Разделить фичу по целевым платформам
-# нельзя: cargo объединяет фичи одной зависимости, и Android-вариант
-# всё равно применился бы к хостовой сборке.
+# `bundled-sqlcipher` берёт системный OpenSSL. На Linux — в том числе
+# на сервере сборки и в CI — он есть, и это самый быстрый путь.
 #
-# Вендоринг требует Perl, выдающего Unix-пути. Windows-Perl их не даёт,
-# поэтому кросс-сборка под Android идёт в Linux-контейнере
-# (tools/Dockerfile.android).
-rusqlite = { workspace = true, features = ["bundled-sqlcipher-vendored-openssl"] }
+# Вендоринг (`vendored-openssl`) собирает OpenSSL из исходников. Он
+# нужен там, где системного нет: под Android, потому что NDK его не
+# поставляет, и на Windows. Ценой того, что для сборки требуется Perl,
+# выдающий Unix-пути, — Windows-Perl их не даёт.
+#
+# Флагом, а не постоянной фичей: иначе каждая сборка на любой машине
+# тянет за собой OpenSSL и требование Perl, включая те, где системный
+# OpenSSL доступен.
+rusqlite = { workspace = true, features = ["bundled-sqlcipher"] }
 
 hex.workspace = true
 uuid.workspace = true
+
+[features]
+
+# Собирать OpenSSL из исходников вместо системного.
+#
+# Включается там, где системного OpenSSL нет: сборка под Android
+# (`cargo ndk --features vendored-openssl`) и на Windows. Требует Perl.
+vendored-openssl = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 
 [dev-dependencies]
 proptest.workspace = true

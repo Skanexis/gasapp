@@ -75,9 +75,13 @@ done
 (
   cd "$CRATES" || exit 1
 
+  # --features vendored-openssl: в NDK системного OpenSSL нет, а он
+  # нужен SQLCipher. Флаг включается только здесь, чтобы обычные
+  # сборки на Linux пользовались системным.
+  #
   # shellcheck disable=SC2086
   cargo ndk "${TARGET_FLAGS[@]}" -P "$API_LEVEL" -o "$JNI_LIBS" \
-    build $CARGO_PROFILE_FLAG -p aegis-ffi
+    build $CARGO_PROFILE_FLAG -p aegis-ffi --features vendored-openssl
 )
 
 # --- Генерация биндингов Kotlin ---------------------------------------------
