@@ -1021,7 +1021,7 @@ impl Storage {
                     i64::from(message.status.as_u8()),
                     i64::from(message.message_type),
                     message.timestamp.as_millis(),
-                    message.expires_at.map(Timestamp::as_millis),
+                    message.expires_at.map(|expiry| expiry.as_millis()),
                 ],
             )
             .map_err(storage_error)?;
@@ -1106,11 +1106,28 @@ impl Storage {
         Ok(())
     }
 
-    /// Удаляет сообщение.
-    ///
-    /// Физическое удаление, а не пометка: `PRAGMA secure_delete = ON`
-    /// перезаписывает освобождённые страницы, поэтому содержимое
 
+    /// Заменяет текст сообщения.
+    ///
+    /// Отсутствие сообщения не считается ошибкой: собеседник мог
+    /// править то, чего мы не получали — например, если сообщение
+    /// истекло по таймеру раньше правки. Создавать его задним числом
+    /// нельзя, оно появилось бы без контекста разговора.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn edit_message(&self, id: &MessageId, text: &str) -> Result<()> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        conn.execute(
+            "UPDATE messages SET content = ? WHERE message_id = ?",
+            params![text.as_bytes(), id.as_bytes()],
+        )
+        .map_err(storage_error)?;
+
+        Ok(())
+    }
     /// Удаляет истёкшие сообщения.
     ///
     /// # 🔐 Почему при открытии базы, а не по таймеру

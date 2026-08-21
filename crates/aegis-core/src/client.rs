@@ -31,6 +31,7 @@ use aegis_net::api::{
     BundleResponse, PublishKeysRequest, RegisterRequest, SendRequest,
 };
 use aegis_net::client::{ApiClient, Transport};
+use aegis_protocol::content::Content;
 use aegis_net::pow;
 use aegis_protocol::keys::{
     IdentityKey, IdentityKeyPair, KemPublicKey, PreKeyBundle, PreKeyId, SignedKemPreKey,
@@ -195,7 +196,16 @@ impl<T: Transport> Client<T> {
         let peer_identity = parse_public_key(&peer.identity_key)?;
 
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
-        let plaintext = Plaintext::new(text.as_bytes().to_vec());
+        // Тело сообщения — структурированное содержимое, а не голый
+        // текст: получатель обязан отличить текст от реакции и правки,
+        // и это различие лежит под шифрованием.
+        let plaintext = Plaintext::new(
+            Content::Text {
+                body: text.to_owned(),
+                reply_to: None,
+            }
+            .to_bytes()?,
+        );
 
         // Существующая сессия продолжается; иначе устанавливается новая.
         // Проверка идёт по хранилищу, а не по наличию контакта: сессия
@@ -245,6 +255,143 @@ impl<T: Transport> Client<T> {
         Ok(message_id)
     }
 
+
+    /// Отправляет реакцию на сообщение.
+    ///
+    /// Пустая строка снимает реакцию: отдельная операция «снять»
+    /// означала бы два пути к одному состоянию, которые легко
+    /// рассогласовать.
+    ///
+    /// # Errors
+    ///
+    /// Те же, что у [`Client::send_message`].
+    pub fn send_reaction<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        target: &MessageId,
+        emoji: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        self.send_content(
+            peer_username,
+            &Content::Reaction {
+                target: *target.as_uuid().as_bytes(),
+                emoji: emoji.to_owned(),
+            },
+            now,
+            rng,
+        )
+    }
+
+    /// Правит ранее отправленное сообщение.
+    ///
+    /// 🔐 Правка не скрывает исходный текст: получатель уже видел его
+    /// и мог запомнить. Интерфейс обязан помечать правленые сообщения,
+    /// иначе отправитель мог бы переписать разговор задним числом.
+    ///
+    /// # Errors
+    ///
+    /// Те же, что у [`Client::send_message`].
+    pub fn edit_message<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        target: &MessageId,
+        text: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        self.storage.edit_message(target, text)?;
+
+        self.send_content(
+            peer_username,
+            &Content::Edit {
+                target: *target.as_uuid().as_bytes(),
+                body: text.to_owned(),
+            },
+            now,
+            rng,
+        )
+    }
+
+    /// Просит собеседника удалить сообщение.
+    ///
+    /// 🔐 Это просьба, а не гарантия: получатель уже видел сообщение
+    /// и мог снять экран. Интерфейс обязан говорить «запрошено
+    /// удаление», а не «удалено у собеседника».
+    ///
+    /// # Errors
+    ///
+    /// Те же, что у [`Client::send_message`].
+    pub fn delete_for_everyone<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        target: &MessageId,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        // Своё удаляется сразу, не дожидаясь отправки: если сеть
+        // недоступна, пользователь всё равно должен перестать видеть
+        // сообщение у себя.
+        self.storage.delete_message(target)?;
+
+        self.send_content(
+            peer_username,
+            &Content::Delete {
+                target: *target.as_uuid().as_bytes(),
+            },
+            now,
+            rng,
+        )
+    }
+
+    /// Отправляет произвольное содержимое.
+    ///
+    /// Общий путь для текста, реакций, правок и удалений: разница
+    /// только в теле, и дублировать вокруг него установку сессии
+    /// значило бы завести несколько мест, где её можно сделать
+    /// по-разному.
+    fn send_content<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        content: &Content,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let (identity, _) = self.load_identity()?;
+
+        let peer = self.api.discover(peer_username)?;
+        let peer_identity = parse_public_key(&peer.identity_key)?;
+        let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
+
+        let plaintext = Plaintext::new(content.to_bytes()?);
+
+        let peer_device = peer
+            .device_ids
+            .first()
+            .cloned()
+            .ok_or(AegisError::SessionNotFound)?;
+
+        let outgoing = if let Some(state) = self.storage.load_session(&chat_id)? {
+            session::continue_session(&state, &plaintext)?
+        } else {
+            let bundle_response = self.api.fetch_bundle(&peer_device)?;
+            let bundle = parse_bundle(&bundle_response)?;
+
+            session::start_session(&identity, &bundle, &plaintext, rng)?
+        };
+
+        // Сессия сохраняется до отправки: см. порядок операций
+        // в описании модуля.
+        self.storage.save_session(&chat_id, &outgoing.session, now)?;
+
+        self.api.send_envelope(&SendRequest {
+            destination_device_id: peer_device,
+            ciphertext: hex(&outgoing.envelope),
+        })?;
+
+        Ok(())
+    }
     /// Забирает и расшифровывает входящие сообщения.
     ///
     /// Возвращает число принятых сообщений. Конверты, которые не
@@ -295,17 +442,56 @@ impl<T: Transport> Client<T> {
 
             self.storage.save_session(&chat_id, &incoming.session, now)?;
 
-            let text = String::from_utf8_lossy(incoming.plaintext.expose()).into_owned();
-            let message_id = MessageId::generate();
-            self.store_message(
-                &chat_id,
-                message_id,
-                &text,
-                now,
-                false,
-                MessageStatus::Delivered,
-            )?;
-            self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+            // Разбор содержимого. Сообщение от собеседника с новой
+            // версией клиента отвергается целиком, а не сохраняется
+            // пустым: пользователь должен видеть, что что-то пришло
+            // и не прочиталось, а не считать, что ему прислали пустоту.
+            let Ok(content) = Content::from_bytes(incoming.plaintext.expose()) else {
+                continue;
+            };
+
+            match content {
+                Content::Text { body, .. } | Content::Attachments { body, .. } => {
+                    let message_id = MessageId::generate();
+                    self.store_message(
+                        &chat_id,
+                        message_id,
+                        &body,
+                        now,
+                        false,
+                        MessageStatus::Delivered,
+                    )?;
+                    self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                }
+
+                Content::Edit { target, body } => {
+                    // Правка применяется к существующему сообщению.
+                    // Если его нет — собеседник правит то, чего мы
+                    // не получали; создавать сообщение задним числом
+                    // нельзя, оно появилось бы без контекста.
+                    self.storage
+                        .edit_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)), &body)?;
+                }
+
+                Content::Delete { target } => {
+                    // 🔐 Удаление выполняется без подтверждения:
+                    // отправитель просит убрать своё сообщение,
+                    // и отказ означал бы, что «удалить у всех»
+                    // не работает.
+                    self.storage
+                        .delete_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)))?;
+                }
+
+                Content::Reaction { .. } => {
+                    // Реакции хранятся отдельно от сообщений: они
+                    // приходят и снимаются многократно, и держать их
+                    // в теле сообщения означало бы переписывать его
+                    // при каждом нажатии.
+                    //
+                    // Хранилище реакций появится вместе с их показом
+                    // в интерфейсе.
+                }
+            }
 
             // Одноразовый предключ вычёркивается только теперь, после
             // успешной расшифровки: раньше — потеряли бы его при сбое.
