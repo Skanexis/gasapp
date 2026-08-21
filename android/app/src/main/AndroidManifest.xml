@@ -76,6 +76,41 @@
         <activity
             android:name=".OnboardingActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".ProfileActivity"
+            android:exported="false" />
+
+        <!--
+          Единственный экспортированный экран кроме launcher.
+
+          Экспорт обязателен: без него система не отдаст приложению
+          ссылку aegis://, и обмен контактами по QR не заработает.
+
+          🔐 Экран при этом безопасен по построению: он **только**
+          подставляет ссылку в поле ввода и ждёт нажатия. Внешнее
+          приложение не может ни добавить контакт, ни узнать что-либо
+          о пользователе — ответа у намерения нет.
+
+          launchMode=singleTop: вторая ссылка, открытая при уже
+          запущенном экране, приходит в onNewIntent, а не заводит
+          второй экземпляр поверх первого.
+        -->
+        <activity
+            android:name=".AddContactActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="aegis" android:host="contact" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SearchActivity"
+            android:exported="false" />
         <!-- FFI service bindings will be added here -->
 
     </application>

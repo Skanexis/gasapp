@@ -620,25 +620,27 @@ pub fn parse_contact_link(uri: String) -> Result<FfiContactLink, FfiError> {
     })
 }
 
-/// Строит QR-код ссылки на профиль.
+/// Строит QR-код готовой ссылки на контакт.
+///
+/// Принимает **саму ссылку**, а не ключ с именем, потому что рядом
+/// с кодом почти всегда показан её текст: собери код заново из
+/// разобранных частей — и пропущенное поле развело бы QR с текстом,
+/// который пользователь видит и диктует.
+///
+/// Ссылка всё равно разбирается перед кодированием: в QR не должно
+/// попасть то, что не является контактом.
 ///
 /// Матрица модулей, а не картинка: отрисовка и размер модуля зависят
 /// от платформы и экрана.
 ///
 /// # Errors
 ///
-/// [`FfiError::Core`] — ключ или имя вне допустимых границ;
+/// [`FfiError::Core`] — ссылка не разбирается либо не помещается в код;
 /// [`FfiError::InvalidArgument`] — матрица не представима на платформе.
 #[uniffi::export]
-pub fn contact_link_qr(
-    identity: Vec<u8>,
-    display_name: Option<String>,
-) -> Result<FfiQrMatrix, FfiError> {
+pub fn contact_link_qr(uri: String) -> Result<FfiQrMatrix, FfiError> {
     let matrix = guard(|| {
-        let link = aegis_protocol::contact_link::ContactLink {
-            identity: identity_from_bytes(&identity)?,
-            display_name,
-        };
+        let link = aegis_protocol::contact_link::ContactLink::parse(&uri)?;
 
         aegis_protocol::contact_link::contact_qr(&link)
     })?;
@@ -691,6 +693,12 @@ mod contact_link_tests {
     /// 🔐 Ключ неверной длины отвергается, а не дополняется нулями.
     ///
     /// Дополнение дало бы ссылку на ключ, которого у пользователя нет.
+    /// 🔐 В QR не попадает то, что не является контактом.
+    #[test]
+    fn qr_rejects_foreign_link() {
+        assert!(contact_link_qr("https://evil.example/".to_owned()).is_err());
+    }
+
     #[test]
     fn wrong_identity_length_is_rejected() {
         for length in [0usize, 31, 33, 64] {
@@ -712,7 +720,8 @@ mod contact_link_tests {
 
     #[test]
     fn qr_is_built_for_profile() {
-        let matrix = contact_link_qr(identity(), Some("Иван".to_owned())).expect("код");
+        let uri = contact_link_uri(identity(), Some("Иван".to_owned())).expect("ссылка");
+        let matrix = contact_link_qr(uri).expect("код");
 
         assert!(matrix.size >= 21);
         assert_eq!(

@@ -8,6 +8,11 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.aegis.app.core.Core
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.aegis.app.ui.ChatListAdapter
@@ -50,9 +55,11 @@ class ChatListActivity : AppCompatActivity() {
             startActivity(Intent(this, SecurityCenterActivity::class.java))
         }
 
-        render(demoChats())
         bindNavigation()
 
+        findViewById<ImageView>(R.id.chat_list_search).setOnClickListener {
+            startActivity(Intent(this, SearchActivity::class.java))
+        }
         findViewById<ImageView>(R.id.new_chat_button).setOnClickListener { promptNewChat() }
     }
 
@@ -70,8 +77,52 @@ class ChatListActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        render(demoChats())
+        loadChats()
     }
+
+    /**
+     * Читает чаты и превью последних сообщений из ядра.
+     *
+     * Уходит на `Dispatchers.IO`: переход через границу FFI
+     * блокирующий, а внутри — расшифровка сообщений.
+     */
+    private fun loadChats() {
+        lifecycleScope.launch {
+            val chats = withContext(Dispatchers.IO) {
+                runCatching {
+                    val messenger = Core.messenger()
+
+                    messenger.chats().map { chatId ->
+                        // Одно последнее сообщение на чат: превью — это
+                        // именно оно, а загружать переписку целиком ради
+                        // одной строки значило бы расшифровывать всё
+                        // при каждом открытии списка.
+                        chatId to messenger.messages(chatId, PREVIEW_LIMIT).lastOrNull()
+                    }
+                }.getOrDefault(emptyList())
+            }
+
+            render(
+                chats.map { (chatId, last) ->
+                    ChatSummary(
+                        chatId = chatId,
+                        // Имя собеседника хранится с контактом, а не
+                        // с чатом; пока контакт не добавлен, показывается
+                        // начало идентификатора — этого хватает, чтобы
+                        // отличать чаты друг от друга.
+                        name = chatId.take(CHAT_LABEL_CHARS),
+                        preview = last?.text.orEmpty(),
+                        time = last?.let { formatTime(it.timestamp) }.orEmpty(),
+                        verified = false,
+                    )
+                },
+            )
+        }
+    }
+
+    private fun formatTime(millis: Long): String =
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(millis))
 
 
     /**
@@ -153,35 +204,17 @@ class ChatListActivity : AppCompatActivity() {
      * Заменяются данными из `aegis-core`, когда появится оркестрация.
      * Имена взяты из UI kit, чтобы экран совпадал с макетом.
      */
-    private fun demoChats(): List<ChatSummary> = listOf(
-        ChatSummary(
-            chatId = "chat-1",
-            name = "Lena Novak",
-            preview = "Проверим safety number?",
-            time = "14:32",
-            verified = true,
-        ),
-        ChatSummary(
-            chatId = "chat-2",
-            name = "Alex Vogel",
-            preview = "Отправлю файл вечером",
-            time = "12:05",
-            verified = false,
-        ),
-        ChatSummary(
-            chatId = "chat-3",
-            name = "Maria Keller",
-            preview = "Спасибо!",
-            time = "Вчера",
-            verified = true,
-        ),
-    )
-
     private companion object {
         /** Текущий счёт Security Center. */
         const val SECURITY_SCORE = 9
 
         /** Максимальный счёт. */
         const val SECURITY_MAX = 10
+
+        /** Сколько сообщений читать ради превью. */
+        const val PREVIEW_LIMIT = 1u
+
+        /** Сколько символов идентификатора чата показывать вместо имени. */
+        const val CHAT_LABEL_CHARS = 8
     }
 }

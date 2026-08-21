@@ -762,6 +762,18 @@ impl<T: Transport> Client<T> {
         .to_uri()
     }
 
+    /// Возвращает собственное имя пользователя, если оно занято.
+    ///
+    /// [`None`] означает, что регистрация ещё не прошла: имя выдаёт
+    /// сервер при регистрации, а до неё занимать нечего.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn own_username(&self) -> Result<Option<String>> {
+        Ok(self.storage.load_own_keys()?.and_then(|keys| keys.username))
+    }
+
     /// Перечисляет контакты, недавно добавленные первыми.
     ///
     /// # Errors

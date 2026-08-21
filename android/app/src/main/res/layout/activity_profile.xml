@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Экран собственного профиля: QR и ссылка для обмена контактами.
+
+  Обмен контактами идёт мимо сервера: ключ, снятый с экрана человека,
+  стоящего рядом, не приходится принимать на веру у сервера. Поэтому
+  QR здесь крупный — его показывают другому телефону, а не читают сами.
+
+  Ссылка под кодом — то же самое текстом: её пересылают, когда люди
+  не рядом. Она видна целиком, а не спрятана за кнопкой «поделиться»:
+  пользователь вправе увидеть, что именно он отправляет.
+-->
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/screen_padding">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/profile_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/profile_username"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            tools:text="@alex.v" />
+
+        <ImageView
+            android:id="@+id/profile_qr"
+            android:layout_width="260dp"
+            android:layout_height="260dp"
+            android:layout_gravity="center"
+            android:layout_marginTop="24dp"
+            android:background="@color/bg_card"
+            android:contentDescription="@string/profile_qr_description"
+            android:padding="12dp" />
+
+        <!--
+          Ссылка моноширинным шрифтом и с переносом: её сверяют
+          посимвольно, когда диктуют голосом, и пропорциональный шрифт
+          сливает похожие символы.
+        -->
+        <TextView
+            android:id="@+id/profile_link"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@color/bg_card"
+            android:fontFamily="monospace"
+            android:padding="12dp"
+            android:textColor="@color/text_primary"
+            android:textIsSelectable="true"
+            android:textSize="13sp"
+            tools:text="aegis://contact/AAAAAAAA" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/profile_link_hint"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/profile_copy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/profile_copy" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/profile_share"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/profile_share" />
+
+    </LinearLayout>
+
+</ScrollView>

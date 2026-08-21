@@ -8,6 +8,11 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.aegis.app.core.Core
 
 /**
  * Настройки.
@@ -28,11 +33,37 @@ class SettingsActivity : AppCompatActivity() {
         bindNavigation()
     }
 
+    /**
+     * Показывает собственное имя и открывает экран профиля.
+     *
+     * Имя читается из ядра: держать вторую копию в настройках значило
+     * бы показывать устаревшее после смены.
+     */
     private fun renderProfile() {
-        // Имя и username придут из ядра вместе с оркестрацией.
-        findViewById<TextView>(R.id.profile_avatar).text = "MK"
-        findViewById<TextView>(R.id.profile_name).text = "Maria Keller"
-        findViewById<TextView>(R.id.profile_username).text = "@maria.k"
+        findViewById<View>(R.id.profile_row).setOnClickListener {
+            startActivity(Intent(this, ProfileActivity::class.java))
+        }
+        findViewById<View>(R.id.profile_qr).setOnClickListener {
+            startActivity(Intent(this, ProfileActivity::class.java))
+        }
+
+        lifecycleScope.launch {
+            val username = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().ownUsername() }.getOrNull()
+            }
+
+            findViewById<TextView>(R.id.profile_name).text =
+                username ?: getString(R.string.profile_no_username)
+            findViewById<TextView>(R.id.profile_username).text = when (username) {
+                null -> ""
+                else -> getString(R.string.contact_username, username)
+            }
+
+            // Инициал для кружка аватара. Пустая строка, а не заглушка
+            // с буквами: чужие инициалы в своём профиле сбивают с толку.
+            findViewById<TextView>(R.id.profile_avatar).text =
+                username?.take(1)?.uppercase().orEmpty()
+        }
     }
 
     private fun renderRows() {

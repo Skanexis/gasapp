@@ -655,7 +655,7 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
 internal interface UniffiCallbackInterfaceHttpTransportMethod0 : com.sun.jna.Callback {
-    fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+    fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
 }
 @Structure.FieldOrder("execute", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceHttpTransport(
@@ -673,6 +673,46 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
     }
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -787,27 +827,67 @@ fun uniffi_aegis_checksum_func_check_protocol_version(
 ): Short
 fun uniffi_aegis_checksum_func_compute_fingerprint(
 ): Short
+fun uniffi_aegis_checksum_func_contact_link_qr(
+): Short
+fun uniffi_aegis_checksum_func_contact_link_uri(
+): Short
 fun uniffi_aegis_checksum_func_core_version(
+): Short
+fun uniffi_aegis_checksum_func_derive_storage_key(
 ): Short
 fun uniffi_aegis_checksum_func_format_safety_number(
 ): Short
 fun uniffi_aegis_checksum_func_generate_identity_public_key(
 ): Short
+fun uniffi_aegis_checksum_func_generate_storage_salt(
+): Short
 fun uniffi_aegis_checksum_func_identity_change_alert(
+): Short
+fun uniffi_aegis_checksum_func_parse_contact_link(
 ): Short
 fun uniffi_aegis_checksum_func_protocol_version(
 ): Short
+fun uniffi_aegis_checksum_func_safety_number_qr(
+): Short
 fun uniffi_aegis_checksum_method_httptransport_execute(
+): Short
+fun uniffi_aegis_checksum_method_messenger_add_contact_from_link(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_chats(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_contacts(
+): Short
+fun uniffi_aegis_checksum_method_messenger_delete_for_everyone(
+): Short
+fun uniffi_aegis_checksum_method_messenger_edit_message(
+): Short
 fun uniffi_aegis_checksum_method_messenger_messages(
+): Short
+fun uniffi_aegis_checksum_method_messenger_own_contact_link(
+): Short
+fun uniffi_aegis_checksum_method_messenger_own_username(
+): Short
+fun uniffi_aegis_checksum_method_messenger_presence_sharing_enabled(
+): Short
+fun uniffi_aegis_checksum_method_messenger_purge_expired(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_receive_messages(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_register(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_search(
+): Short
 fun uniffi_aegis_checksum_method_messenger_send_message(
+): Short
+fun uniffi_aegis_checksum_method_messenger_send_reaction(
+): Short
+fun uniffi_aegis_checksum_method_messenger_send_read_receipt(
+): Short
+fun uniffi_aegis_checksum_method_messenger_send_typing(
+): Short
+fun uniffi_aegis_checksum_method_messenger_set_disappearing_timer(
+): Short
+fun uniffi_aegis_checksum_method_messenger_set_presence_sharing(
 ): Short
 fun uniffi_aegis_checksum_constructor_messenger_open(
 ): Short
@@ -867,7 +947,7 @@ fun uniffi_aegis_fn_free_httptransport(`ptr`: Pointer,uniffi_out_err: UniffiRust
 ): Unit
 fun uniffi_aegis_fn_init_callback_vtable_httptransport(`vtable`: UniffiVTableCallbackInterfaceHttpTransport,
 ): Unit
-fun uniffi_aegis_fn_method_httptransport_execute(`ptr`: Pointer,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_aegis_fn_method_httptransport_execute(`ptr`: Pointer,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_clone_messenger(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
@@ -875,32 +955,72 @@ fun uniffi_aegis_fn_free_messenger(`ptr`: Pointer,uniffi_out_err: UniffiRustCall
 ): Unit
 fun uniffi_aegis_fn_constructor_messenger_open(`databasePath`: RustBuffer.ByValue,`databaseKey`: RustBuffer.ByValue,`transport`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
+fun uniffi_aegis_fn_method_messenger_add_contact_from_link(`ptr`: Pointer,`uri`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_chats(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_contacts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_edit_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_messages(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_own_contact_link(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_own_username(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_presence_sharing_enabled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_aegis_fn_method_messenger_purge_expired(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Int
 fun uniffi_aegis_fn_method_messenger_receive_messages(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 fun uniffi_aegis_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_send_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_send_reaction(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`emoji`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_send_read_receipt(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`untilMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_send_typing(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`active`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_set_disappearing_timer(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`seconds`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_set_presence_sharing(`ptr`: Pointer,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_func_can_send_to_contact(`identityChanged`: Byte,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_check_protocol_version(`raw`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_compute_fingerprint(`identityKey`: RustBuffer.ByValue,`identifier`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_contact_link_qr(`uri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_contact_link_uri(`identity`: RustBuffer.ByValue,`displayName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_derive_storage_key(`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_format_safety_number(`local`: RustBuffer.ByValue,`remote`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_generate_storage_salt(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_identity_change_alert(`knownIdentity`: RustBuffer.ByValue,`presentedIdentity`: RustBuffer.ByValue,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_parse_contact_link(`uri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_protocol_version(uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_aegis_fn_func_safety_number_qr(`digits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun ffi_aegis_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_aegis_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1036,7 +1156,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_compute_fingerprint() != 46253.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_contact_link_qr() != 48647.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_contact_link_uri() != 47386.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_core_version() != 35856.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_derive_storage_key() != 56879.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_format_safety_number() != 12850.toShort()) {
@@ -1045,19 +1174,52 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_generate_identity_public_key() != 24630.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_generate_storage_salt() != 41308.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_identity_change_alert() != 8609.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_parse_contact_link() != 15431.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_protocol_version() != 57124.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 42930.toShort()) {
+    if (lib.uniffi_aegis_checksum_func_safety_number_qr() != 62446.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 38406.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_add_contact_from_link() != 19449.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_chats() != 582.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_contacts() != 14358.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_delete_for_everyone() != 13291.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_messages() != 55576.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_own_contact_link() != 26497.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_own_username() != 61347.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_presence_sharing_enabled() != 32582.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_purge_expired() != 20978.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_receive_messages() != 59151.toShort()) {
@@ -1066,7 +1228,25 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_register() != 16364.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_search() != 52611.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_send_message() != 14514.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_send_reaction() != 24324.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_send_read_receipt() != 6210.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_send_typing() != 53449.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_set_disappearing_timer() != 2849.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_set_presence_sharing() != 38130.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_constructor_messenger_open() != 35547.toShort()) {
@@ -1555,7 +1735,7 @@ public interface HttpTransport {
      *
      * [`FfiError::Core`] при сбое соединения.
      */
-    fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?): FfiHttpResponse
+    fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `headers`: List<FfiHeader>): FfiHttpResponse
     
     companion object
 }
@@ -1660,12 +1840,12 @@ open class HttpTransportImpl: Disposable, AutoCloseable, HttpTransport
      *
      * [`FfiError::Core`] при сбое соединения.
      */
-    @Throws(FfiException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?): FfiHttpResponse {
+    @Throws(FfiException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `headers`: List<FfiHeader>): FfiHttpResponse {
             return FfiConverterTypeFfiHttpResponse.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_httptransport_execute(
-        it, FfiConverterString.lower(`method`),FfiConverterString.lower(`path`),FfiConverterOptionalString.lower(`body`),_status)
+        it, FfiConverterString.lower(`method`),FfiConverterString.lower(`path`),FfiConverterOptionalString.lower(`body`),FfiConverterSequenceTypeFfiHeader.lower(`headers`),_status)
 }
     }
     )
@@ -1684,13 +1864,14 @@ open class HttpTransportImpl: Disposable, AutoCloseable, HttpTransport
 // Put the implementation in an object so we don't pollute the top-level namespace
 internal object uniffiCallbackInterfaceHttpTransport {
     internal object `execute`: UniffiCallbackInterfaceHttpTransportMethod0 {
-        override fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+        override fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
             val uniffiObj = FfiConverterTypeHttpTransport.handleMap.get(uniffiHandle)
             val makeCall = { ->
                 uniffiObj.`execute`(
                     FfiConverterString.lift(`method`),
                     FfiConverterString.lift(`path`),
                     FfiConverterOptionalString.lift(`body`),
+                    FfiConverterSequenceTypeFfiHeader.lift(`headers`),
                 )
             }
             val writeReturn = { value: FfiHttpResponse -> uniffiOutReturn.setValue(FfiConverterTypeFfiHttpResponse.lower(value)) }
@@ -1858,6 +2039,28 @@ public object FfiConverterTypeHttpTransport: FfiConverter<HttpTransport, Pointer
 public interface MessengerInterface {
     
     /**
+     * Добавляет контакт по ссылке `aegis://contact/...`.
+     *
+     * # 🔐 Про доверие к ссылке
+     *
+     * Ссылка не подписана и подписана быть не может — ключ как раз
+     * и передаётся. Если в ней есть имя, ядро сверяет его с тем,
+     * что зарегистрировано на сервере, и отказывает при расхождении.
+     * Это не делает сервер доверенным: ключ пришёл со ссылки, то есть
+     * из канала, которого сервер не видел.
+     *
+     * Приложение обязано показать пользователю, кого добавляет,
+     * **до** добавления.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — ссылка не разбирается, имя принадлежит
+     * другому ключу, контакт уже известен с другим ключом либо
+     * проверка через сервер не удалась.
+     */
+    fun `addContactFromLink`(`uri`: kotlin.String, `nowMillis`: kotlin.Long): FfiContact
+    
+    /**
      * Перечисляет чаты в порядке последней активности.
      *
      * # Errors
@@ -1865,6 +2068,46 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
     fun `chats`(): List<kotlin.String>
+    
+    /**
+     * Перечисляет контакты, недавно добавленные первыми.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `contacts`(): List<FfiContact>
+    
+    /**
+     * Удаляет сообщение у обеих сторон.
+     *
+     * 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
+     * пользователь всё равно должен перестать видеть сообщение
+     * у себя. Удаление у собеседника — просьба, а не гарантия: он уже
+     * видел текст и мог его запомнить.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    fun `deleteForEveryone`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Правит ранее отправленное сообщение.
+     *
+     * 🔐 Правка не скрывает исходный текст: получатель уже видел его.
+     * Интерфейс обязан помечать правленые сообщения, иначе отправитель
+     * мог бы переписать разговор задним числом.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    fun `editMessage`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
      * Возвращает сообщения чата.
@@ -1875,6 +2118,54 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
     fun `messages`(`chatId`: kotlin.String, `limit`: kotlin.UInt): List<FfiMessage>
+    
+    /**
+     * Возвращает ссылку на собственный профиль.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — свои ключи не читаются либо имя не подходит
+     * для ссылки.
+     */
+    fun `ownContactLink`(): kotlin.String
+    
+    /**
+     * Возвращает собственное имя пользователя.
+     *
+     * [`None`] означает, что регистрация ещё не прошла.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `ownUsername`(): kotlin.String?
+    
+    /**
+     * Сообщает, включена ли передача присутствия.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    fun `presenceSharingEnabled`(): kotlin.Boolean
+    
+    /**
+     * Удаляет истёкшие сообщения.
+     *
+     * 🔐 Вызывать **сразу после открытия** хранилища и затем
+     * периодически. Таймер в приложении работает, только пока оно
+     * запущено: сообщение с часовым сроком, полученное перед тем,
+     * как телефон убрали на неделю, пережило бы свой срок в семь раз.
+     * Изъятие устройства показало бы переписку, которую пользователь
+     * считает исчезнувшей.
+     *
+     * Возвращает число удалённых сообщений.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — удаление не удалось.
+     */
+    fun `purgeExpired`(`nowMillis`: kotlin.Long): kotlin.UInt
     
     /**
      * Забирает входящие сообщения и возвращает их число.
@@ -1899,6 +2190,19 @@ public interface MessengerInterface {
     fun `register`(`username`: kotlin.String, `nowMillis`: kotlin.Long): FfiAccount
     
     /**
+     * Ищет по расшифрованной переписке.
+     *
+     * 🔐 Поиск идёт по самим сообщениям, а не по отдельному индексу:
+     * индекс был бы второй копией переписки, которую тоже пришлось бы
+     * стирать при удалении, — и о которой легко забыть.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<FfiSearchHit>
+    
+    /**
      * Отправляет сообщение контакту по имени.
      *
      * # Errors
@@ -1907,6 +2211,72 @@ public interface MessengerInterface {
      * подписи в prekey bundle не сходятся с identity-ключом владельца.
      */
     fun `sendMessage`(`peerUsername`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long): kotlin.String
+    
+    /**
+     * Отправляет реакцию на сообщение.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    fun `sendReaction`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `emoji`: kotlin.String, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Отправляет квитанцию о прочтении.
+     *
+     * Квитанция указывает последнее прочитанное сообщение, а не
+     * каждое: открытие чата с сотней непрочитанных иначе породило бы
+     * сто сообщений, и по их числу собеседник узнал бы, сколько
+     * накопилось.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    fun `sendReadReceipt`(`peerUsername`: kotlin.String, `untilMessageId`: kotlin.String, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Сообщает, что пользователь печатает.
+     *
+     * 🔐 Молча ничего не делает, если передача присутствия выключена:
+     * иначе пользователь получал бы ошибку за то, что сознательно
+     * оставил функцию выключенной.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    fun `sendTyping`(`peerUsername`: kotlin.String, `active`: kotlin.Boolean, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Задаёт таймер исчезающих сообщений для чата.
+     *
+     * `seconds` равное нулю выключает таймер.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разбирается;
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    fun `setDisappearingTimer`(`chatId`: kotlin.String, `seconds`: kotlin.UInt)
+    
+    /**
+     * Включает или выключает передачу присутствия.
+     *
+     * 🔐 Выключено по умолчанию. Индикатор набора и квитанции
+     * о прочтении сообщают собеседнику, когда пользователь у телефона:
+     * это данные о распорядке дня, и включать их за пользователя
+     * нельзя.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    fun `setPresenceSharing`(`enabled`: kotlin.Boolean)
     
     companion object
 }
@@ -2001,6 +2371,39 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Добавляет контакт по ссылке `aegis://contact/...`.
+     *
+     * # 🔐 Про доверие к ссылке
+     *
+     * Ссылка не подписана и подписана быть не может — ключ как раз
+     * и передаётся. Если в ней есть имя, ядро сверяет его с тем,
+     * что зарегистрировано на сервере, и отказывает при расхождении.
+     * Это не делает сервер доверенным: ключ пришёл со ссылки, то есть
+     * из канала, которого сервер не видел.
+     *
+     * Приложение обязано показать пользователю, кого добавляет,
+     * **до** добавления.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — ссылка не разбирается, имя принадлежит
+     * другому ключу, контакт уже известен с другим ключом либо
+     * проверка через сервер не удалась.
+     */
+    @Throws(FfiException::class)override fun `addContactFromLink`(`uri`: kotlin.String, `nowMillis`: kotlin.Long): FfiContact {
+            return FfiConverterTypeFfiContact.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_add_contact_from_link(
+        it, FfiConverterString.lower(`uri`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Перечисляет чаты в порядке последней активности.
      *
      * # Errors
@@ -2021,6 +2424,77 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Перечисляет контакты, недавно добавленные первыми.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `contacts`(): List<FfiContact> {
+            return FfiConverterSequenceTypeFfiContact.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_contacts(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Удаляет сообщение у обеих сторон.
+     *
+     * 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
+     * пользователь всё равно должен перестать видеть сообщение
+     * у себя. Удаление у собеседника — просьба, а не гарантия: он уже
+     * видел текст и мог его запомнить.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    @Throws(FfiException::class)override fun `deleteForEveryone`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_delete_for_everyone(
+        it, FfiConverterString.lower(`peerUsername`),FfiConverterString.lower(`targetMessageId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Правит ранее отправленное сообщение.
+     *
+     * 🔐 Правка не скрывает исходный текст: получатель уже видел его.
+     * Интерфейс обязан помечать правленые сообщения, иначе отправитель
+     * мог бы переписать разговор задним числом.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    @Throws(FfiException::class)override fun `editMessage`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_edit_message(
+        it, FfiConverterString.lower(`peerUsername`),FfiConverterString.lower(`targetMessageId`),FfiConverterString.lower(`text`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Возвращает сообщения чата.
      *
      * # Errors
@@ -2034,6 +2508,98 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_messages(
         it, FfiConverterString.lower(`chatId`),FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Возвращает ссылку на собственный профиль.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — свои ключи не читаются либо имя не подходит
+     * для ссылки.
+     */
+    @Throws(FfiException::class)override fun `ownContactLink`(): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_own_contact_link(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Возвращает собственное имя пользователя.
+     *
+     * [`None`] означает, что регистрация ещё не прошла.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `ownUsername`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_own_username(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Сообщает, включена ли передача присутствия.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    @Throws(FfiException::class)override fun `presenceSharingEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_presence_sharing_enabled(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Удаляет истёкшие сообщения.
+     *
+     * 🔐 Вызывать **сразу после открытия** хранилища и затем
+     * периодически. Таймер в приложении работает, только пока оно
+     * запущено: сообщение с часовым сроком, полученное перед тем,
+     * как телефон убрали на неделю, пережило бы свой срок в семь раз.
+     * Изъятие устройства показало бы переписку, которую пользователь
+     * считает исчезнувшей.
+     *
+     * Возвращает число удалённых сообщений.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — удаление не удалось.
+     */
+    @Throws(FfiException::class)override fun `purgeExpired`(`nowMillis`: kotlin.Long): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_purge_expired(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -2086,6 +2652,30 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Ищет по расшифрованной переписке.
+     *
+     * 🔐 Поиск идёт по самим сообщениям, а не по отдельному индексу:
+     * индекс был бы второй копией переписки, которую тоже пришлось бы
+     * стирать при удалении, — и о которой легко забыть.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<FfiSearchHit> {
+            return FfiConverterSequenceTypeFfiSearchHit.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_search(
+        it, FfiConverterString.lower(`query`),FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Отправляет сообщение контакту по имени.
      *
      * # Errors
@@ -2103,6 +2693,122 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     }
     )
     }
+    
+
+    
+    /**
+     * Отправляет реакцию на сообщение.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    @Throws(FfiException::class)override fun `sendReaction`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `emoji`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_send_reaction(
+        it, FfiConverterString.lower(`peerUsername`),FfiConverterString.lower(`targetMessageId`),FfiConverterString.lower(`emoji`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Отправляет квитанцию о прочтении.
+     *
+     * Квитанция указывает последнее прочитанное сообщение, а не
+     * каждое: открытие чата с сотней непрочитанных иначе породило бы
+     * сто сообщений, и по их числу собеседник узнал бы, сколько
+     * накопилось.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор сообщения
+     * не разбирается;
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    @Throws(FfiException::class)override fun `sendReadReceipt`(`peerUsername`: kotlin.String, `untilMessageId`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_send_read_receipt(
+        it, FfiConverterString.lower(`peerUsername`),FfiConverterString.lower(`untilMessageId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Сообщает, что пользователь печатает.
+     *
+     * 🔐 Молча ничего не делает, если передача присутствия выключена:
+     * иначе пользователь получал бы ошибку за то, что сознательно
+     * оставил функцию выключенной.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — отправка не удалась.
+     */
+    @Throws(FfiException::class)override fun `sendTyping`(`peerUsername`: kotlin.String, `active`: kotlin.Boolean, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_send_typing(
+        it, FfiConverterString.lower(`peerUsername`),FfiConverterBoolean.lower(`active`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Задаёт таймер исчезающих сообщений для чата.
+     *
+     * `seconds` равное нулю выключает таймер.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разбирается;
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `setDisappearingTimer`(`chatId`: kotlin.String, `seconds`: kotlin.UInt)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_disappearing_timer(
+        it, FfiConverterString.lower(`chatId`),FfiConverterUInt.lower(`seconds`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Включает или выключает передачу присутствия.
+     *
+     * 🔐 Выключено по умолчанию. Индикатор набора и квитанции
+     * о прочтении сообщают собеседнику, когда пользователь у телефона:
+     * это данные о распорядке дня, и включать их за пользователя
+     * нельзя.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `setPresenceSharing`(`enabled`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_presence_sharing(
+        it, FfiConverterBoolean.lower(`enabled`),_status)
+}
+    }
+    
     
 
     
@@ -2217,6 +2923,162 @@ public object FfiConverterTypeFfiAccount: FfiConverterRustBuffer<FfiAccount> {
 
 
 /**
+ * Контакт для показа в интерфейсе.
+ */
+data class FfiContact (
+    /**
+     * Идентификатор аккаунта.
+     */
+    var `accountId`: kotlin.String, 
+    /**
+     * Identity-ключ, 32 байта.
+     *
+     * 🔐 Единственное, что определяет собеседника. Имя ниже —
+     * подсказка: его выбирает сам контакт.
+     */
+    var `identity`: kotlin.ByteArray, 
+    /**
+     * Имя, если известно.
+     */
+    var `username`: kotlin.String?, 
+    /**
+     * Чат с контактом, если он заведён.
+     */
+    var `chatId`: kotlin.String?, 
+    /**
+     * Подтверждён ли контакт сверкой safety number.
+     */
+    var `verified`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
+    override fun read(buf: ByteBuffer): FfiContact {
+        return FfiContact(
+            FfiConverterString.read(buf),
+            FfiConverterByteArray.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiContact) = (
+            FfiConverterString.allocationSize(value.`accountId`) +
+            FfiConverterByteArray.allocationSize(value.`identity`) +
+            FfiConverterOptionalString.allocationSize(value.`username`) +
+            FfiConverterOptionalString.allocationSize(value.`chatId`) +
+            FfiConverterBoolean.allocationSize(value.`verified`)
+    )
+
+    override fun write(value: FfiContact, buf: ByteBuffer) {
+            FfiConverterString.write(value.`accountId`, buf)
+            FfiConverterByteArray.write(value.`identity`, buf)
+            FfiConverterOptionalString.write(value.`username`, buf)
+            FfiConverterOptionalString.write(value.`chatId`, buf)
+            FfiConverterBoolean.write(value.`verified`, buf)
+    }
+}
+
+
+
+/**
+ * Контакт, полученный по ссылке `aegis://`.
+ */
+data class FfiContactLink (
+    /**
+     * Identity-ключ контакта, 32 байта.
+     */
+    var `identity`: kotlin.ByteArray, 
+    /**
+     * Имя, предложенное владельцем ссылки.
+     *
+     * 🔐 Подсказка для интерфейса, не более: имя выбирает тот, кто
+     * сделал ссылку, и оно ничем не подтверждено. Показывать его
+     * следует как предложенное, а решение о доверии принимать
+     * по ключу.
+     */
+    var `displayName`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiContactLink: FfiConverterRustBuffer<FfiContactLink> {
+    override fun read(buf: ByteBuffer): FfiContactLink {
+        return FfiContactLink(
+            FfiConverterByteArray.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiContactLink) = (
+            FfiConverterByteArray.allocationSize(value.`identity`) +
+            FfiConverterOptionalString.allocationSize(value.`displayName`)
+    )
+
+    override fun write(value: FfiContactLink, buf: ByteBuffer) {
+            FfiConverterByteArray.write(value.`identity`, buf)
+            FfiConverterOptionalString.write(value.`displayName`, buf)
+    }
+}
+
+
+
+/**
+ * Заголовок HTTP.
+ *
+ * Отдельная запись, а не карта: UniFFI не переносит `HashMap`
+ * с произвольными ключами так же дёшево, а заголовков здесь два —
+ * подпись и время выпуска.
+ */
+data class FfiHeader (
+    /**
+     * Имя заголовка.
+     */
+    var `name`: kotlin.String, 
+    /**
+     * Значение.
+     */
+    var `value`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiHeader: FfiConverterRustBuffer<FfiHeader> {
+    override fun read(buf: ByteBuffer): FfiHeader {
+        return FfiHeader(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiHeader) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`value`)
+    )
+
+    override fun write(value: FfiHeader, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`value`, buf)
+    }
+}
+
+
+
+/**
  * Ответ HTTP, пришедший от платформы.
  */
 data class FfiHttpResponse (
@@ -2314,6 +3176,91 @@ public object FfiConverterTypeFfiMessage: FfiConverterRustBuffer<FfiMessage> {
             FfiConverterLong.write(value.`timestamp`, buf)
             FfiConverterBoolean.write(value.`outgoing`, buf)
             FfiConverterTypeFfiDeliveryStatus.write(value.`status`, buf)
+    }
+}
+
+
+
+/**
+ * QR-код safety number.
+ *
+ * Матрица модулей, а не картинка: отрисовка зависит от платформы,
+ * а размер модуля — от экрана. Ядро не знает ни того, ни другого.
+ */
+data class FfiQrMatrix (
+    /**
+     * Сторона матрицы в модулях.
+     */
+    var `size`: kotlin.UInt, 
+    /**
+     * Модули построчно: `size * size` значений, `true` — чёрный.
+     */
+    var `modules`: List<kotlin.Boolean>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiQrMatrix: FfiConverterRustBuffer<FfiQrMatrix> {
+    override fun read(buf: ByteBuffer): FfiQrMatrix {
+        return FfiQrMatrix(
+            FfiConverterUInt.read(buf),
+            FfiConverterSequenceBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiQrMatrix) = (
+            FfiConverterUInt.allocationSize(value.`size`) +
+            FfiConverterSequenceBoolean.allocationSize(value.`modules`)
+    )
+
+    override fun write(value: FfiQrMatrix, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`size`, buf)
+            FfiConverterSequenceBoolean.write(value.`modules`, buf)
+    }
+}
+
+
+
+/**
+ * Найденное сообщение вместе с его чатом.
+ */
+data class FfiSearchHit (
+    /**
+     * Чат, в котором найдено сообщение.
+     */
+    var `chatId`: kotlin.String, 
+    /**
+     * Само сообщение.
+     */
+    var `message`: FfiMessage
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer<FfiSearchHit> {
+    override fun read(buf: ByteBuffer): FfiSearchHit {
+        return FfiSearchHit(
+            FfiConverterString.read(buf),
+            FfiConverterTypeFfiMessage.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSearchHit) = (
+            FfiConverterString.allocationSize(value.`chatId`) +
+            FfiConverterTypeFfiMessage.allocationSize(value.`message`)
+    )
+
+    override fun write(value: FfiSearchHit, buf: ByteBuffer) {
+            FfiConverterString.write(value.`chatId`, buf)
+            FfiConverterTypeFfiMessage.write(value.`message`, buf)
     }
 }
 
@@ -2690,6 +3637,34 @@ public object FfiConverterOptionalTypeSecurityAlertKind: FfiConverterRustBuffer<
 /**
  * @suppress
  */
+public object FfiConverterSequenceBoolean: FfiConverterRustBuffer<List<kotlin.Boolean>> {
+    override fun read(buf: ByteBuffer): List<kotlin.Boolean> {
+        val len = buf.getInt()
+        return List<kotlin.Boolean>(len) {
+            FfiConverterBoolean.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.Boolean>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterBoolean.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.Boolean>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterBoolean.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
     override fun read(buf: ByteBuffer): List<kotlin.String> {
         val len = buf.getInt()
@@ -2718,6 +3693,62 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiContact: FfiConverterRustBuffer<List<FfiContact>> {
+    override fun read(buf: ByteBuffer): List<FfiContact> {
+        val len = buf.getInt()
+        return List<FfiContact>(len) {
+            FfiConverterTypeFfiContact.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiContact>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiContact.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiContact>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiContact.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiHeader: FfiConverterRustBuffer<List<FfiHeader>> {
+    override fun read(buf: ByteBuffer): List<FfiHeader> {
+        val len = buf.getInt()
+        return List<FfiHeader>(len) {
+            FfiConverterTypeFfiHeader.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiHeader>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiHeader.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiHeader>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiHeader.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiMessage: FfiConverterRustBuffer<List<FfiMessage>> {
     override fun read(buf: ByteBuffer): List<FfiMessage> {
         val len = buf.getInt()
@@ -2736,6 +3767,34 @@ public object FfiConverterSequenceTypeFfiMessage: FfiConverterRustBuffer<List<Ff
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiMessage.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<FfiSearchHit>> {
+    override fun read(buf: ByteBuffer): List<FfiSearchHit> {
+        val len = buf.getInt()
+        return List<FfiSearchHit>(len) {
+            FfiConverterTypeFfiSearchHit.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiSearchHit>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiSearchHit.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiSearchHit>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiSearchHit.write(it, buf)
         }
     }
 }
@@ -2809,6 +3868,58 @@ public object FfiConverterSequenceTypeFfiMessage: FfiConverterRustBuffer<List<Ff
     
 
         /**
+         * Строит QR-код готовой ссылки на контакт.
+         *
+         * Принимает **саму ссылку**, а не ключ с именем, потому что рядом
+         * с кодом почти всегда показан её текст: собери код заново из
+         * разобранных частей — и пропущенное поле развело бы QR с текстом,
+         * который пользователь видит и диктует.
+         *
+         * Ссылка всё равно разбирается перед кодированием: в QR не должно
+         * попасть то, что не является контактом.
+         *
+         * Матрица модулей, а не картинка: отрисовка и размер модуля зависят
+         * от платформы и экрана.
+         *
+         * # Errors
+         *
+         * [`FfiError::Core`] — ссылка не разбирается либо не помещается в код;
+         * [`FfiError::InvalidArgument`] — матрица не представима на платформе.
+         */
+    @Throws(FfiException::class) fun `contactLinkQr`(`uri`: kotlin.String): FfiQrMatrix {
+            return FfiConverterTypeFfiQrMatrix.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_contact_link_qr(
+        FfiConverterString.lower(`uri`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Собирает ссылку на собственный профиль.
+         *
+         * # Зачем
+         *
+         * Обмен контактами без сервера-посредника: ключ, снятый с экрана
+         * человека, стоящего рядом, не нужно принимать на веру у сервера.
+         *
+         * # Errors
+         *
+         * [`FfiError::Core`] — ключ не 32 байта либо имя слишком длинное
+         * или содержит управляющие символы.
+         */
+    @Throws(FfiException::class) fun `contactLinkUri`(`identity`: kotlin.ByteArray, `displayName`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_contact_link_uri(
+        FfiConverterByteArray.lower(`identity`),FfiConverterOptionalString.lower(`displayName`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Версия ядра AEGIS.
          *
          * Клиент сверяет её с версией сгенерированных биндингов: несовпадение
@@ -2818,6 +3929,36 @@ public object FfiConverterSequenceTypeFfiMessage: FfiConverterRustBuffer<List<Ff
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_core_version(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Растягивает PIN в ключ хранилища.
+         *
+         * # Зачем это на границе FFI
+         *
+         * Ключ базы выводится из PIN через `Argon2id` (m=64 МиБ, t=3, p=4).
+         * Приложение вызывает это перед открытием хранилища и больше нигде:
+         * сам PIN за пределы этого вызова не уходит.
+         *
+         * # Про время
+         *
+         * Порядка секунды на телефоне. Вызывать следует в фоновом потоке —
+         * это не оптимизируемая задержка, а цена, которая делает перебор
+         * изъятого устройства невозможным.
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`] — PIN короче шести символов либо
+         * соль не 16 байт.
+         */
+    @Throws(FfiException::class) fun `deriveStorageKey`(`pin`: kotlin.String, `salt`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_derive_storage_key(
+        FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),_status)
 }
     )
     }
@@ -2867,6 +4008,22 @@ public object FfiConverterSequenceTypeFfiMessage: FfiConverterRustBuffer<List<Ff
     
 
         /**
+         * Генерирует соль для растягивания PIN.
+         *
+         * Соль хранится рядом с базой в открытом виде: она защищает не от
+         * того, кто получил устройство, а от заранее посчитанных таблиц —
+         * с ней перебор нужно считать заново для каждого устройства.
+         */ fun `generateStorageSalt`(): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_generate_storage_salt(
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Решает, нужно ли предупредить о смене identity-ключа контакта.
          *
          * Возвращает `None`, когда тревожиться не о чем: ключ прежний либо
@@ -2894,12 +4051,63 @@ public object FfiConverterSequenceTypeFfiMessage: FfiConverterRustBuffer<List<Ff
     
 
         /**
+         * Разбирает ссылку, полученную по QR или пересылкой.
+         *
+         * # 🔐 Про доверие
+         *
+         * Ссылка не подписана и подписана быть не может — подписывать нечем,
+         * ключ как раз и передаётся. Успешный разбор означает только то,
+         * что формат верен. Приложение обязано показать пользователю, кого
+         * именно оно собирается добавить, до того как добавит.
+         *
+         * # Errors
+         *
+         * [`FfiError::Core`] — ссылка не соответствует формату: чужая схема,
+         * лишние сегменты пути, неизвестные параметры, битый ключ.
+         */
+    @Throws(FfiException::class) fun `parseContactLink`(`uri`: kotlin.String): FfiContactLink {
+            return FfiConverterTypeFfiContactLink.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_parse_contact_link(
+        FfiConverterString.lower(`uri`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Версия протокола, которую использует это ядро.
          */ fun `protocolVersion`(): kotlin.UByte {
             return FfiConverterUByte.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_protocol_version(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Строит QR-код для сверки safety number.
+         *
+         * # Зачем это нужно
+         *
+         * Сверка вручную проваливается там, где утомляет: шестьдесят цифр
+         * читают невнимательно, сверяя края и пропуская середину. Атака
+         * на этом и строится. QR убирает человека из сравнения — устройство
+         * сверяет все цифры само.
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`] — строка содержит не только цифры.
+         * Форматированный номер с пробелами сюда передавать нельзя: сканер
+         * получит не то, что показывает второе устройство.
+         */
+    @Throws(FfiException::class) fun `safetyNumberQr`(`digits`: kotlin.String): FfiQrMatrix {
+            return FfiConverterTypeFfiQrMatrix.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_safety_number_qr(
+        FfiConverterString.lower(`digits`),_status)
 }
     )
     }
