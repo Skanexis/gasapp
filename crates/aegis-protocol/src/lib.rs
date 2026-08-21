@@ -30,6 +30,7 @@ pub mod envelope;
 pub mod content;
 pub mod double_ratchet;
 pub mod engine;
+pub mod group;
 pub mod keys;
 pub mod mlkem;
 pub mod qr;
