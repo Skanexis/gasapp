@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Пути к OpenSSL для сборки SQLCipher на Windows.
+#
+# Без них `libsqlite3-sys` не находит библиотеку и падает с
+# «Missing environment variable OPENSSL_DIR», а при частично заданных
+# путях — с «LNK1181: cannot open input file libcrypto.lib»: установщик
+# ShiningLight кладёт библиотеки в lib/VC/x64/MD, а не в lib/.
+#
+# На Linux и macOS файл не нужен: там системный OpenSSL находится
+# через pkg-config, и эти переменные игнорируются.
+
+[env]
+OPENSSL_DIR = { value = "C:/Program Files/OpenSSL-Win64", force = false, relative = false }
+OPENSSL_LIB_DIR = { value = "C:/Program Files/OpenSSL-Win64/lib/VC/x64/MD", force = false, relative = false }
+OPENSSL_INCLUDE_DIR = { value = "C:/Program Files/OpenSSL-Win64/include", force = false, relative = false }
