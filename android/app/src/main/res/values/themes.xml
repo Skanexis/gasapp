@@ -7,7 +7,15 @@
 -->
 <resources xmlns:tools="http://schemas.android.com/tools">
 
-    <style name="Theme.AEGIS" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <!--
+      Тема всегда тёмная, а не DayNight.
+
+      Приложение нарисовано под тёмный фон (UI kit), и светлый режим
+      системы делал бы диалоги белыми поверх тёмных экранов. Кроме
+      того, тёмный интерфейс меньше заметен со стороны — мелочь,
+      но в пользу того, ради чего мессенджер существует.
+    -->
+    <style name="Theme.AEGIS" parent="Theme.MaterialComponents.NoActionBar">
         <item name="colorPrimary">@color/accent_base</item>
         <item name="colorPrimaryVariant">@color/accent_pressed</item>
         <item name="colorOnPrimary">@color/accent_on</item>
