@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  🔐 Необратимое действие: удалить переписку, сбросить
+  ключи, разлогинить устройство. Красный здесь — не
+  украшение, а последняя остановка перед потерей данных.
+
+  Порядок важен: селектор берёт первое совпадение, поэтому
+  исключающие состояния идут раньше общих. disabled первым —
+  недоступная кнопка не должна выглядеть нажатой.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item android:state_enabled="false" android:drawable="@drawable/btn_disabled" />
+    <item app:state_loading="true" android:drawable="@drawable/btn_disabled" />
+    <item android:state_pressed="true" android:drawable="@drawable/btn_dgr_hovered" />
+    <item android:state_focused="true" android:drawable="@drawable/btn_dgr_hovered" />
+    <item android:state_hovered="true" android:drawable="@drawable/btn_dgr_hovered" />
+    <item android:drawable="@drawable/btn_dgr_normal" />
+
+</selector>

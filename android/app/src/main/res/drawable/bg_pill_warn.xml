@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Счётчик требующих внимания пунктов. -->
+<!--
+  Пилюля состояния: 24dp, радиус 12, приглушённая заливка.
+  Метрики из UI kit (.pill).
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="@color/status_warn_dim" />
-    <corners android:radius="9dp" />
+    <corners android:radius="12dp" />
 </shape>

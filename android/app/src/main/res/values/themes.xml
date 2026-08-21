@@ -26,6 +26,26 @@
 
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_muted</item>
+
+        <!--
+          Inter — шрифт макета. Задаётся в теме, а не в каждом
+          TextView: пропущенный атрибут дал бы системный Roboto,
+          и экран отличался бы от макета шириной строк, а не только
+          рисунком букв.
+
+          fontFamily покрывает виджеты платформы, textAppearance —
+          компоненты Material, которые берут шрифт оттуда.
+        -->
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
+
+        <!--
+          Диалоги: без явного указания AlertDialog берёт светлую тему
+          платформы и появляется белым окном поверх тёмного приложения.
+        -->
+        <item name="android:alertDialogTheme">@style/AegisDialog</item>
+        <item name="alertDialogTheme">@style/AegisDialog</item>
 
         <item name="android:statusBarColor">@color/bg_base</item>
         <item name="android:navigationBarColor">@color/bg_base</item>

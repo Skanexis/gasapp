@@ -1,10 +1,87 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Отступы соответствуют шкале из design/aegis.tokens.json. -->
+<!--
+  Размеры из design/aegis.tokens.json.
+
+  Значения продублированы здесь, а не вычисляются: токены — источник
+  истины, но Android не читает JSON во время сборки. Расхождение ловится
+  тестом, сверяющим эти ресурсы с файлом токенов.
+
+  Правило: в раскладках используются эти имена, а не числа. Число,
+  вписанное прямо в раскладку, переживает любую правку токенов — и
+  экран тихо расходится с макетом.
+-->
 <resources>
+
+    <!-- Шкала отступов: 4 / 8 / 16 / 24 / 32 / 40 / 48 / 64 -->
+    <dimen name="space_xs">4dp</dimen>
+    <dimen name="space_s">8dp</dimen>
+    <dimen name="space_m">16dp</dimen>
+    <dimen name="space_l">24dp</dimen>
+    <dimen name="space_xl">32dp</dimen>
+    <dimen name="space_2xl">40dp</dimen>
+    <dimen name="space_3xl">48dp</dimen>
+    <dimen name="space_4xl">64dp</dimen>
+
+    <!-- Скругления -->
+    <dimen name="radius_input">12dp</dimen>
+    <dimen name="radius_button">14dp</dimen>
+    <dimen name="radius_card">16dp</dimen>
+    <dimen name="radius_sheet">24dp</dimen>
+
+    <!-- Высоты элементов -->
+    <dimen name="button_small">40dp</dimen>
+    <dimen name="button_medium">48dp</dimen>
+    <dimen name="button_large">56dp</dimen>
+    <dimen name="input_height">48dp</dimen>
+    <dimen name="list_row_min">64dp</dimen>
+    <dimen name="list_row_max">72dp</dimen>
+
+    <!--
+      Минимальная область нажатия.
+
+      48dp — не украшение: меньшая цель промахивается, а промах
+      в мессенджере отправляет сообщение не тому или открывает не тот
+      чат.
+    -->
+    <dimen name="touch_target">48dp</dimen>
+
+    <!-- Аватары: 40 / 48 / 64 / 88 -->
+    <dimen name="avatar_s">40dp</dimen>
+    <dimen name="avatar_m">48dp</dimen>
+    <dimen name="avatar_l">64dp</dimen>
+    <dimen name="avatar_xl">88dp</dimen>
+
+    <!-- Иконки: 16 / 20 / 24 / 32 -->
+    <dimen name="icon_xs">16dp</dimen>
+    <dimen name="icon_s">20dp</dimen>
+    <dimen name="icon_m">24dp</dimen>
+    <dimen name="icon_l">32dp</dimen>
+
+    <!-- Поля экрана -->
+    <dimen name="screen_padding">16dp</dimen>
+
+    <!--
+      Прежние имена, оставленные ради существующих раскладок.
+
+      Указывают на значения шкалы, а не на свои собственные: два
+      источника размера — верный способ получить два разных отступа
+      там, где задуман один.
+    -->
     <dimen name="list_row_padding">16dp</dimen>
     <dimen name="chat_row_padding_vertical">12dp</dimen>
-    <dimen name="avatar_size">44dp</dimen>
-    <dimen name="screen_padding">16dp</dimen>
+    <dimen name="avatar_size">48dp</dimen>
     <dimen name="bubble_max_width">280dp</dimen>
+
+    <!-- Типографика: размеры кегля -->
+    <dimen name="text_display">32sp</dimen>
+    <dimen name="text_h1">28sp</dimen>
+    <dimen name="text_h2">24sp</dimen>
+    <dimen name="text_h3">20sp</dimen>
+    <dimen name="text_h4">17sp</dimen>
+    <dimen name="text_body">15sp</dimen>
+    <dimen name="text_caption">13sp</dimen>
+    <dimen name="text_button">15sp</dimen>
+    <dimen name="text_label">12sp</dimen>
+
 </resources>
