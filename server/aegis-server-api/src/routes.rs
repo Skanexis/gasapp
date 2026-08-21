@@ -68,6 +68,12 @@ pub struct AppState {
     /// ключей Apple и Google. Разворачивающий инстанс для друзей
     /// не должен ради этого регистрироваться в Firebase.
     pub push: Arc<dyn crate::push::PushProvider>,
+    /// Состояние узла для наблюдения.
+    ///
+    /// 🔐 Здесь только про сам процесс: доступность базы, жив ли
+    /// слушатель, время работы. Ничего про пользователей — см.
+    /// пояснение в модуле `health`.
+    pub health: Arc<crate::health::HealthState>,
 }
 
 impl AppState {
@@ -82,6 +88,7 @@ impl AppState {
             pow_difficulty: pow::DEFAULT_DIFFICULTY,
             hub: Arc::new(crate::hub::Hub::new()),
             push: Arc::new(crate::push::NoPush),
+            health: Arc::new(crate::health::HealthState::new()),
         }
     }
 }
@@ -302,6 +309,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Токен push: клиент присылает его после регистрации
         // и при каждой смене — провайдеры их отзывают.
         .route("/v1/push/:device_id", put(register_push_token))
+        // Проверка готовности узла.
+        //
+        // 🔐 Не должна торчать в интернет: версия подсказывает
+        // атакующему, какие уязвимости пробовать. Балансировщик
+        // отдаёт её только внутренней сети.
+        .route("/health", get(crate::health::health))
         .route(
             "/v1/messages/:device_id/:envelope_id",
             axum::routing::delete(ack_message),

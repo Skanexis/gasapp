@@ -85,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(aegis_server_api::hub::listen(
         pool,
         Arc::clone(&state.hub),
+        Arc::clone(&state.health),
     ));
 
     let app = router(state);

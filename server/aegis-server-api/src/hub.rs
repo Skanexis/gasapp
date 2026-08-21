@@ -241,9 +241,13 @@ pub async fn broadcast(pool: &sqlx::PgPool, device_id: Uuid) -> Result<(), sqlx:
 /// процесса. При обрыве соединения с базой переподключается: без
 /// этого узел молча перестал бы получать уведомления от соседей,
 /// продолжая при этом обслуживать клиентов.
-pub async fn listen(pool: sqlx::PgPool, hub: Arc<Hub>) {
+pub async fn listen(
+    pool: sqlx::PgPool,
+    hub: Arc<Hub>,
+    health: Arc<crate::health::HealthState>,
+) {
     loop {
-        match run_listener(&pool, &hub).await {
+        match run_listener(&pool, &hub, &health).await {
             Ok(()) => {
                 // Слушатель завершился без ошибки — соединение закрыли
                 // штатно. Такое случается при перезапуске базы.
@@ -254,15 +258,25 @@ pub async fn listen(pool: sqlx::PgPool, hub: Arc<Hub>) {
             }
         }
 
+        // 🔐 Отметка об обрыве обязательна: без неё узел выглядел бы
+        // здоровым, молча перестав будить клиентов, и балансировщик
+        // продолжал бы слать на него подключения.
+        health.listener_lost();
+
         tokio::time::sleep(LISTEN_RETRY).await;
     }
 }
 
 /// Одна сессия слушателя: до первой ошибки.
-async fn run_listener(pool: &sqlx::PgPool, hub: &Hub) -> Result<(), sqlx::Error> {
+async fn run_listener(
+    pool: &sqlx::PgPool,
+    hub: &Hub,
+    health: &crate::health::HealthState,
+) -> Result<(), sqlx::Error> {
     let mut listener = sqlx::postgres::PgListener::connect_with(pool).await?;
     listener.listen(NOTIFY_CHANNEL).await?;
 
+    health.listener_connected();
     tracing::info!(channel = NOTIFY_CHANNEL, "слушатель уведомлений запущен");
 
     loop {
