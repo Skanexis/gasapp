@@ -558,3 +558,166 @@ pub fn safety_number_qr(digits: String) -> Result<FfiQrMatrix, FfiError> {
         modules: matrix.modules,
     })
 }
+
+/// Контакт, полученный по ссылке `aegis://`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiContactLink {
+    /// Identity-ключ контакта, 32 байта.
+    pub identity: Vec<u8>,
+
+    /// Имя, предложенное владельцем ссылки.
+    ///
+    /// 🔐 Подсказка для интерфейса, не более: имя выбирает тот, кто
+    /// сделал ссылку, и оно ничем не подтверждено. Показывать его
+    /// следует как предложенное, а решение о доверии принимать
+    /// по ключу.
+    pub display_name: Option<String>,
+}
+
+/// Собирает ссылку на собственный профиль.
+///
+/// # Зачем
+///
+/// Обмен контактами без сервера-посредника: ключ, снятый с экрана
+/// человека, стоящего рядом, не нужно принимать на веру у сервера.
+///
+/// # Errors
+///
+/// [`FfiError::Core`] — ключ не 32 байта либо имя слишком длинное
+/// или содержит управляющие символы.
+#[uniffi::export]
+pub fn contact_link_uri(identity: Vec<u8>, display_name: Option<String>) -> Result<String, FfiError> {
+    guard(|| {
+        let link = aegis_protocol::contact_link::ContactLink {
+            identity: identity_from_bytes(&identity)?,
+            display_name,
+        };
+
+        link.to_uri()
+    })
+}
+
+/// Разбирает ссылку, полученную по QR или пересылкой.
+///
+/// # 🔐 Про доверие
+///
+/// Ссылка не подписана и подписана быть не может — подписывать нечем,
+/// ключ как раз и передаётся. Успешный разбор означает только то,
+/// что формат верен. Приложение обязано показать пользователю, кого
+/// именно оно собирается добавить, до того как добавит.
+///
+/// # Errors
+///
+/// [`FfiError::Core`] — ссылка не соответствует формату: чужая схема,
+/// лишние сегменты пути, неизвестные параметры, битый ключ.
+#[uniffi::export]
+pub fn parse_contact_link(uri: String) -> Result<FfiContactLink, FfiError> {
+    let link = guard(|| aegis_protocol::contact_link::ContactLink::parse(&uri))?;
+
+    Ok(FfiContactLink {
+        identity: link.identity.as_bytes().to_vec(),
+        display_name: link.display_name,
+    })
+}
+
+/// Строит QR-код ссылки на профиль.
+///
+/// Матрица модулей, а не картинка: отрисовка и размер модуля зависят
+/// от платформы и экрана.
+///
+/// # Errors
+///
+/// [`FfiError::Core`] — ключ или имя вне допустимых границ;
+/// [`FfiError::InvalidArgument`] — матрица не представима на платформе.
+#[uniffi::export]
+pub fn contact_link_qr(
+    identity: Vec<u8>,
+    display_name: Option<String>,
+) -> Result<FfiQrMatrix, FfiError> {
+    let matrix = guard(|| {
+        let link = aegis_protocol::contact_link::ContactLink {
+            identity: identity_from_bytes(&identity)?,
+            display_name,
+        };
+
+        aegis_protocol::contact_link::contact_qr(&link)
+    })?;
+
+    Ok(FfiQrMatrix {
+        size: u32::try_from(matrix.size).map_err(|_| FfiError::InvalidArgument)?,
+        modules: matrix.modules,
+    })
+}
+
+/// Превращает байты с платформы в identity-ключ.
+///
+/// Длина проверяется здесь, а не в ядре: за границей FFI ключ — это
+/// массив произвольной длины, и молчаливое дополнение нулями дало бы
+/// ссылку на чужой ключ.
+fn identity_from_bytes(bytes: &[u8]) -> aegis_types::Result<aegis_types::PublicKeyBytes> {
+    let array: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| aegis_types::AegisError::Malformed)?;
+
+    Ok(aegis_types::PublicKeyBytes::new(array))
+}
+
+#[cfg(test)]
+mod contact_link_tests {
+    use super::*;
+
+    fn identity() -> Vec<u8> {
+        (0..32u8).collect()
+    }
+
+    #[test]
+    fn link_round_trips_across_the_boundary() {
+        let uri = contact_link_uri(identity(), Some("Иван".to_owned())).expect("ссылка");
+        let parsed = parse_contact_link(uri).expect("разбор");
+
+        assert_eq!(parsed.identity, identity());
+        assert_eq!(parsed.display_name.as_deref(), Some("Иван"));
+    }
+
+    #[test]
+    fn link_without_name_round_trips() {
+        let uri = contact_link_uri(identity(), None).expect("ссылка");
+        let parsed = parse_contact_link(uri).expect("разбор");
+
+        assert_eq!(parsed.identity, identity());
+        assert!(parsed.display_name.is_none());
+    }
+
+    /// 🔐 Ключ неверной длины отвергается, а не дополняется нулями.
+    ///
+    /// Дополнение дало бы ссылку на ключ, которого у пользователя нет.
+    #[test]
+    fn wrong_identity_length_is_rejected() {
+        for length in [0usize, 31, 33, 64] {
+            assert!(
+                contact_link_uri(vec![0; length], None).is_err(),
+                "ключ длиной {length} принят"
+            );
+        }
+    }
+
+    /// 🔐 Чужая схема не проходит через границу.
+    #[test]
+    fn foreign_scheme_is_rejected_across_the_boundary() {
+        assert!(matches!(
+            parse_contact_link("https://evil.example/".to_owned()),
+            Err(FfiError::Core(AegisError::Malformed))
+        ));
+    }
+
+    #[test]
+    fn qr_is_built_for_profile() {
+        let matrix = contact_link_qr(identity(), Some("Иван".to_owned())).expect("код");
+
+        assert!(matrix.size >= 21);
+        assert_eq!(
+            matrix.modules.len(),
+            (matrix.size as usize).saturating_mul(matrix.size as usize)
+        );
+    }
+}

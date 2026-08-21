@@ -83,7 +83,32 @@ pub fn safety_number_qr(digits: &str) -> Result<QrMatrix> {
         return Err(AegisError::Malformed);
     }
 
-    let code = qrcode::QrCode::with_error_correction_level(digits, qrcode::EcLevel::M)
+    encode_text(digits)
+}
+
+/// Кодирует произвольный текст в матрицу QR.
+///
+/// # 🔐 Когда этим можно пользоваться
+///
+/// Только для данных, которые получатель разбирает **сам**, не
+/// показывая пользователю как ссылку для перехода. Safety number
+/// и [`crate::contact_link`] — такие случаи: первый сверяется
+/// устройством, второй открывается только этим приложением.
+///
+/// Класть сюда адрес, который откроет браузер, нельзя: QR не даёт
+/// человеку прочитать, куда он ведёт, до нажатия, и это готовый
+/// фишинг.
+///
+/// # Про уровень коррекции
+///
+/// Тот же средний уровень, что и у safety number: код должен
+/// читаться с экрана под углом и с бликами.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — текст не помещается в код.
+pub fn encode_text(text: &str) -> Result<QrMatrix> {
+    let code = qrcode::QrCode::with_error_correction_level(text, qrcode::EcLevel::M)
         .map_err(|_| AegisError::Malformed)?;
 
     let size = code.width();

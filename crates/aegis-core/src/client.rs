@@ -31,6 +31,7 @@ use aegis_net::api::{
     BundleResponse, PublishKeysRequest, RegisterRequest, SendRequest,
 };
 use aegis_net::client::{ApiClient, Transport};
+use aegis_protocol::contact_link::ContactLink;
 use aegis_protocol::content::Content;
 use aegis_net::pow;
 use aegis_protocol::keys::{
@@ -78,6 +79,33 @@ pub struct ChatMessage {
     pub outgoing: bool,
     /// Статус доставки.
     pub status: MessageStatus,
+}
+
+/// Контакт в том виде, в каком его показывает приложение.
+#[derive(Debug, Clone)]
+pub struct Contact {
+    /// Идентификатор аккаунта.
+    pub account_id: AccountId,
+    /// Identity-ключ — единственное, что определяет собеседника.
+    pub identity: PublicKeyBytes,
+    /// Имя, если известно.
+    pub username: Option<String>,
+    /// Чат с контактом, если он заведён.
+    pub chat_id: Option<ChatId>,
+    /// Подтверждён ли контакт сверкой safety number.
+    pub verified: bool,
+}
+
+/// Найденное сообщение вместе с чатом, которому оно принадлежит.
+///
+/// Чат нужен, чтобы по нажатию открыть переписку на этом сообщении:
+/// поиск без перехода к результату бесполезен.
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    /// Чат, в котором найдено сообщение.
+    pub chat_id: ChatId,
+    /// Само сообщение.
+    pub message: ChatMessage,
 }
 
 /// Клиент AEGIS.
@@ -602,10 +630,6 @@ impl<T: Transport> Client<T> {
         Ok(accepted)
     }
 
-    /// Возвращает сообщения чата в порядке от старых к новым.
-    ///
-    /// # Errors
-    ///
     /// Перечисляет чаты в порядке последней активности.
     ///
     /// # Errors
@@ -645,6 +669,155 @@ impl<T: Transport> Client<T> {
             .collect()
     }
 
+
+    /// Добавляет контакт по ссылке `aegis://contact/...`.
+    ///
+    /// # 🔐 Что здесь проверяется
+    ///
+    /// Ссылка приносит имя и ключ, но не доказывает их связь: сделать
+    /// ссылку с чужим именем и своим ключом может кто угодно. Поэтому
+    /// имя из ссылки не используется как есть — оно проверяется через
+    /// сервер: если по этому имени зарегистрирован **другой** ключ,
+    /// добавление отклоняется.
+    ///
+    /// Это не делает сервер доверенным. Сервер может соврать про имя,
+    /// но не может подменить ключ: ключ пришёл со ссылки, то есть
+    /// из канала, которого сервер не видел. Единственное, что даёт
+    /// проверка, — не дать чужому имени приклеиться к ключу.
+    ///
+    /// Ссылка без имени добавляется как есть: проверять нечего, и
+    /// пользователь увидит контакт без имени, что честно отражает
+    /// то, что о нём известно.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — ссылка не разбирается, либо имя
+    /// в ней принадлежит другому ключу, либо контакт уже известен
+    /// с другим ключом;
+    /// [`AegisError::Network`] — проверка имени не удалась;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn add_contact_from_link(&self, uri: &str, now: Timestamp) -> Result<Contact> {
+        let link = ContactLink::parse(uri)?;
+
+        let (account_id, username) = match &link.display_name {
+            // Без имени спрашивать сервер не о чем: идентификатор
+            // выводится из самого ключа тем же способом, что и для
+            // входящих сообщений, — иначе один контакт получил бы
+            // две записи в базе.
+            None => (peer_account(&link.identity), None),
+
+            Some(name) => {
+                let peer = self.api.discover(name)?;
+                let advertised = parse_public_key(&peer.identity_key)?;
+
+                // 🔐 Ключ со ссылки — единственное, чему здесь есть
+                // доверие. Расхождение означает, что либо ссылку
+                // подделали, либо сервер называет чужой ключ; в обоих
+                // случаях добавлять нечего.
+                if advertised.as_bytes() != link.identity.as_bytes() {
+                    return Err(AegisError::Malformed);
+                }
+
+                (
+                    AccountId::from_uuid(parse_uuid(&peer.account_id)?),
+                    Some(name.clone()),
+                )
+            }
+        };
+
+        let (identity, _) = self.load_identity()?;
+        let chat_id = derive_chat_id(identity.public().public(), &link.identity);
+
+        self.storage.save_contact(
+            &account_id,
+            link.identity.as_bytes(),
+            username.as_deref(),
+            Some(&chat_id),
+            now,
+        )?;
+
+        Ok(Contact {
+            account_id,
+            identity: link.identity,
+            username,
+            chat_id: Some(chat_id),
+            verified: false,
+        })
+    }
+
+    /// Возвращает ссылку на собственный профиль.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — свои ключи не читаются;
+    /// [`AegisError::Malformed`] — имя не подходит для ссылки.
+    pub fn own_contact_link(&self) -> Result<String> {
+        let (identity, _) = self.load_identity()?;
+        let username = self.storage.load_own_keys()?.and_then(|keys| keys.username);
+
+        ContactLink {
+            identity: *identity.public().public(),
+            display_name: username,
+        }
+        .to_uri()
+    }
+
+    /// Перечисляет контакты, недавно добавленные первыми.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn contacts(&self) -> Result<Vec<Contact>> {
+        self.storage
+            .list_contacts(MAX_CONTACTS_TO_LIST)?
+            .into_iter()
+            .map(|row| {
+                Ok(Contact {
+                    account_id: row.account_id,
+                    identity: PublicKeyBytes::new(
+                        row.identity_key
+                            .as_slice()
+                            .try_into()
+                            .map_err(|_| AegisError::Malformed)?,
+                    ),
+                    username: row.username,
+                    chat_id: row.chat_id,
+                    verified: row.verified,
+                })
+            })
+            .collect()
+    }
+
+    /// Ищет по расшифрованной переписке.
+    ///
+    /// 🔐 Поиск идёт по той же таблице сообщений, а не по отдельному
+    /// индексу: индекс был бы второй копией переписки, которую тоже
+    /// пришлось бы стирать при удалении и при истечении срока, —
+    /// и о которой при этом легко забыть.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn search(&self, query: &str, limit: u32) -> Result<Vec<SearchHit>> {
+        let own = self.storage.get_account_id()?;
+
+        self.storage
+            .search_messages(query, limit)?
+            .into_iter()
+            .map(|message| {
+                Ok(SearchHit {
+                    chat_id: message.chat_id,
+                    message: ChatMessage {
+                        message_id: message.id,
+                        text: String::from_utf8_lossy(message.content.as_bytes()).into_owned(),
+                        timestamp: message.timestamp,
+                        outgoing: own.as_ref() == Some(&message.sender_id),
+                        status: message.status,
+                    },
+                })
+            })
+            .collect()
+    }
 
     /// Удаляет истёкшие сообщения.
     ///
@@ -802,6 +975,12 @@ impl<T: Transport> Client<T> {
 
 /// Сколько чатов перебирается при поиске подходящей сессии.
 const MAX_CHATS_TO_PROBE: u32 = 256;
+
+/// Сколько контактов отдаётся списку.
+///
+/// Тот же предел, что и у чатов: список на экране пролистывают, а не
+/// читают целиком, и выгружать в память больше нечего.
+const MAX_CONTACTS_TO_LIST: u32 = 256;
 
 /// Выводит идентификатор аккаунта из identity-ключа контакта.
 fn peer_account(identity: &PublicKeyBytes) -> AccountId {
