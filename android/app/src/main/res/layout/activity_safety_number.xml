@@ -13,6 +13,7 @@
 -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -31,7 +32,7 @@
             android:text="@string/safety_number_title"
             android:textColor="@color/text_primary"
             android:textSize="20sp"
-            android:textStyle="bold" />
+            android:fontFamily="@font/inter_bold" />
 
         <TextView
             android:id="@+id/safety_number_peer"
@@ -95,13 +96,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="@string/mark_verified" />
+            android:text="@string/mark_verified"
+            app:buttonVariant="ok" />
 
         <org.aegis.app.components.AegisButton
             android:id="@+id/clear_verified"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/clear_verified" />
+            android:text="@string/clear_verified"
+            app:buttonVariant="danger" />
     </LinearLayout>
 </ScrollView>

@@ -91,7 +91,7 @@
             android:gravity="center"
             android:padding="@dimen/screen_padding"
             android:text="@string/chat_list_empty"
-            android:textColor="@color/text_tertiary"
+            android:textColor="@color/text_muted"
             android:textSize="14sp"
             android:visibility="gone" />
 

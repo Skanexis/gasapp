@@ -50,7 +50,7 @@
         android:inputType="text"
         android:maxLines="1"
         android:textColor="@color/text_primary"
-        android:textColorHint="@color/text_tertiary"
+        android:textColorHint="@color/text_muted"
         android:textSize="13sp" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -69,7 +69,7 @@
         android:gravity="center"
         android:padding="@dimen/screen_padding"
         android:text="@string/contacts_empty"
-        android:textColor="@color/text_tertiary"
+        android:textColor="@color/text_muted"
         android:textSize="14sp"
         android:visibility="gone" />
 
