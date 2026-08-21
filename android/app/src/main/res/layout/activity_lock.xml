@@ -36,7 +36,7 @@
         android:text="@string/lock_title"
         android:textColor="@color/text_primary"
         android:textSize="17sp"
-        android:textStyle="bold" />
+        android:fontFamily="@font/inter_semibold" />
 
     <TextView
         android:id="@+id/lock_subtitle"
@@ -44,7 +44,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="@string/lock_subtitle"
-        android:textColor="@color/text_tertiary"
+        android:textColor="@color/text_muted"
         android:textSize="12sp" />
 
     <!-- Шесть точек: показывают длину введённого, но не сам PIN -->
@@ -108,7 +108,7 @@
             android:contentDescription="@string/delete_digit"
             android:padding="16dp"
             android:src="@drawable/ic_back"
-            android:tint="@color/text_tertiary" />
+            android:tint="@color/text_muted" />
     </GridLayout>
 
 </LinearLayout>

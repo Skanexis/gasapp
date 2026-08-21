@@ -39,7 +39,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
-        android:textColor="@color/text_tertiary"
+        android:textColor="@color/text_muted"
         android:textSize="12sp"
         android:visibility="gone"
         tools:text="Тёмная"
@@ -53,6 +53,6 @@
         android:contentDescription="@null"
         android:rotation="180"
         android:src="@drawable/ic_back"
-        android:tint="@color/text_quaternary" />
+        android:tint="@color/text_disabled" />
 
 </LinearLayout>

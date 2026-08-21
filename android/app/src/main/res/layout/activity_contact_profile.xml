@@ -9,6 +9,7 @@
 -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -27,7 +28,7 @@
             android:text="@string/contact_profile_title"
             android:textColor="@color/text_primary"
             android:textSize="20sp"
-            android:textStyle="bold" />
+            android:fontFamily="@font/inter_bold" />
 
         <TextView
             android:id="@+id/contact_profile_name"
@@ -97,14 +98,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="@string/contact_profile_verify" />
+            android:text="@string/contact_profile_verify"
+            app:buttonVariant="primary" />
 
         <org.aegis.app.components.AegisButton
             android:id="@+id/contact_profile_open_chat"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="@string/contact_profile_open_chat" />
+            android:text="@string/contact_profile_open_chat"
+            app:buttonVariant="secondary" />
 
     </LinearLayout>
 

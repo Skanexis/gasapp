@@ -13,6 +13,7 @@
 -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -31,7 +32,7 @@
             android:text="@string/profile_title"
             android:textColor="@color/text_primary"
             android:textSize="20sp"
-            android:textStyle="bold" />
+            android:fontFamily="@font/inter_bold" />
 
         <TextView
             android:id="@+id/profile_username"
@@ -83,14 +84,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="@string/profile_copy" />
+            android:text="@string/profile_copy"
+            app:buttonVariant="secondary" />
 
         <org.aegis.app.components.AegisButton
             android:id="@+id/profile_share"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="@string/profile_share" />
+            android:text="@string/profile_share"
+            app:buttonVariant="secondary" />
 
     </LinearLayout>
 

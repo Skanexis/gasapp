@@ -47,7 +47,7 @@
             android:layout_height="21dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_phone"
-            android:tint="@color/text_quaternary" />
+            android:tint="@color/text_disabled" />
 
         <TextView
             style="@style/AegisNavLabel"
@@ -63,7 +63,7 @@
             android:layout_height="21dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_users"
-            android:tint="@color/text_quaternary" />
+            android:tint="@color/text_disabled" />
 
         <TextView
             style="@style/AegisNavLabel"
@@ -79,7 +79,7 @@
             android:layout_height="21dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_settings"
-            android:tint="@color/text_quaternary" />
+            android:tint="@color/text_disabled" />
 
         <TextView
             style="@style/AegisNavLabel"
