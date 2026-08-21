@@ -788,6 +788,53 @@ impl From<FfiAttachmentFile> for aegis_core::client::AttachmentFile {
     }
 }
 
+/// Разобранное описание вложения.
+///
+/// 🔐 Всё здесь пришло от собеседника внутри сообщения. Ядро уже
+/// проверило границы каждого поля при разборе, но имя остаётся тем,
+/// что назвал отправитель: показывать его можно, доверять — нет.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAttachmentInfo {
+    /// Тип вложения.
+    pub kind: FfiAttachmentKind,
+    /// Имя файла, если отправитель его передал.
+    pub name: Option<String>,
+    /// Размер открытого файла в байтах.
+    pub size: u64,
+    /// Описание для незрячих пользователей.
+    pub description: Option<String>,
+    /// Длительность в миллисекундах — у голосовых и видео.
+    pub duration_millis: Option<u32>,
+}
+
+/// Разбирает описание вложения для показа.
+///
+/// Принимает те же байты, что отдаёт [`Messenger::attachments_of`].
+///
+/// # Errors
+///
+/// [`FfiError::Core`] — описание не разбирается либо какое-то поле
+/// вне допустимых границ.
+#[uniffi::export]
+pub fn parse_attachment_descriptor(descriptor: Vec<u8>) -> Result<FfiAttachmentInfo, FfiError> {
+    let parsed = guard(|| {
+        aegis_media::descriptor::AttachmentDescriptor::from_bytes(&descriptor)
+    })?;
+
+    Ok(FfiAttachmentInfo {
+        kind: match parsed.kind {
+            aegis_media::descriptor::AttachmentKind::Image => FfiAttachmentKind::Image,
+            aegis_media::descriptor::AttachmentKind::Video => FfiAttachmentKind::Video,
+            aegis_media::descriptor::AttachmentKind::Voice => FfiAttachmentKind::Voice,
+            aegis_media::descriptor::AttachmentKind::Document => FfiAttachmentKind::Document,
+        },
+        name: parsed.name,
+        size: parsed.size,
+        description: parsed.description,
+        duration_millis: parsed.duration_millis,
+    })
+}
+
 #[uniffi::export]
 impl Messenger {
     /// Отправляет файл вложением.

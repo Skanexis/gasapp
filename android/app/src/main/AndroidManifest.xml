@@ -10,6 +10,16 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+      Доступа к галерее и файлам в списке нет намеренно.
+      
+      🔐 Фото, видео и документы выбираются системным диалогом
+      (ACTION_OPEN_DOCUMENT и Photo Picker). Он отдаёт приложению
+      ровно тот файл, который человек указал, и ничего больше —
+      в отличие от READ_MEDIA_IMAGES, который открывает всю галерею
+      разом и навсегда.
+    -->
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -110,6 +120,10 @@
 
         <activity
             android:name=".SearchActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ContactProfileActivity"
             android:exported="false" />
         <!-- FFI service bindings will be added here -->
 

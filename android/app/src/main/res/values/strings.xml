@@ -127,4 +127,34 @@
     <string name="search_empty">Ничего не найдено</string>
     <string name="contact_no_username">Без имени</string>
     <string name="contacts_empty_real">Контактов пока нет. Добавьте по QR или ссылке.</string>
+
+    <!-- Вложения. -->
+    <string name="attach">Прикрепить</string>
+    <string name="attach_photo">Фото или видео</string>
+    <string name="attach_file">Документ</string>
+    <string name="attach_cancel">Отмена</string>
+    <string name="attach_sending">Отправка вложения…</string>
+    <string name="attach_failed">Не удалось отправить вложение</string>
+    <string name="attach_too_large">Файл больше 100 МБ</string>
+    <string name="attach_unreadable">Не удалось прочитать файл</string>
+
+    <!-- Вложения в переписке. -->
+    <string name="attachment_image">Изображение</string>
+    <string name="attachment_video">Видео</string>
+    <string name="attachment_document">Документ</string>
+    <string name="attachment_download">Загрузить</string>
+    <string name="attachment_downloading">Загрузка…</string>
+    <string name="attachment_download_failed">Не удалось загрузить</string>
+    <string name="attachment_save">Сохранить</string>
+    <string name="attachment_saved">Файл сохранён</string>
+    <string name="attachment_tampered">Файл изменён на сервере и не открыт</string>
+
+    <!-- Профиль контакта. -->
+    <string name="contact_profile_title">Контакт</string>
+    <string name="contact_profile_verify">Сверить safety number</string>
+    <string name="contact_profile_verified">Ключ сверен лично</string>
+    <string name="contact_profile_unverified">Ключ не сверен</string>
+    <string name="contact_profile_unverified_hint">Пока ключ не сверен, нельзя быть уверенным, что переписка идёт с тем, кем представился собеседник.</string>
+    <string name="contact_profile_open_chat">Открыть переписку</string>
+    <string name="contact_profile_key">Identity-ключ</string>
 </resources>
