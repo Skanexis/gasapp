@@ -18,7 +18,7 @@
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{bucket_to_hour, MAX_ENVELOPE_BYTES};
+use crate::{bucket_to_hour, DEVICE_ATTACHMENT_QUOTA_BYTES, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES};
 
 /// Ошибка доступа к хранилищу.
 ///
@@ -38,6 +38,12 @@ pub enum RepoError {
     /// Конверт превышает допустимый размер.
     #[error("envelope too large")]
     EnvelopeTooLarge,
+    /// Вложение больше предела.
+    #[error("attachment too large")]
+    AttachmentTooLarge,
+    /// Устройство исчерпало квоту на вложения.
+    #[error("quota exceeded")]
+    QuotaExceeded,
     /// Сбой базы данных.
     ///
     /// Текст ошибки Postgres наружу не отдаётся: он может содержать
@@ -514,6 +520,134 @@ pub async fn acknowledge_envelope(
 /// [`RepoError::Database`] — сбой базы.
 pub async fn purge_expired(pool: &PgPool) -> Result<u64, RepoError> {
     let result = sqlx::query("DELETE FROM envelopes WHERE expires_at <= now()")
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected())
+}
+
+/// Сохраняет зашифрованное вложение.
+///
+/// # 🔐 Что здесь не сохраняется
+///
+/// Получатель. Строка вложения не называет, кому файл предназначен:
+/// связь между файлом и разговором существует только внутри сообщения,
+/// которое сервер прочитать не может. Добавь сюда устройство-получателя
+/// — и оператор строил бы граф «кто кому шлёт файлы», не расшифровав
+/// ни байта.
+///
+/// Имя файла, его тип и длительность голосового тоже отсутствуют: они
+/// уходят получателю внутри сообщения, под сквозным шифрованием.
+///
+/// # Errors
+///
+/// * [`RepoError::AttachmentTooLarge`] — блоб больше предела.
+/// * [`RepoError::QuotaExceeded`] — устройство исчерпало квоту.
+/// * [`RepoError::NotFound`] — устройства-загрузчика нет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn store_attachment(
+    pool: &PgPool,
+    uploader_device_id: Uuid,
+    payload: &[u8],
+    ttl_seconds: i64,
+) -> Result<Uuid, RepoError> {
+    // Проверка до обращения к базе: ограничение продублировано в схеме,
+    // но осмысленная ошибка лучше, чем нарушение CHECK.
+    if payload.len() > MAX_ATTACHMENT_BYTES {
+        return Err(RepoError::AttachmentTooLarge);
+    }
+
+    // 🔐 Квота считается до вставки: без неё один аккаунт занял бы диск
+    // целиком, и сервер перестал бы принимать сообщения у всех
+    // остальных.
+    //
+    // Гонка здесь возможна: два параллельных запроса увидят один и тот
+    // же итог и оба пройдут. Плата за это — небольшое превышение
+    // квоты, а не её обход: следующая загрузка уже упрётся. Блокировка
+    // ради точной цифры держала бы транзакцию на всё время вставки
+    // стомегабайтного блоба.
+    let used: i64 = sqlx::query_scalar(
+        "
+        SELECT COALESCE(SUM(octet_length(payload)), 0)
+        FROM attachments
+        WHERE uploader_device_id = $1
+        ",
+    )
+    .bind(uploader_device_id)
+    .fetch_one(pool)
+    .await?;
+
+    let after = used.saturating_add(i64::try_from(payload.len()).unwrap_or(i64::MAX));
+
+    if after > DEVICE_ATTACHMENT_QUOTA_BYTES {
+        return Err(RepoError::QuotaExceeded);
+    }
+
+    let attachment_id = Uuid::new_v4();
+
+    sqlx::query(
+        "
+        INSERT INTO attachments (attachment_id, uploader_device_id, payload, expires_at)
+        VALUES ($1, $2, $3, now() + ($4 * INTERVAL '1 second'))
+        ",
+    )
+    .bind(attachment_id)
+    .bind(uploader_device_id)
+    .bind(payload)
+    .bind(ttl_seconds)
+    .execute(pool)
+    .await?;
+
+    Ok(attachment_id)
+}
+
+/// Отдаёт вложение по адресу.
+///
+/// # 🔐 Почему любой может скачать любое вложение
+///
+/// Проверить право на скачивание невозможно, не зная, кому файл
+/// предназначен, — а этого сервер не знает намеренно. Защита здесь
+/// не в проверке доступа, а в том, что адрес — случайный UUID,
+/// а содержимое зашифровано ключом, которого у сервера нет.
+///
+/// Угадать адрес нельзя: 122 бита случайности. Угадав — получишь
+/// шифроблоб, к которому нет ключа.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — вложения нет либо срок истёк.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn fetch_attachment(pool: &PgPool, attachment_id: Uuid) -> Result<Vec<u8>, RepoError> {
+    // Истёкшее не отдаётся, даже если уборщик до него ещё не дошёл:
+    // иначе срок хранения зависел бы от расписания очистки.
+    let payload: Option<Vec<u8>> = sqlx::query_scalar(
+        "
+        SELECT payload
+        FROM attachments
+        WHERE attachment_id = $1 AND expires_at > now()
+        ",
+    )
+    .bind(attachment_id)
+    .fetch_optional(pool)
+    .await?;
+
+    payload.ok_or(RepoError::NotFound)
+}
+
+/// Удаляет просроченные вложения.
+///
+/// Вызывается тем же расписанием, что и [`purge_expired`].
+///
+/// 🔐 Единственный способ, которым вложения вообще удаляются: строка
+/// не знает получателя, поэтому удалить её «вместе с аккаунтом»
+/// нельзя. Это осознанная плата за то, что сервер не видит, кто кому
+/// шлёт файлы.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn purge_expired_attachments(pool: &PgPool) -> Result<u64, RepoError> {
+    let result = sqlx::query("DELETE FROM attachments WHERE expires_at <= now()")
         .execute(pool)
         .await?;
 

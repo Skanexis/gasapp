@@ -60,14 +60,24 @@ async fn state() -> Option<Arc<AppState>> {
 
     if !*applied {
         let _ = sqlx::raw_sql(
-            "DROP TABLE IF EXISTS envelopes, one_time_prekeys, signed_prekeys, devices, accounts CASCADE",
+            "DROP TABLE IF EXISTS attachments, push_tokens, envelopes, one_time_prekeys,              signed_prekeys, devices, accounts CASCADE",
         )
         .execute(&pool)
         .await;
-        sqlx::raw_sql(include_str!("../../migrations/0001_initial.sql"))
-            .execute(&pool)
-            .await
-            .expect("миграция применяется");
+
+        // Все миграции по порядку, а не только первая: тест, знающий
+        // лишь про начальную схему, зелен на таблицах, которых в бою
+        // уже нет, и слеп к тем, что появились.
+        for migration in [
+            include_str!("../../migrations/0001_initial.sql"),
+            include_str!("../../migrations/0002_push_tokens.sql"),
+            include_str!("../../migrations/0003_attachments.sql"),
+        ] {
+            sqlx::raw_sql(migration)
+                .execute(&pool)
+                .await
+                .expect("миграция применяется");
+        }
         *applied = true;
     }
 
@@ -575,4 +585,237 @@ async fn health_reveals_no_user_metadata() {
              а не о работоспособности узла"
         );
     }
+}
+
+/// Регистрирует устройство и возвращает его идентификатор вместе
+/// с секретным ключом подписи.
+///
+/// Обычный [`register`] кладёт в базу фиксированный публичный ключ,
+/// к которому нет секретного, — подписать им ничего нельзя. Здесь
+/// пара настоящая, поэтому запросы к защищённым ручкам проходят
+/// проверку.
+async fn register_signing_device(
+    state: &Arc<AppState>,
+    username: &str,
+) -> (Uuid, ed25519_dalek::SigningKey) {
+    let signing = ed25519_dalek::SigningKey::from_bytes(&[0x77u8; 32]);
+    let verifying = signing.verifying_key().to_bytes();
+
+    let challenge = [0x42u8; 32];
+    let nonce = solve(&challenge);
+
+    let (status, body) = call(
+        state,
+        "POST",
+        "/v1/accounts/register",
+        Some(serde_json::json!({
+            "username": username,
+            "identity_key": hex::encode([1u8; 32]),
+            "device_identity_key": hex::encode(verifying),
+            "pow_challenge": hex::encode(challenge),
+            "pow_nonce": nonce,
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "регистрация не прошла: {body:?}");
+
+    (
+        body["device_id"].as_str().unwrap().parse().unwrap(),
+        signing,
+    )
+}
+
+/// Выполняет подписанный запрос с сырым телом.
+async fn call_signed(
+    state: &Arc<AppState>,
+    signing: &ed25519_dalek::SigningKey,
+    method: &str,
+    uri: &str,
+    body: Vec<u8>,
+) -> (StatusCode, Vec<u8>) {
+    use ed25519_dalek::Signer as _;
+
+    // Время берётся так же, как его берёт сервер. Внутренняя
+    // now_millis намеренно pub(crate): расширять публичный API ради
+    // теста значило бы делать частью контракта то, что им не является.
+    let issued_at = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("часы после 1970")
+            .as_millis(),
+    )
+    .expect("время помещается в i64");
+    let message = aegis_server_api::authz::signed_message(method, uri, issued_at);
+    let signature = signing.sign(&message).to_bytes();
+
+    let router = aegis_server_api::router(Arc::clone(state));
+
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("x-aegis-signature", hex::encode(signature))
+        .header("x-aegis-issued-at", issued_at.to_string())
+        .header("content-type", "application/octet-stream")
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+
+    // Предел чтения выше предела вложения: иначе тест на слишком
+    // большой ответ упирался бы в собственное ограничение, а не
+    // в серверное.
+    let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024 * 1024)
+        .await
+        .unwrap();
+
+    (status, bytes.to_vec())
+}
+
+/// Вложение загружается и скачивается без изменений.
+#[tokio::test]
+async fn attachment_round_trips() {
+    let state = require_state!();
+    let (device_id, signing) = register_signing_device(&state, &unique_name("uploader")).await;
+
+    let payload = vec![0xABu8; 4096];
+
+    let (status, body) = call_signed(
+        &state,
+        &signing,
+        "POST",
+        &format!("/v1/attachments/{device_id}"),
+        payload.clone(),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "загрузка не прошла");
+
+    let attachment_id: Uuid = serde_json::from_slice::<Uuid>(&body).expect("адрес вложения");
+
+    let (status, downloaded) = call_signed(
+        &state,
+        &signing,
+        "GET",
+        &format!("/v1/attachments/{device_id}/{attachment_id}"),
+        Vec::new(),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "скачивание не прошло");
+    assert_eq!(downloaded, payload, "вложение изменилось при хранении");
+}
+
+/// 🔐 Без подписи вложение не загрузить и не скачать.
+///
+/// Подпись не защищает конкретный файл — адрес случаен, а содержимое
+/// зашифровано, — но не даёт анонимно перебирать адреса и качать
+/// чужой трафик.
+#[tokio::test]
+async fn attachment_requires_authentication() {
+    let state = require_state!();
+    let (device_id, signing) = register_signing_device(&state, &unique_name("anon")).await;
+
+    let (status, body) = call_signed(
+        &state,
+        &signing,
+        "POST",
+        &format!("/v1/attachments/{device_id}"),
+        vec![0x11u8; 128],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let attachment_id: Uuid = serde_json::from_slice::<Uuid>(&body).expect("адрес вложения");
+
+    // Те же запросы без заголовков подписи.
+    for (method, uri) in [
+        ("POST", format!("/v1/attachments/{device_id}")),
+        (
+            "GET",
+            format!("/v1/attachments/{device_id}/{attachment_id}"),
+        ),
+    ] {
+        let router = aegis_server_api::router(Arc::clone(&state));
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(&uri)
+                    .body(Body::from(vec![0x11u8; 128]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {uri} прошёл без подписи"
+        );
+    }
+}
+
+/// 🔐 Чужой подписью загрузить в чужую квоту нельзя.
+#[tokio::test]
+async fn attachment_upload_checks_signer_matches_path() {
+    let state = require_state!();
+    let (_, signing) = register_signing_device(&state, &unique_name("mallory")).await;
+    let victim = Uuid::new_v4();
+
+    let (status, _) = call_signed(
+        &state,
+        &signing,
+        "POST",
+        &format!("/v1/attachments/{victim}"),
+        vec![0x22u8; 128],
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "загрузка в чужую квоту прошла"
+    );
+}
+
+/// Пустое вложение отвергается.
+///
+/// Описание, ссылающееся на пустой блоб, у получателя всё равно
+/// не откроется.
+#[tokio::test]
+async fn empty_attachment_is_rejected() {
+    let state = require_state!();
+    let (device_id, signing) = register_signing_device(&state, &unique_name("empty")).await;
+
+    let (status, _) = call_signed(
+        &state,
+        &signing,
+        "POST",
+        &format!("/v1/attachments/{device_id}"),
+        Vec::new(),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Несуществующее вложение — 404, а не пустое тело.
+#[tokio::test]
+async fn missing_attachment_returns_not_found() {
+    let state = require_state!();
+    let (device_id, signing) = register_signing_device(&state, &unique_name("seeker")).await;
+
+    let (status, _) = call_signed(
+        &state,
+        &signing,
+        "GET",
+        &format!("/v1/attachments/{device_id}/{}", Uuid::new_v4()),
+        Vec::new(),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
