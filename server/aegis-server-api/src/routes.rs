@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 
 use aegis_server_db::{
     repo::{self, RepoError},
-    ENVELOPE_TTL,
+    ATTACHMENT_TTL, ENVELOPE_TTL, MAX_ATTACHMENT_BYTES,
 };
 use axum::{
     extract::{Path, State},
@@ -135,6 +135,8 @@ pub enum ApiError {
     TooManyRequests,
     /// Полезная нагрузка слишком велика.
     PayloadTooLarge,
+    /// Место, отведённое устройству, исчерпано.
+    InsufficientStorage,
     /// Внутренний сбой.
     Internal,
 }
@@ -150,6 +152,7 @@ impl ApiError {
             Self::Conflict => StatusCode::CONFLICT,
             Self::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -160,7 +163,12 @@ impl From<RepoError> for ApiError {
         match error {
             RepoError::NotFound => Self::NotFound,
             RepoError::UsernameTaken => Self::Conflict,
-            RepoError::EnvelopeTooLarge => Self::PayloadTooLarge,
+            RepoError::EnvelopeTooLarge | RepoError::AttachmentTooLarge => Self::PayloadTooLarge,
+            // Исчерпанная квота — не «слишком большой файл»: тот же
+            // файл пройдёт, когда прежние вложения истекут. 507 говорит
+            // именно это, а 413 заставил бы клиента сжимать заново
+            // и упереться снова.
+            RepoError::QuotaExceeded => Self::InsufficientStorage,
             RepoError::Database => Self::Internal,
         }
     }
@@ -342,6 +350,25 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route(
             "/v1/messages/:device_id/:envelope_id",
             axum::routing::delete(ack_message),
+        )
+        // Вложения: шифроблоб внутрь, шифроблоб наружу.
+        //
+        // 🔐 Тело — сырые байты, а не JSON с hex: hex удваивает объём,
+        // и стомегабайтный файл занял бы двести мегабайт трафика
+        // и памяти на разбор.
+        //
+        // Предел тела поднят отдельно для этих двух маршрутов:
+        // умолчание axum в 2 МБ отвергло бы любое вложение крупнее
+        // короткого голосового, а поднимать его для всего сервера
+        // значило бы разрешить стомегабайтную регистрацию.
+        .route(
+            "/v1/attachments/:device_id",
+            post(upload_attachment)
+                .layer(axum::extract::DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES)),
+        )
+        .route(
+            "/v1/attachments/:device_id/:attachment_id",
+            get(download_attachment),
         )
         .with_state(state)
 }
@@ -690,6 +717,110 @@ pub(crate) fn now_millis() -> i64 {
         .map_or(0, |elapsed| {
             i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
         })
+}
+
+/// Загружает зашифрованное вложение.
+///
+/// # 🔐 Что сервер получает и чего не узнаёт
+///
+/// Получает: непрозрачные байты и устройство, которое их прислало.
+/// Не узнаёт: кому файл предназначен, как он называется, что в нём.
+/// Описание вложения — имя, тип, ключ, превью — уходит получателю
+/// **внутри сообщения**, под сквозным шифрованием.
+///
+/// Получателя ручка не принимает намеренно. Знай сервер, кому
+/// адресован файл, оператор строил бы граф «кто кому шлёт файлы»,
+/// не расшифровав ни байта.
+///
+/// # Ограничение частоты
+///
+/// Тот же лимитер, что и у сообщений: загрузка вложения — это шаг
+/// отправки сообщения, и отдельный счётчик позволил бы обойти общий
+/// предел, чередуя вызовы.
+///
+/// # Errors
+///
+/// * [`ApiError::PayloadTooLarge`] — блоб больше предела.
+/// * [`ApiError::InsufficientStorage`] — квота устройства исчерпана.
+/// * [`ApiError::TooManyRequests`] — превышена частота.
+/// * [`ApiError::Internal`] — сбой базы.
+async fn upload_attachment(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+    payload: axum::body::Bytes,
+) -> Result<Json<Uuid>, ApiError> {
+    // 🔐 Подписавший обязан быть тем, чья квота расходуется.
+    //
+    // Извлекатель берёт устройство из того же пути, поэтому
+    // расхождение здесь невозможно — проверка стоит как защита
+    // от будущей правки, которая возьмёт идентификатор откуда-то ещё.
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let key = rate_limit::key_from_addr(&state.limiter_salt, &device.device_id.to_string());
+    let now = now_millis();
+
+    {
+        let mut limiter = state
+            .message_limiter
+            .lock()
+            .map_err(|_| ApiError::Internal)?;
+
+        if !limiter.allow(key, now) {
+            return Err(ApiError::TooManyRequests);
+        }
+    }
+
+    // Пустое вложение — ошибка вызывающего, а не файл нулевой длины:
+    // описание, ссылающееся на пустой блоб, у получателя всё равно
+    // не откроется.
+    if payload.is_empty() {
+        return Err(ApiError::BadRequest);
+    }
+
+    let attachment_id = repo::store_attachment(
+        &state.pool,
+        device.device_id,
+        &payload,
+        i64::try_from(ATTACHMENT_TTL.as_secs()).unwrap_or(i64::MAX),
+    )
+    .await?;
+
+    Ok(Json(attachment_id))
+}
+
+/// Отдаёт зашифрованное вложение.
+///
+/// # 🔐 Почему нет проверки прав
+///
+/// Проверить право на скачивание нельзя, не зная, кому файл
+/// предназначен, — а этого сервер не знает намеренно. Защита здесь
+/// не в проверке доступа, а в том, что адрес — случайный UUID
+/// (122 бита), а содержимое зашифровано ключом, которого у сервера нет.
+/// Угадавший адрес получит шифроблоб без ключа.
+///
+/// Аутентификация всё же требуется: она не защищает конкретный файл,
+/// но не даёт анонимно перебирать адреса и качать чужой трафик.
+///
+/// Устройство стоит в пути **только** ради этой подписи: экстрактор
+/// берёт идентификатор оттуда, и без него подписывать было бы нечего.
+/// Совпадения с загрузившим никто не требует — его сервер не знает
+/// и знать не должен.
+///
+/// # Errors
+///
+/// * [`ApiError::NotFound`] — вложения нет либо срок истёк.
+/// * [`ApiError::Internal`] — сбой базы.
+async fn download_attachment(
+    State(state): State<Arc<AppState>>,
+    _device: crate::authz::AuthenticatedDevice,
+    Path((_device_id, attachment_id)): Path<(Uuid, Uuid)>,
+) -> Result<Vec<u8>, ApiError> {
+    let payload = repo::fetch_attachment(&state.pool, attachment_id).await?;
+
+    Ok(payload)
 }
 
 #[cfg(test)]
