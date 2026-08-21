@@ -175,6 +175,28 @@ pub struct ChatSummaryRow {
     pub last_activity: i64,
 }
 
+/// Строка списка контактов.
+///
+/// 🔐 Всё, кроме ключа, — подсказки для интерфейса. Единственное,
+/// что определяет, с кем идёт переписка, — это
+/// [`identity_key`](ContactRow::identity_key): имя контакт называет
+/// сам, и «Банк» в имени не делает его банком.
+#[derive(Debug, Clone)]
+pub struct ContactRow {
+    /// Идентификатор аккаунта.
+    pub account_id: AccountId,
+    /// Identity-ключ.
+    pub identity_key: Vec<u8>,
+    /// Имя пользователя, если известно.
+    pub username: Option<String>,
+    /// Чат с контактом, если он заведён.
+    pub chat_id: Option<ChatId>,
+    /// Отметка верификации.
+    pub verified: bool,
+    /// Когда контакт добавлен, в миллисекундах.
+    pub added_at: Option<i64>,
+}
+
 /// Сообщение в том виде, в каком оно лежит в базе.
 ///
 /// Содержимое — [`Ciphertext`]: открытый текст на диск не попадает
@@ -238,7 +260,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 1;
+    const SCHEMA_VERSION: i32 = 2;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -395,6 +417,27 @@ impl Storage {
                 // 0 → 1: базовый набор таблиц. Отдельных действий не требует —
                 // `create_tables` уже создал их перед вызовом миграций.
                 1 => {}
+                // 1 → 2: имя и чат контакта.
+                //
+                // До этой версии контакт хранился одним лишь
+                // identity-ключом: этого хватало, чтобы обнаружить
+                // смену ключа, но не чтобы показать список контактов —
+                // строка «7f3a…» вместо имени не даёт пользователю
+                // ничего.
+                //
+                // Столбцы добавляются пустыми, а не заполняются: имя
+                // известно только оттуда, откуда контакт пришёл, и
+                // выдумывать его из ключа значило бы показать
+                // пользователю имя, которого никто не называл.
+                2 => {
+                    for statement in [
+                        "ALTER TABLE known_contacts ADD COLUMN username TEXT",
+                        "ALTER TABLE known_contacts ADD COLUMN chat_id BLOB",
+                        "ALTER TABLE known_contacts ADD COLUMN added_at INTEGER",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
+                    }
+                }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
                 _ => return Err(AegisError::Storage),
@@ -546,7 +589,13 @@ impl Storage {
                 [],
             )
             .map_err(storage_error)?;
-        // Таблица для известных контактов (account_id -> identity_key)
+        // Таблица для известных контактов (account_id -> identity_key).
+        //
+        // Столбцы `username`, `chat_id` и `added_at` добавляет миграция
+        // 1 → 2, а не этот DDL: свежая база засевается версией 0 и
+        // проходит все миграции по порядку. Создай их здесь — и
+        // `ALTER TABLE` в миграции упал бы на дубликате столбца,
+        // то есть свежая база вообще не открылась бы.
         connection
             .execute(
                 "
@@ -1148,6 +1197,99 @@ impl Storage {
         Ok(())
     }
 
+
+    /// Ищет сообщения по подстроке.
+    ///
+    /// # 🔐 Почему поиск идёт по содержимому в базе
+    ///
+    /// Отдельный поисковый индекс — это вторая копия переписки. Даже
+    /// в зашифрованной базе он удваивает объём данных, которые нужно
+    /// затирать при удалении сообщения: забыть про индекс значит
+    /// оставить текст «удалённого» сообщения читаемым.
+    ///
+    /// Здесь поиск идёт по той же таблице, что и хранение. Он медленнее
+    /// полнотекстового индекса, но на переписке одного человека
+    /// разница незаметна, а удалять нечего, кроме самого сообщения.
+    ///
+    /// # Про регистр
+    ///
+    /// Сравнение регистронезависимое только для латиницы: `LIKE`
+    /// в `SQLite` не знает Unicode-регистра без расширения ICU. Для
+    /// кириллицы поиск чувствителен к регистру — это ограничение,
+    /// а не решение, и оно снимается подключением ICU.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn search_messages(&self, query: &str, limit: u32) -> Result<Vec<StoredMessage>> {
+        // Пустой запрос вернул бы всю переписку: это не поиск,
+        // а выгрузка, и вызывающий код почти наверняка не этого хочет.
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        // Экранирование символов LIKE символом @, а не обратным
+        // слэшем: последний пришлось бы удваивать и в Rust, и в SQL,
+        // и одна пропущенная пара сломала бы поиск молча.
+        //
+        // Без экранирования запрос «%» вернул бы
+        // всё, а «_» совпал бы с любым символом — пользователь ищет
+        // текст, а не пишет шаблон.
+        let escaped = query
+            .replace('@', "@@")
+            .replace('%', "@%")
+            .replace('_', "@_");
+        let pattern = format!("%{escaped}%");
+
+        let mut statement = conn
+            .prepare(
+                "
+            SELECT message_id, chat_id, sender_id, timestamp, content,
+                   status, message_type, expires_at
+            FROM messages
+            WHERE content LIKE ? ESCAPE '@'
+            ORDER BY timestamp DESC
+            LIMIT ?
+            ",
+            )
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map(params![pattern, limit], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Vec<u8>>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                ))
+            })
+            .map_err(storage_error)?;
+
+        let mut messages = Vec::new();
+        for row in rows {
+            let (id, chat, sender, timestamp, content, status, kind, expires) =
+                row.map_err(storage_error)?;
+
+            messages.push(StoredMessage {
+                id: MessageId::from_uuid(uuid_from_slice(&id)?),
+                chat_id: ChatId::from_uuid(uuid_from_slice(&chat)?),
+                sender_id: AccountId::from_uuid(uuid_from_slice(&sender)?),
+                timestamp: Timestamp::from_millis(timestamp),
+                content: Ciphertext::new(content),
+                status: MessageStatus::from_u8(u8::try_from(status).unwrap_or(0)),
+                message_type: u8::try_from(kind).unwrap_or(0),
+                expires_at: expires.map(Timestamp::from_millis),
+            });
+        }
+
+        Ok(messages)
+    }
     /// Включены ли индикаторы набора и квитанции о прочтении.
     ///
     /// 🔐 По умолчанию **выключены**. Обе функции сообщают собеседнику,
@@ -1298,6 +1440,132 @@ impl Storage {
             .map_err(storage_error)?;
 
         Ok(())
+    }
+
+    /// Сохраняет контакт вместе с именем и чатом.
+    ///
+    /// # Чем отличается от [`Storage::save_contact_identity`]
+    ///
+    /// Тот метод пишет только ключ и вызывается при каждом входящем
+    /// сообщении. Этот вызывается, когда пользователь **добавляет**
+    /// контакт: по QR, по ссылке или по имени.
+    ///
+    /// 🔐 Ключ не перезаписывается, если контакт уже известен
+    /// с другим ключом. Добавление контакта — не то место, где ключ
+    /// вправе смениться: ссылка приходит откуда угодно, и молчаливая
+    /// перезапись позволила бы подменить ключ верифицированного
+    /// собеседника пересылкой одной ссылки. Расхождение возвращается
+    /// ошибкой, чтобы вызывающий код показал предупреждение о смене
+    /// ключа, а не добавил контакт как ни в чём не бывало.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — контакт уже известен с другим
+    /// ключом;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn save_contact(
+        &self,
+        account: &AccountId,
+        identity: &[u8],
+        username: Option<&str>,
+        chat_id: Option<&ChatId>,
+        added_at: Timestamp,
+    ) -> Result<()> {
+        if let Some(known) = self.get_contact_identity(account)? {
+            if known != identity {
+                return Err(AegisError::Malformed);
+            }
+        }
+
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "
+            INSERT INTO known_contacts
+                (account_id, identity_key, username, chat_id, added_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(account_id) DO UPDATE SET
+                username = COALESCE(excluded.username, username),
+                chat_id  = COALESCE(excluded.chat_id, chat_id)
+            ",
+                params![
+                    account.as_bytes(),
+                    identity,
+                    username,
+                    chat_id.map(|id| id.as_uuid().as_bytes().to_vec()),
+                    added_at.as_millis(),
+                ],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Возвращает контакты, недавно добавленные первыми.
+    ///
+    /// Контакты без `added_at` — из базы, созданной до версии схемы 2, —
+    /// оказываются в конце: время их добавления неизвестно, и ставить
+    /// их первыми значило бы соврать о порядке.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn list_contacts(&self, limit: u32) -> Result<Vec<ContactRow>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT
+                    c.account_id,
+                    c.identity_key,
+                    c.username,
+                    c.chat_id,
+                    c.added_at,
+                    (v.account_id IS NOT NULL) AS verified
+                FROM known_contacts AS c
+                LEFT JOIN verified_contacts AS v
+                    ON v.account_id = c.account_id
+                ORDER BY c.added_at IS NULL, c.added_at DESC
+                LIMIT ?
+                ",
+            )
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map(params![limit], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<Vec<u8>>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, bool>(5)?,
+                ))
+            })
+            .map_err(storage_error)?;
+
+        let mut contacts = Vec::new();
+
+        for row in rows {
+            let (raw_account, identity_key, username, raw_chat, added_at, verified) =
+                row.map_err(storage_error)?;
+
+            contacts.push(ContactRow {
+                account_id: AccountId::from_uuid(uuid_from_slice(&raw_account)?),
+                identity_key,
+                username,
+                chat_id: match raw_chat {
+                    None => None,
+                    Some(bytes) => Some(ChatId::from_uuid(uuid_from_slice(&bytes)?)),
+                },
+                verified,
+                added_at,
+            });
+        }
+
+        Ok(contacts)
     }
 
     /// Возвращает известный identity-ключ контакта.
@@ -2448,5 +2716,295 @@ mod tests {
         let reopened = Storage::new(&path, &key).expect("база открывается");
 
         assert!(reopened.presence_sharing_enabled().expect("чтение"));
+    }
+
+    /// Поиск находит сообщение по подстроке.
+    #[test]
+    fn search_finds_message() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let chat = ChatId::generate();
+
+        for text in ["привет мир", "другое сообщение"] {
+            storage
+                .save_message(&StoredMessage {
+                    id: MessageId::generate(),
+                    chat_id: chat,
+                    sender_id: AccountId::generate(),
+                    timestamp: now(),
+                    content: Ciphertext::new(text.as_bytes().to_vec()),
+                    status: MessageStatus::Delivered,
+                    message_type: 0,
+                    expires_at: None,
+                })
+                .expect("сообщение сохранено");
+        }
+
+        let found = storage.search_messages("мир", 10).expect("поиск");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].content.as_bytes(), b"\xd0\xbf\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82 \xd0\xbc\xd0\xb8\xd1\x80");
+    }
+
+    /// Пустой запрос не выгружает всю переписку.
+    ///
+    /// Это не поиск, а выгрузка, и вызывающий код почти наверняка
+    /// не этого хочет.
+    #[test]
+    fn empty_query_returns_nothing() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        storage
+            .save_message(&StoredMessage {
+                id: MessageId::generate(),
+                chat_id: ChatId::generate(),
+                sender_id: AccountId::generate(),
+                timestamp: now(),
+                content: Ciphertext::new(b"something".to_vec()),
+                status: MessageStatus::Delivered,
+                message_type: 0,
+                expires_at: None,
+            })
+            .expect("сообщение сохранено");
+
+        assert!(storage.search_messages("", 10).expect("поиск").is_empty());
+    }
+
+    /// 🔐 Символы шаблона не превращают запрос в маску.
+    ///
+    /// Без экранирования запрос «%» вернул бы всю переписку —
+    /// пользователь ищет текст, а не пишет шаблон.
+    #[test]
+    fn wildcards_are_escaped() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        storage
+            .save_message(&StoredMessage {
+                id: MessageId::generate(),
+                chat_id: ChatId::generate(),
+                sender_id: AccountId::generate(),
+                timestamp: now(),
+                content: Ciphertext::new(b"plain text".to_vec()),
+                status: MessageStatus::Delivered,
+                message_type: 0,
+                expires_at: None,
+            })
+            .expect("сообщение сохранено");
+
+        // Ни один из этих запросов не должен совпасть с «plain text».
+        for query in ["%", "_", "%%", "@"] {
+            assert!(
+                storage.search_messages(query, 10).expect("поиск").is_empty(),
+                "запрос «{query}» сработал как шаблон"
+            );
+        }
+    }
+
+    /// Предел результатов соблюдается.
+    #[test]
+    fn search_respects_limit() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let chat = ChatId::generate();
+
+        for index in 0..5 {
+            storage
+                .save_message(&StoredMessage {
+                    id: MessageId::generate(),
+                    chat_id: chat,
+                    sender_id: AccountId::generate(),
+                    timestamp: Timestamp::from_millis(1_000 + index),
+                    content: Ciphertext::new(b"repeated".to_vec()),
+                    status: MessageStatus::Delivered,
+                    message_type: 0,
+                    expires_at: None,
+                })
+                .expect("сообщение сохранено");
+        }
+
+        assert_eq!(
+            storage.search_messages("repeated", 2).expect("поиск").len(),
+            2
+        );
+    }
+    /// Контакт сохраняется и перечисляется.
+    #[test]
+    fn contact_is_saved_and_listed() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let account = AccountId::generate();
+        let chat = ChatId::generate();
+
+        storage
+            .save_contact(&account, &[0x11; 32], Some("alex"), Some(&chat), now())
+            .expect("контакт сохранён");
+
+        let contacts = storage.list_contacts(10).expect("список");
+
+        assert_eq!(contacts.len(), 1);
+        assert_eq!(contacts[0].account_id, account);
+        assert_eq!(contacts[0].username.as_deref(), Some("alex"));
+        assert_eq!(contacts[0].chat_id, Some(chat));
+        assert!(!contacts[0].verified, "новый контакт не верифицирован");
+    }
+
+    /// 🔐 Ключ известного контакта не перезаписывается молча.
+    ///
+    /// Ссылка приходит откуда угодно; молчаливая перезапись позволила бы
+    /// подменить ключ верифицированного собеседника пересылкой одной
+    /// ссылки.
+    #[test]
+    fn contact_key_change_is_rejected_on_add() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let account = AccountId::generate();
+
+        storage
+            .save_contact(&account, &[0x11; 32], Some("alex"), None, now())
+            .expect("контакт сохранён");
+
+        assert!(
+            storage
+                .save_contact(&account, &[0x22; 32], Some("alex"), None, now())
+                .is_err(),
+            "ключ контакта переписан без предупреждения"
+        );
+
+        assert_eq!(
+            storage
+                .get_contact_identity(&account)
+                .expect("чтение")
+                .as_deref(),
+            Some(&[0x11u8; 32][..]),
+            "в базе оказался подменённый ключ"
+        );
+    }
+
+    /// Повторное добавление с тем же ключом дополняет запись.
+    ///
+    /// Контакт мог прийти сначала входящим сообщением (только ключ),
+    /// а потом по ссылке (с именем): имя должно добавиться, а не
+    /// потеряться.
+    #[test]
+    fn repeated_add_fills_missing_fields() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let account = AccountId::generate();
+        let chat = ChatId::generate();
+
+        storage
+            .save_contact(&account, &[0x11; 32], None, None, now())
+            .expect("контакт сохранён");
+
+        storage
+            .save_contact(&account, &[0x11; 32], Some("alex"), Some(&chat), now())
+            .expect("контакт дополнен");
+
+        let contacts = storage.list_contacts(10).expect("список");
+
+        assert_eq!(contacts.len(), 1, "контакт задвоился");
+        assert_eq!(contacts[0].username.as_deref(), Some("alex"));
+        assert_eq!(contacts[0].chat_id, Some(chat));
+    }
+
+    /// Верификация видна в списке.
+    #[test]
+    fn verification_shows_in_list() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let account = AccountId::generate();
+
+        storage
+            .save_contact(&account, &[0x11; 32], Some("alex"), None, now())
+            .expect("контакт сохранён");
+        storage
+            .set_contact_verified(&account, true, now())
+            .expect("верификация");
+
+        let contacts = storage.list_contacts(10).expect("список");
+
+        assert!(contacts[0].verified);
+    }
+
+    /// Недавно добавленные идут первыми.
+    #[test]
+    fn contacts_are_ordered_by_recency() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        let older = AccountId::generate();
+        let newer = AccountId::generate();
+
+        storage
+            .save_contact(&older, &[0x11; 32], Some("older"), None, Timestamp::from_millis(1_000))
+            .expect("контакт сохранён");
+        storage
+            .save_contact(&newer, &[0x22; 32], Some("newer"), None, Timestamp::from_millis(2_000))
+            .expect("контакт сохранён");
+
+        let contacts = storage.list_contacts(10).expect("список");
+
+        assert_eq!(contacts[0].username.as_deref(), Some("newer"));
+        assert_eq!(contacts[1].username.as_deref(), Some("older"));
+    }
+
+    /// Контакт, записанный только ключом, тоже попадает в список.
+    ///
+    /// [`Storage::save_contact_identity`] вызывается при каждом входящем
+    /// сообщении и имени не знает; такой контакт нужно показать —
+    /// без имени, но показать.
+    #[test]
+    fn identity_only_contact_appears_in_list() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let account = AccountId::generate();
+
+        storage
+            .save_contact_identity(&account, &[0x33; 32])
+            .expect("ключ сохранён");
+
+        let contacts = storage.list_contacts(10).expect("список");
+
+        assert_eq!(contacts.len(), 1);
+        assert!(contacts[0].username.is_none());
+        assert!(contacts[0].added_at.is_none());
+    }
+    /// База прежней версии доживает до новой схемы.
+    ///
+    /// 🔐 Иначе обновление приложения означало бы потерю переписки:
+    /// база не открылась бы, а ключ от неё выведен из PIN, который
+    /// пользователь помнит, — то есть данные целы, но недоступны.
+    #[test]
+    fn version_one_database_migrates_to_current() {
+        let directory = tempfile::tempdir().expect("каталог");
+        let path = directory
+            .path()
+            .join("legacy.db")
+            .to_string_lossy()
+            .into_owned();
+        let key = test_key();
+
+        // Готовим базу так, как её создала бы версия схемы 1:
+        // таблицы есть, столбцов контакта нет, версия — единица.
+        {
+            let storage = Storage::new(&path, &key).expect("база создана");
+            let connection = storage.connection.lock().expect("соединение");
+
+            for statement in [
+                "ALTER TABLE known_contacts DROP COLUMN username",
+                "ALTER TABLE known_contacts DROP COLUMN chat_id",
+                "ALTER TABLE known_contacts DROP COLUMN added_at",
+                "UPDATE schema_version SET version = 1 WHERE id = 1",
+            ] {
+                connection.execute(statement, []).expect("откат схемы");
+            }
+
+            connection
+                .execute(
+                    "INSERT INTO known_contacts (account_id, identity_key) VALUES (?, ?)",
+                    params![AccountId::generate().as_bytes(), &[0x44u8; 32][..]],
+                )
+                .expect("старый контакт");
+        }
+
+        let migrated = Storage::new(&path, &key).expect("база мигрирована");
+
+        let contacts = migrated.list_contacts(10).expect("список");
+
+        assert_eq!(contacts.len(), 1, "контакт потерян при миграции");
+        assert!(contacts[0].username.is_none());
+        assert_eq!(contacts[0].identity_key, vec![0x44; 32]);
     }
 }

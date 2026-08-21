@@ -28,7 +28,6 @@
 //! получатель продвинул бы цепочку, а отправитель — нет, и переписка
 //! встала бы навсегда.
 
-use aegis_protocol::content::Content;
 use aegis_protocol::double_ratchet::RatchetState;
 use aegis_protocol::envelope::Envelope;
 use aegis_protocol::keys::{IdentityKeyPair, PreKeyBundle, PreKeyId};

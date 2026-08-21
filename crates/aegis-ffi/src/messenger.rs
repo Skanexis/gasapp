@@ -23,7 +23,7 @@ use std::sync::Mutex;
 use aegis_core::client::Client;
 use aegis_net::client::{HttpRequest, HttpResponse, Transport};
 use aegis_storage::Storage;
-use aegis_types::{AegisError, ChatId, Timestamp};
+use aegis_types::{AegisError, ChatId, MessageId, Timestamp};
 
 use crate::{guard, FfiError};
 
@@ -131,6 +131,33 @@ pub struct FfiMessage {
     pub outgoing: bool,
     /// Статус доставки.
     pub status: FfiDeliveryStatus,
+}
+
+/// Контакт для показа в интерфейсе.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiContact {
+    /// Идентификатор аккаунта.
+    pub account_id: String,
+    /// Identity-ключ, 32 байта.
+    ///
+    /// 🔐 Единственное, что определяет собеседника. Имя ниже —
+    /// подсказка: его выбирает сам контакт.
+    pub identity: Vec<u8>,
+    /// Имя, если известно.
+    pub username: Option<String>,
+    /// Чат с контактом, если он заведён.
+    pub chat_id: Option<String>,
+    /// Подтверждён ли контакт сверкой safety number.
+    pub verified: bool,
+}
+
+/// Найденное сообщение вместе с его чатом.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiSearchHit {
+    /// Чат, в котором найдено сообщение.
+    pub chat_id: String,
+    /// Само сообщение.
+    pub message: FfiMessage,
 }
 
 /// Статус доставки сообщения.
@@ -363,4 +390,295 @@ impl Messenger {
             )
         })
     }
+}
+
+/// Контакты и поиск.
+#[uniffi::export]
+impl Messenger {
+    /// Добавляет контакт по ссылке `aegis://contact/...`.
+    ///
+    /// # 🔐 Про доверие к ссылке
+    ///
+    /// Ссылка не подписана и подписана быть не может — ключ как раз
+    /// и передаётся. Если в ней есть имя, ядро сверяет его с тем,
+    /// что зарегистрировано на сервере, и отказывает при расхождении.
+    /// Это не делает сервер доверенным: ключ пришёл со ссылки, то есть
+    /// из канала, которого сервер не видел.
+    ///
+    /// Приложение обязано показать пользователю, кого добавляет,
+    /// **до** добавления.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — ссылка не разбирается, имя принадлежит
+    /// другому ключу, контакт уже известен с другим ключом либо
+    /// проверка через сервер не удалась.
+    pub fn add_contact_from_link(
+        &self,
+        uri: String,
+        now_millis: i64,
+    ) -> Result<FfiContact, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let contact =
+            guard(|| client.add_contact_from_link(&uri, Timestamp::from_millis(now_millis)))?;
+
+        Ok(contact_to_ffi(&contact))
+    }
+
+    /// Возвращает ссылку на собственный профиль.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — свои ключи не читаются либо имя не подходит
+    /// для ссылки.
+    pub fn own_contact_link(&self) -> Result<String, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.own_contact_link())
+    }
+
+    /// Перечисляет контакты, недавно добавленные первыми.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn contacts(&self) -> Result<Vec<FfiContact>, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let contacts = guard(|| client.contacts())?;
+
+        Ok(contacts.iter().map(contact_to_ffi).collect())
+    }
+
+    /// Ищет по расшифрованной переписке.
+    ///
+    /// 🔐 Поиск идёт по самим сообщениям, а не по отдельному индексу:
+    /// индекс был бы второй копией переписки, которую тоже пришлось бы
+    /// стирать при удалении, — и о которой легко забыть.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn search(&self, query: String, limit: u32) -> Result<Vec<FfiSearchHit>, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let hits = guard(|| client.search(&query, limit))?;
+
+        Ok(hits
+            .into_iter()
+            .map(|hit| FfiSearchHit {
+                chat_id: hit.chat_id.to_string(),
+                message: FfiMessage {
+                    message_id: hit.message.message_id.to_string(),
+                    text: hit.message.text,
+                    timestamp: hit.message.timestamp.as_millis(),
+                    outgoing: hit.message.outgoing,
+                    status: hit.message.status.into(),
+                },
+            })
+            .collect())
+    }
+}
+
+/// Действия над сообщениями.
+#[uniffi::export]
+impl Messenger {
+    /// Отправляет реакцию на сообщение.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор сообщения
+    /// не разбирается;
+    /// [`FfiError::Core`] — отправка не удалась.
+    pub fn send_reaction(
+        &self,
+        peer_username: String,
+        target_message_id: String,
+        emoji: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let target = parse_message_id(&target_message_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.send_reaction(
+                &peer_username,
+                &target,
+                &emoji,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Правит ранее отправленное сообщение.
+    ///
+    /// 🔐 Правка не скрывает исходный текст: получатель уже видел его.
+    /// Интерфейс обязан помечать правленые сообщения, иначе отправитель
+    /// мог бы переписать разговор задним числом.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор сообщения
+    /// не разбирается;
+    /// [`FfiError::Core`] — отправка не удалась.
+    pub fn edit_message(
+        &self,
+        peer_username: String,
+        target_message_id: String,
+        text: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let target = parse_message_id(&target_message_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.edit_message(
+                &peer_username,
+                &target,
+                &text,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Удаляет сообщение у обеих сторон.
+    ///
+    /// 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
+    /// пользователь всё равно должен перестать видеть сообщение
+    /// у себя. Удаление у собеседника — просьба, а не гарантия: он уже
+    /// видел текст и мог его запомнить.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор сообщения
+    /// не разбирается;
+    /// [`FfiError::Core`] — отправка не удалась.
+    pub fn delete_for_everyone(
+        &self,
+        peer_username: String,
+        target_message_id: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let target = parse_message_id(&target_message_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.delete_for_everyone(
+                &peer_username,
+                &target,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Сообщает, что пользователь печатает.
+    ///
+    /// 🔐 Молча ничего не делает, если передача присутствия выключена:
+    /// иначе пользователь получал бы ошибку за то, что сознательно
+    /// оставил функцию выключенной.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — отправка не удалась.
+    pub fn send_typing(
+        &self,
+        peer_username: String,
+        active: bool,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.send_typing(
+                &peer_username,
+                active,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Отправляет квитанцию о прочтении.
+    ///
+    /// Квитанция указывает последнее прочитанное сообщение, а не
+    /// каждое: открытие чата с сотней непрочитанных иначе породило бы
+    /// сто сообщений, и по их числу собеседник узнал бы, сколько
+    /// накопилось.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор сообщения
+    /// не разбирается;
+    /// [`FfiError::Core`] — отправка не удалась.
+    pub fn send_read_receipt(
+        &self,
+        peer_username: String,
+        until_message_id: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let until = parse_message_id(&until_message_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.send_read_receipt(
+                &peer_username,
+                &until,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Включает или выключает передачу присутствия.
+    ///
+    /// 🔐 Выключено по умолчанию. Индикатор набора и квитанции
+    /// о прочтении сообщают собеседнику, когда пользователь у телефона:
+    /// это данные о распорядке дня, и включать их за пользователя
+    /// нельзя.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — запись не удалась.
+    pub fn set_presence_sharing(&self, enabled: bool) -> Result<(), FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.set_presence_sharing(enabled))
+    }
+
+    /// Сообщает, включена ли передача присутствия.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn presence_sharing_enabled(&self) -> Result<bool, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.presence_sharing_enabled())
+    }
+}
+
+/// Переводит контакт через границу.
+fn contact_to_ffi(contact: &aegis_core::client::Contact) -> FfiContact {
+    FfiContact {
+        account_id: contact.account_id.to_string(),
+        identity: contact.identity.as_bytes().to_vec(),
+        username: contact.username.clone(),
+        chat_id: contact.chat_id.map(|id| id.to_string()),
+        verified: contact.verified,
+    }
+}
+
+/// Разбирает идентификатор сообщения, пришедший с платформы.
+///
+/// За границей FFI это строка: разбор здесь, а не в ядре, потому что
+/// битый идентификатор — ошибка вызывающего кода, и отличать её
+/// от ошибок хранилища полезно.
+fn parse_message_id(raw: &str) -> Result<MessageId, FfiError> {
+    let uuid = uuid::Uuid::parse_str(raw).map_err(|_| FfiError::InvalidArgument)?;
+
+    Ok(MessageId::from_uuid(uuid))
 }

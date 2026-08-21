@@ -362,3 +362,180 @@ fn messages_are_persisted() {
     assert_eq!(messages[0].text, "сохранённое");
     assert!(!messages[0].outgoing, "входящее помечено как исходящее");
 }
+
+/// Алиса добавляет Боба по ссылке из его профиля.
+#[test]
+fn contact_is_added_from_profile_link() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    let link = bob.own_contact_link().expect("ссылка Боба");
+
+    let contact = alice
+        .add_contact_from_link(&link, now())
+        .expect("контакт добавлен");
+
+    assert_eq!(contact.username.as_deref(), Some("bob"));
+    assert!(!contact.verified, "контакт не может быть верифицирован сразу");
+
+    let contacts = alice.contacts().expect("список контактов");
+
+    assert_eq!(contacts.len(), 1);
+    assert_eq!(contacts[0].identity, contact.identity);
+}
+
+/// 🔐 Ссылка с чужим именем не приклеивает имя к ключу.
+///
+/// Сделать ссылку с именем «bob» и собственным ключом может кто
+/// угодно. Проверка через сервер не делает сервер доверенным: ключ
+/// пришёл со ссылки, то есть из канала, которого сервер не видел, —
+/// но чужое имя к нему приклеиться не должно.
+#[test]
+fn link_with_mismatched_name_is_rejected() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    let mallory = Client::new(server.clone(), open_storage(&dir, "mallory.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+    mallory
+        .register("mallory", now(), &mut OsRng)
+        .expect("Мэллори зарегистрирована");
+
+    // Мэллори берёт свою ссылку и подменяет в ней имя на «bob».
+    let forged = mallory
+        .own_contact_link()
+        .expect("ссылка Мэллори")
+        .replace("?name=mallory", "?name=bob");
+
+    assert!(
+        alice.add_contact_from_link(&forged, now()).is_err(),
+        "ключ Мэллори добавлен под именем Боба"
+    );
+
+    assert!(
+        alice.contacts().expect("список").is_empty(),
+        "отклонённый контакт всё же попал в базу"
+    );
+}
+
+/// 🔐 Смена ключа у известного контакта не проходит молча.
+///
+/// Иначе пересылка одной ссылки подменяла бы ключ собеседника,
+/// которого пользователь уже сверил.
+#[test]
+fn key_change_via_link_is_rejected() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    let link = bob.own_contact_link().expect("ссылка Боба");
+
+    alice
+        .add_contact_from_link(&link, now())
+        .expect("контакт добавлен");
+
+    // Та же ссылка второй раз — это повтор, он безобиден.
+    alice
+        .add_contact_from_link(&link, now())
+        .expect("повторное добавление");
+
+    assert_eq!(
+        alice.contacts().expect("список").len(),
+        1,
+        "повтор задвоил контакт"
+    );
+}
+
+/// Поиск находит отправленное сообщение.
+#[test]
+fn search_finds_sent_message() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    let bob_account = bob
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    alice
+        .send_message("bob", "встречаемся в среду", now(), &mut OsRng)
+        .expect("сообщение отправлено");
+    alice
+        .send_message("bob", "и захвати документы", now(), &mut OsRng)
+        .expect("сообщение отправлено");
+
+    bob.receive_messages(&bob_account.device_id.to_string(), now())
+        .expect("приём удался");
+
+    let hits = alice.search("среду", 10).expect("поиск у отправителя");
+
+    assert_eq!(hits.len(), 1, "поиск не нашёл своё сообщение");
+    assert_eq!(hits[0].message.text, "встречаемся в среду");
+    assert!(hits[0].message.outgoing, "своё сообщение помечено входящим");
+
+    let received = bob.search("среду", 10).expect("поиск у получателя");
+
+    assert_eq!(received.len(), 1, "поиск не нашёл принятое сообщение");
+    assert!(
+        !received[0].message.outgoing,
+        "принятое сообщение помечено исходящим"
+    );
+}
+
+/// Поиск возвращает чат, чтобы результат можно было открыть.
+#[test]
+fn search_hit_points_at_its_chat() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    alice
+        .send_message("bob", "уникальное слово", now(), &mut OsRng)
+        .expect("сообщение отправлено");
+
+    let hits = alice.search("уникальное", 10).expect("поиск");
+    let chats = alice.chats().expect("чаты");
+
+    assert_eq!(hits.len(), 1);
+    assert!(
+        chats.contains(&hits[0].chat_id),
+        "найденное сообщение указывает на несуществующий чат"
+    );
+}
