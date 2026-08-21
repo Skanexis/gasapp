@@ -79,31 +79,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // network_security_config.xml. Сертификат и ключ задаются путями
     // в окружении — самоподписанный для локальной проверки,
     // выданный удостоверяющим центром в бою.
-    match (std::env::var("AEGIS_TLS_CERT"), std::env::var("AEGIS_TLS_KEY")) {
-        (Ok(cert), Ok(key)) => {
-            let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
-                .await
-                .map_err(|error| format!("не удалось прочитать сертификат: {error}"))?;
+    if let (Ok(cert), Ok(key)) =
+        (std::env::var("AEGIS_TLS_CERT"), std::env::var("AEGIS_TLS_KEY"))
+    {
+        let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+            .await
+            .map_err(|error| format!("не удалось прочитать сертификат: {error}"))?;
 
-            tracing::info!(address = %bind, "сервер AEGIS слушает по TLS");
+        tracing::info!(address = %bind, "сервер AEGIS слушает по TLS");
 
-            axum_server::bind_rustls(bind, config)
-                .serve(app.into_make_service())
-                .await?;
-        }
-        _ => {
-            // Открытый HTTP оставлен только для интеграционных тестов,
-            // где сертификат не нужен, и сопровождается предупреждением:
-            // молчаливый откат к незашифрованному каналу — худший вид
-            // отказа защиты.
-            tracing::warn!(
-                address = %bind,
-                "AEGIS_TLS_CERT и AEGIS_TLS_KEY не заданы: сервер слушает БЕЗ ШИФРОВАНИЯ"
-            );
+        axum_server::bind_rustls(bind, config)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        // Открытый HTTP оставлен только для интеграционных тестов,
+        // где сертификат не нужен, и сопровождается предупреждением:
+        // молчаливый откат к незашифрованному каналу — худший вид
+        // отказа защиты.
+        tracing::warn!(
+            address = %bind,
+            "AEGIS_TLS_CERT и AEGIS_TLS_KEY не заданы: сервер слушает БЕЗ ШИФРОВАНИЯ"
+        );
 
-            let listener = tokio::net::TcpListener::bind(bind).await?;
-            axum::serve(listener, app).await?;
-        }
+        let listener = tokio::net::TcpListener::bind(bind).await?;
+        axum::serve(listener, app).await?;
     }
 
     Ok(())
