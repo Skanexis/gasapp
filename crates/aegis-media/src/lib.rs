@@ -7,6 +7,7 @@
 
 /// Версия крейта, доступная во время выполнения.
 pub mod attachment;
+pub mod descriptor;
 pub mod preview;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
