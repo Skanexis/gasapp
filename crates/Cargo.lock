@@ -50,6 +50,7 @@ name = "aegis-ffi"
 version = "0.1.0"
 dependencies = [
  "aegis-core",
+ "aegis-keystore",
  "aegis-net",
  "aegis-protocol",
  "aegis-storage",
