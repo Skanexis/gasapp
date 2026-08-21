@@ -118,6 +118,58 @@
         <item name="android:padding">@dimen/space_m</item>
     </style>
 
+    <!-- ============ Панель ============ -->
+
+    <!--
+      Панель: фон raised, рамка line, радиус 16, паддинг 24.
+      Метрики из UI kit (.panel).
+
+      Панель группирует связанное. Без рамки и отступа настройки
+      сливаются в один длинный список, где непонятно, что к чему
+      относится.
+    -->
+    <style name="AegisPanel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/bg_card_rounded</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">@dimen/space_l</item>
+    </style>
+
+    <!-- Панель на карточном фоне: вложенная группа внутри панели. -->
+    <style name="AegisPanel.Deep">
+        <item name="android:background">@drawable/bg_panel_deep</item>
+    </style>
+
+    <!--
+      Метка секции: 600/12, прописные, разрядка 0.1em.
+      Метрики из UI kit (.lb).
+
+      Разрядка обязательна: прописные без неё читаются как сплошной
+      блок, и заголовок перестаёт отделять секции друг от друга.
+    -->
+    <style name="AegisSectionLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">@dimen/text_label</item>
+        <item name="android:textColor">@color/text_muted</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.1</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:layout_marginBottom">@dimen/space_s</item>
+    </style>
+
+    <!-- Пояснение под заголовком: 13sp вторичного цвета. -->
+    <style name="AegisCaption">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:textColor">@color/text_muted</item>
+        <item name="android:lineSpacingExtra">5sp</item>
+    </style>
+
     <!-- ============ Строки списка ============ -->
 
     <!--

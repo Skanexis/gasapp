@@ -25,9 +25,9 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="@dimen/screen_padding"
-            android:paddingTop="14dp"
+            android:paddingTop="16dp"
             android:paddingEnd="@dimen/screen_padding"
-            android:paddingBottom="14dp">
+            android:paddingBottom="16dp">
 
             <TextView
                 style="@style/AegisAppBarTitle"
@@ -80,7 +80,7 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false"
-            android:paddingBottom="80dp"
+            android:paddingBottom="64dp"
             tools:listitem="@layout/item_chat" />
 
         <TextView
@@ -106,10 +106,10 @@
         android:layout_height="52dp"
         android:layout_gravity="bottom|end"
         android:layout_marginEnd="@dimen/screen_padding"
-        android:layout_marginBottom="86dp"
+        android:layout_marginBottom="64dp"
         android:background="@drawable/bg_fab"
         android:contentDescription="@string/new_chat"
-        android:padding="14dp"
+        android:padding="16dp"
         android:src="@drawable/ic_edit"
         android:tint="@color/accent_on" />
 
