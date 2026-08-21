@@ -59,9 +59,9 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
+            android:layout_marginTop="24dp"
             android:background="@drawable/bg_warning_box"
-            android:padding="14dp"
+            android:padding="16dp"
             android:text="@string/onboarding_audit_warning"
             android:textColor="@color/status_error"
             android:textSize="14sp" />
@@ -131,7 +131,7 @@
             android:id="@+id/onboarding_progress"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
+            android:layout_marginTop="16dp"
             android:indeterminateTint="@color/accent_base"
             android:visibility="gone"
             tools:visibility="visible" />
@@ -157,7 +157,7 @@
             android:id="@+id/onboarding_create"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="24dp"
             android:layout_marginBottom="16dp"
             android:text="@string/onboarding_create"
             app:buttonVariant="primary" />

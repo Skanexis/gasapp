@@ -17,9 +17,9 @@
     <TextView
         style="@style/AegisAppBarTitle"
         android:paddingStart="@dimen/screen_padding"
-        android:paddingTop="14dp"
+        android:paddingTop="16dp"
         android:paddingEnd="@dimen/screen_padding"
-        android:paddingBottom="14dp"
+        android:paddingBottom="16dp"
         android:text="@string/nav_settings" />
 
     <ScrollView

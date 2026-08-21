@@ -27,7 +27,7 @@
         android:paddingStart="12dp"
         android:paddingTop="9dp"
         android:paddingEnd="12dp"
-        android:paddingBottom="7dp">
+        android:paddingBottom="8dp">
 
         <!--
           Строка вложения.
