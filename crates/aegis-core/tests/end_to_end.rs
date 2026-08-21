@@ -794,3 +794,148 @@ fn tampered_attachment_is_rejected() {
         "подменённый блоб расшифровался"
     );
 }
+
+/// Получатель скачивает файл по описанию из пришедшего сообщения.
+///
+/// Главный путь вложения: до этого описания отбрасывались при приёме,
+/// и файл, который сервер честно хранил, получателю был недоступен —
+/// адрес и ключ существовали только внутри сообщения и никуда
+/// не сохранялись.
+#[test]
+fn recipient_downloads_attachment_from_received_message() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    let alice_account = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    let bob_account = bob
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    let original: Vec<u8> = (0..150_000u32).map(|index| (index % 253) as u8).collect();
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_account.device_id.to_string(),
+            &AttachmentFile {
+                kind: AttachmentKind::Image,
+                bytes: original.clone(),
+                name: Some("снимок.png".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            "смотри",
+            now(),
+            &mut OsRng,
+        )
+        .expect("вложение отправлено");
+
+    bob.receive_messages(&bob_account.device_id.to_string(), now())
+        .expect("приём удался");
+
+    // Боб находит сообщение и берёт описание из хранилища — так же,
+    // как это сделает интерфейс.
+    let chat = bob.chats().expect("чаты").into_iter().next().expect("чат");
+    let message = bob
+        .messages(&chat, 10)
+        .expect("сообщения")
+        .into_iter()
+        .next()
+        .expect("сообщение с вложением");
+
+    assert_eq!(message.text, "смотри", "подпись к вложению потерялась");
+
+    let descriptors = bob
+        .attachments_of(&message.message_id)
+        .expect("описания вложений");
+
+    assert_eq!(descriptors.len(), 1, "описание вложения не сохранено");
+    assert_eq!(descriptors[0].name.as_deref(), Some("снимок.png"));
+
+    let downloaded = bob
+        .fetch_attachment(
+            &bob_account.device_id.to_string(),
+            &descriptors[0],
+            now(),
+        )
+        .expect("файл скачан");
+
+    assert_eq!(downloaded, original, "файл изменился при передаче");
+}
+
+/// Отправитель видит собственное вложение в переписке.
+///
+/// Иначе отправленный файл исчезал бы из своего же чата: исходник
+/// в приложении не хранится, а сообщение о нём не записывалось.
+#[test]
+fn sender_keeps_its_own_attachment() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    let alice_account = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    let original = vec![0x7Eu8; 8192];
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_account.device_id.to_string(),
+            &AttachmentFile {
+                kind: AttachmentKind::Document,
+                bytes: original.clone(),
+                name: Some("договор.pdf".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            "подпиши",
+            now(),
+            &mut OsRng,
+        )
+        .expect("вложение отправлено");
+
+    let chat = alice.chats().expect("чаты").into_iter().next().expect("чат");
+    let message = alice
+        .messages(&chat, 10)
+        .expect("сообщения")
+        .into_iter()
+        .next()
+        .expect("своё сообщение");
+
+    assert!(message.outgoing, "своё сообщение помечено входящим");
+
+    let descriptors = alice
+        .attachments_of(&message.message_id)
+        .expect("описания вложений");
+
+    assert_eq!(descriptors.len(), 1, "своё описание не сохранено");
+
+    let reopened = alice
+        .fetch_attachment(
+            &alice_account.device_id.to_string(),
+            &descriptors[0],
+            now(),
+        )
+        .expect("файл открыт заново");
+
+    assert_eq!(reopened, original);
+}

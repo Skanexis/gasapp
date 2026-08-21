@@ -834,6 +834,28 @@ impl Messenger {
         })
     }
 
+    /// Возвращает описания вложений сообщения.
+    ///
+    /// Каждое — те самые байты, что принимает [`Self::fetch_attachment`].
+    /// Пусто, если вложений нет.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор сообщения
+    /// не разбирается;
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn attachments_of(&self, message_id: String) -> Result<Vec<Vec<u8>>, FfiError> {
+        let parsed = parse_message_id(&message_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let descriptors = guard(|| client.attachments_of(&parsed))?;
+
+        descriptors
+            .iter()
+            .map(|descriptor| descriptor.to_bytes().map_err(FfiError::from))
+            .collect()
+    }
+
     /// Скачивает и расшифровывает вложение по его описанию.
     ///
     /// `descriptor` — те самые байты, что пришли внутри сообщения.

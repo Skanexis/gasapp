@@ -250,6 +250,16 @@ pub struct StoredAttachment {
     pub size: i64,
     /// Когда вложение появилось.
     pub created_at: Timestamp,
+    /// Сериализованное описание вложения.
+    ///
+    /// 🔐 Здесь лежит ключ расшифровки файла, поэтому строка живёт
+    /// в той же зашифрованной базе, что и переписка. Без описания
+    /// вложение недоступно: адрес на сервере известен только отсюда,
+    /// а блоб без ключа — набор случайных байт.
+    ///
+    /// `None` у записей, созданных до версии схемы 4: тогда описание
+    /// не сохранялось, и скачать те вложения уже нельзя.
+    pub descriptor: Option<Vec<u8>>,
 }
 
 /// Структура для хранения состояния хранилища.
@@ -266,7 +276,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 3;
+    const SCHEMA_VERSION: i32 = 4;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -484,6 +494,21 @@ impl Storage {
                     ] {
                         transaction.execute(statement, []).map_err(storage_error)?;
                     }
+                }
+                // 3 → 4: описание вложения рядом с записью о нём.
+                //
+                // 🔐 Прежде хранились только тип, размер и подпись —
+                // то есть всё, кроме единственного, что позволяет
+                // получить файл: адреса на сервере и ключа. Вложение
+                // приходило и было недоступно.
+                //
+                // Столбец добавляется пустым: описания уже полученных
+                // вложений не восстановить, они были только в самом
+                // сообщении и там не сохранялись.
+                4 => {
+                    transaction
+                        .execute("ALTER TABLE attachments ADD COLUMN descriptor BLOB", [])
+                        .map_err(storage_error)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
@@ -1772,11 +1797,15 @@ impl Storage {
 
     // --- Attachment repository ---
 
-    /// Сохраняет метаданные вложения.
+    /// Сохраняет описание вложения.
     ///
-    /// Сам файл вложения в базе не лежит: он шифруется отдельно и хранится
-    /// в файловой системе. Здесь — только то, что нужно для отображения
-    /// и очистки.
+    /// Сам файл лежит **на сервере** в зашифрованном виде; здесь —
+    /// описание, по которому его можно получить и расшифровать.
+    ///
+    /// 🔐 Описание содержит ключ файла, поэтому живёт в той же
+    /// зашифрованной базе, что и переписка. Хранить его отдельно
+    /// значило бы завести второе место, где ключи можно потерять
+    /// или забыть стереть.
     ///
     /// # Errors
     ///
@@ -1788,8 +1817,8 @@ impl Storage {
             .execute(
                 "
             INSERT INTO attachments
-                (message_id, attachment_type, description, size, created_at)
-            VALUES (?, ?, ?, ?, ?)
+                (message_id, attachment_type, description, size, created_at, descriptor)
+            VALUES (?, ?, ?, ?, ?, ?)
             ",
                 params![
                     attachment.message_id.as_bytes(),
@@ -1797,6 +1826,7 @@ impl Storage {
                     attachment.description.as_deref(),
                     attachment.size,
                     attachment.created_at.as_millis(),
+                    attachment.descriptor.as_deref(),
                 ],
             )
             .map_err(storage_error)?;
@@ -1815,7 +1845,8 @@ impl Storage {
         let mut statement = connection
             .prepare(
                 "
-            SELECT message_id, attachment_type, description, size, created_at
+            SELECT message_id, attachment_type, description, size, created_at,
+                   descriptor
             FROM attachments
             WHERE message_id = ?
             ORDER BY id ASC
@@ -1831,13 +1862,15 @@ impl Storage {
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, i64>(3)?,
                     row.get::<_, i64>(4)?,
+                    row.get::<_, Option<Vec<u8>>>(5)?,
                 ))
             })
             .map_err(storage_error)?;
 
         let mut attachments = Vec::new();
         for row in rows {
-            let (id, kind, description, size, created) = row.map_err(storage_error)?;
+            let (id, kind, description, size, created, descriptor) =
+                row.map_err(storage_error)?;
 
             attachments.push(StoredAttachment {
                 message_id: MessageId::from_uuid(uuid_from_slice(&id)?),
@@ -1845,6 +1878,7 @@ impl Storage {
                 description,
                 size,
                 created_at: Timestamp::from_millis(created),
+                descriptor,
             });
         }
 
@@ -2407,6 +2441,7 @@ mod tests {
                 description: Some("photo.jpg".to_owned()),
                 size: 2048,
                 created_at: now(),
+                descriptor: Some(vec![0x01, 0x02, 0x03]),
             })
             .unwrap();
 
@@ -2446,6 +2481,9 @@ mod tests {
                 description: Some(CANARY.to_owned()),
                 size: 1,
                 created_at: now(),
+                // 🔐 В описании лежит ключ файла: если незашифрованным
+                // окажется оно, вложения читаются вместе с базой.
+                descriptor: Some(CANARY.as_bytes().to_vec()),
             })
             .unwrap();
         drop(storage);
@@ -3036,6 +3074,9 @@ mod tests {
                 "ALTER TABLE known_contacts DROP COLUMN username",
                 "ALTER TABLE known_contacts DROP COLUMN chat_id",
                 "ALTER TABLE known_contacts DROP COLUMN added_at",
+                "ALTER TABLE attachments DROP COLUMN descriptor",
+                // own_keys откатывать не нужно: миграция 2 → 3
+                // пересоздаёт таблицу целиком и переживает повтор.
                 "UPDATE schema_version SET version = 1 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");
@@ -3092,6 +3133,10 @@ mod tests {
                     updated_at INTEGER NOT NULL
                 )
                 ",
+                // Откатывается и столбец описания: без этого миграция
+                // 3 → 4 выполнилась бы второй раз по уже изменённой
+                // таблице и упала на дубликате.
+                "ALTER TABLE attachments DROP COLUMN descriptor",
                 "UPDATE schema_version SET version = 2 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");
