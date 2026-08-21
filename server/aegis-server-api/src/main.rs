@@ -72,7 +72,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut limiter_salt = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut limiter_salt);
 
-    let state = Arc::new(AppState::new(pool, limiter_salt));
+    let state = Arc::new(AppState::new(pool.clone(), limiter_salt));
+
+    // Слушатель уведомлений от других узлов.
+    //
+    // Запускается до старта сервера: узел, начавший принимать запросы
+    // раньше, чем слушать канал, пропустил бы уведомления о конвертах,
+    // отправленных в этот промежуток.
+    //
+    // Отдельная задача, а не часть обработчика: она живёт всё время
+    // работы процесса и переподключается сама при обрыве связи с базой.
+    tokio::spawn(aegis_server_api::hub::listen(
+        pool,
+        Arc::clone(&state.hub),
+    ));
+
     let app = router(state);
 
     // TLS обязателен: клиент запрещает открытый трафик через

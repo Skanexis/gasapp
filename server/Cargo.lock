@@ -6,6 +6,7 @@ version = 4
 name = "aegis-server-api"
 version = "0.1.0"
 dependencies = [
+ "aegis-server-api",
  "aegis-server-db",
  "axum",
  "axum-server",
