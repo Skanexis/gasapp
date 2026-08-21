@@ -204,7 +204,11 @@ impl<T: Transport> Client<T> {
             identity.private().expose_secret(),
             identity.public().public().as_bytes(),
             &secrets.to_bytes()?,
-            0,
+            // Идентификатор, выданный сервером. Прежде здесь стоял
+            // литеральный ноль, из-за чего после перезапуска
+            // приложение не знало своего устройства и не могло забрать
+            // очередь сообщений.
+            Some(&server_device_id.to_string()),
             Some(username),
             now,
         )?;
@@ -957,6 +961,21 @@ impl<T: Transport> Client<T> {
         Ok(plaintext)
     }
 
+    /// Возвращает идентификатор этого устройства.
+    ///
+    /// [`None`] означает, что регистрация ещё не проходила: устройство
+    /// заводит сервер, и до регистрации его нет.
+    ///
+    /// Нужен вызывающему для приёма сообщений и работы с вложениями:
+    /// обе ручки адресуются по устройству.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn own_device_id(&self) -> Result<Option<String>> {
+        Ok(self.storage.load_own_keys()?.and_then(|keys| keys.device_id))
+    }
+
     /// Возвращает собственное имя пользователя, если оно занято.
     ///
     /// [`None`] означает, что регистрация ещё не прошла: имя выдаёт
@@ -1133,7 +1152,7 @@ impl<T: Transport> Client<T> {
             &keys.identity_private,
             &keys.identity_public,
             &secrets.to_bytes()?,
-            keys.device_id,
+            keys.device_id.as_deref(),
             keys.username.as_deref(),
             now,
         )
