@@ -504,6 +504,25 @@ impl Storage {
             .map_err(storage_error)?;
 
 
+
+        // Настройки приложения.
+        //
+        // 🔐 Отдельная таблица, а не файл рядом с базой: настройки
+        // приватности попадают под то же шифрование, что и переписка.
+        // Файл «presence_sharing=1» рядом с зашифрованной базой сам
+        // по себе говорит наблюдателю, что пользователь включил
+        // передачу присутствия.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value INTEGER NOT NULL
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
         // Собственные долгоживущие ключи: identity-пара и секреты предключей.
         //
         // Лежат в той же зашифрованной базе, что и переписка: отдельное
@@ -1123,6 +1142,48 @@ impl Storage {
         conn.execute(
             "UPDATE messages SET content = ? WHERE message_id = ?",
             params![text.as_bytes(), id.as_bytes()],
+        )
+        .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Включены ли индикаторы набора и квитанции о прочтении.
+    ///
+    /// 🔐 По умолчанию **выключены**. Обе функции сообщают собеседнику,
+    /// что человек сейчас у телефона, — то есть выдают присутствие
+    /// с точностью до секунд. Privacy-функция, требующая отключения,
+    /// защищает только тех, кто нашёл настройку; функция, требующая
+    /// включения, защищает всех остальных.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn presence_sharing_enabled(&self) -> Result<bool> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let value: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'presence_sharing'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+
+        Ok(value == Some(1))
+    }
+
+    /// Включает или выключает индикаторы присутствия.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn set_presence_sharing(&self, enabled: bool) -> Result<()> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('presence_sharing', ?)",
+            params![i64::from(enabled)],
         )
         .map_err(storage_error)?;
 
@@ -2347,5 +2408,45 @@ mod tests {
             .expiry_for_chat(&ChatId::generate(), now())
             .expect("вычисление")
             .is_none());
+    }
+
+    /// 🔐 Передача присутствия выключена по умолчанию.
+    ///
+    /// Главная проверка настройки: privacy-функция, требующая
+    /// отключения, защищает только тех, кто нашёл настройку.
+    /// Функция, требующая включения, защищает всех остальных.
+    #[test]
+    fn presence_sharing_is_off_by_default() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        assert!(
+            !storage.presence_sharing_enabled().expect("чтение"),
+            "передача присутствия включена по умолчанию"
+        );
+    }
+
+    #[test]
+    fn presence_sharing_toggles() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        storage.set_presence_sharing(true).expect("включение");
+        assert!(storage.presence_sharing_enabled().expect("чтение"));
+
+        storage.set_presence_sharing(false).expect("выключение");
+        assert!(!storage.presence_sharing_enabled().expect("чтение"));
+    }
+
+    /// Настройка переживает перезапуск.
+    #[test]
+    fn presence_setting_survives_reopen() {
+        let key = test_key();
+        let (storage, _dir, path) = open_temp(&key);
+
+        storage.set_presence_sharing(true).expect("включение");
+        drop(storage);
+
+        let reopened = Storage::new(&path, &key).expect("база открывается");
+
+        assert!(reopened.presence_sharing_enabled().expect("чтение"));
     }
 }
