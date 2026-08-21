@@ -41,6 +41,17 @@ class LockActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Аккаунта нет — вести на онбординг, а не запрашивать PIN.
+        // Экран блокировки без аккаунта не имеет смысла: расшифровывать
+        // нечего, и пользователь упёрся бы в запрос, который никогда
+        // не проходит.
+        if (!hasAccount()) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+            finish()
+
+            return
+        }
+
         // 🔐 Запрет скриншотов и превью в списке задач.
         //
         // Без FLAG_SECURE система снимает копию экрана при сворачивании
@@ -58,6 +69,16 @@ class LockActivity : AppCompatActivity() {
         bindKeypad()
         renderDots()
     }
+
+    /**
+     * Заведён ли аккаунт на этом устройстве.
+     *
+     * Проверяется по наличию файла базы, а не по флагу в настройках:
+     * флаг можно потерять при очистке данных, оставив базу, и тогда
+     * приложение предложило бы регистрацию поверх существующего
+     * аккаунта — то есть потерю переписки.
+     */
+    private fun hasAccount(): Boolean = java.io.File(filesDir, "aegis.db").exists()
 
     /**
      * 🔐 Затирает введённое при уходе с экрана.
