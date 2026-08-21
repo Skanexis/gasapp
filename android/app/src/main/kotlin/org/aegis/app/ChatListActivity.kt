@@ -108,7 +108,7 @@ class ChatListActivity : AppCompatActivity() {
             setPadding(48, 32, 48, 32)
         }
 
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
             .setTitle(R.string.new_chat)
             .setMessage(R.string.new_chat_hint)
             .setView(input)
