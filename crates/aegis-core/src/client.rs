@@ -332,6 +332,7 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<()> {
+        // Чат здесь не нужен: своя копия таких сообщений не хранится.
         self.send_content(
             peer_username,
             &Content::Reaction {
@@ -340,7 +341,9 @@ impl<T: Transport> Client<T> {
             },
             now,
             rng,
-        )
+        )?;
+
+        Ok(())
     }
 
     /// Правит ранее отправленное сообщение.
@@ -362,6 +365,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<()> {
         self.storage.edit_message(target, text)?;
 
+        // Чат здесь не нужен: своя копия таких сообщений не хранится.
         self.send_content(
             peer_username,
             &Content::Edit {
@@ -370,7 +374,9 @@ impl<T: Transport> Client<T> {
             },
             now,
             rng,
-        )
+        )?;
+
+        Ok(())
     }
 
     /// Просит собеседника удалить сообщение.
@@ -394,6 +400,7 @@ impl<T: Transport> Client<T> {
         // сообщение у себя.
         self.storage.delete_message(target)?;
 
+        // Чат здесь не нужен: своя копия таких сообщений не хранится.
         self.send_content(
             peer_username,
             &Content::Delete {
@@ -401,7 +408,9 @@ impl<T: Transport> Client<T> {
             },
             now,
             rng,
-        )
+        )?;
+
+        Ok(())
     }
 
 
@@ -426,7 +435,9 @@ impl<T: Transport> Client<T> {
             return Ok(());
         }
 
-        self.send_content(peer_username, &Content::Typing { active }, now, rng)
+        self.send_content(peer_username, &Content::Typing { active }, now, rng)?;
+
+        Ok(())
     }
 
     /// Отправляет квитанцию о прочтении.
@@ -452,6 +463,7 @@ impl<T: Transport> Client<T> {
             return Ok(());
         }
 
+        // Чат здесь не нужен: своя копия таких сообщений не хранится.
         self.send_content(
             peer_username,
             &Content::ReadReceipt {
@@ -459,7 +471,9 @@ impl<T: Transport> Client<T> {
             },
             now,
             rng,
-        )
+        )?;
+
+        Ok(())
     }
 
     /// Включает или выключает передачу присутствия.
@@ -485,13 +499,17 @@ impl<T: Transport> Client<T> {
     /// только в теле, и дублировать вокруг него установку сессии
     /// значило бы завести несколько мест, где её можно сделать
     /// по-разному.
+    ///
+    /// Возвращает чат, в который ушло содержимое: вызывающему он нужен,
+    /// чтобы сохранить свою копию сообщения, а выводить его второй раз
+    /// значило бы повторить discovery.
     fn send_content<R: RngCore + CryptoRng>(
         &self,
         peer_username: &str,
         content: &Content,
         now: Timestamp,
         rng: &mut R,
-    ) -> Result<()> {
+    ) -> Result<ChatId> {
         let (identity, _) = self.load_identity()?;
 
         let peer = self.api.discover(peer_username)?;
@@ -524,8 +542,9 @@ impl<T: Transport> Client<T> {
             ciphertext: hex(&outgoing.envelope),
         })?;
 
-        Ok(())
+        Ok(chat_id)
     }
+
     /// Забирает и расшифровывает входящие сообщения.
     ///
     /// Возвращает число принятых сообщений. Конверты, которые не
@@ -585,7 +604,7 @@ impl<T: Transport> Client<T> {
             };
 
             match content {
-                Content::Text { body, .. } | Content::Attachments { body, .. } => {
+                Content::Text { body, .. } => {
                     let message_id = MessageId::generate();
                     self.store_message(
                         &chat_id,
@@ -595,6 +614,28 @@ impl<T: Transport> Client<T> {
                         false,
                         MessageStatus::Delivered,
                     )?;
+                    self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                }
+
+                Content::Attachments {
+                    body, descriptors, ..
+                } => {
+                    let message_id = MessageId::generate();
+                    self.store_message(
+                        &chat_id,
+                        message_id,
+                        &body,
+                        now,
+                        false,
+                        MessageStatus::Delivered,
+                    )?;
+
+                    // 🔐 Описания сохраняются вместе с сообщением.
+                    // Без них вложение недоступно: адрес файла
+                    // на сервере и ключ к нему есть только здесь,
+                    // а второй раз сообщение не придёт.
+                    self.store_descriptors(&message_id, &descriptors, now)?;
+
                     self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
                 }
 
@@ -828,16 +869,78 @@ impl<T: Transport> Client<T> {
     ) -> Result<()> {
         let descriptor = self.upload_attachment(device_id, file, now, rng)?;
 
-        self.send_content(
+        let encoded = descriptor.to_bytes()?;
+
+        let chat_id = self.send_content(
             peer_username,
             &Content::Attachments {
                 body: body.to_owned(),
-                descriptors: vec![descriptor.to_bytes()?],
+                descriptors: vec![encoded.clone()],
                 reply_to: None,
             },
             now,
             rng,
-        )
+        )?;
+
+        // Своя копия сообщения и описания: отправитель должен видеть
+        // отправленный файл так же, как получатель, — и уметь открыть
+        // его снова, не держа исходник на диске.
+        //
+        // Сохраняется после отправки: запись о неушедшем сообщении
+        // показала бы в переписке то, чего собеседник не получал.
+        let message_id = MessageId::generate();
+        self.store_message(&chat_id, message_id, body, now, true, MessageStatus::Sent)?;
+        self.store_descriptors(&message_id, &[encoded], now)?;
+        self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+
+        Ok(())
+    }
+
+    /// Сохраняет описания вложений сообщения.
+    ///
+    /// Битые описания пропускаются, а не роняют приём: одно негодное
+    /// вложение не должно отменять сообщение целиком — текст при нём
+    /// пользователю всё равно нужен.
+    fn store_descriptors(
+        &self,
+        message_id: &MessageId,
+        descriptors: &[Vec<u8>],
+        now: Timestamp,
+    ) -> Result<()> {
+        for encoded in descriptors {
+            let Ok(descriptor) = AttachmentDescriptor::from_bytes(encoded) else {
+                continue;
+            };
+
+            self.storage.save_attachment(&aegis_storage::StoredAttachment {
+                message_id: *message_id,
+                attachment_type: descriptor.kind.as_u8(),
+                description: descriptor.name.clone(),
+                size: i64::try_from(descriptor.size).unwrap_or(i64::MAX),
+                created_at: now,
+                descriptor: Some(encoded.clone()),
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Возвращает описания вложений сообщения.
+    ///
+    /// Пусто, если вложений нет либо они пришли до версии схемы 4,
+    /// когда описания не сохранялись.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn attachments_of(&self, message_id: &MessageId) -> Result<Vec<AttachmentDescriptor>> {
+        Ok(self
+            .storage
+            .load_attachments(message_id)?
+            .into_iter()
+            .filter_map(|row| row.descriptor)
+            .filter_map(|encoded| AttachmentDescriptor::from_bytes(&encoded).ok())
+            .collect())
     }
 
     /// Шифрует файл и кладёт его на сервер.
