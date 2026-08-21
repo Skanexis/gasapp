@@ -3,9 +3,14 @@
 package org.aegis.app
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.provider.OpenableColumns
 import android.view.View
 import android.widget.ImageView
@@ -17,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.ui.AttachmentKindMark
 import org.aegis.app.ui.AttachmentPreview
@@ -53,6 +59,9 @@ class ChatActivity : AppCompatActivity() {
 
     /** Идентификатор чата в хранилище. */
     private var chatId: String = ""
+
+    /** Когда последний раз уходил индикатор набора. */
+    private var lastTypingSent: Long = 0L
 
     /**
      * Скачанное вложение, ожидающее выбора места сохранения.
@@ -105,7 +114,10 @@ class ChatActivity : AppCompatActivity() {
         sendButton = findViewById(R.id.send_button)
         keyChangeBanner = findViewById(R.id.key_change_banner)
 
-        adapter = MessageAdapter(onAttachmentClick = ::openAttachment)
+        adapter = MessageAdapter(
+            onAttachmentClick = ::openAttachment,
+            onMessageLongClick = ::showMessageActions,
+        )
         findViewById<RecyclerView>(R.id.message_list).apply {
             layoutManager = LinearLayoutManager(context)
             adapter = this@ChatActivity.adapter
@@ -124,6 +136,17 @@ class ChatActivity : AppCompatActivity() {
 
         sendButton.setOnClickListener { send() }
         findViewById<ImageView>(R.id.attach_button).setOnClickListener { chooseAttachment() }
+        findViewById<ImageView>(R.id.chat_menu).setOnClickListener { showChatMenu() }
+
+        input.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(text: Editable?) {
+                onTyping(text?.isNotEmpty() == true)
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+        })
 
         applySendGuard()
     }
@@ -136,20 +159,13 @@ class ChatActivity : AppCompatActivity() {
      * показывает только галерею и не даёт доступа к остальным файлам.
      */
     private fun chooseAttachment() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.attach)
-            .setItems(
-                arrayOf(
-                    getString(R.string.attach_photo),
-                    getString(R.string.attach_file),
-                ),
-            ) { _, which ->
-                when (which) {
-                    0 -> pickMedia.launch(arrayOf("image/*", "video/*"))
-                    else -> pickDocument.launch(arrayOf("*/*"))
-                }
+        AegisSheet.on(this, R.string.attach)
+            .action(getString(R.string.attach_photo), R.drawable.ic_image) {
+                pickMedia.launch(arrayOf("image/*", "video/*"))
             }
-            .setNegativeButton(R.string.attach_cancel, null)
+            .action(getString(R.string.attach_file), R.drawable.ic_file) {
+                pickDocument.launch(arrayOf("*/*"))
+            }
             .show()
     }
 
@@ -425,6 +441,12 @@ class ChatActivity : AppCompatActivity() {
             }
 
             adapter.submit(messages)
+
+            // Квитанция после показа: сообщение прочитано тогда, когда
+            // оно на экране, а не когда пришло по сети.
+            messages.lastOrNull { !it.outgoing }?.let { last ->
+                sendReadReceipt(last.messageId)
+            }
         }
     }
 
@@ -489,6 +511,290 @@ class ChatActivity : AppCompatActivity() {
                 },
             )
         }.getOrNull()
+
+    /**
+     * Сообщает собеседнику, что пользователь печатает.
+     *
+     * # Про частоту
+     *
+     * Сигнал уходит не на каждую букву, а не чаще раза в несколько
+     * секунд: иначе слово из пяти букв породило бы пять сетевых
+     * запросов, и по их числу наблюдатель канала оценил бы длину
+     * сообщения ещё до отправки.
+     *
+     * 🔐 Ядро молча ничего не делает, если передача присутствия
+     * выключена, — проверять настройку здесь не нужно и не следует:
+     * второе место, где принимается то же решение, рано или поздно
+     * разойдётся с первым.
+     */
+    private fun onTyping(active: Boolean) {
+        val now = System.currentTimeMillis()
+
+        if (active && now - lastTypingSent < TYPING_INTERVAL_MILLIS) {
+            return
+        }
+
+        lastTypingSent = if (active) now else 0L
+
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().sendTyping(peerUsername, active, now)
+                }
+            }
+        }
+    }
+
+    /**
+     * Отправляет квитанцию о прочтении последнего сообщения.
+     *
+     * Квитанция указывает последнее прочитанное, а не каждое:
+     * открытие чата с сотней непрочитанных иначе породило бы сто
+     * сообщений, и по их числу собеседник узнал бы, сколько
+     * накопилось.
+     *
+     * 🔐 Как и индикатор набора, уходит только при включённой
+     * передаче присутствия — решение принимает ядро.
+     */
+    private fun sendReadReceipt(lastMessageId: String) {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().sendReadReceipt(
+                        peerUsername,
+                        lastMessageId,
+                        System.currentTimeMillis(),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Меню чата: сверка, таймер исчезновения, присутствие.
+     */
+    private fun showChatMenu() {
+        AegisSheet.on(this, chatName())
+            .action(getString(R.string.chat_verify), R.drawable.ic_shield) {
+                openSafetyNumber(chatName())
+            }
+            .action(getString(R.string.chat_disappearing), R.drawable.ic_clock) {
+                showDisappearingOptions()
+            }
+            .action(getString(R.string.chat_presence), R.drawable.ic_alert) {
+                showPresenceOptions()
+            }
+            .show()
+    }
+
+    /**
+     * Выбор срока исчезающих сообщений.
+     *
+     * 🔐 Срок берётся в момент получения сообщения и больше не
+     * меняется: выключение таймера не воскрешает то, что пользователь
+     * уже считает обречённым на исчезновение.
+     */
+    private fun showDisappearingOptions() {
+        val sheet = AegisSheet.on(this, R.string.chat_disappearing)
+
+        for ((label, seconds) in DISAPPEARING_OPTIONS) {
+            sheet.action(getString(label)) {
+                runAction {
+                    Core.messenger().setDisappearingTimer(chatId, seconds)
+                }
+            }
+        }
+
+        sheet.show()
+    }
+
+    /**
+     * Передача присутствия: индикатор набора и квитанции прочтения.
+     *
+     * 🔐 Выключено по умолчанию и одной настройкой на оба признака:
+     * и то и другое сообщает собеседнику, когда человек у телефона,
+     * то есть выдаёт распорядок дня. Разделять их значило бы
+     * предлагать выбор, в котором обе половины означают одно.
+     */
+    private fun showPresenceOptions() {
+        lifecycleScope.launch {
+            val enabled = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().presenceSharingEnabled() }.getOrDefault(false)
+            }
+
+            AegisSheet.on(this@ChatActivity, R.string.chat_presence)
+                .action(
+                    getString(
+                        if (enabled) R.string.presence_disable else R.string.presence_enable,
+                    ),
+                    if (enabled) R.drawable.ic_lock else R.drawable.ic_alert,
+                    destructive = !enabled,
+                ) {
+                    runAction {
+                        Core.messenger().setPresenceSharing(!enabled)
+                    }
+                }
+                .show()
+        }
+    }
+
+    /** Имя собеседника для заголовков панелей. */
+    private fun chatName(): String =
+        intent.getStringExtra(EXTRA_CHAT_NAME).orEmpty().ifEmpty { peerUsername }
+
+    /**
+     * Меню действий над сообщением.
+     *
+     * Состав зависит от того, чьё сообщение: править и удалять у всех
+     * можно только своё. Показывать чужому пользователю пункт, который
+     * ему откажут, значит предлагать то, чего он сделать не может.
+     */
+    private fun showMessageActions(message: MessageItem) {
+        val sheet = AegisSheet.on(this, R.string.message_actions)
+            .action(getString(R.string.message_react), R.drawable.ic_reaction) {
+                reactTo(message)
+            }
+            .action(getString(R.string.message_copy), R.drawable.ic_copy) {
+                copyMessage(message)
+            }
+
+        if (message.outgoing) {
+            sheet.action(getString(R.string.message_edit), R.drawable.ic_edit) {
+                promptEdit(message)
+            }
+
+            // 🔐 Удаление помечено разрушительным: своё исчезает
+            // безвозвратно, а у собеседника — только по просьбе.
+            sheet.action(
+                getString(R.string.message_delete),
+                R.drawable.ic_trash,
+                destructive = true,
+            ) {
+                confirmDelete(message)
+            }
+        }
+
+        sheet.show()
+    }
+
+    /**
+     * Ставит реакцию на сообщение.
+     *
+     * Набор эмодзи короткий и заданный: свободный ввод превратил бы
+     * реакцию во второе поле сообщения, а её смысл — в одном нажатии.
+     */
+    private fun reactTo(message: MessageItem) {
+        val sheet = AegisSheet.on(this, R.string.message_react)
+
+        for ((symbol, name) in REACTIONS) {
+            sheet.emoji(symbol, name) {
+                runAction {
+                    Core.messenger().sendReaction(
+                        peerUsername,
+                        message.messageId,
+                        symbol,
+                        System.currentTimeMillis(),
+                    )
+                }
+            }
+        }
+
+        sheet.show()
+    }
+
+    /** Копирует текст сообщения. */
+    private fun copyMessage(message: MessageItem) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(getString(R.string.message_actions), message.text),
+        )
+
+        Toast.makeText(this, R.string.message_copied, Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Правка отправленного сообщения.
+     *
+     * 🔐 Правка не скрывает исходный текст: получатель уже видел его
+     * и мог запомнить. Изменённое сообщение помечается в переписке —
+     * иначе отправитель мог бы переписать разговор задним числом.
+     */
+    private fun promptEdit(message: MessageItem) {
+        val field = AegisTextField(this).apply {
+            setText(message.text)
+            setHint(R.string.message_edit_hint)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.message_edit_title)
+            .setView(field)
+            .setPositiveButton(R.string.action_save) { _, _ ->
+                val text = field.text?.toString().orEmpty().trim()
+
+                if (text.isEmpty() || text == message.text) {
+                    return@setPositiveButton
+                }
+
+                runAction {
+                    Core.messenger().editMessage(
+                        peerUsername,
+                        message.messageId,
+                        text,
+                        System.currentTimeMillis(),
+                    )
+                }
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    /**
+     * Удаление сообщения у обеих сторон.
+     *
+     * Подтверждение обязательно: 🔐 своё удаляется сразу и безвозвратно,
+     * а у собеседника — только просьбой. Пользователь должен понимать,
+     * что гарантии нет, до нажатия, а не после.
+     */
+    private fun confirmDelete(message: MessageItem) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.message_delete_title)
+            .setMessage(R.string.message_delete_body)
+            .setPositiveButton(R.string.action_delete) { _, _ ->
+                runAction {
+                    Core.messenger().deleteForEveryone(
+                        peerUsername,
+                        message.messageId,
+                        System.currentTimeMillis(),
+                    )
+                }
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    /**
+     * Выполняет действие над сообщением в фоне и перечитывает переписку.
+     *
+     * Отказ показывается явно: действие, которое выглядит выполненным,
+     * но не ушло, — худший исход, потому что пользователь считает
+     * разговор изменённым.
+     */
+    private fun runAction(action: () -> Unit) {
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) { runCatching { action() }.isSuccess }
+
+            if (!done) {
+                Toast.makeText(
+                    this@ChatActivity,
+                    R.string.message_action_failed,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+
+            reload()
+        }
+    }
 
     /**
      * Скачивает вложение и предлагает сохранить его.
@@ -593,6 +899,44 @@ class ChatActivity : AppCompatActivity() {
 
         /** Имя пользователя собеседника: по нему адресуется отправка. */
         const val EXTRA_PEER_USERNAME = "peer_username"
+
+        /**
+         * Набор реакций.
+         *
+         * Короткий и заданный: свободный ввод превратил бы реакцию
+         * во второе поле сообщения, а её смысл — в одном нажатии.
+         */
+        /**
+         * Не чаще раза в столько миллисекунд уходит индикатор набора.
+         *
+         * Иначе слово из пяти букв породило бы пять запросов, и
+         * по их числу наблюдатель канала оценил бы длину сообщения
+         * ещё до отправки.
+         */
+        private const val TYPING_INTERVAL_MILLIS = 4_000L
+
+        /**
+         * Сроки исчезающих сообщений.
+         *
+         * Ноль выключает таймер. Набор короткий: длинный список
+         * превращает решение о том, сколько живёт переписка,
+         * в перебор вариантов.
+         */
+        private val DISAPPEARING_OPTIONS = listOf(
+            R.string.disappearing_off to 0u,
+            R.string.disappearing_hour to 3_600u,
+            R.string.disappearing_day to 86_400u,
+            R.string.disappearing_week to 604_800u,
+        )
+
+        private val REACTIONS = listOf(
+            "👍" to "Нравится",
+            "❤️" to "Сердце",
+            "😂" to "Смешно",
+            "😮" to "Удивление",
+            "😢" to "Грусть",
+            "🙏" to "Спасибо",
+        )
 
         /**
          * Имя по умолчанию для сохранения.

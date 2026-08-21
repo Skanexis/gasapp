@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Уход панели: 150 мс. Быстрее появления — закрытие не должно ждать. -->
+<translate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="150"
+    android:fromYDelta="0"
+    android:interpolator="@android:interpolator/accelerate_quad"
+    android:toYDelta="100%" />
