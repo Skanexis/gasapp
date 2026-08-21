@@ -155,7 +155,16 @@ impl<T: Transport> Client<T> {
         self.storage.set_account_id(&account_id, now)?;
 
         self.api
-            .publish_keys(&server_device_id.to_string(), &publish_request(&bundle))?;
+            .publish_keys(
+                &server_device_id.to_string(),
+                &publish_request(&bundle),
+                auth_headers(
+                    &identity,
+                    "PUT",
+                    &format!("/v1/keys/{server_device_id}"),
+                    now,
+                )?,
+            )?;
 
         Ok(Account {
             account_id,
@@ -248,7 +257,10 @@ impl<T: Transport> Client<T> {
     /// [`AegisError::Network`] — сервер недоступен.
     pub fn receive_messages(&self, device_id: &str, now: Timestamp) -> Result<usize> {
         let (identity, mut secrets) = self.load_identity()?;
-        let envelopes = self.api.fetch_envelopes(device_id)?;
+        let envelopes = self.api.fetch_envelopes(
+            device_id,
+            auth_headers(&identity, "GET", &format!("/v1/messages/{device_id}"), now)?,
+        )?;
 
         let mut accepted = 0usize;
 
@@ -304,7 +316,16 @@ impl<T: Transport> Client<T> {
                 secrets.one_time_kem.retain(|(id, _)| *id != consumed);
             }
 
-            self.api.acknowledge(device_id, &envelope.envelope_id)?;
+            self.api.acknowledge(
+                device_id,
+                &envelope.envelope_id,
+                auth_headers(
+                    &identity,
+                    "DELETE",
+                    &format!("/v1/messages/{device_id}/{}", envelope.envelope_id),
+                    now,
+                )?,
+            )?;
             accepted = accepted.saturating_add(1);
         }
 
@@ -590,4 +611,49 @@ fn parse_public_key(text: &str) -> Result<PublicKeyBytes> {
 /// Разбирает UUID из строки.
 fn parse_uuid(text: &str) -> Result<uuid::Uuid> {
     uuid::Uuid::parse_str(text).map_err(|_| AegisError::Malformed)
+}
+
+/// Домен-разделитель подписи запроса.
+///
+/// Обязан совпадать с серверным (`aegis-server-api/authz`). Клиент
+/// под Apache-2.0, сервер под AGPL-3.0, поэтому общей константы быть
+/// не может — расхождение ловит тест на совместимость.
+const AUTH_DOMAIN: &[u8] = b"AEGIS_AUTH_v1";
+
+/// Собирает подписанные заголовки для запроса.
+///
+/// # Что подписывается
+///
+/// Метод, путь и время выпуска — то есть **конкретный запрос**.
+/// Подпись под свободным челленджем годилась бы для любого действия:
+/// перехватив её у чтения очереди, атакующий предъявил бы её при
+/// подмене предключей.
+///
+/// # Errors
+///
+/// [`AegisError::Crypto`] — подпись не построилась.
+fn auth_headers(
+    identity: &IdentityKeyPair,
+    method: &str,
+    path: &str,
+    now: Timestamp,
+) -> Result<Vec<(String, String)>> {
+    let issued_at = now.as_millis();
+
+    let mut message = Vec::new();
+    message.extend_from_slice(AUTH_DOMAIN);
+    message.push(b'\n');
+    message.extend_from_slice(method.as_bytes());
+    message.push(b'\n');
+    message.extend_from_slice(path.as_bytes());
+    message.push(b'\n');
+    message.extend_from_slice(issued_at.to_string().as_bytes());
+
+    let private = aegis_types::PrivateKeyBytes::new(*identity.private().expose_secret());
+    let signature = aegis_protocol::xeddsa::montgomery::sign(&private, &message)?;
+
+    Ok(vec![
+        ("x-aegis-signature".to_owned(), hex(&signature)),
+        ("x-aegis-issued-at".to_owned(), issued_at.to_string()),
+    ])
 }

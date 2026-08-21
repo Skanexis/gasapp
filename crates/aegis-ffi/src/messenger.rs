@@ -47,9 +47,23 @@ pub trait HttpTransport: Send + Sync {
         method: String,
         path: String,
         body: Option<String>,
+        headers: Vec<FfiHeader>,
     ) -> Result<FfiHttpResponse, FfiError>;
 }
 
+
+/// Заголовок HTTP.
+///
+/// Отдельная запись, а не карта: UniFFI не переносит `HashMap`
+/// с произвольными ключами так же дёшево, а заголовков здесь два —
+/// подпись и время выпуска.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiHeader {
+    /// Имя заголовка.
+    pub name: String,
+    /// Значение.
+    pub value: String,
+}
 /// Ответ HTTP, пришедший от платформы.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiHttpResponse {
@@ -72,6 +86,14 @@ impl Transport for ForeignTransport {
                 request.method.as_str().to_owned(),
                 request.path.clone(),
                 request.body.clone(),
+                request
+                    .headers
+                    .iter()
+                    .map(|(name, value)| FfiHeader {
+                        name: name.clone(),
+                        value: value.clone(),
+                    })
+                    .collect(),
             )
             // Ошибка платформы означает недоступность сети. Различать
             // её причины здесь нельзя: текст исключения Kotlin в лог
