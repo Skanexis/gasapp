@@ -103,10 +103,20 @@ class ChatActivity : AppCompatActivity() {
      * завести вторую реализацию, которая разойдётся с первой.
      */
     private fun applySendGuard() {
-        val allowed = canSendToContact(
-            identityChanged = identityChanged,
-            wasVerified = wasVerified,
-        )
+        // 🔐 При недоступном ядре отправка запрещается, а не разрешается.
+        //
+        // Отказ ядра означает, что проверить смену identity-ключа
+        // нечем. Разрешить отправку «на всякий случай» значило бы
+        // пропустить сообщение верифицированному контакту, чей ключ
+        // мог смениться — то есть, возможно, подменённому собеседнику.
+        // Неотправленное сообщение исправимо, отправленное не тому —
+        // нет.
+        val allowed = runCatching {
+            canSendToContact(
+                identityChanged = identityChanged,
+                wasVerified = wasVerified,
+            )
+        }.getOrDefault(false)
 
         sendButton.isEnabled = allowed
         input.isEnabled = allowed
