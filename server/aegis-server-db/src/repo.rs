@@ -519,3 +519,84 @@ pub async fn purge_expired(pool: &PgPool) -> Result<u64, RepoError> {
 
     Ok(result.rows_affected())
 }
+
+/// Токен push-уведомлений устройства.
+#[derive(Debug, Clone)]
+pub struct PushToken {
+    /// Провайдер: `fcm`, `apns` или `unified`.
+    pub provider: String,
+    /// Сам токен, как его выдал провайдер.
+    pub token: String,
+}
+
+/// Сохраняет токен устройства, заменяя прежний.
+///
+/// 🔐 Замена, а не добавление: второй токен для одного устройства
+/// означал бы доставку на аппарат, с которого пользователь уже ушёл.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы либо неизвестный провайдер
+/// (проверяется ограничением схемы).
+pub async fn save_push_token(
+    pool: &PgPool,
+    device_id: Uuid,
+    provider: &str,
+    token: &str,
+) -> Result<(), RepoError> {
+    sqlx::query(
+        "INSERT INTO push_tokens (device_id, provider, token)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (device_id) DO UPDATE
+         SET provider = EXCLUDED.provider, token = EXCLUDED.token",
+    )
+    .bind(device_id)
+    .bind(provider)
+    .bind(token)
+    .execute(pool)
+    .await
+    .map_err(|_| RepoError::Database)?;
+
+    Ok(())
+}
+
+/// Читает токен устройства.
+///
+/// Возвращает `None`, если устройство не регистрировало токен: это
+/// штатный случай для foss-сборки, которая обходится WebSocket.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn find_push_token(
+    pool: &PgPool,
+    device_id: Uuid,
+) -> Result<Option<PushToken>, RepoError> {
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT provider, token FROM push_tokens WHERE device_id = $1")
+            .bind(device_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| RepoError::Database)?;
+
+    Ok(row.map(|(provider, token)| PushToken { provider, token }))
+}
+
+/// Удаляет токен устройства.
+///
+/// 🔐 Вызывается, когда провайдер сообщил, что токен недействителен.
+/// Хранить мёртвый токен незачем: он остаётся связью между устройством
+/// и аккаунтом у посредника, не давая ничего взамен.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn delete_push_token(pool: &PgPool, device_id: Uuid) -> Result<(), RepoError> {
+    sqlx::query("DELETE FROM push_tokens WHERE device_id = $1")
+        .bind(device_id)
+        .execute(pool)
+        .await
+        .map_err(|_| RepoError::Database)?;
+
+    Ok(())
+}
