@@ -21,7 +21,7 @@ android {
         // Значение по умолчанию — локальная сеть для проверки на двух
         // устройствах; релиз обязан переопределить его.
         buildConfigField "String", "AEGIS_SERVER_URL",
-                "\"${project.findProperty('aegisServerUrl') ?: 'http://10.0.2.2:8443'}\""
+                "\"${project.findProperty('aegisServerUrl') ?: 'https://10.0.2.2:8443'}\""
         versionCode = 1
         versionName = "1.0"
 
