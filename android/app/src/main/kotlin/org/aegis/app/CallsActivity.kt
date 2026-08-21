@@ -9,8 +9,9 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import org.aegis.app.ui.BottomNav
 import org.aegis.app.components.AegisButton
+import org.aegis.app.core.SecureWindow
+import org.aegis.app.ui.BottomNav
 
 /**
  * Журнал звонков.
@@ -42,6 +43,12 @@ class CallsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_calls)
 
         list = findViewById(R.id.calls_list)

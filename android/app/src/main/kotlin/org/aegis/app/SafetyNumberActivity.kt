@@ -3,6 +3,7 @@
 package org.aegis.app
 
 import android.os.Bundle
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -10,13 +11,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
-import uniffi.aegis.FfiException
-import android.widget.ImageView
+import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.QrDrawable
+import uniffi.aegis.FfiException
 import uniffi.aegis.computeFingerprint
-import uniffi.aegis.safetyNumberQr
 import uniffi.aegis.formatSafetyNumber
 import uniffi.aegis.generateIdentityPublicKey
+import uniffi.aegis.safetyNumberQr
 
 /**
  * Экран сверки safety number.
@@ -35,6 +36,12 @@ class SafetyNumberActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_safety_number)
 
         digits = findViewById(R.id.safety_number_digits)

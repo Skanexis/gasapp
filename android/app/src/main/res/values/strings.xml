@@ -198,4 +198,17 @@
     <string name="disappearing_week">Через неделю</string>
     <string name="presence_enable">Включить: собеседник увидит, когда вы печатаете и читаете</string>
     <string name="presence_disable">Выключить</string>
+
+    <!-- Приватность. -->
+    <string name="privacy_section_contacts">Что видят собеседники</string>
+    <string name="privacy_section_device">Это устройство</string>
+    <string name="privacy_presence">Индикаторы присутствия</string>
+    <string name="privacy_presence_hint">Собеседник увидит, когда вы печатаете и прочитали сообщение</string>
+    <string name="privacy_last_seen">Время последнего входа</string>
+    <string name="privacy_last_seen_hint">Собеседник увидит, когда вы последний раз были в сети</string>
+    <string name="privacy_screenshots">Блокировать снимки экрана</string>
+    <string name="privacy_screenshots_hint">Переписка не попадёт в снимки и в переключатель задач</string>
+    <string name="privacy_preview">Текст в уведомлениях</string>
+    <string name="privacy_preview_hint">Показывать сообщение на заблокированном экране</string>
+    <string name="privacy_limits_note">Блокировка снимков действует только на этом устройстве. Она не мешает сфотографировать экран другим телефоном и не ограничивает собеседника: он видел ваше сообщение и мог его сохранить.</string>
 </resources>

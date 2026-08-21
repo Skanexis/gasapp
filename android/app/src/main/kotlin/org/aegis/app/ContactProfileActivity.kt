@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
+import org.aegis.app.core.SecureWindow
 import uniffi.aegis.FfiContact
 
 /**
@@ -42,6 +43,12 @@ class ContactProfileActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_contact_profile)
 
         nameView = findViewById(R.id.contact_profile_name)

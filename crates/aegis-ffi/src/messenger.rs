@@ -451,6 +451,54 @@ impl Messenger {
         guard(|| client.own_contact_link())
     }
 
+    /// Читает булеву настройку приложения.
+    ///
+    /// 🔐 Умолчание указывает приложение: оно разное у разных
+    /// настроек, и общий ответ означал бы, что какая-то из них
+    /// защищает не так, как задумано.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn setting_bool(&self, key: String, default: bool) -> Result<bool, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.setting_bool(&key, default))
+    }
+
+    /// Записывает булеву настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — запись не удалась.
+    pub fn set_setting_bool(&self, key: String, enabled: bool) -> Result<(), FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.set_setting_bool(&key, enabled))
+    }
+
+    /// Читает числовую настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn setting_int(&self, key: String, default: i64) -> Result<i64, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.setting_int(&key, default))
+    }
+
+    /// Записывает числовую настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — запись не удалась.
+    pub fn set_setting_int(&self, key: String, value: i64) -> Result<(), FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.set_setting_int(&key, value))
+    }
+
     /// Возвращает идентификатор этого устройства.
     ///
     /// [`None`] означает, что регистрация ещё не проходила.

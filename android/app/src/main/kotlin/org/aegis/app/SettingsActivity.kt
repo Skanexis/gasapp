@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
+import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.BottomNav
 
 /**
@@ -27,6 +28,12 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🔐 Блокировка снимков экрана по настройке пользователя.
+        // До setContentView: после отрисовки первый кадр уже мог
+        // попасть в снимок переключателя задач.
+        SecureWindow.apply(this)
+
         setContentView(R.layout.activity_settings)
 
         renderProfile()
@@ -86,6 +93,9 @@ class SettingsActivity : AppCompatActivity() {
         bindRow(R.id.settings_devices, R.drawable.ic_users, R.string.settings_devices, "3")
         bindRow(R.id.settings_about, R.drawable.ic_key, R.string.settings_about, null)
 
+        findViewById<View>(R.id.settings_privacy).setOnClickListener {
+            startActivity(Intent(this, PrivacyActivity::class.java))
+        }
         findViewById<View>(R.id.settings_security).setOnClickListener {
             startActivity(Intent(this, SecurityCenterActivity::class.java))
         }

@@ -1362,6 +1362,87 @@ impl Storage {
 
         Ok(messages)
     }
+    /// Читает булеву настройку приложения.
+    ///
+    /// # Про значение по умолчанию
+    ///
+    /// 🔐 Задаётся вызывающим и всегда указывается явно. Настройка,
+    /// которой в базе ещё нет, — обычное состояние первого запуска,
+    /// и молчаливый `false` был бы верен не для всех: «блокировать
+    /// снимки экрана» по умолчанию включено, а «передавать
+    /// присутствие» — выключено. Общий умолчательный ответ означал бы,
+    /// что одна из двух настроек защищает не так, как задумано.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn setting_bool(&self, key: &str, default: bool) -> Result<bool> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let value: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                params![key],
+                |row| row.get(0),
+            )
+            .ok();
+
+        Ok(value.map_or(default, |raw| raw == 1))
+    }
+
+    /// Записывает булеву настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn set_setting_bool(&self, key: &str, enabled: bool) -> Result<()> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            params![key, i64::from(enabled)],
+        )
+        .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Читает числовую настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn setting_int(&self, key: &str, default: i64) -> Result<i64> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let value: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                params![key],
+                |row| row.get(0),
+            )
+            .ok();
+
+        Ok(value.unwrap_or(default))
+    }
+
+    /// Записывает числовую настройку приложения.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn set_setting_int(&self, key: &str, value: i64) -> Result<()> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            params![key, value],
+        )
+        .map_err(storage_error)?;
+
+        Ok(())
+    }
+
     /// Включены ли индикаторы набора и квитанции о прочтении.
     ///
     /// 🔐 По умолчанию **выключены**. Обе функции сообщают собеседнику,
@@ -3216,5 +3297,48 @@ mod tests {
                 .as_deref(),
             Some(device)
         );
+    }
+    /// Настройка без записи отдаёт умолчание вызывающего.
+    ///
+    /// 🔐 Умолчание указывается явно, потому что оно разное:
+    /// блокировка снимков экрана включена по умолчанию, передача
+    /// присутствия выключена. Общий ответ означал бы, что одна
+    /// из настроек защищает не так, как задумано.
+    #[test]
+    fn missing_setting_returns_caller_default() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        assert!(storage.setting_bool("unset", true).expect("чтение"));
+        assert!(!storage.setting_bool("unset", false).expect("чтение"));
+        assert_eq!(storage.setting_int("unset", 42).expect("чтение"), 42);
+    }
+
+    /// Записанная настройка перекрывает умолчание.
+    #[test]
+    fn stored_setting_wins_over_default() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+
+        storage.set_setting_bool("flag", false).expect("запись");
+        assert!(!storage.setting_bool("flag", true).expect("чтение"));
+
+        storage.set_setting_int("timeout", 60).expect("запись");
+        assert_eq!(storage.setting_int("timeout", 5).expect("чтение"), 60);
+    }
+
+    /// Настройки переживают перезапуск.
+    #[test]
+    fn settings_survive_reopen() {
+        let key = test_key();
+        let (storage, _dir, path) = open_temp(&key);
+
+        storage.set_setting_bool("flag", true).expect("запись");
+        storage.set_setting_int("timeout", 300).expect("запись");
+
+        drop(storage);
+
+        let reopened = Storage::new(&path, &key).expect("та же база");
+
+        assert!(reopened.setting_bool("flag", false).expect("чтение"));
+        assert_eq!(reopened.setting_int("timeout", 0).expect("чтение"), 300);
     }
 }
