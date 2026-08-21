@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
+import org.aegis.app.net.NotificationSocket
 import uniffi.aegis.FfiDeliveryStatus
 import uniffi.aegis.FfiMessage
 import uniffi.aegis.canSendToContact
@@ -61,6 +62,15 @@ class ChatActivity : AppCompatActivity() {
      */
     private var identityChanged: Boolean = false
 
+    /**
+     * Сокет уведомлений.
+     *
+     * 🔐 Открывается при показе экрана и закрывается при уходе с него:
+     * постоянно открытый сокет — непрерывный признак присутствия,
+     * видимый наблюдателю канала.
+     */
+    private var notifications: NotificationSocket? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
@@ -96,26 +106,42 @@ class ChatActivity : AppCompatActivity() {
 
         sendButton.setOnClickListener { send() }
 
-        reload()
         applySendGuard()
-    }
-
-    /**
-     * 🔐 Очищает переписку при уходе с экрана.
-     *
-     * Расшифрованный текст не должен переживать сворачивание приложения.
-     */
-    override fun onStop() {
-        super.onStop()
-        adapter.clear()
     }
 
     override fun onStart() {
         super.onStart()
+
         reload()
         fetchIncoming()
+
+        // Уведомления вместо опроса: сообщение появляется, как только
+        // сервер поставил конверт в очередь, а не когда пользователь
+        // догадался обновить экран.
+        Core.deviceId?.let { device ->
+            notifications = NotificationSocket(
+                baseUrl = BuildConfig.AEGIS_SERVER_URL,
+                deviceId = device,
+                onEnvelope = { runOnUiThread { fetchIncoming() } },
+            ).also { it.connect() }
+        }
     }
 
+    /**
+     * 🔐 Закрывает сокет и очищает переписку при уходе с экрана.
+     *
+     * Расшифрованный текст не должен переживать сворачивание
+     * приложения, а открытый сокет — это непрерывный признак
+     * присутствия, видимый наблюдателю канала.
+     */
+    override fun onStop() {
+        super.onStop()
+
+        notifications?.close()
+        notifications = null
+
+        adapter.clear()
+    }
     /**
      * 🔐 Применяет запрет отправки при смене ключа.
      *

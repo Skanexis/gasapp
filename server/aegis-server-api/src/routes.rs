@@ -56,6 +56,12 @@ pub struct AppState {
     pub limiter_salt: [u8; 32],
     /// Сложность proof-of-work при регистрации.
     pub pow_difficulty: u32,
+    /// Хаб уведомлений о новых конвертах.
+    ///
+    /// Живёт в состоянии, а не глобально: тесты поднимают несколько
+    /// экземпляров сервера в одном процессе, и общий хаб связал бы
+    /// их между собой.
+    pub hub: crate::hub::Hub,
 }
 
 impl AppState {
@@ -68,6 +74,7 @@ impl AppState {
             message_limiter: Mutex::new(RateLimiter::new(rate_limit::MESSAGES_PER_MINUTE)),
             limiter_salt,
             pow_difficulty: pow::DEFAULT_DIFFICULTY,
+            hub: crate::hub::Hub::new(),
         }
     }
 }
@@ -269,6 +276,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/keys/:device_id/count", get(count_keys))
         .route("/v1/messages", post(send_message))
         .route("/v1/messages/:device_id", get(fetch_messages))
+        // Уведомления о новых конвертах.
+        //
+        // По сокету уходит только слово «envelope» — сам конверт
+        // забирается обычным GET. Доставка прямо в сокет связала бы
+        // момент отправки с присутствием получателя, а это ровно та
+        // корреляция, которую собирают при наблюдении за трафиком.
+        .route("/v1/ws/:device_id", get(crate::hub::websocket_handler))
         .route(
             "/v1/messages/:device_id/:envelope_id",
             axum::routing::delete(ack_message),
@@ -485,6 +499,11 @@ async fn send_message(
     )
     .await?;
 
+
+    // Уведомление после успешной постановки в очередь, а не до:
+    // при обратном порядке клиент пришёл бы за конвертом, которого
+    // ещё нет, и решил, что уведомление ложное.
+    state.hub.notify(request.destination_device_id).await;
     Ok(Json(envelope_id))
 }
 
