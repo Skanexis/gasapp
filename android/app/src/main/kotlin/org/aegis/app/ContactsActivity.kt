@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
+import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
 import uniffi.aegis.FfiContact
@@ -81,6 +82,7 @@ class ContactsActivity : AppCompatActivity() {
             })
 
         bindNavigation()
+        BottomNav.highlight(this, BottomNav.Tab.Contacts)
     }
 
     /**
@@ -171,6 +173,10 @@ class ContactsActivity : AppCompatActivity() {
     private fun bindNavigation() {
         findViewById<View>(R.id.nav_chats).setOnClickListener {
             startActivity(Intent(this, ChatListActivity::class.java))
+            finish()
+        }
+        findViewById<View>(R.id.nav_calls).setOnClickListener {
+            startActivity(Intent(this, CallsActivity::class.java))
             finish()
         }
         findViewById<View>(R.id.nav_settings).setOnClickListener {

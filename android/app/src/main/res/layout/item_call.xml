@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Строка журнала звонков: аватар, имя, направление со временем,
+  кнопка повторного вызова.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/call_row"
+    style="@style/AegisListRow"
+    android:paddingTop="@dimen/space_s"
+    android:paddingBottom="@dimen/space_s">
+
+    <TextView
+        android:id="@+id/call_avatar"
+        android:layout_width="@dimen/avatar_m"
+        android:layout_height="@dimen/avatar_m"
+        android:background="@drawable/bg_avatar"
+        android:fontFamily="@font/inter_semibold"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:textColor="@color/text_secondary"
+        android:textSize="16sp"
+        tools:text="DR" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_m"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/call_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/inter_semibold"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            tools:text="Daniel Rios" />
+
+        <!--
+          Направление и время одной строкой.
+
+          Пропущенный звонок красится красным: это единственное
+          состояние журнала, требующее действия, и отличать его
+          только словом значит потерять его в списке.
+        -->
+        <TextView
+            android:id="@+id/call_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/inter_regular"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp"
+            tools:text="Входящий · 12:40" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/call_back"
+        style="@style/AegisIconButton"
+        android:contentDescription="@string/call_back"
+        android:src="@drawable/ic_phone"
+        android:tint="@color/accent_base" />
+
+</LinearLayout>

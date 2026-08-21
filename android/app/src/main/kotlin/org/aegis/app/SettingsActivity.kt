@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
+import org.aegis.app.ui.BottomNav
 
 /**
  * Настройки.
@@ -31,6 +32,7 @@ class SettingsActivity : AppCompatActivity() {
         renderProfile()
         renderRows()
         bindNavigation()
+        BottomNav.highlight(this, BottomNav.Tab.Settings)
     }
 
     /**
@@ -118,6 +120,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun bindNavigation() {
         findViewById<View>(R.id.nav_chats).setOnClickListener {
             startActivity(Intent(this, ChatListActivity::class.java))
+            finish()
+        }
+        findViewById<View>(R.id.nav_calls).setOnClickListener {
+            startActivity(Intent(this, CallsActivity::class.java))
             finish()
         }
     }

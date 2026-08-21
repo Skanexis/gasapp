@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Журнал звонков по UI kit: фильтры «Все / Пропущенные», список
+  и подпись о шифровании.
+
+  🔐 Журнал хранится только на устройстве, в той же зашифрованной базе,
+  что и переписка. Сервер о звонках не знает: кто кому звонил и когда —
+  это тот же социальный граф, что и переписка, только точнее по времени.
+
+  Сами звонки появятся в M9 (WebRTC + E2EE медиа). До тех пор экран
+  показывает пустой журнал, а не заглушку «скоро»: пустой список —
+  честное состояние, а обещание в интерфейсе устаревает молча.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <!-- Шапка -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingTop="@dimen/space_m"
+        android:paddingEnd="@dimen/screen_padding"
+        android:paddingBottom="@dimen/space_m">
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_weight="1"
+            android:text="@string/nav_calls" />
+    </LinearLayout>
+
+    <!--
+      Фильтры журнала.
+
+      Две кнопки, а не выпадающий список: вариантов всего два, и
+      спрятать их за нажатием значило бы сделать пропущенные звонки
+      менее заметными, чем они есть.
+    -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingEnd="@dimen/screen_padding"
+        android:paddingBottom="@dimen/space_s">
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/calls_filter_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/calls_filter_all"
+            app:buttonSize="small"
+            app:buttonVariant="secondary" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/calls_filter_missed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/calls_filter_missed"
+            app:buttonSize="small"
+            app:buttonVariant="ghost" />
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/calls_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:visibility="gone"
+        tools:listitem="@layout/item_call"
+        tools:visibility="visible" />
+
+    <TextView
+        android:id="@+id/calls_empty"
+        style="@style/AegisCaption"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="@dimen/space_xl"
+        android:text="@string/calls_empty" />
+
+    <!--
+      🔐 Подпись о шифровании стоит над навигацией, а не в шапке:
+      её читают, закончив просматривать журнал, а не до того.
+    -->
+    <TextView
+        style="@style/AegisCaption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:drawablePadding="@dimen/space_xs"
+        android:gravity="center"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingTop="@dimen/space_s"
+        android:paddingEnd="@dimen/screen_padding"
+        android:paddingBottom="@dimen/space_s"
+        android:text="@string/calls_encrypted_note"
+        android:textColor="@color/text_muted" />
+
+    <include layout="@layout/view_bottom_nav" />
+
+</LinearLayout>
