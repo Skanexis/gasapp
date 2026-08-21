@@ -79,11 +79,35 @@ pub struct AppState {
 impl AppState {
     /// Собирает состояние с лимитами из плана.
     #[must_use]
+    /// Собирает состояние для одиночного узла.
+    ///
+    /// Лимиты применяются целиком: узел один, делить не на что.
     pub fn new(pool: PgPool, limiter_salt: [u8; 32]) -> Self {
+        Self::with_nodes(pool, limiter_salt, rate_limit::DEFAULT_CLUSTER_NODES)
+    }
+
+    /// Собирает состояние с учётом числа узлов кластера.
+    ///
+    /// 🔐 Лимиты делятся на `nodes`: счётчики живут в памяти процесса,
+    /// и без деления заявленные 20 запросов в минуту превратились бы
+    /// в 60 на трёх узлах — то есть заявление перестало бы быть
+    /// правдой.
+    ///
+    /// Число узлов задаётся конфигурацией, а не определяется само:
+    /// автоопределение потребовало бы, чтобы узлы знали друг о друге,
+    /// то есть ещё одного механизма, который может сломаться молча.
+    #[must_use]
+    pub fn with_nodes(pool: PgPool, limiter_salt: [u8; 32], nodes: u32) -> Self {
         Self {
             pool,
-            discovery_limiter: Mutex::new(RateLimiter::new(rate_limit::DISCOVERY_PER_MINUTE)),
-            message_limiter: Mutex::new(RateLimiter::new(rate_limit::MESSAGES_PER_MINUTE)),
+            discovery_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::DISCOVERY_PER_MINUTE,
+                nodes,
+            ))),
+            message_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::MESSAGES_PER_MINUTE,
+                nodes,
+            ))),
             limiter_salt,
             pow_difficulty: pow::DEFAULT_DIFFICULTY,
             hub: Arc::new(crate::hub::Hub::new()),

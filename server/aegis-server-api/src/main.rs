@@ -72,7 +72,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut limiter_salt = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut limiter_salt);
 
-    let state = Arc::new(AppState::new(pool.clone(), limiter_salt));
+    // Число узлов кластера: на него делятся лимиты частоты.
+    //
+    // 🔐 Без этого значения лимиты применяются целиком на каждом узле,
+    // и заявленные 20 запросов в минуту превращаются в 60 на трёх
+    // узлах. Значение по умолчанию — 1: одиночный запуск не должен
+    // требовать настройки, а кластер обязан объявить себя явно.
+    let cluster_nodes: u32 = std::env::var("AEGIS_CLUSTER_NODES")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(aegis_server_api::rate_limit::DEFAULT_CLUSTER_NODES);
+
+    if cluster_nodes > 1 {
+        tracing::info!(
+            nodes = cluster_nodes,
+            "лимиты частоты поделены на число узлов кластера"
+        );
+    }
+
+    let state = Arc::new(AppState::with_nodes(
+        pool.clone(),
+        limiter_salt,
+        cluster_nodes,
+    ));
 
     // Слушатель уведомлений от других узлов.
     //
