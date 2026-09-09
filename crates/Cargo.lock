@@ -20,8 +20,10 @@ dependencies = [
  "argon2",
  "chacha20poly1305",
  "hex",
+ "hkdf",
  "proptest",
  "rand_core 0.6.4",
+ "sha2",
  "thiserror",
  "zeroize",
 ]
@@ -30,6 +32,8 @@ dependencies = [
 name = "aegis-core"
 version = "0.1.0"
 dependencies = [
+ "aegis-backup",
+ "aegis-keystore",
  "aegis-media",
  "aegis-net",
  "aegis-protocol",
@@ -44,12 +48,14 @@ dependencies = [
  "thiserror",
  "tracing",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
 name = "aegis-ffi"
 version = "0.1.0"
 dependencies = [
+ "aegis-backup",
  "aegis-core",
  "aegis-keystore",
  "aegis-media",
@@ -70,6 +76,7 @@ dependencies = [
  "aegis-types",
  "argon2",
  "async-trait",
+ "chacha20poly1305",
  "hex",
  "hkdf",
  "proptest",

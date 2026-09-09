@@ -824,6 +824,44 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -843,6 +881,8 @@ internal interface IntegrityCheckingUniffiLib : Library {
 ): Short
 fun uniffi_aegis_checksum_func_check_protocol_version(
 ): Short
+fun uniffi_aegis_checksum_func_check_recovery_key_group(
+): Short
 fun uniffi_aegis_checksum_func_compute_fingerprint(
 ): Short
 fun uniffi_aegis_checksum_func_contact_link_qr(
@@ -857,6 +897,8 @@ fun uniffi_aegis_checksum_func_format_safety_number(
 ): Short
 fun uniffi_aegis_checksum_func_generate_identity_public_key(
 ): Short
+fun uniffi_aegis_checksum_func_generate_recovery_key(
+): Short
 fun uniffi_aegis_checksum_func_generate_storage_salt(
 ): Short
 fun uniffi_aegis_checksum_func_identity_change_alert(
@@ -869,23 +911,45 @@ fun uniffi_aegis_checksum_func_protocol_version(
 ): Short
 fun uniffi_aegis_checksum_func_safety_number_qr(
 ): Short
+fun uniffi_aegis_checksum_func_validate_recovery_key(
+): Short
 fun uniffi_aegis_checksum_method_httptransport_execute(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_add_contact_from_link(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_add_vault_file(
+): Short
 fun uniffi_aegis_checksum_method_messenger_attachments_of(
+): Short
+fun uniffi_aegis_checksum_method_messenger_backup_status(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_chats(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_contacts(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_create_backup(
+): Short
 fun uniffi_aegis_checksum_method_messenger_delete_for_everyone(
+): Short
+fun uniffi_aegis_checksum_method_messenger_delete_vault_file(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_edit_message(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_fetch_attachment(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_forget_backup_chain(
+): Short
+fun uniffi_aegis_checksum_method_messenger_inspect_backup(
+): Short
+fun uniffi_aegis_checksum_method_messenger_is_vault_open(
+): Short
+fun uniffi_aegis_checksum_method_messenger_maintain_storage(
+): Short
 fun uniffi_aegis_checksum_method_messenger_messages(
+): Short
+fun uniffi_aegis_checksum_method_messenger_on_background(
+): Short
+fun uniffi_aegis_checksum_method_messenger_open_vault_file(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_own_contact_link(
 ): Short
@@ -901,7 +965,13 @@ fun uniffi_aegis_checksum_method_messenger_receive_messages(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_register(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_restore_backup(
+): Short
+fun uniffi_aegis_checksum_method_messenger_seal_vault(
+): Short
 fun uniffi_aegis_checksum_method_messenger_search(
+): Short
+fun uniffi_aegis_checksum_method_messenger_security_events(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_send_attachment(
 ): Short
@@ -924,6 +994,12 @@ fun uniffi_aegis_checksum_method_messenger_set_setting_int(
 fun uniffi_aegis_checksum_method_messenger_setting_bool(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_setting_int(
+): Short
+fun uniffi_aegis_checksum_method_messenger_unlock_vault(
+): Short
+fun uniffi_aegis_checksum_method_messenger_vault_file_count(
+): Short
+fun uniffi_aegis_checksum_method_messenger_vault_files(
 ): Short
 fun uniffi_aegis_checksum_constructor_messenger_open(
 ): Short
@@ -993,19 +1069,39 @@ fun uniffi_aegis_fn_constructor_messenger_open(`databasePath`: RustBuffer.ByValu
 ): Pointer
 fun uniffi_aegis_fn_method_messenger_add_contact_from_link(`ptr`: Pointer,`uri`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_add_vault_file(`ptr`: Pointer,`name`: RustBuffer.ByValue,`contents`: RustBuffer.ByValue,`location`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_attachments_of(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_backup_status(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_chats(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_contacts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_create_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`deviceLabel`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_aegis_fn_method_messenger_delete_vault_file(`ptr`: Pointer,`fileId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_edit_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_fetch_attachment(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`descriptor`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_forget_backup_chain(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_inspect_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`archive`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_is_vault_open(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_aegis_fn_method_messenger_maintain_storage(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_aegis_fn_method_messenger_messages(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_on_background(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_open_vault_file(`ptr`: Pointer,`fileId`: RustBuffer.ByValue,`ciphertext`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_own_contact_link(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1021,7 +1117,13 @@ fun uniffi_aegis_fn_method_messenger_receive_messages(`ptr`: Pointer,`deviceId`:
 ): Int
 fun uniffi_aegis_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_restore_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`links`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_seal_vault(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_security_events(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_send_attachment(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`file`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1045,9 +1147,17 @@ fun uniffi_aegis_fn_method_messenger_setting_bool(`ptr`: Pointer,`key`: RustBuff
 ): Byte
 fun uniffi_aegis_fn_method_messenger_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
+fun uniffi_aegis_fn_method_messenger_unlock_vault(`ptr`: Pointer,`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_vault_file_count(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Int
+fun uniffi_aegis_fn_method_messenger_vault_files(`ptr`: Pointer,`limit`: Int,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_can_send_to_contact(`identityChanged`: Byte,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_check_protocol_version(`raw`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_aegis_fn_func_check_recovery_key_group(`text`: RustBuffer.ByValue,`index`: Int,`entered`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_compute_fingerprint(`identityKey`: RustBuffer.ByValue,`identifier`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1063,6 +1173,8 @@ fun uniffi_aegis_fn_func_format_safety_number(`local`: RustBuffer.ByValue,`remot
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_generate_recovery_key(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_generate_storage_salt(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_identity_change_alert(`knownIdentity`: RustBuffer.ByValue,`presentedIdentity`: RustBuffer.ByValue,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1075,6 +1187,8 @@ fun uniffi_aegis_fn_func_protocol_version(uniffi_out_err: UniffiRustCallStatus,
 ): Byte
 fun uniffi_aegis_fn_func_safety_number_qr(`digits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_validate_recovery_key(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun ffi_aegis_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_aegis_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1207,6 +1321,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_check_protocol_version() != 59473.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_check_recovery_key_group() != 63444.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_compute_fingerprint() != 46253.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1228,6 +1345,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_generate_identity_public_key() != 24630.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_generate_recovery_key() != 44396.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_generate_storage_salt() != 41308.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1246,13 +1366,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_safety_number_qr() != 62446.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_validate_recovery_key() != 56902.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 53468.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_add_contact_from_link() != 19449.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_add_vault_file() != 13818.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_attachments_of() != 49186.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_backup_status() != 58549.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_chats() != 582.toShort()) {
@@ -1261,7 +1390,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_contacts() != 14358.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_create_backup() != 41989.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_delete_for_everyone() != 13291.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_delete_vault_file() != 24879.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
@@ -1270,7 +1405,25 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_fetch_attachment() != 47811.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_forget_backup_chain() != 49263.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_inspect_backup() != 5477.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_is_vault_open() != 1174.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_maintain_storage() != 58362.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_messages() != 55576.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_on_background() != 30668.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_open_vault_file() != 11451.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_own_contact_link() != 26497.toShort()) {
@@ -1294,7 +1447,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_register() != 16364.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_restore_backup() != 31001.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_seal_vault() != 51619.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_search() != 52611.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_security_events() != 26757.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_send_attachment() != 8050.toShort()) {
@@ -1328,6 +1490,15 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_setting_int() != 23735.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_unlock_vault() != 52238.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_vault_file_count() != 39132.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_vault_files() != 48354.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_constructor_messenger_open() != 35547.toShort()) {
@@ -2166,6 +2337,15 @@ public interface MessengerInterface {
     fun `addContactFromLink`(`uri`: kotlin.String, `nowMillis`: kotlin.Long): FfiContact
     
     /**
+     * Кладёт файл в vault и отдаёт шифроблоб для записи на диск.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — vault закрыт либо шифрование не удалось.
+     */
+    fun `addVaultFile`(`name`: kotlin.String, `contents`: kotlin.ByteArray, `location`: kotlin.String, `nowMillis`: kotlin.Long): FfiSealedVaultFile
+    
+    /**
      * Возвращает описания вложений сообщения.
      *
      * Каждое — те самые байты, что принимает [`Self::fetch_attachment`].
@@ -2178,6 +2358,15 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
     fun `attachmentsOf`(`messageId`: kotlin.String): List<kotlin.ByteArray>
+    
+    /**
+     * Состояние резервного копирования для Recovery Center.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение базы не удалось.
+     */
+    fun `backupStatus`(): FfiBackupStatus
     
     /**
      * Перечисляет чаты в порядке последней активности.
@@ -2198,6 +2387,19 @@ public interface MessengerInterface {
     fun `contacts`(): List<FfiContact>
     
     /**
+     * Делает резервную копию и отдаёт зашифрованный файл.
+     *
+     * Операция долгая: Argon2id с 256 МиБ памяти плюс чтение всей
+     * базы. Вызывать в фоновом потоке.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — сбой чтения базы или шифрования.
+     */
+    fun `createBackup`(`recoveryKey`: kotlin.String, `deviceLabel`: kotlin.String?, `nowMillis`: kotlin.Long): FfiBackup
+    
+    /**
      * Удаляет сообщение у обеих сторон.
      *
      * 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
@@ -2212,6 +2414,19 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — отправка не удалась.
      */
     fun `deleteForEveryone`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Убирает файл из vault и отдаёт путь к его блобу.
+     *
+     * Сам файл с диска стирает платформа: файловой системы ядро
+     * не касается.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — vault закрыт либо удаление не удалось.
+     */
+    fun `deleteVaultFile`(`fileId`: kotlin.String, `nowMillis`: kotlin.Long): kotlin.String?
     
     /**
      * Правит ранее отправленное сообщение.
@@ -2244,6 +2459,51 @@ public interface MessengerInterface {
     fun `fetchAttachment`(`deviceId`: kotlin.String, `descriptor`: kotlin.ByteArray, `nowMillis`: kotlin.Long): kotlin.ByteArray
     
     /**
+     * Забывает цепочку копий — при создании нового recovery key.
+     *
+     * ⚠️ Прежние файлы в облаке остаются читаемыми **старым**
+     * ключом: перешифровать их отсюда нельзя, и удалить их должен
+     * тот, кто ими владеет. Интерфейс обязан это сказать.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    fun `forgetBackupChain`()
+    
+    /**
+     * Читает метаданные копии, не расшифровывая переписку.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — файл не разбирается либо ключ не тот.
+     */
+    fun `inspectBackup`(`recoveryKey`: kotlin.String, `archive`: kotlin.ByteArray): FfiBackupMeta
+    
+    /**
+     * Открыт ли vault.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — состояние vault недоступно.
+     */
+    fun `isVaultOpen`(`nowMillis`: kotlin.Long): kotlin.Boolean
+    
+    /**
+     * Уплотняет базу, если пришёл срок.
+     *
+     * Возвращает `true`, если уплотнение выполнено. Вызывать
+     * при холодном старте в фоновом потоке: `VACUUM` переписывает
+     * файл целиком.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — уплотнение не удалось.
+     */
+    fun `maintainStorage`(`nowMillis`: kotlin.Long): kotlin.Boolean
+    
+    /**
      * Возвращает сообщения чата.
      *
      * # Errors
@@ -2252,6 +2512,32 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
     fun `messages`(`chatId`: kotlin.String, `limit`: kotlin.UInt): List<FfiMessage>
+    
+    /**
+     * 🔐 Сообщает ядру об уходе приложения в фон.
+     *
+     * Vault закрывается немедленно, не дожидаясь таймаута: в фоне
+     * экран попадает в снимок переключателя задач, а телефон —
+     * в чужие руки.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — состояние vault недоступно.
+     */
+    fun `onBackground`()
+    
+    /**
+     * Расшифровывает файл vault.
+     *
+     * `ciphertext` — содержимое блоба, прочитанное платформой
+     * по пути из [`FfiVaultFile::location`].
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — vault закрыт либо блоб подменён.
+     */
+    fun `openVaultFile`(`fileId`: kotlin.String, `ciphertext`: kotlin.ByteArray, `nowMillis`: kotlin.Long): kotlin.ByteArray
     
     /**
      * Возвращает ссылку на собственный профиль.
@@ -2340,6 +2626,29 @@ public interface MessengerInterface {
     fun `register`(`username`: kotlin.String, `nowMillis`: kotlin.Long): FfiAccount
     
     /**
+     * Восстанавливает данные из цепочки копий.
+     *
+     * `links` — файлы в порядке создания: сначала полный снимок,
+     * затем инкременты. Разорванная цепочка отвергается целиком.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — цепочка разорвана, файл изменён либо
+     * ключ не тот.
+     */
+    fun `restoreBackup`(`recoveryKey`: kotlin.String, `links`: List<kotlin.ByteArray>, `nowMillis`: kotlin.Long): FfiRestore
+    
+    /**
+     * Закрывает vault и обнуляет его ключ.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — состояние vault недоступно.
+     */
+    fun `sealVault`()
+    
+    /**
      * Ищет по расшифрованной переписке.
      *
      * 🔐 Поиск идёт по самим сообщениям, а не по отдельному индексу:
@@ -2351,6 +2660,15 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
     fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<FfiSearchHit>
+    
+    /**
+     * Читает журнал безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    fun `securityEvents`(`limit`: kotlin.UInt): List<FfiSecurityEvent>
     
     /**
      * Отправляет файл вложением.
@@ -2493,6 +2811,43 @@ public interface MessengerInterface {
      */
     fun `settingInt`(`key`: kotlin.String, `default`: kotlin.Long): kotlin.Long
     
+    /**
+     * Открывает File Vault после повторной аутентификации.
+     *
+     * 🔐 PIN передаётся сюда, а ключ vault наружу не выходит:
+     * вывод целиком происходит в ядре. Платформа обязана вызывать
+     * этот метод **только** после свежего подтверждения личности —
+     * ввода PIN или биометрии, — потому что ядро отличить свежее
+     * подтверждение от запомненного не может.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — PIN короче допустимого, соль не той
+     * длины либо сбой вывода ключей.
+     */
+    fun `unlockVault`(`pin`: kotlin.String, `salt`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Сколько файлов в vault.
+     *
+     * Доступно и при закрытом vault: число файлов не говорит,
+     * какие они.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    fun `vaultFileCount`(): kotlin.UInt
+    
+    /**
+     * Перечисляет файлы vault.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — vault закрыт либо чтение не удалось.
+     */
+    fun `vaultFiles`(`limit`: kotlin.UInt, `nowMillis`: kotlin.Long): List<FfiVaultFile>
+    
     companion object
 }
 
@@ -2619,6 +2974,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Кладёт файл в vault и отдаёт шифроблоб для записи на диск.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — vault закрыт либо шифрование не удалось.
+     */
+    @Throws(FfiException::class)override fun `addVaultFile`(`name`: kotlin.String, `contents`: kotlin.ByteArray, `location`: kotlin.String, `nowMillis`: kotlin.Long): FfiSealedVaultFile {
+            return FfiConverterTypeFfiSealedVaultFile.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_add_vault_file(
+        it, FfiConverterString.lower(`name`),FfiConverterByteArray.lower(`contents`),FfiConverterString.lower(`location`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Возвращает описания вложений сообщения.
      *
      * Каждое — те самые байты, что принимает [`Self::fetch_attachment`].
@@ -2636,6 +3011,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_attachments_of(
         it, FfiConverterString.lower(`messageId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Состояние резервного копирования для Recovery Center.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение базы не удалось.
+     */
+    @Throws(FfiException::class)override fun `backupStatus`(): FfiBackupStatus {
+            return FfiConverterTypeFfiBackupStatus.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_backup_status(
+        it, _status)
 }
     }
     )
@@ -2684,6 +3079,30 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Делает резервную копию и отдаёт зашифрованный файл.
+     *
+     * Операция долгая: Argon2id с 256 МиБ памяти плюс чтение всей
+     * базы. Вызывать в фоновом потоке.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — сбой чтения базы или шифрования.
+     */
+    @Throws(FfiException::class)override fun `createBackup`(`recoveryKey`: kotlin.String, `deviceLabel`: kotlin.String?, `nowMillis`: kotlin.Long): FfiBackup {
+            return FfiConverterTypeFfiBackup.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_create_backup(
+        it, FfiConverterString.lower(`recoveryKey`),FfiConverterOptionalString.lower(`deviceLabel`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Удаляет сообщение у обеих сторон.
      *
      * 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
@@ -2706,6 +3125,30 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 }
     }
     
+    
+
+    
+    /**
+     * Убирает файл из vault и отдаёт путь к его блобу.
+     *
+     * Сам файл с диска стирает платформа: файловой системы ядро
+     * не касается.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — vault закрыт либо удаление не удалось.
+     */
+    @Throws(FfiException::class)override fun `deleteVaultFile`(`fileId`: kotlin.String, `nowMillis`: kotlin.Long): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_delete_vault_file(
+        it, FfiConverterString.lower(`fileId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -2761,6 +3204,94 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Забывает цепочку копий — при создании нового recovery key.
+     *
+     * ⚠️ Прежние файлы в облаке остаются читаемыми **старым**
+     * ключом: перешифровать их отсюда нельзя, и удалить их должен
+     * тот, кто ими владеет. Интерфейс обязан это сказать.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `forgetBackupChain`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_forget_backup_chain(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Читает метаданные копии, не расшифровывая переписку.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — файл не разбирается либо ключ не тот.
+     */
+    @Throws(FfiException::class)override fun `inspectBackup`(`recoveryKey`: kotlin.String, `archive`: kotlin.ByteArray): FfiBackupMeta {
+            return FfiConverterTypeFfiBackupMeta.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_inspect_backup(
+        it, FfiConverterString.lower(`recoveryKey`),FfiConverterByteArray.lower(`archive`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Открыт ли vault.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — состояние vault недоступно.
+     */
+    @Throws(FfiException::class)override fun `isVaultOpen`(`nowMillis`: kotlin.Long): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_is_vault_open(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Уплотняет базу, если пришёл срок.
+     *
+     * Возвращает `true`, если уплотнение выполнено. Вызывать
+     * при холодном старте в фоновом потоке: `VACUUM` переписывает
+     * файл целиком.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — уплотнение не удалось.
+     */
+    @Throws(FfiException::class)override fun `maintainStorage`(`nowMillis`: kotlin.Long): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_maintain_storage(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Возвращает сообщения чата.
      *
      * # Errors
@@ -2774,6 +3305,53 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_messages(
         it, FfiConverterString.lower(`chatId`),FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * 🔐 Сообщает ядру об уходе приложения в фон.
+     *
+     * Vault закрывается немедленно, не дожидаясь таймаута: в фоне
+     * экран попадает в снимок переключателя задач, а телефон —
+     * в чужие руки.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — состояние vault недоступно.
+     */
+    @Throws(FfiException::class)override fun `onBackground`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_on_background(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Расшифровывает файл vault.
+     *
+     * `ciphertext` — содержимое блоба, прочитанное платформой
+     * по пути из [`FfiVaultFile::location`].
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — vault закрыт либо блоб подменён.
+     */
+    @Throws(FfiException::class)override fun `openVaultFile`(`fileId`: kotlin.String, `ciphertext`: kotlin.ByteArray, `nowMillis`: kotlin.Long): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_open_vault_file(
+        it, FfiConverterString.lower(`fileId`),FfiConverterByteArray.lower(`ciphertext`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -2945,6 +3523,50 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Восстанавливает данные из цепочки копий.
+     *
+     * `links` — файлы в порядке создания: сначала полный снимок,
+     * затем инкременты. Разорванная цепочка отвергается целиком.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — цепочка разорвана, файл изменён либо
+     * ключ не тот.
+     */
+    @Throws(FfiException::class)override fun `restoreBackup`(`recoveryKey`: kotlin.String, `links`: List<kotlin.ByteArray>, `nowMillis`: kotlin.Long): FfiRestore {
+            return FfiConverterTypeFfiRestore.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_restore_backup(
+        it, FfiConverterString.lower(`recoveryKey`),FfiConverterSequenceByteArray.lower(`links`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Закрывает vault и обнуляет его ключ.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — состояние vault недоступно.
+     */
+    @Throws(FfiException::class)override fun `sealVault`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_seal_vault(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
      * Ищет по расшифрованной переписке.
      *
      * 🔐 Поиск идёт по самим сообщениям, а не по отдельному индексу:
@@ -2961,6 +3583,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_search(
         it, FfiConverterString.lower(`query`),FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Читает журнал безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    @Throws(FfiException::class)override fun `securityEvents`(`limit`: kotlin.UInt): List<FfiSecurityEvent> {
+            return FfiConverterSequenceTypeFfiSecurityEvent.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_security_events(
+        it, FfiConverterUInt.lower(`limit`),_status)
 }
     }
     )
@@ -3222,6 +3864,75 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     
 
     
+    /**
+     * Открывает File Vault после повторной аутентификации.
+     *
+     * 🔐 PIN передаётся сюда, а ключ vault наружу не выходит:
+     * вывод целиком происходит в ядре. Платформа обязана вызывать
+     * этот метод **только** после свежего подтверждения личности —
+     * ввода PIN или биометрии, — потому что ядро отличить свежее
+     * подтверждение от запомненного не может.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — PIN короче допустимого, соль не той
+     * длины либо сбой вывода ключей.
+     */
+    @Throws(FfiException::class)override fun `unlockVault`(`pin`: kotlin.String, `salt`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_unlock_vault(
+        it, FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Сколько файлов в vault.
+     *
+     * Доступно и при закрытом vault: число файлов не говорит,
+     * какие они.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    @Throws(FfiException::class)override fun `vaultFileCount`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_vault_file_count(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Перечисляет файлы vault.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — vault закрыт либо чтение не удалось.
+     */
+    @Throws(FfiException::class)override fun `vaultFiles`(`limit`: kotlin.UInt, `nowMillis`: kotlin.Long): List<FfiVaultFile> {
+            return FfiConverterSequenceTypeFfiVaultFile.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_vault_files(
+        it, FfiConverterUInt.lower(`limit`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
 
     
     companion object {
@@ -3469,6 +4180,157 @@ public object FfiConverterTypeFfiAttachmentInfo: FfiConverterRustBuffer<FfiAttac
             FfiConverterULong.write(value.`size`, buf)
             FfiConverterOptionalString.write(value.`description`, buf)
             FfiConverterOptionalUInt.write(value.`durationMillis`, buf)
+    }
+}
+
+
+
+/**
+ * Готовая резервная копия.
+ */
+data class FfiBackup (
+    /**
+     * Зашифрованный файл: его выгружает платформа.
+     */
+    var `archive`: kotlin.ByteArray, 
+    /**
+     * Номер в цепочке.
+     */
+    var `generation`: kotlin.UInt, 
+    /**
+     * Полный ли это снимок.
+     */
+    var `isFull`: kotlin.Boolean, 
+    /**
+     * Сколько строк вошло в копию.
+     */
+    var `recordCount`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiBackup: FfiConverterRustBuffer<FfiBackup> {
+    override fun read(buf: ByteBuffer): FfiBackup {
+        return FfiBackup(
+            FfiConverterByteArray.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiBackup) = (
+            FfiConverterByteArray.allocationSize(value.`archive`) +
+            FfiConverterUInt.allocationSize(value.`generation`) +
+            FfiConverterBoolean.allocationSize(value.`isFull`) +
+            FfiConverterUInt.allocationSize(value.`recordCount`)
+    )
+
+    override fun write(value: FfiBackup, buf: ByteBuffer) {
+            FfiConverterByteArray.write(value.`archive`, buf)
+            FfiConverterUInt.write(value.`generation`, buf)
+            FfiConverterBoolean.write(value.`isFull`, buf)
+            FfiConverterUInt.write(value.`recordCount`, buf)
+    }
+}
+
+
+
+/**
+ * Метаданные копии, прочитанные без расшифровки тела.
+ */
+data class FfiBackupMeta (
+    /**
+     * Когда собрана копия, миллисекунды.
+     */
+    var `createdAtMillis`: kotlin.Long, 
+    /**
+     * Сколько записей внутри.
+     */
+    var `recordCount`: kotlin.UInt, 
+    /**
+     * Сколько из них сообщений.
+     */
+    var `messageCount`: kotlin.UInt, 
+    /**
+     * Метка устройства, собравшего копию.
+     */
+    var `deviceLabel`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiBackupMeta: FfiConverterRustBuffer<FfiBackupMeta> {
+    override fun read(buf: ByteBuffer): FfiBackupMeta {
+        return FfiBackupMeta(
+            FfiConverterLong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiBackupMeta) = (
+            FfiConverterLong.allocationSize(value.`createdAtMillis`) +
+            FfiConverterUInt.allocationSize(value.`recordCount`) +
+            FfiConverterUInt.allocationSize(value.`messageCount`) +
+            FfiConverterOptionalString.allocationSize(value.`deviceLabel`)
+    )
+
+    override fun write(value: FfiBackupMeta, buf: ByteBuffer) {
+            FfiConverterLong.write(value.`createdAtMillis`, buf)
+            FfiConverterUInt.write(value.`recordCount`, buf)
+            FfiConverterUInt.write(value.`messageCount`, buf)
+            FfiConverterOptionalString.write(value.`deviceLabel`, buf)
+    }
+}
+
+
+
+/**
+ * Состояние резервного копирования для Recovery Center.
+ */
+data class FfiBackupStatus (
+    /**
+     * Настроено ли копирование.
+     */
+    var `configured`: kotlin.Boolean, 
+    /**
+     * Когда делалась последняя копия.
+     */
+    var `lastBackupAtMillis`: kotlin.Long?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiBackupStatus: FfiConverterRustBuffer<FfiBackupStatus> {
+    override fun read(buf: ByteBuffer): FfiBackupStatus {
+        return FfiBackupStatus(
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiBackupStatus) = (
+            FfiConverterBoolean.allocationSize(value.`configured`) +
+            FfiConverterOptionalLong.allocationSize(value.`lastBackupAtMillis`)
+    )
+
+    override fun write(value: FfiBackupStatus, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`configured`, buf)
+            FfiConverterOptionalLong.write(value.`lastBackupAtMillis`, buf)
     }
 }
 
@@ -3793,6 +4655,151 @@ public object FfiConverterTypeFfiQrMatrix: FfiConverterRustBuffer<FfiQrMatrix> {
 
 
 /**
+ * Recovery key, показанный пользователю.
+ */
+data class FfiRecoveryKey (
+    /**
+     * Запись ключа: `AEGIS-XXXX-…`, 13 групп по 4 символа.
+     *
+     * 🔐 Показывается **один раз** и на защищённом экране
+     * (`FLAG_SECURE` на Android). Платформа обязана не класть её
+     * ни в буфер обмена по умолчанию, ни в снимок экрана.
+     */
+    var `display`: kotlin.String, 
+    /**
+     * Сколько групп в записи — чтобы интерфейс не считал сам.
+     */
+    var `groupCount`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiRecoveryKey: FfiConverterRustBuffer<FfiRecoveryKey> {
+    override fun read(buf: ByteBuffer): FfiRecoveryKey {
+        return FfiRecoveryKey(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiRecoveryKey) = (
+            FfiConverterString.allocationSize(value.`display`) +
+            FfiConverterUInt.allocationSize(value.`groupCount`)
+    )
+
+    override fun write(value: FfiRecoveryKey, buf: ByteBuffer) {
+            FfiConverterString.write(value.`display`, buf)
+            FfiConverterUInt.write(value.`groupCount`, buf)
+    }
+}
+
+
+
+/**
+ * Итог восстановления.
+ */
+data class FfiRestore (
+    /**
+     * Сколько строк применено.
+     */
+    var `applied`: kotlin.UInt, 
+    /**
+     * Сколько звеньев цепочки применено.
+     */
+    var `links`: kotlin.UInt, 
+    /**
+     * Когда сделана последняя копия цепочки.
+     */
+    var `createdAtMillis`: kotlin.Long, 
+    /**
+     * Сменился ли ключ безопасности устройства.
+     *
+     * Всегда `true`. Интерфейс обязан показать экран «ваш ключ
+     * безопасности изменился»: собеседники увидят это как смену
+     * safety number, и без объяснения смена выглядит как подмена.
+     */
+    var `identityChanged`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiRestore: FfiConverterRustBuffer<FfiRestore> {
+    override fun read(buf: ByteBuffer): FfiRestore {
+        return FfiRestore(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiRestore) = (
+            FfiConverterUInt.allocationSize(value.`applied`) +
+            FfiConverterUInt.allocationSize(value.`links`) +
+            FfiConverterLong.allocationSize(value.`createdAtMillis`) +
+            FfiConverterBoolean.allocationSize(value.`identityChanged`)
+    )
+
+    override fun write(value: FfiRestore, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`applied`, buf)
+            FfiConverterUInt.write(value.`links`, buf)
+            FfiConverterLong.write(value.`createdAtMillis`, buf)
+            FfiConverterBoolean.write(value.`identityChanged`, buf)
+    }
+}
+
+
+
+/**
+ * Только что зашифрованный файл vault.
+ */
+data class FfiSealedVaultFile (
+    /**
+     * Идентификатор записи.
+     */
+    var `fileId`: kotlin.String, 
+    /**
+     * Шифроблоб — его платформа записывает по `location`.
+     */
+    var `ciphertext`: kotlin.ByteArray
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSealedVaultFile: FfiConverterRustBuffer<FfiSealedVaultFile> {
+    override fun read(buf: ByteBuffer): FfiSealedVaultFile {
+        return FfiSealedVaultFile(
+            FfiConverterString.read(buf),
+            FfiConverterByteArray.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSealedVaultFile) = (
+            FfiConverterString.allocationSize(value.`fileId`) +
+            FfiConverterByteArray.allocationSize(value.`ciphertext`)
+    )
+
+    override fun write(value: FfiSealedVaultFile, buf: ByteBuffer) {
+            FfiConverterString.write(value.`fileId`, buf)
+            FfiConverterByteArray.write(value.`ciphertext`, buf)
+    }
+}
+
+
+
+/**
  * Найденное сообщение вместе с его чатом.
  */
 data class FfiSearchHit (
@@ -3828,6 +4835,116 @@ public object FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer<FfiSearchHit>
     override fun write(value: FfiSearchHit, buf: ByteBuffer) {
             FfiConverterString.write(value.`chatId`, buf)
             FfiConverterTypeFfiMessage.write(value.`message`, buf)
+    }
+}
+
+
+
+/**
+ * Событие журнала безопасности.
+ */
+data class FfiSecurityEvent (
+    /**
+     * Тип события.
+     */
+    var `eventType`: kotlin.String, 
+    /**
+     * Подробности.
+     */
+    var `details`: kotlin.String, 
+    /**
+     * Когда случилось, миллисекунды.
+     */
+    var `timestampMillis`: kotlin.Long
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSecurityEvent: FfiConverterRustBuffer<FfiSecurityEvent> {
+    override fun read(buf: ByteBuffer): FfiSecurityEvent {
+        return FfiSecurityEvent(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSecurityEvent) = (
+            FfiConverterString.allocationSize(value.`eventType`) +
+            FfiConverterString.allocationSize(value.`details`) +
+            FfiConverterLong.allocationSize(value.`timestampMillis`)
+    )
+
+    override fun write(value: FfiSecurityEvent, buf: ByteBuffer) {
+            FfiConverterString.write(value.`eventType`, buf)
+            FfiConverterString.write(value.`details`, buf)
+            FfiConverterLong.write(value.`timestampMillis`, buf)
+    }
+}
+
+
+
+/**
+ * Файл в vault.
+ */
+data class FfiVaultFile (
+    /**
+     * Идентификатор записи.
+     */
+    var `fileId`: kotlin.String, 
+    /**
+     * Имя файла.
+     */
+    var `name`: kotlin.String, 
+    /**
+     * Размер открытого файла в байтах.
+     */
+    var `size`: kotlin.Long, 
+    /**
+     * Когда добавлен, миллисекунды.
+     */
+    var `createdAtMillis`: kotlin.Long, 
+    /**
+     * Путь к шифроблобу — по нему платформа читает файл.
+     */
+    var `location`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiVaultFile: FfiConverterRustBuffer<FfiVaultFile> {
+    override fun read(buf: ByteBuffer): FfiVaultFile {
+        return FfiVaultFile(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiVaultFile) = (
+            FfiConverterString.allocationSize(value.`fileId`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterLong.allocationSize(value.`size`) +
+            FfiConverterLong.allocationSize(value.`createdAtMillis`) +
+            FfiConverterString.allocationSize(value.`location`)
+    )
+
+    override fun write(value: FfiVaultFile, buf: ByteBuffer) {
+            FfiConverterString.write(value.`fileId`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterLong.write(value.`size`, buf)
+            FfiConverterLong.write(value.`createdAtMillis`, buf)
+            FfiConverterString.write(value.`location`, buf)
     }
 }
 
@@ -4187,6 +5304,38 @@ public object FfiConverterOptionalUInt: FfiConverterRustBuffer<kotlin.UInt?> {
 /**
  * @suppress
  */
+public object FfiConverterOptionalLong: FfiConverterRustBuffer<kotlin.Long?> {
+    override fun read(buf: ByteBuffer): kotlin.Long? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterLong.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.Long?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterLong.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.Long?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterLong.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
     override fun read(buf: ByteBuffer): kotlin.String? {
         if (buf.get().toInt() == 0) {
@@ -4472,6 +5621,62 @@ public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiSecurityEvent: FfiConverterRustBuffer<List<FfiSecurityEvent>> {
+    override fun read(buf: ByteBuffer): List<FfiSecurityEvent> {
+        val len = buf.getInt()
+        return List<FfiSecurityEvent>(len) {
+            FfiConverterTypeFfiSecurityEvent.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiSecurityEvent>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiSecurityEvent.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiSecurityEvent>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiSecurityEvent.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<FfiVaultFile>> {
+    override fun read(buf: ByteBuffer): List<FfiVaultFile> {
+        val len = buf.getInt()
+        return List<FfiVaultFile>(len) {
+            FfiConverterTypeFfiVaultFile.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiVaultFile>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiVaultFile.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiVaultFile>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiVaultFile.write(it, buf)
+        }
+    }
+}
         /**
          * Можно ли отправлять сообщение контакту.
          *
@@ -4514,6 +5719,27 @@ public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_check_protocol_version(
         FfiConverterUByte.lower(`raw`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Сверяет введённую группу с эталонной.
+         *
+         * Нужно экрану подтверждения записи: у пользователя просят три
+         * случайные группы, чтобы он не пролистал показ ключа не глядя.
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`] — ключ не разбирается либо номер
+         * группы вне диапазона.
+         */
+    @Throws(FfiException::class) fun `checkRecoveryKeyGroup`(`text`: kotlin.String, `index`: kotlin.UInt, `entered`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_check_recovery_key_group(
+        FfiConverterString.lower(`text`),FfiConverterUInt.lower(`index`),FfiConverterString.lower(`entered`),_status)
 }
     )
     }
@@ -4682,6 +5908,27 @@ public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<
     
 
         /**
+         * Генерирует новый recovery key.
+         *
+         * 🔐 Ключ существует только в возвращённой строке: он не пишется
+         * ни в базу, ни в файл. Потерять его — значит потерять доступ
+         * к копиям, и это осознанная цена обещания №4.
+         *
+         * # Errors
+         *
+         * [`FfiError::Panic`] — сбой генератора случайных чисел.
+         */
+    @Throws(FfiException::class) fun `generateRecoveryKey`(): FfiRecoveryKey {
+            return FfiConverterTypeFfiRecoveryKey.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_generate_recovery_key(
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Генерирует соль для растягивания PIN.
          *
          * Соль хранится рядом с базой в открытом виде: она защищает не от
@@ -4802,6 +6049,23 @@ public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_safety_number_qr(
         FfiConverterString.lower(`digits`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Проверяет, что набранный ключ похож на настоящий.
+         *
+         * 🔐 Проверяется контрольная сумма — то есть опечатка отвергается
+         * мгновенно, до дорогого Argon2id. Успех означает «строка выглядит
+         * как ключ», а не «этот ключ открывает вашу копию»: второе
+         * выясняется только попыткой расшифровать.
+         */ fun `validateRecoveryKey`(`text`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_validate_recovery_key(
+        FfiConverterString.lower(`text`),_status)
 }
     )
     }

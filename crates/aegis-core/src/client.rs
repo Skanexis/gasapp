@@ -27,6 +27,9 @@
 //! обращений к `aegis-protocol`. Это граница, за которой начинается
 //! проверяемый фаззингом код.
 
+use std::sync::Mutex;
+
+use aegis_backup::RecoveryKey;
 use aegis_net::api::{
     BundleResponse, PublishKeysRequest, RegisterRequest, SendRequest,
 };
@@ -41,7 +44,10 @@ use aegis_protocol::keys::{
     SignedPreKey,
 };
 use aegis_protocol::prekeys::{self, PreKeySecrets};
-use aegis_storage::{MessageStatus, Storage, StoredMessage};
+use aegis_storage::{MessageStatus, Storage, StoredMessage, VaultFileRow};
+
+use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
+use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 use aegis_types::{
     AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext, PublicKeyBytes, Result,
     Timestamp,
@@ -139,14 +145,25 @@ pub struct AttachmentFile {
 pub struct Client<T: Transport> {
     api: ApiClient<T>,
     storage: Storage,
+
+    /// Состояние File Vault.
+    ///
+    /// 🔐 Живёт рядом с хранилищем, но независимо от него: ключ базы
+    /// держится всё время работы приложения, ключ vault — только
+    /// пока vault открыт (раздел 11.4). `Mutex` здесь по той же
+    /// причине, что и у клиента: операции меняют состояние.
+    vault: Mutex<VaultGuard>,
 }
 
 impl<T: Transport> Client<T> {
     /// Создаёт клиент поверх транспорта и открытого хранилища.
-    pub const fn new(transport: T, storage: Storage) -> Self {
+    pub fn new(transport: T, storage: Storage) -> Self {
         Self {
             api: ApiClient::new(transport),
             storage,
+            // Vault всегда начинается закрытым: открыть его может
+            // только повторная аутентификация.
+            vault: Mutex::new(VaultGuard::new(Timestamp::from_millis(0))),
         }
     }
 
@@ -308,7 +325,7 @@ impl<T: Transport> Client<T> {
         })?;
 
         self.storage
-            .set_message_status(&message_id, MessageStatus::Sent)?;
+            .set_message_status(&message_id, MessageStatus::Sent, now)?;
         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
 
         Ok(message_id)
@@ -363,7 +380,7 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<()> {
-        self.storage.edit_message(target, text)?;
+        self.storage.edit_message(target, text, now)?;
 
         // Чат здесь не нужен: своя копия таких сообщений не хранится.
         self.send_content(
@@ -398,7 +415,7 @@ impl<T: Transport> Client<T> {
         // Своё удаляется сразу, не дожидаясь отправки: если сеть
         // недоступна, пользователь всё равно должен перестать видеть
         // сообщение у себя.
-        self.storage.delete_message(target)?;
+        self.storage.delete_message(target, now)?;
 
         // Чат здесь не нужен: своя копия таких сообщений не хранится.
         self.send_content(
@@ -645,7 +662,7 @@ impl<T: Transport> Client<T> {
                     // не получали; создавать сообщение задним числом
                     // нельзя, оно появилось бы без контекста.
                     self.storage
-                        .edit_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)), &body)?;
+                        .edit_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)), &body, now)?;
                 }
 
                 Content::Delete { target } => {
@@ -654,7 +671,7 @@ impl<T: Transport> Client<T> {
                     // и отказ означал бы, что «удалить у всех»
                     // не работает.
                     self.storage
-                        .delete_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)))?;
+                        .delete_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)), now)?;
                 }
 
                 Content::Reaction { .. }
@@ -1341,6 +1358,228 @@ impl<T: Transport> Client<T> {
             expires_at: self.storage.expiry_for_chat(chat_id, now)?,
         })
     }
+
+    // --- Резервное копирование и File Vault (M6) ---
+
+    /// Делает резервную копию.
+    ///
+    /// 🔐 `recovery_key` используется и забывается: клиент его
+    /// не сохраняет (раздел 12.3).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение или запись базы не удались;
+    /// [`AegisError::Crypto`] — сбой вывода ключей или шифрования.
+    pub fn create_backup<R: RngCore + CryptoRng>(
+        &self,
+        recovery_key: &RecoveryKey,
+        device_label: Option<&str>,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<BackupOutcome> {
+        BackupService::new(&self.storage).create(recovery_key, device_label, now, rng)
+    }
+
+    /// Восстанавливает данные из цепочки копий.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — цепочка разорвана либо собрана
+    /// не в том порядке;
+    /// [`AegisError::Crypto`] — не тот recovery key;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn restore_backup(
+        &self,
+        recovery_key: &RecoveryKey,
+        links: &[Vec<u8>],
+        now: Timestamp,
+    ) -> Result<RestoreOutcome> {
+        BackupService::new(&self.storage).restore(recovery_key, links, now)
+    }
+
+    /// Читает метаданные копии, не расшифровывая тело.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — файл не разбирается;
+    /// [`AegisError::Crypto`] — не тот recovery key.
+    pub fn inspect_backup(
+        recovery_key: &RecoveryKey,
+        archive: &[u8],
+    ) -> Result<aegis_backup::ArchiveMeta> {
+        BackupService::inspect(recovery_key, archive)
+    }
+
+    /// Когда делалась последняя копия.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn last_backup_at(&self) -> Result<Option<Timestamp>> {
+        BackupService::new(&self.storage).last_backup_at()
+    }
+
+    /// Настроено ли резервное копирование.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn backup_configured(&self) -> Result<bool> {
+        BackupService::new(&self.storage).is_configured()
+    }
+
+    /// Забывает цепочку копий — при смене recovery key.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn forget_backup_chain(&self) -> Result<()> {
+        BackupService::new(&self.storage).forget_chain()
+    }
+
+    /// Уплотняет базу, если пришёл срок.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — уплотнение не удалось.
+    pub fn maintain_storage(&self, now: Timestamp) -> Result<bool> {
+        BackupService::new(&self.storage).maintain(now)
+    }
+
+    /// Читает последние события журнала безопасности.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn security_events(&self, limit: u32) -> Result<Vec<(String, String, Timestamp)>> {
+        self.storage.recent_security_events(limit)
+    }
+
+    /// Открывает File Vault после повторной аутентификации.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — PIN или соль не той формы;
+    /// [`AegisError::Crypto`] — сбой вывода ключей.
+    pub fn unlock_vault(&self, pin: &str, salt: &[u8], now: Timestamp) -> Result<()> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+
+        Vault::new(&self.storage, &mut keeper).unlock(pin, salt, now)
+    }
+
+    /// Закрывает vault и обнуляет его ключ.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — состояние vault недоступно.
+    pub fn seal_vault(&self) -> Result<()> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+        keeper.seal();
+
+        Ok(())
+    }
+
+    /// 🔐 Реакция на уход приложения в фон: vault закрывается.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — состояние vault недоступно.
+    pub fn on_background(&self) -> Result<()> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+        keeper.on_background();
+
+        Ok(())
+    }
+
+    /// Открыт ли vault.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — состояние vault недоступно.
+    pub fn vault_is_open(&self, now: Timestamp) -> Result<bool> {
+        let keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+
+        Ok(keeper.is_open(now))
+    }
+
+    /// Сколько файлов лежит в vault.
+    ///
+    /// Доступно и при закрытом vault: число файлов не выдаёт, какие
+    /// они (см. `Vault::file_count`).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn vault_file_count(&self) -> Result<u32> {
+        self.storage.vault_file_count()
+    }
+
+    /// Перечисляет файлы vault.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Locked`] — vault закрыт;
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn vault_files(&self, limit: u32, now: Timestamp) -> Result<Vec<VaultFileRow>> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+
+        Vault::new(&self.storage, &mut keeper).files(limit, now)
+    }
+
+    /// Кладёт файл в vault.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Locked`] — vault закрыт;
+    /// [`AegisError::Crypto`] — сбой шифрования;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn add_vault_file<R: RngCore + CryptoRng>(
+        &self,
+        name: &str,
+        plaintext: &[u8],
+        location: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<SealedVaultFile> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+
+        Vault::new(&self.storage, &mut keeper).add_file(name, plaintext, location, now, rng)
+    }
+
+    /// Достаёт файл из vault.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Locked`] — vault закрыт;
+    /// [`AegisError::SessionNotFound`] — записи о файле нет;
+    /// [`AegisError::Crypto`] — блоб подменён либо ключ не подходит.
+    pub fn open_vault_file(
+        &self,
+        file_id: &MessageId,
+        ciphertext: &[u8],
+        now: Timestamp,
+    ) -> Result<Vec<u8>> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+
+        Vault::new(&self.storage, &mut keeper).open_file(file_id, ciphertext, now)
+    }
+
+    /// Убирает файл из vault, возвращая путь к его блобу.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Locked`] — vault закрыт;
+    /// [`AegisError::Storage`] — удаление не удалось.
+    pub fn delete_vault_file(
+        &self,
+        file_id: &MessageId,
+        now: Timestamp,
+    ) -> Result<Option<String>> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+
+        Vault::new(&self.storage, &mut keeper).delete_file(file_id, now)
+    }
+
 }
 
 /// Сколько чатов перебирается при поиске подходящей сессии.

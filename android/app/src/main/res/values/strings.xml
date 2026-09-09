@@ -268,6 +268,119 @@
     <string name="security_devices_title">Доверенные устройства</string>
     <string name="security_recovery_title">Ключ восстановления</string>
     <string name="security_blocked_title">Заблокированные</string>
-    <string name="security_not_ready">Появится вместе с резервным копированием</string>
     <string name="security_blocked_empty">Заблокированных нет</string>
+
+    <!--
+      Recovery Center и резервное копирование (раздел 12 плана).
+
+      🔐 Формулировки намеренно прямые: «восстановить будет невозможно,
+      даже нам» — это не запугивание, а точное описание. Смягчить его
+      значило бы дать человеку надежду на службу поддержки, которой
+      не существует и не может существовать.
+    -->
+    <string name="recovery_title">Восстановление</string>
+    <string name="recovery_intro">Резервная копия зашифрована ключом восстановления. Ключ есть только у вас: ни сервер, ни мы расшифровать копию не можем.</string>
+    <string name="recovery_section_state">Состояние</string>
+    <string name="recovery_section_actions">Действия</string>
+    <string name="recovery_pill_encrypted">Копия зашифрована</string>
+    <string name="recovery_pill_server_cannot">Сервер расшифровать не может</string>
+    <string name="recovery_pill_configured">Ключ создан</string>
+    <string name="recovery_pill_not_configured">Ключ ещё не создан</string>
+    <string name="recovery_never">Копий пока не было</string>
+    <string name="recovery_last">Последняя копия: %1$s</string>
+    <string name="recovery_create">Создать ключ восстановления</string>
+    <string name="recovery_backup_now">Сделать копию сейчас</string>
+    <string name="recovery_restore">Восстановить из копии</string>
+    <string name="recovery_new_key">Создать новый ключ</string>
+    <string name="recovery_new_key_warning">Прежние копии останутся зашифрованными старым ключом — перешифровать их приложение не может. Сохраните старый ключ, пока эти копии вам нужны.</string>
+    <string name="recovery_new_key_confirm">Создать новый</string>
+    <string name="recovery_key_needed">Введите ключ восстановления</string>
+    <string name="recovery_created">Копия собрана: %1$d записей, поколение %2$d</string>
+    <string name="recovery_failed">Не удалось собрать копию</string>
+    <string name="recovery_saved">Файл копии сохранён</string>
+    <string name="recovery_save_failed">Не удалось сохранить файл</string>
+    <string name="recovery_not_saved">Копия собрана, но не сохранена</string>
+    <string name="recovery_warning">Если вы потеряете этот ключ, восстановить данные будет невозможно. Даже нам. Сброса по почте или SMS нет — именно поэтому вашу переписку не может прочитать никто посторонний.</string>
+
+    <!-- Показ ключа восстановления. -->
+    <string name="recovery_key_title">Ключ восстановления</string>
+    <string name="recovery_key_explain">Перепишите этот ключ на бумагу и храните отдельно от телефона. Он расшифровывает все ваши резервные копии.</string>
+    <string name="recovery_key_once">Ключ показывается один раз. Приложение его не сохраняет — посмотреть повторно будет негде.</string>
+    <string name="recovery_key_no_screenshot">Снимок экрана здесь заблокирован: ключ на скриншоте попал бы в галерею, а оттуда в облако.</string>
+    <string name="recovery_key_written">Я записал ключ</string>
+    <string name="recovery_key_failed">Не удалось создать ключ</string>
+
+    <!-- Подтверждение записи ключа. -->
+    <string name="recovery_confirm_title">Проверка ключа</string>
+    <string name="recovery_confirm_explain">Введите три группы из записанного ключа. Проверка нужна, чтобы вы не остались без доступа к своим данным: восстановить их без ключа нельзя.</string>
+    <string name="recovery_confirm_group">Группа %1$d</string>
+    <string name="recovery_confirm_hint">XXXX</string>
+    <string name="recovery_confirm_submit">Подтвердить</string>
+    <string name="recovery_confirm_show_again">Показать ключ ещё раз</string>
+    <string name="recovery_confirm_mismatch">Группы не совпали. Сверьтесь с записью.</string>
+
+    <!-- Восстановление из копии. -->
+    <string name="restore_title">Восстановление из копии</string>
+    <string name="restore_intro">Выберите файлы копии в порядке создания: сначала полный снимок, затем инкременты. Если хотя бы одного файла не хватает, восстановление не выполняется — частичное восстановление выглядело бы как целое.</string>
+    <string name="restore_section_files">Файлы копии</string>
+    <string name="restore_section_key">Ключ восстановления</string>
+    <string name="restore_pick">Выбрать файлы</string>
+    <string name="restore_no_files">Файлы не выбраны</string>
+    <string name="restore_files_chosen">Выбрано файлов: %1$d</string>
+    <string name="restore_key_hint">AEGIS-XXXX-XXXX-…</string>
+    <string name="restore_key_empty">Введите ключ из 13 групп</string>
+    <string name="restore_key_ok">Ключ выглядит правильно</string>
+    <string name="restore_key_invalid">В ключе опечатка</string>
+    <string name="restore_confirm">Восстановить</string>
+    <string name="restore_done">Восстановлено записей: %1$d</string>
+    <string name="restore_failed">Восстановить не удалось: не тот ключ или цепочка файлов неполная</string>
+    <string name="restore_note">Восстановятся переписка, контакты и настройки. Ключ безопасности устройства будет новым — это нормально, и мы объясним почему.</string>
+
+    <!-- Смена ключа безопасности после восстановления (раздел 12.5). -->
+    <string name="identity_changed_title">Восстановление завершено</string>
+    <string name="identity_changed_headline">Ваш ключ безопасности изменился</string>
+    <string name="identity_changed_restored">Переписка восстановлена.</string>
+    <string name="identity_changed_restored_count">Восстановлено записей: %1$d.</string>
+    <string name="identity_changed_explain">Собеседники увидят предупреждение о смене ключа безопасности. При восстановлении это нормально: устройство получает новый ключ, и старый не переносится.</string>
+    <string name="identity_changed_why">Ключи не переносятся намеренно. Перенос старого состояния шифрования означал бы, что два разных сообщения могут быть зашифрованы одним ключом, — а это раскрывает их содержимое. Смена ключа безопасности — цена того, что такого не случится.</string>
+    <string name="identity_changed_not_restored">Не восстановлены: активные защищённые сессии — они установятся заново при первом сообщении.</string>
+    <string name="identity_changed_verify">Сверить ключи с контактами</string>
+    <string name="identity_changed_later">Позже</string>
+
+    <!-- File Vault (раздел 11.4). -->
+    <string name="vault_title">Хранилище файлов</string>
+    <string name="vault_sealed_explain">Хранилище закрыто вторым фактором. Даже при разблокированном приложении для доступа к файлам нужно подтвердить себя заново.</string>
+    <string name="vault_pin_hint">PIN</string>
+    <string name="vault_unlock">Открыть хранилище</string>
+    <string name="vault_unlock_failed">Открыть не удалось</string>
+    <string name="vault_seal">Закрыть хранилище</string>
+    <string name="vault_sealed">Хранилище закрыто</string>
+    <string name="vault_reauth_note">Хранилище закрывается через минуту бездействия и при переходе приложения в фон.</string>
+    <string name="vault_auto_seal">Закроется через минуту бездействия или при уходе в фон.</string>
+    <string name="vault_add">Добавить файл</string>
+    <string name="vault_added">Файл добавлен</string>
+    <string name="vault_add_failed">Не удалось добавить файл</string>
+    <string name="vault_opened">Файл расшифрован: %1$s</string>
+    <string name="vault_open_failed">Открыть файл не удалось</string>
+    <string name="vault_empty">В хранилище пока пусто</string>
+    <string name="vault_unnamed">Без имени</string>
+
+    <!-- Пункты настроек, ведущие к экранам M6. -->
+    <string name="settings_recovery">Резервное копирование</string>
+    <string name="settings_vault">Хранилище файлов</string>
+
+    <!--
+      Число файлов в хранилище.
+
+      Множественное число вынесено в plurals, а не собрано строкой:
+      «1 файлов» на русском выглядит как ошибка приложения, а не
+      как мелочь перевода.
+    -->
+    <plurals name="vault_file_count">
+        <item quantity="one">В хранилище %1$d файл</item>
+        <item quantity="few">В хранилище %1$d файла</item>
+        <item quantity="many">В хранилище %1$d файлов</item>
+        <item quantity="other">В хранилище %1$d файла</item>
+    </plurals>
+
 </resources>

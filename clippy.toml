@@ -17,7 +17,11 @@ type-complexity-threshold = 300
 doc-valid-idents = [
     "AEGIS", "PQXDH", "SPQR", "XEdDSA", "SQLCipher", "StrongBox",
     "SecureEnclave", "UniFFI", "WebRTC", "SRTP", "AEAD", "HKDF",
-    "ChaCha20", "XChaCha20", "Poly1305", "Argon2id", "libsignal",
+    "ChaCha20", "XChaCha20", "XChaCha", "Poly1305", "Argon2id", "libsignal",
     "DoS", "MITM", "TOFU", "APNs", "GMS",
+    # Кириллические сокращения единиц измерения. Clippy принимает их
+    # за имена из кода из-за смешанного регистра и требует backticks,
+    # хотя это обычные слова: «256 МиБ» — это текст, а не идентификатор.
+    "КиБ", "МиБ", "ГиБ",
     "..",
 ]

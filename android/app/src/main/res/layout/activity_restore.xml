@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Восстановление из резервной копии.
+
+  Порядок экрана повторяет порядок действий: сначала выбрать файлы,
+  потом ввести ключ, потом восстановить. Кнопка восстановления
+  недоступна, пока не сделано и то, и другое, — иначе нажатие
+  оканчивается ошибкой, а не результатом.
+
+  🔐 Файлы выбираются в порядке создания: сначала полный снимок,
+  затем инкременты. Разорванная цепочка отвергается целиком,
+  и экран говорит об этом прямо, а не «восстановлено частично».
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/restore_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/restore_title" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:text="@string/restore_intro" />
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/restore_section_files" />
+
+            <LinearLayout style="@style/AegisPanel">
+
+                <org.aegis.app.components.AegisButton
+                    android:id="@+id/restore_pick"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/restore_pick"
+                    app:buttonVariant="secondary" />
+
+                <TextView
+                    android:id="@+id/restore_files"
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/restore_no_files" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/restore_section_key" />
+
+            <LinearLayout style="@style/AegisPanel">
+
+                <EditText
+                    android:id="@+id/restore_key"
+                    style="@style/AegisInput"
+                    android:layout_width="match_parent"
+                    android:autofillHints=""
+                    android:fontFamily="monospace"
+                    android:gravity="top|start"
+                    android:hint="@string/restore_key_hint"
+                    android:importantForAutofill="no"
+                    android:inputType="textCapCharacters|textMultiLine|textNoSuggestions"
+                    android:minLines="3"
+                    android:textColor="@color/text_primary" />
+
+                <!--
+                  Отклик о форме ключа — сразу при вводе. Контрольная
+                  сумма проверяется до дорогого Argon2id, поэтому
+                  сказать «в ключе опечатка» можно мгновенно, не
+                  заставляя человека ждать неудачной расшифровки.
+                -->
+                <TextView
+                    android:id="@+id/restore_key_state"
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/restore_key_empty" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/restore_status"
+                style="@style/AegisText.Caption"
+                android:layout_width="match_parent"
+                android:layout_marginTop="@dimen/space_m"
+                android:visibility="gone"
+                tools:text="Восстановлено 128 записей"
+                tools:visibility="visible" />
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/restore_confirm"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:enabled="false"
+                android:text="@string/restore_confirm"
+                app:buttonVariant="primary" />
+
+            <LinearLayout
+                style="@style/AegisPanel.Deep"
+                android:layout_marginTop="@dimen/space_l">
+
+                <TextView
+                    style="@style/AegisText.Caption"
+                    android:layout_width="match_parent"
+                    android:text="@string/restore_note" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

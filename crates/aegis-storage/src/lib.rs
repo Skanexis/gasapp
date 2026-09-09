@@ -24,6 +24,10 @@
 //! проверяют, что чужой ключ не открывает базу, а в сыром файле нет ни
 //! опознаваемых строк, ни заголовка `SQLite format 3`.
 
+pub mod backup;
+
+pub use backup::{BackupChainState, BackupExport, ChatBackupRow, VaultFileRow};
+
 use std::sync::{Mutex, RwLock};
 
 use aegis_protocol::keys::SessionState;
@@ -276,7 +280,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 4;
+    const SCHEMA_VERSION: i32 = 5;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -509,6 +513,36 @@ impl Storage {
                     transaction
                         .execute("ALTER TABLE attachments ADD COLUMN descriptor BLOB", [])
                         .map_err(storage_error)?;
+                }
+                // 4 → 5: всё, что нужно резервному копированию (M6).
+                //
+                // Столбец `updated_at` у сообщений — то, по чему
+                // инкрементальная копия понимает, что изменилось.
+                // Без него в инкремент попадали бы только новые
+                // сообщения, а смена статуса на старом (отправлено →
+                // доставлено) терялась бы навсегда: `created_at`
+                // при ней не меняется.
+                //
+                // Существующие строки засеваются временем создания:
+                // это худшее приближение из верных — оно не моложе
+                // настоящего момента изменения, поэтому очередная
+                // копия заберёт такую строку, а не пропустит её.
+                5 => {
+                    transaction
+                        .execute("ALTER TABLE messages ADD COLUMN updated_at INTEGER", [])
+                        .map_err(storage_error)?;
+                    transaction
+                        .execute(
+                            "UPDATE messages SET updated_at = created_at
+                             WHERE updated_at IS NULL",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+
+                    // Таблицы копии и хранилища создаёт `create_tables`
+                    // с `IF NOT EXISTS`; здесь тот же вызов — для баз,
+                    // созданных прежними версиями приложения.
+                    Self::create_backup_tables(&transaction)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
@@ -833,6 +867,9 @@ impl Storage {
             )
             .map_err(storage_error)?;
 
+        // Таблицы резервного копирования и хранилища файлов (M6).
+        Self::create_backup_tables(connection)?;
+
         // Триггеры, делающие журнал append-only на уровне базы.
         //
         // # Зачем триггеры, а не дисциплина вызовов
@@ -868,6 +905,101 @@ impl Storage {
             .execute(
                 "
             INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 0)
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Создаёт таблицы резервного копирования и File Vault (M6).
+    ///
+    /// Вынесены из [`Storage::create_tables`] отдельной функцией,
+    /// потому что вызываются дважды: оттуда — для свежей базы,
+    /// и из миграции 4 → 5 — для баз прежних версий. Везде
+    /// `IF NOT EXISTS`, поэтому повторный вызов безвреден.
+    fn create_backup_tables(connection: &Connection) -> Result<()> {
+        // Надгробия удалённых сообщений.
+        //
+        // # 🔐 Зачем хранить факт удаления
+        //
+        // Резервная копия инкрементальна: цепочка только дописывается.
+        // Без записи об удалении восстановление воскресило бы всё,
+        // что когда-либо попадало в копию, — включая сообщения,
+        // исчезнувшие по таймеру. Для мессенджера с исчезающими
+        // сообщениями это отказ функции, а не мелкое неудобство:
+        // пользователь видел, что сообщения нет, а оно вернулось.
+        //
+        // Хранится только идентификатор и время: ни текста, ни чата,
+        // ни собеседника. Надгробие само по себе ничего не выдаёт.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS backup_tombstones (
+                message_id BLOB PRIMARY KEY,
+                deleted_at INTEGER NOT NULL
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        // Состояние цепочки резервных копий — ровно одна строка.
+        //
+        // 🔐 Здесь нет recovery key и нет BRK. Соль и параметры
+        // растягивания секретами не являются: они лежат и в открытом
+        // заголовке самого файла копии. Без ключа они не дают ничего.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS backup_chain (
+                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                salt         BLOB    NOT NULL,
+                memory_kib   INTEGER NOT NULL,
+                iterations   INTEGER NOT NULL,
+                parallelism  INTEGER NOT NULL,
+                generation   INTEGER NOT NULL,
+                last_digest  BLOB    NOT NULL,
+                watermark    INTEGER NOT NULL,
+                last_backup_at INTEGER
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        // Когда база последний раз уплотнялась.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS maintenance (
+                id            INTEGER PRIMARY KEY CHECK (id = 1),
+                last_vacuum_at INTEGER
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        // File Vault: файлы под вторым фактором.
+        //
+        // 🔐 Здесь только метаданные и завёрнутый ключ файла. Сам
+        // файл лежит на диске шифроблобом, а ключ завёрнут `K_vault`,
+        // который живёт в оперативной памяти лишь пока vault открыт
+        // (раздел 11.4). Поэтому изъятая база, даже расшифрованная
+        // ключом устройства, содержимого vault не выдаёт.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS vault_files (
+                file_id     BLOB PRIMARY KEY,
+                name        TEXT NOT NULL,
+                size        INTEGER NOT NULL,
+                created_at  INTEGER NOT NULL,
+                location    TEXT NOT NULL,
+                wrapped_key BLOB NOT NULL
+            )
             ",
                 [],
             )
@@ -1149,8 +1281,8 @@ impl Storage {
                 "
             INSERT OR REPLACE INTO messages
                 (message_id, chat_id, sender_id, timestamp, content, status,
-                 message_type, created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 message_type, created_at, expires_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
                 params![
                     message.id.as_bytes(),
@@ -1162,6 +1294,11 @@ impl Storage {
                     i64::from(message.message_type),
                     message.timestamp.as_millis(),
                     message.expires_at.map(|expiry| expiry.as_millis()),
+                    // 🔐 Момент изменения — то, по чему инкрементальная
+                    // копия отбирает строки. Совпадает со временем
+                    // сообщения при создании и обновляется при каждой
+                    // правке статуса или текста.
+                    message.timestamp.as_millis(),
                 ],
             )
             .map_err(storage_error)?;
@@ -1233,13 +1370,22 @@ impl Storage {
     /// # Errors
     ///
     /// [`AegisError::Storage`] — запись не удалась.
-    pub fn set_message_status(&self, id: &MessageId, status: MessageStatus) -> Result<()> {
+    /// Время нужно, чтобы отметить строку изменённой: без этого
+    /// смена статуса не попала бы в инкрементальную копию, и
+    /// восстановленная переписка показывала бы «отправляется»
+    /// на давно доставленных сообщениях.
+    pub fn set_message_status(
+        &self,
+        id: &MessageId,
+        status: MessageStatus,
+        now: Timestamp,
+    ) -> Result<()> {
         let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
 
         connection
             .execute(
-                "UPDATE messages SET status = ? WHERE message_id = ?",
-                params![i64::from(status.as_u8()), id.as_bytes()],
+                "UPDATE messages SET status = ?, updated_at = ? WHERE message_id = ?",
+                params![i64::from(status.as_u8()), now.as_millis(), id.as_bytes()],
             )
             .map_err(storage_error)?;
 
@@ -1257,12 +1403,12 @@ impl Storage {
     /// # Errors
     ///
     /// [`AegisError::Storage`] — запись не удалась.
-    pub fn edit_message(&self, id: &MessageId, text: &str) -> Result<()> {
+    pub fn edit_message(&self, id: &MessageId, text: &str, now: Timestamp) -> Result<()> {
         let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
 
         conn.execute(
-            "UPDATE messages SET content = ? WHERE message_id = ?",
-            params![text.as_bytes(), id.as_bytes()],
+            "UPDATE messages SET content = ?, updated_at = ? WHERE message_id = ?",
+            params![text.as_bytes(), now.as_millis(), id.as_bytes()],
         )
         .map_err(storage_error)?;
 
@@ -1509,14 +1655,36 @@ impl Storage {
     pub fn purge_expired(&self, now: Timestamp) -> Result<usize> {
         let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
 
+        // Всё в одной транзакции: надгробия и удаление обязаны
+        // случиться вместе. Сбой между ними оставил бы либо
+        // сообщение без надгробия (вернётся из копии), либо
+        // надгробие без сообщения (безвредно, но лишнее).
+        let transaction = conn.unchecked_transaction().map_err(storage_error)?;
+
+        // 🔐 Надгробия ставятся **до** удаления: после него узнать,
+        // что именно исчезло, уже неоткуда.
+        transaction
+            .execute(
+                "
+            INSERT OR REPLACE INTO backup_tombstones (message_id, deleted_at)
+            SELECT message_id, ?
+            FROM messages
+            WHERE expires_at IS NOT NULL AND expires_at <= ?
+            ",
+                params![now.as_millis(), now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
         // Одним запросом: чистка по одному сообщению пережила бы сбой
         // посреди себя, оставив часть истёкших на диске.
-        let removed = conn
+        let removed = transaction
             .execute(
                 "DELETE FROM messages WHERE expires_at IS NOT NULL AND expires_at <= ?",
                 params![now.as_millis()],
             )
             .map_err(storage_error)?;
+
+        transaction.commit().map_err(storage_error)?;
 
         Ok(removed)
     }
@@ -1551,15 +1719,33 @@ impl Storage {
     /// # Errors
     ///
     /// [`AegisError::Storage`] — удаление не удалось.
-    pub fn delete_message(&self, id: &MessageId) -> Result<()> {
+    /// Время нужно для надгробия: без него удаление не доехало бы
+    /// до резервной копии, и сообщение вернулось бы при восстановлении
+    /// (см. `backup_tombstones`).
+    pub fn delete_message(&self, id: &MessageId, now: Timestamp) -> Result<()> {
         let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+        let transaction = connection
+            .unchecked_transaction()
+            .map_err(storage_error)?;
 
-        connection
+        transaction
+            .execute(
+                "
+            INSERT OR REPLACE INTO backup_tombstones (message_id, deleted_at)
+            VALUES (?, ?)
+            ",
+                params![id.as_bytes(), now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
+        transaction
             .execute(
                 "DELETE FROM messages WHERE message_id = ?",
                 params![id.as_bytes()],
             )
             .map_err(storage_error)?;
+
+        transaction.commit().map_err(storage_error)?;
 
         Ok(())
     }
@@ -2335,7 +2521,7 @@ mod tests {
             .unwrap();
 
         storage
-            .set_message_status(&id, MessageStatus::Delivered)
+            .set_message_status(&id, MessageStatus::Delivered, now())
             .unwrap();
 
         let loaded = storage.load_messages(&chat, 1).unwrap();
@@ -2365,7 +2551,7 @@ mod tests {
             })
             .unwrap();
 
-        storage.delete_message(&id).unwrap();
+        storage.delete_message(&id, now()).unwrap();
 
         assert!(storage.load_messages(&chat, 10).unwrap().is_empty());
     }
@@ -3156,6 +3342,9 @@ mod tests {
                 "ALTER TABLE known_contacts DROP COLUMN chat_id",
                 "ALTER TABLE known_contacts DROP COLUMN added_at",
                 "ALTER TABLE attachments DROP COLUMN descriptor",
+                // Столбец времени изменения добавляет миграция 4 → 5;
+                // без отката она повторилась бы на дубликате столбца.
+                "ALTER TABLE messages DROP COLUMN updated_at",
                 // own_keys откатывать не нужно: миграция 2 → 3
                 // пересоздаёт таблицу целиком и переживает повтор.
                 "UPDATE schema_version SET version = 1 WHERE id = 1",
@@ -3218,6 +3407,7 @@ mod tests {
                 // 3 → 4 выполнилась бы второй раз по уже изменённой
                 // таблице и упала на дубликате.
                 "ALTER TABLE attachments DROP COLUMN descriptor",
+                "ALTER TABLE messages DROP COLUMN updated_at",
                 "UPDATE schema_version SET version = 2 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");
