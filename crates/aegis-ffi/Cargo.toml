@@ -42,6 +42,7 @@ panic = "deny"
 # из манифеста, потому что не собирался и ломал сборку биндингов вместе
 # с собой.
 aegis-core.workspace = true
+aegis-backup.workspace = true
 aegis-keystore.workspace = true
 aegis-media.workspace = true
 aegis-protocol.workspace = true

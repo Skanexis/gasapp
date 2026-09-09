@@ -27,13 +27,17 @@
 //! определяется его API, а писать её вслепую значило бы закреплять
 //! догадки о форме, которой пока нет.
 
+pub mod backup;
 pub mod client;
 pub mod session;
 pub mod events;
 pub mod lock;
+pub mod vault;
 
+pub use backup::{BackupOutcome, BackupService, RestoreOutcome};
 pub use events::{AegisEvent, ConnState, DeliveryStatus, SecurityAlert};
 pub use lock::{LockGuard, LockState, DEFAULT_AUTO_LOCK_MILLIS};
+pub use vault::{VaultGuard, VaultState, DEFAULT_IDLE_TIMEOUT_MILLIS};
 
 use aegis_types::AccountId;
 

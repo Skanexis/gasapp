@@ -153,6 +153,42 @@
         <activity
             android:name=".AboutActivity"
             android:exported="false" />
+        <!--
+          Экраны резервного копирования и хранилища файлов (M6).
+
+          🔐 `excludeFromRecents` у экранов ключа: карточка приложения
+          в переключателе задач сохраняет заголовок экрана, а «Ключ
+          восстановления» в списке недавних — уже подсказка тому, кто
+          взял телефон в руки. Содержимое закрыто FLAG_SECURE, но сам
+          факт лучше не показывать.
+        -->
+        <activity
+            android:name=".RecoveryCenterActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".RecoveryKeyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
+        <activity
+            android:name=".RecoveryConfirmActivity"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
+        <activity
+            android:name=".RestoreActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".IdentityChangedActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".VaultActivity"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
         <!-- FFI service bindings will be added here -->
 
     </application>

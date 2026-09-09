@@ -30,6 +30,7 @@ use aegis_types::{AegisError, PublicKeyBytes};
 
 uniffi::setup_scaffolding!();
 
+pub mod backup;
 pub mod messenger;
 
 /// Длина отпечатка identity-ключа в байтах.

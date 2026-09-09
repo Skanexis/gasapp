@@ -9,6 +9,7 @@ import android.widget.ImageView
 import android.widget.Toast
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 
 /**
@@ -60,11 +61,8 @@ class SecurityCenterActivity : AppCompatActivity() {
             startActivity(Intent(this, DevicesActivity::class.java))
         }
 
-        // 🔐 Резервное копирование появится в M6. Пока говорим об этом
-        // прямо: строка, молча ничего не делающая, читается как
-        // поломка, а обещание «скоро» в интерфейсе устаревает молча.
         findViewById<View>(R.id.security_recovery).setOnClickListener {
-            Toast.makeText(this, R.string.security_not_ready, Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, RecoveryCenterActivity::class.java))
         }
 
         // Блокировка контактов появится вместе с работой над abuse.
@@ -106,8 +104,31 @@ class SecurityCenterActivity : AppCompatActivity() {
     private fun renderChecks() {
         bindRow(R.id.security_keys, R.drawable.ic_key, R.string.security_keys, null)
         bindRow(R.id.security_devices, R.drawable.ic_users, R.string.security_devices, "2")
-        bindRow(R.id.security_recovery, R.drawable.ic_shield, R.string.security_recovery, null)
+        bindRow(
+            R.id.security_recovery,
+            R.drawable.ic_shield,
+            R.string.security_recovery,
+            recoveryState(),
+        )
         bindRow(R.id.security_blocked, R.drawable.ic_alert, R.string.security_blocked, "1")
+    }
+
+    /**
+     * Состояние резервного копирования для строки проверок.
+     *
+     * 🔐 «Ключ не создан» — не украшение списка, а предупреждение:
+     * при таком состоянии потеря телефона означает потерю всей
+     * переписки, и восстановить её будет неоткуда.
+     */
+    private fun recoveryState(): String {
+        val configured = runCatching {
+            Core.messenger().backupStatus().configured
+        }.getOrDefault(false)
+
+        return getString(
+            if (configured) R.string.recovery_pill_configured
+            else R.string.recovery_pill_not_configured,
+        )
     }
 
     private fun bindRow(rowId: Int, iconRes: Int, labelRes: Int, value: String?) {

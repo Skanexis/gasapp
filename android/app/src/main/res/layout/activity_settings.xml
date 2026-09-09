@@ -185,6 +185,29 @@
                 android:layout_height="1dp"
                 android:background="@drawable/divider_row" />
 
+            <!--
+              Резервное копирование и хранилище файлов стоят рядом
+              с хранилищем, а не в разделе безопасности: для
+              пользователя это про данные, а не про ключи.
+            -->
+            <include
+                android:id="@+id/settings_recovery"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
+            <include
+                android:id="@+id/settings_vault"
+                layout="@layout/item_settings_row" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@drawable/divider_row" />
+
             <include
                 android:id="@+id/settings_about"
                 layout="@layout/item_settings_row" />

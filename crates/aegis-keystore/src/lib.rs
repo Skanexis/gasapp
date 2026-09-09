@@ -8,12 +8,16 @@
 //! - Поддерживает аппаратное хранение через трейт [`HardwareKeyProvider`]
 //! - Обеспечивает graceful degradation на устройствах без TEE
 pub mod pin;
+pub mod wrap;
+
+pub use wrap::{unwrap_key, wrap_key};
 
 use aegis_types::{AegisError, Result, Secret};
 use async_trait::async_trait;
 use hkdf::Hkdf;
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha256;
+use zeroize::Zeroizing;
 
 /// Размер ключей в байтах
 pub const KEY_SIZE: usize = 32;
@@ -26,6 +30,15 @@ pub const KEY_SIZE: usize = 32;
 const HKDF_SALT: &[u8] = b"AEGIS_KEYSTORE_SALT_V1";
 const INFO_KEK: &[u8] = b"AEGIS_KEK_DERIVATION";
 const INFO_DEK: &[u8] = b"AEGIS_DEK_DERIVATION";
+
+/// Метка вывода ключа File Vault (раздел 11.4 плана).
+///
+/// 🔐 Ключ выводится из того же мастер-ключа, но по отдельной метке,
+/// поэтому он независим от DEK, которым зашифрована база. Смысл
+/// разделения в том, что `K_vault` живёт в памяти **не всё время
+/// работы приложения**, а только пока vault открыт: разблокированное
+/// приложение с закрытым vault ключа от него не содержит.
+const INFO_VAULT: &[u8] = b"AEGIS_VAULT_DERIVATION";
 
 /// Иерархия ключей: Master Key -> KEK -> DEK
 ///
@@ -116,6 +129,29 @@ impl KeyHierarchy {
     #[must_use]
     pub const fn dek(&self) -> &Secret<[u8; KEY_SIZE]> {
         &self.data_encryption_key
+    }
+
+    /// Выводит ключ File Vault.
+    ///
+    /// # Почему выводится по требованию, а не хранится полем
+    ///
+    /// 🔐 Остальные ключи иерархии нужны всё время работы: без DEK
+    /// не открыть базу. `K_vault` нужен только пока пользователь
+    /// смотрит содержимое vault, и держать его в памяти постоянно
+    /// значило бы свести второй фактор к украшению — дамп памяти
+    /// разблокированного приложения выдавал бы и его.
+    ///
+    /// Поэтому ключ считается в момент успешной повторной
+    /// аутентификации, отдаётся вызывающему в [`Zeroizing`] и
+    /// обнуляется, как только vault закрывается.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой HKDF.
+    pub fn vault_key(&self) -> Result<Zeroizing<[u8; KEY_SIZE]>> {
+        let key = Self::derive_key(self.master_key.expose_secret(), INFO_VAULT)?;
+
+        Ok(Zeroizing::new(key))
     }
 }
 

@@ -39,8 +39,34 @@ object SettingsRow {
         destructive: Boolean = false,
         onClick: (() -> Unit)? = null,
     ) {
+        bind(
+            root = root,
+            title = root.context.getString(label),
+            value = value,
+            icon = icon,
+            destructive = destructive,
+            onClick = onClick,
+        )
+    }
+
+    /**
+     * Настраивает строку с подписью, известной только во время работы.
+     *
+     * Нужен там, где подпись — это данные, а не ресурс: имя файла
+     * в хранилище, имя контакта. Ресурсная перегрузка выше сводится
+     * к этой, чтобы поведение у обеих было одно и то же, а не
+     * «почти одно и то же».
+     */
+    fun bind(
+        root: View,
+        title: String,
+        value: String? = null,
+        @DrawableRes icon: Int? = null,
+        destructive: Boolean = false,
+        onClick: (() -> Unit)? = null,
+    ) {
         val labelView = root.findViewById<TextView>(R.id.row_label)
-        labelView.setText(label)
+        labelView.text = title
 
         if (destructive) {
             labelView.setTextColor(

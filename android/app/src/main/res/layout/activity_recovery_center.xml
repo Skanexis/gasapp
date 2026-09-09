@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Recovery Center (раздел 12.4 плана).
+
+  🔐 Экран объясняет главное свойство резервной копии: расшифровать её
+  можно только ключом восстановления, и второго экземпляра этого ключа
+  не существует. Предупреждение стоит внизу и набрано как тревога,
+  а не как примечание: человек, потерявший ключ, теряет переписку,
+  и узнать об этом он должен до, а не после.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/recovery_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/recovery_title" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:text="@string/recovery_intro" />
+
+            <!--
+              Состояние копии: три утверждения, каждое из которых либо
+              верно, либо нет. Пилюли, а не галочки в тексте: пользователь
+              должен видеть состояние, не читая абзац.
+            -->
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/recovery_section_state" />
+
+            <LinearLayout style="@style/AegisPanel">
+
+                <TextView
+                    android:id="@+id/recovery_pill_encrypted"
+                    style="@style/AegisPill.Ok"
+                    android:layout_marginBottom="@dimen/space_xs"
+                    android:text="@string/recovery_pill_encrypted" />
+
+                <TextView
+                    android:id="@+id/recovery_pill_server"
+                    style="@style/AegisPill.Ok"
+                    android:layout_marginBottom="@dimen/space_xs"
+                    android:text="@string/recovery_pill_server_cannot" />
+
+                <TextView
+                    android:id="@+id/recovery_pill_configured"
+                    style="@style/AegisPill.Warn"
+                    tools:text="Копия ещё не настроена" />
+
+                <TextView
+                    android:id="@+id/recovery_last"
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/space_s"
+                    tools:text="Последняя копия: 2 часа назад" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/recovery_section_actions" />
+
+            <LinearLayout style="@style/AegisPanel">
+
+                <org.aegis.app.components.AegisButton
+                    android:id="@+id/recovery_create"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/recovery_create"
+                    app:buttonVariant="primary" />
+
+                <org.aegis.app.components.AegisButton
+                    android:id="@+id/recovery_backup_now"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/recovery_backup_now"
+                    app:buttonVariant="secondary" />
+
+                <org.aegis.app.components.AegisButton
+                    android:id="@+id/recovery_restore"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/recovery_restore"
+                    app:buttonVariant="secondary" />
+
+                <!--
+                  Смена ключа помечена как разрушительная: она делает
+                  прежние копии недоступными этим устройством.
+                -->
+                <org.aegis.app.components.AegisButton
+                    android:id="@+id/recovery_new_key"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/recovery_new_key"
+                    app:buttonVariant="outline" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/recovery_status"
+                style="@style/AegisText.Caption"
+                android:layout_width="match_parent"
+                android:layout_marginTop="@dimen/space_m"
+                android:visibility="gone"
+                tools:text="Копия собрана: 128 записей"
+                tools:visibility="visible" />
+
+            <!--
+              Предупреждение внизу и последним: это то, с чем человек
+              уходит с экрана.
+            -->
+            <LinearLayout
+                style="@style/AegisPanel.Deep"
+                android:layout_marginTop="@dimen/space_l">
+
+                <TextView
+                    style="@style/AegisText.Body"
+                    android:layout_width="match_parent"
+                    android:text="@string/recovery_warning"
+                    android:textColor="@color/status_warn" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

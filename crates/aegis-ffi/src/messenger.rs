@@ -85,7 +85,7 @@ pub struct FfiHttpResponse {
 }
 
 /// Мост между колбэком платформы и внутренним трейтом транспорта.
-struct ForeignTransport {
+pub(crate) struct ForeignTransport {
     inner: std::sync::Arc<dyn HttpTransport>,
 }
 
@@ -210,6 +210,20 @@ pub struct Messenger {
     // и параллельная отправка двух сообщений в один чат провернула бы
     // храповик дважды из одного состояния, потеряв одно из них.
     client: Mutex<Client<ForeignTransport>>,
+}
+
+impl Messenger {
+    /// Берёт клиент под замком.
+    ///
+    /// Вынесено отдельным методом, потому что модуль `backup`
+    /// обращается к клиенту так же часто, как этот: повторять
+    /// `lock().map_err(...)` в каждой точке входа значит однажды
+    /// написать иначе и получить панику через границу FFI.
+    pub(crate) fn client(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Client<ForeignTransport>>, FfiError> {
+        self.client.lock().map_err(|_| FfiError::Panic)
+    }
 }
 
 #[uniffi::export]

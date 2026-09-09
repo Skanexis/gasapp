@@ -17,6 +17,9 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 aegis-protocol = { path = "../crates/aegis-protocol" }
 aegis-types = { path = "../crates/aegis-types" }
+# Разбор файла резервной копии: заголовок читается до проверки тега,
+# то есть на данных, подконтрольных тому, у кого файл.
+aegis-backup = { path = "../crates/aegis-backup" }
 # Версия совпадает с той, что использует `aegis-protocol`: иначе типы
 # источника случайности окажутся разными и не подойдут по трейтам.
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
@@ -54,5 +57,11 @@ doc = false
 [[bin]]
 name = "parse_safety_number"
 path = "fuzz_targets/parse_safety_number.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "backup_restore"
+path = "fuzz_targets/backup_restore.rs"
 test = false
 doc = false

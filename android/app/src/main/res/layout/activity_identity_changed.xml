@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Объяснение смены ключа безопасности после восстановления
+  (раздел 12.5 плана).
+
+  🔐 Зачем этот экран вообще существует. Резервная копия не содержит
+  ни приватного identity-ключа, ни состояния храповика — и это
+  осознанное решение: старое состояние храповика в копии означало бы
+  повторное использование message key после восстановления.
+
+  Цена решения в том, что собеседники увидят «ключ безопасности
+  изменился» — ровно то предупреждение, которым приложение сообщает
+  о возможной подмене. Не объяснить это здесь значит приучить
+  человека игнорировать настоящую тревогу: он однажды увидел её
+  без причины и перестал читать.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:text="@string/identity_changed_title" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                style="@style/AegisText.H3"
+                android:layout_width="match_parent"
+                android:text="@string/identity_changed_headline" />
+
+            <TextView
+                android:id="@+id/identity_changed_summary"
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/identity_changed_restored" />
+
+            <LinearLayout
+                style="@style/AegisPanel"
+                android:layout_marginTop="@dimen/space_l">
+
+                <TextView
+                    style="@style/AegisText.Body"
+                    android:layout_width="match_parent"
+                    android:text="@string/identity_changed_explain" />
+
+                <TextView
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:text="@string/identity_changed_why" />
+            </LinearLayout>
+
+            <!--
+              Что не восстановилось — списком и честно. Человек, который
+              ждёт, что переписка продолжится сама, иначе решит, что
+              приложение сломалось.
+            -->
+            <LinearLayout
+                style="@style/AegisPanel.Deep"
+                android:layout_marginTop="@dimen/space_m">
+
+                <TextView
+                    style="@style/AegisText.Caption"
+                    android:layout_width="match_parent"
+                    android:text="@string/identity_changed_not_restored" />
+            </LinearLayout>
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/identity_changed_verify"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/identity_changed_verify"
+                app:buttonVariant="primary" />
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/identity_changed_later"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/identity_changed_later"
+                app:buttonVariant="ghost" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

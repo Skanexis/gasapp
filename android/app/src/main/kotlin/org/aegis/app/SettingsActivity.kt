@@ -117,6 +117,22 @@ class SettingsActivity : AppCompatActivity() {
             null,
         )
 
+        // Резервное копирование показывает своё состояние прямо
+        // в строке: «ключ не создан» — это то, что человек должен
+        // увидеть, не заходя внутрь.
+        bindRow(
+            R.id.settings_recovery,
+            R.drawable.ic_key,
+            R.string.settings_recovery,
+            backupSummary(),
+        )
+        bindRow(
+            R.id.settings_vault,
+            R.drawable.ic_lock,
+            R.string.settings_vault,
+            null,
+        )
+
         // Устройство ровно одно, пока нет связывания: показывать
         // выдуманное число рядом с настройкой безопасности нельзя.
         bindRow(R.id.settings_devices, R.drawable.ic_users, R.string.settings_devices, "1")
@@ -129,6 +145,26 @@ class SettingsActivity : AppCompatActivity() {
         open(R.id.settings_storage, StorageActivity::class.java)
         open(R.id.settings_devices, DevicesActivity::class.java)
         open(R.id.settings_about, AboutActivity::class.java)
+        open(R.id.settings_recovery, RecoveryCenterActivity::class.java)
+        open(R.id.settings_vault, VaultActivity::class.java)
+    }
+
+    /**
+     * Подпись строки резервного копирования.
+     *
+     * 🔐 «Ключ не создан» показывается прямо в настройках: это
+     * состояние, при котором потеря телефона означает потерю всей
+     * переписки, и узнавать о нём, заходя внутрь, поздно.
+     */
+    private fun backupSummary(): String {
+        val configured = runCatching {
+            Core.messenger().backupStatus().configured
+        }.getOrDefault(false)
+
+        return getString(
+            if (configured) R.string.recovery_pill_configured
+            else R.string.recovery_pill_not_configured,
+        )
     }
 
     /** Связывает строку с экраном, который она открывает. */

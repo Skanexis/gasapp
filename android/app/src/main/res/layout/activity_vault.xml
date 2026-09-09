@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  File Vault: файлы под вторым фактором (раздел 11.4 плана).
+
+  🔐 Экран имеет два состояния, и закрытое — не заглушка, а рабочее
+  состояние: на нём видно только число файлов. Имена файлов уже
+  говорят достаточно («паспорт.pdf», «результаты анализов.jpg»),
+  поэтому список появляется лишь после повторной аутентификации.
+
+  Экран всегда под FLAG_SECURE, независимо от общей настройки:
+  снимок содержимого vault попадает в галерею и оттуда в облако.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/vault_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/vault_title" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Закрыть vault вручную, не дожидаясь таймаута. -->
+        <ImageView
+            android:id="@+id/vault_seal"
+            style="@style/AegisIconButton"
+            android:contentDescription="@string/vault_seal"
+            android:src="@drawable/ic_lock"
+            android:tint="@color/text_primary"
+            android:visibility="gone"
+            tools:visibility="visible" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <!-- === Закрытое состояние === -->
+            <LinearLayout
+                android:id="@+id/vault_sealed_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/AegisText.Body"
+                    android:layout_width="match_parent"
+                    android:text="@string/vault_sealed_explain" />
+
+                <LinearLayout
+                    style="@style/AegisPanel"
+                    android:layout_marginTop="@dimen/space_l">
+
+                    <TextView
+                        android:id="@+id/vault_count"
+                        style="@style/AegisText.Body.Secondary"
+                        android:layout_width="match_parent"
+                        tools:text="В хранилище 3 файла" />
+
+                    <EditText
+                        android:id="@+id/vault_pin"
+                        style="@style/AegisInput"
+                        android:layout_width="match_parent"
+                        android:layout_marginTop="@dimen/space_m"
+                        android:autofillHints=""
+                        android:hint="@string/vault_pin_hint"
+                        android:importantForAutofill="no"
+                        android:inputType="numberPassword"
+                        android:textColor="@color/text_primary" />
+
+                    <org.aegis.app.components.AegisButton
+                        android:id="@+id/vault_unlock"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_m"
+                        android:text="@string/vault_unlock"
+                        app:buttonVariant="primary" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:text="@string/vault_reauth_note" />
+            </LinearLayout>
+
+            <!-- === Открытое состояние === -->
+            <LinearLayout
+                android:id="@+id/vault_open_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <TextView
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:text="@string/vault_auto_seal" />
+
+                <org.aegis.app.components.AegisButton
+                    android:id="@+id/vault_add"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:text="@string/vault_add"
+                    app:buttonVariant="secondary" />
+
+                <!--
+                  Список файлов собирается кодом: строк немного,
+                  а RecyclerView здесь стоил бы адаптера ради десятка
+                  элементов.
+                -->
+                <LinearLayout
+                    android:id="@+id/vault_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/vault_empty"
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:text="@string/vault_empty"
+                    android:visibility="gone"
+                    tools:visibility="visible" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/vault_status"
+                style="@style/AegisText.Caption"
+                android:layout_width="match_parent"
+                android:layout_marginTop="@dimen/space_m"
+                android:visibility="gone"
+                tools:text="Файл добавлен"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>
