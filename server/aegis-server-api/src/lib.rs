@@ -37,6 +37,7 @@ pub mod push;
 pub mod authz;
 pub mod hub;
 pub mod auth;
+pub mod certificate;
 pub mod pow;
 pub mod rate_limit;
 pub mod routes;

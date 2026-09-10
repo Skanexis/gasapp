@@ -9,7 +9,24 @@ import java.net.Socket
 import java.net.URI
 import java.security.SecureRandom
 import java.util.Base64
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
+
+/**
+ * Потолок задержки переподключения через прокси: 15 секунд.
+ *
+ * Через Tor цепочки рвутся чаще, и минута ожидания после каждого
+ * обрыва означала бы минуту без уведомлений (ADR-024).
+ */
+private const val PROXIED_MAX_RETRY_MS = 15_000L
+
+/**
+ * Ожидание установления соединения сокета.
+ *
+ * С запасом на построение цепочки Tor.
+ */
+private const val SOCKET_CONNECT_TIMEOUT_MS = 30_000
 
 /**
  * Сокет уведомлений о новых конвертах.
@@ -67,7 +84,10 @@ class NotificationSocket(
                 // в секунду разряжали бы батарею и создавали узнаваемый
                 // рисунок трафика; отказ после первой неудачи оставил бы
                 // пользователя без уведомлений до перезапуска.
-                delay = if (clean) MIN_RETRY_MS else (delay * 2).coerceAtMost(MAX_RETRY_MS)
+                //
+                // Через прокси потолок ниже: цепочки Tor рвутся чаще.
+                val ceiling = if (NetworkProxy.isProxied) PROXIED_MAX_RETRY_MS else MAX_RETRY_MS
+                delay = if (clean) MIN_RETRY_MS else (delay * 2).coerceAtMost(ceiling)
 
                 runCatching { Thread.sleep(delay) }
             }
@@ -98,13 +118,37 @@ class NotificationSocket(
         val secure = uri.scheme == "https"
         val port = if (uri.port > 0) uri.port else if (secure) DEFAULT_TLS_PORT else DEFAULT_PORT
 
+        // 🔐 Сокет открывается через тот же прокси, что и HTTP: сокет,
+        // идущий напрямую при включённом Tor, выдал бы адрес так же,
+        // как и запрос. При закрытой сети соединение не открывается.
+        val raw = NetworkProxy.connect(uri.host, port, SOCKET_CONNECT_TIMEOUT_MS)
+
         val connection = if (secure) {
             // Фабрика платформы: она применяет network_security_config,
             // включая пиннинг. Свой SSLContext здесь означал бы отказ
-            // от этих проверок.
-            SSLSocketFactory.getDefault().createSocket(uri.host, port)
+            // от этих проверок. TLS накладывается поверх уже открытого,
+            // возможно проксированного, сокета — до сервера, а не до прокси.
+            val tls = (SSLSocketFactory.getDefault() as SSLSocketFactory)
+                .createSocket(raw, uri.host, port, true) as SSLSocket
+
+            tls.startHandshake()
+
+            // 🔐 Сверка имени хоста с сертификатом.
+            //
+            // `HttpsURLConnection` сверяет имя сам, а голый `SSLSocket` —
+            // нет: прежде сокет уведомлений принимал любой сертификат,
+            // прошедший цепочку доверия, с чужим именем. Сверка через
+            // HostnameVerifier, а не через SSLParameters, потому что
+            // последний путь есть только с Android 7.0, а приложение
+            // поддерживает 5.0.
+            if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(uri.host, tls.session)) {
+                tls.close()
+                throw IOException("имя сервера не совпало с сертификатом")
+            }
+
+            tls
         } else {
-            Socket(uri.host, port)
+            raw
         }
 
         socket = connection

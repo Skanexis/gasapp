@@ -27,6 +27,7 @@ pub mod client;
 pub mod pow;
 pub mod pinning;
 pub mod queue;
+pub mod proxy;
 
 pub use api::{
     BundleResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest, RegisterRequest,

@@ -18,6 +18,10 @@ sqlx.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+# Хеш и сравнение за постоянное время: ключ доступа sealed sender
+# хранится хешем, а сверка не должна утекать по времени ответа.
+sha2.workspace = true
+subtle.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

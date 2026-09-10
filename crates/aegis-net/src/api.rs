@@ -137,3 +137,56 @@ pub struct EnvelopeResponse {
     /// корреляции отправителя с получателем (раздел 15 плана).
     pub queued_at_bucketed: i64,
 }
+
+/// Запрос анонимной отправки (sealed sender, раздел 15.2).
+///
+/// 🔐 Подписи здесь нет намеренно: она и была бы той меткой
+/// отправителя, которую sealed sender убирает. Право на отправку
+/// доказывается ключом доступа получателя.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedSendRequest {
+    /// Устройство-получатель.
+    pub destination_device_id: String,
+    /// Запечатанный конверт, hex. Сервер его не разбирает.
+    pub sealed: String,
+    /// Ключ доступа получателя, hex.
+    pub access_key: Option<String>,
+}
+
+/// Ключ доступа, публикуемый получателем.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedAccessRequest {
+    /// SHA-256 от ключа доступа, hex.
+    ///
+    /// 🔐 Уходит именно хеш: сам ключ сервер знать не должен.
+    pub access_key_hash: String,
+    /// Принимать ли конверты вообще без ключа доступа.
+    pub allow_from_anyone: bool,
+}
+
+/// Сертификат отправителя, выданный сервером.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateResponse {
+    /// Сертификат целиком, hex.
+    pub certificate: String,
+    /// Момент истечения, миллисекунды.
+    pub expires_at_millis: i64,
+    /// Публичный ключ сервера, hex.
+    pub server_key: String,
+}
+
+/// Жалоба на отправителя, раскрытого получателем.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedReportRequest {
+    /// Сертификат отправителя, извлечённый из конверта, hex.
+    pub certificate: String,
+}
+
+/// Ответ на жалобу.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedReportResponse {
+    /// Учтена ли жалоба.
+    pub recorded: bool,
+    /// Сколько разных людей пожаловались на этот аккаунт.
+    pub total_reporters: i64,
+}

@@ -163,6 +163,69 @@ fn derive_nonce(key: &[u8; KEY_LEN]) -> Result<[u8; NONCE_LEN]> {
     Ok(nonce)
 }
 
+/// Шифрует ключом и **явно заданным** nonce.
+///
+/// # Когда это нужно, а когда нет
+///
+/// [`MessageKey`] выводит nonce из самого ключа и потребляет себя,
+/// потому что message key в храповике одноразовый по построению.
+/// Есть места, где это не так: внешний слой sealed sender шифрует
+/// ключом, выведенным из эфемерной пары, и уникальность там даёт
+/// не одноразовость ключа, а сама эфемерность.
+///
+/// ⚠️ Вызывающий отвечает за то, что пара «ключ, nonce» не
+/// повторится. Повтор в GCM раскрывает и оба открытых текста,
+/// и подключ аутентификации — то есть ломает и конфиденциальность,
+/// и целостность. Если уникальность не очевидна из устройства
+/// вызывающего кода, брать нужно [`MessageKey`], а не эту функцию.
+///
+/// # Errors
+///
+/// [`AegisError::Crypto`] — сбой AEAD.
+pub fn seal_with_key(
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+    plaintext: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| AegisError::Crypto)?;
+
+    cipher
+        .encrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
+        .map_err(|_| AegisError::Crypto)
+}
+
+/// Расшифровывает то, что зашифровано [`seal_with_key`].
+///
+/// # Errors
+///
+/// [`AegisError::Crypto`] — тег не сходится: не тот ключ, не тот
+/// nonce, не те `aad` либо данные изменены.
+pub fn open_with_key(
+    key: &[u8; KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| AegisError::Crypto)?;
+
+    cipher
+        .decrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
+        .map_err(|_| AegisError::Crypto)
+}
+
 /// HKDF-SHA-256: извлечение и расширение за один шаг.
 ///
 /// Обёртка над `hkdf` с фиксированным `Sha256`, чтобы вызывающий код

@@ -86,6 +86,23 @@
             </LinearLayout>
 
             <!--
+              🔐 Сеть: IP-адрес — последняя крупная утечка раздела 15.5.
+              Строка ведёт на отдельный экран: выбор прокси требует
+              пояснений, которые не помещаются в переключатель.
+            -->
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/privacy_section_network" />
+
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/privacy_network"
+                    layout="@layout/item_settings_row" />
+            </LinearLayout>
+
+            <!--
               🔐 Пояснение о пределах защиты.
 
               Блокировка снимков экрана не мешает сфотографировать

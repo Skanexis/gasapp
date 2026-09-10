@@ -189,6 +189,10 @@
             android:excludeFromRecents="true"
             android:exported="false" />
 
+        <activity
+            android:name=".NetworkActivity"
+            android:exported="false" />
+
         <!-- FFI service bindings will be added here -->
 
     </application>

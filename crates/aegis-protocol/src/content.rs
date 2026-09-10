@@ -67,6 +67,12 @@ const KIND_TYPING: u8 = 6;
 /// Тип: квитанция о прочтении.
 const KIND_READ_RECEIPT: u8 = 7;
 
+/// Тип: ключ доступа sealed sender.
+const KIND_ACCESS_KEY: u8 = 8;
+
+/// Длина ключа доступа sealed sender.
+pub const ACCESS_KEY_LEN: usize = 32;
+
 /// Длина идентификатора сообщения.
 const MESSAGE_ID_LEN: usize = 16;
 
@@ -160,17 +166,70 @@ pub enum Content {
         /// Последнее прочитанное сообщение.
         until: [u8; MESSAGE_ID_LEN],
     },
+
+    /// Ключ доступа sealed sender (раздел 15.2).
+    ///
+    /// # Зачем он передаётся сообщением
+    ///
+    /// 🔐 При sealed sender сервер не знает отправителя, и без
+    /// дополнительной проверки писать анонимно мог бы кто угодно
+    /// кому угодно. Ключ доступа — ответ на это: сервер сверяет
+    /// его с хешем, не узнавая, кто предъявил, и пропускает только
+    /// тех, кому получатель ключ дал.
+    ///
+    /// Ключ раздаётся **внутри переписки**, то есть под сквозным
+    /// шифрованием: сервер не видит, кому он выдан, и потому не может
+    /// построить по нему список контактов.
+    ///
+    /// ⚠️ Отсюда следует порядок, который стоит понимать честно:
+    /// первое сообщение собеседнику идёт обычным путём — сервер
+    /// видит отправителя, — а запечатанными становятся последующие.
+    /// Скрыть первое нечем: пока ключ не передан, доказать право
+    /// на анонимную отправку невозможно.
+    ///
+    /// Ключ не секрет в криптографическом смысле: он ничего
+    /// не шифрует и не подписывает. Его утечка означает лишь, что
+    /// укравший сможет писать владельцу анонимно, — а не читать
+    /// его переписку.
+    AccessKey {
+        /// Сам ключ.
+        key: [u8; ACCESS_KEY_LEN],
+    },
 }
 
 impl Content {
-    /// Сериализует содержимое для отправки.
+    /// Сериализует содержимое для отправки, дополняя его до бакета.
+    ///
+    /// # 🔐 Почему padding здесь, а не отдельным вызовом
+    ///
+    /// Раздел 15.3 требует, чтобы **все** шифротексты имели размер
+    /// из списка бакетов. Отдельная функция `pad`, которую нужно
+    /// не забыть вызвать, однажды была бы забыта — и забытой
+    /// оказалась бы ровно та ветка кода, которую реже всего трогают.
+    /// Поэтому padding встроен в сериализацию: получить содержимое
+    /// без него нельзя, не написав это явно ([`Content::to_unpadded_bytes`]).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — поле выходит за допустимые границы
+    /// либо содержимое не помещается в наибольший бакет.
+    /// Отказ на своей стороне лучше отправки сообщения, которое
+    /// получатель обязан отвергнуть.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        crate::padding::pad(&self.to_unpadded_bytes()?)
+    }
+
+    /// Сериализует содержимое **без** padding.
+    ///
+    /// ⚠️ Результат отличим по длине и в сеть уходить не должен.
+    /// Метод существует для тестов формата и для случаев, когда
+    /// содержимое кладётся внутрь другой структуры, которую
+    /// дополняют целиком.
     ///
     /// # Errors
     ///
     /// [`AegisError::Malformed`] — поле выходит за допустимые границы.
-    /// Отказ на своей стороне лучше отправки сообщения, которое
-    /// получатель обязан отвергнуть.
-    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+    pub fn to_unpadded_bytes(&self) -> Result<Vec<u8>> {
         let mut out = vec![CONTENT_VERSION];
 
         match self {
@@ -224,6 +283,10 @@ impl Content {
                 out.push(KIND_READ_RECEIPT);
                 out.extend_from_slice(until);
             }
+            Self::AccessKey { key } => {
+                out.push(KIND_ACCESS_KEY);
+                out.extend_from_slice(key);
+            }
         }
 
         Ok(out)
@@ -238,6 +301,16 @@ impl Content {
     /// подробный разбор причины подсказывал бы, как собрать
     /// сообщение, которое пройдёт.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Self::from_unpadded_bytes(crate::padding::unpad(bytes)?)
+    }
+
+    /// Разбирает содержимое, с которого padding уже снят.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — неизвестная версия или тип, обрыв
+    /// данных, превышение предела.
+    pub fn from_unpadded_bytes(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
 
         if reader.take_u8()? != CONTENT_VERSION {
@@ -300,6 +373,9 @@ impl Content {
             },
             KIND_READ_RECEIPT => Self::ReadReceipt {
                 until: reader.take_id()?,
+            },
+            KIND_ACCESS_KEY => Self::AccessKey {
+                key: reader.take_access_key()?,
             },
             _ => return Err(AegisError::Malformed),
         };
@@ -413,6 +489,13 @@ impl<'a> Reader<'a> {
 
     fn take_id(&mut self) -> Result<[u8; MESSAGE_ID_LEN]> {
         self.take_slice(MESSAGE_ID_LEN)?
+            .try_into()
+            .map_err(|_| AegisError::Malformed)
+    }
+
+    /// Читает ключ доступа sealed sender.
+    fn take_access_key(&mut self) -> Result<[u8; ACCESS_KEY_LEN]> {
+        self.take_slice(ACCESS_KEY_LEN)?
             .try_into()
             .map_err(|_| AegisError::Malformed)
     }
@@ -568,13 +651,87 @@ mod tests {
         }
     }
 
-    /// Лишние байты в хвосте отвергаются.
+    /// Лишние байты в хвосте отвергаются самим разбором.
+    ///
+    /// Проверяется `from_unpadded_bytes`, а не `from_bytes`: у второго
+    /// лишний байт сломал бы длину бакета, и тест проходил бы, не
+    /// проверяя разбор вовсе. Хвост обязан отвергаться **до** и
+    /// **после** появления padding.
     #[test]
     fn trailing_bytes_are_rejected() {
         let mut bytes = Content::Delete { target: id(1) }
-            .to_bytes()
+            .to_unpadded_bytes()
             .expect("сериализация");
         bytes.push(0);
+
+        assert!(Content::from_unpadded_bytes(&bytes).is_err());
+    }
+
+    /// 🔐 Содержимое уходит в сеть дополненным до бакета.
+    ///
+    /// Это то самое свойство раздела 15.3, ради которого padding
+    /// встроен в сериализацию: получить недополненные байты можно
+    /// только вызвав `to_unpadded_bytes` явно.
+    #[test]
+    fn serialized_content_is_always_bucketed() {
+        let cases = [
+            Content::Text {
+                body: "ок".to_owned(),
+                reply_to: None,
+            },
+            Content::Delete { target: id(1) },
+            Content::Typing { active: true },
+            Content::Text {
+                body: "а".repeat(2000),
+                reply_to: Some(id(2)),
+            },
+        ];
+
+        for content in cases {
+            let bytes = content.to_bytes().expect("сериализация");
+
+            assert!(
+                crate::padding::BUCKETS.contains(&bytes.len()),
+                "размер {} не из списка бакетов",
+                bytes.len()
+            );
+            assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+        }
+    }
+
+    /// 🔐 Короткое и длинное сообщение одного бакета неразличимы.
+    #[test]
+    fn short_and_long_messages_look_the_same() {
+        let short = Content::Text {
+            body: "ок".to_owned(),
+            reply_to: None,
+        }
+        .to_bytes()
+        .expect("сериализация");
+
+        let long = Content::Text {
+            body: "я не приду, потому что ".repeat(8),
+            reply_to: None,
+        }
+        .to_bytes()
+        .expect("сериализация");
+
+        assert_eq!(
+            short.len(),
+            long.len(),
+            "длина сообщения видна по размеру шифротекста"
+        );
+    }
+
+    /// Недополненные байты в сеть не принимаются.
+    ///
+    /// Отправитель, не применивший padding, отличим по размеру,
+    /// и принимать от него молча значит поощрять утечку.
+    #[test]
+    fn unpadded_bytes_are_not_accepted_by_from_bytes() {
+        let bytes = Content::Delete { target: id(1) }
+            .to_unpadded_bytes()
+            .expect("сериализация");
 
         assert!(Content::from_bytes(&bytes).is_err());
     }
@@ -639,6 +796,51 @@ mod tests {
         let bytes = content.to_bytes().expect("сериализация");
 
         assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+    }
+
+    /// Ключ доступа sealed sender переживает сериализацию.
+    #[test]
+    fn access_key_round_trips() {
+        let content = Content::AccessKey {
+            key: [0x5Au8; ACCESS_KEY_LEN],
+        };
+        let bytes = content.to_bytes().expect("сериализация");
+
+        assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+    }
+
+    /// 🔐 Ключ доступа не виден в сериализованном виде без шифрования?
+    ///
+    /// Нет — и это правильно: содержимое здесь **не зашифровано**,
+    /// шифрует его ратчет уровнем выше. Тест фиксирует именно это
+    /// ожидание, чтобы никто не принял `to_bytes` за защиту.
+    ///
+    /// Проверяется другое: ключ уходит целиком и не обрезается.
+    #[test]
+    fn access_key_is_carried_whole() {
+        let key = [0x33u8; ACCESS_KEY_LEN];
+        let bytes = Content::AccessKey { key }
+            .to_unpadded_bytes()
+            .expect("сериализация");
+
+        assert!(
+            bytes.windows(ACCESS_KEY_LEN).any(|window| window == key),
+            "ключ доступа потерялся при сериализации"
+        );
+    }
+
+    /// Обрезанный ключ доступа отвергается, а не дополняется нулями.
+    #[test]
+    fn truncated_access_key_is_rejected() {
+        let mut bytes = Content::AccessKey {
+            key: [0x11u8; ACCESS_KEY_LEN],
+        }
+        .to_unpadded_bytes()
+        .expect("сериализация");
+
+        bytes.truncate(bytes.len().saturating_sub(1));
+
+        assert!(Content::from_unpadded_bytes(&bytes).is_err());
     }
 
     /// Булев флаг имеет ровно два состояния.

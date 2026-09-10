@@ -20,8 +20,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use aegis_net::api::{
-    BundleResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest, RegisterRequest,
-    RegisterResponse, SendRequest,
+    BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
+    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
+    SealedReportResponse, SealedSendRequest, SendRequest,
 };
 
 /// Возвращает отсортированный список полей JSON-объекта.
@@ -219,4 +220,101 @@ fn ciphertext_stays_opaque() {
 
     assert_eq!(ciphertext, "00ff");
     assert_eq!(hex::decode(ciphertext).unwrap(), vec![0x00, 0xFF]);
+}
+
+// --- Sealed sender (раздел 15.2) ---
+
+/// Поля анонимной отправки совпадают с серверными.
+///
+/// 🔐 Расхождение здесь означало бы, что sealed sender молча
+/// не работает: сервер отвечал бы 400 на каждую попытку, и клиент
+/// откатывался бы на обычную отправку — то есть на ту, где
+/// отправитель виден.
+#[test]
+fn sealed_send_request_matches_server_contract() {
+    let request = SealedSendRequest {
+        destination_device_id: "11111111-1111-1111-1111-111111111111".to_owned(),
+        sealed: "aabb".to_owned(),
+        access_key: Some("ccdd".to_owned()),
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+
+    assert_eq!(
+        field_names(&json),
+        vec!["access_key", "destination_device_id", "sealed"]
+    );
+}
+
+/// Отсутствующий ключ доступа сериализуется как `null`, а не пропадает.
+///
+/// Сервер читает поле как `Option`, и пропуск поля тоже разобрался бы.
+/// Тест фиксирует форму, чтобы смена на `skip_serializing_if` была
+/// осознанным решением, а не побочным эффектом правки.
+#[test]
+fn sealed_send_request_keeps_absent_access_key() {
+    let request = SealedSendRequest {
+        destination_device_id: "11111111-1111-1111-1111-111111111111".to_owned(),
+        sealed: "aabb".to_owned(),
+        access_key: None,
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+
+    assert!(json.contains("\"access_key\":null"), "форма изменилась: {json}");
+}
+
+/// Поля публикации ключа доступа совпадают с серверными.
+#[test]
+fn sealed_access_request_matches_server_contract() {
+    let request = SealedAccessRequest {
+        access_key_hash: "aabb".to_owned(),
+        allow_from_anyone: false,
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+
+    assert_eq!(
+        field_names(&json),
+        vec!["access_key_hash", "allow_from_anyone"]
+    );
+}
+
+/// Ответ с сертификатом разбирается в клиентский тип.
+#[test]
+fn certificate_response_parses_server_shape() {
+    let json = r#"{
+        "certificate": "aabb",
+        "expires_at_millis": 1760000000000,
+        "server_key": "ccdd"
+    }"#;
+
+    let response: CertificateResponse = serde_json::from_str(json).unwrap();
+
+    assert_eq!(response.certificate, "aabb");
+    assert_eq!(response.expires_at_millis, 1_760_000_000_000);
+    assert_eq!(response.server_key, "ccdd");
+}
+
+/// Поля жалобы совпадают с серверными.
+#[test]
+fn sealed_report_request_matches_server_contract() {
+    let request = SealedReportRequest {
+        certificate: "aabb".to_owned(),
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+
+    assert_eq!(field_names(&json), vec!["certificate"]);
+}
+
+/// Ответ на жалобу разбирается в клиентский тип.
+#[test]
+fn sealed_report_response_parses_server_shape() {
+    let json = r#"{"recorded": true, "total_reporters": 3}"#;
+
+    let response: SealedReportResponse = serde_json::from_str(json).unwrap();
+
+    assert!(response.recorded);
+    assert_eq!(response.total_reporters, 3);
 }

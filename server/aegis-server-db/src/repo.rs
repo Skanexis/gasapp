@@ -15,7 +15,9 @@
 //! как непрозрачный массив байт и отдаёт его получателю — ключей у него
 //! нет, и разбирать нечем.
 
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use crate::{bucket_to_hour, DEVICE_ATTACHMENT_QUOTA_BYTES, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES};
@@ -733,4 +735,170 @@ pub async fn delete_push_token(pool: &PgPool, device_id: Uuid) -> Result<(), Rep
         .map_err(|_| RepoError::Database)?;
 
     Ok(())
+}
+
+// --- Sealed sender (раздел 15.2) ---
+
+/// Аккаунт и identity-ключ устройства — то, что попадает в сертификат.
+#[derive(Debug, Clone)]
+pub struct DeviceSubject {
+    /// Аккаунт, которому принадлежит устройство.
+    pub account_id: Uuid,
+    /// Публичный identity-ключ устройства.
+    pub identity_key: Vec<u8>,
+}
+
+/// Читает аккаунт и ключ устройства для выдачи сертификата.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы либо устройства нет.
+pub async fn device_subject(pool: &PgPool, device_id: Uuid) -> Result<DeviceSubject, RepoError> {
+    let row: (Uuid, Vec<u8>) =
+        sqlx::query_as("SELECT account_id, identity_key FROM devices WHERE device_id = $1")
+            .bind(device_id)
+            .fetch_one(pool)
+            .await?;
+
+    Ok(DeviceSubject {
+        account_id: row.0,
+        identity_key: row.1,
+    })
+}
+
+/// Сохраняет хеш ключа доступа устройства.
+///
+/// 🔐 Принимается именно хеш: сам ключ сервер знать не должен, иначе
+/// утечка дампа позволила бы писать анонимно любому пользователю.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn set_sealed_sender_access(
+    pool: &PgPool,
+    device_id: Uuid,
+    access_key_hash: &[u8],
+    allow_from_anyone: bool,
+) -> Result<(), RepoError> {
+    sqlx::query(
+        "
+        INSERT INTO sealed_sender_access (device_id, access_key_hash, allow_from_anyone, updated_at)
+        VALUES ($1, $2, $3, now())
+        ON CONFLICT (device_id) DO UPDATE
+            SET access_key_hash = EXCLUDED.access_key_hash,
+                allow_from_anyone = EXCLUDED.allow_from_anyone,
+                updated_at = now()
+        ",
+    )
+    .bind(device_id)
+    .bind(access_key_hash)
+    .bind(allow_from_anyone)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Проверяет предъявленный ключ доступа получателя.
+///
+/// Возвращает `true`, если анонимную отправку этому устройству
+/// разрешено принять.
+///
+/// # 🔐 Про сравнение
+///
+/// Сравниваются хеши, и сравнение идёт за постоянное время: обычное
+/// `==` на срезах выходит по первому расхождению, и по времени ответа
+/// подбирался бы правильный префикс.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn check_sealed_sender_access(
+    pool: &PgPool,
+    device_id: Uuid,
+    presented_key: Option<&[u8]>,
+) -> Result<bool, RepoError> {
+    let row: Option<(Vec<u8>, bool)> = sqlx::query_as(
+        "SELECT access_key_hash, allow_from_anyone FROM sealed_sender_access WHERE device_id = $1",
+    )
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?;
+
+    // Устройство не публиковало ключ доступа — значит, анонимную
+    // отправку не включало. Отказ, а не разрешение: умолчание обязано
+    // быть в пользу тишины.
+    let Some((stored_hash, allow_from_anyone)) = row else {
+        return Ok(false);
+    };
+
+    if allow_from_anyone {
+        return Ok(true);
+    }
+
+    let Some(presented) = presented_key else {
+        return Ok(false);
+    };
+
+    let presented_hash = Sha256::digest(presented);
+
+    Ok(bool::from(presented_hash.as_slice().ct_eq(&stored_hash)))
+}
+
+/// Записывает жалобу на отправителя.
+///
+/// Возвращает `false`, если такая жалоба уже была: повторная от того
+/// же жалобщика на того же отправителя не считается второй.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn record_sealed_sender_report(
+    pool: &PgPool,
+    reported_account: Uuid,
+    reported_device: Uuid,
+    complainant_device: Uuid,
+) -> Result<bool, RepoError> {
+    let result = sqlx::query(
+        "
+        INSERT INTO sealed_sender_reports
+            (report_id, reported_account, reported_device, complainant_device)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (complainant_device, reported_device) DO NOTHING
+        ",
+    )
+    .bind(Uuid::new_v4())
+    .bind(reported_account)
+    .bind(reported_device)
+    .bind(complainant_device)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Сколько разных людей пожаловались на аккаунт.
+///
+/// Считаются жалобщики, а не жалобы: один человек, пожаловавшийся
+/// десять раз, — это один недовольный, а не десять.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn sealed_sender_report_count(
+    pool: &PgPool,
+    reported_account: Uuid,
+) -> Result<i64, RepoError> {
+    let row: (i64,) = sqlx::query_as(
+        "
+        SELECT count(DISTINCT complainant_device)
+        FROM sealed_sender_reports
+        WHERE reported_account = $1
+        ",
+    )
+    .bind(reported_account)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row.0)
 }

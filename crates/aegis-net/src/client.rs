@@ -24,8 +24,9 @@
 use aegis_types::{AegisError, Result};
 
 use crate::api::{
-    BundleResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest, RegisterRequest,
-    RegisterResponse, SendRequest,
+    BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
+    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
+    SealedReportResponse, SealedSendRequest, SendRequest,
 };
 
 /// Метод HTTP.
@@ -218,6 +219,96 @@ impl<T: Transport> ApiClient<T> {
             Method::Post,
             "/v1/messages".to_owned(),
             Some(to_json(request)?),
+        )?;
+
+        parse(&response)
+    }
+
+    /// Отправляет запечатанный конверт, не называя отправителя.
+    ///
+    /// # 🔐 Чем это отличается от [`ApiClient::send_envelope`]
+    ///
+    /// Запрос не подписывается: сервер не узнаёт, кто отправитель.
+    /// Право на отправку доказывается ключом доступа получателя,
+    /// который тот раздал своим собеседникам внутри переписки.
+    ///
+    /// Что сервер всё равно видит: IP отправителя и время. От этого
+    /// защищает Tor или прокси (ADR-024), а не sealed sender.
+    ///
+    /// # Errors
+    ///
+    /// * [`AegisError::Malformed`] — конверт превышает лимит;
+    /// * [`AegisError::Network`] — сбой соединения, лимит частоты
+    ///   либо получатель не принимает анонимные сообщения.
+    pub fn send_sealed(&self, request: &SealedSendRequest) -> Result<String> {
+        let response = self.send(
+            Method::Post,
+            "/v1/sealed/messages".to_owned(),
+            Some(to_json(request)?),
+        )?;
+
+        parse(&response)
+    }
+
+    /// Публикует ключ доступа sealed sender.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] при сбое соединения.
+    pub fn publish_sealed_access(
+        &self,
+        device_id: &str,
+        request: &SealedAccessRequest,
+        auth: Vec<(String, String)>,
+    ) -> Result<()> {
+        self.send_signed(
+            Method::Put,
+            format!("/v1/sealed/access/{device_id}"),
+            Some(to_json(request)?),
+            auth,
+        )?;
+
+        Ok(())
+    }
+
+    /// Забирает свежий сертификат отправителя.
+    ///
+    /// Вызывается раз в сутки: сертификат живёт 24 часа (раздел 15.2).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] при сбое соединения.
+    pub fn fetch_certificate(
+        &self,
+        device_id: &str,
+        auth: Vec<(String, String)>,
+    ) -> Result<CertificateResponse> {
+        let response = self.send_signed(
+            Method::Get,
+            format!("/v1/sealed/certificate/{device_id}"),
+            None,
+            auth,
+        )?;
+
+        parse(&response)
+    }
+
+    /// Жалуется на отправителя, раскрытого из запечатанного конверта.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] при сбое соединения.
+    pub fn report_sealed_sender(
+        &self,
+        device_id: &str,
+        request: &SealedReportRequest,
+        auth: Vec<(String, String)>,
+    ) -> Result<SealedReportResponse> {
+        let response = self.send_signed(
+            Method::Post,
+            format!("/v1/sealed/report/{device_id}"),
+            Some(to_json(request)?),
+            auth,
         )?;
 
         parse(&response)

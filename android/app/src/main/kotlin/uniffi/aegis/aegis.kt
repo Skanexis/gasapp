@@ -862,6 +862,16 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -911,6 +921,8 @@ fun uniffi_aegis_checksum_func_protocol_version(
 ): Short
 fun uniffi_aegis_checksum_func_safety_number_qr(
 ): Short
+fun uniffi_aegis_checksum_func_validate_proxy(
+): Short
 fun uniffi_aegis_checksum_func_validate_recovery_key(
 ): Short
 fun uniffi_aegis_checksum_method_httptransport_execute(
@@ -959,6 +971,8 @@ fun uniffi_aegis_checksum_method_messenger_own_username(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_presence_sharing_enabled(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_proxy(
+): Short
 fun uniffi_aegis_checksum_method_messenger_purge_expired(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_receive_messages(
@@ -969,9 +983,13 @@ fun uniffi_aegis_checksum_method_messenger_restore_backup(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_seal_vault(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_sealed_sender_enabled(
+): Short
 fun uniffi_aegis_checksum_method_messenger_search(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_security_events(
+): Short
+fun uniffi_aegis_checksum_method_messenger_security_report(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_send_attachment(
 ): Short
@@ -986,6 +1004,8 @@ fun uniffi_aegis_checksum_method_messenger_send_typing(
 fun uniffi_aegis_checksum_method_messenger_set_disappearing_timer(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_set_presence_sharing(
+): Short
+fun uniffi_aegis_checksum_method_messenger_set_proxy(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_set_setting_bool(
 ): Short
@@ -1111,6 +1131,8 @@ fun uniffi_aegis_fn_method_messenger_own_username(`ptr`: Pointer,uniffi_out_err:
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_presence_sharing_enabled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_aegis_fn_method_messenger_proxy(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_purge_expired(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 fun uniffi_aegis_fn_method_messenger_receive_messages(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1121,9 +1143,13 @@ fun uniffi_aegis_fn_method_messenger_restore_backup(`ptr`: Pointer,`recoveryKey`
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_seal_vault(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_aegis_fn_method_messenger_sealed_sender_enabled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_aegis_fn_method_messenger_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_security_events(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_security_report(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_send_attachment(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`deviceId`: RustBuffer.ByValue,`file`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1138,6 +1164,8 @@ fun uniffi_aegis_fn_method_messenger_send_typing(`ptr`: Pointer,`peerUsername`: 
 fun uniffi_aegis_fn_method_messenger_set_disappearing_timer(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`seconds`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_set_presence_sharing(`ptr`: Pointer,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_set_proxy(`ptr`: Pointer,`proxy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_set_setting_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1187,6 +1215,8 @@ fun uniffi_aegis_fn_func_protocol_version(uniffi_out_err: UniffiRustCallStatus,
 ): Byte
 fun uniffi_aegis_fn_func_safety_number_qr(`digits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_validate_proxy(`proxy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_aegis_fn_func_validate_recovery_key(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun ffi_aegis_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1366,6 +1396,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_safety_number_qr() != 62446.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_validate_proxy() != 16742.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_validate_recovery_key() != 56902.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1438,6 +1471,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_presence_sharing_enabled() != 32582.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_proxy() != 52232.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_purge_expired() != 20978.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1453,10 +1489,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_seal_vault() != 51619.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_sealed_sender_enabled() != 32584.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_search() != 52611.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_security_events() != 26757.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_security_report() != 57483.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_send_attachment() != 8050.toShort()) {
@@ -1478,6 +1520,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_set_presence_sharing() != 38130.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_set_proxy() != 39649.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_set_setting_bool() != 40291.toShort()) {
@@ -2586,6 +2631,17 @@ public interface MessengerInterface {
     fun `presenceSharingEnabled`(): kotlin.Boolean
     
     /**
+     * Текущий режим выхода в сеть.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось либо запись повреждена.
+     * 🔐 Платформа при ошибке обязана закрыть сеть, а не открыть её:
+     * повреждённая запись «Tor» не должна превращаться в «напрямую».
+     */
+    fun `proxy`(): FfiProxy
+    
+    /**
      * Удаляет истёкшие сообщения.
      *
      * 🔐 Вызывать **сразу после открытия** хранилища и затем
@@ -2649,6 +2705,15 @@ public interface MessengerInterface {
     fun `sealVault`()
     
     /**
+     * Включён ли sealed sender.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    fun `sealedSenderEnabled`(): kotlin.Boolean
+    
+    /**
      * Ищет по расшифрованной переписке.
      *
      * 🔐 Поиск идёт по самим сообщениям, а не по отдельному индексу:
@@ -2669,6 +2734,15 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение не удалось.
      */
     fun `securityEvents`(`limit`: kotlin.UInt): List<FfiSecurityEvent>
+    
+    /**
+     * Проверки центра безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    fun `securityReport`(`nowMillis`: kotlin.Long): FfiSecurityReport
     
     /**
      * Отправляет файл вложением.
@@ -2770,6 +2844,16 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — запись не удалась.
      */
     fun `setPresenceSharing`(`enabled`: kotlin.Boolean)
+    
+    /**
+     * Сохраняет режим выхода в сеть.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — режим недопустим;
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    fun `setProxy`(`proxy`: FfiProxy)
     
     /**
      * Записывает булеву настройку приложения.
@@ -3450,6 +3534,28 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Текущий режим выхода в сеть.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось либо запись повреждена.
+     * 🔐 Платформа при ошибке обязана закрыть сеть, а не открыть её:
+     * повреждённая запись «Tor» не должна превращаться в «напрямую».
+     */
+    @Throws(FfiException::class)override fun `proxy`(): FfiProxy {
+            return FfiConverterTypeFfiProxy.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_proxy(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Удаляет истёкшие сообщения.
      *
      * 🔐 Вызывать **сразу после открытия** хранилища и затем
@@ -3567,6 +3673,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Включён ли sealed sender.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    @Throws(FfiException::class)override fun `sealedSenderEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_sealed_sender_enabled(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Ищет по расшифрованной переписке.
      *
      * 🔐 Поиск идёт по самим сообщениям, а не по отдельному индексу:
@@ -3603,6 +3729,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_security_events(
         it, FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Проверки центра безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось.
+     */
+    @Throws(FfiException::class)override fun `securityReport`(`nowMillis`: kotlin.Long): FfiSecurityReport {
+            return FfiConverterTypeFfiSecurityReport.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_security_report(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -3776,6 +3922,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_presence_sharing(
         it, FfiConverterBoolean.lower(`enabled`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Сохраняет режим выхода в сеть.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — режим недопустим;
+     * [`FfiError::Core`] — запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `setProxy`(`proxy`: FfiProxy)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_proxy(
+        it, FfiConverterTypeFfiProxy.lower(`proxy`),_status)
 }
     }
     
@@ -4889,6 +5055,82 @@ public object FfiConverterTypeFfiSecurityEvent: FfiConverterRustBuffer<FfiSecuri
 
 
 /**
+ * Проверки центра безопасности, посчитанные ядром.
+ */
+data class FfiSecurityReport (
+    /**
+     * Ключ восстановления создан.
+     */
+    var `recoveryKeyCreated`: kotlin.Boolean, 
+    /**
+     * Последняя резервная копия не старше недели.
+     */
+    var `backupRecent`: kotlin.Boolean, 
+    /**
+     * Сколько контактов не сверены по safety number.
+     */
+    var `unverifiedContacts`: kotlin.UInt, 
+    /**
+     * Sealed sender включён.
+     */
+    var `sealedSenderEnabled`: kotlin.Boolean, 
+    /**
+     * IP-адрес скрыт прокси или Tor.
+     */
+    var `addressHidden`: kotlin.Boolean, 
+    /**
+     * Сколько проверок ядра пройдено.
+     */
+    var `passed`: kotlin.UInt, 
+    /**
+     * Сколько проверок ядра всего.
+     */
+    var `total`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSecurityReport: FfiConverterRustBuffer<FfiSecurityReport> {
+    override fun read(buf: ByteBuffer): FfiSecurityReport {
+        return FfiSecurityReport(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSecurityReport) = (
+            FfiConverterBoolean.allocationSize(value.`recoveryKeyCreated`) +
+            FfiConverterBoolean.allocationSize(value.`backupRecent`) +
+            FfiConverterUInt.allocationSize(value.`unverifiedContacts`) +
+            FfiConverterBoolean.allocationSize(value.`sealedSenderEnabled`) +
+            FfiConverterBoolean.allocationSize(value.`addressHidden`) +
+            FfiConverterUInt.allocationSize(value.`passed`) +
+            FfiConverterUInt.allocationSize(value.`total`)
+    )
+
+    override fun write(value: FfiSecurityReport, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`recoveryKeyCreated`, buf)
+            FfiConverterBoolean.write(value.`backupRecent`, buf)
+            FfiConverterUInt.write(value.`unverifiedContacts`, buf)
+            FfiConverterBoolean.write(value.`sealedSenderEnabled`, buf)
+            FfiConverterBoolean.write(value.`addressHidden`, buf)
+            FfiConverterUInt.write(value.`passed`, buf)
+            FfiConverterUInt.write(value.`total`, buf)
+    }
+}
+
+
+
+/**
  * Файл в vault.
  */
 data class FfiVaultFile (
@@ -5120,6 +5362,106 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
     }
 
 }
+
+
+
+/**
+ * Режим выхода в сеть.
+ */
+sealed class FfiProxy {
+    
+    /**
+     * Напрямую: сервер видит IP-адрес.
+     */
+    object Direct : FfiProxy()
+    
+    
+    /**
+     * Через SOCKS5-прокси.
+     */
+    data class Socks5(
+        /**
+         * Имя хоста или IP-адрес прокси.
+         */
+        val `host`: kotlin.String, 
+        /**
+         * Порт прокси.
+         */
+        val `port`: kotlin.UShort) : FfiProxy() {
+        companion object
+    }
+    
+    /**
+     * Через Tor с помощью Orbot на этом устройстве.
+     */
+    object Orbot : FfiProxy()
+    
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiProxy : FfiConverterRustBuffer<FfiProxy>{
+    override fun read(buf: ByteBuffer): FfiProxy {
+        return when(buf.getInt()) {
+            1 -> FfiProxy.Direct
+            2 -> FfiProxy.Socks5(
+                FfiConverterString.read(buf),
+                FfiConverterUShort.read(buf),
+                )
+            3 -> FfiProxy.Orbot
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: FfiProxy) = when(value) {
+        is FfiProxy.Direct -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is FfiProxy.Socks5 -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`host`)
+                + FfiConverterUShort.allocationSize(value.`port`)
+            )
+        }
+        is FfiProxy.Orbot -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: FfiProxy, buf: ByteBuffer) {
+        when(value) {
+            is FfiProxy.Direct -> {
+                buf.putInt(1)
+                Unit
+            }
+            is FfiProxy.Socks5 -> {
+                buf.putInt(2)
+                FfiConverterString.write(value.`host`, buf)
+                FfiConverterUShort.write(value.`port`, buf)
+                Unit
+            }
+            is FfiProxy.Orbot -> {
+                buf.putInt(3)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
 
 
 
@@ -6049,6 +6391,21 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_safety_number_qr(
         FfiConverterString.lower(`digits`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Допустим ли режим выхода в сеть.
+         *
+         * Нужен экрану настройки: подсветить ошибку в адресе до сохранения,
+         * а не после.
+         */ fun `validateProxy`(`proxy`: FfiProxy): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_validate_proxy(
+        FfiConverterTypeFfiProxy.lower(`proxy`),_status)
 }
     )
     }
