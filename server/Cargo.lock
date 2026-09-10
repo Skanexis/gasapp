@@ -32,7 +32,9 @@ dependencies = [
 name = "aegis-server-db"
 version = "0.1.0"
 dependencies = [
+ "sha2",
  "sqlx",
+ "subtle",
  "thiserror 2.0.20",
  "tokio",
  "tracing",

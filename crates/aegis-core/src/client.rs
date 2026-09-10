@@ -31,7 +31,7 @@ use std::sync::Mutex;
 
 use aegis_backup::RecoveryKey;
 use aegis_net::api::{
-    BundleResponse, PublishKeysRequest, RegisterRequest, SendRequest,
+    BundleResponse, PublishKeysRequest, RegisterRequest,
 };
 use aegis_net::client::{ApiClient, Transport};
 use aegis_media::attachment::{self, AttachmentKey};
@@ -48,6 +48,11 @@ use aegis_storage::{MessageStatus, Storage, StoredMessage, VaultFileRow};
 
 use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
 use crate::vault::{SealedVaultFile, Vault, VaultGuard};
+
+mod network;
+mod sealed;
+
+pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 use aegis_types::{
     AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext, PublicKeyBytes, Result,
     Timestamp,
@@ -297,21 +302,27 @@ impl<T: Transport> Client<T> {
             .first()
             .cloned()
             .ok_or(AegisError::SessionNotFound)?;
+        let peer = peer_account(&peer_identity);
 
-        let (outgoing, device_id) = if let Some(state) = existing {
-            (
-                session::continue_session(&state, &plaintext)?,
-                peer_device,
-            )
-        } else {
-            let bundle_response = self.api.fetch_bundle(&peer_device)?;
-            let bundle = parse_bundle(&bundle_response)?;
-
-            (
-                session::start_session(&identity, &bundle, &plaintext, rng)?,
-                peer_device,
-            )
+        // 🔐 Ключ доступа sealed sender уходит раньше текста — та же
+        // логика, что в `send_content` (см. модуль `sealed`). Прежде
+        // текст шёл собственной веткой прямо в `send_envelope`, и
+        // основная переписка оставалась бы незапечатанной, даже когда
+        // реакции и правки уже запечатаны.
+        let session = match existing {
+            Some(state) if self.storage.access_key_shared_with(&peer)? => state,
+            other => self.send_own_access_key(
+                &identity,
+                &chat_id,
+                other,
+                &peer_identity,
+                &peer_device,
+                now,
+                rng,
+            )?,
         };
+
+        let outgoing = session::continue_session(&session, &plaintext)?;
 
         // Сессия сохраняется до отправки: см. порядок операций.
         self.storage.save_session(&chat_id, &outgoing.session, now)?;
@@ -319,10 +330,14 @@ impl<T: Transport> Client<T> {
         let message_id = MessageId::generate();
         self.store_message(&chat_id, message_id, text, now, true, MessageStatus::Pending)?;
 
-        self.api.send_envelope(&SendRequest {
-            destination_device_id: device_id,
-            ciphertext: hex(&outgoing.envelope),
-        })?;
+        self.deliver(
+            &identity,
+            &peer_identity,
+            &peer_device,
+            &outgoing.envelope,
+            now,
+            rng,
+        )?;
 
         self.storage
             .set_message_status(&message_id, MessageStatus::Sent, now)?;
@@ -540,31 +555,53 @@ impl<T: Transport> Client<T> {
             .first()
             .cloned()
             .ok_or(AegisError::SessionNotFound)?;
+        let peer = peer_account(&peer_identity);
 
-        let outgoing = if let Some(state) = self.storage.load_session(&chat_id)? {
-            session::continue_session(&state, &plaintext)?
-        } else {
-            let bundle_response = self.api.fetch_bundle(&peer_device)?;
-            let bundle = parse_bundle(&bundle_response)?;
+        // 🔐 Ключ доступа sealed sender уходит собеседнику раньше
+        // содержимого (см. модуль `sealed`): новой сессии — первым
+        // сообщением, существующей — если собеседник начинал сессию
+        // заново и нашего ключа у него, возможно, нет. Иначе его ответы
+        // так и шли бы незапечатанными, раскрывая серверу отправителя.
+        let existing = self.storage.load_session(&chat_id)?;
 
-            session::start_session(&identity, &bundle, &plaintext, rng)?
+        let session = match existing {
+            Some(state) if self.storage.access_key_shared_with(&peer)? => state,
+            other => self.send_own_access_key(
+                &identity,
+                &chat_id,
+                other,
+                &peer_identity,
+                &peer_device,
+                now,
+                rng,
+            )?,
         };
+
+        let outgoing = session::continue_session(&session, &plaintext)?;
 
         // Сессия сохраняется до отправки: см. порядок операций
         // в описании модуля.
         self.storage.save_session(&chat_id, &outgoing.session, now)?;
 
-        self.api.send_envelope(&SendRequest {
-            destination_device_id: peer_device,
-            ciphertext: hex(&outgoing.envelope),
-        })?;
+        self.deliver(
+            &identity,
+            &peer_identity,
+            &peer_device,
+            &outgoing.envelope,
+            now,
+            rng,
+        )?;
 
         Ok(chat_id)
     }
 
     /// Забирает и расшифровывает входящие сообщения.
     ///
-    /// Возвращает число принятых сообщений. Конверты, которые не
+    /// Возвращает число принятых сообщений. Служебные — ключ доступа
+    /// sealed sender — не считаются: их число ушло бы в интерфейс
+    /// как новые сообщения, которых пользователь не увидит.
+    ///
+    /// Конверты, которые не
     /// удалось расшифровать, пропускаются, а не прерывают приём:
     /// одно повреждённое сообщение не должно блокировать остальные.
     ///
@@ -572,6 +609,11 @@ impl<T: Transport> Client<T> {
     ///
     /// [`AegisError::SessionNotFound`] — аккаунт не зарегистрирован;
     /// [`AegisError::Network`] — сервер недоступен.
+    // Длина — прямое следствие конвейера на один конверт: разворачивание,
+    // расшифровка, привязка, разбор, применение, подтверждение. Шаги идут
+    // строго подряд и делят состояние цикла; дробление на функции
+    // протаскивало бы через каждую половину этого состояния.
+    #[allow(clippy::too_many_lines)]
     pub fn receive_messages(&self, device_id: &str, now: Timestamp) -> Result<usize> {
         let (identity, mut secrets) = self.load_identity()?;
         let envelopes = self.api.fetch_envelopes(
@@ -582,7 +624,16 @@ impl<T: Transport> Client<T> {
         let mut accepted = 0usize;
 
         for envelope in envelopes {
-            let Ok(raw) = unhex(&envelope.ciphertext) else {
+            let Ok(wire) = unhex(&envelope.ciphertext) else {
+                continue;
+            };
+
+            // 🔐 Запечатанный конверт сначала разворачивается (см. модуль
+            // `sealed`); неразворачиваемый пропускается так же, как
+            // нерасшифровываемый обычный.
+            let Some((raw, certificate)) =
+                self.unwrap_wire(&identity, wire, envelope.queued_at_bucketed, now)
+            else {
                 continue;
             };
 
@@ -593,6 +644,19 @@ impl<T: Transport> Client<T> {
             else {
                 continue;
             };
+
+            // 🔐 Сертификат обязан принадлежать собеседнику этой сессии,
+            // иначе чужой сертификат, снятый с полученного конверта,
+            // позволял бы выдать своё сообщение за чужое.
+            if !self.certificate_bound(
+                &identity,
+                certificate.as_ref(),
+                incoming.sender_identity.as_ref(),
+                known_chat.as_ref(),
+                now,
+            )? {
+                continue;
+            }
 
             // Чат берётся оттуда, где он известен: для инициации — из
             // identity отправителя, для сообщения в сессии — из самой
@@ -605,9 +669,20 @@ impl<T: Transport> Client<T> {
                 (None, None) => continue,
             };
 
+            // Собеседник этого конверта: из конверта инициации либо
+            // из проверенного и привязанного сертификата.
+            let sender = incoming
+                .sender_identity
+                .or_else(|| certificate.as_ref().map(|certificate| certificate.identity_key));
+
             if let Some(peer) = incoming.sender_identity {
                 self.storage
                     .save_contact_identity(&peer_account(&peer), peer.as_bytes())?;
+
+                // Собеседник начал новую сессию: у него, возможно, новое
+                // устройство или восстановленная копия, и нашего ключа
+                // доступа там нет. Следующая отправка передаст его заново.
+                self.storage.forget_access_key_share(&peer_account(&peer))?;
             }
 
             self.storage.save_session(&chat_id, &incoming.session, now)?;
@@ -619,6 +694,11 @@ impl<T: Transport> Client<T> {
             let Ok(content) = Content::from_bytes(incoming.plaintext.expose()) else {
                 continue;
             };
+
+            // Служебное содержимое не считается принятым сообщением:
+            // число уходит в интерфейс, и «1 новое сообщение» без
+            // сообщения выглядело бы как потерянное.
+            let counts = !matches!(content, Content::AccessKey { .. });
 
             match content {
                 Content::Text { body, .. } => {
@@ -674,6 +754,18 @@ impl<T: Transport> Client<T> {
                         .delete_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)), now)?;
                 }
 
+                Content::AccessKey { key } => {
+                    // 🔐 Ключ сохраняется только за собеседником,
+                    // установленным криптографически: identity из PQXDH
+                    // либо из привязанного сертификата. Сообщение
+                    // в сессии без сертификата собеседника не называет,
+                    // и сохранить ключ «за кем-то» значило бы угадывать.
+                    if let Some(peer) = sender {
+                        self.storage
+                            .save_contact_access_key(&peer_account(&peer), &key, now)?;
+                    }
+                }
+
                 Content::Reaction { .. }
                 | Content::Typing { .. }
                 | Content::ReadReceipt { .. } => {
@@ -711,7 +803,9 @@ impl<T: Transport> Client<T> {
                     now,
                 )?,
             )?;
-            accepted = accepted.saturating_add(1);
+            if counts {
+                accepted = accepted.saturating_add(1);
+            }
         }
 
         self.persist_secrets(&secrets, now)?;
@@ -1255,16 +1349,22 @@ impl<T: Transport> Client<T> {
             return Some((incoming, None));
         }
 
-        // Иначе перебираем сессии известных чатов.
-        let chats = self.storage.list_chats(MAX_CHATS_TO_PROBE).ok()?;
+        // Иначе перебираем существующие сессии.
+        //
+        // Именно сессии, а не чаты интерфейса: сессия появляется раньше
+        // чата. Первым сообщением новой сессии приходит ключ доступа
+        // sealed sender, и чата он не создаёт — перебор по списку чатов
+        // такую сессию не находил, и следующее за ключом сообщение
+        // молча терялось.
+        let chats = self.storage.session_chat_ids(MAX_CHATS_TO_PROBE).ok()?;
 
-        for chat in chats {
-            let Ok(Some(state)) = self.storage.load_session(&chat.chat_id) else {
+        for chat_id in chats {
+            let Ok(Some(state)) = self.storage.load_session(&chat_id) else {
                 continue;
             };
 
             if let Ok(incoming) = session::receive(identity, secrets, Some(&state), raw, now) {
-                return Some((incoming, Some(chat.chat_id)));
+                return Some((incoming, Some(chat_id)));
             }
         }
 

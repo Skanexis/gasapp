@@ -37,12 +37,24 @@ use std::collections::HashMap;
 
 use aegis_core::client::Client;
 use aegis_net::api::{
-    BundleResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest, RegisterRequest,
-    RegisterResponse, SendRequest,
+    BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
+    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest, SendRequest,
 };
 use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
 use aegis_storage::Storage;
-use aegis_types::{Result, Timestamp};
+use aegis_protocol::sealed_sender::{self, SenderCertificate};
+use aegis_protocol::xeddsa;
+use aegis_types::{PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
+use sha2::{Digest, Sha256};
+
+/// Приватный ключ подписи сертификатов у поддельного сервера.
+const FAKE_SERVER_KEY: [u8; 32] = [0x77; 32];
+
+/// Срок сертификата у поддельного сервера: 2100 год.
+///
+/// Тесты работают с фиксированным временем, и сертификату не нужно
+/// истекать посреди прогона — истечение проверяется модульными тестами.
+const FAR_FUTURE_MILLIS: i64 = 4_102_444_800_000;
 use rand_core::OsRng;
 
 /// Состояние поддельного сервера.
@@ -65,6 +77,17 @@ struct ServerState {
     /// Как и настоящий сервер, заглушка не знает ни получателя,
     /// ни имени файла — только байты.
     attachments: HashMap<String, Vec<u8>>,
+    /// Хеши ключей доступа sealed sender по устройству.
+    ///
+    /// Как и настоящий сервер, заглушка хранит хеш, а не сам ключ.
+    access_hashes: HashMap<String, Vec<u8>>,
+    /// Сколько принято запечатанных конвертов.
+    ///
+    /// Тесты сверяют по нему, что переписка действительно пошла
+    /// запечатанной, а не только что клиент утверждает это.
+    sealed_accepted: usize,
+    /// Сколько принято обычных конвертов.
+    plain_accepted: usize,
 }
 
 /// Поддельный сервер, разделяемый между клиентами.
@@ -100,6 +123,53 @@ impl FakeServer {
                 *byte ^= 0x01;
             }
         }
+    }
+
+    /// Сколько принято запечатанных конвертов.
+    fn sealed_accepted(&self) -> usize {
+        self.state.borrow().sealed_accepted
+    }
+
+    /// Сколько принято обычных конвертов.
+    fn plain_accepted(&self) -> usize {
+        self.state.borrow().plain_accepted
+    }
+
+    /// Конверты в очереди устройства — ровно то, что лежит у оператора.
+    fn queued(&self, device_id: &str) -> Vec<Vec<u8>> {
+        self.state
+            .borrow()
+            .queues
+            .get(device_id)
+            .map(|queue| {
+                queue
+                    .iter()
+                    .filter_map(|envelope| hex::decode(&envelope.ciphertext).ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Identity-ключ аккаунта в том виде, в каком его знает сервер.
+    fn identity_of(&self, username: &str) -> Vec<u8> {
+        self.state
+            .borrow()
+            .accounts
+            .get(username)
+            .and_then(|(_, key)| hex::decode(key).ok())
+            .unwrap_or_default()
+    }
+
+    /// Портит хеш ключа доступа устройства.
+    ///
+    /// Так выглядит ключ, устаревший после переустановки приложения
+    /// у получателя, — и так же выглядит сервер, отвергающий
+    /// запечатанные конверты намеренно.
+    fn revoke_access(&self, device_id: &str) {
+        self.state
+            .borrow_mut()
+            .access_hashes
+            .insert(device_id.to_owned(), vec![0u8; 32]);
     }
 
     fn next_uuid(state: &mut ServerState) -> String {
@@ -211,6 +281,8 @@ impl Transport for FakeServer {
                     serde_json::from_str(request.body.as_deref().unwrap_or_default())
                         .map_err(|_| aegis_types::AegisError::Malformed)?;
 
+                state.plain_accepted += 1;
+
                 let envelope_id = Self::next_uuid(&mut state);
                 state
                     .queues
@@ -225,6 +297,114 @@ impl Transport for FakeServer {
                 // Клиент ждёт JSON-строку: send_envelope разбирает ответ
                 // как идентификатор конверта.
                 (200, serde_json::to_string(&envelope_id).unwrap_or_default())
+            }
+            (Method::Put, path) if path.starts_with("/v1/sealed/access/") => {
+                let device_id = path.trim_start_matches("/v1/sealed/access/").to_owned();
+                let parsed: SealedAccessRequest =
+                    serde_json::from_str(request.body.as_deref().unwrap_or_default())
+                        .map_err(|_| aegis_types::AegisError::Malformed)?;
+
+                let hash = hex::decode(&parsed.access_key_hash)
+                    .map_err(|_| aegis_types::AegisError::Malformed)?;
+                state.access_hashes.insert(device_id, hash);
+
+                (200, String::new())
+            }
+            (Method::Get, path) if path.starts_with("/v1/sealed/certificate/") => {
+                let device_id = path
+                    .trim_start_matches("/v1/sealed/certificate/")
+                    .to_owned();
+
+                let account_id = state
+                    .devices
+                    .iter()
+                    .find(|(_, device)| **device == device_id)
+                    .map(|(account, _)| account.clone());
+                let identity = state.device_identity.get(&device_id).cloned();
+
+                match (account_id, identity) {
+                    (Some(account_id), Some(identity)) => {
+                        let account = uuid::Uuid::parse_str(&account_id).expect("uuid аккаунта");
+                        let device = uuid::Uuid::parse_str(&device_id).expect("uuid устройства");
+                        let identity: [u8; 32] = hex::decode(&identity)
+                            .expect("hex ключа")
+                            .try_into()
+                            .expect("32 байта");
+                        let identity_key = PublicKeyBytes::new(identity);
+
+                        let payload = SenderCertificate::signed_payload(
+                            account.as_bytes(),
+                            device.as_bytes(),
+                            &identity_key,
+                            FAR_FUTURE_MILLIS,
+                        );
+                        let private = PrivateKeyBytes::new(FAKE_SERVER_KEY);
+                        let signature =
+                            xeddsa::montgomery::sign(&private, &payload).expect("подпись");
+                        let server_key =
+                            xeddsa::montgomery::public_key(&private).expect("ключ сервера");
+
+                        let certificate = SenderCertificate {
+                            account_id: *account.as_bytes(),
+                            device_id: *device.as_bytes(),
+                            identity_key,
+                            expires_at_millis: FAR_FUTURE_MILLIS,
+                            signature,
+                        };
+
+                        (
+                            200,
+                            serde_json::to_string(&CertificateResponse {
+                                certificate: hex::encode(certificate.to_bytes()),
+                                expires_at_millis: FAR_FUTURE_MILLIS,
+                                server_key: hex::encode(server_key.as_bytes()),
+                            })
+                            .unwrap_or_default(),
+                        )
+                    }
+                    _ => (404, String::new()),
+                }
+            }
+            (Method::Post, "/v1/sealed/messages") => {
+                let parsed: SealedSendRequest =
+                    serde_json::from_str(request.body.as_deref().unwrap_or_default())
+                        .map_err(|_| aegis_types::AegisError::Malformed)?;
+
+                let presented = match &parsed.access_key {
+                    None => None,
+                    Some(encoded) => Some(
+                        hex::decode(encoded).map_err(|_| aegis_types::AegisError::Malformed)?,
+                    ),
+                };
+
+                // Как настоящий сервер: хеш предъявленного ключа сверяется
+                // с опубликованным, отправитель при этом не называется.
+                let allowed = match (
+                    state.access_hashes.get(&parsed.destination_device_id),
+                    presented,
+                ) {
+                    (Some(stored), Some(key)) => Sha256::digest(&key).as_slice() == stored.as_slice(),
+                    _ => false,
+                };
+
+                if allowed {
+                    state.sealed_accepted += 1;
+
+                    let envelope_id = Self::next_uuid(&mut state);
+                    state
+                        .queues
+                        .entry(parsed.destination_device_id)
+                        .or_default()
+                        .push(EnvelopeResponse {
+                            envelope_id: envelope_id.clone(),
+                            ciphertext: parsed.sealed,
+                            queued_at_bucketed: 0,
+                        });
+
+                    (200, serde_json::to_string(&envelope_id).unwrap_or_default())
+                } else {
+                    (401, String::new())
+                }
             }
             (Method::Get, path) if path.starts_with("/v1/messages/") => {
                 let device_id = path.trim_start_matches("/v1/messages/");
@@ -938,4 +1118,180 @@ fn sender_keeps_its_own_attachment() {
         .expect("файл открыт заново");
 
     assert_eq!(reopened, original);
+}
+
+/// Проводит первый обмен: после него оба знают ключи доступа друг друга.
+///
+/// Возвращает клиентов и их устройства.
+fn handshake(
+    server: &FakeServer,
+    dir: &tempfile::TempDir,
+) -> (Client<FakeServer>, Client<FakeServer>, String, String) {
+    let alice = Client::new(server.clone(), open_storage(dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(dir, "bob.db"));
+
+    let alice_device = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована")
+        .device_id
+        .to_string();
+    let bob_device = bob
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован")
+        .device_id
+        .to_string();
+
+    alice
+        .send_message("bob", "первое", now(), &mut OsRng)
+        .expect("первое сообщение");
+    bob.receive_messages(&bob_device, now()).expect("приём у Боба");
+
+    bob.send_message("alice", "ответ", now(), &mut OsRng)
+        .expect("ответ Боба");
+    alice
+        .receive_messages(&alice_device, now())
+        .expect("приём у Алисы");
+
+    (alice, bob, alice_device, bob_device)
+}
+
+/// 🔐 После первого обмена переписка идёт запечатанной.
+///
+/// Первое сообщение запечатать нечем — ключ доступа ещё не передан.
+/// Тест это фиксирует явно, чтобы граница защиты была видна, а не
+/// подразумевалась.
+#[test]
+fn conversation_becomes_sealed_after_first_exchange() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    let alice_device = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса")
+        .device_id
+        .to_string();
+    let bob_device = bob
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб")
+        .device_id
+        .to_string();
+
+    alice
+        .send_message("bob", "первое", now(), &mut OsRng)
+        .expect("отправка");
+
+    assert_eq!(
+        server.sealed_accepted(),
+        0,
+        "первое сообщение запечатано без ключа доступа получателя"
+    );
+    assert_eq!(
+        bob.receive_messages(&bob_device, now()).expect("приём"),
+        1,
+        "служебный ключ доступа посчитан как сообщение"
+    );
+
+    // Боб отвечает: ключ доступа Алисы у него уже есть.
+    bob.send_message("alice", "ответ", now(), &mut OsRng)
+        .expect("ответ");
+
+    assert!(server.sealed_accepted() >= 1, "ответ Боба не запечатан");
+    assert_eq!(
+        alice.receive_messages(&alice_device, now()).expect("приём"),
+        1,
+        "Алиса не получила запечатанный ответ"
+    );
+
+    // Дальше Алиса пишет только запечатанным.
+    let plain_before = server.plain_accepted();
+    let sealed_before = server.sealed_accepted();
+
+    alice
+        .send_message("bob", "снова", now(), &mut OsRng)
+        .expect("отправка");
+
+    assert_eq!(
+        server.plain_accepted(),
+        plain_before,
+        "Алиса отправила незапечатанное, имея ключ доступа Боба"
+    );
+    assert!(server.sealed_accepted() > sealed_before);
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+
+    assert!(alice.sealed_sender_enabled().expect("состояние"));
+    assert!(bob.sealed_sender_enabled().expect("состояние"));
+}
+
+/// 🔐 Запечатанный конверт не несёт identity-ключа отправителя.
+#[test]
+fn sealed_envelope_hides_sender_identity_from_server() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _alice_device, bob_device) = handshake(&server, &dir);
+
+    let alice_identity = server.identity_of("alice");
+    assert_eq!(alice_identity.len(), 32, "ключ Алисы не найден на сервере");
+
+    alice
+        .send_message("bob", "секрет", now(), &mut OsRng)
+        .expect("отправка");
+
+    let queued = server.queued(&bob_device);
+    assert!(!queued.is_empty(), "очередь Боба пуста");
+
+    for envelope in queued {
+        assert!(
+            sealed_sender::is_sealed(&envelope),
+            "в очереди лежит незапечатанный конверт"
+        );
+        assert!(
+            !envelope
+                .windows(alice_identity.len())
+                .any(|window| window == alice_identity.as_slice()),
+            "identity-ключ Алисы виден серверу"
+        );
+    }
+}
+
+/// 🔐 Отвергнутый ключ доступа не приводит к тихой отправке без запечатывания.
+///
+/// Иначе сервер узнавал бы отправителя, просто отвечая отказом
+/// на каждый запечатанный конверт.
+#[test]
+fn rejected_access_key_does_not_fall_back_to_plain() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, bob_device) = handshake(&server, &dir);
+
+    server.revoke_access(&bob_device);
+    let plain_before = server.plain_accepted();
+
+    let outcome = alice.send_message("bob", "не дойдёт", now(), &mut OsRng);
+
+    assert!(outcome.is_err(), "отправка прошла с отвергнутым ключом доступа");
+    assert_eq!(
+        server.plain_accepted(),
+        plain_before,
+        "клиент молча отправил незапечатанное"
+    );
+
+    let events = alice.security_events(20).expect("журнал");
+    assert!(
+        events
+            .iter()
+            .any(|(kind, _, _)| kind == "sealed_sender_access_rejected"),
+        "отказ не записан в журнал безопасности"
+    );
+
+    // Устаревший ключ забыт: следующая попытка — видимая пользователю,
+    // обычным путём. Сообщение доходит, пропуск ключа храповик переживает.
+    alice
+        .send_message("bob", "повтор", now(), &mut OsRng)
+        .expect("повтор");
+
+    assert_eq!(server.plain_accepted(), plain_before + 1);
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
 }

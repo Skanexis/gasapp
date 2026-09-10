@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Сеть: как приложение выходит в интернет (ADR-024).
+
+  🔐 Экран закрывает последнюю крупную утечку раздела 15.5 — IP-адрес.
+  Два обещания на нём стоят рядом с выбором, а не в справке: при
+  недоступном прокси приложение не подключится, а не пойдёт напрямую;
+  и прокси не скрывает всего. Обещание, понятое шире, чем оно есть,
+  опаснее отсутствия обещания.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/network_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/network_title" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:text="@string/network_intro" />
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/network_section_mode" />
+
+            <LinearLayout style="@style/AegisPanel">
+
+                <RadioGroup
+                    android:id="@+id/network_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <RadioButton
+                        android:id="@+id/network_direct"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent_base"
+                        android:minHeight="48dp"
+                        android:text="@string/network_mode_direct"
+                        android:textColor="@color/text_primary" />
+
+                    <RadioButton
+                        android:id="@+id/network_orbot"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent_base"
+                        android:minHeight="48dp"
+                        android:text="@string/network_mode_orbot"
+                        android:textColor="@color/text_primary" />
+
+                    <RadioButton
+                        android:id="@+id/network_socks"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent_base"
+                        android:minHeight="48dp"
+                        android:text="@string/network_mode_socks"
+                        android:textColor="@color/text_primary" />
+                </RadioGroup>
+
+                <!-- Адрес прокси нужен только для SOCKS5: Orbot всегда локальный. -->
+                <LinearLayout
+                    android:id="@+id/network_socks_fields"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <EditText
+                        android:id="@+id/network_host"
+                        style="@style/AegisInput"
+                        android:layout_width="match_parent"
+                        android:layout_marginTop="@dimen/space_s"
+                        android:autofillHints=""
+                        android:hint="@string/network_host_hint"
+                        android:importantForAutofill="no"
+                        android:inputType="textUri|textNoSuggestions"
+                        android:textColor="@color/text_primary" />
+
+                    <EditText
+                        android:id="@+id/network_port"
+                        style="@style/AegisInput"
+                        android:layout_width="match_parent"
+                        android:layout_marginTop="@dimen/space_s"
+                        android:autofillHints=""
+                        android:hint="@string/network_port_hint"
+                        android:importantForAutofill="no"
+                        android:inputType="number"
+                        android:maxLength="5"
+                        android:textColor="@color/text_primary" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Что будет при выбранном режиме — меняется вместе с выбором. -->
+            <TextView
+                android:id="@+id/network_mode_hint"
+                style="@style/AegisText.Caption.Muted"
+                android:layout_width="match_parent"
+                android:layout_marginTop="@dimen/space_s"
+                tools:text="@string/network_hint_orbot" />
+
+            <TextView
+                android:id="@+id/network_status"
+                style="@style/AegisText.Caption"
+                android:layout_width="match_parent"
+                android:layout_marginTop="@dimen/space_m"
+                android:visibility="gone"
+                tools:text="@string/network_saved"
+                tools:visibility="visible" />
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/network_save"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/network_save"
+                app:buttonVariant="primary" />
+
+            <LinearLayout
+                style="@style/AegisPanel.Deep"
+                android:layout_marginTop="@dimen/space_l">
+
+                <TextView
+                    style="@style/AegisText.Caption"
+                    android:layout_width="match_parent"
+                    android:text="@string/network_limits" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

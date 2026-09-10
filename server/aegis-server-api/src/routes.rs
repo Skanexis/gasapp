@@ -37,7 +37,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    auth, pow,
+    auth, certificate, pow,
     rate_limit::{self, RateLimiter},
 };
 
@@ -74,6 +74,22 @@ pub struct AppState {
     /// слушатель, время работы. Ничего про пользователей — см.
     /// пояснение в модуле `health`.
     pub health: Arc<crate::health::HealthState>,
+
+    /// Приватный ключ, которым сервер подписывает сертификаты
+    /// отправителя (раздел 15.2).
+    ///
+    /// 🔐 Ключ узла, а не пользователя: им подписывается утверждение
+    /// «этот identity-ключ принадлежит этому аккаунту». Утечка ключа
+    /// позволяет выписывать поддельные сертификаты — то есть выдавать
+    /// чужие сообщения за сообщения другого аккаунта. От этого
+    /// защищает не он, а safety number, но менять его при подозрении
+    /// всё равно нужно.
+    ///
+    /// В кластере ключ обязан быть одним на все узлы: сертификат,
+    /// выданный одним узлом, проверяется клиентом независимо от того,
+    /// через какой узел пришло сообщение. Задаётся переменной
+    /// окружения, а не генерируется при старте.
+    pub certificate_key: [u8; 32],
 }
 
 impl AppState {
@@ -98,7 +114,22 @@ impl AppState {
     /// то есть ещё одного механизма, который может сломаться молча.
     #[must_use]
     pub fn with_nodes(pool: PgPool, limiter_salt: [u8; 32], nodes: u32) -> Self {
+        Self::with_certificate_key(pool, limiter_salt, nodes, certificate_key_from_env())
+    }
+
+    /// Собирает состояние с явно заданным ключом подписи сертификатов.
+    ///
+    /// Нужен тестам: они поднимают сервер в процессе и должны знать
+    /// ключ, чтобы проверять выданные сертификаты.
+    #[must_use]
+    pub fn with_certificate_key(
+        pool: PgPool,
+        limiter_salt: [u8; 32],
+        nodes: u32,
+        certificate_key: [u8; 32],
+    ) -> Self {
         Self {
+            certificate_key,
             pool,
             discovery_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 rate_limit::DISCOVERY_PER_MINUTE,
@@ -331,6 +362,16 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/keys/:device_id/count", get(count_keys))
         .route("/v1/messages", post(send_message))
         .route("/v1/messages/:device_id", get(fetch_messages))
+        // Sealed sender (раздел 15.2).
+        //
+        // 🔐 Отправка идёт по отдельному маршруту без аутентификации
+        // отправителя: подпись и была бы той меткой, которую sealed
+        // sender убирает. Право на отправку доказывается ключом
+        // доступа получателя, а не личностью отправителя.
+        .route("/v1/sealed/messages", post(send_sealed_message))
+        .route("/v1/sealed/access/:device_id", put(publish_sealed_access))
+        .route("/v1/sealed/certificate/:device_id", get(issue_certificate))
+        .route("/v1/sealed/report/:device_id", post(report_sealed_sender))
         // Уведомления о новых конвертах.
         //
         // По сокету уходит только слово «envelope» — сам конверт
@@ -821,6 +862,311 @@ async fn download_attachment(
     let payload = repo::fetch_attachment(&state.pool, attachment_id).await?;
 
     Ok(payload)
+}
+
+// --- Sealed sender (раздел 15.2) ---
+
+/// Запрос на публикацию ключа доступа sealed sender.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedAccessRequest {
+    /// SHA-256 от ключа доступа, hex.
+    ///
+    /// 🔐 Именно хеш: сам ключ сервер знать не должен. Иначе утечка
+    /// дампа позволила бы писать анонимно любому пользователю.
+    pub access_key_hash: String,
+    /// Принимать ли анонимные конверты вообще без ключа.
+    pub allow_from_anyone: bool,
+}
+
+/// Ответ с сертификатом отправителя.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateResponse {
+    /// Сертификат целиком, hex.
+    pub certificate: String,
+    /// Момент истечения, миллисекунды.
+    pub expires_at_millis: i64,
+    /// Публичный ключ сервера, hex — им клиент проверяет подпись.
+    pub server_key: String,
+}
+
+/// Запрос на анонимную отправку.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedSendRequest {
+    /// Устройство-получатель.
+    pub destination_device_id: Uuid,
+    /// Запечатанный конверт, hex. Сервер его не разбирает.
+    pub sealed: String,
+    /// Ключ доступа получателя, hex.
+    ///
+    /// Получатель раздаёт его своим собеседникам внутри E2EE-переписки.
+    /// Сервер сверяет его с хешем, не узнавая, кто предъявил.
+    pub access_key: Option<String>,
+}
+
+/// Жалоба на спам, отправленный через sealed sender.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedReportRequest {
+    /// Сертификат отправителя, извлечённый получателем из конверта, hex.
+    pub certificate: String,
+}
+
+/// Ответ на жалобу.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedReportResponse {
+    /// Учтена ли жалоба (повторная от того же жалобщика — нет).
+    pub recorded: bool,
+    /// Сколько разных людей пожаловались на этот аккаунт.
+    pub total_reporters: i64,
+}
+
+/// Выдаёт сертификат отправителя.
+///
+/// 🔐 Требует подпись устройства: сертификат утверждает, кому
+/// принадлежит ключ, и выдавать его кому попало значит позволить
+/// выписать его на чужой аккаунт.
+async fn issue_certificate(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+) -> Result<Json<CertificateResponse>, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let subject = repo::device_subject(&state.pool, device_id)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+
+    let identity: [u8; certificate::KEY_LEN] = subject
+        .identity_key
+        .try_into()
+        .map_err(|_| ApiError::Internal)?;
+
+    let expires_at_millis = now_millis().saturating_add(certificate::VALIDITY_MILLIS);
+
+    let payload = certificate::signed_payload(
+        subject.account_id.as_bytes(),
+        device_id.as_bytes(),
+        &identity,
+        expires_at_millis,
+    );
+    let signature = certificate::sign(&state.certificate_key, &payload);
+
+    Ok(Json(CertificateResponse {
+        certificate: hex::encode(certificate::encode(&payload, &signature)),
+        expires_at_millis,
+        server_key: hex::encode(certificate::public_key(&state.certificate_key)),
+    }))
+}
+
+/// Публикует ключ доступа sealed sender.
+///
+/// 🔐 Требует подпись устройства: иначе посторонний заменил бы чужой
+/// ключ доступа своим и открыл бы себе анонимную отправку.
+async fn publish_sealed_access(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+    Json(request): Json<SealedAccessRequest>,
+) -> Result<StatusCode, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let hash = decode_hex(&request.access_key_hash)?;
+
+    // Длина проверяется здесь, а не только схемой: ошибка клиента
+    // должна давать понятный 400, а не нарушение CHECK.
+    if hash.len() != 32 {
+        return Err(ApiError::BadRequest);
+    }
+
+    repo::set_sealed_sender_access(&state.pool, device_id, &hash, request.allow_from_anyone)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Принимает запечатанный конверт без аутентификации отправителя.
+///
+/// # 🔐 Что сервер знает и чего не знает
+///
+/// Знает: кому доставить, размер конверта, время и IP. Не знает:
+/// кто отправитель. Подписи здесь нет и быть не может — она и была бы
+/// той самой меткой, которую sealed sender убирает.
+///
+/// # Чем это не открытая дверь для спама
+///
+/// Отправитель обязан предъявить **ключ доступа получателя**.
+/// Получатель раздаёт его только тем, с кем согласен переписываться,
+/// и делает это внутри E2EE-переписки — сервер раздачу не видит.
+/// Итог: писать анонимно можно, писать анонимно кому угодно — нет.
+///
+/// Плюс к этому действует общий ограничитель частоты по получателю:
+/// он не различает отправителей и потому не даёт им признака.
+async fn send_sealed_message(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<SealedSendRequest>,
+) -> Result<Json<Uuid>, ApiError> {
+    let key = rate_limit::key_from_addr(
+        &state.limiter_salt,
+        &request.destination_device_id.to_string(),
+    );
+    let now = now_millis();
+
+    {
+        let mut limiter = state
+            .message_limiter
+            .lock()
+            .map_err(|_| ApiError::Internal)?;
+
+        if !limiter.allow(key, now) {
+            return Err(ApiError::TooManyRequests);
+        }
+    }
+
+    let access_key = match &request.access_key {
+        None => None,
+        Some(encoded) => Some(decode_hex(encoded)?),
+    };
+
+    let allowed = repo::check_sealed_sender_access(
+        &state.pool,
+        request.destination_device_id,
+        access_key.as_deref(),
+    )
+    .await?;
+
+    if !allowed {
+        // 🔐 Тот же код, что у неверной подписи, и по той же причине:
+        // разница между «получателя нет» и «ключ не тот» — оракул,
+        // по которому перебором выясняется, кто зарегистрирован.
+        return Err(ApiError::Unauthorized);
+    }
+
+    let sealed = decode_hex(&request.sealed)?;
+
+    let envelope_id = repo::enqueue_envelope(
+        &state.pool,
+        request.destination_device_id,
+        &sealed,
+        i64::try_from(ENVELOPE_TTL.as_secs()).unwrap_or(i64::MAX),
+    )
+    .await?;
+
+    if let Err(error) = crate::hub::broadcast(&state.pool, request.destination_device_id).await {
+        tracing::warn!(%error, "не удалось разослать уведомление");
+    }
+
+    crate::push::wake_device(
+        &state.pool,
+        state.push.as_ref(),
+        request.destination_device_id,
+    )
+    .await;
+
+    Ok(Json(envelope_id))
+}
+
+/// Принимает жалобу на отправителя, раскрытого получателем.
+///
+/// # Как жалоба доказывает то, что утверждает
+///
+/// Сервер при доставке отправителя не знает. Узнать его он может
+/// только от получателя: тот расшифровывает конверт, достаёт оттуда
+/// сертификат — подписанный самим же сервером — и предъявляет его.
+///
+/// 🔐 Подпись проверяется здесь. Без неё жалоба была бы просто
+/// утверждением жалобщика, и любой мог бы навесить спам на неугодного.
+async fn report_sealed_sender(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+    Json(request): Json<SealedReportRequest>,
+) -> Result<Json<SealedReportResponse>, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let raw = decode_hex(&request.certificate)?;
+
+    let (payload, signature) = certificate::split(&raw).ok_or(ApiError::BadRequest)?;
+
+    // 🔐 Проверка подписи — до того, как из сертификата что-либо
+    // прочитано. До неё это байты жалобщика, а не утверждение сервера.
+    let server_public = certificate::public_key(&state.certificate_key);
+    if !certificate::verify(&server_public, payload, &signature) {
+        return Err(ApiError::BadRequest);
+    }
+
+    let (account_bytes, device_bytes) =
+        certificate::subject(payload).ok_or(ApiError::BadRequest)?;
+
+    let reported_account = Uuid::from_bytes(account_bytes);
+    let reported_device = Uuid::from_bytes(device_bytes);
+
+    // Жалоба на себя — либо ошибка клиента, либо попытка накрутить
+    // счётчик. И то и другое не должно попадать в статистику.
+    if reported_device == device_id {
+        return Err(ApiError::BadRequest);
+    }
+
+    let recorded = repo::record_sealed_sender_report(
+        &state.pool,
+        reported_account,
+        reported_device,
+        device_id,
+    )
+    .await?;
+
+    let total_reporters =
+        repo::sealed_sender_report_count(&state.pool, reported_account).await?;
+
+    Ok(Json(SealedReportResponse {
+        recorded,
+        total_reporters,
+    }))
+}
+
+/// Читает ключ подписи сертификатов из окружения.
+///
+/// # Почему из окружения, а не генерируется при старте
+///
+/// 🔐 Сгенерированный при старте ключ менялся бы при каждом
+/// перезапуске, и все выданные сертификаты разом переставали бы
+/// проверяться. В кластере было бы хуже: узлы выдавали бы
+/// сертификаты, которые не проверяются клиентами, сходившими
+/// к другому узлу.
+///
+/// # Что происходит, если переменной нет
+///
+/// Берётся ключ из нулей и пишется предупреждение. Это осознанно:
+/// сервер обязан подниматься без настройки, иначе разворачивающий
+/// инстанс для друзей упрётся в неё на первом же шаге. Но такой
+/// ключ **публично известен**, то есть сертификаты подделывает кто
+/// угодно, — и предупреждение об этом обязано быть громким.
+#[must_use]
+pub fn certificate_key_from_env() -> [u8; 32] {
+    let Ok(encoded) = std::env::var("AEGIS_CERTIFICATE_KEY") else {
+        tracing::warn!(
+            "AEGIS_CERTIFICATE_KEY не задан: сертификаты отправителя \
+             подписываются известным ключом и подделываются кем угодно"
+        );
+
+        return [0u8; 32];
+    };
+
+    let Ok(bytes) = hex::decode(&encoded) else {
+        tracing::warn!("AEGIS_CERTIFICATE_KEY не является hex — ключ не применён");
+
+        return [0u8; 32];
+    };
+
+    <[u8; 32]>::try_from(bytes.as_slice()).unwrap_or_else(|_| {
+        tracing::warn!("AEGIS_CERTIFICATE_KEY не 32 байта — ключ не применён");
+
+        [0u8; 32]
+    })
 }
 
 #[cfg(test)]

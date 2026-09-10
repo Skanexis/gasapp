@@ -32,6 +32,7 @@ uniffi::setup_scaffolding!();
 
 pub mod backup;
 pub mod messenger;
+pub mod network;
 
 /// Длина отпечатка identity-ключа в байтах.
 const FINGERPRINT_LEN: usize = 30;

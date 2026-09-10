@@ -383,4 +383,67 @@
         <item quantity="other">В хранилище %1$d файла</item>
     </plurals>
 
+
+    <!--
+      Проверки центра безопасности (M7).
+
+      🔐 Каждая формулировка — утверждение, которое верно, только когда
+      проверка пройдена. «Защищено» показывается лишь при всех пройденных:
+      заголовок, не зависящий от счёта, успокаивал бы при любом значении.
+    -->
+    <string name="security_section_checks">Проверки</string>
+    <string name="security_section_details">Подробнее</string>
+    <string name="security_attention_title">Требует внимания</string>
+    <string name="security_check_recovery">Ключ восстановления создан</string>
+    <string name="security_check_backup">Резервная копия свежее недели</string>
+    <string name="security_check_contacts">Все контакты сверены</string>
+    <string name="security_check_sealed">Отправитель скрыт от сервера</string>
+    <string name="security_check_address">IP-адрес скрыт прокси или Tor</string>
+    <string name="security_check_screenshots">Снимки экрана заблокированы</string>
+    <string name="security_check_preview">Текст скрыт в уведомлениях</string>
+    <string name="security_check_autolock">Автоблокировка не дольше 5 минут</string>
+    <string name="security_check_passed">Да</string>
+    <string name="security_check_failed">Нет</string>
+    <string name="security_check_unverified">Не сверено: %1$d</string>
+
+    <plurals name="security_attention">
+        <item quantity="one">%1$d пункт требует внимания</item>
+        <item quantity="few">%1$d пункта требуют внимания</item>
+        <item quantity="many">%1$d пунктов требуют внимания</item>
+        <item quantity="other">%1$d пункта требуют внимания</item>
+    </plurals>
+
+
+    <!--
+      Сеть: прокси и Tor (ADR-024).
+
+      🔐 Формулировки прямо говорят о двух вещах: при недоступном прокси
+      приложение не подключится, а не пойдёт напрямую; и прокси скрывает
+      не всё. Человек, выбравший Tor, должен понимать, от кого именно
+      скрыт его адрес.
+    -->
+    <string name="network_title">Сеть</string>
+    <string name="network_intro">Сервер видит IP-адрес устройства: по нему можно узнать примерное местоположение и связать ваши аккаунты между собой. Прокси или Tor скрывают адрес от сервера.</string>
+    <string name="network_section_mode">Способ подключения</string>
+    <string name="network_mode_direct">Напрямую</string>
+    <string name="network_mode_orbot">Tor через Orbot</string>
+    <string name="network_mode_socks">SOCKS5-прокси</string>
+    <string name="network_hint_direct">Сервер видит ваш IP-адрес.</string>
+    <string name="network_hint_orbot">Нужен установленный и запущенный Orbot. Если он выключен, приложение не подключится — напрямую оно не пойдёт.</string>
+    <string name="network_hint_socks">Все запросы и уведомления идут через указанный прокси. Если он недоступен, приложение не подключится — напрямую оно не пойдёт.</string>
+    <string name="network_host_hint">Адрес прокси</string>
+    <string name="network_port_hint">Порт</string>
+    <string name="network_save">Сохранить</string>
+    <string name="network_saved">Сохранено. Новые соединения идут выбранным способом.</string>
+    <string name="network_invalid">Адрес или порт указаны неверно. Укажите имя хоста или IP-адрес без схемы и пути; логин и пароль не поддерживаются.</string>
+    <string name="network_save_failed">Не удалось сохранить настройку</string>
+    <string name="network_limits">Прокси видит, что вы пользуетесь AEGIS, и когда. Tor скрывает адрес от сервера, но не от входного узла Tor. Через Tor соединение нестабильнее, и уведомления могут приходить с задержкой.</string>
+    <string name="network_unavailable">Настройка сети повреждена — соединения заблокированы, пока вы не выберете способ подключения заново.</string>
+    <string name="privacy_section_network">Сеть</string>
+    <string name="privacy_network">Подключение</string>
+
+
+    <string name="network_unavailable_short">Повреждена</string>
+    <string name="network_requires_android7">Прокси и Tor доступны на Android 7.0 и новее: на старых версиях система не гарантирует, что имя сервера уйдёт через прокси, и адрес утекал бы через DNS.</string>
+
 </resources>

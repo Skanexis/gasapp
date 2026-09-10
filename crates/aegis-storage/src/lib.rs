@@ -25,8 +25,10 @@
 //! опознаваемых строк, ни заголовка `SQLite format 3`.
 
 pub mod backup;
+pub mod sealed;
 
 pub use backup::{BackupChainState, BackupExport, ChatBackupRow, VaultFileRow};
+pub use sealed::{OwnAccessKey, StoredCertificate};
 
 use std::sync::{Mutex, RwLock};
 
@@ -280,7 +282,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 5;
+    const SCHEMA_VERSION: i32 = 6;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -543,6 +545,16 @@ impl Storage {
                     // с `IF NOT EXISTS`; здесь тот же вызов — для баз,
                     // созданных прежними версиями приложения.
                     Self::create_backup_tables(&transaction)?;
+                }
+                // 5 → 6: sealed sender и текстовые настройки (M7).
+                //
+                // Таблицы создают `create_sealed_sender_tables`
+                // и `create_text_settings_table` с `IF NOT EXISTS`;
+                // здесь те же вызовы — для баз, созданных прежними
+                // версиями приложения.
+                6 => {
+                    Self::create_sealed_sender_tables(&transaction)?;
+                    Self::create_text_settings_table(&transaction)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
@@ -870,6 +882,12 @@ impl Storage {
         // Таблицы резервного копирования и хранилища файлов (M6).
         Self::create_backup_tables(connection)?;
 
+        // Таблицы sealed sender (M7).
+        Self::create_sealed_sender_tables(connection)?;
+
+        // Текстовые настройки: адрес прокси (M7, ADR-024).
+        Self::create_text_settings_table(connection)?;
+
         // Триггеры, делающие журнал append-only на уровне базы.
         //
         // # Зачем триггеры, а не дисциплина вызовов
@@ -999,6 +1017,115 @@ impl Storage {
                 created_at  INTEGER NOT NULL,
                 location    TEXT NOT NULL,
                 wrapped_key BLOB NOT NULL
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Создаёт таблицы sealed sender (M7, раздел 15.2).
+    ///
+    /// Вынесены отдельной функцией по той же причине, что и таблицы
+    /// резервного копирования: вызываются и для свежей базы, и из
+    /// миграции для баз прежних версий.
+    fn create_sealed_sender_tables(connection: &Connection) -> Result<()> {
+        // Собственный ключ доступа — ровно одна строка.
+        //
+        // 🔐 Ключ не шифрует переписку: его утечка позволяет лишь писать
+        // владельцу анонимно. Но его наличие рядом с базой открытым
+        // текстом сообщало бы наблюдателю, что владелец пользуется
+        // sealed sender, поэтому он живёт в зашифрованной базе.
+        //
+        // `published_at` — когда хеш ключа принят сервером. Ключ,
+        // не дошедший до сервера, раздавать собеседникам нельзя:
+        // их запечатанные сообщения отвергались бы.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS own_access_key (
+                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                access_key   BLOB NOT NULL,
+                published_at INTEGER
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        // Последний сертификат отправителя — ровно одна строка.
+        //
+        // Отдельно от ключа доступа: сертификат нужен и получателю,
+        // который ещё ничего не отправлял, — им проверяются входящие.
+        // В одной таблице с ключом доступа строка требовала бы ключа
+        // раньше, чем он понадобился.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS sender_certificate (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                certificate BLOB NOT NULL,
+                expires_at  INTEGER NOT NULL,
+                server_key  BLOB NOT NULL
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        // Ключи доступа собеседников.
+        //
+        // 🔐 Приходят внутри переписки (`Content::AccessKey`), то есть
+        // под сквозным шифрованием: сервер не видит, кто кому их дал,
+        // и не может построить по ним список контактов.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS contact_access_keys (
+                account_id BLOB PRIMARY KEY,
+                access_key BLOB NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        // Кому собственный ключ доступа уже передан.
+        //
+        // Строка снимается, когда собеседник начинает новую сессию:
+        // у него новое устройство или восстановленная копия, и нашего
+        // ключа там нет.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS access_key_shares (
+                account_id BLOB PRIMARY KEY,
+                shared_at  INTEGER NOT NULL
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Создаёт таблицу текстовых настроек.
+    ///
+    /// Прежняя таблица `settings` хранит только числа, а адрес прокси —
+    /// строка. 🔐 Держать его рядом с базой открытым текстом нельзя:
+    /// файл «socks5:127.0.0.1:9050» сам по себе говорит, что владелец
+    /// ходит через Tor.
+    fn create_text_settings_table(connection: &Connection) -> Result<()> {
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS settings_text (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             )
             ",
                 [],
@@ -1213,6 +1340,38 @@ impl Storage {
         )
         .map_err(storage_error)?;
         Ok(())
+    }
+
+    /// Перечисляет чаты, для которых есть сессия, — свежие первыми.
+    ///
+    /// # Зачем отдельно от списка чатов
+    ///
+    /// Сессия появляется раньше чата в интерфейсе: первым сообщением
+    /// новой сессии приходит ключ доступа sealed sender, а он текста
+    /// не создаёт. Перебор входящих по списку чатов такую сессию
+    /// не находил, и следующее за ключом сообщение молча терялось.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось либо запись повреждена.
+    pub fn session_chat_ids(&self, limit: u32) -> Result<Vec<ChatId>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = connection
+            .prepare("SELECT chat_id FROM sessions ORDER BY updated_at DESC LIMIT ?")
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map(params![limit], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(storage_error)?;
+
+        let mut chats = Vec::new();
+        for row in rows {
+            let bytes = row.map_err(storage_error)?;
+            chats.push(ChatId::from_uuid(uuid_from_slice(&bytes)?));
+        }
+
+        Ok(chats)
     }
 
     /// Получает состояние сессии для указанного чата, если оно существует.
@@ -2211,6 +2370,35 @@ mod tests {
         let replacement = AccountId::generate();
         storage.set_account_id(&replacement, now()).unwrap();
         assert_eq!(storage.get_account_id().unwrap(), Some(replacement));
+    }
+
+    /// Сессии перечисляются свежими первыми.
+    ///
+    /// Перебор входящих идёт по этому списку: сессия, которой нет
+    /// в списке, не расшифрует ни одного сообщения.
+    #[test]
+    fn session_chats_are_listed_newest_first() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let older = ChatId::generate();
+        let newer = ChatId::generate();
+
+        storage
+            .save_session(
+                &older,
+                &SessionState::from_serialized(Secret::new(vec![1])),
+                now(),
+            )
+            .unwrap();
+        storage
+            .save_session(
+                &newer,
+                &SessionState::from_serialized(Secret::new(vec![2])),
+                Timestamp::from_millis(now().as_millis() + 1),
+            )
+            .unwrap();
+
+        assert_eq!(storage.session_chat_ids(10).unwrap(), vec![newer, older]);
+        assert_eq!(storage.session_chat_ids(1).unwrap(), vec![newer]);
     }
 
     #[test]

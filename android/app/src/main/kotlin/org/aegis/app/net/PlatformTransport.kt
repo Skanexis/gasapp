@@ -24,6 +24,13 @@ import uniffi.aegis.HttpTransport
  * Используется `HttpURLConnection`, а не сторонний клиент: он входит
  * в платформу и подчиняется её конфигурации безопасности без
  * дополнительной настройки, которую легко забыть.
+ *
+ * # Прокси (ADR-024)
+ *
+ * Прокси передаётся соединению явно из [NetworkProxy]. Явный прокси
+ * не откатывается на прямое соединение: недоступный Orbot означает
+ * ошибку сети, а не запрос в обход Tor. TLS идёт сквозь туннель до
+ * сервера, поэтому пиннинг продолжает действовать.
  */
 class PlatformTransport(private val baseUrl: String) : HttpTransport {
 
@@ -34,7 +41,14 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
         binaryBody: ByteArray?,
         headers: List<FfiHeader>,
     ): FfiHttpResponse {
-        val connection = openConnection(method, path)
+        // Открытие соединения тоже внутри обработки ошибок: закрытая сеть
+        // (повреждённая настройка прокси) — это сбой сети для ядра,
+        // а не исключение, пересекающее границу FFI.
+        val connection = try {
+            openConnection(method, path)
+        } catch (error: IOException) {
+            throw FfiException.Core("network unavailable: ${error.javaClass.simpleName}")
+        }
 
         try {
             // 🔐 Заголовки подписи ставит ядро: приватный ключ живёт
@@ -112,9 +126,14 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
     private fun binaryDownload(method: String, path: String): Boolean =
         method.equals("GET", ignoreCase = true) && path.startsWith("/v1/attachments/")
 
+    @Throws(IOException::class)
     private fun openConnection(method: String, path: String): HttpURLConnection {
         val url = URL("$baseUrl$path")
-        val connection = url.openConnection() as HttpURLConnection
+
+        // 🔐 Прокси передаётся явно: `openConnection()` без аргумента
+        // спросил бы системный ProxySelector и при недоступном прокси
+        // мог бы уйти напрямую. Явный прокси так не делает.
+        val connection = url.openConnection(NetworkProxy.current()) as HttpURLConnection
 
         connection.requestMethod = method
         connection.connectTimeout = CONNECT_TIMEOUT_MS
@@ -131,8 +150,14 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
     }
 
     private companion object {
-        /** Ожидание установления соединения. */
-        const val CONNECT_TIMEOUT_MS = 15_000
+        /**
+         * Ожидание установления соединения.
+         *
+         * С запасом на Tor: построение цепочки занимает секунды,
+         * и слишком короткий таймаут выдавал бы работающий Tor
+         * за недоступную сеть.
+         */
+        const val CONNECT_TIMEOUT_MS = 30_000
 
         /**
          * Ожидание ответа.
@@ -141,6 +166,6 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
          * серверную проверку proof-of-work, и слишком короткий таймаут
          * обрывал бы её на медленной сети.
          */
-        const val READ_TIMEOUT_MS = 30_000
+        const val READ_TIMEOUT_MS = 45_000
     }
 }

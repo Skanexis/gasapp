@@ -4,9 +4,9 @@
   Security Center по UI kit: кольцевой счёт и список проверок.
 
   🔐 Смысл экрана — показать, что именно проверено, а не поставить
-  оценку. Одна цифра без разбивки создавала бы ложное чувство
-  защищённости: «9 из 10» ничего не говорит о том, какой пункт
-  не выполнен и чем это грозит.
+  оценку. Поэтому под кольцом стоит список проверок, собираемый кодом
+  из реального состояния: непройденные — первыми и с переходом туда,
+  где их исправляют. Прежде счёт был константой «9 из 10».
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -72,7 +72,7 @@
                 android:textColor="@color/status_ok"
                 android:textSize="12sp"
                 android:fontFamily="@font/inter_semibold"
-                tools:text="9/10" />
+                tools:text="6/8" />
         </FrameLayout>
 
         <LinearLayout
@@ -86,7 +86,7 @@
                 android:id="@+id/score_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/security_protected"
+                android:text="@string/security_attention_title"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
                 android:fontFamily="@font/inter_semibold" />
@@ -98,7 +98,7 @@
                 android:layout_marginTop="3dp"
                 android:textColor="@color/text_muted"
                 android:textSize="13sp"
-                tools:text="1 пункт требует внимания" />
+                tools:text="2 пункта требуют внимания" />
         </LinearLayout>
     </LinearLayout>
 
@@ -112,6 +112,25 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginStart="@dimen/screen_padding"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/security_section_checks" />
+
+            <!-- Заполняется кодом: состав зависит от состояния устройства. -->
+            <LinearLayout
+                android:id="@+id/security_checks"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginStart="@dimen/screen_padding"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/security_section_details" />
 
             <include android:id="@+id/security_keys" layout="@layout/item_settings_row" />
 

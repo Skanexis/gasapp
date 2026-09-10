@@ -65,3 +65,9 @@ name = "backup_restore"
 path = "fuzz_targets/backup_restore.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_sealed_sender"
+path = "fuzz_targets/parse_sealed_sender.rs"
+test = false
+doc = false

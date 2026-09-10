@@ -2,6 +2,7 @@
 
 package org.aegis.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
@@ -9,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
+import org.aegis.app.ui.SettingsRow
 import org.aegis.app.ui.SettingsToggle
 
 /**
@@ -46,6 +48,33 @@ class PrivacyActivity : AppCompatActivity() {
         bindLastSeen()
         bindScreenshots()
         bindNotificationPreview()
+    }
+
+    /**
+     * Строка сети пересчитывается при возвращении: человек уходит
+     * на экран «Сеть» менять способ подключения и возвращается сюда.
+     */
+    override fun onStart() {
+        super.onStart()
+        bindNetwork()
+    }
+
+    /**
+     * Способ подключения к серверу (ADR-024).
+     *
+     * 🔐 Нечитаемая настройка показывается как повреждённая, а не как
+     * «напрямую»: подпись не должна обещать то, чего нет.
+     */
+    private fun bindNetwork() {
+        val mode = runCatching { Core.messenger().proxy() }.getOrNull()
+
+        SettingsRow.bind(
+            root = findViewById(R.id.privacy_network),
+            label = R.string.privacy_network,
+            value = getString(NetworkActivity.labelFor(mode)),
+            icon = R.drawable.ic_shield,
+            onClick = { startActivity(Intent(this, NetworkActivity::class.java)) },
+        )
     }
 
     private fun bindPresence() {
