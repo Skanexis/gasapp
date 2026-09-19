@@ -77,6 +77,16 @@ jobs:
       - run: bash tools/check-no-telemetry.sh
 
   # --------------------------------------------------------------------------
+  #  MASVS STORAGE-2: секреты не попадают в журнал
+  # --------------------------------------------------------------------------
+  no-secrets-in-logs:
+    name: "masvs storage-2 — no secrets in logs"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/check-no-secrets-in-logs.sh
+
+  # --------------------------------------------------------------------------
   #  unsafe разрешён только в aegis-ffi
   # --------------------------------------------------------------------------
   unsafe-boundary:
