@@ -42,6 +42,34 @@
     <string name="pin_error">Не удалось разблокировать</string>
     <string name="unlock">Разблокировать</string>
 
+    <!--
+        Задержки после неверного PIN (раздел 19.3).
+
+        Сообщения намеренно не называют число оставшихся попыток:
+        оно полезно только тому, кто перебирает.
+    -->
+    <string name="lock_error_wrong">Неверный PIN</string>
+    <string name="lock_error_wait">Неверный PIN. Следующая попытка — с задержкой</string>
+    <string name="lock_locked_for">Повторить можно через %1$s</string>
+    <plurals name="lock_left_seconds">
+        <item quantity="one">%d секунду</item>
+        <item quantity="few">%d секунды</item>
+        <item quantity="many">%d секунд</item>
+        <item quantity="other">%d секунды</item>
+    </plurals>
+    <plurals name="lock_left_minutes">
+        <item quantity="one">%d минуту</item>
+        <item quantity="few">%d минуты</item>
+        <item quantity="many">%d минут</item>
+        <item quantity="other">%d минуты</item>
+    </plurals>
+    <plurals name="lock_left_hours">
+        <item quantity="one">%d час</item>
+        <item quantity="few">%d часа</item>
+        <item quantity="many">%d часов</item>
+        <item quantity="other">%d часа</item>
+    </plurals>
+
     <!-- Safety number -->
     <string name="safety_number_title">Safety number</string>
     <string name="safety_number_qr_description">QR-код safety number</string>

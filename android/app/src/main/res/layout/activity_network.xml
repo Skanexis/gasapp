@@ -108,6 +108,7 @@
                         android:autofillHints=""
                         android:hint="@string/network_host_hint"
                         android:importantForAutofill="no"
+                        android:imeOptions="flagNoPersonalizedLearning"
                         android:inputType="textUri|textNoSuggestions"
                         android:textColor="@color/text_primary" />
 
@@ -119,6 +120,7 @@
                         android:autofillHints=""
                         android:hint="@string/network_port_hint"
                         android:importantForAutofill="no"
+                        android:imeOptions="flagNoPersonalizedLearning"
                         android:inputType="number"
                         android:maxLength="5"
                         android:textColor="@color/text_primary" />

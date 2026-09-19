@@ -4,6 +4,7 @@ package org.aegis.app.components
 
 import android.content.Context
 import android.util.AttributeSet
+import android.view.inputmethod.EditorInfo
 import androidx.appcompat.widget.AppCompatEditText
 import org.aegis.app.R
 
@@ -19,6 +20,25 @@ import org.aegis.app.R
  * Флаг ошибки называется [hasError], а не `error`: у `EditText` уже есть
  * свойство `error` (текст всплывающей подсказки валидации). Прежняя версия
  * объявляла своё `getError` и получала конфликт с методом супертипа.
+ *
+ * # 🔐 Почему запрет обучения клавиатуры стоит здесь
+ *
+ * Раздел 19.2 требует `imeOptions="flagNoPersonalizedLearning"`. Флаг
+ * можно было проставить в каждой разметке, но разметок восемь, а полей
+ * в них больше, и следующее добавленное поле флага не получило бы —
+ * молча, потому что его отсутствие ничем не проявляется.
+ *
+ * Что происходит без флага: клавиатура (Gboard и подавляющее
+ * большинство остальных) добавляет набранные слова в персональный
+ * словарь. Словарь живёт вне приложения, переживает его удаление и
+ * синхронизируется в облако учётной записи. Имена, адреса и редкие
+ * слова из переписки после этого всплывают подсказками в других
+ * приложениях — и попадают в резервную копию, которую само приложение
+ * у себя запретило (`allowBackup="false"`).
+ *
+ * Флаг именно добавляется к значению из разметки, а не заменяет его:
+ * у поля поиска в разметке стоит `actionSearch`, и присваивание
+ * стёрло бы кнопку «Искать» на клавиатуре.
  */
 class AegisTextField @JvmOverloads constructor(
     context: Context,
@@ -36,6 +56,11 @@ class AegisTextField @JvmOverloads constructor(
 
     init {
         setBackgroundResource(R.drawable.bg_aegis_text_field)
+
+        // 🔐 Порядок важен: суперконструктор уже разобрал атрибуты
+        // разметки, поэтому `imeOptions` здесь содержит заданное в XML
+        // значение, и `or` его дополняет.
+        imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
     }
 
     override fun onCreateDrawableState(extraSpace: Int): IntArray {

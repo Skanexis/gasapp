@@ -29,6 +29,7 @@ import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
+import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.AttachmentKindMark
@@ -709,12 +710,19 @@ class ChatActivity : AppCompatActivity() {
         sheet.show()
     }
 
-    /** Копирует текст сообщения. */
+    /**
+     * Копирует текст сообщения.
+     *
+     * 🔐 Через [SecureClipboard], а не напрямую: скопированное
+     * помечается чувствительным (иначе Android 13+ показывает текст
+     * во всплывающем окне поверх экрана, который этот же текст прячет
+     * от снимка) и стирается через минуту.
+     */
     private fun copyMessage(message: MessageItem) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-
-        clipboard.setPrimaryClip(
-            ClipData.newPlainText(getString(R.string.message_actions), message.text),
+        SecureClipboard.copySensitive(
+            context = this,
+            label = getString(R.string.message_actions),
+            text = message.text,
         )
 
         Toast.makeText(this, R.string.message_copied, Toast.LENGTH_SHORT).show()
