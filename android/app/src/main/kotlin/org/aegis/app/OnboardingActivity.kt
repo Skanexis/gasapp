@@ -17,7 +17,6 @@ import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import uniffi.aegis.FfiException
-import uniffi.aegis.deriveStorageKey
 
 /**
  * Онбординг: регистрация первого аккаунта.
@@ -77,18 +76,17 @@ class OnboardingActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    // 🔐 Ключ хранилища выводится из PIN через Argon2id.
-                    // Это занимает около секунды и происходит в фоновом
-                    // потоке: задержка здесь — цена того, что перебор
-                    // PIN на изъятом устройстве занимает годы.
-                    val key = deriveStorageKey(
-                        pinValue,
-                        Core.salt(this@OnboardingActivity),
-                    )
-
+                    // 🔐 Ключ хранилища выводится из PIN через Argon2id
+                    // и связывается с секретом, не покидающим устройство
+                    // (Core.unlock). Занимает около секунды и идёт
+                    // в фоновом потоке.
+                    //
+                    // Цена этой секунды — то, что снятый с телефона файл
+                    // базы не перебирается: одного PIN для ключа мало.
+                    //
                     // Общий экземпляр: второй открыл бы ту же базу
                     // повторно, и состояния Double Ratchet разошлись бы.
-                    Core.open(this@OnboardingActivity, key)
+                    Core.unlock(this@OnboardingActivity, pinValue)
                         .register(name, System.currentTimeMillis())
                 }
             }

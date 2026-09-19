@@ -874,6 +874,12 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -905,6 +911,8 @@ fun uniffi_aegis_checksum_func_core_version(
 ): Short
 fun uniffi_aegis_checksum_func_derive_storage_key(
 ): Short
+fun uniffi_aegis_checksum_func_derive_storage_key_bound(
+): Short
 fun uniffi_aegis_checksum_func_format_safety_number(
 ): Short
 fun uniffi_aegis_checksum_func_generate_identity_public_key(
@@ -912,6 +920,8 @@ fun uniffi_aegis_checksum_func_generate_identity_public_key(
 fun uniffi_aegis_checksum_func_generate_recovery_key(
 ): Short
 fun uniffi_aegis_checksum_func_generate_storage_salt(
+): Short
+fun uniffi_aegis_checksum_func_hardware_secret_len(
 ): Short
 fun uniffi_aegis_checksum_func_identity_change_alert(
 ): Short
@@ -980,6 +990,8 @@ fun uniffi_aegis_checksum_method_messenger_purge_expired(
 fun uniffi_aegis_checksum_method_messenger_receive_messages(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_register(
+): Short
+fun uniffi_aegis_checksum_method_messenger_rekey_storage(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_restore_backup(
 ): Short
@@ -1143,6 +1155,8 @@ fun uniffi_aegis_fn_method_messenger_receive_messages(`ptr`: Pointer,`deviceId`:
 ): Int
 fun uniffi_aegis_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_restore_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`links`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_seal_vault(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1203,6 +1217,8 @@ fun uniffi_aegis_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_derive_storage_key(`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_derive_storage_key_bound(`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`hardwareSecret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_format_safety_number(`local`: RustBuffer.ByValue,`remote`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRustCallStatus, 
@@ -1211,6 +1227,8 @@ fun uniffi_aegis_fn_func_generate_recovery_key(uniffi_out_err: UniffiRustCallSta
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_generate_storage_salt(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_hardware_secret_len(uniffi_out_err: UniffiRustCallStatus, 
+): Int
 fun uniffi_aegis_fn_func_identity_change_alert(`knownIdentity`: RustBuffer.ByValue,`presentedIdentity`: RustBuffer.ByValue,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_parse_attachment_descriptor(`descriptor`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1375,6 +1393,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_derive_storage_key() != 56879.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_derive_storage_key_bound() != 39178.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_format_safety_number() != 12850.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1385,6 +1406,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_generate_storage_salt() != 41308.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_hardware_secret_len() != 17169.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_identity_change_alert() != 8609.toShort()) {
@@ -1487,6 +1511,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_register() != 16364.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_rekey_storage() != 60038.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_restore_backup() != 31001.toShort()) {
@@ -2691,6 +2718,25 @@ public interface MessengerInterface {
     fun `register`(`username`: kotlin.String, `nowMillis`: kotlin.Long): FfiAccount
     
     /**
+     * Перешифровывает базу новым ключом.
+     *
+     * Нужен ровно для одного: перевести базу, созданную схемой
+     * «ключ из одного PIN», на ключ, связанный с аппаратным
+     * хранилищем ([`derive_storage_key_bound`], находка P-5 раздела
+     * 23.6). Выбросить старую базу значило бы стереть переписку при
+     * обновлении приложения.
+     *
+     * 🔐 Вызывается на **открытой** базе: перешифровать можно только
+     * то, что удалось расшифровать. Отсюда и порядок на платформе —
+     * открыть старым ключом, затем сменить.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — ключ не 32 байта либо смена не удалась.
+     */
+    fun `rekeyStorage`(`newKey`: kotlin.ByteArray)
+    
+    /**
      * Восстанавливает данные из цепочки копий.
      *
      * `links` — файлы в порядке создания: сначала полный снимок,
@@ -3654,6 +3700,35 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     }
     )
     }
+    
+
+    
+    /**
+     * Перешифровывает базу новым ключом.
+     *
+     * Нужен ровно для одного: перевести базу, созданную схемой
+     * «ключ из одного PIN», на ключ, связанный с аппаратным
+     * хранилищем ([`derive_storage_key_bound`], находка P-5 раздела
+     * 23.6). Выбросить старую базу значило бы стереть переписку при
+     * обновлении приложения.
+     *
+     * 🔐 Вызывается на **открытой** базе: перешифровать можно только
+     * то, что удалось расшифровать. Отсюда и порядок на платформе —
+     * открыть старым ключом, затем сменить.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — ключ не 32 байта либо смена не удалась.
+     */
+    @Throws(FfiException::class)override fun `rekeyStorage`(`newKey`: kotlin.ByteArray)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_rekey_storage(
+        it, FfiConverterByteArray.lower(`newKey`),_status)
+}
+    }
+    
     
 
     
@@ -6267,6 +6342,39 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     
 
         /**
+         * Выводит ключ хранилища из PIN **и** аппаратного секрета.
+         *
+         * # Чем отличается от [`derive_storage_key`]
+         *
+         * [`derive_storage_key`] строит ключ из одного PIN. PIN шестизначный,
+         * и `Argon2id` перебор растягивает, но не исключает: машина с 64
+         * ядрами и 4 ГиБ памяти проходит весь миллион вариантов за пару
+         * часов. То есть снятый с телефона файл базы вместе с солью
+         * раскрывается за аренду в несколько долларов.
+         *
+         * 🔐 `hardware_secret` — 32 байта, которые платформа хранит
+         * зашифрованными ключом аппаратного хранилища (Android Keystore,
+         * по возможности StrongBox). Ключ оттуда не извлекается, поэтому
+         * скопировать секрет вместе с файлами нельзя, и у атакующего
+         * нет половины входа. Это схема раздела 7.3 и ADR-017; до находки
+         * P-5 внутреннего пентеста (раздел 23.6) её не существовало.
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`] — PIN короче шести символов, соль
+         * не 16 байт либо секрет не 32 байта.
+         */
+    @Throws(FfiException::class) fun `deriveStorageKeyBound`(`pin`: kotlin.String, `salt`: kotlin.ByteArray, `hardwareSecret`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_derive_storage_key_bound(
+        FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),FfiConverterByteArray.lower(`hardwareSecret`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Форматирует safety number по двум отпечаткам identity-ключей.
          *
          * Возвращает строку в раскладке ADR-022: 4 строки по 3 группы из 5 цифр.
@@ -6340,6 +6448,23 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
             return FfiConverterByteArray.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_generate_storage_salt(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Длина аппаратного секрета в байтах.
+         *
+         * Платформа генерирует секрет сама — ей нужно знать размер.
+         * Константа отдаётся наружу, а не дублируется в Kotlin и Swift:
+         * разойдясь, они дали бы отказ вывода ключа, который выглядит как
+         * «неверный PIN».
+         */ fun `hardwareSecretLen`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_hardware_secret_len(
         _status)
 }
     )
