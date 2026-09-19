@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# RFC 9116. Публикуется по адресу https://aegis.chat/.well-known/security.txt
+#
+# Файл лежит в репозитории, а не только на сервере: сервер ещё
+# не развёрнут, а исследователю нужно знать, куда писать, уже сейчас.
+
+Contact: mailto:security@aegis.chat
+Expires: 2027-09-20T00:00:00.000Z
+Preferred-Languages: ru, en
+Canonical: https://aegis.chat/.well-known/security.txt
+Policy: https://github.com/aegis-messenger/aegis/blob/main/SECURITY.md
+Acknowledgments: https://github.com/aegis-messenger/aegis/blob/main/SECURITY.md#благодарности
+
+# PGP-ключа для этого адреса пока нет. Когда появится, сюда добавится
+# строка Encryption: с ссылкой на него. Пустой или выдуманной ссылки
+# здесь не будет: исследователь, зашифровавший отчёт ключом, которым
+# его никто не прочитает, потеряет и время, и отчёт.
