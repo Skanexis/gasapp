@@ -28,7 +28,22 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:theme="@style/Theme.AEGIS">
+        android:theme="@style/Theme.AEGIS"
+        android:usesCleartextTraffic="false">
+        <!--
+          🔐 usesCleartextTraffic="false" — раздел 19.2, MASVS NETWORK-1.
+
+          Запрет уже есть в network_security_config (base-config), и этот
+          атрибут его дублирует. Дублирование намеренно: атрибут виден
+          в манифесте распакованного APK, а конфигурация лежит отдельным
+          ресурсом. Проверяющий — хоть аудитор, хоть Play Console —
+          смотрит в манифест, и его молчание здесь читается как
+          разрешение.
+
+          Второй довод важнее косметического: конфигурацию легко потерять
+          при слиянии манифестов из библиотеки, а атрибут при слиянии
+          конфликтует громко.
+        -->
         <!--
           Точка входа — экран блокировки, а не список чатов.
 

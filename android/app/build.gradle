@@ -7,12 +7,51 @@ android {
     // Обязателен начиная с AGP 8: пакет, в котором генерируется класс R.
     // Без него конфигурация проекта падает ещё до сборки.
     namespace = "org.aegis.app"
-    compileSdk = 34
+    compileSdk = 35
+
+    // 🔐 Версия NDK закреплена — раздел 19.2, пункт «.so не содержит
+    // debug-символов в release», и ADR-020 (воспроизводимость).
+    //
+    // Без этой строки AGP не находит NDK и молча пропускает задачу
+    // `stripReleaseDebugSymbols`, сообщая об этом одной строкой в логе:
+    // «Unable to strip the following libraries, packaging them as they
+    // are: libaegis.so, libjnidispatch.so». Сборка при этом успешна.
+    // В APK уезжала libaegis.so с .symtab на 34 тысячи записей —
+    // полными именами функций ядра, от `pqxdh_initiate` до
+    // `double_ratchet_decrypt`.
+    //
+    // Rust срезать их не может: `strip = "symbols"` в Cargo.toml убрал бы
+    // вместе с ними метаданные UNIFFI_META_*, и биндинги перестали бы
+    // генерироваться (см. комментарий в crates/Cargo.toml). `strip` из NDK
+    // различает таблицы: убирает .symtab, оставляет .dynsym — то есть
+    // ровно то, что нужно.
+    //
+    // Версия именно точная: `strip` разных NDK даёт разный байт-в-байт
+    // результат, а воспроизводимая сборка (M8) требует совпадения APK.
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "org.aegis.app"
-        minSdk = 21
-        targetSdk = 34
+
+        // 🔐 minSdk = 28, как требует раздел 19.2 плана.
+        //
+        // Стояло 21 — и это расходилось не только с планом, но и с
+        // `tools/build-rust-android.sh`, который собирает .so под API 28.
+        // На API < 28 в Android Keystore нет `setUnlockedDeviceRequired`
+        // и нет StrongBox, то есть схема KEK/DEK (ADR-017) на таких
+        // устройствах держалась бы на ключе, доступном при заблокированном
+        // экране. Приложение при этом ставилось и выглядело работающим:
+        // заявленная аппаратная защита просто отсутствовала.
+        minSdk = 28
+
+        // 🔐 targetSdk = 35.
+        //
+        // targetSdk — это не «где запускается», а «какие ограничения
+        // платформы приложение на себя принимает». На 34 система применяла
+        // бы к нему послабления совместимости: часть ограничений на фоновый
+        // запуск и на доступ к буферу обмена из фона действует только
+        // начиная с 35.
+        targetSdk = 35
 
         // Адрес сервера как поле сборки.
         //
@@ -26,6 +65,21 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Четыре ABI — ровно те, под которые `tools/build-rust-android.sh`
+        // собирает libaegis.so.
+        //
+        // Без фильтра в APK попадало семь: JNA поставляет libjnidispatch.so
+        // ещё под mips, mips64 и armeabi — архитектуры, выброшенные из NDK
+        // в r17 и не встречающиеся на живых устройствах с API 28+.
+        //
+        // Помимо лишнего веса это было и дырой в обрезке символов: strip
+        // из NDK для mips не существует, и именно эти три библиотеки
+        // задача `stripReleaseDebugSymbols` пропускала с предупреждением,
+        // упаковывая их с полной таблицей символов.
+        ndk {
+            abiFilters += ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
+        }
     }
 
     // compileOptions и kotlinOptions — блоки уровня `android`, а не
@@ -63,14 +117,101 @@ android {
         buildConfig = true
     }
 
+    // 🔐 Подпись релиза (раздел 26.3, пункт M8 «Подпись релизов + публикация
+    // SHA-256»).
+    //
+    // Все четыре значения приходят из свойств Gradle — из ~/.gradle/gradle.properties
+    // или из переменных окружения CI. В репозитории нет ни ключа, ни пароля;
+    // gitleaks проверяет это на каждом PR.
+    signingConfigs {
+        release {
+            if (project.hasProperty('aegisKeystore')) {
+                storeFile = file(project.property('aegisKeystore'))
+                storePassword = project.property('aegisKeystorePassword')
+                keyAlias = project.property('aegisKeyAlias')
+                keyPassword = project.property('aegisKeyPassword')
+
+                // v1 (JAR signing) выключена намеренно.
+                //
+                // 🔐 minSdk = 28, а v2 существует с API 24: v1 не нужна ни
+                // одному поддерживаемому устройству, зато она уязвима к
+                // Janus-подобным подменам и оставляет в APK второй, более
+                // слабый путь проверки подписи.
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
-            minifyEnabled false
+            // 🔐 R8 с обфускацией — раздел 19.2 и MASVS CODE-2/RESILIENCE-4.
+            //
+            // Стояло `false`, при том что строкой ниже уже перечислялись
+            // proguardFiles, а файла 'proguard-rules.pro' вообще не
+            // существовало: конфигурация выглядела настроенной и не
+            // выполнялась. Релизный APK отдавал имена классов и методов
+            // как есть — `LockActivity.verifyPin`, `Core.open` — то есть
+            // карту приложения тому, кто его вскрывает.
+            //
+            // ⚠️ Обфускация ≠ безопасность (прямая оговорка раздела 25).
+            // Она не защищает ни ключи, ни протокол; она лишь поднимает
+            // цену первого прохода по коду. Настоящие меры — memory safety
+            // ядра и воспроизводимость сборки.
+            minifyEnabled true
+
+            // Удаление неиспользуемых ресурсов. Помимо размера это убирает
+            // из APK строки и разметку черновых экранов, по которым видно
+            // незавершённые функции.
+            shrinkResources true
+
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
                     'proguard-rules.pro'
+
+            // 🔐 Явное `false`, а не умолчание.
+            //
+            // AGP и так не делает релиз отлаживаемым, но пункт раздела 19.2
+            // требует именно проверяемого запрета: строка в файле сборки
+            // видна в ревью, умолчание — нет.
+            debuggable false
+
+            // 🔐 Не прикладывать таблицу символов libaegis.so к бандлу.
+            //
+            // Обрезает .so в самом APK задача AGP `stripDebugSymbols`
+            // (она вызывает strip из NDK и работает в release всегда);
+            // Rust-профиль release срезает debuginfo ещё раньше. Эта же
+            // строка отвечает за другое — за отдельный архив символов,
+            // который AGP иначе прикладывает к .aab для Play Console.
+            //
+            // 'NONE', потому что архив символов Play раздаёт в составе
+            // отчётов о падениях. Осмысленные трассировки нативных
+            // падений — вещь полезная, но в обмен на публикацию карты
+            // libaegis.so, а ядро здесь — то, что защищает переписку.
+            ndk {
+                debugSymbolLevel = 'NONE'
+            }
+
+            // Подпись релиза берётся из свойств Gradle, а не из файла
+            // в репозитории (раздел 26): ключ в дереве исходников — это
+            // ключ, утёкший вместе с первым клоном.
+            //
+            // Без свойств блок не объявляется вовсе: пустой signingConfig
+            // заставил бы AGP подписать релиз отладочным ключом и выдать
+            // его за подписанный.
+            if (project.hasProperty('aegisKeystore')) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             minifyEnabled false
+
+            // Отладочная сборка ставится рядом с релизной, а не поверх неё.
+            //
+            // 🔐 Иначе установка отладочного APK на устройство с релизным
+            // затирала бы боевую базу: applicationId совпадает, и система
+            // считает это обновлением.
+            applicationIdSuffix = ".debug"
         }
     }
 
@@ -151,7 +292,10 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     // Robolectric — чтобы тесты вью выполнялись на JVM без эмулятора:
     // компоненты дизайн-системы наследуют View и требуют Context.
-    testImplementation 'org.robolectric:robolectric:4.13'
+    // 4.14.1, а не 4.13: в 4.13 максимальный поддерживаемый SDK — 34,
+    // и после подъёма targetSdk до 35 (раздел 19.2) каждый тест падал
+    // ещё до запуска с «Package targetSdkVersion=35 > maxSdkVersion=34».
+    testImplementation 'org.robolectric:robolectric:4.14.1'
     testImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
