@@ -1,0 +1,176 @@
+name: release
+
+# Сборка релиза, подпись и публикация SHA-256.
+#
+# Пункт M8 «Подпись релизов + публикация SHA-256» (раздел 22).
+#
+# 🔐 Запускается только по тегу вида v1.2.3 и вручную. На push в ветку
+# не запускается намеренно: ключ подписи доступен этому workflow,
+# и запуск с произвольной ветки означал бы, что подписать релиз может
+# любой, кто протолкнул коммит.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Собрать и посчитать суммы, но не публиковать"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build and hash
+    runs-on: ubuntu-latest
+
+    # Публикация требует права на запись; они выдаются одному шагу,
+    # а не всему workflow.
+    permissions:
+      contents: write
+
+    # Секрет поднимается в env на уровне job.
+    #
+    # ⚠️ Контекст `secrets` недоступен в `if:` у шага — проверка
+    # `secrets.X != ''` там молча считается ложной, и шаг не выполняется
+    # никогда. Через env проверка работает.
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.AEGIS_KEYSTORE_BASE64 != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Полная история: SOURCE_DATE_EPOCH берётся из времени
+          # последнего коммита, а мелкая копия его не содержит.
+          fetch-depth: 0
+
+      # Версии NDK в Dockerfile и в build.gradle обязаны совпадать:
+      # одним libaegis.so собирается, другим обрезается. Проверка
+      # идёт до сборки — расхождение делает бессмысленным всё
+      # остальное в этом workflow.
+      - name: NDK pins agree
+        run: bash tools/check-ndk-pins.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      # Ядро собирается в том же контейнере, что и у разработчика:
+      # сборка на голом раннере зависит от его OpenSSL и libc,
+      # и суммы разошлись бы с эталоном (docs/ops/reproducible-builds.md).
+      - name: build core in the pinned container
+        run: |
+          docker build -f tools/Dockerfile.android -t aegis-android tools/
+          docker run --rm -v "$PWD":/work -w /work aegis-android \
+            tools/build-rust-android.sh
+
+      # 🔐 Ключ подписи приходит из секретов и живёт только на время job.
+      # В репозитории его нет — это проверяет gitleaks на каждом PR.
+      #
+      # Без секретов шаг пропускается, и сборка остаётся неподписанной:
+      # так workflow_dispatch с dry_run можно запускать, не имея доступа
+      # к ключу.
+      - name: restore signing key
+        if: env.HAS_SIGNING_KEY == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.AEGIS_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/aegis-release.jks"
+          echo "AEGIS_KEYSTORE=$RUNNER_TEMP/aegis-release.jks" >> "$GITHUB_ENV"
+
+      - name: build and hash
+        env:
+          ORG_GRADLE_PROJECT_aegisKeystore: ${{ env.AEGIS_KEYSTORE }}
+          ORG_GRADLE_PROJECT_aegisKeystorePassword: ${{ secrets.AEGIS_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_aegisKeyAlias: ${{ secrets.AEGIS_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_aegisKeyPassword: ${{ secrets.AEGIS_KEY_PASSWORD }}
+        run: bash tools/reproducible-build.sh
+
+      # 🔐 Ключ удаляется явно, не дожидаясь уборки раннера.
+      # `if: always()` — иначе провал сборки оставил бы его на диске.
+      - name: wipe signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/aegis-release.jks"
+
+      - name: check the signature
+        run: |
+          set -euo pipefail
+
+          apk=$(find android/app/build/outputs/apk -name '*-release*.apk' | head -1)
+
+          if [ -z "$apk" ]; then
+            echo "::error::релизный APK не собран"
+            exit 1
+          fi
+
+          # 🔐 Неподписанный APK не должен уехать в релиз незамеченным.
+          # AGP собирает его молча, если свойств подписи не было,
+          # и отличить такой файл от подписанного по имени нельзя.
+          case "$apk" in
+            *unsigned*)
+              if [ "${{ github.event_name }}" = "push" ]; then
+                echo "::error::релиз по тегу собран без подписи — нет секретов?"
+                exit 1
+              fi
+
+              echo "::warning::сборка не подписана (нет секретов); для dry-run это норма"
+              ;;
+            *)
+              "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$apk"
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aegis-release
+          path: |
+            android/app/build/outputs/apk/**/*.apk
+            android/app/build/outputs/SHA256SUMS.txt
+          if-no-files-found: error
+
+      # Публикация только по тегу: ручной запуск собирает и считает,
+      # но релиз не создаёт.
+      - name: publish
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # 🔐 В заметках — как сверить сумму. Выложить APK рядом с файлом
+          # сумм и не сказать, зачем он, значит выложить его для
+          # украшения: подменивший APK подменит и суммы, если никто
+          # не знает, что их надо проверять.
+          {
+            printf '## Проверка сборки\n\n'
+            printf '```\n'
+            printf 'git checkout %s\n' "${{ github.ref_name }}"
+            printf 'tools/reproducible-build.sh --verify SHA256SUMS.txt\n'
+            printf '```\n\n'
+            printf 'Расхождение — это другая ревизия, другое окружение сборки\n'
+            printf 'либо подменённый артефакт. Третье разбирается как инцидент.\n\n'
+            printf '> ⚠️ Побайтовая воспроизводимость APK пока **не достигнута**.\n'
+            printf '> Известные источники расхождений перечислены\n'
+            printf '> в `docs/ops/reproducible-builds.md`. Суммы `libaegis.so`\n'
+            printf '> воспроизводимы при сборке в контейнере.\n'
+          } > notes.md
+
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file notes.md \
+            android/app/build/outputs/SHA256SUMS.txt \
+            $(find android/app/build/outputs/apk -name '*-release*.apk')
