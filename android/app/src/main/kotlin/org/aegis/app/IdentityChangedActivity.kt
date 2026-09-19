@@ -40,6 +40,12 @@ class IdentityChangedActivity : AppCompatActivity() {
 
         SecureWindow.apply(this)
 
+        // 🔐 Касания через накрывающее окно отбрасываются:
+        // здесь разблокируют отправку контакту со сменившимся ключом,
+        // то есть подменённое нажатие стоит дороже неудобства
+        // (MASVS PLATFORM-3).
+        SecureWindow.blockObscuredTouches(this)
+
         setContentView(R.layout.activity_identity_changed)
 
         val applied = intent.getIntExtra(EXTRA_APPLIED, 0)

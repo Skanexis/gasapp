@@ -4,10 +4,10 @@ package org.aegis.app
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.aegis.app.core.SecureWindow
 import org.aegis.app.components.AegisButton
 import uniffi.aegis.generateRecoveryKey
 
@@ -51,10 +51,9 @@ class RecoveryKeyActivity : AppCompatActivity() {
 
         // 🔐 До setContentView: после отрисовки первый кадр уже мог
         // попасть в снимок переключателя задач.
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE,
-        )
+        // Заодно отбрасываются касания через накрывающее окно:
+        // подтверждение на этом экране необратимо (MASVS PLATFORM-3).
+        SecureWindow.applyAlways(this)
 
         setContentView(R.layout.activity_recovery_key)
 

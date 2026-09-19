@@ -5,11 +5,11 @@ package org.aegis.app
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
-import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.aegis.app.core.SecureWindow
 import org.aegis.app.components.AegisButton
 import uniffi.aegis.checkRecoveryKeyGroup
 import kotlin.random.Random
@@ -50,10 +50,9 @@ class RecoveryConfirmActivity : AppCompatActivity() {
 
         // 🔐 Тот же флаг, что и на показе ключа: сюда его набирают,
         // и снимок экрана выдал бы три группы из тринадцати.
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE,
-        )
+        // Заодно отбрасываются касания через накрывающее окно:
+        // подтверждение на этом экране необратимо (MASVS PLATFORM-3).
+        SecureWindow.applyAlways(this)
 
         setContentView(R.layout.activity_recovery_confirm)
 

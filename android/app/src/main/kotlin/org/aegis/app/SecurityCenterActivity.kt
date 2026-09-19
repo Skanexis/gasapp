@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import org.aegis.app.core.Core
+import org.aegis.app.core.DeviceIntegrity
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
 import org.aegis.app.ui.SettingsRow
@@ -37,24 +38,42 @@ import uniffi.aegis.Messenger
  * Пять считает ядро (`securityReport`) — ключ восстановления, свежесть
  * копии, сверка контактов, sealed sender, скрытый адрес. Три — настройки
  * устройства, которые хранит и применяет само приложение: блокировка
- * снимков, скрытый текст уведомлений, автоблокировка. Если состояние
- * прочитать нельзя, проверка считается **не пройденной**: не подтверждённая
+ * снимков, скрытый текст уведомлений, автоблокировка. Две последние —
+ * состояние самого устройства: экран блокировки и признаки root
+ * ([org.aegis.app.core.DeviceIntegrity]). Если состояние прочитать
+ * нельзя, проверка считается **не пройденной**: не подтверждённая
  * защита не засчитывается.
+ *
+ * # Почему проверки устройства здесь, а не в запрете запуска
+ *
+ * 🔐 Ни отсутствие экрана блокировки, ни найденный root не мешают
+ * пользоваться приложением. Довод записан в
+ * [org.aegis.app.core.DeviceIntegrity]; короче всего он звучит так:
+ * детект root обходится, и защита, которую тривиально обходят,
+ * не должна принимать решений за пользователя.
  */
 class SecurityCenterActivity : AppCompatActivity() {
 
     /**
      * Одна проверка.
      *
-     * @param target экран, где проверку можно исправить; `null` — такого
-     *   экрана нет, и строка не обещает перехода.
+     * @param fix что делать, чтобы её исправить; `null` — исправлять
+     *   нечем, и строка не обещает перехода.
+     *
+     * Действие, а не класс экрана: экран блокировки устройства ставится
+     * в системных настройках, а туда переходят намерением, а не
+     * `Intent(this, Класс::class.java)`.
      */
     private data class Check(
         val label: Int,
         val passed: Boolean,
         val detail: String? = null,
-        val target: Class<*>? = null,
+        val fix: (() -> Unit)? = null,
     )
+
+    /** Переход к экрану приложения — самый частый вид [Check.fix]. */
+    private fun screen(target: Class<*>): () -> Unit =
+        { startActivity(Intent(this, target)) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -115,16 +134,22 @@ class SecurityCenterActivity : AppCompatActivity() {
 
         val unverified = report?.unverifiedContacts?.toInt()
 
+        // Считается один раз: обращение ходит по файловой системе,
+        // а список проверок перестраивается при каждом возвращении
+        // на экран.
+        val rooted = DeviceIntegrity.looksRooted()
+        val hasScreenLock = DeviceIntegrity.hasScreenLock(this)
+
         return listOf(
             Check(
                 label = R.string.security_check_recovery,
                 passed = report?.recoveryKeyCreated == true,
-                target = RecoveryCenterActivity::class.java,
+                fix = screen(RecoveryCenterActivity::class.java),
             ),
             Check(
                 label = R.string.security_check_backup,
                 passed = report?.backupRecent == true,
-                target = RecoveryCenterActivity::class.java,
+                fix = screen(RecoveryCenterActivity::class.java),
             ),
             Check(
                 label = R.string.security_check_contacts,
@@ -132,7 +157,7 @@ class SecurityCenterActivity : AppCompatActivity() {
                 detail = unverified?.takeIf { it > 0 }?.let {
                     getString(R.string.security_check_unverified, it)
                 },
-                target = ContactsActivity::class.java,
+                fix = screen(ContactsActivity::class.java),
             ),
             Check(
                 label = R.string.security_check_sealed,
@@ -141,23 +166,65 @@ class SecurityCenterActivity : AppCompatActivity() {
             Check(
                 label = R.string.security_check_address,
                 passed = report?.addressHidden == true,
-                target = PrivacyActivity::class.java,
+                fix = screen(PrivacyActivity::class.java),
             ),
             Check(
                 label = R.string.security_check_screenshots,
                 passed = readBool(messenger, Settings.BLOCK_SCREENSHOTS, default = true) == true,
-                target = PrivacyActivity::class.java,
+                fix = screen(PrivacyActivity::class.java),
             ),
             Check(
                 label = R.string.security_check_preview,
                 passed = readBool(messenger, Settings.NOTIFICATION_PREVIEW, default = false) == false,
-                target = PrivacyActivity::class.java,
+                fix = screen(PrivacyActivity::class.java),
             ),
             Check(
                 label = R.string.security_check_autolock,
                 passed = autoLockWithinLimit(messenger),
             ),
+
+            // 🔐 Экран блокировки устройства. Без него схема хранения
+            // ключей (раздел 7.3) держится ни на чём: KEK в Android
+            // Keystore привязан к аутентификации пользователя, а
+            // аутентификация — к экрану блокировки.
+            //
+            // Экрана в приложении, который это чинит, нет и быть не
+            // может: настройка системная, поэтому строка ведёт в
+            // системные настройки безопасности.
+            Check(
+                label = R.string.security_check_screen_lock,
+                passed = hasScreenLock,
+                detail = if (hasScreenLock) {
+                    null
+                } else {
+                    getString(R.string.security_check_screen_lock_hint)
+                },
+                fix = { openSystemSecuritySettings() },
+            ),
+
+            // ⚠️ Признаки root. Проверка эвристическая, и её
+            // отрицательный ответ ничего не гарантирует — так и
+            // написано в подписи строки.
+            Check(
+                label = R.string.security_check_root,
+                passed = !rooted,
+                detail = if (rooted) getString(R.string.security_check_root_hint) else null,
+            ),
         )
+    }
+
+    /**
+     * Открывает системные настройки безопасности.
+     *
+     * Экран блокировки ставится в системе, а не в приложении, поэтому
+     * строка проверки ведёт туда. Намерение может не разрешиться
+     * (производители переносят этот экран), и тогда строка просто
+     * не реагирует — это лучше падения.
+     */
+    private fun openSystemSecuritySettings() {
+        runCatching {
+            startActivity(Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
+        }
     }
 
     /**
@@ -236,9 +303,7 @@ class SecurityCenterActivity : AppCompatActivity() {
                 icon = if (check.passed) R.drawable.ic_shield else R.drawable.ic_alert,
                 // Переход предлагается только к непройденной проверке:
                 // исправлять пройденную незачем.
-                onClick = check.target
-                    ?.takeUnless { check.passed }
-                    ?.let { screen -> { startActivity(Intent(this, screen)) } },
+                onClick = check.fix?.takeUnless { check.passed },
             )
 
             row.findViewById<TextView>(R.id.row_value).setTextColor(statusColor(check.passed))
