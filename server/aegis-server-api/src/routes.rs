@@ -49,6 +49,11 @@ pub struct AppState {
     pub discovery_limiter: Mutex<RateLimiter>,
     /// Ограничитель отправки сообщений.
     pub message_limiter: Mutex<RateLimiter>,
+    /// Ограничитель выдачи prekey bundle.
+    ///
+    /// 🔐 Отдельный от остальных: выдача расходует одноразовый предключ,
+    /// то есть тратит ресурс получателя, а не пропускную способность.
+    pub bundle_limiter: Mutex<RateLimiter>,
     /// Соль для ключей ограничителя.
     ///
     /// Живёт только в памяти процесса: после перезапуска счётчики нельзя
@@ -133,6 +138,10 @@ impl AppState {
             pool,
             discovery_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 rate_limit::DISCOVERY_PER_MINUTE,
+                nodes,
+            ))),
+            bundle_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::BUNDLE_PER_MINUTE,
                 nodes,
             ))),
             message_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
@@ -378,6 +387,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         // забирается обычным GET. Доставка прямо в сокет связала бы
         // момент отправки с присутствием получателя, а это ровно та
         // корреляция, которую собирают при наблюдении за трафиком.
+        //
+        // 🔐 Маршрут требует подпись устройства. Без неё та же
+        // корреляция раздавалась даром: `discovery` отдаёт `device_ids`
+        // по имени пользователя без аутентификации, а сокет открывал
+        // по этому идентификатору поток уведомлений кому угодно.
+        // Время прихода «envelope» и есть метаданные — см. `hub`.
         .route("/v1/ws/:device_id", get(crate::hub::websocket_handler))
         // Токен push: клиент присылает его после регистрации
         // и при каждой смене — провайдеры их отзывают.
@@ -571,10 +586,46 @@ async fn publish_keys(
 }
 
 /// Выдача prekey bundle с расходом одноразового ключа.
+///
+/// # Почему без подписи
+///
+/// Bundle берёт тот, кто хочет **начать** переписку, — то есть, как
+/// правило, человек, которого получатель ещё не знает. Требовать здесь
+/// подпись значило бы разрешать первый контакт только знакомым.
+///
+/// # 🔐 Почему с ограничителем
+///
+/// Каждый вызов **расходует** одноразовый предключ. Без ограничителя
+/// любой желающий вычерпывал запас жертвы в один цикл запросов
+/// (находка внутреннего пентеста, раздел 23.6): маршрут был единственным
+/// из расходующих ресурс, где ограничителя не стояло вовсе, при том что
+/// он стоял на поиске по имени и на отправке.
+///
+/// Последствие не отказ, а тихое ухудшение: `take_prekey_bundle`
+/// отдаёт bundle с `degraded = true`, и все новые сессии с жертвой
+/// заводятся **без** одноразового предключа. Пострадавшая при этом
+/// сторона ничего не замечает — у неё просто «кто-то написал».
+///
+/// Ключ ограничителя — устройство-получатель, а не адрес: адрес сервер
+/// не хранит. Отсюда и ограничение меры: тот же ограничитель мешает
+/// и честным собеседникам жертвы, если запас выбирают слишком быстро.
+/// Размен сознательный — исчерпанный запас хуже отложенной отправки,
+/// потому что он не отображается никак.
 async fn take_bundle(
     State(state): State<Arc<AppState>>,
     Path(device_id): Path<Uuid>,
 ) -> Result<Json<BundleResponse>, ApiError> {
+    let key = rate_limit::key_from_addr(&state.limiter_salt, &device_id.to_string());
+    let now = now_millis();
+
+    {
+        let mut limiter = state.bundle_limiter.lock().map_err(|_| ApiError::Internal)?;
+
+        if !limiter.allow(key, now) {
+            return Err(ApiError::TooManyRequests);
+        }
+    }
+
     let bundle = repo::take_prekey_bundle(&state.pool, device_id).await?;
     let degraded = bundle.one_time.is_none() || bundle.one_time_kem.is_none();
 
@@ -596,10 +647,26 @@ async fn take_bundle(
 }
 
 /// Сколько одноразовых предключей осталось.
+///
+/// 🔐 Требует подпись устройства. Прежде маршрут был открыт, и это
+/// был оракул использования (находка внутреннего пентеста, раздел 23.6):
+/// расход одноразовых предключей равен числу новых сессий, начатых
+/// с этим устройством. Опрашивая счётчик раз в минуту, посторонний
+/// строил график того, как часто с человеком начинают переписку —
+/// не читая ни одного сообщения.
+///
+/// Ограничение никому не мешает: число нужно самому устройству, чтобы
+/// решить, когда пополнять запас. Отправителю оно не нужно — он берёт
+/// bundle и получает `degraded`, если одноразового ключа не нашлось.
 async fn count_keys(
     State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
     Path(device_id): Path<Uuid>,
 ) -> Result<Json<i64>, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
     let count = repo::count_one_time_prekeys(&state.pool, device_id).await?;
 
     Ok(Json(count))

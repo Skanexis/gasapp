@@ -12,6 +12,7 @@ import java.util.Base64
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
+import org.aegis.app.core.Core
 
 /**
  * Потолок задержки переподключения через прокси: 15 секунд.
@@ -53,6 +54,21 @@ private const val SOCKET_CONNECT_TIMEOUT_MS = 30_000
  * Одно слово: `envelope`. Ни конверта, ни отправителя, ни количества.
  * Сам конверт клиент забирает обычным запросом — так момент доставки
  * не связывается с присутствием получателя.
+ *
+ * # 🔐 Рукопожатие подписывается
+ *
+ * Апгрейд начинается обычным `GET`, и в него ставятся те же заголовки
+ * подписи, что и в остальные запросы: `x-aegis-signature`
+ * и `x-aegis-issued-at`. Подпись строит ядро
+ * ([uniffi.aegis.Messenger.socketAuthHeaders]) — приватный ключ наружу
+ * не выходит, а подпись привязана к пути и времени и для другого
+ * запроса не годится.
+ *
+ * Прежде рукопожатие было анонимным, и сервер его принимал. Это
+ * означало, что поток уведомлений любого устройства открыт кому
+ * угодно: «одно слово `envelope`» само по себе безобидно, но **время**
+ * его прихода — это и есть метаданные, которые раздел 15 велит
+ * не отдавать. Находка внутреннего пентеста, раздел 23.6.
  */
 class NotificationSocket(
     private val baseUrl: String,
@@ -161,7 +177,14 @@ class NotificationSocket(
         readFrames(input, output)
     }
 
-    /** Выполняет рукопожатие WebSocket. */
+    /**
+     * Выполняет рукопожатие WebSocket.
+     *
+     * 🔐 Подпись строится **на каждую сессию заново**, а не один раз
+     * при создании объекта: она привязана ко времени выпуска, и сервер
+     * отвергает просроченную. Переподключение через час после разрыва
+     * предъявило бы подпись часовой давности.
+     */
     private fun handshake(
         output: OutputStream,
         input: InputStream,
@@ -171,13 +194,24 @@ class NotificationSocket(
         val key = ByteArray(WS_KEY_BYTES).also { SecureRandom().nextBytes(it) }
         val encodedKey = Base64.getEncoder().encodeToString(key)
 
+        val path = "/v1/ws/$deviceId"
+
+        // Путь в подписи обязан совпадать со строкой запроса байт в байт:
+        // сервер подписывает то, что видит в `parts.uri.path()`.
+        val auth = Core.messenger().socketAuthHeaders(deviceId, System.currentTimeMillis())
+
         val request = buildString {
-            append("GET /v1/ws/$deviceId HTTP/1.1\r\n")
+            append("GET $path HTTP/1.1\r\n")
             append("Host: $host:$port\r\n")
             append("Upgrade: websocket\r\n")
             append("Connection: Upgrade\r\n")
             append("Sec-WebSocket-Key: $encodedKey\r\n")
             append("Sec-WebSocket-Version: 13\r\n")
+
+            auth.forEach { header ->
+                append("${header.name}: ${header.value}\r\n")
+            }
+
             append("\r\n")
         }
 
@@ -186,6 +220,14 @@ class NotificationSocket(
 
         val response = readHeaders(input)
         if (!response.contains("101")) {
+            // 401 отличается от прочих отказов тем, что повтор его не
+            // исправит: подпись не подошла, и следующая попытка
+            // построит такую же. Сообщение это различает, иначе в логе
+            // виден лишь бесконечный цикл переподключений.
+            if (response.contains("401")) {
+                throw IOException("сервер отверг подпись рукопожатия сокета")
+            }
+
             throw IOException("сервер отказал в апгрейде до WebSocket")
         }
     }

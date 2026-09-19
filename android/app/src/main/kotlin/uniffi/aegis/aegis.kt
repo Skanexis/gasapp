@@ -872,6 +872,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1014,6 +1016,8 @@ fun uniffi_aegis_checksum_method_messenger_set_setting_int(
 fun uniffi_aegis_checksum_method_messenger_setting_bool(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_setting_int(
+): Short
+fun uniffi_aegis_checksum_method_messenger_socket_auth_headers(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_unlock_vault(
 ): Short
@@ -1175,6 +1179,8 @@ fun uniffi_aegis_fn_method_messenger_setting_bool(`ptr`: Pointer,`key`: RustBuff
 ): Byte
 fun uniffi_aegis_fn_method_messenger_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
+fun uniffi_aegis_fn_method_messenger_socket_auth_headers(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_unlock_vault(`ptr`: Pointer,`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_vault_file_count(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1535,6 +1541,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_setting_int() != 23735.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_socket_auth_headers() != 18159.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_unlock_vault() != 52238.toShort()) {
@@ -2896,6 +2905,26 @@ public interface MessengerInterface {
     fun `settingInt`(`key`: kotlin.String, `default`: kotlin.Long): kotlin.Long
     
     /**
+     * Заголовки подписи для рукопожатия сокета уведомлений.
+     *
+     * Возвращает пары «имя заголовка — значение», которые платформа
+     * обязана добавить в запрос апгрейда `GET /v1/ws/{device_id}`.
+     *
+     * 🔐 Подпись привязана к пути и к времени: воспользоваться ею
+     * для другого запроса нельзя. Приватный ключ остаётся в ядре.
+     *
+     * Понадобилось потому, что сокет ведёт платформа: рукопожатие
+     * WebSocket на Android собрано руками поверх сырого сокета,
+     * и поставить заголовок изнутри ядра неоткуда.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунт не зарегистрирован либо подпись
+     * не построилась.
+     */
+    fun `socketAuthHeaders`(`deviceId`: kotlin.String, `nowMillis`: kotlin.Long): List<FfiHeader>
+    
+    /**
      * Открывает File Vault после повторной аутентификации.
      *
      * 🔐 PIN передаётся сюда, а ключ vault наружу не выходит:
@@ -4023,6 +4052,37 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_setting_int(
         it, FfiConverterString.lower(`key`),FfiConverterLong.lower(`default`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Заголовки подписи для рукопожатия сокета уведомлений.
+     *
+     * Возвращает пары «имя заголовка — значение», которые платформа
+     * обязана добавить в запрос апгрейда `GET /v1/ws/{device_id}`.
+     *
+     * 🔐 Подпись привязана к пути и к времени: воспользоваться ею
+     * для другого запроса нельзя. Приватный ключ остаётся в ядре.
+     *
+     * Понадобилось потому, что сокет ведёт платформа: рукопожатие
+     * WebSocket на Android собрано руками поверх сырого сокета,
+     * и поставить заголовок изнутри ядра неоткуда.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунт не зарегистрирован либо подпись
+     * не построилась.
+     */
+    @Throws(FfiException::class)override fun `socketAuthHeaders`(`deviceId`: kotlin.String, `nowMillis`: kotlin.Long): List<FfiHeader> {
+            return FfiConverterSequenceTypeFfiHeader.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_socket_auth_headers(
+        it, FfiConverterString.lower(`deviceId`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
