@@ -43,7 +43,7 @@
 |---|---|---|---|
 | CRYPTO-1 | Современная проверенная криптография | ✅ | Тестовые векторы: `crates/aegis-protocol/tests/rfc_vectors.rs`, `tests/protocol_vectors.rs`; список примитивов — раздел 6.1 |
 | CRYPTO-2.1 | Генерация: только OS CSPRNG | ✅ | Только `OsRng` (`rand_core` с `getrandom`): `grep -rn "thread_rng|rand::random|from_entropy" crates/*/src/` — ноль вхождений |
-| CRYPTO-2.2 | Хранение: аппаратный KEK | 🟡 | Схема в `aegis-keystore::wrap`; привязка к Android Keystore/StrongBox требует устройства. Зависит от STORAGE-2.7-аналога на iOS |
+| CRYPTO-2.2 | Хранение: аппаратный KEK | 🟡 | **Было ❌ и выдавалось за ✅** — Android Keystore не использовался нигде (P-5 пентеста). Сделано: ключ базы = HKDF(Argon2id(PIN) ‖ секрет из Keystore), `core/HardwareKey.kt`, переход старых баз через `PRAGMA rekey`. Связывание закреплено тестами `pin::tests::different_hardware_secret_gives_a_different_key` и соседними (6 шт.) + `storage::tests::rekey_*` (2 шт.). 🟡, потому что половина на стороне Keystore вне устройства не выполняется и тестами не покрыта; `setUserAuthenticationRequired` не выставлен — ждёт биометрии (AUTH-2.1) |
 | CRYPTO-2.3 | Один ключ — одна задача | ✅ | Раздельные метки HKDF; `double_ratchet::tests::each_message_uses_a_fresh_key`, `::nonce_depends_on_message_key`, `::compromised_state_does_not_reveal_past_messages` (дефекты #6–#7, раздел 23.0.1) |
 | CRYPTO-2.4 | Ротация ключей | 🟡 | OPK одноразовые и вычёркиваются (`aegis-core::session`); ротация SPK раз в 7 дней на сервере не автоматизирована |
 | CRYPTO-2.5 | Уничтожение: zeroize | ✅ | `aegis-types::secret` — `ZeroizeOnDrop`; `aegis-protocol::xeddsa::tests::private_key_is_zeroize_on_drop` |
@@ -70,6 +70,7 @@
 | NETWORK-2.3 | 🧪 `mitm_proxy_rejected` | ✅ | `android/app/src/test/.../MitmProxyRejectedTest.kt` (5 тестов) |
 | NETWORK-2.4 | Процедура ротации пинов | ✅ | `docs/ops/cert-pin-rotation.md`, `server/deploy/compute-pin.sh` |
 | NETWORK-2.5 | Боевые пины вписаны | ❌ | В релизной политике заглушки: сервера ещё нет. Шаг «Релиз N» процедуры ротации |
+| NETWORK-3.1 | Сокет уведомлений требует аутентификации | ✅ | **Было ❌** (P-1 пентеста): `GET /v1/ws/{device}` пускал кого угодно, и в паре с анонимным `discovery` давал поток метаданных о любом пользователе по имени. Теперь требует подпись; `client_contract::websocket_path_signs_like_every_other_route` |
 
 ## MASVS-PLATFORM — Платформа
 
@@ -106,7 +107,7 @@
 |---|---|---|---|
 | RESILIENCE-1.1 | Детект root/jailbreak → предупреждение | ✅ | `core/DeviceIntegrity.kt::looksRooted`; показывается в центре безопасности, не блокирует |
 | RESILIENCE-1.2 | Требовать экран блокировки | ✅ | `DeviceIntegrity::hasScreenLock` (`isDeviceSecure`), проверка в центре безопасности ведёт в системные настройки |
-| RESILIENCE-1.3 | Android key attestation | ❌ | Не реализовано |
+| RESILIENCE-1.3 | Android key attestation | ❌ | Не реализовано. Предпосылка появилась: ключ в Keystore теперь есть (`core/HardwareKey.kt`), аттестовать стало что |
 | RESILIENCE-2.1 | Проверка подписи APK во время выполнения | ❌ | Не реализовано |
 | RESILIENCE-2.2 | Reproducible builds | ❌ | Не сделано. `ndkVersion` и `abiFilters` закреплены — это предпосылка, но не сама воспроизводимость |
 | RESILIENCE-3 | Детект отладчика | ⛔ | Сознательно не делается: ломает работу добросовестных исследователей, на которых держится bug bounty. Прямая оговорка раздела 25 |
@@ -118,6 +119,7 @@
 | # | Требование | Статус | Чем проверено |
 |---|---|---|---|
 | PRIVACY-1 | Минимизация сбора данных | ✅ | `tools/check-no-telemetry.sh` в CI; нет `QUERY_ALL_PACKAGES`, нет доступа к галерее (только системный выбор файла) |
+| PRIVACY-1.1 | Сервер не раздаёт метаданные посторонним | 🟡 | P-1 и P-3 пентеста закрыты (сокет и счётчик предключей требуют подписи). Осталось: `discovery` анонимно отдаёт `device_ids` под лимитом 20/мин — осознанно, иначе первый контакт невозможен |
 | PRIVACY-2.1 | Опубликованная Privacy Policy | ❌ | Не написана |
 | PRIVACY-2.2 | Экран «About security» с честными пределами | 🟡 | `AboutActivity` есть; сверка текста с фактическими пределами модели не проводилась |
 | PRIVACY-2.3 | Опубликованная спецификация протокола | 🟡 | `docs/protocol/AEGIS-PROTOCOL-v1.md` существует; сверка с реализацией после M6–M8 не проводилась |
@@ -139,12 +141,12 @@
 | STORAGE | 4 | 3 | 1 | 0 |
 | CRYPTO | 5 | 2 | 0 | 0 |
 | AUTH | 3 | 1 | 1 | 0 |
-| NETWORK | 5 | 1 | 1 | 0 |
+| NETWORK | 6 | 1 | 1 | 0 |
 | PLATFORM | 5 | 0 | 2 | 1 |
 | CODE | 8 | 2 | 1 | 0 |
 | RESILIENCE | 4 | 0 | 3 | 1 |
-| PRIVACY | 2 | 3 | 2 | 0 |
-| **Итого** | **36** | **12** | **11** | **2** |
+| PRIVACY | 2 | 4 | 2 | 0 |
+| **Итого** | **37** | **13** | **11** | **2** |
 
 ⚠️ Чек-лист **не пройден**. Одиннадцать пунктов не сделаны, и четыре
 из них — не мелочи: биометрия (AUTH-2.1), воспроизводимая сборка
