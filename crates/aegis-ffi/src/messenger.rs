@@ -531,6 +531,39 @@ impl Messenger {
         guard(|| client.own_device_id())
     }
 
+    /// Заголовки подписи для рукопожатия сокета уведомлений.
+    ///
+    /// Возвращает пары «имя заголовка — значение», которые платформа
+    /// обязана добавить в запрос апгрейда `GET /v1/ws/{device_id}`.
+    ///
+    /// 🔐 Подпись привязана к пути и к времени: воспользоваться ею
+    /// для другого запроса нельзя. Приватный ключ остаётся в ядре.
+    ///
+    /// Понадобилось потому, что сокет ведёт платформа: рукопожатие
+    /// WebSocket на Android собрано руками поверх сырого сокета,
+    /// и поставить заголовок изнутри ядра неоткуда.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — аккаунт не зарегистрирован либо подпись
+    /// не построилась.
+    pub fn socket_auth_headers(
+        &self,
+        device_id: String,
+        now_millis: i64,
+    ) -> Result<Vec<FfiHeader>, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let headers = guard(|| {
+            client.socket_auth_headers(&device_id, aegis_types::Timestamp::from_millis(now_millis))
+        })?;
+
+        Ok(headers
+            .into_iter()
+            .map(|(name, value)| FfiHeader { name, value })
+            .collect())
+    }
+
     /// Возвращает собственное имя пользователя.
     ///
     /// [`None`] означает, что регистрация ещё не прошла.

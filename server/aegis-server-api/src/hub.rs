@@ -30,10 +30,11 @@
 //! процесс, который его наблюдает.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::response::Response;
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
@@ -59,7 +60,23 @@ pub struct Hub {
     ///
     /// `Mutex`, а не `RwLock`: операции короткие, а запись происходит
     /// при каждом подключении и отключении — то есть не реже чтения.
-    connections: Mutex<HashMap<Uuid, mpsc::Sender<()>>>,
+    connections: Mutex<HashMap<Uuid, Connection>>,
+
+    /// Счётчик соединений: даёт каждому подключению свой номер.
+    ///
+    /// Нужен, чтобы отключение убирало **своё** соединение, а не то,
+    /// что лежит в карте сейчас. Подробности — в [`Hub::disconnect`].
+    next_connection: AtomicU64,
+}
+
+/// Одно зарегистрированное соединение.
+#[derive(Debug)]
+struct Connection {
+    /// Номер, выданный при подключении.
+    id: u64,
+
+    /// Куда слать уведомления.
+    sender: mpsc::Sender<()>,
 }
 
 impl Hub {
@@ -77,27 +94,29 @@ impl Hub {
     pub async fn notify(&self, device_id: Uuid) {
         let connections = self.connections.lock().await;
 
-        if let Some(sender) = connections.get(&device_id) {
+        if let Some(connection) = connections.get(&device_id) {
             // `try_send`, а не `send`: очередь размером в одно
             // уведомление уже полна, значит клиент ещё не забрал
             // предыдущее, и второе ничего не добавит. Ждать здесь
             // означало бы задержать ответ отправителю из-за того,
             // что получатель читает медленно.
-            let _ = sender.try_send(());
+            let _ = connection.sender.try_send(());
         }
     }
 
-    /// Регистрирует устройство и возвращает приёмник уведомлений.
-    async fn connect(&self, device_id: Uuid) -> mpsc::Receiver<()> {
+    /// Регистрирует устройство и возвращает приёмник уведомлений
+    /// вместе с номером соединения.
+    async fn connect(&self, device_id: Uuid) -> (u64, mpsc::Receiver<()>) {
         let (sender, receiver) = mpsc::channel(NOTIFY_QUEUE);
+        let id = self.next_connection.fetch_add(1, Ordering::Relaxed);
         let mut connections = self.connections.lock().await;
 
         // Повторное подключение вытесняет прежнее: устройство одно,
         // и два сокета к нему означают, что старый уже мёртв, просто
         // разрыв ещё не заметили.
-        connections.insert(device_id, sender);
+        connections.insert(device_id, Connection { id, sender });
 
-        receiver
+        (id, receiver)
     }
 
 
@@ -109,12 +128,40 @@ impl Hub {
     /// запись, которую никто не уберёт.
     #[cfg(feature = "test-hub")]
     pub async fn connect_for_test(&self, device_id: Uuid) -> mpsc::Receiver<()> {
-        self.connect(device_id).await
+        self.connect(device_id).await.1
     }
-    /// Убирает устройство из карты.
-    async fn disconnect(&self, device_id: Uuid) {
+    /// Убирает **своё** соединение из карты.
+    ///
+    /// # Почему номер, а не просто удаление по ключу
+    ///
+    /// Прежде здесь стоял `connections.remove(&device_id)`, и это
+    /// давало бесплатный отказ в обслуживании (находка внутреннего
+    /// пентеста, раздел 23.6):
+    ///
+    /// 1. жертва держит сокет, в карте лежит её отправитель;
+    /// 2. чужак открывает сокет на тот же `device_id` и вытесняет её
+    ///    запись — до появления подписи выше это мог сделать любой;
+    /// 3. отправитель жертвы уничтожается, её `recv()` возвращает
+    ///    `None`, цикл завершается и вызывает `disconnect`;
+    /// 4. `disconnect` удаляет по ключу — то есть стирает запись
+    ///    **чужака**.
+    ///
+    /// В карте не остаётся никого. Жертва переподключается, и цикл
+    /// повторяется; уведомления не приходят ни ей, ни кому-либо ещё.
+    ///
+    /// Подпись на сокете закрывает шаг 2, но не сам дефект: те же
+    /// четыре шага разыгрываются без всякого злого умысла, когда
+    /// клиент переподключается раньше, чем заметил разрыв старого
+    /// соединения. Поэтому удаление сверяется с номером.
+    async fn disconnect(&self, device_id: Uuid, connection_id: u64) {
         let mut connections = self.connections.lock().await;
-        connections.remove(&device_id);
+
+        if connections
+            .get(&device_id)
+            .is_some_and(|connection| connection.id == connection_id)
+        {
+            connections.remove(&device_id);
+        }
     }
 
     /// Сколько устройств подключено.
@@ -129,21 +176,46 @@ impl Hub {
 
 /// Обработчик апгрейда до WebSocket.
 ///
-/// # Аутентификации здесь нет
+/// # 🔐 Требует подпись устройства
 ///
-/// Соединение открывается по идентификатору устройства, который знает
-/// и сервер, и отправители. Это допустимо, потому что по сокету не
-/// уходит ничего, кроме слова «envelope»: подключившийся чужак узнает
-/// лишь то, что кому-то пришёл конверт, — не содержимое, не отправителя
-/// и не адресата.
+/// Прежде её здесь не было, и довод в комментарии звучал так: по сокету
+/// не уходит ничего, кроме слова «envelope», поэтому чужак узнает лишь
+/// то, что кому-то пришёл конверт. Довод неверен, и раздел 15 плана
+/// объясняет, почему: **метаданные — это и есть время**.
 ///
-/// Аутентификация подписью появится вместе с ней же на остальных
-/// маршрутах; до тех пор добавлять её только сюда бессмысленно.
+/// Уведомление в секунду `t` сообщает наблюдателю, что **вот этот**
+/// человек получил сообщение в секунду `t`. За сутки такой поток даёт
+/// распорядок дня; за двумя аккаунтами сразу — ещё и то, переписываются
+/// ли они между собой (приход коррелирует с отправкой). Содержимое для
+/// этого не нужно.
+///
+/// Атака стоила ровно два анонимных запроса:
+///
+/// 1. `GET /v1/discovery/username/{имя}` отдаёт `device_ids` без всякой
+///    аутентификации;
+/// 2. `GET /v1/ws/{device_id}` открывает поток уведомлений этого
+///    устройства кому угодно.
+///
+/// Тот же самый риск уже был описан на соседнем маршруте — у
+/// `register_push_token` стоит: «без подписи любой мог бы привязать свой
+/// токен к чужому устройству и получать сигнал о каждом входящем
+/// сообщении, то есть наблюдать активность собеседника, не читая
+/// переписки». Сокет давал ровно это, только без возни с токеном.
+///
+/// Подпись — та же, что на остальных маршрутах ([`crate::authz`]):
+/// апгрейд начинается обычным `GET`, поэтому заголовки
+/// `x-aegis-signature` и `x-aegis-issued-at` ставятся как везде.
 pub async fn websocket_handler(
     upgrade: WebSocketUpgrade,
     State(state): State<Arc<crate::routes::AppState>>,
-    Path(device_id): Path<Uuid>,
+    device: crate::authz::AuthenticatedDevice,
 ) -> Response {
+    // Идентификатор берётся из результата проверки, а не из пути.
+    // Значения совпадают по построению (экстрактор читает путь), но
+    // источником обязан быть проверенный: иначе будущая правка
+    // экстрактора разошлась бы с этим обработчиком молча.
+    let device_id = device.device_id;
+
     upgrade.on_upgrade(move |socket| handle_socket(socket, state, device_id))
 }
 
@@ -153,7 +225,7 @@ async fn handle_socket(
     state: Arc<crate::routes::AppState>,
     device_id: Uuid,
 ) {
-    let mut notifications = state.hub.connect(device_id).await;
+    let (connection_id, mut notifications) = state.hub.connect(device_id).await;
 
     loop {
         tokio::select! {
@@ -184,7 +256,7 @@ async fn handle_socket(
         }
     }
 
-    state.hub.disconnect(device_id).await;
+    state.hub.disconnect(device_id, connection_id).await;
 }
 
 
@@ -307,7 +379,7 @@ mod tests {
         let hub = Hub::new();
         let device = Uuid::from_u128(1);
 
-        let mut receiver = hub.connect(device).await;
+        let (_id, mut receiver) = hub.connect(device).await;
         hub.notify(device).await;
 
         assert!(receiver.recv().await.is_some(), "уведомление не дошло");
@@ -331,10 +403,10 @@ mod tests {
         let hub = Hub::new();
         let device = Uuid::from_u128(7);
 
-        let _receiver = hub.connect(device).await;
+        let (id, _receiver) = hub.connect(device).await;
         assert_eq!(hub.connected().await, 1);
 
-        hub.disconnect(device).await;
+        hub.disconnect(device, id).await;
         assert_eq!(hub.connected().await, 0);
     }
 
@@ -348,8 +420,8 @@ mod tests {
         let hub = Hub::new();
         let device = Uuid::from_u128(3);
 
-        let mut first = hub.connect(device).await;
-        let mut second = hub.connect(device).await;
+        let (_first_id, mut first) = hub.connect(device).await;
+        let (_second_id, mut second) = hub.connect(device).await;
 
         hub.notify(device).await;
 
@@ -366,7 +438,7 @@ mod tests {
         let hub = Hub::new();
         let device = Uuid::from_u128(9);
 
-        let mut receiver = hub.connect(device).await;
+        let (_id, mut receiver) = hub.connect(device).await;
 
         hub.notify(device).await;
         hub.notify(device).await;
@@ -377,5 +449,67 @@ mod tests {
         // Очередь опустела: уведомления неразличимы, и клиент,
         // получивший одно, заберёт из очереди всё сразу.
         assert!(receiver.try_recv().is_err(), "уведомления накопились");
+    }
+
+    /// 🔐 Отключение вытесненного соединения не уносит с собой то,
+    /// которое его вытеснило.
+    ///
+    /// Находка внутреннего пентеста (раздел 23.6). Прежде `disconnect`
+    /// удалял по ключу, и порядок событий давал бесплатный отказ
+    /// в обслуживании:
+    ///
+    /// 1. жертва подключена, в карте её отправитель;
+    /// 2. второе подключение вытесняет её запись;
+    /// 3. отправитель жертвы уничтожен, её `recv()` даёт `None`,
+    ///    цикл сокета завершается и зовёт `disconnect`;
+    /// 4. `disconnect` стирает запись **второго** соединения.
+    ///
+    /// В карте не остаётся никого, и уведомления не приходят ни одному
+    /// из двух. Повторяя шаг 2, атакующий держал устройство без
+    /// уведомлений неограниченно долго.
+    ///
+    /// Подпись на сокете закрывает доступ постороннему, но не сам
+    /// дефект: те же четыре шага случаются при обычном переподключении
+    /// клиента, не заметившего разрыв.
+    #[tokio::test]
+    async fn stale_disconnect_does_not_evict_the_live_connection() {
+        let hub = Hub::new();
+        let device = Uuid::from_u128(11);
+
+        let (first_id, _first) = hub.connect(device).await;
+        let (_second_id, mut second) = hub.connect(device).await;
+
+        // Первое соединение замечает разрыв и отключается — позже,
+        // чем появилось второе. Именно этот порядок и ломал всё.
+        hub.disconnect(device, first_id).await;
+
+        assert_eq!(
+            hub.connected().await,
+            1,
+            "отключение вытесненного соединения убрало живое"
+        );
+
+        hub.notify(device).await;
+
+        assert!(
+            second.recv().await.is_some(),
+            "живое соединение перестало получать уведомления"
+        );
+    }
+
+    /// Своё отключение по-прежнему убирает запись.
+    ///
+    /// Парный к предыдущему: сверка по номеру не должна превратиться
+    /// в «никогда не удалять», иначе карта растёт до конца жизни
+    /// процесса — утечка памяти вместо отказа в обслуживании.
+    #[tokio::test]
+    async fn own_disconnect_still_removes_the_entry() {
+        let hub = Hub::new();
+        let device = Uuid::from_u128(12);
+
+        let (id, _receiver) = hub.connect(device).await;
+        hub.disconnect(device, id).await;
+
+        assert_eq!(hub.connected().await, 0, "запись осталась в карте");
     }
 }
