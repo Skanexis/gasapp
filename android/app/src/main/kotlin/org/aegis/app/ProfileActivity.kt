@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
+import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.QrDrawable
 import uniffi.aegis.FfiException
@@ -148,10 +149,14 @@ class ProfileActivity : AppCompatActivity() {
             return
         }
 
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-
-        clipboard.setPrimaryClip(
-            ClipData.newPlainText(getString(R.string.profile_title), link),
+        // 🔐 Ссылка несёт identity-ключ — то, чем собеседник сверяет
+        // подлинность. В буфере обмена, который читает любое приложение
+        // на переднем плане, ей делать нечего дольше, чем нужно на одну
+        // вставку.
+        SecureClipboard.copySensitive(
+            context = this,
+            label = getString(R.string.profile_title),
+            text = link,
         )
 
         Toast.makeText(this, R.string.profile_copied, Toast.LENGTH_SHORT).show()

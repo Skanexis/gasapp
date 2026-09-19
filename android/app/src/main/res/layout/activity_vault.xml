@@ -92,6 +92,7 @@
                         android:autofillHints=""
                         android:hint="@string/vault_pin_hint"
                         android:importantForAutofill="no"
+                        android:imeOptions="flagNoPersonalizedLearning"
                         android:inputType="numberPassword"
                         android:textColor="@color/text_primary" />
 

@@ -69,6 +69,7 @@
                     android:fontFamily="monospace"
                     android:hint="@string/recovery_confirm_hint"
                     android:importantForAutofill="no"
+                    android:imeOptions="flagNoPersonalizedLearning"
                     android:inputType="textCapCharacters|textNoSuggestions"
                     android:maxLength="4"
                     android:textColor="@color/text_primary" />
@@ -87,6 +88,7 @@
                     android:fontFamily="monospace"
                     android:hint="@string/recovery_confirm_hint"
                     android:importantForAutofill="no"
+                    android:imeOptions="flagNoPersonalizedLearning"
                     android:inputType="textCapCharacters|textNoSuggestions"
                     android:maxLength="4"
                     android:textColor="@color/text_primary" />
@@ -105,6 +107,7 @@
                     android:fontFamily="monospace"
                     android:hint="@string/recovery_confirm_hint"
                     android:importantForAutofill="no"
+                    android:imeOptions="flagNoPersonalizedLearning"
                     android:inputType="textCapCharacters|textNoSuggestions"
                     android:maxLength="4"
                     android:textColor="@color/text_primary" />

@@ -91,6 +91,7 @@
                     android:gravity="top|start"
                     android:hint="@string/restore_key_hint"
                     android:importantForAutofill="no"
+                    android:imeOptions="flagNoPersonalizedLearning"
                     android:inputType="textCapCharacters|textMultiLine|textNoSuggestions"
                     android:minLines="3"
                     android:textColor="@color/text_primary" />
