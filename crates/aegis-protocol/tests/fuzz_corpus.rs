@@ -35,6 +35,7 @@ use aegis_protocol::{
         IdentityKey, KemPublicKey, PreKeyBundle, PreKeyId, SessionState, SignedKemPreKey,
         SignedPreKey,
     },
+    contact_link::ContactLink,
     pqxdh,
     spqr::{Chunk, ChunkAssembler, EpochId},
     x25519::X25519PrivateKey,
@@ -80,6 +81,25 @@ impl Rng {
             .map(|_| u8::try_from(self.next_u64() & 0xFF).unwrap_or(0))
             .collect()
     }
+}
+
+/// Хвост из символов, которые встречаются в ссылке и ломают разбор:
+/// алфавит base32, разделители параметров, проценты, кириллица.
+fn noisy_tail(rng: &mut Rng, max: usize) -> String {
+    const ALPHABET: &[char] = &[
+        'A', 'B', 'C', 'Z', '2', '7', '?', '=', '&', '%', 'n', 'a', 'm', 'e', '/', '.', ' ', 'и',
+        '\u{0}',
+    ];
+
+    let len = usize::try_from(rng.next_u64()).unwrap_or(0) % max.saturating_add(1);
+
+    (0..len)
+        .map(|_| {
+            let index = usize::try_from(rng.next_u64()).unwrap_or(0) % ALPHABET.len();
+
+            ALPHABET.get(index).copied().unwrap_or('A')
+        })
+        .collect()
 }
 
 /// Таргет `chunk_reassembly`: сборщик чанков SPQR.
@@ -271,4 +291,95 @@ fn safety_number_parsing_never_panics() {
             );
         }
     }
+}
+
+
+/// Таргет `parse_contact_link`: разбор ссылки `aegis://contact/...`.
+///
+/// 🔐 Единственная внешняя точка входа приложения: `AddContactActivity`
+/// экспортирована и объявляет `intent-filter` на схему `aegis`. Ссылку
+/// сюда подаёт любое приложение на устройстве и любая открытая страница,
+/// без участия пользователя. Паника здесь — отказ мессенджера по чужой
+/// команде, а не «ошибка разбора».
+#[test]
+fn contact_link_parsing_never_panics() {
+    let mut rng = Rng::new(0xC0F7_AC70);
+
+    // Случайные байты как текст: почти всё отсеется на префиксе, но
+    // отсеяться обязано отказом, а не паникой.
+    for _ in 0..ITERATIONS {
+        let bytes = rng.bytes(600);
+        let Ok(text) = core::str::from_utf8(&bytes) else {
+            continue;
+        };
+
+        let _ = ContactLink::parse(text);
+    }
+
+    // Отдельно — мутации настоящей ссылки.
+    //
+    // Первая версия этой половины собирала хвост из случайных символов
+    // после префикса и не разобрала ни одной ссылки: ключ — это ровно
+    // 52 символа base32, и угадать их случайным перебором нельзя.
+    // Проверялась бы при этом одна строка кода — сравнение префикса.
+    // Поймал это `assert` в конце; без него тест был бы зелёным
+    // и бессмысленным.
+    //
+    // Поэтому каждая ссылка строится из настоящего ключа и затем
+    // портится: так разбор доходит до параметров, процентных
+    // последовательностей и границ имени.
+    let mut reached = 0_usize;
+
+    for _ in 0..ITERATIONS {
+        let mut identity = [0u8; 32];
+
+        for byte in &mut identity {
+            *byte = u8::try_from(rng.next_u64() & 0xFF).unwrap_or(0);
+        }
+
+        let base = ContactLink {
+            identity: PublicKeyBytes::new(identity),
+            display_name: None,
+        }
+        .to_uri()
+        .expect("своя ссылка обязана собираться");
+
+        let uri = match rng.next_u64() % 6 {
+            // Как есть: разбор обязан принять то, что сам и построил.
+            0 => base,
+            // Имя из случайных символов, включая проценты и разделители.
+            1 => format!("{base}?name={}", noisy_tail(&mut rng, 80)),
+            // Обрезка: короткий ключ, оборванная процентная
+            // последовательность, пустой хвост.
+            2 => {
+                let cut = usize::try_from(rng.next_u64()).unwrap_or(0) % base.len().max(1);
+
+                base.get(..cut).unwrap_or_default().to_owned()
+            }
+            // Лишний сегмент пути — `contact/KEY/что-то ещё`.
+            3 => format!("{base}/{}", noisy_tail(&mut rng, 24)),
+            // Неизвестный параметр рядом с известным.
+            4 => format!("{base}?name=A&{}=1", noisy_tail(&mut rng, 12)),
+            // Мусор в хвосте ключа.
+            _ => format!("{base}{}", noisy_tail(&mut rng, 8)),
+        };
+
+        if let Ok(link) = ContactLink::parse(&uri) {
+            reached = reached.saturating_add(1);
+
+            // Разобранная ссылка обязана собираться обратно и означать
+            // то же самое: иначе экран подтверждения показывал бы одно,
+            // а в контакты попадало другое.
+            let rebuilt = link.to_uri().expect("разобранная ссылка обязана собираться");
+
+            let reparsed = ContactLink::parse(&rebuilt)
+                .expect("пересобранная ссылка обязана разбираться");
+
+            assert_eq!(link, reparsed, "круговой обход изменил контакт: {uri}");
+        }
+    }
+
+    // Ноль дошедших до разбора ссылок означал бы, что вторая половина
+    // теста ничего не проверяет.
+    assert!(reached > 0, "ни одна сгенерированная ссылка не разобралась");
 }

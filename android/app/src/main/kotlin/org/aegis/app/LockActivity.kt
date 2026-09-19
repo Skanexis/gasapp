@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.view.View
-import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -17,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.PinAttempts
+import org.aegis.app.core.SecureWindow
 import uniffi.aegis.deriveStorageKey
 
 /**
@@ -70,14 +70,14 @@ class LockActivity : AppCompatActivity() {
             return
         }
 
-        // 🔐 Запрет скриншотов и превью в списке задач.
+        // 🔐 Запрет скриншотов, превью в списке задач и касаний
+        // через накрывающее окно.
         //
         // Без FLAG_SECURE система снимает копию экрана при сворачивании
-        // и показывает её в переключателе приложений.
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE,
-        )
+        // и показывает её в переключателе приложений. Без фильтрации
+        // накрытых касаний приложение, рисующее поверх других, могло бы
+        // подставить свою клавиатуру поверх этой и собрать PIN.
+        SecureWindow.applyAlways(this)
 
         setContentView(R.layout.activity_lock)
 

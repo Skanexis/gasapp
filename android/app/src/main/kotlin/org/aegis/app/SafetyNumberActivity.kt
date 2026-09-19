@@ -42,6 +42,12 @@ class SafetyNumberActivity : AppCompatActivity() {
         // попасть в снимок переключателя задач.
         SecureWindow.apply(this)
 
+        // 🔐 Касания через накрывающее окно отбрасываются:
+        // отметка «сверено» снимает предупреждение о подмене ключа,
+        // то есть подменённое нажатие стоит дороже неудобства
+        // (MASVS PLATFORM-3).
+        SecureWindow.blockObscuredTouches(this)
+
         setContentView(R.layout.activity_safety_number)
 
         digits = findViewById(R.id.safety_number_digits)

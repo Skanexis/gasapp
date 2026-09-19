@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -18,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
+import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Core
 import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.FfiVaultFile
@@ -89,10 +89,9 @@ class VaultActivity : AppCompatActivity() {
         // не должно попасть ни в скриншот, ни в снимок переключателя
         // задач. Человек, выключивший блокировку снимков ради чатов,
         // не имел в виду «показывать паспорт в переключателе задач».
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE,
-        )
+        // Заодно отбрасываются касания через накрывающее окно:
+        // подтверждение на этом экране необратимо (MASVS PLATFORM-3).
+        SecureWindow.applyAlways(this)
 
         setContentView(R.layout.activity_vault)
 

@@ -430,6 +430,18 @@
     <string name="security_check_screenshots">Снимки экрана заблокированы</string>
     <string name="security_check_preview">Текст скрыт в уведомлениях</string>
     <string name="security_check_autolock">Автоблокировка не дольше 5 минут</string>
+
+    <!--
+        Проверки состояния устройства (раздел 19.2).
+
+        Формулировки объясняют последствие, а не называют механизм:
+        «нет экрана блокировки» человеку ничего не говорит, а «ключи
+        не защищены аппаратно» — говорит.
+    -->
+    <string name="security_check_screen_lock">Экран блокировки устройства</string>
+    <string name="security_check_screen_lock_hint">Без него ключи не защищены аппаратно</string>
+    <string name="security_check_root">Устройство без root</string>
+    <string name="security_check_root_hint">Найдены признаки root — другие приложения могут читать данные</string>
     <string name="security_check_passed">Да</string>
     <string name="security_check_failed">Нет</string>
     <string name="security_check_unverified">Не сверено: %1$d</string>

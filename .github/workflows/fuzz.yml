@@ -14,12 +14,22 @@ on:
     paths:
       - "fuzz/**"
       - "crates/aegis-protocol/**"
+      # aegis-backup фаззится таргетом backup_restore. Его тут не было,
+      # поэтому правка разбора файла копии не поднимала фаззинг вовсе.
+      - "crates/aegis-backup/**"
+      - "crates/aegis-types/**"
   workflow_dispatch:
     inputs:
       duration_seconds:
         description: "Секунд на таргет"
         required: false
         default: "300"
+      runs_per_target:
+        description: >-
+          Итераций на таргет вместо времени. Пусто — считать по времени.
+          Для рубежа M8 («100M+ итераций на всех таргетах») — 100000000.
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -54,6 +64,39 @@ jobs:
       - name: build all targets
         run: cargo fuzz build --fuzz-dir fuzz
 
+      # 🔐 Таргет, объявленный в Cargo.toml и забытый в матрице ночного
+      # прогона, выглядит работающим: он собирается на каждом PR.
+      # Фаззится при этом ноль раз. Сверка списков — единственное, что
+      # это ловит.
+      - name: matrix covers every target
+        run: |
+          set -euo pipefail
+
+          # sed, а не grep -P: PCRE недоступен там, где locale не UTF-8,
+          # и первая же версия этой проверки молча нашла ноль таргетов
+          # с обеих сторон — то есть сошлась сама с собой.
+          declared=$(sed -n 's/^name = "\([a-z_]*\)"$/\1/p' fuzz/Cargo.toml \
+            | grep -v '^aegis-fuzz$' | sort -u)
+          listed=$(sed -n 's/^ *- \([a-z_]*\)$/\1/p' \
+            .github/workflows/fuzz.yml | sort -u)
+
+          # Пустые списки сравниваются как равные, поэтому сверке
+          # обязательно предшествует проверка на «нашлось хоть что-то».
+          count=$(printf '%s' "$declared" | grep -c . || true)
+
+          if [ "$count" -lt 2 ]; then
+            echo "::error::разбор fuzz/Cargo.toml дал $count таргетов — сломан сам разбор"
+            exit 1
+          fi
+
+          if [ "$declared" != "$listed" ]; then
+            echo "::error::матрица ночного прогона разошлась с fuzz/Cargo.toml"
+            diff <(echo "$declared") <(echo "$listed") || true
+            exit 1
+          fi
+
+          echo "таргетов в прогоне: $count"
+
   # Ночной прогон. Каждый таргет фаззится независимо, поэтому падение
   # одного не отменяет остальные.
   run:
@@ -64,6 +107,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # ⚠️ Список обязан совпадать с [[bin]] в fuzz/Cargo.toml.
+        # Расхождение молчаливо: таргет, которого здесь нет, исправно
+        # собирается в job `build` и не фаззится никогда. Так и было
+        # с backup_restore (M6) и parse_sealed_sender (M7) — оба
+        # добавлены в Cargo.toml и оба ни разу не запускались.
+        # Проверку совпадения делает шаг `matrix covers every target`.
         target:
           - chunk_reassembly
           - parse_message
@@ -71,6 +120,9 @@ jobs:
           - parse_prekey_bundle
           - parse_session_state
           - parse_safety_number
+          - backup_restore
+          - parse_sealed_sender
+          - parse_contact_link
     steps:
       - uses: actions/checkout@v4
 
@@ -94,13 +146,30 @@ jobs:
           restore-keys: |
             fuzz-corpus-${{ matrix.target }}-
 
+      # По умолчанию прогон ограничен временем: ночной запуск обязан
+      # укладываться в ночь.
+      #
+      # Рубеж M8 задан иначе — «100M+ итераций на всех таргетах», — и
+      # временем он не выражается: на медленном таргете час даёт на два
+      # порядка меньше итераций, чем на быстром. Для него запускают
+      # workflow вручную с `runs_per_target`, и тогда предел по времени
+      # снимается совсем: иначе итоговое число итераций молча зависело бы
+      # от того, что кончилось раньше.
       - name: run
         env:
           DURATION: ${{ github.event.inputs.duration_seconds || '3600' }}
+          RUNS: ${{ github.event.inputs.runs_per_target || '' }}
         run: |
+          if [ -n "$RUNS" ]; then
+            limit="-runs=$RUNS"
+          else
+            limit="-max_total_time=$DURATION"
+          fi
+
           cargo fuzz run --fuzz-dir fuzz "${{ matrix.target }}" -- \
-            -max_total_time="$DURATION" \
-            -rss_limit_mb=4096
+            "$limit" \
+            -rss_limit_mb=4096 \
+            -print_final_stats=1
 
       # Артефакт сохраняется только при падении: это вход, воспроизводящий
       # краш, и он нужен для отладки. При успехе сохранять нечего.

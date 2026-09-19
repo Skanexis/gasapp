@@ -71,3 +71,9 @@ name = "parse_sealed_sender"
 path = "fuzz_targets/parse_sealed_sender.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_contact_link"
+path = "fuzz_targets/parse_contact_link.rs"
+test = false
+doc = false
