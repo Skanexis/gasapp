@@ -6,7 +6,18 @@ import PackageDescription
 let package = Package(
     name: "AEGIS",
     platforms: [
-        .iOS(.v13)
+        // 🔐 iOS 17, как требует раздел 19.1 плана.
+        //
+        // Стояло .v13 — расхождение в четыре версии системы, найденное
+        // при заполнении чек-листа MASVS (CODE-1). На iOS 13 нет ни
+        // части гарантий Keychain, на которых держится схема ключей
+        // (раздел 7.3), ни Swift 6 со строгой моделью конкурентности,
+        // объявленной в том же разделе 19.1.
+        //
+        // Приложение при этом ставилось бы и выглядело работающим:
+        // заявленные гарантии просто отсутствовали бы, как это было
+        // с minSdk = 21 на Android (раздел 23.5).
+        .iOS(.v17)
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.

@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# MASVS CODE-3.3 «Dependencies актуальны и без известных уязвимостей».
+#
+# # Зачем это здесь
+#
+# `cargo-audit` и `cargo-deny` уже стоят в CI, но они лишь **сообщают**
+# об уязвимой зависимости. Обновлять её всё равно приходится руками,
+# а значит — когда кто-нибудь заметит. Цепочка поставок (T11) —
+# недооценённый вектор именно потому, что молчит до последнего.
+#
+# # ⚠️ Почему обновления не применяются автоматически
+#
+# Dependabot открывает пул-реквест, а не коммитит в ветку. Автоматическое
+# слияние здесь было бы прямой дырой в цепочке поставок: скомпрометированный
+# релиз зависимости попал бы в сборку без единого человеческого взгляда.
+# Это ровно та атака, от которой защищает `deny.toml` с allow-list.
+#
+# Каждый PR обязан пройти полный CI (тесты, clippy, audit, deny, gitleaks)
+# и ревью человеком. Версии в `Cargo.toml` закреплены через `=`, поэтому
+# обновление всегда видно в диффе одной строкой.
+
+version: 2
+
+updates:
+  # --- Rust: клиентские крейты ----------------------------------------------
+  - package-ecosystem: cargo
+    directory: /crates
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - supply-chain
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Криптографические крейты — отдельной группой и никогда не вместе
+      # с остальным. 🔐 Их обновление меняет поведение протокола, и смотреть
+      # на него нужно отдельно, а не в PR на сорок строк Cargo.lock.
+      crypto:
+        patterns:
+          - "aes-gcm"
+          - "argon2"
+          - "chacha20poly1305"
+          - "curve25519-dalek"
+          - "ed25519-dalek"
+          - "hkdf"
+          - "ml-kem"
+          - "rand_core"
+          - "sha2"
+          - "x25519-dalek"
+          - "zeroize"
+
+  # --- Rust: сервер ----------------------------------------------------------
+  #
+  # Отдельная запись, а не общая: сервер под AGPL-3.0, клиент под
+  # Apache-2.0, и это разные workspace с разными Cargo.lock.
+  - package-ecosystem: cargo
+    directory: /server
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - supply-chain
+    commit-message:
+      prefix: "chore(deps)"
+
+  # --- Rust: фаззинг ---------------------------------------------------------
+  #
+  # Крейт намеренно вне общего workspace (собирается только nightly),
+  # поэтому его Cargo.lock иначе не обновлялся бы никогда.
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+
+  # --- Android ---------------------------------------------------------------
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - supply-chain
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # ⚠️ Версия NDK закреплена ради воспроизводимой сборки (ADR-020):
+      # `strip` разных NDK даёт разный байт-в-байт результат. Поднимать
+      # её обязан человек, вместе с пересчётом эталонных сумм APK.
+      - dependency-name: "com.android.tools.build:gradle"
+        update-types:
+          - version-update:semver-major
+
+  # --- Сам CI ----------------------------------------------------------------
+  #
+  # 🔐 Действия GitHub — исполняемый код в конвейере сборки, и устаревшее
+  # действие с уязвимостью опаснее устаревшей библиотеки: оно имеет доступ
+  # к секретам подписи релиза.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
