@@ -439,7 +439,7 @@
         не защищены аппаратно» — говорит.
     -->
     <string name="security_check_screen_lock">Экран блокировки устройства</string>
-    <string name="security_check_screen_lock_hint">Без него ключи не защищены аппаратно</string>
+    <string name="security_check_screen_lock_hint">Без него телефон открыт всякому, кто взял его в руки</string>
     <string name="security_check_root">Устройство без root</string>
     <string name="security_check_root_hint">Найдены признаки root — другие приложения могут читать данные</string>
     <string name="security_check_passed">Да</string>

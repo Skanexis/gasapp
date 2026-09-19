@@ -17,7 +17,6 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.SecureWindow
-import uniffi.aegis.deriveStorageKey
 
 /**
  * Экран блокировки.
@@ -219,9 +218,12 @@ class LockActivity : AppCompatActivity() {
                     // Argon2id считается около секунды и обязан идти
                     // в фоновом потоке: на главном это «приложение
                     // не отвечает» при каждом вводе.
-                    val key = deriveStorageKey(pin, Core.salt(this@LockActivity))
-
-                    Core.open(this@LockActivity, key)
+                    //
+                    // 🔐 Ключ собирает Core.unlock — из PIN и секрета,
+                    // не покидающего устройство. Здесь его не строят:
+                    // две точки сборки ключа разошлись бы, и вторая
+                    // открывала бы базу слабее первой.
+                    Core.unlock(this@LockActivity, pin)
                 }
             }
 
