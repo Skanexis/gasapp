@@ -264,9 +264,7 @@ impl Messenger {
     ) -> Result<FfiBackupMeta, FfiError> {
         let key = RecoveryKey::parse(&recovery_key).map_err(|_| FfiError::InvalidArgument)?;
 
-        let meta = guard(|| {
-            Client::<ForeignTransport>::inspect_backup(&key, &archive)
-        })?;
+        let meta = guard(|| Client::<ForeignTransport>::inspect_backup(&key, &archive))?;
 
         Ok(FfiBackupMeta {
             created_at_millis: meta.created_at_millis,
@@ -284,9 +282,8 @@ impl Messenger {
     pub fn backup_status(&self) -> Result<FfiBackupStatus, FfiError> {
         let client = self.client()?;
 
-        let (configured, last) = guard(|| {
-            Ok((client.backup_configured()?, client.last_backup_at()?))
-        })?;
+        let (configured, last) =
+            guard(|| Ok((client.backup_configured()?, client.last_backup_at()?)))?;
 
         Ok(FfiBackupStatus {
             configured,
@@ -423,11 +420,7 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — vault закрыт либо чтение не удалось.
-    pub fn vault_files(
-        &self,
-        limit: u32,
-        now_millis: i64,
-    ) -> Result<Vec<FfiVaultFile>, FfiError> {
+    pub fn vault_files(&self, limit: u32, now_millis: i64) -> Result<Vec<FfiVaultFile>, FfiError> {
         let client = self.client()?;
 
         let files = guard(|| client.vault_files(limit, Timestamp::from_millis(now_millis)))?;
@@ -492,9 +485,7 @@ impl Messenger {
         let parsed = parse_file_id(&file_id)?;
         let client = self.client()?;
 
-        guard(|| {
-            client.open_vault_file(&parsed, &ciphertext, Timestamp::from_millis(now_millis))
-        })
+        guard(|| client.open_vault_file(&parsed, &ciphertext, Timestamp::from_millis(now_millis)))
     }
 
     /// Убирает файл из vault и отдаёт путь к его блобу.

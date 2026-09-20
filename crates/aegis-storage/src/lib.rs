@@ -664,8 +664,6 @@ impl Storage {
             )
             .map_err(storage_error)?;
 
-
-
         // Настройки приложения.
         //
         // 🔐 Отдельная таблица, а не файл рядом с базой: настройки
@@ -1289,10 +1287,7 @@ impl Storage {
 
         let rows = stmt
             .query_map(params![limit], |row| {
-                Ok((
-                    row.get::<_, Vec<u8>>(0)?,
-                    row.get::<_, Option<i64>>(1)?,
-                ))
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<i64>>(1)?))
             })
             .map_err(storage_error)?;
 
@@ -1551,7 +1546,6 @@ impl Storage {
         Ok(())
     }
 
-
     /// Заменяет текст сообщения.
     ///
     /// Отсутствие сообщения не считается ошибкой: собеседник мог
@@ -1573,7 +1567,6 @@ impl Storage {
 
         Ok(())
     }
-
 
     /// Ищет сообщения по подстроке.
     ///
@@ -1899,11 +1892,7 @@ impl Storage {
     /// # Errors
     ///
     /// [`AegisError::Storage`] — чтение таймера не удалось.
-    pub fn expiry_for_chat(
-        &self,
-        chat_id: &ChatId,
-        now: Timestamp,
-    ) -> Result<Option<Timestamp>> {
+    pub fn expiry_for_chat(&self, chat_id: &ChatId, now: Timestamp) -> Result<Option<Timestamp>> {
         let Some(seconds) = self.get_disappearing_timer(chat_id)? else {
             return Ok(None);
         };
@@ -1927,9 +1916,7 @@ impl Storage {
     /// (см. `backup_tombstones`).
     pub fn delete_message(&self, id: &MessageId, now: Timestamp) -> Result<()> {
         let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
-        let transaction = connection
-            .unchecked_transaction()
-            .map_err(storage_error)?;
+        let transaction = connection.unchecked_transaction().map_err(storage_error)?;
 
         transaction
             .execute(
@@ -2339,8 +2326,7 @@ impl Storage {
 
         let mut attachments = Vec::new();
         for row in rows {
-            let (id, kind, description, size, created, descriptor) =
-                row.map_err(storage_error)?;
+            let (id, kind, description, size, created, descriptor) = row.map_err(storage_error)?;
 
             attachments.push(StoredAttachment {
                 message_id: MessageId::from_uuid(uuid_from_slice(&id)?),
@@ -3384,7 +3370,10 @@ mod tests {
         let found = storage.search_messages("мир", 10).expect("поиск");
 
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].content.as_bytes(), b"\xd0\xbf\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82 \xd0\xbc\xd0\xb8\xd1\x80");
+        assert_eq!(
+            found[0].content.as_bytes(),
+            b"\xd0\xbf\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82 \xd0\xbc\xd0\xb8\xd1\x80"
+        );
     }
 
     /// Пустой запрос не выгружает всю переписку.
@@ -3435,7 +3424,10 @@ mod tests {
         // Ни один из этих запросов не должен совпасть с «plain text».
         for query in ["%", "_", "%%", "@"] {
             assert!(
-                storage.search_messages(query, 10).expect("поиск").is_empty(),
+                storage
+                    .search_messages(query, 10)
+                    .expect("поиск")
+                    .is_empty(),
                 "запрос «{query}» сработал как шаблон"
             );
         }
@@ -3571,10 +3563,22 @@ mod tests {
         let newer = AccountId::generate();
 
         storage
-            .save_contact(&older, &[0x11; 32], Some("older"), None, Timestamp::from_millis(1_000))
+            .save_contact(
+                &older,
+                &[0x11; 32],
+                Some("older"),
+                None,
+                Timestamp::from_millis(1_000),
+            )
             .expect("контакт сохранён");
         storage
-            .save_contact(&newer, &[0x22; 32], Some("newer"), None, Timestamp::from_millis(2_000))
+            .save_contact(
+                &newer,
+                &[0x22; 32],
+                Some("newer"),
+                None,
+                Timestamp::from_millis(2_000),
+            )
             .expect("контакт сохранён");
 
         let contacts = storage.list_contacts(10).expect("список");

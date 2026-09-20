@@ -486,10 +486,11 @@ fn read_pool<K>(
     // повреждённая база с числом в четыре миллиарда не должна приводить
     // к попытке зарезервировать под него вектор.
     let per_entry = key_len.checked_add(4).ok_or(AegisError::Malformed)?;
-    let needed = count
-        .checked_mul(per_entry)
+    let needed = count.checked_mul(per_entry).ok_or(AegisError::Malformed)?;
+    let remaining = bytes
+        .len()
+        .checked_sub(*offset)
         .ok_or(AegisError::Malformed)?;
-    let remaining = bytes.len().checked_sub(*offset).ok_or(AegisError::Malformed)?;
     if needed > remaining {
         return Err(AegisError::Malformed);
     }

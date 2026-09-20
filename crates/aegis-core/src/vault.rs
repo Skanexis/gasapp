@@ -532,9 +532,7 @@ mod tests {
         let mut vault = VaultGuard::new(now());
         vault.open(key(), now());
 
-        assert!(vault
-            .key(later(DEFAULT_IDLE_TIMEOUT_MILLIS))
-            .is_err());
+        assert!(vault.key(later(DEFAULT_IDLE_TIMEOUT_MILLIS)).is_err());
 
         // Ключ забыт: даже возврат к «сейчас» vault не открывает.
         assert_eq!(vault.state(now()), VaultState::Sealed);
@@ -680,13 +678,7 @@ mod file_tests {
         vault.unlock(PIN, &SALT, now()).expect("открытие");
 
         let sealed = vault
-            .add_file(
-                "паспорт.pdf",
-                FILE_CANARY,
-                "vault/1.enc",
-                now(),
-                &mut OsRng,
-            )
+            .add_file("паспорт.pdf", FILE_CANARY, "vault/1.enc", now(), &mut OsRng)
             .expect("добавление");
 
         let plaintext = vault
@@ -878,7 +870,10 @@ mod file_tests {
         let files = vault.files(10, now()).expect("список");
 
         assert_eq!(files.len(), 1);
-        assert_eq!(files.first().map(|row| row.name.as_str()), Some("паспорт.pdf"));
+        assert_eq!(
+            files.first().map(|row| row.name.as_str()),
+            Some("паспорт.pdf")
+        );
         assert_eq!(
             files.first().map(|row| row.size),
             i64::try_from(FILE_CANARY.len()).ok()

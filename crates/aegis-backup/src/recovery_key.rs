@@ -566,7 +566,9 @@ mod tests {
         let key = RecoveryKey::generate(&mut OsRng);
         let canonical = key.to_display_string();
 
-        let short = canonical.get(..canonical.len().saturating_sub(1)).unwrap_or("");
+        let short = canonical
+            .get(..canonical.len().saturating_sub(1))
+            .unwrap_or("");
         let long = format!("{canonical}Z");
 
         assert!(RecoveryKey::parse(short).is_err());
@@ -622,9 +624,7 @@ mod tests {
         let group = key.group(3).expect("группа");
 
         assert!(key.check_group(3, &group).expect("проверка"));
-        assert!(key
-            .check_group(3, &group.to_lowercase())
-            .expect("проверка"));
+        assert!(key.check_group(3, &group.to_lowercase()).expect("проверка"));
         assert!(!key.check_group(3, "ZZZZ").expect("проверка"));
         // Чужая группа не подходит, даже будучи верной сама по себе.
         let other = key.group(4).expect("группа");
@@ -640,9 +640,7 @@ mod tests {
         let mut differing = [0u8; KEY_LEN];
         differing[0] = 1;
 
-        let values: Vec<u8> = (0..64u8)
-            .map(|seed| crc4(&[seed; KEY_LEN]))
-            .collect();
+        let values: Vec<u8> = (0..64u8).map(|seed| crc4(&[seed; KEY_LEN])).collect();
         let distinct = values
             .iter()
             .collect::<std::collections::BTreeSet<_>>()

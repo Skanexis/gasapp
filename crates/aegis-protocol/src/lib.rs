@@ -26,19 +26,19 @@
 //! стоимость внешнего аудита пропорциональна объёму криптографического кода.
 //
 pub mod aead;
-pub mod envelope;
 pub mod contact_link;
 pub mod content;
 pub mod double_ratchet;
 pub mod engine;
+pub mod envelope;
 pub mod group;
 pub mod keys;
 pub mod mlkem;
 pub mod padding;
-pub mod qr;
 pub mod pqxdh;
 pub mod prekeys;
 pub mod protocol_engine;
+pub mod qr;
 pub mod sealed_sender;
 pub mod sender_key;
 pub mod spqr;

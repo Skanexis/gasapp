@@ -660,8 +660,14 @@ impl Cursor<'_> {
     }
 
     fn take_exact(&mut self, count: usize) -> Result<&[u8]> {
-        let end = self.offset.checked_add(count).ok_or(AegisError::Malformed)?;
-        let slice = self.raw.get(self.offset..end).ok_or(AegisError::Malformed)?;
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(AegisError::Malformed)?;
+        let slice = self
+            .raw
+            .get(self.offset..end)
+            .ok_or(AegisError::Malformed)?;
         self.offset = end;
 
         Ok(slice)
@@ -957,7 +963,10 @@ mod tests {
         });
 
         assert_eq!(base.messages.len(), 1);
-        assert_eq!(base.messages.first().map(|record| record.id), Some([2; ID_LEN]));
+        assert_eq!(
+            base.messages.first().map(|record| record.id),
+            Some([2; ID_LEN])
+        );
         assert!(base.attachments.is_empty(), "вложение пережило надгробие");
     }
 

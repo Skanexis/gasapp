@@ -261,7 +261,10 @@ fn sealed_send_request_keeps_absent_access_key() {
 
     let json = serde_json::to_string(&request).unwrap();
 
-    assert!(json.contains("\"access_key\":null"), "форма изменилась: {json}");
+    assert!(
+        json.contains("\"access_key\":null"),
+        "форма изменилась: {json}"
+    );
 }
 
 /// Поля публикации ключа доступа совпадают с серверными.

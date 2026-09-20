@@ -64,8 +64,7 @@ use rand_core::{CryptoRng, RngCore};
 use sha2::{Digest, Sha256};
 
 use super::{
-    auth_headers, derive_chat_id, hex, parse_bundle, parse_public_key, peer_account, unhex,
-    Client,
+    auth_headers, derive_chat_id, hex, parse_bundle, parse_public_key, peer_account, unhex, Client,
 };
 use crate::session;
 
@@ -159,7 +158,9 @@ impl<T: Transport> Client<T> {
         if !force {
             if let Some(current) = &stored {
                 let fresh_enough = current.expires_at.as_millis()
-                    > now.as_millis().saturating_add(CERTIFICATE_REFRESH_MARGIN_MILLIS);
+                    > now
+                        .as_millis()
+                        .saturating_add(CERTIFICATE_REFRESH_MARGIN_MILLIS);
 
                 if fresh_enough {
                     let certificate = SenderCertificate::from_bytes(&current.certificate)?;
@@ -290,7 +291,14 @@ impl<T: Transport> Client<T> {
         // Сессия сохраняется до отправки — тот же порядок, что у любого
         // сообщения: потерянное состояние храповика хуже повторной попытки.
         self.storage.save_session(chat_id, &outgoing.session, now)?;
-        self.deliver(identity, peer_identity, peer_device, &outgoing.envelope, now, rng)?;
+        self.deliver(
+            identity,
+            peer_identity,
+            peer_device,
+            &outgoing.envelope,
+            now,
+            rng,
+        )?;
         self.storage
             .mark_access_key_shared(&peer_account(peer_identity), now)?;
 
@@ -426,9 +434,7 @@ fn validity_moment(queued_at_seconds: i64, now: Timestamp) -> i64 {
         return now.as_millis();
     }
 
-    queued_at_seconds
-        .saturating_mul(1000)
-        .min(now.as_millis())
+    queued_at_seconds.saturating_mul(1000).min(now.as_millis())
 }
 
 #[cfg(test)]
@@ -462,7 +468,12 @@ mod tests {
     fn initial_envelope_binds_by_sender_identity() {
         let certificate = certificate_for(peer());
 
-        assert!(certificate_matches(&own(), &certificate, Some(&peer()), None));
+        assert!(certificate_matches(
+            &own(),
+            &certificate,
+            Some(&peer()),
+            None
+        ));
         assert!(
             !certificate_matches(&own(), &certificate, Some(&stranger()), None),
             "чужой сертификат принят для конверта инициации"
@@ -476,7 +487,12 @@ mod tests {
         let peer_chat = derive_chat_id(&own(), &peer());
         let stranger_chat = derive_chat_id(&own(), &stranger());
 
-        assert!(certificate_matches(&own(), &certificate, None, Some(&peer_chat)));
+        assert!(certificate_matches(
+            &own(),
+            &certificate,
+            None,
+            Some(&peer_chat)
+        ));
         assert!(
             !certificate_matches(&own(), &certificate, None, Some(&stranger_chat)),
             "сертификат собеседника принят в чужой сессии"

@@ -123,7 +123,8 @@ impl<T: Transport> Client<T> {
     pub fn set_proxy_mode(&self, mode: &ProxyMode) -> Result<()> {
         mode.validate()?;
 
-        self.storage.set_setting_text(PROXY_SETTING, &mode.to_setting())
+        self.storage
+            .set_setting_text(PROXY_SETTING, &mode.to_setting())
     }
 
     /// Считает проверки центра безопасности.
@@ -148,9 +149,7 @@ impl<T: Transport> Client<T> {
 
         // 🔐 Повреждённая настройка прокси не засчитывается как скрытый
         // адрес: утверждать защиту, которую нельзя подтвердить, нельзя.
-        let address_hidden = self
-            .proxy_mode()
-            .is_ok_and(|mode| mode.hides_address());
+        let address_hidden = self.proxy_mode().is_ok_and(|mode| mode.hides_address());
 
         Ok(SecurityReport {
             recovery_key_created,
@@ -190,10 +189,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
 
-        (
-            Storage::new(&path, &[0x5Au8; 32]).expect("база"),
-            directory,
-        )
+        (Storage::new(&path, &[0x5Au8; 32]).expect("база"), directory)
     }
 
     /// Без настройки — прямое соединение.
@@ -254,10 +250,7 @@ mod tests {
 
         assert!(client.proxy_mode().is_err());
         assert!(
-            !client
-                .security_report(now())
-                .expect("отчёт")
-                .address_hidden,
+            !client.security_report(now()).expect("отчёт").address_hidden,
             "повреждённая настройка засчитана как скрытый адрес"
         );
     }
@@ -286,7 +279,13 @@ mod tests {
         let (unverified_storage, _first) = open_storage();
         let contact = AccountId::generate();
         unverified_storage
-            .save_contact(&contact, &[0x11; 32], Some("bob"), Some(&ChatId::generate()), now())
+            .save_contact(
+                &contact,
+                &[0x11; 32],
+                Some("bob"),
+                Some(&ChatId::generate()),
+                now(),
+            )
             .expect("контакт");
         let unverified = Client::new(NoNetwork, unverified_storage);
 
@@ -300,7 +299,13 @@ mod tests {
 
         let (verified_storage, _second) = open_storage();
         verified_storage
-            .save_contact(&contact, &[0x11; 32], Some("bob"), Some(&ChatId::generate()), now())
+            .save_contact(
+                &contact,
+                &[0x11; 32],
+                Some("bob"),
+                Some(&ChatId::generate()),
+                now(),
+            )
             .expect("контакт");
         verified_storage
             .set_contact_verified(&contact, true, now())

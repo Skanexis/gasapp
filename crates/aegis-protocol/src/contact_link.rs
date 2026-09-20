@@ -671,8 +671,8 @@ mod tests {
 
         let mut checked = 0;
 
-        for suffix in core::iter::once(String::new())
-            .chain(names.iter().map(|name| format!("?name={name}")))
+        for suffix in
+            core::iter::once(String::new()).chain(names.iter().map(|name| format!("?name={name}")))
         {
             let uri = format!("{base}{suffix}");
 
@@ -680,7 +680,9 @@ mod tests {
                 continue;
             };
 
-            let rebuilt = link.to_uri().expect("разобранная ссылка обязана собираться");
+            let rebuilt = link
+                .to_uri()
+                .expect("разобранная ссылка обязана собираться");
 
             assert_eq!(
                 link,

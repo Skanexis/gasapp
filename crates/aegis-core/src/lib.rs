@@ -29,9 +29,9 @@
 
 pub mod backup;
 pub mod client;
-pub mod session;
 pub mod events;
 pub mod lock;
+pub mod session;
 pub mod vault;
 
 pub use backup::{BackupOutcome, BackupService, RestoreOutcome};

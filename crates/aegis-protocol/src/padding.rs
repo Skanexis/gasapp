@@ -165,7 +165,9 @@ mod tests {
     /// 🧪 Задача раздела 15.3: любой шифротекст имеет размер из списка.
     #[test]
     fn every_padded_size_is_a_bucket() {
-        for length in [0usize, 1, 37, 100, 511, 512, 513, 700, 5000, 65_000, 200_000] {
+        for length in [
+            0usize, 1, 37, 100, 511, 512, 513, 700, 5000, 65_000, 200_000,
+        ] {
             let padded = pad(&vec![0u8; length]).expect("padding");
 
             assert!(

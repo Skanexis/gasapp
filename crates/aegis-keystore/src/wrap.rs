@@ -86,10 +86,7 @@ pub fn wrap_key<R: RngCore + CryptoRng>(
 /// [`AegisError::Malformed`] — завёрнутый ключ не той длины;
 /// [`AegisError::Crypto`] — тег не сходится: не тот ключ-обёртка
 /// либо запись изменена.
-pub fn unwrap_key(
-    wrapping_key: &[u8; KEY_SIZE],
-    wrapped: &[u8],
-) -> Result<Secret<[u8; KEY_SIZE]>> {
+pub fn unwrap_key(wrapping_key: &[u8; KEY_SIZE], wrapped: &[u8]) -> Result<Secret<[u8; KEY_SIZE]>> {
     if wrapped.len() != WRAPPED_LEN {
         return Err(AegisError::Malformed);
     }
@@ -138,8 +135,8 @@ mod tests {
     /// 🔐 Чужой ключ-обёртка не разворачивает.
     #[test]
     fn foreign_wrapping_key_is_rejected() {
-        let wrapped = wrap_key(&[0x11u8; KEY_SIZE], &[0x22u8; KEY_SIZE], &mut OsRng)
-            .expect("заворачивание");
+        let wrapped =
+            wrap_key(&[0x11u8; KEY_SIZE], &[0x22u8; KEY_SIZE], &mut OsRng).expect("заворачивание");
 
         assert!(matches!(
             unwrap_key(&[0x33u8; KEY_SIZE], &wrapped),

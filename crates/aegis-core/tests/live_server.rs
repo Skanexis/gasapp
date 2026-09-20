@@ -46,8 +46,8 @@ struct LocalHttp {
 
 impl Transport for LocalHttp {
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse> {
-        let mut stream = TcpStream::connect((self.host.as_str(), self.port))
-            .map_err(|_| AegisError::Network)?;
+        let mut stream =
+            TcpStream::connect((self.host.as_str(), self.port)).map_err(|_| AegisError::Network)?;
 
         let body = request.body.clone().unwrap_or_default();
         let head = format!(
@@ -77,9 +77,7 @@ impl Transport for LocalHttp {
 /// Разбирает ответ HTTP.
 fn parse_response(raw: &[u8]) -> Result<HttpResponse> {
     let text = String::from_utf8_lossy(raw);
-    let (head, body) = text
-        .split_once("\r\n\r\n")
-        .ok_or(AegisError::Network)?;
+    let (head, body) = text.split_once("\r\n\r\n").ok_or(AegisError::Network)?;
 
     let status = head
         .lines()
@@ -183,7 +181,12 @@ fn real_server_delivers_a_message() {
         .expect("регистрация Боба");
 
     alice
-        .send_message(&bob_name, "привет через настоящий сервер", now(), &mut OsRng)
+        .send_message(
+            &bob_name,
+            "привет через настоящий сервер",
+            now(),
+            &mut OsRng,
+        )
         .expect("отправка");
 
     let received = bob
@@ -214,7 +217,10 @@ fn server_database_holds_only_ciphertext() {
     let bob_path = dir.path().join("b.db").to_string_lossy().into_owned();
 
     let alice = Client::new(
-        LocalHttp { host: host.clone(), port },
+        LocalHttp {
+            host: host.clone(),
+            port,
+        },
         Storage::new(&alice_path, &[0x11; 32]).expect("база"),
     );
     let bob = Client::new(
@@ -223,7 +229,9 @@ fn server_database_holds_only_ciphertext() {
     );
 
     let bob_name = unique("bob");
-    alice.register(&unique("alice"), now(), &mut OsRng).expect("Алиса");
+    alice
+        .register(&unique("alice"), now(), &mut OsRng)
+        .expect("Алиса");
     bob.register(&bob_name, now(), &mut OsRng).expect("Боб");
 
     // Опознаваемая строка: если сервер видит текст, она найдётся в дампе.
@@ -251,7 +259,10 @@ fn message_is_received_and_decrypted() {
     let receiver_path = dir.path().join("r.db").to_string_lossy().into_owned();
 
     let sender = Client::new(
-        LocalHttp { host: host.clone(), port },
+        LocalHttp {
+            host: host.clone(),
+            port,
+        },
         Storage::new(&sender_path, &[0x31; 32]).expect("база"),
     );
     let receiver = Client::new(
@@ -260,7 +271,9 @@ fn message_is_received_and_decrypted() {
     );
 
     let receiver_name = unique("recv");
-    sender.register(&unique("send"), now(), &mut OsRng).expect("отправитель");
+    sender
+        .register(&unique("send"), now(), &mut OsRng)
+        .expect("отправитель");
     let receiver_account = receiver
         .register(&receiver_name, now(), &mut OsRng)
         .expect("получатель");
