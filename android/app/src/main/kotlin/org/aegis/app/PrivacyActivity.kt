@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +54,7 @@ class PrivacyActivity : AppCompatActivity() {
         bindLastSeen()
         bindScreenshots()
         bindNotificationPreview()
+        bindExport()
         bindDeleteAccount()
     }
 
@@ -129,6 +131,94 @@ class PrivacyActivity : AppCompatActivity() {
             icon = R.drawable.ic_alert,
             checked = readBool(Settings.NOTIFICATION_PREVIEW, default = false),
         ) { wanted -> writeBool(Settings.NOTIFICATION_PREVIEW, wanted) }
+    }
+
+    /**
+     * 🔐 Выгрузка данных (MASVS PRIVACY-3.1).
+     *
+     * # Почему через системный выбор файла
+     *
+     * `CreateDocument` отдаёт приложению ровно тот файл, который
+     * человек указал, и не требует ни одного разрешения на хранилище.
+     * Запись в «Загрузки» своими руками потребовала бы доступа
+     * ко всему хранилищу — ради одного файла, который человек и так
+     * выбирает сам.
+     *
+     * # Почему предупреждение обязательно
+     *
+     * ⚠️ Файл **не зашифрован**. Это не недоработка: зашифрованная
+     * выгрузка не переносима, а смысл выгрузки — унести данные туда,
+     * где их прочтут другой программой. Но получивший этот файл
+     * получил всю переписку, и узнать об этом человек должен
+     * до того, как выберет, куда сохранять, — а не после.
+     */
+    private fun bindExport() {
+        SettingsRow.bind(
+            root = findViewById(R.id.privacy_export),
+            label = R.string.privacy_export,
+            icon = R.drawable.ic_shield,
+            onClick = { confirmExport() },
+        )
+    }
+
+    /** Предупреждение до выбора места. */
+    private fun confirmExport() {
+        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
+            .setTitle(R.string.privacy_export_title)
+            .setMessage(R.string.privacy_export_warning)
+            .setPositiveButton(R.string.privacy_export_continue) { _, _ ->
+                createExportFile.launch(exportFileName())
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Принимает выбранное место и пишет туда выгрузку.
+     *
+     * 🔐 Выгрузка строится **после** выбора места, а не до: иначе вся
+     * переписка открытым текстом лежала бы в памяти процесса всё
+     * время, пока человек ходит по системному выбору файлов, — в том
+     * числе если он оттуда просто уйдёт.
+     */
+    private val createExportFile = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri == null) {
+            return@registerForActivityResult
+        }
+
+        lifecycleScope.launch {
+            val written = withContext(Dispatchers.IO) {
+                runCatching {
+                    val json = Core.messenger().exportData(System.currentTimeMillis())
+
+                    contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(json.toByteArray(Charsets.UTF_8))
+                    } ?: error("поток не открылся")
+                }
+            }
+
+            android.widget.Toast.makeText(
+                this@PrivacyActivity,
+                if (written.isSuccess) R.string.privacy_export_done else R.string.privacy_export_failed,
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    /**
+     * Имя файла с датой.
+     *
+     * 🔐 Имени пользователя в нём нет: файл попадает в «Загрузки»,
+     * в облако и в список недавних, а эти места видят другие
+     * приложения. Имя аккаунта внутри файла — там ему и место.
+     */
+    private fun exportFileName(): String {
+        val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(java.util.Date())
+
+        return "aegis-export-$date.json"
     }
 
     /**

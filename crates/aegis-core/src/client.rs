@@ -168,6 +168,20 @@ pub struct AccountDeletionReport {
     pub attachments: u64,
 }
 
+/// Версия формата выгрузки.
+///
+/// Читающая программа обязана уметь отличить этот формат от
+/// следующего: выгрузка переживает и приложение, и его версию.
+const EXPORT_FORMAT: &str = "aegis-export-v1";
+
+/// Сколько сообщений на чат попадает в выгрузку.
+///
+/// Предел есть, потому что выгрузка целиком строится в памяти
+/// и уходит через границу FFI одной строкой: переписка без предела
+/// уронила бы приложение по памяти ровно у того, кому выгрузка
+/// нужнее всего — у человека с длинной историей.
+const MAX_EXPORTED_MESSAGES: u32 = 10_000;
+
 /// Клиент AEGIS.
 pub struct Client<T: Transport> {
     api: ApiClient<T>,
@@ -1349,6 +1363,113 @@ impl<T: Transport> Client<T> {
     /// [`AegisError::Storage`] — смена не удалась.
     pub fn rekey_storage(&self, new_key: &[u8]) -> Result<()> {
         self.storage.rekey(new_key)
+    }
+
+    /// 🔐 Собирает выгрузку данных пользователя (MASVS PRIVACY-3.1).
+    ///
+    /// # Что попадает в выгрузку
+    ///
+    /// То, что человек в приложение **положил**: имя аккаунта,
+    /// контакты, переписка и настройки. Формат — JSON: его читает
+    /// и человек, и чужая программа, а «право забрать свои данные»
+    /// в закрытом формате правом не является.
+    ///
+    /// # ⚠️ Чего в выгрузке нет и не будет
+    ///
+    /// **Ключей.** Ни приватного identity-ключа, ни секретов
+    /// предключей, ни состояния ратчета, ни ключа восстановления.
+    /// Выгрузка — файл, который человек кладёт в облако, шлёт себе
+    /// почтой и забывает в загрузках; ключ в нём означал бы, что
+    /// всю защиту переписки можно обойти, взяв один этот файл.
+    ///
+    /// Восстановиться из выгрузки поэтому нельзя — для этого есть
+    /// резервная копия (`create_backup`), и она зашифрована.
+    /// Это разные задачи, и смешивать их нельзя: портируемость
+    /// требует читаемости, восстановление требует секретности.
+    ///
+    /// **Содержимого хранилища файлов.** Оно и на диске лежит
+    /// зашифрованным отдельным ключом; выгружать его открытым текстом
+    /// значило бы отменить смысл хранилища.
+    ///
+    /// # ⚠️ Файл не зашифрован
+    ///
+    /// Это осознанно: зашифрованная выгрузка не переносима. Но тот,
+    /// кто её получил, получил всю переписку — и интерфейс обязан
+    /// сказать это до того, как человек выберет, куда сохранять.
+    ///
+    /// # Errors
+    ///
+    /// * [`AegisError::SessionNotFound`] — аккаунта нет, выгружать нечего.
+    /// * [`AegisError::Storage`] — чтение не удалось.
+    pub fn export_data(&self, now: Timestamp) -> Result<String> {
+        let keys = self
+            .storage
+            .load_own_keys()?
+            .ok_or(AegisError::SessionNotFound)?;
+
+        let mut contacts = Vec::new();
+
+        for contact in self.contacts()? {
+            contacts.push(serde_json::json!({
+                "username": contact.username,
+                // Публичный ключ — тот самый, который человек сверял
+                // с собеседником. Без него список контактов
+                // не перенести: имя контакт называет себе сам.
+                "identity_key": hex(contact.identity.as_bytes()),
+                "verified": contact.verified,
+                "chat_id": contact.chat_id.as_ref().map(ToString::to_string),
+            }));
+        }
+
+        let mut chats = Vec::new();
+
+        for chat_id in self.chats()? {
+            let mut messages = Vec::new();
+
+            for message in self.messages(&chat_id, MAX_EXPORTED_MESSAGES)? {
+                messages.push(serde_json::json!({
+                    "text": message.text,
+                    "timestamp": message.timestamp.as_millis(),
+                    "outgoing": message.outgoing,
+                }));
+            }
+
+            chats.push(serde_json::json!({
+                "chat_id": chat_id.to_string(),
+                "messages": messages,
+            }));
+        }
+
+        let settings: serde_json::Map<String, serde_json::Value> = self
+            .storage
+            .list_settings()?
+            .into_iter()
+            .map(|(key, value)| (key, serde_json::json!(value)))
+            .collect();
+
+        let document = serde_json::json!({
+            // Версия формата первым полем: читающая программа обязана
+            // знать, что делать, раньше, чем начнёт разбирать остальное.
+            "format": EXPORT_FORMAT,
+            "exported_at": now.as_millis(),
+            "account": {
+                "username": keys.username,
+                "device_id": keys.device_id,
+            },
+            "contacts": contacts,
+            "chats": chats,
+            "settings": settings,
+            // Сказано прямо в самом файле, а не только в интерфейсе:
+            // файл переживёт тот экран, на котором его сделали.
+            "not_included": [
+                "private keys of any kind",
+                "double ratchet state",
+                "recovery key",
+                "encrypted vault contents",
+            ],
+        });
+
+        serde_json::to_string_pretty(&document).map_err(|_| AegisError::Storage)
     }
 
     /// 🔐 Удаляет аккаунт на сервере (MASVS PRIVACY-3.2).

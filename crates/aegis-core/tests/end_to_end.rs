@@ -1513,3 +1513,169 @@ fn deleting_twice_fails_the_second_time() {
         "второе удаление объявлено успешным"
     );
 }
+
+// ---------------------------------------------------------------------------
+//  🔐 Выгрузка данных (MASVS PRIVACY-3.1)
+//
+//  Право забрать свои данные проверяется двумя вопросами: попало ли
+//  в файл то, что должно, и — важнее — не попало ли то, чего не должно.
+//  Второй вопрос здесь главный: выгрузка не зашифрована по замыслу,
+//  и приватный ключ в ней отменил бы всю защиту переписки разом.
+// ---------------------------------------------------------------------------
+
+/// Выгрузка содержит переписку, контакты и имя аккаунта.
+#[test]
+fn export_contains_the_conversation() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    alice
+        .send_message("bob", "встречаемся в семь", now(), &mut OsRng)
+        .expect("сообщение отправлено");
+
+    let export = alice.export_data(now()).expect("выгрузка");
+
+    assert!(export.contains("aegis-export-v1"), "нет версии формата");
+    assert!(export.contains("alice"), "нет имени аккаунта");
+    assert!(
+        export.contains("встречаемся в семь"),
+        "в выгрузке нет отправленного сообщения",
+    );
+}
+
+/// 🔐 В выгрузке нет ни одного приватного ключа.
+///
+/// Самая дорогая ошибка, какая здесь возможна. Файл не зашифрован
+/// и создаётся для того, чтобы его унесли с устройства: ключ в нём
+/// означал бы, что всю защиту переписки обходит один этот файл,
+/// лежащий в загрузках.
+///
+/// Проверяется не отсутствие слова «ключ», а отсутствие **самих
+/// байтов**: приватный identity-ключ берётся из хранилища и ищется
+/// в выгрузке в hex. Слово можно переименовать, байты — нет.
+#[test]
+fn export_never_contains_private_keys() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let storage = open_storage(&dir, "alice.db");
+    let alice = Client::new(server, storage);
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+
+    let export = alice.export_data(now()).expect("выгрузка");
+
+    // Приватные части берутся прямо из хранилища — то есть то же
+    // самое, что утекло бы, окажись оно в файле.
+    let keys = open_storage(&dir, "alice.db")
+        .load_own_keys()
+        .expect("чтение ключей")
+        .expect("аккаунт заведён");
+
+    let secrets: Vec<(&str, &[u8])> = vec![
+        ("приватный identity-ключ", keys.identity_private.as_slice()),
+        ("секреты предключей", keys.prekey_secrets.as_slice()),
+    ];
+
+    for (name, bytes) in secrets {
+        assert!(!bytes.is_empty(), "{name} пуст — тест ничего не проверит");
+
+        let as_hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+
+        assert!(
+            !export.contains(&as_hex),
+            "🔐 {name} попал в выгрузку — файл отменяет защиту переписки",
+        );
+    }
+}
+
+/// Выгрузка — разбираемый JSON, а не строка, похожая на него.
+///
+/// «Право забрать данные» в файле, который не читается ничем, правом
+/// не является. Проверяется разбором, а не глазами.
+#[test]
+fn export_is_valid_json_with_the_promised_shape() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server, open_storage(&dir, "alice.db"));
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+
+    let export = alice.export_data(now()).expect("выгрузка");
+    let parsed: serde_json::Value = serde_json::from_str(&export).expect("выгрузка не разбирается");
+
+    assert_eq!(parsed["format"], "aegis-export-v1");
+    assert!(
+        parsed["account"]["username"].is_string(),
+        "нет имени аккаунта"
+    );
+    assert!(parsed["contacts"].is_array(), "контакты не массив");
+    assert!(parsed["chats"].is_array(), "чаты не массив");
+    assert!(parsed["settings"].is_object(), "настройки не объект");
+
+    // Файл сам говорит, чего в нём нет: он переживёт тот экран,
+    // на котором его сделали.
+    assert!(
+        parsed["not_included"].is_array(),
+        "файл не называет, чего в нём нет",
+    );
+}
+
+/// Имя с кавычкой не ломает файл.
+///
+/// ⚠️ Самая вероятная поломка выгрузки, собранной конкатенацией строк.
+/// Заметил бы её не автор, а тот, кто пытается прочитать собственные
+/// данные и получает файл, который не разбирается ничем.
+#[test]
+fn export_survives_quotes_in_message_text() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    let nasty = r#"он сказал "да", а потом \ушёл"#;
+
+    alice
+        .send_message("bob", nasty, now(), &mut OsRng)
+        .expect("сообщение отправлено");
+
+    let export = alice.export_data(now()).expect("выгрузка");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&export).expect("кавычка в тексте сломала выгрузку");
+
+    let text = parsed["chats"][0]["messages"][0]["text"]
+        .as_str()
+        .expect("текста нет");
+
+    assert_eq!(text, nasty, "текст изменился при выгрузке");
+}
+
+/// Без аккаунта выгружать нечего.
+#[test]
+fn exporting_without_an_account_fails() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let client = Client::new(server, open_storage(&dir, "empty.db"));
+
+    assert!(
+        matches!(
+            client.export_data(now()),
+            Err(aegis_types::AegisError::SessionNotFound)
+        ),
+        "выгрузка несуществующего аккаунта объявлена успешной",
+    );
+}

@@ -257,6 +257,12 @@
         человек должен до нажатия, а не после: вернуть удалённый
         аккаунт нельзя ни ему, ни оператору сервера.
     -->
+        <string name="privacy_export">Export my data</string>
+    <string name="privacy_export_title">Export your data?</string>
+    <string name="privacy_export_warning">You will get a JSON file with your username, contacts, conversations and settings.\n\n⚠️ The file is NOT encrypted. Anyone who gets it can read every message in it. Save it somewhere you control, and delete it when you are done.\n\nKeys are never included, so this file cannot restore your account — use a backup for that.</string>
+    <string name="privacy_export_continue">Choose where to save</string>
+    <string name="privacy_export_done">Data exported. Remember: the file is not encrypted.</string>
+    <string name="privacy_export_failed">Export failed. Nothing was written.</string>
     <string name="privacy_section_account">Account</string>
     <string name="privacy_delete_account">Delete account</string>
     <string name="privacy_delete_account_hint">Removes your account from the server and everything stored for it on this device. There is no way back.</string>
