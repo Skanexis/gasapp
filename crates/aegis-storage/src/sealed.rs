@@ -406,9 +406,14 @@ mod tests {
         assert!(storage.own_access_key().expect("чтение").is_none());
 
         storage.init_own_access_key(&[1u8; 32]).expect("запись");
-        storage.init_own_access_key(&[2u8; 32]).expect("повторная запись");
+        storage
+            .init_own_access_key(&[2u8; 32])
+            .expect("повторная запись");
 
-        let own = storage.own_access_key().expect("чтение").expect("ключ есть");
+        let own = storage
+            .own_access_key()
+            .expect("чтение")
+            .expect("ключ есть");
 
         assert_eq!(own.key, [1u8; 32], "ключ доступа перезаписан");
         assert!(own.published_at.is_none());
@@ -420,7 +425,9 @@ mod tests {
         let (storage, _dir) = open_temp();
         storage.init_own_access_key(&[1u8; 32]).expect("запись");
 
-        storage.mark_own_access_key_published(now()).expect("отметка");
+        storage
+            .mark_own_access_key_published(now())
+            .expect("отметка");
 
         assert_eq!(
             storage
@@ -502,7 +509,9 @@ mod tests {
             Some([6u8; 32])
         );
 
-        storage.forget_contact_access_key(&contact).expect("удаление");
+        storage
+            .forget_contact_access_key(&contact)
+            .expect("удаление");
 
         assert_eq!(storage.contact_access_key(&contact).expect("чтение"), None);
     }
@@ -553,7 +562,10 @@ mod tests {
             .expect("замена");
 
         assert_eq!(
-            storage.setting_text("network_proxy").expect("чтение").as_deref(),
+            storage
+                .setting_text("network_proxy")
+                .expect("чтение")
+                .as_deref(),
             Some("socks5:proxy.example.org:1080")
         );
     }

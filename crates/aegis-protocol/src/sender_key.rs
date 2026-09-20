@@ -278,7 +278,10 @@ impl SenderKeyReceiver {
             .open(&message.ciphertext, &message.counter.to_be_bytes())?;
 
         self.chain_key = Secret::new(chain);
-        self.counter = message.counter.checked_add(1).ok_or(AegisError::Malformed)?;
+        self.counter = message
+            .counter
+            .checked_add(1)
+            .ok_or(AegisError::Malformed)?;
 
         Ok(plaintext)
     }
@@ -312,8 +315,7 @@ fn step(chain_key: &[u8; CHAIN_KEY_LEN]) -> Result<([u8; CHAIN_KEY_LEN], Zeroizi
 
 /// Один шаг HMAC с меткой.
 fn hmac_step(key: &[u8; CHAIN_KEY_LEN], label: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
-    let mut mac =
-        <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| AegisError::Crypto)?;
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| AegisError::Crypto)?;
     mac.update(label);
 
     let output = mac.finalize().into_bytes();
@@ -349,7 +351,10 @@ mod tests {
 
         let message = sender.encrypt(b"group message").expect("шифрование");
 
-        assert_eq!(receiver.decrypt(&message).expect("расшифровка"), b"group message");
+        assert_eq!(
+            receiver.decrypt(&message).expect("расшифровка"),
+            b"group message"
+        );
     }
 
     #[test]
@@ -425,7 +430,10 @@ mod tests {
         let _lost = sender.encrypt(b"lost").expect("шифрование");
         let delivered = sender.encrypt(b"delivered").expect("шифрование");
 
-        assert_eq!(receiver.decrypt(&delivered).expect("расшифровка"), b"delivered");
+        assert_eq!(
+            receiver.decrypt(&delivered).expect("расшифровка"),
+            b"delivered"
+        );
     }
 
     /// 🔐 Повтор сообщения отвергается.

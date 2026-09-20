@@ -632,7 +632,10 @@ pub struct FfiContactLink {
 /// [`FfiError::Core`] — ключ не 32 байта либо имя слишком длинное
 /// или содержит управляющие символы.
 #[uniffi::export]
-pub fn contact_link_uri(identity: Vec<u8>, display_name: Option<String>) -> Result<String, FfiError> {
+pub fn contact_link_uri(
+    identity: Vec<u8>,
+    display_name: Option<String>,
+) -> Result<String, FfiError> {
     guard(|| {
         let link = aegis_protocol::contact_link::ContactLink {
             identity: identity_from_bytes(&identity)?,

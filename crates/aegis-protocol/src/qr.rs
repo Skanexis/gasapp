@@ -145,10 +145,9 @@ mod tests {
     #[test]
     fn different_numbers_give_different_codes() {
         let first = safety_number_qr(SAMPLE).expect("код");
-        let second = safety_number_qr(
-            "999456789012345678901234567890123456789012345678901234567890",
-        )
-        .expect("код");
+        let second =
+            safety_number_qr("999456789012345678901234567890123456789012345678901234567890")
+                .expect("код");
 
         assert_ne!(first.modules, second.modules);
     }

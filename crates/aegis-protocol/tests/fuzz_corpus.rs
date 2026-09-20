@@ -30,12 +30,12 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 use aegis_protocol::{
+    contact_link::ContactLink,
     double_ratchet::RatchetState,
     keys::{
         IdentityKey, KemPublicKey, PreKeyBundle, PreKeyId, SessionState, SignedKemPreKey,
         SignedPreKey,
     },
-    contact_link::ContactLink,
     pqxdh,
     spqr::{Chunk, ChunkAssembler, EpochId},
     x25519::X25519PrivateKey,
@@ -293,7 +293,6 @@ fn safety_number_parsing_never_panics() {
     }
 }
 
-
 /// Таргет `parse_contact_link`: разбор ссылки `aegis://contact/...`.
 ///
 /// 🔐 Единственная внешняя точка входа приложения: `AddContactActivity`
@@ -370,10 +369,12 @@ fn contact_link_parsing_never_panics() {
             // Разобранная ссылка обязана собираться обратно и означать
             // то же самое: иначе экран подтверждения показывал бы одно,
             // а в контакты попадало другое.
-            let rebuilt = link.to_uri().expect("разобранная ссылка обязана собираться");
+            let rebuilt = link
+                .to_uri()
+                .expect("разобранная ссылка обязана собираться");
 
-            let reparsed = ContactLink::parse(&rebuilt)
-                .expect("пересобранная ссылка обязана разбираться");
+            let reparsed =
+                ContactLink::parse(&rebuilt).expect("пересобранная ссылка обязана разбираться");
 
             assert_eq!(link, reparsed, "круговой обход изменил контакт: {uri}");
         }

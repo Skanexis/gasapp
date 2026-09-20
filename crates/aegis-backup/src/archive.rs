@@ -413,7 +413,10 @@ pub fn open_meta(root: &BackupRootKey, raw: &[u8]) -> Result<ArchiveMeta> {
 ///
 /// [`AegisError::Malformed`] — файл не разбирается;
 /// [`AegisError::Crypto`] — тег не сходится.
-pub fn open(root: &BackupRootKey, raw: &[u8]) -> Result<(ArchiveHeader, ArchiveMeta, BackupBundle)> {
+pub fn open(
+    root: &BackupRootKey,
+    raw: &[u8],
+) -> Result<(ArchiveHeader, ArchiveMeta, BackupBundle)> {
     let (header, meta, bundle) = split_and_open(root, raw, true)?;
 
     Ok((
@@ -442,7 +445,8 @@ fn split_and_open(
     let mut offset = ArchiveHeader::LEN;
 
     let meta_nonce = take(raw, &mut offset, NONCE_LEN)?.to_vec();
-    let meta_len = usize::try_from(take_u32(raw, &mut offset)?).map_err(|_| AegisError::Malformed)?;
+    let meta_len =
+        usize::try_from(take_u32(raw, &mut offset)?).map_err(|_| AegisError::Malformed)?;
 
     if meta_len > MAX_META_LEN {
         return Err(AegisError::Malformed);
@@ -906,9 +910,7 @@ mod tests {
             open_file(&root, &sealed).expect("расшифровка"),
             b"vault file contents"
         );
-        assert!(!sealed
-            .windows(5)
-            .any(|window| window == b"vault"));
+        assert!(!sealed.windows(5).any(|window| window == b"vault"));
     }
 
     /// Чужой ключ файл vault не открывает.
@@ -923,7 +925,10 @@ mod tests {
         .expect("шифрование");
 
         assert!(matches!(
-            open_file(&root_for(&RecoveryKey::from_bytes([2u8; 32]), &salt), &sealed),
+            open_file(
+                &root_for(&RecoveryKey::from_bytes([2u8; 32]), &salt),
+                &sealed
+            ),
             Err(AegisError::Crypto)
         ));
     }

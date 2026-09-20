@@ -47,9 +47,7 @@ use aegis_storage::backup::{BackupChainState, BackupExport, ChatBackupRow};
 use aegis_storage::{
     ContactRow, MessageStatus, Storage, StoredAttachment, StoredMessage, VaultFileRow,
 };
-use aegis_types::{
-    AccountId, AegisError, ChatId, Ciphertext, MessageId, Result, Timestamp,
-};
+use aegis_types::{AccountId, AegisError, ChatId, Ciphertext, MessageId, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 
 /// Сколько инкрементов делать до следующего полного снимка.
@@ -429,11 +427,7 @@ fn export_to_bundle(export: &BackupExport, now: Timestamp) -> BackupBundle {
                 value: *value,
             })
             .collect(),
-        tombstones: export
-            .tombstones
-            .iter()
-            .map(|id| *id.as_bytes())
-            .collect(),
+        tombstones: export.tombstones.iter().map(|id| *id.as_bytes()).collect(),
     }
 }
 
@@ -904,8 +898,11 @@ mod tests {
 
         // Второе звено потеряно.
         let (fresh, _fresh_dir) = open_storage();
-        let outcome =
-            cheap_service(&fresh).restore(&recovery_key, &[full.archive, third.archive], later(6_000));
+        let outcome = cheap_service(&fresh).restore(
+            &recovery_key,
+            &[full.archive, third.archive],
+            later(6_000),
+        );
 
         assert!(matches!(outcome, Err(AegisError::Malformed)));
         assert!(
@@ -942,11 +939,9 @@ mod tests {
             .create(&RecoveryKey::generate(&mut OsRng), None, now(), &mut OsRng)
             .expect("копия");
 
-        assert!(BackupService::inspect(
-            &RecoveryKey::generate(&mut OsRng),
-            &outcome.archive
-        )
-        .is_err());
+        assert!(
+            BackupService::inspect(&RecoveryKey::generate(&mut OsRng), &outcome.archive).is_err()
+        );
     }
 
     /// Состояние цепочки видно через службу.

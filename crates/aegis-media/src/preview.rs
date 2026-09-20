@@ -85,10 +85,7 @@ pub struct SealedPreview {
 ///
 /// [`AegisError::Malformed`] — превью больше [`MAX_PREVIEW_BYTES`];
 /// [`AegisError::Crypto`] — сбой шифрования.
-pub fn seal_preview<R: RngCore + CryptoRng>(
-    image: &[u8],
-    rng: &mut R,
-) -> Result<SealedPreview> {
+pub fn seal_preview<R: RngCore + CryptoRng>(image: &[u8], rng: &mut R) -> Result<SealedPreview> {
     if image.len() > MAX_PREVIEW_BYTES {
         return Err(AegisError::Malformed);
     }
@@ -171,8 +168,7 @@ mod tests {
 
         // Шифруем в обход проверки — так поступил бы атакующий,
         // собравший сообщение своей реализацией.
-        let ciphertext =
-            attachment::seal_chunk(&key, 0, &oversized).expect("шифрование");
+        let ciphertext = attachment::seal_chunk(&key, 0, &oversized).expect("шифрование");
 
         assert!(matches!(
             open_preview(&key, &ciphertext),
@@ -187,5 +183,4 @@ mod tests {
 
         assert!(open_preview(&sealed.key, &sealed.ciphertext).is_err());
     }
-
 }

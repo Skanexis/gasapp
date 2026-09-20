@@ -127,8 +127,7 @@ pub fn seal_chunk(key: &AttachmentKey, index: u32, plaintext: &[u8]) -> Result<V
         return Err(AegisError::Malformed);
     }
 
-    let cipher =
-        XChaCha20Poly1305::new_from_slice(key.expose()).map_err(|_| AegisError::Crypto)?;
+    let cipher = XChaCha20Poly1305::new_from_slice(key.expose()).map_err(|_| AegisError::Crypto)?;
 
     cipher
         .encrypt(
@@ -149,8 +148,7 @@ pub fn seal_chunk(key: &AttachmentKey, index: u32, plaintext: &[u8]) -> Result<V
 /// повреждение, либо подмену, включая перестановку чанков местами;
 /// различать их для пользователя смысла нет.
 pub fn open_chunk(key: &AttachmentKey, index: u32, ciphertext: &[u8]) -> Result<Vec<u8>> {
-    let cipher =
-        XChaCha20Poly1305::new_from_slice(key.expose()).map_err(|_| AegisError::Crypto)?;
+    let cipher = XChaCha20Poly1305::new_from_slice(key.expose()).map_err(|_| AegisError::Crypto)?;
 
     cipher
         .decrypt(

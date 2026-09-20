@@ -22,14 +22,12 @@
 //! Проверяет это не комментарий, а тест
 //! `export_contains_no_session_or_identity_material`.
 
-use aegis_types::{
-    AccountId, AegisError, ChatId, Ciphertext, MessageId, Result, Timestamp,
-};
+use aegis_types::{AccountId, AegisError, ChatId, Ciphertext, MessageId, Result, Timestamp};
 use rusqlite::{params, Connection};
 
 use crate::{
-    storage_error, uuid_from_slice, ContactRow, MessageStatus, StoredAttachment, StoredMessage,
-    Storage,
+    storage_error, uuid_from_slice, ContactRow, MessageStatus, Storage, StoredAttachment,
+    StoredMessage,
 };
 
 /// Состояние чата, попадающее в копию.
@@ -758,10 +756,7 @@ impl Storage {
     /// # Errors
     ///
     /// [`AegisError::Storage`] — чтение не удалось.
-    pub fn recent_security_events(
-        &self,
-        limit: u32,
-    ) -> Result<Vec<(String, String, Timestamp)>> {
+    pub fn recent_security_events(&self, limit: u32) -> Result<Vec<(String, String, Timestamp)>> {
         let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
 
         let mut statement = connection

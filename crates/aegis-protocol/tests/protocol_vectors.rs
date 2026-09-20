@@ -201,8 +201,7 @@ fn different_ratchet_keys_give_different_ciphertexts() {
         let public = X25519PublicKey::from_bytes(aegis_types::PublicKeyBytes::new([key; 32]))
             .expect("публичный ключ");
 
-        let mut ratchet =
-            RatchetState::initiate(&[0x11; 32], &public, &mut rng).expect("храповик");
+        let mut ratchet = RatchetState::initiate(&[0x11; 32], &public, &mut rng).expect("храповик");
 
         ratchet
             .encrypt(&Plaintext::new(b"vector".to_vec()))

@@ -234,8 +234,7 @@ mod tests {
     }
 
     fn group() -> GroupState {
-        GroupState::new("Команда".to_owned(), vec![member(1), member(2)])
-            .expect("группа создана")
+        GroupState::new("Команда".to_owned(), vec![member(1), member(2)]).expect("группа создана")
     }
 
     #[test]
@@ -408,19 +407,13 @@ mod tests {
     /// Порог Sender Keys применяется к составу группы.
     #[test]
     fn small_group_uses_pairwise() {
-        let small = GroupState::new(
-            "Малая".to_owned(),
-            (1..=8u8).map(member).collect(),
-        )
-        .expect("группа");
+        let small =
+            GroupState::new("Малая".to_owned(), (1..=8u8).map(member).collect()).expect("группа");
 
         assert!(!small.uses_sender_keys());
 
-        let large = GroupState::new(
-            "Большая".to_owned(),
-            (1..=9u8).map(member).collect(),
-        )
-        .expect("группа");
+        let large =
+            GroupState::new("Большая".to_owned(), (1..=9u8).map(member).collect()).expect("группа");
 
         assert!(large.uses_sender_keys());
     }

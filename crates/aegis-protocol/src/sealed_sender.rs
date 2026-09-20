@@ -290,8 +290,7 @@ pub fn seal<R: RngCore + CryptoRng>(
 
     let mut plaintext = Vec::new();
     let certificate_bytes = certificate.to_bytes();
-    let length =
-        u32::try_from(certificate_bytes.len()).map_err(|_| AegisError::Malformed)?;
+    let length = u32::try_from(certificate_bytes.len()).map_err(|_| AegisError::Malformed)?;
     plaintext.extend_from_slice(&length.to_be_bytes());
     plaintext.extend_from_slice(&certificate_bytes);
     plaintext.extend_from_slice(envelope);
@@ -307,10 +306,7 @@ pub fn seal<R: RngCore + CryptoRng>(
 
     // Ёмкость считается с насыщением: это подсказка аллокатору,
     // и переполнение здесь не должно ронять отправку.
-    let capacity = ciphertext
-        .len()
-        .saturating_add(KEY_BYTES)
-        .saturating_add(1);
+    let capacity = ciphertext.len().saturating_add(KEY_BYTES).saturating_add(1);
     let mut out = Vec::with_capacity(capacity);
     out.push(SEALED_VERSION);
     out.extend_from_slice(ephemeral_public.as_bytes());
@@ -368,7 +364,10 @@ pub fn unseal(recipient_private: &X25519PrivateKey, raw: &[u8]) -> Result<Sealed
 
     let certificate_bytes = take(&plaintext, &mut inner, length)?;
     let certificate = SenderCertificate::from_bytes(certificate_bytes)?;
-    let envelope = plaintext.get(inner..).ok_or(AegisError::Malformed)?.to_vec();
+    let envelope = plaintext
+        .get(inner..)
+        .ok_or(AegisError::Malformed)?
+        .to_vec();
 
     Ok(SealedContents {
         certificate,
@@ -443,8 +442,7 @@ mod tests {
     const COMPAT_MESSAGE: &[u8] = b"AEGIS-XEDDSA-COMPAT-VECTOR";
 
     /// Публичный ключ вектора: X25519 от приватного `[0x42; 32]`.
-    const COMPAT_PUBLIC: &str =
-        "132c442be010fbd57e72603328aa76e71fccc1503aae219327d14d9c9993f472";
+    const COMPAT_PUBLIC: &str = "132c442be010fbd57e72603328aa76e71fccc1503aae219327d14d9c9993f472";
 
     /// Подпись вектора, посчитанная обеими реализациями.
     const COMPAT_SIGNATURE: &str = concat!(
@@ -474,12 +472,8 @@ mod tests {
         let account_id = [7u8; ID_LEN];
         let device_id = [9u8; ID_LEN];
 
-        let payload = SenderCertificate::signed_payload(
-            &account_id,
-            &device_id,
-            identity,
-            expires_at_millis,
-        );
+        let payload =
+            SenderCertificate::signed_payload(&account_id, &device_id, identity, expires_at_millis);
         let signature = xeddsa::montgomery::sign(server_private, &payload).expect("подпись");
 
         SenderCertificate {
@@ -631,7 +625,10 @@ mod tests {
         )
         .expect("запечатывание");
 
-        assert_ne!(first, second, "два конверта совпали — эфемерный ключ не случаен");
+        assert_ne!(
+            first, second,
+            "два конверта совпали — эфемерный ключ не случаен"
+        );
 
         // Совпадать не должны и эфемерные ключи, которые лежат открыто.
         assert_ne!(
@@ -703,8 +700,7 @@ mod tests {
         let (server_private, server_public) = server_key();
         let sender = X25519PrivateKey::generate(&mut OsRng);
 
-        let certificate =
-            certificate_for(&sender.public_key().as_bytes(), &server_private, now());
+        let certificate = certificate_for(&sender.public_key().as_bytes(), &server_private, now());
 
         // Ровно в момент истечения он уже недействителен.
         assert!(matches!(
@@ -833,7 +829,10 @@ mod tests {
         for length in 0..sealed.len() {
             let slice = sealed.get(..length).expect("срез");
 
-            assert!(unseal(&recipient, slice).is_err(), "обрубок {length} разобрался");
+            assert!(
+                unseal(&recipient, slice).is_err(),
+                "обрубок {length} разобрался"
+            );
         }
     }
 
@@ -851,9 +850,7 @@ mod tests {
     /// детерминированная, поэтому вектор устойчив.
     #[test]
     fn server_compatibility_vector_verifies() {
-        let public = PublicKeyBytes::new(
-            hex_to_array::<32>(COMPAT_PUBLIC).expect("вектор ключа"),
-        );
+        let public = PublicKeyBytes::new(hex_to_array::<32>(COMPAT_PUBLIC).expect("вектор ключа"));
         let signature = hex_to_array::<64>(COMPAT_SIGNATURE).expect("вектор подписи");
 
         xeddsa::montgomery::verify(&public, COMPAT_MESSAGE, &signature)
@@ -863,9 +860,7 @@ mod tests {
     /// Тот же вектор не проходит по другому сообщению.
     #[test]
     fn compatibility_vector_is_bound_to_its_message() {
-        let public = PublicKeyBytes::new(
-            hex_to_array::<32>(COMPAT_PUBLIC).expect("вектор ключа"),
-        );
+        let public = PublicKeyBytes::new(hex_to_array::<32>(COMPAT_PUBLIC).expect("вектор ключа"));
         let signature = hex_to_array::<64>(COMPAT_SIGNATURE).expect("вектор подписи");
 
         assert!(xeddsa::montgomery::verify(&public, b"another message", &signature).is_err());

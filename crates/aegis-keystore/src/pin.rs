@@ -156,11 +156,7 @@ const BOUND_KEY_INFO: &[u8] = b"AEGIS storage key v2 (hardware-bound)";
 /// [`AegisError::Malformed`] — PIN короче [`MIN_PIN_LEN`], соль не той
 /// длины либо `hardware` не [`HARDWARE_SECRET_LEN`] байт;
 /// [`AegisError::Crypto`] — сбой `Argon2id` или HKDF.
-pub fn derive_key_bound(
-    pin: &str,
-    salt: &[u8],
-    hardware: &[u8],
-) -> Result<Secret<[u8; KEY_LEN]>> {
+pub fn derive_key_bound(pin: &str, salt: &[u8], hardware: &[u8]) -> Result<Secret<[u8; KEY_LEN]>> {
     if hardware.len() != HARDWARE_SECRET_LEN {
         return Err(AegisError::Malformed);
     }

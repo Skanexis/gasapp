@@ -31,12 +31,10 @@
 use aegis_protocol::double_ratchet::RatchetState;
 use aegis_protocol::envelope::Envelope;
 use aegis_protocol::keys::{IdentityKeyPair, PreKeyBundle, PreKeyId};
-use aegis_protocol::prekeys::PreKeySecrets;
 use aegis_protocol::pqxdh::{self, KemPreKeyChoice, ResponderKeys};
+use aegis_protocol::prekeys::PreKeySecrets;
 use aegis_protocol::x25519::{X25519PrivateKey, X25519PublicKey};
-use aegis_types::{
-    AegisError, ChatId, Plaintext, PublicKeyBytes, Result, Timestamp,
-};
+use aegis_types::{AegisError, ChatId, Plaintext, PublicKeyBytes, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 
 /// Результат подготовки исходящего сообщения.
@@ -94,11 +92,8 @@ pub fn start_session<R: RngCore + CryptoRng>(
     // Храповик стартует от подписанного предключа получателя: это
     // единственный его публичный ключ, который мы знаем на этот момент.
     let their_ratchet = X25519PublicKey::from_bytes(their_bundle.signed_pre_key.public)?;
-    let mut ratchet = RatchetState::initiate(
-        output.shared_secret.expose_secret(),
-        &their_ratchet,
-        rng,
-    )?;
+    let mut ratchet =
+        RatchetState::initiate(output.shared_secret.expose_secret(), &their_ratchet, rng)?;
 
     let ciphertext = ratchet.encrypt(plaintext)?;
 
@@ -197,8 +192,7 @@ pub fn receive(
         Envelope::Message { payload } => {
             let state = session.ok_or(AegisError::SessionNotFound)?;
             let mut ratchet = RatchetState::deserialize(state)?;
-            let plaintext =
-                ratchet.decrypt(&aegis_types::Ciphertext::new(payload), now)?;
+            let plaintext = ratchet.decrypt(&aegis_types::Ciphertext::new(payload), now)?;
 
             Ok(IncomingMessage {
                 plaintext,
@@ -253,9 +247,7 @@ fn accept_initial(
 
     // Наша сторона храповика стартует от подписанного предключа:
     // именно его отправитель использовал как их публичный ключ.
-    let our_ratchet = X25519PrivateKey::from_bytes(
-        secrets.signed_pre_key.expose_secret(),
-    )?;
+    let our_ratchet = X25519PrivateKey::from_bytes(secrets.signed_pre_key.expose_secret())?;
     let mut ratchet = RatchetState::accept(shared.expose_secret(), our_ratchet);
 
     let plaintext = ratchet.decrypt(&aegis_types::Ciphertext::new(payload.to_vec()), now)?;
@@ -346,8 +338,8 @@ mod tests {
         let text = Plaintext::new(b"attack at dawn".to_vec());
         let outgoing = start_session(&alice, &bundle, &text, &mut OsRng).expect("сессия начата");
 
-        let incoming = receive(&bob, &secrets, None, &outgoing.envelope, now())
-            .expect("сообщение принято");
+        let incoming =
+            receive(&bob, &secrets, None, &outgoing.envelope, now()).expect("сообщение принято");
 
         assert_eq!(incoming.plaintext.expose(), text.expose());
         assert_eq!(
@@ -467,8 +459,8 @@ mod tests {
             .consumed_one_time
             .expect("одноразовый предключ был использован");
 
-        let mut depleted = PreKeySecrets::from_bytes(&secrets.to_bytes().expect("сериализация"))
-            .expect("разбор");
+        let mut depleted =
+            PreKeySecrets::from_bytes(&secrets.to_bytes().expect("сериализация")).expect("разбор");
         depleted.one_time.retain(|(id, _)| *id != consumed);
 
         assert!(

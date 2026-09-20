@@ -445,7 +445,10 @@ impl Cursor<'_> {
 
     /// Читает ровно `count` байт.
     fn take_exact(&mut self, count: usize) -> Result<&[u8]> {
-        let end = self.offset.checked_add(count).ok_or(AegisError::Malformed)?;
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(AegisError::Malformed)?;
 
         let slice = self
             .raw
@@ -502,7 +505,6 @@ mod tests {
             preview: None,
         }
     }
-
 
     /// Описание переживает круг сериализации.
     #[test]

@@ -219,7 +219,13 @@ impl BackupChain {
             parent_digest: [0u8; archive::DIGEST_LEN],
         };
 
-        let sealed = archive::seal(&self.root, &header, &meta_for(bundle, device_label)?, bundle, rng)?;
+        let sealed = archive::seal(
+            &self.root,
+            &header,
+            &meta_for(bundle, device_label)?,
+            bundle,
+            rng,
+        )?;
 
         self.generation = 0;
         self.last_digest = archive::digest(&sealed);
@@ -263,7 +269,13 @@ impl BackupChain {
             parent_digest: self.last_digest,
         };
 
-        let sealed = archive::seal(&self.root, &header, &meta_for(bundle, device_label)?, bundle, rng)?;
+        let sealed = archive::seal(
+            &self.root,
+            &header,
+            &meta_for(bundle, device_label)?,
+            bundle,
+            rng,
+        )?;
 
         self.generation = generation;
         self.last_digest = archive::digest(&sealed);
@@ -848,7 +860,10 @@ mod tests {
 
         let text = format!("{chain:?}");
 
-        assert!(!text.contains("root"), "в Debug попал корневой ключ: {text}");
+        assert!(
+            !text.contains("root"),
+            "в Debug попал корневой ключ: {text}"
+        );
         assert!(!text.contains("salt"), "в Debug попала соль: {text}");
     }
 }
