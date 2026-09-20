@@ -247,7 +247,18 @@
         человек должен до нажатия, а не после: вернуть удалённый
         аккаунт нельзя ни ему, ни оператору сервера.
     -->
-        <string name="privacy_export">Выгрузить мои данные</string>
+            <string name="lock_biometric_title">Разблокировать AEGIS</string>
+    <string name="lock_biometric_subtitle">Отпечаток вместо ввода PIN</string>
+    <string name="lock_biometric_use_pin">Ввести PIN</string>
+    <string name="privacy_biometric">Вход по отпечатку</string>
+    <string name="privacy_biometric_hint">Чтобы не набирать PIN. Сам PIN продолжает работать и по-прежнему защищает переписку — отпечаток лишь открывает запечатанную копию ключа.</string>
+    <string name="privacy_biometric_pin_title">Введите PIN</string>
+    <string name="privacy_biometric_enabled">Вход по отпечатку включён.</string>
+    <string name="privacy_biometric_disabled">Вход по отпечатку выключен.</string>
+    <string name="privacy_biometric_failed">Не удалось включить вход по отпечатку. PIN продолжает работать.</string>
+    <string name="privacy_biometric_not_enrolled">Сначала добавьте отпечаток в настройках системы.</string>
+    <string name="privacy_biometric_unsupported">На этом устройстве нет надёжного датчика отпечатка.</string>
+    <string name="privacy_export">Выгрузить мои данные</string>
     <string name="privacy_export_title">Выгрузить ваши данные?</string>
     <string name="privacy_export_warning">Вы получите файл JSON с именем пользователя, контактами, перепиской и настройками.\n\n⚠️ Файл НЕ зашифрован. Любой, кто его получит, прочтёт всю переписку. Сохраняйте туда, где распоряжаетесь вы, и удаляйте, когда он больше не нужен.\n\nКлючей в файле нет, поэтому восстановить из него аккаунт нельзя — для этого есть резервная копия.</string>
     <string name="privacy_export_continue">Выбрать, куда сохранить</string>

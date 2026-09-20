@@ -118,6 +118,10 @@
             <LinearLayout style="@style/AegisPanel">
 
                 <include
+                    android:id="@+id/privacy_biometric"
+                    layout="@layout/item_settings_toggle" />
+
+                <include
                     android:id="@+id/privacy_export"
                     layout="@layout/item_settings_row" />
 
