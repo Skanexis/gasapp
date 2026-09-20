@@ -5,6 +5,7 @@
   кнопка повторного вызова.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/call_row"
     style="@style/AegisListRow"
@@ -68,6 +69,6 @@
         style="@style/AegisIconButton"
         android:contentDescription="@string/call_back"
         android:src="@drawable/ic_phone"
-        android:tint="@color/accent_base" />
+        app:tint="@color/accent_base" />
 
 </LinearLayout>

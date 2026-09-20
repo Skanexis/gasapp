@@ -27,7 +27,7 @@
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
-            android:tint="@color/text_primary" />
+            app:tint="@color/text_primary" />
 
         <TextView
             style="@style/AegisAppBarTitle"
@@ -45,7 +45,7 @@
             style="@style/AegisIconButton"
             android:contentDescription="@string/vault_seal"
             android:src="@drawable/ic_lock"
-            android:tint="@color/text_primary"
+            app:tint="@color/text_primary"
             android:visibility="gone"
             tools:visibility="visible" />
     </LinearLayout>

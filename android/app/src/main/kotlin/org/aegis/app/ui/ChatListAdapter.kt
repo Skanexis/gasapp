@@ -109,7 +109,13 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
 
             if (chat.unread > 0) {
                 unread.visibility = View.VISIBLE
-                unread.text = chat.unread.toString()
+
+                // Через формат локали, а не `toString()`: в части локалей
+                // цифры пишутся другими знаками, и счётчик оказывался бы
+                // единственным местом интерфейса с латинскими.
+                unread.text = java.text.NumberFormat
+                    .getIntegerInstance()
+                    .format(chat.unread)
             } else {
                 unread.visibility = View.GONE
             }

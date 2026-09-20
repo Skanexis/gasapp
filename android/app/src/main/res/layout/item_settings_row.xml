@@ -5,6 +5,7 @@
   Отступы 13dp/16dp и промежуток 14dp перенесены дословно.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -22,7 +23,7 @@
         android:layout_height="20dp"
         android:contentDescription="@null"
         android:src="@drawable/ic_shield"
-        android:tint="@color/text_secondary" />
+        app:tint="@color/text_secondary" />
 
     <TextView
         android:id="@+id/row_label"
@@ -53,6 +54,6 @@
         android:contentDescription="@null"
         android:rotation="180"
         android:src="@drawable/ic_back"
-        android:tint="@color/text_disabled" />
+        app:tint="@color/text_disabled" />
 
 </LinearLayout>

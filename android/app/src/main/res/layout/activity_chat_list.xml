@@ -8,6 +8,7 @@
   как в макете, и в линейной раскладке этого не добиться.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -41,7 +42,7 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/search"
                 android:src="@drawable/ic_search"
-                android:tint="@color/text_secondary" />
+                app:tint="@color/text_secondary" />
 
             <ImageView
                 android:id="@+id/security_center_badge"
@@ -51,7 +52,7 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/security_center_description"
                 android:src="@drawable/ic_shield"
-                android:tint="@color/status_ok" />
+                app:tint="@color/status_ok" />
         </LinearLayout>
 
         <!--
@@ -111,6 +112,6 @@
         android:contentDescription="@string/new_chat"
         android:padding="16dp"
         android:src="@drawable/ic_edit"
-        android:tint="@color/accent_on" />
+        app:tint="@color/accent_on" />
 
 </FrameLayout>

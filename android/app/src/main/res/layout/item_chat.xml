@@ -8,6 +8,7 @@
   с сервера выдал бы оператору, кто с кем переписывается.
 -->
 <org.aegis.app.components.AegisListRow xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/chat_row"
     android:layout_width="match_parent"
@@ -55,7 +56,7 @@
             android:contentDescription="@string/chat_verified_mark"
             android:padding="3dp"
             android:src="@drawable/ic_check"
-            android:tint="@color/accent_on"
+            app:tint="@color/accent_on"
             android:visibility="gone"
             tools:visibility="visible" />
     </FrameLayout>

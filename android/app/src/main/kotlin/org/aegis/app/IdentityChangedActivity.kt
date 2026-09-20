@@ -5,6 +5,7 @@ package org.aegis.app
 import android.content.Intent
 import android.os.Bundle
 import android.widget.TextView
+import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.SecureWindow
@@ -63,17 +64,20 @@ class IdentityChangedActivity : AppCompatActivity() {
         findViewById<AegisButton>(R.id.identity_changed_later).setOnClickListener {
             goTo(ChatListActivity::class.java)
         }
-    }
 
-    /**
-     * Кнопка «назад» никуда не ведёт.
-     *
-     * Восстановление завершено, предыдущий экран закрыт. Вернуться
-     * означало бы выйти из приложения на середине объяснения.
-     */
-    @Deprecated("Заменяется OnBackPressedDispatcher в новых версиях AndroidX")
-    override fun onBackPressed() {
-        goTo(ChatListActivity::class.java)
+        // Кнопка «назад» ведёт к списку чатов, а не наружу.
+        //
+        // Восстановление завершено, предыдущий экран закрыт: обычное
+        // «назад» выбросило бы из приложения на середине объяснения
+        // про сменившийся ключ.
+        //
+        // Через OnBackPressedDispatcher, а не переопределением
+        // `onBackPressed`: последнее объявлено устаревшим, не вызывает
+        // `super` (на что ругается lint и ронял сборку проверок) и
+        // не работает с предиктивным жестом «назад» на Android 13+.
+        onBackPressedDispatcher.addCallback(this) {
+            goTo(ChatListActivity::class.java)
+        }
     }
 
     private fun goTo(screen: Class<*>) {

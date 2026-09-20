@@ -1,489 +1,447 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+    English strings — the default resource set.
+
+    Пункт M8 «Локализация (минимум: EN, RU)» (раздел 22).
+
+    # Почему английский стал умолчанием, а русский переехал в values-ru
+
+    Раньше русский лежал в `values/`, то есть был запасным вариантом
+    для **всех** локалей. Телефон с немецким или испанским языком
+    показывал русский интерфейс — не перевод, а язык, которого человек
+    может не знать вовсе. Для мессенджера, где от понимания
+    предупреждения зависит решение о безопасности, это хуже обычного
+    неудобства: строку «ключ контакта сменился» нужно прочитать
+    и понять, а не пролистать.
+
+    Английский в `values/` — запасной для любой локали без перевода;
+    русский в `values-ru/` — для русской.
+
+    # 🔐 Про тон
+
+    Формулировки не преувеличивают. «Protected from tampering» стоит
+    там, где сверка действительно это даёт, и нигде больше; «we cannot
+    decrypt» — там, где это правда по построению. Строка интерфейса,
+    обещающая больше, чем делает код, опаснее отсутствующей строки:
+    человек строит поведение на защите, которой нет.
+-->
 <resources>
     <string name="app_name">AEGIS</string>
 
-    <!-- Экран проверки моста FFI (M1). Заменяется реальными экранами в M4. -->
-    <string name="ffi_core_version">Версия ядра: %1$s</string>
-    <string name="ffi_protocol_version">Версия протокола: %1$d</string>
+    <!-- FFI bridge check screen (M1). Replaced by real screens in M4. -->
+    <string name="ffi_core_version">Core version: %1$s</string>
+    <string name="ffi_protocol_version">Protocol version: %1$d</string>
     <string name="ffi_safety_number">Safety number:\n%1$s</string>
-    <string name="ffi_error">Ошибка ядра</string>
-    <!-- Отправка заблокирована: у верифицированного контакта сменился
-         identity-ключ, нужна повторная сверка safety number. -->
-    <string name="send_blocked">🔒 Отправка заблокирована: ключ контакта сменился</string>
-    <string name="send_allowed">✓ Отправка разрешена</string>
-
-    <!-- Компоненты дизайн-системы -->
-    <string name="button_loading">Загрузка…</string>
-
-    <!-- ===== Экраны M4 ===== -->
-
-    <!-- Список чатов -->
+    <string name="ffi_error">Core error</string>
+    <!-- Sending is blocked: a verified contact's identity key changed,
+         the safety number has to be compared again. -->
+    <string name="send_blocked">🔒 Sending blocked: the contact\'s key changed</string>
+    <string name="send_allowed">✓ Sending allowed</string>
+    <string name="button_loading">Loading…</string>
     <string name="chat_verified_mark">✓</string>
-    <string name="chat_list_empty">Пока нет переписок.
-Найдите собеседника по имени, чтобы начать.</string>
-    <string name="connection_offline">Нет соединения — сообщения уйдут позже</string>
-    <string name="security_center_description">Центр безопасности</string>
-
-    <!-- Чат -->
-    <string name="back">Назад</string>
+    <string name="chat_list_empty">No conversations yet.\nFind someone by username to start one.</string>
+    <string name="connection_offline">No connection — messages will be sent later</string>
+    <string name="security_center_description">Security center</string>
+    <string name="back">Back</string>
     <string name="back_arrow">←</string>
-    <string name="message_hint">Сообщение</string>
-    <string name="send">Отправить</string>
-    <string name="key_changed_title">🔒 Ключ контакта сменился</string>
-    <string name="key_changed_body">Вы ранее сверили safety number с этим контактом. Отправка заблокирована, пока вы не сверите его заново.</string>
-    <string name="verify_safety_number">Сверить safety number</string>
+    <string name="message_hint">Message</string>
+    <string name="send">Send</string>
+    <string name="key_changed_title">🔒 The contact\'s key changed</string>
+    <string name="key_changed_body">You compared the safety number with this contact before. Sending is blocked until you compare it again.</string>
+    <string name="verify_safety_number">Compare safety number</string>
 
-    <!-- Блокировка -->
+    <!-- Lock screen -->
     <string name="lock_icon">🔒</string>
-    <string name="lock_title">AEGIS заблокирован</string>
-    <string name="lock_subtitle">Введите PIN, чтобы расшифровать переписку</string>
+    <string name="lock_title">AEGIS is locked</string>
+    <string name="lock_subtitle">Enter your PIN to decrypt your messages</string>
     <string name="pin_hint">PIN</string>
-    <string name="pin_error">Не удалось разблокировать</string>
-    <string name="unlock">Разблокировать</string>
+    <string name="pin_error">Could not unlock</string>
+    <string name="unlock">Unlock</string>
 
     <!--
-        Задержки после неверного PIN (раздел 19.3).
+        Delays after a wrong PIN (section 19.3).
 
-        Сообщения намеренно не называют число оставшихся попыток:
-        оно полезно только тому, кто перебирает.
+        The messages deliberately do not state how many attempts are
+        left: that number is only useful to someone guessing.
     -->
-    <string name="lock_error_wrong">Неверный PIN</string>
-    <string name="lock_error_wait">Неверный PIN. Следующая попытка — с задержкой</string>
-    <string name="lock_locked_for">Повторить можно через %1$s</string>
+    <string name="lock_error_wrong">Wrong PIN</string>
+    <string name="lock_error_wait">Wrong PIN. The next attempt is delayed</string>
+    <string name="lock_locked_for">You can try again in %1$s</string>
     <plurals name="lock_left_seconds">
-        <item quantity="one">%d секунду</item>
-        <item quantity="few">%d секунды</item>
-        <item quantity="many">%d секунд</item>
-        <item quantity="other">%d секунды</item>
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
     </plurals>
     <plurals name="lock_left_minutes">
-        <item quantity="one">%d минуту</item>
-        <item quantity="few">%d минуты</item>
-        <item quantity="many">%d минут</item>
-        <item quantity="other">%d минуты</item>
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
     </plurals>
     <plurals name="lock_left_hours">
-        <item quantity="one">%d час</item>
-        <item quantity="few">%d часа</item>
-        <item quantity="many">%d часов</item>
-        <item quantity="other">%d часа</item>
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
     </plurals>
 
     <!-- Safety number -->
     <string name="safety_number_title">Safety number</string>
-    <string name="safety_number_qr_description">QR-код safety number</string>
-    <string name="safety_number_hint">Сверьте эти 60 цифр с собеседником лично или по видеосвязи. Совпадают — переписка защищена от подмены.</string>
-    <string name="mark_verified">Отметить как сверенный</string>
-    <string name="clear_verified">Снять отметку</string>
-    <string name="safety_number_peer">Сверка с %1$s</string>
+    <string name="safety_number_qr_description">Safety number QR code</string>
+    <string name="safety_number_hint">Compare these 60 digits with the other person face to face or over video. If they match, your conversation is protected against a substituted key.</string>
+    <string name="mark_verified">Mark as compared</string>
+    <string name="clear_verified">Remove the mark</string>
+    <string name="safety_number_peer">Comparing with %1$s</string>
+
     <string name="security_score">🛡 %1$d/%2$d</string>
-    <string name="chat_verified_state">✓ Верифицирован</string>
-    <string name="chat_unverified_state">Не верифицирован — сверьте safety number</string>
-    <!-- Нижняя навигация -->
-    <string name="nav_chats">Чаты</string>
-    <string name="nav_calls">Звонки</string>
-    <string name="nav_contacts">Контакты</string>
-    <string name="nav_settings">Настройки</string>
-    <string name="new_chat">Новый чат</string>
-    <string name="search">Поиск</string>
-    <string name="more">Ещё</string>
-    <string name="delete_digit">Удалить цифру</string>
-    <string name="attempts_left">Осталось попыток: %1$d</string>
-    <!-- Настройки -->
-    <string name="show_my_qr">Показать мой QR-код</string>
-    <string name="settings_security">Безопасность</string>
-    <string name="settings_privacy">Приватность</string>
-    <string name="settings_notifications">Уведомления</string>
-    <string name="settings_devices">Устройства</string>
-    <string name="settings_about">О защите</string>
-    <string name="notifications_private">Приватные</string>
-    <!-- Security Center -->
-    <string name="security_center_title">Центр безопасности</string>
-    <string name="security_protected">Защищено</string>
-    <string name="security_needs_attention">%1$d пункт требует внимания</string>
-    <string name="security_all_clear">Все проверки пройдены</string>
-    <string name="security_keys">Ключи шифрования</string>
-    <string name="security_devices">Доверенные устройства</string>
-    <string name="security_recovery">Ключ восстановления</string>
-    <string name="security_blocked">Заблокированные</string>
-    <string name="e2e_encrypted">Сквозное шифрование</string>
-    <!-- Контакты -->
-    <string name="add_contact">Добавить контакт</string>
-    <string name="search_contacts">Поиск контактов</string>
-    <string name="contacts_empty">Контактов пока нет. Добавьте собеседника по имени пользователя.</string>
-    <string name="contact_verified">@%1$s · верифицирован</string>
+    <string name="chat_verified_state">✓ Verified</string>
+    <string name="chat_unverified_state">Not verified — compare the safety number</string>
+
+    <!-- Navigation -->
+    <string name="nav_chats">Chats</string>
+    <string name="nav_calls">Calls</string>
+    <string name="nav_contacts">Contacts</string>
+    <string name="nav_settings">Settings</string>
+    <string name="new_chat">New chat</string>
+    <string name="search">Search</string>
+    <string name="more">More</string>
+    <string name="delete_digit">Delete digit</string>
+    <string name="attempts_left">Attempts left: %1$d</string>
+    <string name="show_my_qr">Show my QR code</string>
+
+    <!-- Settings -->
+    <string name="settings_security">Security</string>
+    <string name="settings_privacy">Privacy</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_devices">Devices</string>
+    <string name="settings_about">About protection</string>
+    <string name="notifications_private">Private</string>
+
+    <string name="security_center_title">Security center</string>
+    <string name="security_protected">Protected</string>
+    <string name="security_needs_attention">%1$d item needs attention</string>
+    <string name="security_all_clear">All checks passed</string>
+    <string name="security_keys">Encryption keys</string>
+    <string name="security_devices">Trusted devices</string>
+    <string name="security_recovery">Recovery key</string>
+    <string name="security_blocked">Blocked</string>
+    <string name="e2e_encrypted">End-to-end encrypted</string>
+
+    <string name="add_contact">Add contact</string>
+    <string name="search_contacts">Search contacts</string>
+    <string name="contacts_empty">No contacts yet. Add someone by username.</string>
+    <string name="contact_verified">@%1$s · verified</string>
     <string name="contact_username">@%1$s</string>
-    <!-- Онбординг -->
-    <string name="onboarding_tagline">Мессенджер со сквозным шифрованием, устойчивым к квантовому компьютеру</string>
-    <string name="onboarding_audit_warning">Не прошёл независимый аудит. Не используйте для защиты жизни и свободы.</string>
-    <string name="onboarding_choose_username">Выберите имя пользователя — по нему вас найдут собеседники</string>
-    <string name="onboarding_username_hint">имя_пользователя</string>
-    <string name="onboarding_create">Создать аккаунт</string>
-    <string name="onboarding_working">Подбирается доказательство работы…</string>
-    <string name="onboarding_error_short">Имя слишком короткое</string>
-    <string name="onboarding_error_taken">Это имя уже занято</string>
-    <string name="onboarding_error_network">Сервер недоступен. Проверьте соединение.</string>
-    <string name="new_chat_hint">Введите имя пользователя собеседника</string>
-    <string name="new_chat_open">Открыть</string>
-    <string name="onboarding_choose_pin">Придумайте PIN — им шифруется переписка на устройстве</string>
-    <string name="onboarding_pin_hint">не менее 6 цифр</string>
-    <string name="onboarding_error_pin_short">PIN должен быть не короче 6 символов</string>
 
-    <!-- Экран профиля: QR и ссылка для обмена контактами. -->
-    <string name="profile_title">Мой профиль</string>
-    <string name="profile_no_username">Имя не задано</string>
-    <string name="profile_qr_description">QR-код профиля: покажите его собеседнику, чтобы он добавил вас</string>
-    <string name="profile_link_hint">Покажите код рядом стоящему собеседнику или отправьте ссылку. Ключ передаётся мимо сервера.</string>
-    <string name="profile_copy">Скопировать ссылку</string>
-    <string name="profile_share">Отправить ссылку</string>
-    <string name="profile_copied">Ссылка скопирована</string>
+    <!-- Onboarding -->
+    <string name="onboarding_tagline">An end-to-end encrypted messenger built to resist quantum computers</string>
+    <string name="onboarding_audit_warning">Has not passed an independent audit. Do not rely on it where life or liberty is at stake.</string>
+    <string name="onboarding_choose_username">Choose a username — this is how others will find you</string>
+    <string name="onboarding_username_hint">username</string>
+    <string name="onboarding_create">Create account</string>
+    <string name="onboarding_working">Computing proof of work…</string>
+    <string name="onboarding_error_short">Username is too short</string>
+    <string name="onboarding_error_taken">That username is taken</string>
+    <string name="onboarding_error_network">Server unavailable. Check your connection.</string>
+    <string name="new_chat_hint">Enter the other person\'s username</string>
+    <string name="new_chat_open">Open</string>
+    <string name="onboarding_choose_pin">Choose a PIN — it encrypts your messages on this device</string>
+    <string name="onboarding_pin_hint">at least 6 digits</string>
+    <string name="onboarding_error_pin_short">The PIN must be at least 6 characters</string>
 
-    <!-- Добавление контакта по ссылке. -->
-    <string name="add_contact_title">Добавить контакт</string>
-    <string name="add_contact_hint">Вставьте ссылку вида aegis://contact/…</string>
-    <string name="add_contact_confirm">Добавить</string>
-    <string name="add_contact_added">Контакт добавлен: %1$s</string>
-    <string name="add_contact_added_unnamed">Контакт добавлен</string>
-    <string name="add_contact_invalid">Ссылка не подходит: она не является ссылкой AEGIS либо имя в ней принадлежит другому ключу</string>
-    <string name="add_contact_key_changed">У этого контакта уже известен другой ключ. Добавление отклонено: подтвердите смену ключа сверкой safety number.</string>
-    <string name="add_contact_review">Проверьте, кого добавляете. Ссылка не подтверждает имя — его называет тот, кто её сделал.</string>
+    <!-- Profile -->
+    <string name="profile_title">My profile</string>
+    <string name="profile_no_username">No username set</string>
+    <string name="profile_qr_description">Profile QR code: show it to someone so they can add you</string>
+    <string name="profile_link_hint">Show the code to someone standing next to you, or send them the link. The key travels past the server, not through it.</string>
+    <string name="profile_copy">Copy link</string>
+    <string name="profile_share">Send link</string>
+    <string name="profile_copied">Link copied</string>
 
-    <!-- Поиск по переписке. -->
-    <string name="search_title">Поиск</string>
-    <string name="search_hint">Найти в переписке</string>
-    <string name="search_empty">Ничего не найдено</string>
-    <string name="contact_no_username">Без имени</string>
-    <string name="contacts_empty_real">Контактов пока нет. Добавьте по QR или ссылке.</string>
+    <string name="add_contact_title">Add contact</string>
+    <string name="add_contact_hint">Paste a link like aegis://contact/…</string>
+    <string name="add_contact_confirm">Add</string>
+    <string name="add_contact_added">Contact added: %1$s</string>
+    <string name="add_contact_added_unnamed">Contact added</string>
+    <string name="add_contact_invalid">This link does not work: it is not an AEGIS link, or the name in it belongs to a different key</string>
+    <string name="add_contact_key_changed">A different key is already known for this contact. The addition was rejected: confirm the key change by comparing the safety number.</string>
+    <string name="add_contact_review">Check who you are adding. The link does not confirm the name — it is chosen by whoever made the link.</string>
 
-    <!-- Вложения. -->
-    <string name="attach">Прикрепить</string>
-    <string name="attach_photo">Фото или видео</string>
-    <string name="attach_file">Документ</string>
-    <string name="attach_cancel">Отмена</string>
-    <string name="attach_sending">Отправка вложения…</string>
-    <string name="attach_failed">Не удалось отправить вложение</string>
-    <string name="attach_too_large">Файл больше 100 МБ</string>
-    <string name="attach_unreadable">Не удалось прочитать файл</string>
+    <string name="search_title">Search</string>
+    <string name="search_hint">Search your messages</string>
+    <string name="search_empty">Nothing found</string>
+    <string name="contact_no_username">No name</string>
+    <string name="contacts_empty_real">No contacts yet. Add one by QR code or link.</string>
 
-    <!-- Вложения в переписке. -->
-    <string name="attachment_image">Изображение</string>
-    <string name="attachment_video">Видео</string>
-    <string name="attachment_document">Документ</string>
-    <string name="attachment_download">Загрузить</string>
-    <string name="attachment_downloading">Загрузка…</string>
-    <string name="attachment_download_failed">Не удалось загрузить</string>
-    <string name="attachment_save">Сохранить</string>
-    <string name="attachment_saved">Файл сохранён</string>
-    <string name="attachment_tampered">Файл изменён на сервере и не открыт</string>
+    <!-- Attachments -->
+    <string name="attach">Attach</string>
+    <string name="attach_photo">Photo or video</string>
+    <string name="attach_file">Document</string>
+    <string name="attach_cancel">Cancel</string>
+    <string name="attach_sending">Sending attachment…</string>
+    <string name="attach_failed">Could not send the attachment</string>
+    <string name="attach_too_large">The file is larger than 100 MB</string>
+    <string name="attach_unreadable">Could not read the file</string>
+    <string name="attachment_image">Image</string>
+    <string name="attachment_video">Video</string>
+    <string name="attachment_document">Document</string>
+    <string name="attachment_download">Download</string>
+    <string name="attachment_downloading">Downloading…</string>
+    <string name="attachment_download_failed">Download failed</string>
+    <string name="attachment_save">Save</string>
+    <string name="attachment_saved">File saved</string>
+    <string name="attachment_tampered">The file was changed on the server and was not opened</string>
 
-    <!-- Профиль контакта. -->
-    <string name="contact_profile_title">Контакт</string>
-    <string name="contact_profile_verify">Сверить safety number</string>
-    <string name="contact_profile_verified">Ключ сверен лично</string>
-    <string name="contact_profile_unverified">Ключ не сверен</string>
-    <string name="contact_profile_unverified_hint">Пока ключ не сверен, нельзя быть уверенным, что переписка идёт с тем, кем представился собеседник.</string>
-    <string name="contact_profile_open_chat">Открыть переписку</string>
-    <string name="contact_profile_key">Identity-ключ</string>
+    <!-- Contact profile -->
+    <string name="contact_profile_title">Contact</string>
+    <string name="contact_profile_verify">Compare safety number</string>
+    <string name="contact_profile_verified">Key compared in person</string>
+    <string name="contact_profile_unverified">Key not compared</string>
+    <string name="contact_profile_unverified_hint">Until the key is compared, there is no way to be sure you are talking to the person the contact claims to be.</string>
+    <string name="contact_profile_open_chat">Open conversation</string>
+    <string name="contact_profile_key">Identity key</string>
 
-    <!-- Журнал звонков. -->
-    <string name="calls_filter_all">Все</string>
-    <string name="calls_filter_missed">Пропущенные</string>
-    <string name="calls_empty">Звонков пока нет</string>
-    <string name="calls_encrypted_note">Все звонки защищены сквозным шифрованием</string>
-    <string name="call_back">Позвонить</string>
-    <string name="call_incoming">Входящий · %1$s</string>
-    <string name="call_outgoing">Исходящий · %1$s</string>
-    <string name="call_missed">Пропущенный · %1$s</string>
-    <string name="call_video">Видео · %1$s</string>
+    <!-- Calls -->
+    <string name="calls_filter_all">All</string>
+    <string name="calls_filter_missed">Missed</string>
+    <string name="calls_empty">No calls yet</string>
+    <string name="calls_encrypted_note">All calls are end-to-end encrypted</string>
+    <string name="call_back">Call</string>
+    <string name="call_incoming">Incoming · %1$s</string>
+    <string name="call_outgoing">Outgoing · %1$s</string>
+    <string name="call_missed">Missed · %1$s</string>
+    <string name="call_video">Video · %1$s</string>
 
-    <!-- Действия над сообщением. -->
-    <string name="message_edited">изменено</string>
-    <string name="message_actions">Действия</string>
-    <string name="message_react">Реакция</string>
-    <string name="message_reply">Ответить</string>
-    <string name="message_edit">Изменить</string>
-    <string name="message_copy">Копировать</string>
-    <string name="message_delete">Удалить у всех</string>
-    <string name="message_copied">Скопировано</string>
-    <string name="message_edit_title">Изменить сообщение</string>
-    <string name="message_edit_hint">Новый текст</string>
-    <string name="message_delete_title">Удалить у всех?</string>
-    <string name="message_delete_body">Сообщение исчезнет у вас сразу. У собеседника — когда дойдёт запрос: он уже видел текст и мог его запомнить.</string>
-    <string name="message_action_failed">Не удалось выполнить</string>
-    <string name="action_cancel">Отмена</string>
-    <string name="action_save">Сохранить</string>
-    <string name="action_delete">Удалить</string>
+    <!-- Message actions -->
+    <string name="message_edited">edited</string>
+    <string name="message_actions">Actions</string>
+    <string name="message_react">React</string>
+    <string name="message_reply">Reply</string>
+    <string name="message_edit">Edit</string>
+    <string name="message_copy">Copy</string>
+    <string name="message_delete">Delete for everyone</string>
+    <string name="message_copied">Copied</string>
+    <string name="message_edit_title">Edit message</string>
+    <string name="message_edit_hint">New text</string>
+    <string name="message_delete_title">Delete for everyone?</string>
+    <string name="message_delete_body">The message disappears for you right away. For the other person — when the request reaches them: they have already seen the text and may remember it.</string>
+    <string name="message_action_failed">Could not do that</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
 
-    <!-- Меню чата. -->
-    <string name="chat_menu">Меню чата</string>
-    <string name="chat_verify">Сверить safety number</string>
-    <string name="chat_disappearing">Исчезающие сообщения</string>
-    <string name="chat_presence">Индикаторы присутствия</string>
-    <string name="disappearing_off">Выключено</string>
-    <string name="disappearing_hour">Через час</string>
-    <string name="disappearing_day">Через сутки</string>
-    <string name="disappearing_week">Через неделю</string>
-    <string name="presence_enable">Включить: собеседник увидит, когда вы печатаете и читаете</string>
-    <string name="presence_disable">Выключить</string>
+    <string name="chat_menu">Chat menu</string>
+    <string name="chat_verify">Compare safety number</string>
+    <string name="chat_disappearing">Disappearing messages</string>
+    <string name="chat_presence">Presence indicators</string>
+    <string name="disappearing_off">Off</string>
+    <string name="disappearing_hour">After an hour</string>
+    <string name="disappearing_day">After a day</string>
+    <string name="disappearing_week">After a week</string>
+    <string name="presence_enable">Turn on: the other person will see when you are typing and reading</string>
+    <string name="presence_disable">Turn off</string>
 
-    <!-- Приватность. -->
-    <string name="privacy_section_contacts">Что видят собеседники</string>
-    <string name="privacy_section_device">Это устройство</string>
-    <string name="privacy_presence">Индикаторы присутствия</string>
-    <string name="privacy_presence_hint">Собеседник увидит, когда вы печатаете и прочитали сообщение</string>
-    <string name="privacy_last_seen">Время последнего входа</string>
-    <string name="privacy_last_seen_hint">Собеседник увидит, когда вы последний раз были в сети</string>
-    <string name="privacy_screenshots">Блокировать снимки экрана</string>
-    <string name="privacy_screenshots_hint">Переписка не попадёт в снимки и в переключатель задач</string>
-    <string name="privacy_preview">Текст в уведомлениях</string>
-    <string name="privacy_preview_hint">Показывать сообщение на заблокированном экране</string>
-    <string name="privacy_limits_note">Блокировка снимков действует только на этом устройстве. Она не мешает сфотографировать экран другим телефоном и не ограничивает собеседника: он видел ваше сообщение и мог его сохранить.</string>
+    <!-- Privacy -->
+    <string name="privacy_section_contacts">What others can see</string>
+    <string name="privacy_section_device">This device</string>
+    <string name="privacy_presence">Presence indicators</string>
+    <string name="privacy_presence_hint">The other person sees when you are typing and when you have read a message</string>
+    <string name="privacy_last_seen">Last seen</string>
+    <string name="privacy_last_seen_hint">The other person sees when you were last online</string>
+    <string name="privacy_screenshots">Block screenshots</string>
+    <string name="privacy_screenshots_hint">Your messages stay out of screenshots and out of the recent apps preview</string>
+    <string name="privacy_preview">Message text in notifications</string>
+    <string name="privacy_preview_hint">Show the message on the lock screen</string>
+    <string name="privacy_limits_note">Blocking screenshots only works on this device. It does not stop someone photographing the screen with another phone, and it does not restrict the other person: they saw your message and could have saved it.</string>
 
-    <!-- Уведомления. -->
-    <string name="notifications_section_content">Что показывать</string>
-    <string name="notifications_section_alerts">Как оповещать</string>
-    <string name="notifications_preview">Текст сообщения</string>
-    <string name="notifications_preview_hint">Показывать сообщение на заблокированном экране</string>
-    <string name="notifications_sender">Имя отправителя</string>
-    <string name="notifications_sender_hint">Показывать, от кого пришло сообщение</string>
-    <string name="notifications_sound">Звук</string>
-    <string name="notifications_vibrate">Вибрация</string>
-    <string name="notifications_content_note">Сервер присылает только сигнал «есть новое»: ни текста, ни отправителя, ни чата в уведомлении нет. Всё, что настраивается здесь, приложение подставляет само, уже расшифровав сообщение на устройстве.</string>
+    <!-- Notifications -->
+    <string name="notifications_section_content">What to show</string>
+    <string name="notifications_section_alerts">How to alert</string>
+    <string name="notifications_preview">Message text</string>
+    <string name="notifications_preview_hint">Show the message on the lock screen</string>
+    <string name="notifications_sender">Sender name</string>
+    <string name="notifications_sender_hint">Show who the message came from</string>
+    <string name="notifications_sound">Sound</string>
+    <string name="notifications_vibrate">Vibration</string>
+    <string name="notifications_content_note">The server sends only a \"there is something new\" signal: the notification carries no text, no sender and no chat. Everything configured here is filled in by the app itself, after it has decrypted the message on your device.</string>
 
-    <!-- Внешний вид. -->
-    <string name="settings_appearance">Внешний вид</string>
-    <string name="appearance_section_theme">Тема</string>
-    <string name="appearance_section_text">Текст</string>
-    <string name="appearance_theme">Оформление</string>
-    <string name="appearance_theme_value">Тёмное</string>
-    <string name="appearance_theme_note">Приложение нарисовано под тёмный фон. Светлая тема означала бы вторую палитру и вторую возможность ошибиться в том, каким цветом показано состояние безопасности, — поэтому её нет.</string>
-    <string name="appearance_language">Язык</string>
-    <string name="appearance_language_value">Системный</string>
-    <string name="appearance_language_note">Язык берётся из настроек системы.</string>
+    <!-- Appearance -->
+    <string name="settings_appearance">Appearance</string>
+    <string name="appearance_section_theme">Theme</string>
+    <string name="appearance_section_text">Text</string>
+    <string name="appearance_theme">Style</string>
+    <string name="appearance_theme_value">Dark</string>
+    <string name="appearance_theme_note">The app is drawn for a dark background. A light theme would mean a second palette and a second chance to get the colour of a security state wrong — so there isn\'t one.</string>
+    <string name="appearance_language">Language</string>
+    <string name="appearance_language_value">System</string>
+    <string name="appearance_language_note">The language follows your system settings.</string>
 
-    <!-- Хранилище. -->
-    <string name="settings_storage">Хранилище</string>
-    <string name="storage_section_usage">Занято</string>
-    <string name="storage_section_cleanup">Очистка</string>
-    <string name="storage_messages">Сообщения</string>
-    <string name="storage_attachments">Вложения</string>
-    <string name="storage_purge_expired">Удалить истёкшие сообщения</string>
-    <string name="storage_clear_cache">Очистить загруженные файлы</string>
-    <string name="storage_cleanup_note">Удаление необратимо: сервер копий не хранит, и восстановить стёртое будет неоткуда.</string>
-    <string name="storage_purged">Удалено сообщений: %1$d</string>
-    <string name="storage_cleared">Загруженные файлы удалены</string>
+    <!-- Storage -->
+    <string name="settings_storage">Storage</string>
+    <string name="storage_section_usage">Used</string>
+    <string name="storage_section_cleanup">Cleanup</string>
+    <string name="storage_messages">Messages</string>
+    <string name="storage_attachments">Attachments</string>
+    <string name="storage_purge_expired">Delete expired messages</string>
+    <string name="storage_clear_cache">Clear downloaded files</string>
+    <string name="storage_cleanup_note">Deletion cannot be undone: the server keeps no copies, and there will be nowhere to restore from.</string>
+    <string name="storage_purged">Messages deleted: %1$d</string>
+    <string name="storage_cleared">Downloaded files deleted</string>
 
-    <!-- Устройства. -->
-    <string name="devices_section_current">Это устройство</string>
-    <string name="devices_this">Текущее устройство</string>
-    <string name="devices_note">Каждое связанное устройство читает переписку целиком. Связывание появится вместе с синхронизацией между устройствами; пока аккаунт доступен только отсюда.</string>
+    <!-- Devices -->
+    <string name="devices_section_current">This device</string>
+    <string name="devices_this">Current device</string>
+    <string name="devices_note">Every linked device reads all of your messages. Linking will arrive together with sync between devices; for now the account is reachable only from here.</string>
 
-    <!-- О программе. -->
-    <string name="about_section_version">Версии</string>
-    <string name="about_section_legal">Лицензия</string>
-    <string name="about_app_version">Приложение</string>
-    <string name="about_core_version">Ядро</string>
-    <string name="about_protocol_version">Протокол</string>
-    <string name="about_license">Лицензия</string>
+    <!-- About -->
+    <string name="about_section_version">Versions</string>
+    <string name="about_section_legal">License</string>
+    <string name="about_app_version">App</string>
+    <string name="about_core_version">Core</string>
+    <string name="about_protocol_version">Protocol</string>
+    <string name="about_license">License</string>
     <string name="about_license_value">Apache-2.0</string>
-    <string name="about_source">Исходный код</string>
-    <string name="about_source_value">Открыт</string>
-    <string name="about_note">Версия протокола определяет совместимость: собеседник с более старой версией не прочитает сообщение. Клиент под Apache-2.0, сервер под AGPL-3.0.</string>
+    <string name="about_source">Source code</string>
+    <string name="about_source_value">Open</string>
+    <string name="about_note">The protocol version determines compatibility: someone on an older version will not be able to read your message. The client is Apache-2.0, the server is AGPL-3.0.</string>
 
-    <!-- Security Center. -->
-    <string name="security_keys_title">Ключи шифрования</string>
-    <string name="security_devices_title">Доверенные устройства</string>
-    <string name="security_recovery_title">Ключ восстановления</string>
-    <string name="security_blocked_title">Заблокированные</string>
-    <string name="security_blocked_empty">Заблокированных нет</string>
+    <string name="security_keys_title">Encryption keys</string>
+    <string name="security_devices_title">Trusted devices</string>
+    <string name="security_recovery_title">Recovery key</string>
+    <string name="security_blocked_title">Blocked</string>
+    <string name="security_blocked_empty">Nobody is blocked</string>
 
-    <!--
-      Recovery Center и резервное копирование (раздел 12 плана).
-
-      🔐 Формулировки намеренно прямые: «восстановить будет невозможно,
-      даже нам» — это не запугивание, а точное описание. Смягчить его
-      значило бы дать человеку надежду на службу поддержки, которой
-      не существует и не может существовать.
-    -->
-    <string name="recovery_title">Восстановление</string>
-    <string name="recovery_intro">Резервная копия зашифрована ключом восстановления. Ключ есть только у вас: ни сервер, ни мы расшифровать копию не можем.</string>
-    <string name="recovery_section_state">Состояние</string>
-    <string name="recovery_section_actions">Действия</string>
-    <string name="recovery_pill_encrypted">Копия зашифрована</string>
-    <string name="recovery_pill_server_cannot">Сервер расшифровать не может</string>
-    <string name="recovery_pill_configured">Ключ создан</string>
-    <string name="recovery_pill_not_configured">Ключ ещё не создан</string>
-    <string name="recovery_never">Копий пока не было</string>
-    <string name="recovery_last">Последняя копия: %1$s</string>
-    <string name="recovery_create">Создать ключ восстановления</string>
-    <string name="recovery_backup_now">Сделать копию сейчас</string>
-    <string name="recovery_restore">Восстановить из копии</string>
-    <string name="recovery_new_key">Создать новый ключ</string>
-    <string name="recovery_new_key_warning">Прежние копии останутся зашифрованными старым ключом — перешифровать их приложение не может. Сохраните старый ключ, пока эти копии вам нужны.</string>
-    <string name="recovery_new_key_confirm">Создать новый</string>
-    <string name="recovery_key_needed">Введите ключ восстановления</string>
-    <string name="recovery_created">Копия собрана: %1$d записей, поколение %2$d</string>
-    <string name="recovery_failed">Не удалось собрать копию</string>
-    <string name="recovery_saved">Файл копии сохранён</string>
-    <string name="recovery_save_failed">Не удалось сохранить файл</string>
-    <string name="recovery_not_saved">Копия собрана, но не сохранена</string>
-    <string name="recovery_warning">Если вы потеряете этот ключ, восстановить данные будет невозможно. Даже нам. Сброса по почте или SMS нет — именно поэтому вашу переписку не может прочитать никто посторонний.</string>
-
-    <!-- Показ ключа восстановления. -->
-    <string name="recovery_key_title">Ключ восстановления</string>
-    <string name="recovery_key_explain">Перепишите этот ключ на бумагу и храните отдельно от телефона. Он расшифровывает все ваши резервные копии.</string>
-    <string name="recovery_key_once">Ключ показывается один раз. Приложение его не сохраняет — посмотреть повторно будет негде.</string>
-    <string name="recovery_key_no_screenshot">Снимок экрана здесь заблокирован: ключ на скриншоте попал бы в галерею, а оттуда в облако.</string>
-    <string name="recovery_key_written">Я записал ключ</string>
-    <string name="recovery_key_failed">Не удалось создать ключ</string>
-
-    <!-- Подтверждение записи ключа. -->
-    <string name="recovery_confirm_title">Проверка ключа</string>
-    <string name="recovery_confirm_explain">Введите три группы из записанного ключа. Проверка нужна, чтобы вы не остались без доступа к своим данным: восстановить их без ключа нельзя.</string>
-    <string name="recovery_confirm_group">Группа %1$d</string>
+    <!-- Recovery -->
+    <string name="recovery_title">Recovery</string>
+    <string name="recovery_intro">Your backup is encrypted with a recovery key. Only you have that key: neither the server nor we can decrypt the backup.</string>
+    <string name="recovery_section_state">State</string>
+    <string name="recovery_section_actions">Actions</string>
+    <string name="recovery_pill_encrypted">Backup is encrypted</string>
+    <string name="recovery_pill_server_cannot">The server cannot decrypt it</string>
+    <string name="recovery_pill_configured">Key created</string>
+    <string name="recovery_pill_not_configured">Key not created yet</string>
+    <string name="recovery_never">No backups yet</string>
+    <string name="recovery_last">Last backup: %1$s</string>
+    <string name="recovery_create">Create a recovery key</string>
+    <string name="recovery_backup_now">Back up now</string>
+    <string name="recovery_restore">Restore from a backup</string>
+    <string name="recovery_new_key">Create a new key</string>
+    <string name="recovery_new_key_warning">Earlier backups stay encrypted with the old key — the app cannot re-encrypt them. Keep the old key for as long as you need those backups.</string>
+    <string name="recovery_new_key_confirm">Create new</string>
+    <string name="recovery_key_needed">Enter your recovery key</string>
+    <string name="recovery_created">Backup built: %1$d records, generation %2$d</string>
+    <string name="recovery_failed">Could not build the backup</string>
+    <string name="recovery_saved">Backup file saved</string>
+    <string name="recovery_save_failed">Could not save the file</string>
+    <string name="recovery_not_saved">Backup was built but not saved</string>
+    <string name="recovery_warning">If you lose this key, your data cannot be recovered. Not even by us. There is no reset by email or SMS — and that is exactly why nobody else can read your messages.</string>
+    <string name="recovery_key_title">Recovery key</string>
+    <string name="recovery_key_explain">Copy this key onto paper and keep it away from your phone. It decrypts all of your backups.</string>
+    <string name="recovery_key_once">The key is shown once. The app does not keep it — there will be nowhere to look it up again.</string>
+    <string name="recovery_key_no_screenshot">Screenshots are blocked here: a key in a screenshot would land in your gallery, and from there in the cloud.</string>
+    <string name="recovery_key_written">I have written the key down</string>
+    <string name="recovery_key_failed">Could not create the key</string>
+    <string name="recovery_confirm_title">Key check</string>
+    <string name="recovery_confirm_explain">Enter three groups from the key you wrote down. The check is here so that you are not left without access to your own data: it cannot be recovered without the key.</string>
+    <string name="recovery_confirm_group">Group %1$d</string>
     <string name="recovery_confirm_hint">XXXX</string>
-    <string name="recovery_confirm_submit">Подтвердить</string>
-    <string name="recovery_confirm_show_again">Показать ключ ещё раз</string>
-    <string name="recovery_confirm_mismatch">Группы не совпали. Сверьтесь с записью.</string>
+    <string name="recovery_confirm_submit">Confirm</string>
+    <string name="recovery_confirm_show_again">Show the key again</string>
+    <string name="recovery_confirm_mismatch">The groups did not match. Check against what you wrote down.</string>
 
-    <!-- Восстановление из копии. -->
-    <string name="restore_title">Восстановление из копии</string>
-    <string name="restore_intro">Выберите файлы копии в порядке создания: сначала полный снимок, затем инкременты. Если хотя бы одного файла не хватает, восстановление не выполняется — частичное восстановление выглядело бы как целое.</string>
-    <string name="restore_section_files">Файлы копии</string>
-    <string name="restore_section_key">Ключ восстановления</string>
-    <string name="restore_pick">Выбрать файлы</string>
-    <string name="restore_no_files">Файлы не выбраны</string>
-    <string name="restore_files_chosen">Выбрано файлов: %1$d</string>
+    <!-- Restore -->
+    <string name="restore_title">Restore from a backup</string>
+    <string name="restore_intro">Pick the backup files in the order they were made: the full snapshot first, then the increments. If even one file is missing, nothing is restored — a partial restore would look like a complete one.</string>
+    <string name="restore_section_files">Backup files</string>
+    <string name="restore_section_key">Recovery key</string>
+    <string name="restore_pick">Choose files</string>
+    <string name="restore_no_files">No files chosen</string>
+    <string name="restore_files_chosen">Files chosen: %1$d</string>
     <string name="restore_key_hint">AEGIS-XXXX-XXXX-…</string>
-    <string name="restore_key_empty">Введите ключ из 13 групп</string>
-    <string name="restore_key_ok">Ключ выглядит правильно</string>
-    <string name="restore_key_invalid">В ключе опечатка</string>
-    <string name="restore_confirm">Восстановить</string>
-    <string name="restore_done">Восстановлено записей: %1$d</string>
-    <string name="restore_failed">Восстановить не удалось: не тот ключ или цепочка файлов неполная</string>
-    <string name="restore_note">Восстановятся переписка, контакты и настройки. Ключ безопасности устройства будет новым — это нормально, и мы объясним почему.</string>
+    <string name="restore_key_empty">Enter the key — 13 groups</string>
+    <string name="restore_key_ok">The key looks right</string>
+    <string name="restore_key_invalid">There is a typo in the key</string>
+    <string name="restore_confirm">Restore</string>
+    <string name="restore_done">Records restored: %1$d</string>
+    <string name="restore_failed">Restore failed: wrong key, or the chain of files is incomplete</string>
+    <string name="restore_note">Messages, contacts and settings will be restored. This device will get a new security key — that is normal, and we explain why.</string>
 
-    <!-- Смена ключа безопасности после восстановления (раздел 12.5). -->
-    <string name="identity_changed_title">Восстановление завершено</string>
-    <string name="identity_changed_headline">Ваш ключ безопасности изменился</string>
-    <string name="identity_changed_restored">Переписка восстановлена.</string>
-    <string name="identity_changed_restored_count">Восстановлено записей: %1$d.</string>
-    <string name="identity_changed_explain">Собеседники увидят предупреждение о смене ключа безопасности. При восстановлении это нормально: устройство получает новый ключ, и старый не переносится.</string>
-    <string name="identity_changed_why">Ключи не переносятся намеренно. Перенос старого состояния шифрования означал бы, что два разных сообщения могут быть зашифрованы одним ключом, — а это раскрывает их содержимое. Смена ключа безопасности — цена того, что такого не случится.</string>
-    <string name="identity_changed_not_restored">Не восстановлены: активные защищённые сессии — они установятся заново при первом сообщении.</string>
-    <string name="identity_changed_verify">Сверить ключи с контактами</string>
-    <string name="identity_changed_later">Позже</string>
+    <!-- Identity changed after a restore -->
+    <string name="identity_changed_title">Restore complete</string>
+    <string name="identity_changed_headline">Your security key has changed</string>
+    <string name="identity_changed_restored">Your messages have been restored.</string>
+    <string name="identity_changed_restored_count">Records restored: %1$d.</string>
+    <string name="identity_changed_explain">Your contacts will see a warning that your security key changed. After a restore this is normal: the device gets a new key, and the old one is not carried over.</string>
+    <string name="identity_changed_why">Keys are not carried over on purpose. Moving the old encryption state across would mean two different messages could be encrypted with the same key — and that reveals what they say. A changed security key is the price of that never happening.</string>
+    <string name="identity_changed_not_restored">Not restored: active secure sessions — they will be established again with the first message.</string>
+    <string name="identity_changed_verify">Compare keys with your contacts</string>
+    <string name="identity_changed_later">Later</string>
 
-    <!-- File Vault (раздел 11.4). -->
-    <string name="vault_title">Хранилище файлов</string>
-    <string name="vault_sealed_explain">Хранилище закрыто вторым фактором. Даже при разблокированном приложении для доступа к файлам нужно подтвердить себя заново.</string>
+    <!-- File vault -->
+    <string name="vault_title">File vault</string>
+    <string name="vault_sealed_explain">The vault is closed behind a second factor. Even with the app unlocked, you have to confirm yourself again to reach the files.</string>
     <string name="vault_pin_hint">PIN</string>
-    <string name="vault_unlock">Открыть хранилище</string>
-    <string name="vault_unlock_failed">Открыть не удалось</string>
-    <string name="vault_seal">Закрыть хранилище</string>
-    <string name="vault_sealed">Хранилище закрыто</string>
-    <string name="vault_reauth_note">Хранилище закрывается через минуту бездействия и при переходе приложения в фон.</string>
-    <string name="vault_auto_seal">Закроется через минуту бездействия или при уходе в фон.</string>
-    <string name="vault_add">Добавить файл</string>
-    <string name="vault_added">Файл добавлен</string>
-    <string name="vault_add_failed">Не удалось добавить файл</string>
-    <string name="vault_opened">Файл расшифрован: %1$s</string>
-    <string name="vault_open_failed">Открыть файл не удалось</string>
-    <string name="vault_empty">В хранилище пока пусто</string>
-    <string name="vault_unnamed">Без имени</string>
-
-    <!-- Пункты настроек, ведущие к экранам M6. -->
-    <string name="settings_recovery">Резервное копирование</string>
-    <string name="settings_vault">Хранилище файлов</string>
-
-    <!--
-      Число файлов в хранилище.
-
-      Множественное число вынесено в plurals, а не собрано строкой:
-      «1 файлов» на русском выглядит как ошибка приложения, а не
-      как мелочь перевода.
-    -->
+    <string name="vault_unlock">Open the vault</string>
+    <string name="vault_unlock_failed">Could not open it</string>
+    <string name="vault_seal">Close the vault</string>
+    <string name="vault_sealed">The vault is closed</string>
+    <string name="vault_reauth_note">The vault closes after a minute of inactivity and whenever the app goes into the background.</string>
+    <string name="vault_auto_seal">Closes after a minute of inactivity, or when the app goes into the background.</string>
+    <string name="vault_add">Add a file</string>
+    <string name="vault_added">File added</string>
+    <string name="vault_add_failed">Could not add the file</string>
+    <string name="vault_opened">File decrypted: %1$s</string>
+    <string name="vault_open_failed">Could not open the file</string>
+    <string name="vault_empty">The vault is empty</string>
+    <string name="vault_unnamed">No name</string>
     <plurals name="vault_file_count">
-        <item quantity="one">В хранилище %1$d файл</item>
-        <item quantity="few">В хранилище %1$d файла</item>
-        <item quantity="many">В хранилище %1$d файлов</item>
-        <item quantity="other">В хранилище %1$d файла</item>
+        <item quantity="one">%1$d file in the vault</item>
+        <item quantity="other">%1$d files in the vault</item>
     </plurals>
 
+    <string name="settings_recovery">Backup</string>
+    <string name="settings_vault">File vault</string>
 
-    <!--
-      Проверки центра безопасности (M7).
-
-      🔐 Каждая формулировка — утверждение, которое верно, только когда
-      проверка пройдена. «Защищено» показывается лишь при всех пройденных:
-      заголовок, не зависящий от счёта, успокаивал бы при любом значении.
-    -->
-    <string name="security_section_checks">Проверки</string>
-    <string name="security_section_details">Подробнее</string>
-    <string name="security_attention_title">Требует внимания</string>
-    <string name="security_check_recovery">Ключ восстановления создан</string>
-    <string name="security_check_backup">Резервная копия свежее недели</string>
-    <string name="security_check_contacts">Все контакты сверены</string>
-    <string name="security_check_sealed">Отправитель скрыт от сервера</string>
-    <string name="security_check_address">IP-адрес скрыт прокси или Tor</string>
-    <string name="security_check_screenshots">Снимки экрана заблокированы</string>
-    <string name="security_check_preview">Текст скрыт в уведомлениях</string>
-    <string name="security_check_autolock">Автоблокировка не дольше 5 минут</string>
-
-    <!--
-        Проверки состояния устройства (раздел 19.2).
-
-        Формулировки объясняют последствие, а не называют механизм:
-        «нет экрана блокировки» человеку ничего не говорит, а «ключи
-        не защищены аппаратно» — говорит.
-    -->
-    <string name="security_check_screen_lock">Экран блокировки устройства</string>
-    <string name="security_check_screen_lock_hint">Без него телефон открыт всякому, кто взял его в руки</string>
-    <string name="security_check_root">Устройство без root</string>
-    <string name="security_check_root_hint">Найдены признаки root — другие приложения могут читать данные</string>
-    <string name="security_check_passed">Да</string>
-    <string name="security_check_failed">Нет</string>
-    <string name="security_check_unverified">Не сверено: %1$d</string>
-
+    <!-- Security center -->
+    <string name="security_section_checks">Checks</string>
+    <string name="security_section_details">Details</string>
+    <string name="security_attention_title">Needs attention</string>
     <plurals name="security_attention">
-        <item quantity="one">%1$d пункт требует внимания</item>
-        <item quantity="few">%1$d пункта требуют внимания</item>
-        <item quantity="many">%1$d пунктов требуют внимания</item>
-        <item quantity="other">%1$d пункта требуют внимания</item>
+        <item quantity="one">%1$d item needs attention</item>
+        <item quantity="other">%1$d items need attention</item>
     </plurals>
+    <string name="security_check_recovery">Recovery key created</string>
+    <string name="security_check_backup">Backup newer than a week</string>
+    <string name="security_check_contacts">All contacts compared</string>
+    <string name="security_check_sealed">Sender hidden from the server</string>
+    <string name="security_check_address">IP address hidden by a proxy or Tor</string>
+    <string name="security_check_screenshots">Screenshots blocked</string>
+    <string name="security_check_preview">Message text hidden in notifications</string>
+    <string name="security_check_autolock">Auto-lock no longer than 5 minutes</string>
+    <string name="security_check_screen_lock">Device screen lock</string>
+    <string name="security_check_screen_lock_hint">Without it the phone is open to anyone who picks it up</string>
+    <string name="security_check_root">Device without root</string>
+    <string name="security_check_root_hint">Signs of root found — other apps may be able to read your data</string>
+    <string name="security_check_passed">Yes</string>
+    <string name="security_check_failed">No</string>
+    <string name="security_check_unverified">Not compared: %1$d</string>
 
-
-    <!--
-      Сеть: прокси и Tor (ADR-024).
-
-      🔐 Формулировки прямо говорят о двух вещах: при недоступном прокси
-      приложение не подключится, а не пойдёт напрямую; и прокси скрывает
-      не всё. Человек, выбравший Tor, должен понимать, от кого именно
-      скрыт его адрес.
-    -->
-    <string name="network_title">Сеть</string>
-    <string name="network_intro">Сервер видит IP-адрес устройства: по нему можно узнать примерное местоположение и связать ваши аккаунты между собой. Прокси или Tor скрывают адрес от сервера.</string>
-    <string name="network_section_mode">Способ подключения</string>
-    <string name="network_mode_direct">Напрямую</string>
-    <string name="network_mode_orbot">Tor через Orbot</string>
-    <string name="network_mode_socks">SOCKS5-прокси</string>
-    <string name="network_hint_direct">Сервер видит ваш IP-адрес.</string>
-    <string name="network_hint_orbot">Нужен установленный и запущенный Orbot. Если он выключен, приложение не подключится — напрямую оно не пойдёт.</string>
-    <string name="network_hint_socks">Все запросы и уведомления идут через указанный прокси. Если он недоступен, приложение не подключится — напрямую оно не пойдёт.</string>
-    <string name="network_host_hint">Адрес прокси</string>
-    <string name="network_port_hint">Порт</string>
-    <string name="network_save">Сохранить</string>
-    <string name="network_saved">Сохранено. Новые соединения идут выбранным способом.</string>
-    <string name="network_invalid">Адрес или порт указаны неверно. Укажите имя хоста или IP-адрес без схемы и пути; логин и пароль не поддерживаются.</string>
-    <string name="network_save_failed">Не удалось сохранить настройку</string>
-    <string name="network_limits">Прокси видит, что вы пользуетесь AEGIS, и когда. Tor скрывает адрес от сервера, но не от входного узла Tor. Через Tor соединение нестабильнее, и уведомления могут приходить с задержкой.</string>
-    <string name="network_unavailable">Настройка сети повреждена — соединения заблокированы, пока вы не выберете способ подключения заново.</string>
-    <string name="privacy_section_network">Сеть</string>
-    <string name="privacy_network">Подключение</string>
-
-
-    <string name="network_unavailable_short">Повреждена</string>
-    <string name="network_requires_android7">Прокси и Tor доступны на Android 7.0 и новее: на старых версиях система не гарантирует, что имя сервера уйдёт через прокси, и адрес утекал бы через DNS.</string>
-
+    <!-- Network -->
+    <string name="network_title">Network</string>
+    <string name="network_intro">The server sees your device\'s IP address: it reveals roughly where you are and can link your accounts to each other. A proxy or Tor hides that address from the server.</string>
+    <string name="network_section_mode">Connection method</string>
+    <string name="network_mode_direct">Direct</string>
+    <string name="network_mode_orbot">Tor via Orbot</string>
+    <string name="network_mode_socks">SOCKS5 proxy</string>
+    <string name="network_hint_direct">The server sees your IP address.</string>
+    <string name="network_hint_orbot">Requires Orbot installed and running. If it is off, the app will not connect — it will not fall back to a direct connection.</string>
+    <string name="network_hint_socks">All requests and notifications go through the proxy you specify. If it is unreachable, the app will not connect — it will not fall back to a direct connection.</string>
+    <string name="network_host_hint">Proxy address</string>
+    <string name="network_port_hint">Port</string>
+    <string name="network_save">Save</string>
+    <string name="network_saved">Saved. New connections use the method you chose.</string>
+    <string name="network_invalid">The address or port is not valid. Give a hostname or IP address without a scheme or path; usernames and passwords are not supported.</string>
+    <string name="network_save_failed">Could not save the setting</string>
+    <string name="network_limits">A proxy can see that you use AEGIS, and when. Tor hides your address from the server, but not from the Tor entry node. Over Tor the connection is less stable, and notifications may arrive late.</string>
+    <string name="network_unavailable">The network setting is damaged — connections are blocked until you choose a connection method again.</string>
+    <string name="privacy_section_network">Network</string>
+    <string name="privacy_network">Connection</string>
+    <string name="network_unavailable_short">Damaged</string>
+    <string name="network_requires_android7">Proxy and Tor need Android 7.0 or newer: on older versions the system does not guarantee that the hostname goes through the proxy, and the address would leak over DNS.</string>
 </resources>

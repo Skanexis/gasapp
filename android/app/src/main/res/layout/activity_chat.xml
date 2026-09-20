@@ -81,7 +81,7 @@
             style="@style/AegisIconButton"
             android:contentDescription="@string/chat_menu"
             android:src="@drawable/ic_more"
-            android:tint="@color/text_secondary" />
+            app:tint="@color/text_secondary" />
     </LinearLayout>
 
     <!--
@@ -181,7 +181,7 @@
             android:contentDescription="@string/attach"
             android:padding="8dp"
             android:src="@drawable/ic_paperclip"
-            android:tint="@color/text_secondary" />
+            app:tint="@color/text_secondary" />
 
         <org.aegis.app.components.AegisTextField
             android:id="@+id/message_input"
