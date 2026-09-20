@@ -134,16 +134,11 @@ pub struct HealthResponse {
 /// случаях узел выглядит рабочим, но обслуживает не полностью —
 /// балансировщик должен убрать его из ротации, а не продолжать слать
 /// на него клиентов.
-pub async fn health(
-    State(state): State<Arc<AppState>>,
-) -> (StatusCode, Json<HealthResponse>) {
+pub async fn health(State(state): State<Arc<AppState>>) -> (StatusCode, Json<HealthResponse>) {
     // Простейший запрос: проверяется доступность соединения,
     // а не содержимое базы. Считать строки здесь нельзя — это
     // и была бы метрика активности.
-    let database = sqlx::query("SELECT 1")
-        .execute(&state.pool)
-        .await
-        .is_ok();
+    let database = sqlx::query("SELECT 1").execute(&state.pool).await.is_ok();
 
     let listener = state.health.listener_alive.load(Ordering::Relaxed);
 

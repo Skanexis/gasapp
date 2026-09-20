@@ -32,13 +32,13 @@
 //! поэтому конфликта с их условиями нет, а AGPL не даёт хостить
 //! модифицированный закрытый форк (ADR-006).
 
-pub mod health;
-pub mod push;
-pub mod authz;
-pub mod hub;
 pub mod auth;
+pub mod authz;
 pub mod certificate;
+pub mod health;
+pub mod hub;
 pub mod pow;
+pub mod push;
 pub mod rate_limit;
 pub mod routes;
 

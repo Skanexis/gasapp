@@ -76,11 +76,7 @@ impl PushProvider for NoPush {
 /// см. пояснение у [`PushProvider::wake`]. Недействительный токен
 /// удаляется, чтобы не хранить связь устройства с посредником,
 /// не дающую ничего взамен.
-pub async fn wake_device(
-    pool: &sqlx::PgPool,
-    provider: &dyn PushProvider,
-    device_id: Uuid,
-) {
+pub async fn wake_device(pool: &sqlx::PgPool, provider: &dyn PushProvider, device_id: Uuid) {
     let Ok(Some(token)) = aegis_server_db::repo::find_push_token(pool, device_id).await else {
         // Токена нет — устройство обходится WebSocket. Это штатный
         // случай для foss-сборки, а не ошибка.

@@ -90,9 +90,7 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedDevice {
         // Брать «первый параметр» вслепую нельзя: порядок в кортеже
         // задаётся маршрутом, и молчаливая опора на него сломалась бы
         // при добавлении маршрута с другим порядком.
-        let device_id = if let Ok(Path(id)) =
-            Path::<Uuid>::from_request_parts(parts, state).await
-        {
+        let device_id = if let Ok(Path(id)) = Path::<Uuid>::from_request_parts(parts, state).await {
             id
         } else {
             let Path((id, _)) = Path::<(Uuid, Uuid)>::from_request_parts(parts, state)
@@ -101,7 +99,6 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedDevice {
 
             id
         };
-
 
         let signature = header_bytes(parts, SIGNATURE_HEADER)?;
         let issued_at = header_i64(parts, ISSUED_AT_HEADER)?;

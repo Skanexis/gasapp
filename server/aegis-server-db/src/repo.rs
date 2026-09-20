@@ -20,7 +20,9 @@ use sqlx::{PgPool, Postgres, Transaction};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-use crate::{bucket_to_hour, DEVICE_ATTACHMENT_QUOTA_BYTES, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES};
+use crate::{
+    bucket_to_hour, DEVICE_ATTACHMENT_QUOTA_BYTES, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES,
+};
 
 /// Ошибка доступа к хранилищу.
 ///
@@ -511,6 +513,126 @@ pub async fn acknowledge_envelope(
         .await?;
 
     Ok(())
+}
+
+/// Что исчезло вместе с аккаунтом.
+///
+/// Возвращается пользователю: право на удаление, подтверждённое
+/// словом «готово», ничем не отличается от отсутствия удаления.
+/// Числа — про его собственные данные и больше ничьи.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AccountDeletion {
+    /// Сколько устройств было у аккаунта.
+    pub devices: u64,
+    /// Сколько недоставленных конвертов лежало в очередях этих устройств.
+    pub envelopes: u64,
+    /// Сколько вложений, загруженных этими устройствами, удалено.
+    pub attachments: u64,
+}
+
+/// Удаляет аккаунт целиком — по любому из его устройств.
+///
+/// # 🔐 Что именно удаляется
+///
+/// Строка `accounts` и всё, что на неё ссылается: устройства,
+/// подписанные и одноразовые предключи, очереди конвертов, токены
+/// push, ключи доступа sealed sender, жалобы и вложения, загруженные
+/// этими устройствами. Каскады объявлены в схеме, а не собраны здесь
+/// перечислением: перечисление разошлось бы со схемой при добавлении
+/// следующей таблицы, и остаток пережил бы удаление молча.
+///
+/// # Почему по устройству, а не по аккаунту
+///
+/// Право на удаление доказывается подписью, а подписывает устройство.
+/// Аккаунт вычисляется из него здесь, чтобы обработчик не мог
+/// передать чужой идентификатор.
+///
+/// # ⚠️ Удаление уносит все устройства аккаунта
+///
+/// Это и есть удаление аккаунта, а не выход с одного телефона.
+/// Остальные устройства узнают об этом, когда их подпись перестанет
+/// приниматься.
+///
+/// # ⚠️ Что переживает удаление
+///
+/// Вложения, которые этому аккаунту **прислали**: их загрузил
+/// отправитель, и сервер не знает, кому они предназначались, —
+/// связь лежит внутри шифротекста (`0003_attachments.sql`).
+/// Они исчезают по общему сроку в тридцать суток.
+///
+/// Копии конвертов, уже доставленные другим устройствам, тоже
+/// остаются: они лежат у получателей, а не здесь.
+///
+/// # ⚠️ Имя пользователя освобождается
+///
+/// Его сможет занять кто угодно. Выдать себя за прежнего владельца
+/// это не позволяет: identity-ключ будет другим, и у тех, кто сверял
+/// отпечаток, сработает предупреждение о смене ключа. Удерживать имя
+/// вечно значило бы хранить запись об удалённом аккаунте — то есть
+/// не удалять его.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — устройства нет; аккаунт уже удалён.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn delete_account(pool: &PgPool, device_id: Uuid) -> Result<AccountDeletion, RepoError> {
+    // Всё в одной транзакции: подсчёт и удаление обязаны видеть
+    // одно состояние, иначе отчёт сообщит о конвертах, которые
+    // пришли уже после него, и разойдётся с тем, что удалено.
+    let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+
+    let account_id: Uuid =
+        sqlx::query_scalar("SELECT account_id FROM devices WHERE device_id = $1")
+            .bind(device_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(RepoError::NotFound)?;
+
+    let devices: i64 = sqlx::query_scalar("SELECT count(*) FROM devices WHERE account_id = $1")
+        .bind(account_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    let envelopes: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM envelopes e
+           JOIN devices d ON d.device_id = e.destination_device_id
+          WHERE d.account_id = $1",
+    )
+    .bind(account_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let attachments: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM attachments a
+           JOIN devices d ON d.device_id = a.uploader_device_id
+          WHERE d.account_id = $1",
+    )
+    .bind(account_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    // Одна строка. Остальное уносят каскады схемы.
+    let removed = sqlx::query("DELETE FROM accounts WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    if removed == 0 {
+        // Аккаунт исчез между выборкой и удалением — второй запрос
+        // на удаление, пришедший одновременно. Фиксировать нечего.
+        tx.rollback().await?;
+
+        return Err(RepoError::NotFound);
+    }
+
+    tx.commit().await?;
+
+    Ok(AccountDeletion {
+        devices: devices.max(0).unsigned_abs(),
+        envelopes: envelopes.max(0).unsigned_abs(),
+        attachments: attachments.max(0).unsigned_abs(),
+    })
 }
 
 /// Удаляет просроченные конверты.
