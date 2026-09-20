@@ -99,10 +99,51 @@ if ! git -C "$ROOT" diff --quiet || ! git -C "$ROOT" diff --cached --quiet; then
   echo "⚠️  рабочее дерево изменено: посчитанные суммы никто не повторит" >&2
 fi
 
+# ⚠️ И ещё одно: дерево не должно меняться **во время** прогона.
+#
+# Между первой и второй сборкой проходят десятки минут, и правка
+# исходника в этот промежуток выглядит как невоспроизводимость —
+# хотя разошлись не сборки, а входные данные. Отпечаток снимается
+# до первой сборки и сверяется после второй.
+TREE_BEFORE=$(git -C "$ROOT" status --porcelain=v1 | sha256sum)
+
 bash "$ROOT/tools/check-ndk-pins.sh"
+
+# Какие ABI собирать: те, что уже лежат в jniLibs. Пусто — значит
+# собирается полный набор, заданный самим build-rust-android.sh.
+ABI_FLAGS_MAIN=()
+for dir in "$ROOT"/android/app/src/main/jniLibs/*/; do
+  [[ -d "$dir" ]] || continue
+  ABI_FLAGS_MAIN+=(--abi "$(basename "$dir")")
+done
 
 echo
 echo "== Сборка =="
+
+# ⚠️ Нативные библиотеки собираются здесь, а не берутся из `jniLibs`.
+#
+# Gradle их не собирает — он упаковывает готовые. Первая версия
+# `--twice` этого не учитывала: первый проход считал сумму того,
+# что лежало в `jniLibs` от прошлого запуска, второй — того, что
+# собрал сам. Две сборки «разошлись», хотя разошлись не они,
+# а источники файлов.
+#
+# Вывод из той ошибки шире одного скрипта: сумма файла, который
+# эта сборка не собирала, не говорит об этой сборке ничего.
+if [[ -n "${ANDROID_NDK_HOME:-}" ]]; then
+  echo "  собирается ядро под Android…"
+  bash "$ROOT/tools/build-rust-android.sh" "${ABI_FLAGS_MAIN[@]}"
+elif [[ "$TWICE" -eq 1 ]]; then
+  echo "error: для --twice нужен ANDROID_NDK_HOME." >&2
+  echo "  Без пересборки libaegis.so сравнение её сумм бессмысленно:" >&2
+  echo "  gradle берёт готовый файл из jniLibs и не трогает его." >&2
+  exit 2
+else
+  echo "  ⚠️ ANDROID_NDK_HOME не задан: ядро не пересобирается,"
+  echo "     и суммы libaegis.so относятся к тому, что уже лежит"
+  echo "     в jniLibs, — то есть неизвестно к какой сборке."
+fi
+
 (cd "$ROOT/android" && ./gradlew --no-daemon :app:assembleGmsRelease :app:assembleFossRelease)
 
 # --- Подсчёт сумм ------------------------------------------------------------
@@ -164,16 +205,12 @@ if [[ "$TWICE" -eq 1 ]]; then
     -p aegis-ffi -p aegis-core -p aegis-protocol \
     -p aegis-storage -p aegis-net -p aegis-types >/dev/null 2>&1 || true)
 
-  # Те же ABI, что лежали в jniLibs до очистки: сравнивать нужно
-  # то же самое, а не подмножество и не надмножество.
-  ABI_FLAGS=()
-  for dir in "$ROOT"/android/app/src/main/jniLibs/*/; do
-    [[ -f "$dir/libaegis.so" ]] || continue
-    ABI_FLAGS+=(--abi "$(basename "$dir")")
-  done
+  # Те же ABI, что и в первом проходе: сравнивать нужно то же самое,
+  # а не подмножество и не надмножество.
+  ABI_FLAGS=("${ABI_FLAGS_MAIN[@]}")
 
   if [[ "${#ABI_FLAGS[@]}" -eq 0 ]]; then
-    echo "error: в jniLibs нет ни одной libaegis.so — пересобирать нечего" >&2
+    echo "error: не определён ни один ABI — пересобирать нечего" >&2
     exit 1
   fi
 
@@ -186,6 +223,14 @@ if [[ "$TWICE" -eq 1 ]]; then
   (cd "$ROOT/android" && ./gradlew --no-daemon -q :app:assembleGmsRelease :app:assembleFossRelease)
 
   SECOND=$(sums)
+
+  TREE_AFTER=$(git -C "$ROOT" status --porcelain=v1 | sha256sum)
+
+  if [[ "$TREE_BEFORE" != "$TREE_AFTER" ]]; then
+    echo "error: рабочее дерево изменилось во время прогона." >&2
+    echo "  Сравнивать нечего: две сборки получили разные исходники." >&2
+    exit 1
+  fi
 
   # 🔐 Проверка проверки: в сравнении обязаны участвовать и APK,
   # и библиотеки. Пустой или укороченный список совпал бы сам

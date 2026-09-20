@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.TouchTarget
 import org.aegis.app.ui.BottomNav
 
 /**
@@ -55,6 +56,11 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.profile_qr).setOnClickListener {
             startActivity(Intent(this, ProfileActivity::class.java))
         }
+
+        // 🔐 Иконка 24dp, область нажатия — 48dp (WCAG 2.5.5).
+        // Вид не меняется: увеличивается только то, куда можно
+        // попасть. Подробности — в TouchTarget.
+        TouchTarget.expand(findViewById(R.id.profile_qr))
 
         lifecycleScope.launch {
             val username = withContext(Dispatchers.IO) {
