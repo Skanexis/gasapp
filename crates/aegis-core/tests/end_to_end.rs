@@ -41,9 +41,9 @@ use aegis_net::api::{
     RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest, SendRequest,
 };
 use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
-use aegis_storage::Storage;
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::xeddsa;
+use aegis_storage::Storage;
 use aegis_types::{PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
 use sha2::{Digest, Sha256};
 
@@ -88,6 +88,12 @@ struct ServerState {
     sealed_accepted: usize,
     /// Сколько принято обычных конвертов.
     plain_accepted: usize,
+    /// Путь и заголовки каждого пришедшего запроса.
+    ///
+    /// Нужны, чтобы проверять не только ответ, но и то, что клиент
+    /// **отправил**: подпись под запросом видна только здесь —
+    /// в ответе её нет, и её отсутствие выглядело бы как успех.
+    requests: Vec<(String, Vec<(String, String)>)>,
 }
 
 /// Поддельный сервер, разделяемый между клиентами.
@@ -172,6 +178,26 @@ impl FakeServer {
             .insert(device_id.to_owned(), vec![0u8; 32]);
     }
 
+    /// Сколько конвертов лежит в очереди устройства.
+    fn queue_len(&self, device_id: &str) -> usize {
+        self.state
+            .borrow()
+            .queues
+            .get(device_id)
+            .map_or(0, Vec::len)
+    }
+
+    /// Заголовки последнего запроса по префиксу пути.
+    fn last_request(&self, prefix: &str) -> Option<Vec<(String, String)>> {
+        self.state
+            .borrow()
+            .requests
+            .iter()
+            .rev()
+            .find(|(path, _)| path.starts_with(prefix))
+            .map(|(_, headers)| headers.clone())
+    }
+
     fn next_uuid(state: &mut ServerState) -> String {
         state.counter += 1;
 
@@ -183,6 +209,10 @@ impl Transport for FakeServer {
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse> {
         let mut state = self.state.borrow_mut();
         let path = request.path.as_str();
+
+        state
+            .requests
+            .push((request.path.clone(), request.headers.clone()));
 
         let (status, body) = match (&request.method, path) {
             (Method::Post, "/v1/accounts/register") => {
@@ -216,8 +246,7 @@ impl Transport for FakeServer {
 
                 match state.accounts.get(username) {
                     Some((account_id, identity_key)) => {
-                        let device_id =
-                            state.devices.get(account_id).cloned().unwrap_or_default();
+                        let device_id = state.devices.get(account_id).cloned().unwrap_or_default();
 
                         (
                             200,
@@ -372,9 +401,9 @@ impl Transport for FakeServer {
 
                 let presented = match &parsed.access_key {
                     None => None,
-                    Some(encoded) => Some(
-                        hex::decode(encoded).map_err(|_| aegis_types::AegisError::Malformed)?,
-                    ),
+                    Some(encoded) => {
+                        Some(hex::decode(encoded).map_err(|_| aegis_types::AegisError::Malformed)?)
+                    }
                 };
 
                 // Как настоящий сервер: хеш предъявленного ключа сверяется
@@ -383,7 +412,9 @@ impl Transport for FakeServer {
                     state.access_hashes.get(&parsed.destination_device_id),
                     presented,
                 ) {
-                    (Some(stored), Some(key)) => Sha256::digest(&key).as_slice() == stored.as_slice(),
+                    (Some(stored), Some(key)) => {
+                        Sha256::digest(&key).as_slice() == stored.as_slice()
+                    }
                     _ => false,
                 };
 
@@ -411,6 +442,46 @@ impl Transport for FakeServer {
                 let queue = state.queues.get(device_id).cloned().unwrap_or_default();
 
                 (200, serde_json::to_string(&queue).unwrap_or_default())
+            }
+            (Method::Delete, path) if path.starts_with("/v1/accounts/") => {
+                // 🔐 Удаление аккаунта. Заглушка ведёт себя как сервер:
+                // без подписи — 401, и после удаления не остаётся ни
+                // аккаунта, ни устройства, ни ключей, ни очереди.
+                let device_id = path.trim_start_matches("/v1/accounts/").to_owned();
+
+                let signed = request
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name == "x-aegis-signature");
+
+                if !signed || !state.device_identity.contains_key(&device_id) {
+                    (401, String::new())
+                } else {
+                    let envelopes = state
+                        .queues
+                        .remove(&device_id)
+                        .map_or(0, |queue| queue.len());
+
+                    state.device_identity.remove(&device_id);
+                    state.bundles.remove(&device_id);
+                    state.access_hashes.remove(&device_id);
+
+                    let account = state
+                        .devices
+                        .iter()
+                        .find(|(_, device)| *device == &device_id)
+                        .map(|(account, _)| account.clone());
+
+                    if let Some(account) = account {
+                        state.devices.remove(&account);
+                        state.accounts.retain(|_, (id, _)| id != &account);
+                    }
+
+                    (
+                        200,
+                        format!(r#"{{"devices":1,"envelopes":{envelopes},"attachments":0}}"#),
+                    )
+                }
             }
             (Method::Delete, path) if path.starts_with("/v1/messages/") => {
                 // Подтверждение доставки: сервер удаляет конверт.
@@ -629,7 +700,10 @@ fn contact_is_added_from_profile_link() {
         .expect("контакт добавлен");
 
     assert_eq!(contact.username.as_deref(), Some("bob"));
-    assert!(!contact.verified, "контакт не может быть верифицирован сразу");
+    assert!(
+        !contact.verified,
+        "контакт не может быть верифицирован сразу"
+    );
 
     let contacts = alice.contacts().expect("список контактов");
 
@@ -1042,11 +1116,7 @@ fn recipient_downloads_attachment_from_received_message() {
     assert_eq!(descriptors[0].name.as_deref(), Some("снимок.png"));
 
     let downloaded = bob
-        .fetch_attachment(
-            &bob_account.device_id.to_string(),
-            &descriptors[0],
-            now(),
-        )
+        .fetch_attachment(&bob_account.device_id.to_string(), &descriptors[0], now())
         .expect("файл скачан");
 
     assert_eq!(downloaded, original, "файл изменился при передаче");
@@ -1093,7 +1163,12 @@ fn sender_keeps_its_own_attachment() {
         )
         .expect("вложение отправлено");
 
-    let chat = alice.chats().expect("чаты").into_iter().next().expect("чат");
+    let chat = alice
+        .chats()
+        .expect("чаты")
+        .into_iter()
+        .next()
+        .expect("чат");
     let message = alice
         .messages(&chat, 10)
         .expect("сообщения")
@@ -1110,11 +1185,7 @@ fn sender_keeps_its_own_attachment() {
     assert_eq!(descriptors.len(), 1, "своё описание не сохранено");
 
     let reopened = alice
-        .fetch_attachment(
-            &alice_account.device_id.to_string(),
-            &descriptors[0],
-            now(),
-        )
+        .fetch_attachment(&alice_account.device_id.to_string(), &descriptors[0], now())
         .expect("файл открыт заново");
 
     assert_eq!(reopened, original);
@@ -1144,7 +1215,8 @@ fn handshake(
     alice
         .send_message("bob", "первое", now(), &mut OsRng)
         .expect("первое сообщение");
-    bob.receive_messages(&bob_device, now()).expect("приём у Боба");
+    bob.receive_messages(&bob_device, now())
+        .expect("приём у Боба");
 
     bob.send_message("alice", "ответ", now(), &mut OsRng)
         .expect("ответ Боба");
@@ -1271,7 +1343,10 @@ fn rejected_access_key_does_not_fall_back_to_plain() {
 
     let outcome = alice.send_message("bob", "не дойдёт", now(), &mut OsRng);
 
-    assert!(outcome.is_err(), "отправка прошла с отвергнутым ключом доступа");
+    assert!(
+        outcome.is_err(),
+        "отправка прошла с отвергнутым ключом доступа"
+    );
     assert_eq!(
         server.plain_accepted(),
         plain_before,
@@ -1294,4 +1369,147 @@ fn rejected_access_key_does_not_fall_back_to_plain() {
 
     assert_eq!(server.plain_accepted(), plain_before + 1);
     assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+}
+
+// ---------------------------------------------------------------------------
+//  🔐 Удаление аккаунта (MASVS PRIVACY-3.2)
+// ---------------------------------------------------------------------------
+
+/// 🔐 Удаление уносит аккаунт и очередь, и сообщает, что именно унесло.
+///
+/// Числа проверяются наравне с самим удалением: «готово» без них
+/// неотличимо от «готово» при запросе, который ничего не удалил,
+/// а человеку после удаления проверить уже нечем — аккаунта,
+/// которым можно было бы спросить, больше нет.
+#[test]
+fn account_deletion_removes_the_account_and_its_queue() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    let alice_account = alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    // Недоставленный конверт в очереди Алисы.
+    bob.send_message("alice", "ещё не прочитано", now(), &mut OsRng)
+        .expect("сообщение отправлено");
+
+    // Сколько лежит в очереди — спрашивается у сервера, а не берётся
+    // из головы: одно отправленное сообщение не обязано быть одним
+    // конвертом (рукопожатие добавляет свои), и зашитое «1» сделало бы
+    // тест проверкой этой детали, а не удаления.
+    let device = alice_account.device_id.to_string();
+    let queued = server.queue_len(&device);
+
+    assert!(
+        queued > 0,
+        "в очереди нечего удалять — тест ничего не проверит"
+    );
+
+    let report = alice.delete_account(now()).expect("аккаунт удалён");
+
+    assert_eq!(report.devices, 1);
+    // Сравнение в u64, а не приведение к usize: на 32-битной цели
+    // приведение обрезало бы число, и тест начал бы врать именно там,
+    // где его некому перепроверить.
+    assert_eq!(
+        report.envelopes, queued as u64,
+        "удалено не то число конвертов, что лежало в очереди"
+    );
+    assert_eq!(server.queue_len(&device), 0, "очередь пережила удаление");
+
+    // Аккаунта нет: Боб больше не находит Алису по имени.
+    let lookup = bob.add_contact_from_link(
+        &format!("aegis://contact?u=alice&k={}", "A".repeat(52)),
+        now(),
+    );
+
+    assert!(lookup.is_err(), "удалённый аккаунт всё ещё находится");
+}
+
+/// 🔐 Запрос удаления подписан.
+///
+/// Заглушка отвечает `401` на неподписанный `DELETE`, как настоящий
+/// сервер. Тест на то, что подпись **ставится**, а не на то, что
+/// сервер её требует, — требование проверено на стороне сервера.
+#[test]
+fn account_deletion_is_signed() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+
+    alice.delete_account(now()).expect("аккаунт удалён");
+
+    let request = server
+        .last_request("/v1/accounts/")
+        .expect("запроса на удаление не было");
+
+    assert!(
+        request.iter().any(|(name, _)| name == "x-aegis-signature"),
+        "запрос ушёл без подписи"
+    );
+    assert!(
+        request.iter().any(|(name, _)| name == "x-aegis-issued-at"),
+        "запрос ушёл без времени выпуска"
+    );
+}
+
+/// Без регистрации удалять нечего.
+///
+/// 🔐 Важно, что это отказ, а не молчаливый успех: экран, показавший
+/// «аккаунт удалён» там, где на сервере ничего не было, научил бы
+/// доверять этому сообщению и в тех случаях, когда удаление не прошло.
+#[test]
+fn deleting_without_an_account_fails() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let client = Client::new(server.clone(), open_storage(&dir, "empty.db"));
+
+    let outcome = client.delete_account(now());
+
+    // Именно «сеанса нет», а не любая ошибка: сетевой сбой здесь
+    // выглядел бы так же, и тест прошёл бы, проверив не то.
+    assert!(
+        matches!(outcome, Err(aegis_types::AegisError::SessionNotFound)),
+        "ожидался отказ «сеанса нет», получено {:?}",
+        outcome.err()
+    );
+
+    // И до сервера запрос не дошёл.
+    //
+    // ⚠️ Без этой проверки тест прошёл бы и в случае, когда запрос
+    // всё-таки уходит: заглушка отвечает `401` на неизвестное
+    // устройство, то есть отказ выглядел бы тем же самым.
+    //
+    // ⚠️ Какая именно из двух проверок в ядре сработала, тест
+    // не различает, и различать не берётся: отсутствие устройства
+    // и отсутствие ключа дают один и тот же `SessionNotFound`,
+    // и мутация любой из них по отдельности оставляет тест зелёным
+    // (проверено). Закрепляется поведение — отказ и молчание в сеть.
+    assert!(
+        server.last_request("/v1/accounts/").is_none(),
+        "ядро отправило запрос на удаление, не зная, что удалять"
+    );
+}
+
+/// 🔐 Повторное удаление не выдаёт себя за успешное.
+#[test]
+fn deleting_twice_fails_the_second_time() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server, open_storage(&dir, "alice.db"));
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+
+    alice.delete_account(now()).expect("первое удаление");
+
+    assert!(
+        alice.delete_account(now()).is_err(),
+        "второе удаление объявлено успешным"
+    );
 }

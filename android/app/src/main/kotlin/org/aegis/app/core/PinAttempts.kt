@@ -162,6 +162,23 @@ object PinAttempts {
         }
     }
 
+    /**
+     * 🔐 Забывает историю попыток — при удалении аккаунта.
+     *
+     * Счётчик неверных попыток и время последней — это след того,
+     * что телефоном пользовались и в какой момент. После удаления
+     * аккаунта его быть не должно: удаление, оставляющее «последняя
+     * попытка входа — вчера в 23:40», удалением не является.
+     *
+     * `commit()`, а не `apply()`, по той же причине, что и везде
+     * в этом файле: асинхронная запись не переживёт процесс,
+     * убитый сразу после выхода.
+     */
+    @android.annotation.SuppressLint("ApplySharedPref")
+    fun forget(context: Context) {
+        prefs(context).edit().clear().commit()
+    }
+
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(STORE, Context.MODE_PRIVATE)
 

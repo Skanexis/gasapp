@@ -104,6 +104,30 @@
             </LinearLayout>
 
             <!--
+              🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
+
+              Внизу и отдельной секцией: действие необратимо, и стоять
+              рядом с переключателями, которые можно вернуть обратно,
+              оно не должно.
+            -->
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/privacy_section_account" />
+
+            <LinearLayout style="@style/AegisPanel">
+
+                <include
+                    android:id="@+id/privacy_delete_account"
+                    layout="@layout/item_settings_row" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/privacy_delete_account_hint" />
+
+            <!--
               🔐 Пояснение о пределах защиты.
 
               Блокировка снимков экрана не мешает сфотографировать

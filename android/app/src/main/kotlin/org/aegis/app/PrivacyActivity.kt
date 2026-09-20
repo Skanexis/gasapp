@@ -7,7 +7,12 @@ import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
+import org.aegis.app.core.DeleteAccount
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
 import org.aegis.app.ui.SettingsRow
@@ -48,6 +53,7 @@ class PrivacyActivity : AppCompatActivity() {
         bindLastSeen()
         bindScreenshots()
         bindNotificationPreview()
+        bindDeleteAccount()
     }
 
     /**
@@ -123,6 +129,108 @@ class PrivacyActivity : AppCompatActivity() {
             icon = R.drawable.ic_alert,
             checked = readBool(Settings.NOTIFICATION_PREVIEW, default = false),
         ) { wanted -> writeBool(Settings.NOTIFICATION_PREVIEW, wanted) }
+    }
+
+    /**
+     * 🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
+     *
+     * # Почему подтверждений два
+     *
+     * Первое называет последствия, второе требует нажать кнопку
+     * с явным словом. Одно подтверждение здесь мало: диалог с «ОК»
+     * закрывают не читая, а вернуть удалённый аккаунт нельзя —
+     * ни нам, ни человеку, ни оператору сервера.
+     *
+     * # Что говорится честно
+     *
+     * Что имя освободится и его сможет занять кто-то другой; что
+     * сообщения, уже доставленные собеседникам, останутся у них; что
+     * присланные вложения доживут на сервере свой тридцатидневный
+     * срок. Всё это — правда о том, чего удаление **не** делает,
+     * и узнать её человек должен до нажатия, а не после.
+     */
+    private fun bindDeleteAccount() {
+        SettingsRow.bind(
+            root = findViewById(R.id.privacy_delete_account),
+            label = R.string.privacy_delete_account,
+            icon = R.drawable.ic_alert,
+            destructive = true,
+            onClick = { confirmDeleteAccount() },
+        )
+    }
+
+    /** Первое подтверждение: что именно произойдёт. */
+    private fun confirmDeleteAccount() {
+        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
+            .setTitle(R.string.privacy_delete_account_title)
+            .setMessage(R.string.privacy_delete_account_warning)
+            .setPositiveButton(R.string.privacy_delete_account_continue) { _, _ ->
+                confirmDeleteAccountFinally()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Второе подтверждение: последняя возможность отказаться. */
+    private fun confirmDeleteAccountFinally() {
+        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
+            .setTitle(R.string.privacy_delete_account_final_title)
+            .setMessage(R.string.privacy_delete_account_final)
+            .setPositiveButton(R.string.privacy_delete_account_confirm) { _, _ ->
+                runDeleteAccount()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Выполняет удаление.
+     *
+     * Порядок «сначала сервер, потом устройство» держит
+     * [DeleteAccount], а не этот экран: перепутать его можно ровно
+     * один раз, и стоить это будет переписки.
+     *
+     * 🔐 Отказ сервера показывается как отказ. Экран, сообщивший
+     * «аккаунт удалён» там, где удаления не было, научил бы доверять
+     * этому сообщению и в следующий раз.
+     */
+    private fun runDeleteAccount() {
+        lifecycleScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching { DeleteAccount.run(applicationContext) }
+            }
+
+            outcome
+                .onSuccess { result ->
+                    if (!result.wiped) {
+                        // Сервер очищен, устройство — не до конца.
+                        // Умолчать значило бы оставить человека
+                        // с файлами, о которых он не знает.
+                        android.widget.Toast.makeText(
+                            this@PrivacyActivity,
+                            R.string.privacy_delete_account_partial,
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
+
+                    // Хранилище закрыто, аккаунта нет: любой экран,
+                    // кроме начального, обратился бы к закрытому ядру.
+                    startActivity(
+                        Intent(this@PrivacyActivity, OnboardingActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        },
+                    )
+                    finish()
+                }
+                .onFailure {
+                    android.widget.Toast.makeText(
+                        this@PrivacyActivity,
+                        R.string.privacy_delete_account_failed,
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+        }
     }
 
     /**
