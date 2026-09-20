@@ -45,24 +45,59 @@ struct LocalHttp {
 }
 
 impl Transport for LocalHttp {
+    /// # ⚠️ Заголовки обязаны доходить до сервера
+    ///
+    /// Прежде эта реализация их просто **теряла**: собирала запрос
+    /// из метода, пути и тела, а `request.headers` не читала вовсе.
+    /// Для регистрации это было незаметно — она анонимна, — а всё
+    /// остальное получало `401`: подпись устройства уходит именно
+    /// в заголовках `x-aegis-signature` и `x-aegis-issued-at`.
+    ///
+    /// Заметить было нечем: тесты этого файла помечены `#[ignore]`
+    /// и ни разу не запускались, потому что сервер для них никто
+    /// не поднимал. Написаны они были до того, как маршруты стали
+    /// требовать подпись.
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse> {
         let mut stream =
             TcpStream::connect((self.host.as_str(), self.port)).map_err(|_| AegisError::Network)?;
 
-        let body = request.body.clone().unwrap_or_default();
-        let head = format!(
-            "{} {} HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: application/json\r\n\
-             Content-Length: {}\r\nConnection: close\r\n\r\n",
+        // Тело бывает двух видов: JSON и сырые байты вложения.
+        // Второе тоже терялось, и загрузка вложения уходила пустой.
+        let body: Vec<u8> = match (&request.body, &request.binary_body) {
+            (Some(text), _) => text.as_bytes().to_vec(),
+            (None, Some(bytes)) => bytes.clone(),
+            (None, None) => Vec::new(),
+        };
+
+        let content_type = if request.binary_body.is_some() {
+            "application/octet-stream"
+        } else {
+            "application/json"
+        };
+
+        let mut head = format!(
+            "{} {} HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: {}\r\n\
+             Content-Length: {}\r\nConnection: close\r\n",
             request.method.as_str(),
             request.path,
             self.host,
             self.port,
+            content_type,
             body.len(),
         );
 
+        for (name, value) in &request.headers {
+            head.push_str(name);
+            head.push_str(": ");
+            head.push_str(value);
+            head.push_str("\r\n");
+        }
+
+        head.push_str("\r\n");
+
         stream
             .write_all(head.as_bytes())
-            .and_then(|()| stream.write_all(body.as_bytes()))
+            .and_then(|()| stream.write_all(&body))
             .map_err(|_| AegisError::Network)?;
 
         let mut raw = Vec::new();
@@ -136,8 +171,32 @@ fn server() -> Option<(String, u16)> {
     Some((host.to_owned(), port.parse().ok()?))
 }
 
+/// Текущее время — настоящее, а не зафиксированное.
+///
+/// # ⚠️ Почему здесь нельзя застывшую метку
+///
+/// Здесь стояло `Timestamp::from_millis(1_760_000_000_000)`, и это
+/// работало ровно до того дня, когда маршруты стали требовать подпись.
+/// Подпись включает `issued_at`, а сервер отвергает всё старше пяти
+/// минут ([`crate::auth::CHALLENGE_TTL_MILLIS`] на его стороне) —
+/// то есть застывшая метка гарантированно просрочена, и каждый
+/// подписанный запрос получает `401`.
+///
+/// Диагностика при этом обманчива: `InvalidSignature` читается как
+/// «подпись неверна», хотя подпись верна, а просрочено время.
+///
+/// Заметить было нечем: тесты этого файла помечены `#[ignore]`
+/// и ни разу не запускались — сервер для них никто не поднимал.
 fn now() -> Timestamp {
-    Timestamp::from_millis(1_760_000_000_000)
+    Timestamp::from_millis(
+        i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("часы после 1970")
+                .as_millis(),
+        )
+        .expect("время помещается в i64"),
+    )
 }
 
 /// Уникальное имя: сервер хранит аккаунты между запусками теста.

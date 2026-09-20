@@ -131,6 +131,97 @@ jobs:
           cargo metadata --manifest-path server/Cargo.toml
           --locked --format-version 1 > /dev/null
 
+  # ---------------------------------------------------------------------------
+  #  Клиент против НАСТОЯЩЕГО сервера
+  #
+  #  ⚠️ Эти тесты помечены `#[ignore]` и до сих пор не запускались ни разу:
+  #  сервер для них никто не поднимал. Первый же запуск нашёл два дефекта
+  #  в самом наборе — транспорт терял заголовки подписи, а `now()` был
+  #  зафиксирован на 2025 год, из-за чего каждый подписанный запрос
+  #  оказывался просроченным (окно свежести — пять минут).
+  #
+  #  Набор проверяет то, чего не покажет ни заглушка, ни HTTP-тесты
+  #  сервера: что клиент и сервер договариваются между собой — по форме
+  #  запроса, по proof-of-work, по подписи и по адресации.
+  # ---------------------------------------------------------------------------
+  client-against-server:
+    name: client talks to the real server
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aegis
+          POSTGRES_PASSWORD: aegis-dev
+          POSTGRES_DB: aegis
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U aegis"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crates
+            server
+
+      - name: build the server
+        run: cargo build --manifest-path server/Cargo.toml -p aegis-server-api
+
+      # Сервер поднимается на том же хосте: тестам нужен настоящий
+      # разбор HTTP, а не обёртка вокруг роутера.
+      - name: start the server
+        run: |
+          set -euo pipefail
+
+          DATABASE_URL=postgres://aegis:aegis-dev@localhost:5433/aegis \
+          AEGIS_BIND=127.0.0.1:8443 \
+            server/target/debug/aegis-server-api > server.log 2>&1 &
+
+          for _ in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:8443/health; then
+              echo "сервер поднялся"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::сервер не поднялся за 30 секунд"
+          cat server.log
+          exit 1
+
+      # ⚠️ `--ignored` обязателен: без него набор молча не выполнится,
+      # и джоб будет зелёным, ничего не проверив.
+      - name: client against the server
+        env:
+          AEGIS_SERVER: http://127.0.0.1:8443
+        run: |
+          set -euo pipefail
+
+          output=$(cargo test --manifest-path crates/Cargo.toml \
+            -p aegis-core --test live_server -- --ignored 2>&1 | tee /dev/stderr)
+
+          # Проверка проверки: набор из нуля тестов «проходит» всегда.
+          if echo "$output" | grep -qE "test result: ok\. 0 passed"; then
+            echo "::error::не выполнено ни одного теста против живого сервера"
+            exit 1
+          fi
+
+      - name: server log
+        if: always()
+        run: cat server.log || true
+
   cross-compile:
     name: cross-compile ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
