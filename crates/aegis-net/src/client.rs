@@ -24,9 +24,9 @@
 use aegis_types::{AegisError, Result};
 
 use crate::api::{
-    BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
-    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
-    SealedReportResponse, SealedSendRequest, SendRequest,
+    AccountDeletedResponse, BundleResponse, CertificateResponse, DiscoveryResponse,
+    EnvelopeResponse, PublishKeysRequest, RegisterRequest, RegisterResponse, SealedAccessRequest,
+    SealedReportRequest, SealedReportResponse, SealedSendRequest, SendRequest,
 };
 
 /// Метод HTTP.
@@ -324,12 +324,8 @@ impl<T: Transport> ApiClient<T> {
         device_id: &str,
         auth: Vec<(String, String)>,
     ) -> Result<Vec<EnvelopeResponse>> {
-        let response = self.send_signed(
-            Method::Get,
-            format!("/v1/messages/{device_id}"),
-            None,
-            auth,
-        )?;
+        let response =
+            self.send_signed(Method::Get, format!("/v1/messages/{device_id}"), None, auth)?;
 
         parse(&response)
     }
@@ -353,6 +349,36 @@ impl<T: Transport> ApiClient<T> {
         )?;
 
         check_status(&response)
+    }
+
+    /// 🔐 Удаляет аккаунт целиком (MASVS PRIVACY-3.2).
+    ///
+    /// Адресуется устройством: право доказывается подписью, а
+    /// подписывает устройство. Аккаунт сервер находит сам — иначе
+    /// клиент назвал бы чужой.
+    ///
+    /// ⚠️ Уносит **все** устройства аккаунта, а не только это.
+    /// Это и есть удаление аккаунта, а не выход с одного телефона.
+    ///
+    /// # Errors
+    ///
+    /// * [`AegisError::InvalidSignature`] — подпись не принята либо
+    ///   аккаунт уже удалён: сервер не различает эти случаи, чтобы
+    ///   не отвечать на вопрос «существовал ли такой аккаунт».
+    /// * [`AegisError::Network`] — сбой соединения.
+    pub fn delete_account(
+        &self,
+        device_id: &str,
+        auth: Vec<(String, String)>,
+    ) -> Result<AccountDeletedResponse> {
+        let response = self.send_signed(
+            Method::Delete,
+            format!("/v1/accounts/{device_id}"),
+            None,
+            auth,
+        )?;
+
+        parse(&response)
     }
 
     /// Выполняет запрос и переводит код ответа в ошибку домена.

@@ -30,15 +30,13 @@
 use std::sync::Mutex;
 
 use aegis_backup::RecoveryKey;
-use aegis_net::api::{
-    BundleResponse, PublishKeysRequest, RegisterRequest,
-};
-use aegis_net::client::{ApiClient, Transport};
 use aegis_media::attachment::{self, AttachmentKey};
 use aegis_media::descriptor::{AttachmentDescriptor, AttachmentKind};
+use aegis_net::api::{BundleResponse, PublishKeysRequest, RegisterRequest};
+use aegis_net::client::{ApiClient, Transport};
+use aegis_net::pow;
 use aegis_protocol::contact_link::ContactLink;
 use aegis_protocol::content::Content;
-use aegis_net::pow;
 use aegis_protocol::keys::{
     IdentityKey, IdentityKeyPair, KemPublicKey, PreKeyBundle, PreKeyId, SignedKemPreKey,
     SignedPreKey,
@@ -52,11 +50,11 @@ use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 mod network;
 mod sealed;
 
-pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 use aegis_types::{
     AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext, PublicKeyBytes, Result,
     Timestamp,
 };
+pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 use rand_core::{CryptoRng, RngCore};
 
 use crate::session::{self, derive_chat_id};
@@ -144,6 +142,30 @@ pub struct AttachmentFile {
     pub duration_millis: Option<u32>,
     /// Огибающая громкости — для голосовых.
     pub waveform: Option<Vec<u8>>,
+}
+
+/// Что исчезло вместе с аккаунтом.
+///
+/// 🔐 Числа показываются человеку. «Готово» без них ничем не
+/// отличается от «готово» при запросе, который ничего не удалил,
+/// а удаление аккаунта — именно тот случай, где верить на слово
+/// не за чем: проверить самому уже нечем.
+///
+/// Всё перечисленное — данные самого запрашивающего, и ни о ком,
+/// кроме него, эти числа не говорят.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AccountDeletionReport {
+    /// Сколько устройств было у аккаунта.
+    pub devices: u64,
+    /// Сколько недоставленных конвертов лежало в очередях.
+    pub envelopes: u64,
+    /// Сколько загруженных вложений удалено.
+    ///
+    /// ⚠️ Только загруженных **этим** аккаунтом. Присланные ему
+    /// остаются: сервер не знает, кому они предназначались, — связь
+    /// лежит внутри шифротекста. Они исчезают по общему сроку
+    /// в тридцать суток.
+    pub attachments: u64,
 }
 
 /// Клиент AEGIS.
@@ -236,17 +258,16 @@ impl<T: Transport> Client<T> {
         )?;
         self.storage.set_account_id(&account_id, now)?;
 
-        self.api
-            .publish_keys(
-                &server_device_id.to_string(),
-                &publish_request(&bundle),
-                auth_headers(
-                    &identity,
-                    "PUT",
-                    &format!("/v1/keys/{server_device_id}"),
-                    now,
-                )?,
-            )?;
+        self.api.publish_keys(
+            &server_device_id.to_string(),
+            &publish_request(&bundle),
+            auth_headers(
+                &identity,
+                "PUT",
+                &format!("/v1/keys/{server_device_id}"),
+                now,
+            )?,
+        )?;
 
         Ok(Account {
             account_id,
@@ -325,10 +346,18 @@ impl<T: Transport> Client<T> {
         let outgoing = session::continue_session(&session, &plaintext)?;
 
         // Сессия сохраняется до отправки: см. порядок операций.
-        self.storage.save_session(&chat_id, &outgoing.session, now)?;
+        self.storage
+            .save_session(&chat_id, &outgoing.session, now)?;
 
         let message_id = MessageId::generate();
-        self.store_message(&chat_id, message_id, text, now, true, MessageStatus::Pending)?;
+        self.store_message(
+            &chat_id,
+            message_id,
+            text,
+            now,
+            true,
+            MessageStatus::Pending,
+        )?;
 
         self.deliver(
             &identity,
@@ -345,7 +374,6 @@ impl<T: Transport> Client<T> {
 
         Ok(message_id)
     }
-
 
     /// Отправляет реакцию на сообщение.
     ///
@@ -444,7 +472,6 @@ impl<T: Transport> Client<T> {
 
         Ok(())
     }
-
 
     /// Сообщает, что пользователь печатает.
     ///
@@ -581,7 +608,8 @@ impl<T: Transport> Client<T> {
 
         // Сессия сохраняется до отправки: см. порядок операций
         // в описании модуля.
-        self.storage.save_session(&chat_id, &outgoing.session, now)?;
+        self.storage
+            .save_session(&chat_id, &outgoing.session, now)?;
 
         self.deliver(
             &identity,
@@ -671,9 +699,11 @@ impl<T: Transport> Client<T> {
 
             // Собеседник этого конверта: из конверта инициации либо
             // из проверенного и привязанного сертификата.
-            let sender = incoming
-                .sender_identity
-                .or_else(|| certificate.as_ref().map(|certificate| certificate.identity_key));
+            let sender = incoming.sender_identity.or_else(|| {
+                certificate
+                    .as_ref()
+                    .map(|certificate| certificate.identity_key)
+            });
 
             if let Some(peer) = incoming.sender_identity {
                 self.storage
@@ -685,7 +715,8 @@ impl<T: Transport> Client<T> {
                 self.storage.forget_access_key_share(&peer_account(&peer))?;
             }
 
-            self.storage.save_session(&chat_id, &incoming.session, now)?;
+            self.storage
+                .save_session(&chat_id, &incoming.session, now)?;
 
             // Разбор содержимого. Сообщение от собеседника с новой
             // версией клиента отвергается целиком, а не сохраняется
@@ -741,8 +772,11 @@ impl<T: Transport> Client<T> {
                     // Если его нет — собеседник правит то, чего мы
                     // не получали; создавать сообщение задним числом
                     // нельзя, оно появилось бы без контекста.
-                    self.storage
-                        .edit_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)), &body, now)?;
+                    self.storage.edit_message(
+                        &MessageId::from_uuid(uuid::Uuid::from_bytes(target)),
+                        &body,
+                        now,
+                    )?;
                 }
 
                 Content::Delete { target } => {
@@ -750,8 +784,10 @@ impl<T: Transport> Client<T> {
                     // отправитель просит убрать своё сообщение,
                     // и отказ означал бы, что «удалить у всех»
                     // не работает.
-                    self.storage
-                        .delete_message(&MessageId::from_uuid(uuid::Uuid::from_bytes(target)), now)?;
+                    self.storage.delete_message(
+                        &MessageId::from_uuid(uuid::Uuid::from_bytes(target)),
+                        now,
+                    )?;
                 }
 
                 Content::AccessKey { key } => {
@@ -766,9 +802,7 @@ impl<T: Transport> Client<T> {
                     }
                 }
 
-                Content::Reaction { .. }
-                | Content::Typing { .. }
-                | Content::ReadReceipt { .. } => {
+                Content::Reaction { .. } | Content::Typing { .. } | Content::ReadReceipt { .. } => {
                     // Ничего не сохраняется, но по разным причинам.
                     //
                     // Реакции приходят и снимаются многократно: держать
@@ -851,7 +885,6 @@ impl<T: Transport> Client<T> {
             })
             .collect()
     }
-
 
     /// Добавляет контакт по ссылке `aegis://contact/...`.
     ///
@@ -1023,14 +1056,15 @@ impl<T: Transport> Client<T> {
                 continue;
             };
 
-            self.storage.save_attachment(&aegis_storage::StoredAttachment {
-                message_id: *message_id,
-                attachment_type: descriptor.kind.as_u8(),
-                description: descriptor.name.clone(),
-                size: i64::try_from(descriptor.size).unwrap_or(i64::MAX),
-                created_at: now,
-                descriptor: Some(encoded.clone()),
-            })?;
+            self.storage
+                .save_attachment(&aegis_storage::StoredAttachment {
+                    message_id: *message_id,
+                    attachment_type: descriptor.kind.as_u8(),
+                    description: descriptor.name.clone(),
+                    size: i64::try_from(descriptor.size).unwrap_or(i64::MAX),
+                    created_at: now,
+                    descriptor: Some(encoded.clone()),
+                })?;
         }
 
         Ok(())
@@ -1228,7 +1262,10 @@ impl<T: Transport> Client<T> {
     ///
     /// [`AegisError::Storage`] — чтение не удалось.
     pub fn own_device_id(&self) -> Result<Option<String>> {
-        Ok(self.storage.load_own_keys()?.and_then(|keys| keys.device_id))
+        Ok(self
+            .storage
+            .load_own_keys()?
+            .and_then(|keys| keys.device_id))
     }
 
     /// Возвращает собственное имя пользователя, если оно занято.
@@ -1314,6 +1351,60 @@ impl<T: Transport> Client<T> {
         self.storage.rekey(new_key)
     }
 
+    /// 🔐 Удаляет аккаунт на сервере (MASVS PRIVACY-3.2).
+    ///
+    /// # Что делает и чего не делает
+    ///
+    /// Делает один подписанный запрос и возвращает то, что сервер
+    /// сообщил об удалённом. **Локальные данные не трогает**: файл
+    /// базы, аппаратный секрет и настройки принадлежат платформе,
+    /// она их и убирает — ядро не знает ни пути к файлу, ни имени
+    /// ключа в хранилище устройства.
+    ///
+    /// Порядок обязателен именно такой: сначала сервер, потом
+    /// локальное. Наоборот — и при сбое сети человек остался бы
+    /// без переписки, но с живым аккаунтом на сервере, а повторить
+    /// удаление стало бы нечем: подпись требует ключа, который
+    /// только что стёрли.
+    ///
+    /// # ⚠️ Уносит все устройства аккаунта
+    ///
+    /// Это удаление аккаунта, а не выход с одного телефона.
+    ///
+    /// # Errors
+    ///
+    /// * [`AegisError::SessionNotFound`] — аккаунт не зарегистрирован,
+    ///   удалять нечего.
+    /// * [`AegisError::InvalidSignature`] — сервер не принял подпись
+    ///   либо аккаунт уже удалён: он не различает эти случаи, чтобы
+    ///   не отвечать на вопрос «существовал ли такой аккаунт».
+    /// * [`AegisError::Network`] — сбой соединения. Аккаунт при этом
+    ///   цел, и попытку можно повторить.
+    pub fn delete_account(&self, now: Timestamp) -> Result<AccountDeletionReport> {
+        let device_id = self
+            .storage
+            .load_own_keys()?
+            .and_then(|keys| keys.device_id)
+            .ok_or(AegisError::SessionNotFound)?;
+
+        let (identity, _) = self.load_identity()?;
+
+        let auth = auth_headers(
+            &identity,
+            "DELETE",
+            &format!("/v1/accounts/{device_id}"),
+            now,
+        )?;
+
+        let response = self.api.delete_account(&device_id, auth)?;
+
+        Ok(AccountDeletionReport {
+            devices: response.devices,
+            envelopes: response.envelopes,
+            attachments: response.attachments,
+        })
+    }
+
     /// Заголовки подписи для рукопожатия сокета уведомлений.
     ///
     /// # Зачем отдельный метод
@@ -1373,11 +1464,7 @@ impl<T: Transport> Client<T> {
     /// # Errors
     ///
     /// [`AegisError::Storage`] — запись не удалась.
-    pub fn set_disappearing_timer(
-        &self,
-        chat_id: &ChatId,
-        seconds: Option<u32>,
-    ) -> Result<()> {
+    pub fn set_disappearing_timer(&self, chat_id: &ChatId, seconds: Option<u32>) -> Result<()> {
         self.storage.set_disappearing_timer(chat_id, seconds)
     }
     /// Пробует расшифровать конверт всеми известными сессиями.
@@ -1721,16 +1808,11 @@ impl<T: Transport> Client<T> {
     ///
     /// [`AegisError::Locked`] — vault закрыт;
     /// [`AegisError::Storage`] — удаление не удалось.
-    pub fn delete_vault_file(
-        &self,
-        file_id: &MessageId,
-        now: Timestamp,
-    ) -> Result<Option<String>> {
+    pub fn delete_vault_file(&self, file_id: &MessageId, now: Timestamp) -> Result<Option<String>> {
         let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
 
         Vault::new(&self.storage, &mut keeper).delete_file(file_id, now)
     }
-
 }
 
 /// Сколько чатов перебирается при поиске подходящей сессии.
@@ -1786,16 +1868,23 @@ fn publish_request(bundle: &PreKeyBundle) -> PublishKeysRequest {
         one_time: bundle
             .one_time_pre_key
             .iter()
-            .map(|(id, key)| (i32::try_from(id.as_u32()).unwrap_or(i32::MAX), hex(key.as_bytes())))
+            .map(|(id, key)| {
+                (
+                    i32::try_from(id.as_u32()).unwrap_or(i32::MAX),
+                    hex(key.as_bytes()),
+                )
+            })
             .collect(),
         one_time_kem: bundle
             .one_time_kem_pre_key
             .iter()
-            .map(|(id, key)| (
+            .map(|(id, key)| {
+                (
                     i32::try_from(id.as_u32()).unwrap_or(i32::MAX),
                     hex(key.as_bytes()),
                     String::new(),
-                ))
+                )
+            })
             .collect(),
     }
 }

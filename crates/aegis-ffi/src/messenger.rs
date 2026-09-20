@@ -52,7 +52,6 @@ pub trait HttpTransport: Send + Sync {
     ) -> Result<FfiHttpResponse, FfiError>;
 }
 
-
 /// Заголовок HTTP.
 ///
 /// Отдельная запись, а не карта: UniFFI не переносит `HashMap`
@@ -65,6 +64,25 @@ pub struct FfiHeader {
     /// Значение.
     pub value: String,
 }
+/// Что исчезло вместе с аккаунтом.
+///
+/// 🔐 Показывается человеку после удаления. «Готово» без чисел ничем
+/// не отличается от «готово» при запросе, который ничего не удалил,
+/// а здесь проверить самому уже нечем: аккаунта, которым можно было бы
+/// спросить, больше нет.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAccountDeletion {
+    /// Сколько устройств было у аккаунта.
+    pub devices: u64,
+    /// Сколько недоставленных конвертов удалено.
+    pub envelopes: u64,
+    /// Сколько загруженных вложений удалено.
+    ///
+    /// ⚠️ Только загруженных этим аккаунтом. Присланные ему остаются:
+    /// сервер не знает, кому они предназначались.
+    pub attachments: u64,
+}
+
 /// Ответ HTTP, пришедший от платформы.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiHttpResponse {
@@ -315,16 +333,11 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — сервер недоступен либо аккаунт не
     /// зарегистрирован.
-    pub fn receive_messages(
-        &self,
-        device_id: String,
-        now_millis: i64,
-    ) -> Result<u32, FfiError> {
+    pub fn receive_messages(&self, device_id: String, now_millis: i64) -> Result<u32, FfiError> {
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
 
-        let count = guard(|| {
-            client.receive_messages(&device_id, Timestamp::from_millis(now_millis))
-        })?;
+        let count =
+            guard(|| client.receive_messages(&device_id, Timestamp::from_millis(now_millis)))?;
 
         u32::try_from(count).map_err(|_| FfiError::InvalidArgument)
     }
@@ -400,11 +413,7 @@ impl Messenger {
     ///
     /// [`FfiError::InvalidArgument`] — идентификатор чата не разбирается;
     /// [`FfiError::Core`] — запись не удалась.
-    pub fn set_disappearing_timer(
-        &self,
-        chat_id: String,
-        seconds: u32,
-    ) -> Result<(), FfiError> {
+    pub fn set_disappearing_timer(&self, chat_id: String, seconds: u32) -> Result<(), FfiError> {
         let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
 
@@ -550,6 +559,43 @@ impl Messenger {
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
 
         guard(|| client.rekey_storage(&new_key))
+    }
+
+    /// 🔐 Удаляет аккаунт на сервере (MASVS PRIVACY-3.2).
+    ///
+    /// # Что делает и чего не делает
+    ///
+    /// Делает один подписанный запрос и возвращает то, что сервер
+    /// сообщил об удалённом. **Локальные данные остаются**: файл базы,
+    /// аппаратный секрет и настройки убирает платформа — ядро не знает
+    /// ни пути к файлу, ни имени ключа в хранилище устройства.
+    ///
+    /// ⚠️ Порядок на платформе обязателен именно такой: сначала этот
+    /// вызов, и только по его успеху — стирание локального. Наоборот —
+    /// и при обрыве сети человек остался бы без переписки, но с живым
+    /// аккаунтом на сервере, а повторить удаление стало бы нечем:
+    /// подпись требует ключа, который только что стёрли.
+    ///
+    /// ⚠️ Уносит все устройства аккаунта. Это удаление аккаунта,
+    /// а не выход с одного телефона.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — аккаунт не зарегистрирован, сервер не принял
+    /// подпись (в том числе если аккаунт уже удалён) либо не удалось
+    /// соединиться. В последнем случае аккаунт цел и попытку можно
+    /// повторить.
+    pub fn delete_account(&self, now_millis: i64) -> Result<FfiAccountDeletion, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let report =
+            guard(|| client.delete_account(aegis_types::Timestamp::from_millis(now_millis)))?;
+
+        Ok(FfiAccountDeletion {
+            devices: report.devices,
+            envelopes: report.envelopes,
+            attachments: report.attachments,
+        })
     }
 
     /// Заголовки подписи для рукопожатия сокета уведомлений.
@@ -933,9 +979,7 @@ pub struct FfiAttachmentInfo {
 /// вне допустимых границ.
 #[uniffi::export]
 pub fn parse_attachment_descriptor(descriptor: Vec<u8>) -> Result<FfiAttachmentInfo, FfiError> {
-    let parsed = guard(|| {
-        aegis_media::descriptor::AttachmentDescriptor::from_bytes(&descriptor)
-    })?;
+    let parsed = guard(|| aegis_media::descriptor::AttachmentDescriptor::from_bytes(&descriptor))?;
 
     Ok(FfiAttachmentInfo {
         kind: match parsed.kind {

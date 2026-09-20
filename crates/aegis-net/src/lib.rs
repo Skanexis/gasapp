@@ -24,14 +24,14 @@
 pub mod api;
 pub mod auth;
 pub mod client;
-pub mod pow;
 pub mod pinning;
-pub mod queue;
+pub mod pow;
 pub mod proxy;
+pub mod queue;
 
 pub use api::{
-    BundleResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest, RegisterRequest,
-    RegisterResponse, SendRequest,
+    AccountDeletedResponse, BundleResponse, DiscoveryResponse, EnvelopeResponse,
+    PublishKeysRequest, RegisterRequest, RegisterResponse, SendRequest,
 };
 pub use client::{ApiClient, HttpRequest, HttpResponse, Method, Transport};
 pub use pinning::{pin_from_spki, PinSet, MIN_PINS, PIN_LEN};

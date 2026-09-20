@@ -240,6 +240,25 @@
     <string name="privacy_preview_hint">Показывать сообщение на заблокированном экране</string>
     <string name="privacy_limits_note">Блокировка снимков действует только на этом устройстве. Она не мешает сфотографировать экран другим телефоном и не ограничивает собеседника: он видел ваше сообщение и мог его сохранить.</string>
 
+    <!--
+        🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
+
+        Тексты называют и то, чего удаление НЕ делает. Узнать это
+        человек должен до нажатия, а не после: вернуть удалённый
+        аккаунт нельзя ни ему, ни оператору сервера.
+    -->
+    <string name="privacy_section_account">Аккаунт</string>
+    <string name="privacy_delete_account">Удалить аккаунт</string>
+    <string name="privacy_delete_account_hint">Убирает аккаунт с сервера и всё, что хранится для него на этом устройстве. Обратного пути нет.</string>
+    <string name="privacy_delete_account_title">Удалить этот аккаунт?</string>
+    <string name="privacy_delete_account_warning">С сервера исчезнут имя, ключи и недоставленные сообщения, а с устройства — вся переписка, контакты и файлы.\n\nЧего это не сделает: сообщения, которые уже дошли, останутся у собеседников, а присланные вам файлы пролежат на сервере до конца своего тридцатидневного срока. Имя освободится, и его сможет занять кто угодно — выдать себя за вас он не сможет: ключ будет другим, и ваши собеседники получат предупреждение.</string>
+    <string name="privacy_delete_account_continue">Продолжить</string>
+    <string name="privacy_delete_account_final_title">Это необратимо</string>
+    <string name="privacy_delete_account_final">Восстановить аккаунт не сможет никто — ни вы, ни тот, кто держит сервер. Если нужно просто выйти на этом устройстве, закройте приложение.</string>
+    <string name="privacy_delete_account_confirm">Удалить навсегда</string>
+    <string name="privacy_delete_account_failed">Аккаунт не удалён. На устройстве ничего не тронуто — проверьте соединение и попробуйте снова.</string>
+    <string name="privacy_delete_account_partial">Аккаунт убран с сервера, но что-то на устройстве удалить не удалось. Чтобы быть уверенным, удалите приложение.</string>
+
     <!-- Уведомления. -->
     <string name="notifications_section_content">Что показывать</string>
     <string name="notifications_section_alerts">Как оповещать</string>

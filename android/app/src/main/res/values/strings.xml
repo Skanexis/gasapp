@@ -250,6 +250,25 @@
     <string name="privacy_preview_hint">Show the message on the lock screen</string>
     <string name="privacy_limits_note">Blocking screenshots only works on this device. It does not stop someone photographing the screen with another phone, and it does not restrict the other person: they saw your message and could have saved it.</string>
 
+    <!--
+        🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
+
+        Тексты называют и то, чего удаление НЕ делает. Узнать это
+        человек должен до нажатия, а не после: вернуть удалённый
+        аккаунт нельзя ни ему, ни оператору сервера.
+    -->
+    <string name="privacy_section_account">Account</string>
+    <string name="privacy_delete_account">Delete account</string>
+    <string name="privacy_delete_account_hint">Removes your account from the server and everything stored for it on this device. There is no way back.</string>
+    <string name="privacy_delete_account_title">Delete this account?</string>
+    <string name="privacy_delete_account_warning">Your username, keys and any undelivered messages will be removed from the server, and this device will be wiped — every conversation, contact and file.\n\nWhat this does not do: messages already delivered stay on your contacts\u2019 devices, and files sent to you stay on the server until they expire after 30 days. Your username becomes available for anyone else to take — they cannot pose as you, because their key would be different and your contacts would be warned.</string>
+    <string name="privacy_delete_account_continue">Continue</string>
+    <string name="privacy_delete_account_final_title">This cannot be undone</string>
+    <string name="privacy_delete_account_final">Nobody can restore this account — not you, not whoever runs the server. If you only want to sign out of this device, close the app instead.</string>
+    <string name="privacy_delete_account_confirm">Delete for good</string>
+    <string name="privacy_delete_account_failed">The account was not deleted. Nothing on this device has been touched — check your connection and try again.</string>
+    <string name="privacy_delete_account_partial">The account is gone from the server, but something on this device could not be removed. Uninstall the app to be sure.</string>
+
     <!-- Notifications -->
     <string name="notifications_section_content">What to show</string>
     <string name="notifications_section_alerts">How to alert</string>

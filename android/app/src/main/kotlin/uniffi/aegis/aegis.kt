@@ -882,6 +882,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -954,6 +956,8 @@ fun uniffi_aegis_checksum_method_messenger_chats(
 fun uniffi_aegis_checksum_method_messenger_contacts(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_create_backup(
+): Short
+fun uniffi_aegis_checksum_method_messenger_delete_account(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_delete_for_everyone(
 ): Short
@@ -1118,6 +1122,8 @@ fun uniffi_aegis_fn_method_messenger_chats(`ptr`: Pointer,uniffi_out_err: Uniffi
 fun uniffi_aegis_fn_method_messenger_contacts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_create_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`deviceLabel`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_delete_account(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1456,6 +1462,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_create_backup() != 41989.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_delete_account() != 38024.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_delete_for_everyone() != 13291.toShort()) {
@@ -2483,6 +2492,34 @@ public interface MessengerInterface {
     fun `createBackup`(`recoveryKey`: kotlin.String, `deviceLabel`: kotlin.String?, `nowMillis`: kotlin.Long): FfiBackup
     
     /**
+     * 🔐 Удаляет аккаунт на сервере (MASVS PRIVACY-3.2).
+     *
+     * # Что делает и чего не делает
+     *
+     * Делает один подписанный запрос и возвращает то, что сервер
+     * сообщил об удалённом. **Локальные данные остаются**: файл базы,
+     * аппаратный секрет и настройки убирает платформа — ядро не знает
+     * ни пути к файлу, ни имени ключа в хранилище устройства.
+     *
+     * ⚠️ Порядок на платформе обязателен именно такой: сначала этот
+     * вызов, и только по его успеху — стирание локального. Наоборот —
+     * и при обрыве сети человек остался бы без переписки, но с живым
+     * аккаунтом на сервере, а повторить удаление стало бы нечем:
+     * подпись требует ключа, который только что стёрли.
+     *
+     * ⚠️ Уносит все устройства аккаунта. Это удаление аккаунта,
+     * а не выход с одного телефона.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунт не зарегистрирован, сервер не принял
+     * подпись (в том числе если аккаунт уже удалён) либо не удалось
+     * соединиться. В последнем случае аккаунт цел и попытку можно
+     * повторить.
+     */
+    fun `deleteAccount`(`nowMillis`: kotlin.Long): FfiAccountDeletion
+    
+    /**
      * Удаляет сообщение у обеих сторон.
      *
      * 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
@@ -3256,6 +3293,45 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_create_backup(
         it, FfiConverterString.lower(`recoveryKey`),FfiConverterOptionalString.lower(`deviceLabel`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * 🔐 Удаляет аккаунт на сервере (MASVS PRIVACY-3.2).
+     *
+     * # Что делает и чего не делает
+     *
+     * Делает один подписанный запрос и возвращает то, что сервер
+     * сообщил об удалённом. **Локальные данные остаются**: файл базы,
+     * аппаратный секрет и настройки убирает платформа — ядро не знает
+     * ни пути к файлу, ни имени ключа в хранилище устройства.
+     *
+     * ⚠️ Порядок на платформе обязателен именно такой: сначала этот
+     * вызов, и только по его успеху — стирание локального. Наоборот —
+     * и при обрыве сети человек остался бы без переписки, но с живым
+     * аккаунтом на сервере, а повторить удаление стало бы нечем:
+     * подпись требует ключа, который только что стёрли.
+     *
+     * ⚠️ Уносит все устройства аккаунта. Это удаление аккаунта,
+     * а не выход с одного телефона.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунт не зарегистрирован, сервер не принял
+     * подпись (в том числе если аккаунт уже удалён) либо не удалось
+     * соединиться. В последнем случае аккаунт цел и попытку можно
+     * повторить.
+     */
+    @Throws(FfiException::class)override fun `deleteAccount`(`nowMillis`: kotlin.Long): FfiAccountDeletion {
+            return FfiConverterTypeFfiAccountDeletion.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_delete_account(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -4341,6 +4417,62 @@ public object FfiConverterTypeFfiAccount: FfiConverterRustBuffer<FfiAccount> {
             FfiConverterString.write(value.`accountId`, buf)
             FfiConverterString.write(value.`deviceId`, buf)
             FfiConverterString.write(value.`username`, buf)
+    }
+}
+
+
+
+/**
+ * Что исчезло вместе с аккаунтом.
+ *
+ * 🔐 Показывается человеку после удаления. «Готово» без чисел ничем
+ * не отличается от «готово» при запросе, который ничего не удалил,
+ * а здесь проверить самому уже нечем: аккаунта, которым можно было бы
+ * спросить, больше нет.
+ */
+data class FfiAccountDeletion (
+    /**
+     * Сколько устройств было у аккаунта.
+     */
+    var `devices`: kotlin.ULong, 
+    /**
+     * Сколько недоставленных конвертов удалено.
+     */
+    var `envelopes`: kotlin.ULong, 
+    /**
+     * Сколько загруженных вложений удалено.
+     *
+     * ⚠️ Только загруженных этим аккаунтом. Присланные ему остаются:
+     * сервер не знает, кому они предназначались.
+     */
+    var `attachments`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAccountDeletion: FfiConverterRustBuffer<FfiAccountDeletion> {
+    override fun read(buf: ByteBuffer): FfiAccountDeletion {
+        return FfiAccountDeletion(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAccountDeletion) = (
+            FfiConverterULong.allocationSize(value.`devices`) +
+            FfiConverterULong.allocationSize(value.`envelopes`) +
+            FfiConverterULong.allocationSize(value.`attachments`)
+    )
+
+    override fun write(value: FfiAccountDeletion, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`devices`, buf)
+            FfiConverterULong.write(value.`envelopes`, buf)
+            FfiConverterULong.write(value.`attachments`, buf)
     }
 }
 

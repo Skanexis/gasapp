@@ -21,7 +21,23 @@ FORBIDDEN_ANDROID='javax\.crypto|java\.security\.(KeyPairGenerator|Signature|Mes
 
 # --- Файлы-исключения (allow-list) ---
 # Любое расширение этого списка требует явного обоснования в ревью.
-ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt'
+#
+# `core/HardwareKey.kt` — та самая платформенная обёртка из комментария
+# выше, только под своим именем. Она заводит в Android Keystore ключ
+# AES-256-GCM и шифрует им 32 байта, вторую половину ключа базы
+# (ADR-017, находка P-5 раздела 23.6). Обратиться к Keystore иначе,
+# чем через `javax.crypto`, нельзя: интерфейс хранилища — это
+# `KeyGenerator` и `Cipher`, и Rust-ядру он недоступен по определению.
+#
+# ⚠️ Никакой криптографии протокола здесь нет и быть не должно:
+# обёртка только прячет и достаёт случайные байты, а выводит из них
+# ключ ядро (`deriveStorageKeyBound`).
+#
+# ⚠️ Исключение появилось не вместе с файлом: `HardwareKey.kt` был
+# добавлен в прошлой сессии, и проверка с тех пор падала. Заметить
+# это было нечем — джоб `no-crypto-in-ui` в CI никто не читал,
+# пока скрипт не запустили руками.
+ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt'
 
 violations=0
 
