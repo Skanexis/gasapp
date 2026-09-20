@@ -264,7 +264,6 @@ pub struct DiscoveryResponse {
     pub device_ids: Vec<Uuid>,
 }
 
-
 /// Регистрация токена push-уведомлений.
 #[derive(Debug, Deserialize)]
 pub struct PushTokenRequest {
@@ -364,6 +363,15 @@ pub struct VerifyRequest {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/accounts/register", post(register))
+        // 🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
+        //
+        // Адресуется устройством, а не аккаунтом: право доказывается
+        // подписью, а подписывает устройство. Аккаунт сервер находит
+        // сам — иначе клиент назвал бы чужой.
+        .route(
+            "/v1/accounts/:device_id",
+            axum::routing::delete(delete_account),
+        )
         .route("/v1/auth/verify", post(verify_auth))
         .route("/v1/discovery/username/:username", get(discovery))
         .route("/v1/keys/:device_id", put(publish_keys))
@@ -619,7 +627,10 @@ async fn take_bundle(
     let now = now_millis();
 
     {
-        let mut limiter = state.bundle_limiter.lock().map_err(|_| ApiError::Internal)?;
+        let mut limiter = state
+            .bundle_limiter
+            .lock()
+            .map_err(|_| ApiError::Internal)?;
 
         if !limiter.allow(key, now) {
             return Err(ApiError::TooManyRequests);
@@ -704,7 +715,6 @@ async fn send_message(
     )
     .await?;
 
-
     // Уведомление после успешной постановки в очередь, а не до:
     // при обратном порядке клиент пришёл бы за конвертом, которого
     // ещё нет, и решил, что уведомление ложное.
@@ -739,7 +749,6 @@ async fn send_message(
     .await;
     Ok(Json(envelope_id))
 }
-
 
 /// Регистрация токена push-уведомлений.
 ///
@@ -787,6 +796,67 @@ async fn fetch_messages(
             })
             .collect(),
     ))
+}
+
+/// Ответ на удаление аккаунта: что именно исчезло.
+#[derive(Debug, Serialize)]
+pub struct AccountDeletedResponse {
+    /// Сколько устройств удалено.
+    pub devices: u64,
+    /// Сколько недоставленных конвертов удалено.
+    pub envelopes: u64,
+    /// Сколько загруженных вложений удалено.
+    pub attachments: u64,
+}
+
+/// 🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
+///
+/// # Почему это отдельный маршрут, а не «перестань пользоваться»
+///
+/// До его появления политика приватности была вынуждена признавать,
+/// что права на удаление у пользователя нет: снос приложения убирал
+/// локальные данные, а на сервере оставались имя, identity-ключ,
+/// предключи и недоставленные конверты. Обещанное право без ручки,
+/// которая его исполняет, — это то самое расхождение документа
+/// со сборкой, ради которого заведено правило 0.1.
+///
+/// # Что делает
+///
+/// Удаляет строку аккаунта; всё остальное уносят каскады схемы
+/// ([`repo::delete_account`]). Затем закрывает сокет устройства:
+/// подпись проверяется один раз, при апгрейде, и открытое соединение
+/// пережило бы удаление.
+///
+/// # Почему ответ сообщает числа
+///
+/// «Готово» без чисел неотличимо от «готово» при пустом запросе.
+/// Всё, что здесь названо, — данные самого запрашивающего.
+///
+/// # ⚠️ Чего этот маршрут не делает
+///
+/// Не удаляет сообщения, уже доставленные собеседникам: они лежат
+/// на их устройствах, и сервер до них не дотянется. Не удаляет
+/// присланные этому аккаунту вложения — сервер не знает, кому они
+/// предназначались, и узнать это значило бы хранить граф отправок
+/// (`0003_attachments.sql`). Они исчезают по сроку в тридцать суток.
+async fn delete_account(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+) -> Result<Json<AccountDeletedResponse>, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let report = repo::delete_account(&state.pool, device_id).await?;
+
+    state.hub.evict(device_id).await;
+
+    Ok(Json(AccountDeletedResponse {
+        devices: report.devices,
+        envelopes: report.envelopes,
+        attachments: report.attachments,
+    }))
 }
 
 /// Подтверждение доставки: конверт удаляется немедленно.
@@ -1186,8 +1256,7 @@ async fn report_sealed_sender(
     )
     .await?;
 
-    let total_reporters =
-        repo::sealed_sender_report_count(&state.pool, reported_account).await?;
+    let total_reporters = repo::sealed_sender_report_count(&state.pool, reported_account).await?;
 
     Ok(Json(SealedReportResponse {
         recorded,

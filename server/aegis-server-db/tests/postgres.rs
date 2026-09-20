@@ -31,6 +31,10 @@ use aegis_server_db::repo::{self, RepoError};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+// Общий с `aegis-server-api` файл: см. пояснение внутри него.
+#[path = "../../test-support/schema.rs"]
+mod schema;
+
 /// Подключается к тестовой базе, либо сообщает о пропуске.
 ///
 /// # Про изоляцию тестов
@@ -44,33 +48,10 @@ use uuid::Uuid;
 /// ([`unique_name`]): тесты не пересекаются по данным, поэтому им
 /// незачем пересекаться по схеме.
 async fn pool() -> Option<PgPool> {
-    use std::sync::OnceLock;
-    use tokio::sync::Mutex;
-
-    static MIGRATED: OnceLock<Mutex<bool>> = OnceLock::new();
-
-    let url = std::env::var("AEGIS_TEST_DATABASE_URL").ok()?;
+    let url = schema::database_url()?;
     let pool = PgPool::connect(&url).await.ok()?;
 
-    let guard = MIGRATED.get_or_init(|| Mutex::new(false));
-    let mut applied = guard.lock().await;
-
-    if !*applied {
-        // `IF NOT EXISTS` в самой миграции нет: она рассчитана на пустую
-        // базу. Здесь схема готовится к прогону, поэтому прежняя сносится.
-        let _ = sqlx::raw_sql(
-            "DROP TABLE IF EXISTS envelopes, one_time_prekeys, signed_prekeys, devices, accounts CASCADE",
-        )
-        .execute(&pool)
-        .await;
-
-        sqlx::raw_sql(include_str!("../../migrations/0001_initial.sql"))
-            .execute(&pool)
-            .await
-            .expect("миграция применяется");
-
-        *applied = true;
-    }
+    schema::bootstrap(&pool).await;
 
     Some(pool)
 }

@@ -21,7 +21,7 @@
 
 pub mod repo;
 
-pub use repo::{Account, Device, Envelope, PreKeyBundle, RepoError};
+pub use repo::{Account, AccountDeletion, Device, Envelope, PreKeyBundle, RepoError};
 
 use std::time::Duration;
 

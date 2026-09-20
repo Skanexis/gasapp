@@ -49,8 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .map_err(|_| "не задана переменная окружения DATABASE_URL")?;
+    let database_url =
+        std::env::var("DATABASE_URL").map_err(|_| "не задана переменная окружения DATABASE_URL")?;
 
     let bind: SocketAddr = std::env::var("AEGIS_BIND")
         .unwrap_or_else(|_| DEFAULT_BIND.to_owned())
@@ -116,9 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // network_security_config.xml. Сертификат и ключ задаются путями
     // в окружении — самоподписанный для локальной проверки,
     // выданный удостоверяющим центром в бою.
-    if let (Ok(cert), Ok(key)) =
-        (std::env::var("AEGIS_TLS_CERT"), std::env::var("AEGIS_TLS_KEY"))
-    {
+    if let (Ok(cert), Ok(key)) = (
+        std::env::var("AEGIS_TLS_CERT"),
+        std::env::var("AEGIS_TLS_KEY"),
+    ) {
         let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
             .await
             .map_err(|error| format!("не удалось прочитать сертификат: {error}"))?;

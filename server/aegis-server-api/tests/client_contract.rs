@@ -40,47 +40,16 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use sqlx::PgPool;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
-/// Малая сложность: боевые 18 бит считались бы секундами на тест.
-const TEST_DIFFICULTY: u32 = 4;
+mod common;
 
-async fn state() -> Option<Arc<AppState>> {
-    use std::sync::OnceLock;
-    use tokio::sync::Mutex;
-
-    static MIGRATED: OnceLock<Mutex<bool>> = OnceLock::new();
-
-    let url = std::env::var("AEGIS_TEST_DATABASE_URL").ok()?;
-    let pool = PgPool::connect(&url).await.ok()?;
-
-    let guard = MIGRATED.get_or_init(|| Mutex::new(false));
-    let mut applied = guard.lock().await;
-
-    if !*applied {
-        let _ = sqlx::raw_sql(
-            "DROP TABLE IF EXISTS envelopes, one_time_prekeys, signed_prekeys, devices, accounts CASCADE",
-        )
-        .execute(&pool)
-        .await;
-        sqlx::raw_sql(include_str!("../../migrations/0001_initial.sql"))
-            .execute(&pool)
-            .await
-            .expect("миграция применяется");
-        *applied = true;
-    }
-
-    let mut state = AppState::new(pool, [0x7Au8; 32]);
-    state.pow_difficulty = TEST_DIFFICULTY;
-
-    Some(Arc::new(state))
-}
+use common::{public_key, signed_request, DeviceKey};
 
 macro_rules! require_state {
     () => {
-        match state().await {
+        match common::state().await {
             Some(state) => state,
             None => {
                 eprintln!("AEGIS_TEST_DATABASE_URL не задан — тест пропущен");
@@ -88,6 +57,35 @@ macro_rules! require_state {
             }
         }
     };
+}
+
+/// Отправляет сырую строку тела **с подписью устройства**.
+///
+/// 🔐 Часть маршрутов требует подписи, и без неё сервер отвечает `401`
+/// ещё до разбора тела — то есть форма запроса остаётся непроверенной,
+/// а тест выглядит упавшим по другой причине. Ровно так два теста
+/// в этом файле были красными всё время, пока набор не запускался.
+async fn call_raw_signed(
+    state: &Arc<AppState>,
+    private: &DeviceKey,
+    method: &str,
+    uri: &str,
+    body: Option<String>,
+) -> (StatusCode, serde_json::Value) {
+    let router = aegis_server_api::router(Arc::clone(state));
+    let raw = body.map(String::into_bytes).unwrap_or_default();
+    let request = signed_request(private, method, uri, "application/json", raw);
+
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+    )
 }
 
 /// Отправляет **сырую строку** тела, как её сформировал бы клиент.
@@ -123,7 +121,7 @@ async fn call_raw(
 
 fn solve(challenge: &[u8]) -> u64 {
     (0u64..100_000)
-        .find(|nonce| pow::verify(challenge, *nonce, TEST_DIFFICULTY).is_ok())
+        .find(|nonce| pow::verify(challenge, *nonce, common::TEST_DIFFICULTY).is_ok())
         .expect("решение находится")
 }
 
@@ -171,11 +169,15 @@ async fn client_publish_keys_shape_is_accepted() {
 
     let challenge = [0x42u8; 32];
     let nonce = solve(&challenge);
+
+    // Ключ настоящий: публикация предключей требует подписи, и
+    // фиктивные 32 байта для неё не годятся.
+    let private: DeviceKey = [0x31u8; 32];
     let register = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
         unique_name("keys"),
         hex::encode([1u8; 32]),
-        hex::encode([2u8; 32]),
+        hex::encode(public_key(&private)),
         hex::encode(challenge),
         nonce,
     );
@@ -193,7 +195,14 @@ async fn client_publish_keys_shape_is_accepted() {
         hex::encode([0xCCu8; 64]),
     );
 
-    let (status, _) = call_raw(&state, "PUT", &format!("/v1/keys/{device_id}"), Some(body)).await;
+    let (status, _) = call_raw_signed(
+        &state,
+        &private,
+        "PUT",
+        &format!("/v1/keys/{device_id}"),
+        Some(body),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::NO_CONTENT, "сервер отверг форму ключей");
 
@@ -230,11 +239,12 @@ async fn client_send_shape_is_accepted() {
 
     let challenge = [0x42u8; 32];
     let nonce = solve(&challenge);
+    let private: DeviceKey = [0x32u8; 32];
     let register = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
         unique_name("send"),
         hex::encode([1u8; 32]),
-        hex::encode([2u8; 32]),
+        hex::encode(public_key(&private)),
         hex::encode(challenge),
         nonce,
     );
@@ -251,8 +261,16 @@ async fn client_send_shape_is_accepted() {
     assert_eq!(status, StatusCode::OK, "сервер отверг форму отправки");
 
     // Ответ со списком конвертов обязан разбираться клиентом.
-    let (status, envelopes) =
-        call_raw(&state, "GET", &format!("/v1/messages/{device_id}"), None).await;
+    //
+    // 🔐 Чтение очереди — за подписью: выдача удаляет конверты.
+    let (status, envelopes) = call_raw_signed(
+        &state,
+        &private,
+        "GET",
+        &format!("/v1/messages/{device_id}"),
+        None,
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     let first = &envelopes[0];
@@ -306,9 +324,7 @@ fn client_and_server_pow_agree() {
     // Значения получены клиентской реализацией (aegis-net::pow).
     let challenge = [0x42u8; 32];
     let nonce = 12345u64;
-    let expected = [
-        0x23, 0xe0, 0x41, 0xf6, 0xcf, 0x4c, 0xc2, 0x6b,
-    ];
+    let expected = [0x23, 0xe0, 0x41, 0xf6, 0xcf, 0x4c, 0xc2, 0x6b];
 
     let actual = aegis_server_api::pow::hash(&challenge, nonce).expect("хеш");
 
@@ -334,7 +350,8 @@ fn client_and_server_pow_agree() {
 /// `aegis-net/src/auth.rs`.
 #[test]
 fn client_and_server_sign_the_same_message() {
-    let message = aegis_server_api::authz::signed_message("GET", "/v1/messages/abc", 1_700_000_000_000);
+    let message =
+        aegis_server_api::authz::signed_message("GET", "/v1/messages/abc", 1_700_000_000_000);
 
     assert_eq!(
         message,

@@ -61,6 +61,76 @@ jobs:
           fi
           echo "OK: toolchain $pinned"
 
+  # ---------------------------------------------------------------------------
+  #  Сервер: отдельный workspace, отдельная лицензия (AGPL), отдельный прогон.
+  #
+  #  ⚠️ До появления этого джоба серверный код в CI не собирался вовсе —
+  #  проверялся только `crates/`. Интеграционные тесты при этом молча
+  #  пропускались без `AEGIS_TEST_DATABASE_URL`, и семь тестов из
+  #  семнадцати были красными всё время, пока считались зелёными:
+  #  подпись в них делалась ed25519, а сервер проверяет XEdDSA.
+  #
+  #  Поэтому база здесь не «если получится», а условие запуска:
+  #  `AEGIS_REQUIRE_DATABASE` превращает пропуск в падение.
+  # ---------------------------------------------------------------------------
+  server:
+    name: server · clippy · tests (postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aegis
+          POSTGRES_PASSWORD: aegis-dev
+          POSTGRES_DB: aegis
+        ports:
+          - 5433:5432
+        # Без проверки готовности первый же тест упирается в базу,
+        # которая ещё поднимается, и падает «не смог подключиться».
+        options: >-
+          --health-cmd "pg_isready -U aegis"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      AEGIS_TEST_DATABASE_URL: postgres://aegis:aegis-dev@localhost:5433/aegis
+      AEGIS_REQUIRE_DATABASE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - name: rustfmt
+        run: cargo fmt --manifest-path server/Cargo.toml --all -- --check
+
+      - name: clippy
+        run: >-
+          cargo clippy --manifest-path server/Cargo.toml
+          --workspace --all-targets --all-features
+
+      # Схему готовит сам набор тестов (server/test-support/schema.rs):
+      # миграции применяются под консультативной блокировкой, один раз
+      # на базу, поэтому три исполняемых файла тестов не мешают друг другу.
+      - name: tests
+        run: >-
+          cargo test --manifest-path server/Cargo.toml
+          --workspace --all-features
+
+      - name: Cargo.lock is committed and up to date
+        run: >-
+          cargo metadata --manifest-path server/Cargo.toml
+          --locked --format-version 1 > /dev/null
+
   cross-compile:
     name: cross-compile ${{ matrix.target }}
     runs-on: ${{ matrix.os }}

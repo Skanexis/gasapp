@@ -58,8 +58,8 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 use curve25519_dalek::{
-    constants::ED25519_BASEPOINT_TABLE, edwards::CompressedEdwardsY,
-    montgomery::MontgomeryPoint, scalar::Scalar,
+    constants::ED25519_BASEPOINT_TABLE, edwards::CompressedEdwardsY, montgomery::MontgomeryPoint,
+    scalar::Scalar,
 };
 use sha2::{Digest, Sha512};
 
@@ -210,8 +210,7 @@ pub fn verify(public: &[u8; KEY_LEN], message: &[u8], signature: &[u8]) -> bool 
         return false;
     };
 
-    let Ok(verifying) =
-        ed25519_dalek::VerifyingKey::from_bytes(&point.compress().to_bytes())
+    let Ok(verifying) = ed25519_dalek::VerifyingKey::from_bytes(&point.compress().to_bytes())
     else {
         return false;
     };
@@ -258,8 +257,7 @@ pub fn split(raw: &[u8]) -> Option<(&[u8], [u8; SIGNATURE_LEN])> {
 #[must_use]
 pub fn subject(payload: &[u8]) -> Option<([u8; ID_LEN], [u8; ID_LEN])> {
     let account = <[u8; ID_LEN]>::try_from(payload.get(1..1 + ID_LEN)?).ok()?;
-    let device =
-        <[u8; ID_LEN]>::try_from(payload.get(1 + ID_LEN..1 + ID_LEN + ID_LEN)?).ok()?;
+    let device = <[u8; ID_LEN]>::try_from(payload.get(1 + ID_LEN..1 + ID_LEN + ID_LEN)?).ok()?;
 
     Some((account, device))
 }
@@ -290,8 +288,7 @@ mod tests {
     const COMPAT_MESSAGE: &[u8] = b"AEGIS-XEDDSA-COMPAT-VECTOR";
 
     /// Публичный ключ вектора: X25519 от приватного `[0x42; 32]`.
-    const COMPAT_PUBLIC: &str =
-        "132c442be010fbd57e72603328aa76e71fccc1503aae219327d14d9c9993f472";
+    const COMPAT_PUBLIC: &str = "132c442be010fbd57e72603328aa76e71fccc1503aae219327d14d9c9993f472";
 
     /// Подпись вектора, посчитанная клиентской реализацией.
     const COMPAT_SIGNATURE: &str = concat!(
@@ -330,7 +327,11 @@ mod tests {
             expected_signature,
             "серверная подпись разошлась с клиентской"
         );
-        assert!(verify(&expected_public, COMPAT_MESSAGE, &expected_signature));
+        assert!(verify(
+            &expected_public,
+            COMPAT_MESSAGE,
+            &expected_signature
+        ));
     }
 
     /// Своя подпись проверяется своим же публичным ключом.
@@ -396,10 +397,7 @@ mod tests {
 
         assert_eq!(split_payload, payload.as_slice());
         assert_eq!(split_signature, signature);
-        assert_eq!(
-            subject(split_payload),
-            Some(([1u8; ID_LEN], [2u8; ID_LEN]))
-        );
+        assert_eq!(subject(split_payload), Some(([1u8; ID_LEN], [2u8; ID_LEN])));
     }
 
     /// Сертификат неверной длины не разбирается.
