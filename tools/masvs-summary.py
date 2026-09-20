@@ -13,6 +13,7 @@
 """
 
 import io
+import os
 import re
 import sys
 
@@ -60,6 +61,74 @@ def collect(text):
     return counts
 
 
+def existing_names(root):
+    """Имена всех файлов репозитория — один обход вместо многих."""
+    names = set()
+
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [
+            d
+            for d in dirs
+            if d not in {"target", "build", ".git", ".gradle", "node_modules"}
+        ]
+
+        names.update(files)
+
+    return names
+
+
+def check_paths(text, root):
+    """Каждый файл, на который ссылается чек-лист, существует.
+
+    🔐 Обоснование в чек-листе — это ссылка на проверяемое место.
+    Ссылка на файл, которого нет, превращает обоснование в слова:
+    читающий не может убедиться, а пишущий не узнаёт, что переименовал
+    или удалил то, на что ссылался.
+
+    ⚠️ Проверяется только существование. Что файл содержит именно то,
+    что обещано строкой чек-листа, проверка не знает, — и это сказано
+    здесь прямо, а не подразумевается. Строка CODE-1 утверждала, что
+    `ios/Package.swift` объявляет `.iOS(.v13)`, когда там уже стояло
+    `.v17`: файл был на месте, а утверждение о нём устарело.
+
+    Возвращает список ненайденных путей.
+    """
+    names = existing_names(root)
+    missing = []
+
+    for quoted in sorted(set(re.findall(r"`([^`\s]+)`", text))):
+        # Схема URI, а не путь: `aegis://…`.
+        if "://" in quoted:
+            continue
+
+        # Ссылка на тест внутри файла: `путь::модуль::имя_теста`.
+        # Проверяется файл, имя теста — не наше дело.
+        quoted = quoted.split("::", 1)[0]
+
+        # Артефакт сборки: до сборки его нет, и это нормально.
+        if quoted.startswith("build/") or "/build/" in quoted:
+            continue
+
+        is_path = "/" in quoted or re.search(
+            r"\.(kt|rs|swift|xml|sh|py|toml|gradle|md|yml|pro)$", quoted
+        )
+
+        if not is_path:
+            continue
+
+        # Сокращение вида `android/app/.../SomeTest.kt` — указание
+        # на файл, а не путь: ищем по имени.
+        if os.path.exists(os.path.join(root, quoted)):
+            continue
+
+        if quoted.rsplit("/", 1)[-1] in names:
+            continue
+
+        missing.append(quoted)
+
+    return missing
+
+
 def main():
     text = io.open(DOC, encoding="utf-8").read()
     counts = collect(text)
@@ -88,6 +157,17 @@ def main():
     if "--check" not in sys.argv:
         print(rendered)
         return 0
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    absent = check_paths(text, root)
+
+    if absent:
+        print("\u0447\u0435\u043a-\u043b\u0438\u0441\u0442 \u0441\u0441\u044b\u043b\u0430\u0435\u0442\u0441\u044f \u043d\u0430 \u043d\u0435\u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u044e\u0449\u0435\u0435:")
+
+        for path in absent:
+            print(f"  {path}")
+
+        return 1
 
     missing = [line for line in lines if line not in text]
 
