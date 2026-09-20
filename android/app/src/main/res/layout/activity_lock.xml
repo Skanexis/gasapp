@@ -12,6 +12,7 @@
   сторонним и видит каждое нажатие.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -27,7 +28,7 @@
         android:contentDescription="@string/lock_icon"
         android:padding="20dp"
         android:src="@drawable/ic_shield"
-        android:tint="@color/accent_base" />
+        app:tint="@color/accent_base" />
 
     <TextView
         android:layout_width="wrap_content"
@@ -108,7 +109,7 @@
             android:contentDescription="@string/delete_digit"
             android:padding="16dp"
             android:src="@drawable/ic_back"
-            android:tint="@color/text_muted" />
+            app:tint="@color/text_muted" />
     </GridLayout>
 
 </LinearLayout>

@@ -7,6 +7,7 @@
   и гравитацию. Две отдельные разошлись бы при первой же правке.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/message_container"
     android:layout_width="match_parent"
@@ -56,7 +57,7 @@
                 android:layout_height="24dp"
                 android:contentDescription="@string/attachment_document"
                 android:src="@drawable/ic_file"
-                android:tint="@color/accent_base" />
+                app:tint="@color/accent_base" />
 
             <LinearLayout
                 android:layout_width="wrap_content"
@@ -117,7 +118,7 @@
                 android:includeFontPadding="false"
                 android:text="@string/message_edited"
                 android:textColor="@color/text_disabled"
-                android:textSize="10sp"
+                android:textSize="12sp"
                 android:visibility="gone"
                 tools:visibility="visible" />
 
@@ -126,7 +127,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_disabled"
-                android:textSize="10sp"
+                android:textSize="12sp"
                 tools:text="14:32" />
 
             <ImageView
@@ -136,7 +137,7 @@
                 android:layout_marginStart="4dp"
                 android:contentDescription="@null"
                 android:src="@drawable/ic_tick_double"
-                android:tint="@color/text_disabled"
+                app:tint="@color/text_disabled"
                 android:visibility="gone"
                 tools:visibility="visible" />
         </LinearLayout>

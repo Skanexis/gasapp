@@ -27,7 +27,7 @@
         android:layout_width="@dimen/icon_m"
         android:layout_height="@dimen/icon_m"
         android:contentDescription="@null"
-        android:tint="@color/text_secondary"
+        app:tint="@color/text_secondary"
         tools:src="@drawable/ic_lock" />
 
     <LinearLayout
