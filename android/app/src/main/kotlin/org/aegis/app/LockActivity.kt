@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.SecureWindow
@@ -97,6 +98,114 @@ class LockActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         applyCooldown()
+        offerBiometricUnlock()
+    }
+
+    /**
+     * 🔐 Предлагает войти по биометрии (MASVS AUTH-2.1).
+     *
+     * Показывается только если человек её включил: конверт с ключом
+     * базы существует. Биометрия — способ не набирать PIN, а не второй
+     * способ вывести ключ, и без включения её здесь нет вовсе.
+     *
+     * # Почему не при задержке
+     *
+     * ⚠️ Во время задержки после неверных попыток биометрия не
+     * предлагается. Иначе перебор PIN обходился бы вообще: подержал
+     * палец — вошёл, при том что задержка ровно для того и стоит,
+     * чтобы вход стоил времени.
+     *
+     * # Что происходит при отказе
+     *
+     * Ничего. Экран PIN уже на месте, и человек вводит код. Отказ
+     * биометрии обязан вести к PIN, а не к отдельному сообщению
+     * об ошибке: неудавшееся подтверждение — штатный случай, а не сбой.
+     */
+    private fun offerBiometricUnlock() {
+        if (Core.isUnlocked || cooldown != null) {
+            return
+        }
+
+        if (!BiometricUnlock.isEnabled(this)) {
+            return
+        }
+
+        if (BiometricUnlock.availability(this) != BiometricUnlock.Availability.Ready) {
+            return
+        }
+
+        val cipher = BiometricUnlock.cipherForUnlocking(this) ?: return
+
+        val prompt = androidx.biometric.BiometricPrompt(
+            this,
+            androidx.core.content.ContextCompat.getMainExecutor(this),
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(
+                    result: androidx.biometric.BiometricPrompt.AuthenticationResult,
+                ) {
+                    unlockWithBiometrics(result)
+                }
+            },
+        )
+
+        val info = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+            .setTitle(getString(R.string.lock_biometric_title))
+            .setSubtitle(getString(R.string.lock_biometric_subtitle))
+            // Запасной путь — PIN этого приложения, а не код устройства:
+            // из кода устройства ключ базы не выводится.
+            .setNegativeButtonText(getString(R.string.lock_biometric_use_pin))
+            .setAllowedAuthenticators(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG,
+            )
+            .setConfirmationRequired(false)
+            .build()
+
+        prompt.authenticate(
+            info,
+            androidx.biometric.BiometricPrompt.CryptoObject(cipher),
+        )
+    }
+
+    /**
+     * Открывает хранилище ключом из конверта.
+     *
+     * 🔐 Ключ живёт ровно до открытия базы и затирается сразу:
+     * массив остаётся в куче до сборки мусора, и снятый в этот момент
+     * дамп памяти отдал бы ключ базы целиком.
+     */
+    private fun unlockWithBiometrics(
+        result: androidx.biometric.BiometricPrompt.AuthenticationResult,
+    ) {
+        val key = BiometricUnlock.open(this, result)
+
+        if (key == null) {
+            // Конверт повреждён. Молча остаёмся на PIN: человеку
+            // здесь нечего делать с этим сообщением.
+            BiometricUnlock.disable(this)
+
+            return
+        }
+
+        lifecycleScope.launch {
+            val opened = withContext(Dispatchers.IO) {
+                runCatching { Core.unlockWithKey(this@LockActivity, key) }
+            }
+
+            key.fill(0)
+
+            if (opened.isSuccess) {
+                PinAttempts.recordSuccess(this@LockActivity)
+                startActivity(Intent(this@LockActivity, ChatListActivity::class.java))
+                finish()
+
+                return@launch
+            }
+
+            // Ключ из конверта не подошёл: база сменила ключ, а конверт
+            // остался прежним. Вход по PIN запечатает новый.
+            Core.close()
+            BiometricUnlock.disable(this@LockActivity)
+        }
     }
 
     /**

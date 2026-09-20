@@ -110,8 +110,23 @@ echo
 echo "генерация биндингов Kotlin по $REFERENCE_ABI"
 mkdir -p "$KOTLIN_OUT"
 
-cargo run --manifest-path "$CRATES/Cargo.toml" -p aegis-ffi --bin uniffi-bindgen -- \
-  generate --library "$REFERENCE_LIB" --language kotlin --out-dir "$KOTLIN_OUT" --no-format
+# ⚠️ Запускается из каталога workspace, а не из корня репозитория.
+#
+# `--manifest-path` говорит cargo, что собирать, но сам
+# `uniffi-bindgen` внутри зовёт `cargo metadata` в **текущем**
+# каталоге. В корне репозитория `Cargo.toml` нет — workspace лежит
+# в `crates/`, — и шаг падал с «could not find Cargo.toml».
+#
+# Заметно это было не сразу: вызывающий, пустивший вывод через
+# `| tail`, получал код возврата `tail`, то есть ноль. Сборка
+# выглядела успешной, а биндинги оставались от прошлого раза.
+(
+  cd "$CRATES" || exit 1
+
+  cargo run -p aegis-ffi --bin uniffi-bindgen -- \
+    generate --library "$REFERENCE_LIB" --language kotlin \
+    --out-dir "$KOTLIN_OUT" --no-format
+)
 
 # ⚠️ uniffi-bindgen завершается с кодом 0, даже если не сгенерировал ничего.
 # Так бывает, когда из библиотеки вырезаны символы UNIFFI_META_*

@@ -33,11 +33,23 @@ FORBIDDEN_ANDROID='javax\.crypto|java\.security\.(KeyPairGenerator|Signature|Mes
 # обёртка только прячет и достаёт случайные байты, а выводит из них
 # ключ ядро (`deriveStorageKeyBound`).
 #
+# `core/BiometricUnlock.kt` — вторая такая обёртка. Она заводит ключ
+# с `setUserAuthenticationRequired(true)` и запечатывает им ключ базы;
+# получить `Cipher`, которым Keystore разрешит работать после
+# подтверждения, можно только через `javax.crypto`.
+#
+# ⚠️ Исключение выдано **файлу-обёртке, а не экранам**. `LockActivity`
+# и `PrivacyActivity` намеренно не знают про `javax.crypto`: они
+# передают в обёртку результат подтверждения целиком, а примитив
+# достаётся внутри. Первая версия биометрии называла `Cipher`
+# в сигнатурах обоих экранов — проверка это поймала, и правильным
+# ответом было убрать тип из UI, а не расширить список.
+#
 # ⚠️ Исключение появилось не вместе с файлом: `HardwareKey.kt` был
 # добавлен в прошлой сессии, и проверка с тех пор падала. Заметить
 # это было нечем — джоб `no-crypto-in-ui` в CI никто не читал,
 # пока скрипт не запустили руками.
-ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt'
+ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/aegis/app/core/BiometricUnlock.kt'
 
 violations=0
 

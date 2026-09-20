@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeleteAccount
 import org.aegis.app.core.SecureWindow
@@ -54,6 +55,7 @@ class PrivacyActivity : AppCompatActivity() {
         bindLastSeen()
         bindScreenshots()
         bindNotificationPreview()
+        bindBiometric()
         bindExport()
         bindDeleteAccount()
     }
@@ -131,6 +133,168 @@ class PrivacyActivity : AppCompatActivity() {
             icon = R.drawable.ic_alert,
             checked = readBool(Settings.NOTIFICATION_PREVIEW, default = false),
         ) { wanted -> writeBool(Settings.NOTIFICATION_PREVIEW, wanted) }
+    }
+
+    /**
+     * 🔐 Вход по отпечатку (MASVS AUTH-2.1).
+     *
+     * # Что переключатель на самом деле делает
+     *
+     * Включение: спрашивает PIN, собирает из него ключ базы
+     * и запечатывает его в конверт, который Android Keystore откроет
+     * только после подтверждения биометрией. Выключение: стирает
+     * конверт и его ключ.
+     *
+     * Биометрия здесь — способ не набирать PIN, а не второй способ
+     * получить доступ. Подпись под переключателем говорит это прямо:
+     * иначе человек решит, что отпечаток защищает переписку **вместо**
+     * PIN, и выберет PIN попроще.
+     *
+     * # Почему PIN спрашивается заново
+     *
+     * Ключ базы живёт в ядре и наружу не отдаётся. Чтобы его
+     * запечатать, его надо собрать, а собрать его без PIN нельзя —
+     * в этом и смысл. Экран не хранит PIN между экранами и не может
+     * взять его «откуда-то».
+     */
+    private fun bindBiometric() {
+        val row = findViewById<View>(R.id.privacy_biometric)
+        val availability = BiometricUnlock.availability(this)
+
+        SettingsToggle.bind(
+            root = row,
+            label = R.string.privacy_biometric,
+            hint = R.string.privacy_biometric_hint,
+            icon = R.drawable.ic_shield,
+            checked = BiometricUnlock.isEnabled(this),
+        ) { wanted ->
+            if (!wanted) {
+                BiometricUnlock.disable(this)
+                toast(R.string.privacy_biometric_disabled)
+
+                return@bind true
+            }
+
+            when (availability) {
+                BiometricUnlock.Availability.Ready -> {
+                    askPinThenEnableBiometric()
+
+                    // Переключатель встанет в нужное положение после
+                    // подтверждения, а не по нажатию: пока человек
+                    // не приложил палец, ничего не включено.
+                    false
+                }
+
+                BiometricUnlock.Availability.NotEnrolled -> {
+                    toast(R.string.privacy_biometric_not_enrolled)
+
+                    false
+                }
+
+                BiometricUnlock.Availability.Unsupported -> {
+                    toast(R.string.privacy_biometric_unsupported)
+
+                    false
+                }
+            }
+        }
+    }
+
+    /** Спрашивает PIN и запечатывает ключ базы. */
+    private fun askPinThenEnableBiometric() {
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            // 🔐 Клавиатура не запоминает PIN для подсказок.
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            setTextColor(
+                androidx.core.content.ContextCompat.getColor(context, R.color.text_primary),
+            )
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
+            .setTitle(R.string.privacy_biometric_pin_title)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                enableBiometric(input.text.toString())
+                input.text.clear()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Показывает подтверждение и запечатывает ключ.
+     *
+     * 🔐 Ключ базы затирается сразу после запечатывания: массив
+     * остаётся в куче до сборки мусора, и дамп памяти, снятый
+     * в этот момент, отдал бы его целиком.
+     */
+    private fun enableBiometric(pin: String) {
+        val cipher = runCatching { BiometricUnlock.cipherForEnabling() }.getOrNull()
+
+        if (cipher == null) {
+            toast(R.string.privacy_biometric_failed)
+
+            return
+        }
+
+        val prompt = androidx.biometric.BiometricPrompt(
+            this,
+            androidx.core.content.ContextCompat.getMainExecutor(this),
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(
+                    result: androidx.biometric.BiometricPrompt.AuthenticationResult,
+                ) {
+                    sealStorageKey(pin, result)
+                }
+            },
+        )
+
+        prompt.authenticate(
+            androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                .setTitle(getString(R.string.lock_biometric_title))
+                .setSubtitle(getString(R.string.privacy_biometric))
+                .setNegativeButtonText(getString(android.R.string.cancel))
+                .setAllowedAuthenticators(
+                    androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG,
+                )
+                .build(),
+            androidx.biometric.BiometricPrompt.CryptoObject(cipher),
+        )
+    }
+
+    private fun sealStorageKey(
+        pin: String,
+        result: androidx.biometric.BiometricPrompt.AuthenticationResult,
+    ) {
+        lifecycleScope.launch {
+            val sealed = withContext(Dispatchers.IO) {
+                runCatching {
+                    // Argon2id: около секунды, главный поток не переживёт.
+                    val key = Core.deriveKey(applicationContext, pin)
+
+                    try {
+                        BiometricUnlock.seal(applicationContext, result, key)
+                    } finally {
+                        key.fill(0)
+                    }
+                }
+            }
+
+            if (sealed.isSuccess) {
+                toast(R.string.privacy_biometric_enabled)
+            } else {
+                BiometricUnlock.disable(applicationContext)
+                toast(R.string.privacy_biometric_failed)
+            }
+
+            bindBiometric()
+        }
+    }
+
+    private fun toast(@androidx.annotation.StringRes message: Int) {
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
     }
 
     /**

@@ -314,6 +314,20 @@ dependencies {
     implementation 'androidx.activity:activity-ktx:1.7.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 
+    // 🔐 Биометрическая разблокировка (MASVS AUTH-2.1).
+    //
+    // Библиотека нужна ради `BiometricPrompt`: он единственный способ
+    // получить `Cipher`, которым Keystore разрешит работать после
+    // подтверждения. Свой диалог поверх `FingerprintManager` такого
+    // не даёт — и сам по себе был бы ровно тем «рисунком поверх
+    // незапертой двери», от которого защищает
+    // `setUserAuthenticationRequired`.
+    //
+    // AndroidX, не Google Play Services: сборка `foss` обязана
+    // оставаться свободной от проприетарных сервисов (раздел 18.2),
+    // и это проверяет `tools/check-foss-apk.sh`.
+    implementation 'androidx.biometric:biometric:1.1.0'
+
     // JNA — обязательна для биндингов UniFFI: сгенерированный aegis.kt
     // обращается к нативной библиотеке через com.sun.jna. Классификатор
     // `@aar` важен: обычный jar не содержит нативных частей JNA под Android,

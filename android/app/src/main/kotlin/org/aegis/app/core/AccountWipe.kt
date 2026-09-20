@@ -65,6 +65,12 @@ object AccountWipe {
             clean = false
         }
 
+        // 🔐 Биометрический конверт и его ключ Keystore: в конверте
+        // лежит ключ базы. Оставить его значило бы оставить вход
+        // в удалённый аккаунт — при том что база уже стёрта, а вот
+        // ключ от неё пережил бы удаление.
+        runCatching { BiometricUnlock.disable(context) }
+
         runCatching { PinAttempts.forget(context) }
 
         for (name in FILES) {
@@ -101,5 +107,6 @@ object AccountWipe {
         "aegis.db-shm",
         "aegis.salt",
         "aegis.hw",
+        "aegis.bio",
     )
 }

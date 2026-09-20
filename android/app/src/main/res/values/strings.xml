@@ -257,7 +257,18 @@
         человек должен до нажатия, а не после: вернуть удалённый
         аккаунт нельзя ни ему, ни оператору сервера.
     -->
-        <string name="privacy_export">Export my data</string>
+            <string name="lock_biometric_title">Unlock AEGIS</string>
+    <string name="lock_biometric_subtitle">Use your fingerprint instead of typing the PIN</string>
+    <string name="lock_biometric_use_pin">Use PIN</string>
+    <string name="privacy_biometric">Unlock with fingerprint</string>
+    <string name="privacy_biometric_hint">Skip typing the PIN. The PIN still works and is still what protects your messages — your fingerprint only unlocks a sealed copy of the key.</string>
+    <string name="privacy_biometric_pin_title">Enter your PIN</string>
+    <string name="privacy_biometric_enabled">Fingerprint unlock is on.</string>
+    <string name="privacy_biometric_disabled">Fingerprint unlock is off.</string>
+    <string name="privacy_biometric_failed">Could not turn on fingerprint unlock. Your PIN still works.</string>
+    <string name="privacy_biometric_not_enrolled">Add a fingerprint in system settings first.</string>
+    <string name="privacy_biometric_unsupported">This device has no strong fingerprint sensor.</string>
+    <string name="privacy_export">Export my data</string>
     <string name="privacy_export_title">Export your data?</string>
     <string name="privacy_export_warning">You will get a JSON file with your username, contacts, conversations and settings.\n\n⚠️ The file is NOT encrypted. Anyone who gets it can read every message in it. Save it somewhere you control, and delete it when you are done.\n\nKeys are never included, so this file cannot restore your account — use a backup for that.</string>
     <string name="privacy_export_continue">Choose where to save</string>
