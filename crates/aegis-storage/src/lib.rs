@@ -1724,6 +1724,40 @@ impl Storage {
         Ok(value.unwrap_or(default))
     }
 
+    /// Перечисляет все сохранённые настройки.
+    ///
+    /// Нужна для экспорта данных (MASVS PRIVACY-3.1): человек имеет
+    /// право забрать и то, как он настроил приложение, а не только
+    /// переписку.
+    ///
+    /// Порядок по ключу: экспорт обязан быть одинаковым при двух
+    /// запусках подряд, иначе два файла не сравнить между собой.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn list_settings(&self) -> Result<Vec<(String, i64)>> {
+        let conn = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = conn
+            .prepare("SELECT key, value FROM settings ORDER BY key")
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(storage_error)?;
+
+        let mut settings = Vec::new();
+
+        for row in rows {
+            settings.push(row.map_err(storage_error)?);
+        }
+
+        Ok(settings)
+    }
+
     /// Записывает числовую настройку приложения.
     ///
     /// # Errors

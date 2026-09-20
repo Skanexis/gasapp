@@ -247,6 +247,12 @@
         человек должен до нажатия, а не после: вернуть удалённый
         аккаунт нельзя ни ему, ни оператору сервера.
     -->
+        <string name="privacy_export">Выгрузить мои данные</string>
+    <string name="privacy_export_title">Выгрузить ваши данные?</string>
+    <string name="privacy_export_warning">Вы получите файл JSON с именем пользователя, контактами, перепиской и настройками.\n\n⚠️ Файл НЕ зашифрован. Любой, кто его получит, прочтёт всю переписку. Сохраняйте туда, где распоряжаетесь вы, и удаляйте, когда он больше не нужен.\n\nКлючей в файле нет, поэтому восстановить из него аккаунт нельзя — для этого есть резервная копия.</string>
+    <string name="privacy_export_continue">Выбрать, куда сохранить</string>
+    <string name="privacy_export_done">Данные выгружены. Помните: файл не зашифрован.</string>
+    <string name="privacy_export_failed">Выгрузка не удалась. Ничего не записано.</string>
     <string name="privacy_section_account">Аккаунт</string>
     <string name="privacy_delete_account">Удалить аккаунт</string>
     <string name="privacy_delete_account_hint">Убирает аккаунт с сервера и всё, что хранится для него на этом устройстве. Обратного пути нет.</string>

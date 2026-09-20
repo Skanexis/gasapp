@@ -118,6 +118,10 @@
             <LinearLayout style="@style/AegisPanel">
 
                 <include
+                    android:id="@+id/privacy_export"
+                    layout="@layout/item_settings_row" />
+
+                <include
                     android:id="@+id/privacy_delete_account"
                     layout="@layout/item_settings_row" />
             </LinearLayout>

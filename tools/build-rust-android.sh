@@ -27,15 +27,23 @@ API_LEVEL=28
 
 PROFILE="release"
 CARGO_PROFILE_FLAG="--release"
-ABIS=(arm64-v8a armeabi-v7a x86_64 x86)
+DEFAULT_ABIS=(arm64-v8a armeabi-v7a x86_64 x86)
+ABIS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --debug) PROFILE="debug"; CARGO_PROFILE_FLAG=""; shift ;;
-    --abi)   ABIS=("$2"); shift 2 ;;
+    # Накапливается, а не заменяется: `--abi a --abi b` собирает обе.
+    # Прежде второй флаг молча отменял первый, и вызывающий получал
+    # одну библиотеку там, где просил две.
+    --abi)   ABIS+=("$2"); shift 2 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ "${#ABIS[@]}" -eq 0 ]]; then
+  ABIS=("${DEFAULT_ABIS[@]}")
+fi
 
 # --- Проверка окружения -----------------------------------------------------
 

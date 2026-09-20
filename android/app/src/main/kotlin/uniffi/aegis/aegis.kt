@@ -884,6 +884,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -964,6 +966,8 @@ fun uniffi_aegis_checksum_method_messenger_delete_for_everyone(
 fun uniffi_aegis_checksum_method_messenger_delete_vault_file(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_edit_message(
+): Short
+fun uniffi_aegis_checksum_method_messenger_export_data(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_fetch_attachment(
 ): Short
@@ -1131,6 +1135,8 @@ fun uniffi_aegis_fn_method_messenger_delete_vault_file(`ptr`: Pointer,`fileId`: 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_edit_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_aegis_fn_method_messenger_export_data(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_fetch_attachment(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`descriptor`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_forget_backup_chain(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1474,6 +1480,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_export_data() != 23159.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_fetch_attachment() != 47811.toShort()) {
@@ -2564,6 +2573,33 @@ public interface MessengerInterface {
     fun `editMessage`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
+     * 🔐 Собирает выгрузку данных пользователя (MASVS PRIVACY-3.1).
+     *
+     * Возвращает JSON: имя аккаунта, контакты, переписка и настройки.
+     *
+     * # ⚠️ Ключей в выгрузке нет
+     *
+     * Ни приватного identity-ключа, ни состояния ратчета, ни ключа
+     * восстановления. Выгрузка — файл, который человек кладёт
+     * в облако и забывает в загрузках; ключ в нём означал бы, что
+     * всю защиту переписки обходит один этот файл.
+     *
+     * Восстановиться из выгрузки поэтому нельзя: для этого есть
+     * [`Messenger::create_backup`], и она зашифрована.
+     *
+     * # ⚠️ Файл не зашифрован
+     *
+     * Иначе он не переносим. Интерфейс обязан сказать это **до**
+     * того, как человек выберет, куда сохранять: получивший файл
+     * получил всю переписку.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунта нет либо чтение не удалось.
+     */
+    fun `exportData`(`nowMillis`: kotlin.Long): kotlin.String
+    
+    /**
      * Скачивает и расшифровывает вложение по его описанию.
      *
      * `descriptor` — те самые байты, что пришли внутри сообщения.
@@ -3411,6 +3447,44 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 }
     }
     
+    
+
+    
+    /**
+     * 🔐 Собирает выгрузку данных пользователя (MASVS PRIVACY-3.1).
+     *
+     * Возвращает JSON: имя аккаунта, контакты, переписка и настройки.
+     *
+     * # ⚠️ Ключей в выгрузке нет
+     *
+     * Ни приватного identity-ключа, ни состояния ратчета, ни ключа
+     * восстановления. Выгрузка — файл, который человек кладёт
+     * в облако и забывает в загрузках; ключ в нём означал бы, что
+     * всю защиту переписки обходит один этот файл.
+     *
+     * Восстановиться из выгрузки поэтому нельзя: для этого есть
+     * [`Messenger::create_backup`], и она зашифрована.
+     *
+     * # ⚠️ Файл не зашифрован
+     *
+     * Иначе он не переносим. Интерфейс обязан сказать это **до**
+     * того, как человек выберет, куда сохранять: получивший файл
+     * получил всю переписку.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунта нет либо чтение не удалось.
+     */
+    @Throws(FfiException::class)override fun `exportData`(`nowMillis`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_export_data(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
     
 
     

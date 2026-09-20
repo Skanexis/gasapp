@@ -28,9 +28,17 @@ sha2.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 
+# Выгрузка данных (MASVS PRIVACY-3.1) отдаётся JSON'ом: его читает
+# и человек, и чужая программа. Собирать его конкатенацией строк
+# нельзя — первое же имя контакта с кавычкой сломало бы файл,
+# а заметил бы это тот, кто пытается свои данные прочитать.
+#
+# Новой зависимостью в графе не становится: serde_json уже приходит
+# через aegis-net, который разбирает ответы сервера.
+serde_json = "1"
+
 [dev-dependencies]
 tempfile = "3"
-serde_json = "1"
 rand_core = { workspace = true, features = ["getrandom"] }
 uuid = { workspace = true }
 aegis-net = { workspace = true }
