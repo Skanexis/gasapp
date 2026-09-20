@@ -43,7 +43,7 @@
 |---|---|---|---|
 | CRYPTO-1 | Современная проверенная криптография | ✅ | Тестовые векторы: `crates/aegis-protocol/tests/rfc_vectors.rs`, `tests/protocol_vectors.rs`; список примитивов — раздел 6.1 |
 | CRYPTO-2.1 | Генерация: только OS CSPRNG | ✅ | Только `OsRng` (`rand_core` с `getrandom`): `grep -rn "thread_rng|rand::random|from_entropy" crates/*/src/` — ноль вхождений |
-| CRYPTO-2.2 | Хранение: аппаратный KEK | 🟡 | **Было ❌ и выдавалось за ✅** — Android Keystore не использовался нигде (P-5 пентеста). Сделано: ключ базы = HKDF(Argon2id(PIN) ‖ секрет из Keystore), `core/HardwareKey.kt`, переход старых баз через `PRAGMA rekey`. Связывание закреплено тестами `pin::tests::different_hardware_secret_gives_a_different_key` и соседними (6 шт.) + `storage::tests::rekey_*` (2 шт.). 🟡, потому что половина на стороне Keystore вне устройства не выполняется и тестами не покрыта; `setUserAuthenticationRequired` не выставлен — ждёт биометрии (AUTH-2.1) |
+| CRYPTO-2.2 | Хранение: аппаратный KEK | 🟡 | **Было ❌ и выдавалось за ✅** — Android Keystore не использовался нигде (P-5 пентеста). Сделано: ключ базы = HKDF(Argon2id(PIN) ‖ секрет из Keystore), `core/HardwareKey.kt`, переход старых баз через `PRAGMA rekey`. Связывание закреплено тестами `pin::tests::different_hardware_secret_gives_a_different_key` и соседними (6 шт.) + `storage::tests::rekey_*` (2 шт.). 🟡, потому что половина на стороне Keystore вне устройства не выполняется и тестами не покрыта. `setUserAuthenticationRequired` теперь выставлен — но на отдельном ключе, конверте биометрии (`core/BiometricUnlock.kt`); на самом KEK его намеренно нет, иначе вход по PIN был бы невозможен без биометрии |
 | CRYPTO-2.3 | Один ключ — одна задача | ✅ | Раздельные метки HKDF; `double_ratchet::tests::each_message_uses_a_fresh_key`, `::nonce_depends_on_message_key`, `::compromised_state_does_not_reveal_past_messages` (дефекты #6–#7, раздел 23.0.1) |
 | CRYPTO-2.4 | Ротация ключей | 🟡 | OPK одноразовые и вычёркиваются (`aegis-core::session`); ротация SPK раз в 7 дней на сервере не автоматизирована |
 | CRYPTO-2.5 | Уничтожение: zeroize | ✅ | `aegis-types::secret` — `ZeroizeOnDrop`; `aegis-protocol::xeddsa::tests::private_key_is_zeroize_on_drop` |
@@ -89,7 +89,7 @@
 
 | # | Требование | Статус | Чем проверено |
 |---|---|---|---|
-| CODE-1 | Актуальная версия платформы | 🟡 | Android ✅: `minSdk = 28`, `targetSdk = 35`. **iOS ❌**: `ios/Package.swift` объявляет `.iOS(.v13)` при требовании раздела 19.1 «iOS 17.0» — расхождение в четыре версии системы |
+| CODE-1 | Актуальная версия платформы | 🟡 | Android ✅: `minSdk = 28`, `targetSdk = 35`. **iOS 🟡**: `ios/Package.swift` объявляет `.iOS(.v17)` — расхождение в четыре версии системы устранено. 🟡, а не ✅: сборка iOS на Windows не проверяется ничем, и объявленная версия — пока только объявление |
 | CODE-2.1 | Rust memory safety | ✅ | Весь протокол и хранилище на Rust |
 | CODE-2.2 | `#![forbid(unsafe_code)]` | ✅ | `[workspace.lints.rust] unsafe_code = "forbid"`; исключение только для `aegis-ffi`, что проверяет job `unsafe-boundary` в `security.yml` |
 | CODE-2.3 | R8/ProGuard в release | ✅ | `minifyEnabled true` + `android/app/proguard-rules.pro`; обфускация видна в `build/outputs/mapping/gmsRelease/mapping.txt` |
