@@ -15,6 +15,7 @@ import org.aegis.app.core.Core
 import org.aegis.app.core.DeviceIntegrity
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
+import org.aegis.app.core.TouchTarget
 import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.Messenger
 
@@ -86,6 +87,11 @@ class SecurityCenterActivity : AppCompatActivity() {
         setContentView(R.layout.activity_security_center)
 
         findViewById<ImageView>(R.id.security_back).setOnClickListener { finish() }
+
+        // 🔐 Иконка 24dp, область нажатия — 48dp (WCAG 2.5.5).
+        // Вид не меняется: увеличивается только то, куда можно
+        // попасть. Подробности — в TouchTarget.
+        TouchTarget.expand(findViewById(R.id.security_back))
 
         bindActions()
     }

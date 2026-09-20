@@ -3931,7 +3931,8 @@ Token:   button.primary.pressed.bg
 | Focus: 2px акцентный контур + 4px dim ring | Snapshot |
 | Состояние **никогда** не только цветом — всегда иконка + текст | Ревью |
 | Dynamic Type до 200% без обрезания | 🔐 **Fingerprint переносится, не обрезается** |
-| VoiceOver/TalkBack: каждая icon-only кнопка имеет метку | Автотест accessibility labels |
+| VoiceOver/TalkBack: каждая icon-only кнопка имеет метку | `ContentDescription` поднят до ошибки lint |
+| Цель нажатия не меньше 48dp | `core/TouchTarget.kt` + `TouchTargetTest`; ⚠️ проверена геометрия, не попадание |
 | Состояние шифрования объявляется при открытии чата | Ручная проверка |
 | Тосты — polite live regions | Ручная проверка |
 
@@ -5013,9 +5014,15 @@ sender целиком, поэтому оно закреплено одним и 
 - [ ] Полное покрытие accessibility — `lintRelease` проходит без ошибок,
       и это удерживается: `abortOnError`, а `SmallSp`, `ContentDescription`,
       `LabelFor`, `ClickableViewAccessibility`, `KeyboardInaccessibleWidget`
-      подняты до ошибок (`android/app/build.gradle`). Размер цели нажатия
-      (48dp) lint не проверяет вовсе — остаётся ручной проверкой
-      на устройстве, поэтому покрытие не полное
+      подняты до ошибок (`android/app/build.gradle`).
+      Размер цели нажатия закрыт `core/TouchTarget.kt`: пять иконок
+      по 24dp (и одна 20dp) получили область нажатия 48dp через
+      `TouchDelegate` — вид не изменился, изменилось только то, куда
+      можно попасть. `TouchTargetTest`, 5 тестов, мутационно проверены.
+      ⚠️ Отметка не ставится: проверена **геометрия делегата**, а не
+      попадание пальцем. Настоящее нажатие и удобство остаются ручной
+      проверкой на устройстве, а `TouchTargetSizeCheck` из Accessibility
+      Scanner требует устройства и lint'у неизвестен
 - [x] 🧪 Тест: fingerprint при 200% Dynamic Type —
       `SafetyNumberDynamicTypeTest`, 5 тестов. Проверяется отсутствие
       многоточия в каждой строке, все 60 цифр, высота вида и отсутствие

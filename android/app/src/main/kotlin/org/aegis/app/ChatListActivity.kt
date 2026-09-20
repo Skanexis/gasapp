@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.TouchTarget
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
@@ -63,12 +64,22 @@ class ChatListActivity : AppCompatActivity() {
             startActivity(Intent(this, SecurityCenterActivity::class.java))
         }
 
+        // 🔐 Иконка 24dp, область нажатия — 48dp (WCAG 2.5.5).
+        // Вид не меняется: увеличивается только то, куда можно
+        // попасть. Подробности — в TouchTarget.
+        TouchTarget.expand(findViewById(R.id.security_center_badge))
+
         bindNavigation()
         BottomNav.highlight(this, BottomNav.Tab.Chats)
 
         findViewById<ImageView>(R.id.chat_list_search).setOnClickListener {
             startActivity(Intent(this, SearchActivity::class.java))
         }
+
+        // 🔐 Иконка 24dp, область нажатия — 48dp (WCAG 2.5.5).
+        // Вид не меняется: увеличивается только то, куда можно
+        // попасть. Подробности — в TouchTarget.
+        TouchTarget.expand(findViewById(R.id.chat_list_search))
         findViewById<ImageView>(R.id.new_chat_button).setOnClickListener { promptNewChat() }
     }
 
