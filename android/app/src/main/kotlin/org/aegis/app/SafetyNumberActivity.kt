@@ -13,10 +13,10 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.QrDrawable
+import android.view.View
+import android.widget.Toast
+import org.aegis.app.core.Core
 import uniffi.aegis.FfiException
-import uniffi.aegis.computeFingerprint
-import uniffi.aegis.formatSafetyNumber
-import uniffi.aegis.generateIdentityPublicKey
 import uniffi.aegis.safetyNumberQr
 
 /**
@@ -29,6 +29,26 @@ import uniffi.aegis.safetyNumberQr
  * 🔐 Само число считает ядро: итеративный SHA-512 на 5200 раундов.
  * Повторять вычисление в Kotlin значило бы завести вторую реализацию,
  * которая разойдётся с первой — и пользователь сверил бы не то.
+ *
+ * # Что здесь было
+ *
+ * 🔴 Экран показывал safety number **двух случайных ключей**:
+ * `generateIdentityPublicKey()` дважды — две свежие пары на каждое
+ * открытие. Цифры менялись от показа к показу, не совпадали
+ * у собеседников никогда и не относились ни к одному из них.
+ * Кнопка «Отметить сверенным» закрывала экран, и только.
+ *
+ * Абзац выше при этом уже был — и описывал экран, которого не было.
+ *
+ * Сверка этих цифр — единственное, что защищает сквозное шифрование
+ * от подмены ключей сервером. Её не было, а экран, выглядевший
+ * как она, был: хуже, чем отсутствие экрана.
+ *
+ * # Почему контакт задаётся счётом, а не именем
+ *
+ * Имя неоднозначно. После смены ключа под одним именем живут две
+ * записи (см. `Contact.keyChanged`), и поиск по имени мог бы показать
+ * цифры **прежнего** ключа — ровно тогда, когда сверка нужнее всего.
  */
 class SafetyNumberActivity : AppCompatActivity() {
 
@@ -56,14 +76,54 @@ class SafetyNumberActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.safety_number_peer).text =
             getString(R.string.safety_number_peer, peerName)
 
+        accountId = intent.getStringExtra(EXTRA_ACCOUNT_ID).orEmpty()
+
         findViewById<AegisButton>(R.id.mark_verified).setOnClickListener {
             // Отметка ставится только вручную: автоматическая обесценила
             // бы верификацию, которая означает «я лично сверил».
-            finish()
+            setVerified(true)
         }
-        findViewById<AegisButton>(R.id.clear_verified).setOnClickListener { finish() }
+        findViewById<AegisButton>(R.id.clear_verified).setOnClickListener { setVerified(false) }
 
         loadSafetyNumber()
+    }
+
+    /** Счёт собеседника: по нему ядро находит его ключ. */
+    private var accountId: String = ""
+
+    /**
+     * 🔐 Ставит или снимает отметку о сверке — в ядре.
+     *
+     * Экран закрывается только после того, как отметка записана:
+     * закрыться при отказе значило бы показать человеку, что сверка
+     * засчитана, когда она не засчитана.
+     */
+    private fun setVerified(verified: Boolean) {
+        if (accountId.isEmpty()) {
+            return
+        }
+
+        lifecycleScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().setContactVerified(
+                        accountId,
+                        verified,
+                        System.currentTimeMillis(),
+                    )
+                }.isSuccess
+            }
+
+            if (saved) {
+                finish()
+            } else {
+                Toast.makeText(
+                    this@SafetyNumberActivity,
+                    R.string.ffi_error,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
     }
 
     /**
@@ -75,16 +135,17 @@ class SafetyNumberActivity : AppCompatActivity() {
      */
     private fun loadSafetyNumber() {
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val local = generateIdentityPublicKey()
-                    val remote = generateIdentityPublicKey()
+            // 🔐 Без счёта собеседника цифр нет — и подставлять вместо
+            // них нечего. Любое «правдоподобное» число здесь было бы
+            // тем самым дефектом, который тут исправлен.
+            if (accountId.isEmpty()) {
+                showUnavailable()
 
-                    formatSafetyNumber(
-                        computeFingerprint(local, LOCAL_ID),
-                        computeFingerprint(remote, REMOTE_ID),
-                    )
-                }
+                return@launch
+            }
+
+            val result = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().safetyNumberWith(accountId) }
             }
 
             result
@@ -99,13 +160,26 @@ class SafetyNumberActivity : AppCompatActivity() {
                 // намеренно неинформативен, поэтому в UI показывается
                 // собственная строка, а не `e.message`.
                 .onFailure { error ->
-                    if (error is FfiException) {
-                        digits.text = getString(R.string.ffi_error)
+                    if (error is FfiException || error is IllegalStateException) {
+                        showUnavailable()
                     } else {
                         throw error
                     }
                 }
         }
+    }
+
+    /**
+     * Цифр нет: контакт неизвестен либо хранилище заперто.
+     *
+     * 🔐 Кнопки отметки прячутся. Отметить сверенным контакт, цифры
+     * которого не показаны, значило бы засчитать сверку, которой
+     * не было.
+     */
+    private fun showUnavailable() {
+        digits.text = getString(R.string.ffi_error)
+        findViewById<AegisButton>(R.id.mark_verified).visibility = View.GONE
+        findViewById<AegisButton>(R.id.clear_verified).visibility = View.GONE
     }
 
 
@@ -127,14 +201,14 @@ class SafetyNumberActivity : AppCompatActivity() {
         view.setImageBitmap(QrDrawable.render(matrix, side))
     }
     companion object {
-        /** Имя собеседника для подписи экрана. */
+        /** Имя собеседника — только для подписи экрана. */
         const val EXTRA_PEER_NAME = "peer_name"
 
-        /** Идентификатор локальной стороны для привязки отпечатка. */
-        private val LOCAL_ID = "local".toByteArray()
-
-        /** Идентификатор удалённой стороны. */
-        private val REMOTE_ID = "remote".toByteArray()
+        /**
+         * Счёт собеседника. По нему, а не по имени, ядро находит ключ:
+         * имя после смены ключа неоднозначно.
+         */
+        const val EXTRA_ACCOUNT_ID = "account_id"
 
         /**
          * Сторона QR, если разметка ещё не измерена.

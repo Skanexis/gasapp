@@ -27,6 +27,7 @@
 //! обращений к `aegis-protocol`. Это граница, за которой начинается
 //! проверяемый фаззингом код.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use aegis_backup::RecoveryKey;
@@ -42,6 +43,7 @@ use aegis_protocol::keys::{
     SignedPreKey,
 };
 use aegis_protocol::prekeys::{self, PreKeySecrets};
+use aegis_protocol::{Fingerprint, SafetyNumber};
 use aegis_storage::{MessageStatus, Storage, StoredMessage, VaultFileRow};
 
 use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
@@ -105,6 +107,22 @@ pub struct Contact {
     pub chat_id: Option<ChatId>,
     /// Подтверждён ли контакт сверкой safety number.
     pub verified: bool,
+    /// 🔐 Это имя уже известно под **другим** ключом.
+    ///
+    /// То есть либо собеседник переустановил приложение или
+    /// восстановился из копии, либо кто-то занял его имя, либо
+    /// подсунутая ссылка выдаёт чужой ключ за его.
+    ///
+    /// Отличить эти случаи не может ни сервер, ни приложение —
+    /// только сверка safety number вживую. Поэтому здесь не отказ
+    /// и не молчание, а признак: показать человеку, что ключ
+    /// не тот, которым он пользовался раньше.
+    ///
+    /// ⚠️ Прежний контакт при этом **остаётся на месте**: счёт
+    /// выводится из ключа, так что новый ключ заводит новую запись,
+    /// а не переписывает старую. Верификация старой записи не
+    /// переносится на новую никогда.
+    pub key_changed: bool,
 }
 
 /// Найденное сообщение вместе с чатом, которому оно принадлежит.
@@ -978,6 +996,42 @@ impl<T: Transport> Client<T> {
         let (identity, _) = self.load_identity()?;
         let chat_id = derive_chat_id(identity.public().public(), &link.identity);
 
+        // 🔐 Смена ключа ищется по имени, а не по счёту.
+        //
+        // Счёт контакта выводится из первых шестнадцати байт
+        // identity-ключа, поэтому сменившийся ключ даёт другой счёт:
+        // тихо переписать прежнюю запись он не может — но и на неё
+        // не попадает, так что по счёту смена не видна никогда.
+        //
+        // Видна она по имени. «То же имя при другом ключе» — это
+        // и есть смена ключа, как её наблюдает получатель.
+        //
+        // ⚠️ Добавление не отменяется. Смена бывает законной —
+        // переустановка, восстановление из копии, — и отказ
+        // означал бы, что после переустановки с человеком нельзя
+        // связаться вовсе. Отличить законную смену от подмены может
+        // только сверка safety number вживую, поэтому здесь признак
+        // для показа, а не решение.
+        let key_changed = match username.as_deref() {
+            None => false,
+            Some(name) => {
+                let known = self.storage.contact_identity_by_username(name)?;
+
+                match known {
+                    Some(previous) if previous != link.identity.as_bytes() => {
+                        // Журнал безопасности: законная смена и подмена
+                        // выглядят одинаково, и человек должен иметь
+                        // возможность увидеть, когда она случилась.
+                        self.storage
+                            .log_security_event("contact_identity_changed", None, now)?;
+
+                        true
+                    }
+                    _ => false,
+                }
+            }
+        };
+
         self.storage.save_contact(
             &account_id,
             link.identity.as_bytes(),
@@ -992,6 +1046,7 @@ impl<T: Transport> Client<T> {
             username,
             chat_id: Some(chat_id),
             verified: false,
+            key_changed,
         })
     }
 
@@ -1314,16 +1369,150 @@ impl<T: Transport> Client<T> {
         Ok(self.storage.load_own_keys()?.and_then(|keys| keys.username))
     }
 
+    /// Safety number с контактом.
+    ///
+    /// # Что здесь было
+    ///
+    /// 🔴 Экран сверки считал safety number **двух случайных ключей**:
+    /// `generateIdentityPublicKey()` дважды, то есть две свежие пары
+    /// на каждое открытие. Цифры были разными при каждом показе,
+    /// не совпадали у собеседников никогда и не имели отношения
+    /// ни к одному из них.
+    ///
+    /// Единственная защита сквозного шифрования от подмены ключей
+    /// сервером — сверка этих цифр человеком. Её не было, а экран,
+    /// который выглядел как она, был.
+    ///
+    /// # Почему идентификатор выводится из ключа
+    ///
+    /// Отпечаток привязывается к владельцу идентификатором, и обе
+    /// стороны обязаны взять для каждого участника **один и тот же**.
+    /// Счёт собеседника для этого не годится: добавленный по имени,
+    /// он серверный, а узнанный из входящего сообщения — выведенный
+    /// из ключа. Возьми одна сторона первый, другая второй, и цифры
+    /// разошлись бы на честном канале — ложная тревога о подмене.
+    ///
+    /// Одинаково обе стороны знают только сам ключ. Поэтому
+    /// идентификатор каждого участника выводится из его ключа.
+    ///
+    /// # Почему одинаково у обоих
+    ///
+    /// [`SafetyNumber::new`] упорядочивает отпечатки, так что Алиса
+    /// и Боб получают одну последовательность, хотя «свой» и «чужой»
+    /// у них противоположны.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — такого контакта нет;
+    /// [`AegisError::Uninitialized`] — свои ключи не созданы;
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn safety_number(&self, contact: &AccountId) -> Result<String> {
+        let (identity, _) = self.load_identity()?;
+        let own = *identity.public().public();
+
+        let peer_bytes = self
+            .storage
+            .get_contact_identity(contact)?
+            .ok_or(AegisError::Malformed)?;
+
+        let peer = PublicKeyBytes::new(
+            peer_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| AegisError::Malformed)?,
+        );
+
+        Ok(safety_number_of(&own, &peer))
+    }
+
+    /// Отмечает контакт сверенным или снимает отметку.
+    ///
+    /// # Что здесь было
+    ///
+    /// 🔴 Ничего. Кнопка «Отметить сверенным» закрывала экран, и только.
+    /// `Storage::set_contact_verified` вызывался из тестов и больше
+    /// ниоткуда, а комментарий в хранилище обещал, что время сверки
+    /// живёт в журнале безопасности, — туда не писал никто.
+    ///
+    /// # Про журнал
+    ///
+    /// 🔐 И отметка, и её снятие записываются. Отметка — решение
+    /// человека «я лично сверил»; когда оно было принято и когда
+    /// отозвано, должно быть видно потом, а не только сейчас.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — такого контакта нет;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn set_contact_verified(
+        &self,
+        contact: &AccountId,
+        verified: bool,
+        now: Timestamp,
+    ) -> Result<()> {
+        // Отметить можно только известный контакт: иначе в таблице
+        // сверенных завелась бы запись без ключа, и сверка
+        // относилась бы неизвестно к чему.
+        if self.storage.get_contact_identity(contact)?.is_none() {
+            return Err(AegisError::Malformed);
+        }
+
+        self.storage.set_contact_verified(contact, verified, now)?;
+
+        self.storage.log_security_event(
+            if verified {
+                "contact_verified"
+            } else {
+                "contact_verification_revoked"
+            },
+            None,
+            now,
+        )?;
+
+        Ok(())
+    }
+
     /// Перечисляет контакты, недавно добавленные первыми.
     ///
     /// # Errors
     ///
     /// [`AegisError::Storage`] — чтение не удалось.
     pub fn contacts(&self) -> Result<Vec<Contact>> {
-        self.storage
-            .list_contacts(MAX_CONTACTS_TO_LIST)?
+        let rows = self.storage.list_contacts(MAX_CONTACTS_TO_LIST)?;
+
+        // 🔐 Имя, встречающееся больше одного раза, — это имя,
+        // известное под разными ключами.
+        //
+        // Счёт контакта выводится из его identity-ключа, поэтому
+        // сменившийся ключ не переписывает прежнюю запись, а заводит
+        // новую. В списке это выглядит как два контакта с одним
+        // именем — и ровно так смену ключа и видно.
+        //
+        // ⚠️ Который из двух настоящий, отсюда не определить.
+        // Помечаются оба: выбор между ними — это сверка safety
+        // number, а не догадка приложения.
+        let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+
+        for row in &rows {
+            if let Some(name) = row.username.as_deref() {
+                let count = seen.entry(name).or_insert(0);
+                *count = count.saturating_add(1);
+            }
+        }
+
+        let ambiguous: BTreeSet<String> = seen
             .into_iter()
+            .filter(|(_, count)| *count > 1)
+            .map(|(name, _)| name.to_owned())
+            .collect();
+
+        rows.into_iter()
             .map(|row| {
+                let key_changed = row
+                    .username
+                    .as_deref()
+                    .is_some_and(|name| ambiguous.contains(name));
+
                 Ok(Contact {
                     account_id: row.account_id,
                     identity: PublicKeyBytes::new(
@@ -1335,6 +1524,7 @@ impl<T: Transport> Client<T> {
                     username: row.username,
                     chat_id: row.chat_id,
                     verified: row.verified,
+                    key_changed,
                 })
             })
             .collect()
@@ -2162,6 +2352,22 @@ fn expected_payload_len(size: u64) -> Result<usize> {
 const MAX_CONTACTS_TO_LIST: u32 = 256;
 
 /// Выводит идентификатор аккаунта из identity-ключа контакта.
+/// Safety number двух identity-ключей.
+///
+/// Вынесено отдельно, чтобы тест мог сравнить результат обеих
+/// сторон, не поднимая двух клиентов.
+///
+/// 🔐 Идентификатор каждого участника выводится из **его** ключа
+/// (см. [`Client::safety_number`]): только так обе стороны берут
+/// для него одно и то же.
+#[must_use]
+pub fn safety_number_of(own: &PublicKeyBytes, peer: &PublicKeyBytes) -> String {
+    let own_print = Fingerprint::compute(own, peer_account(own).as_bytes());
+    let peer_print = Fingerprint::compute(peer, peer_account(peer).as_bytes());
+
+    SafetyNumber::new(&own_print, &peer_print).to_display_block()
+}
+
 fn peer_account(identity: &PublicKeyBytes) -> AccountId {
     let mut bytes = [0u8; 16];
     bytes.copy_from_slice(identity.as_bytes().get(..16).unwrap_or(&[0u8; 16]));

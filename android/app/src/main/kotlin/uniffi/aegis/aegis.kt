@@ -888,6 +888,10 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1009,6 +1013,8 @@ fun uniffi_aegis_checksum_method_messenger_rekey_storage(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_restore_backup(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_safety_number_with(
+): Short
 fun uniffi_aegis_checksum_method_messenger_seal_vault(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_sealed_sender_enabled(
@@ -1028,6 +1034,8 @@ fun uniffi_aegis_checksum_method_messenger_send_reaction(
 fun uniffi_aegis_checksum_method_messenger_send_read_receipt(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_send_typing(
+): Short
+fun uniffi_aegis_checksum_method_messenger_set_contact_verified(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_set_disappearing_timer(
 ): Short
@@ -1179,6 +1187,8 @@ fun uniffi_aegis_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: Rust
 ): Unit
 fun uniffi_aegis_fn_method_messenger_restore_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`links`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_safety_number_with(`ptr`: Pointer,`accountId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_seal_vault(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_sealed_sender_enabled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1198,6 +1208,8 @@ fun uniffi_aegis_fn_method_messenger_send_reaction(`ptr`: Pointer,`peerUsername`
 fun uniffi_aegis_fn_method_messenger_send_read_receipt(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`untilMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_send_typing(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`active`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_set_contact_verified(`ptr`: Pointer,`accountId`: RustBuffer.ByValue,`verified`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_set_disappearing_timer(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`seconds`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1548,6 +1560,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_restore_backup() != 31001.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_safety_number_with() != 31899.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_seal_vault() != 51619.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1576,6 +1591,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_send_typing() != 53449.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_set_contact_verified() != 21391.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_set_disappearing_timer() != 2849.toShort()) {
@@ -2861,6 +2879,26 @@ public interface MessengerInterface {
     fun `restoreBackup`(`recoveryKey`: kotlin.String, `links`: List<kotlin.ByteArray>, `nowMillis`: kotlin.Long): FfiRestore
     
     /**
+     * Safety number с контактом.
+     *
+     * 🔴 Прежде экран сверки считал цифры по двум **случайным** ключам
+     * (`generate_identity_public_key` дважды). Настоящих ключей
+     * в расчёте не было, и совпасть у собеседников цифры не могли.
+     *
+     * ⚠️ Контакт задаётся счётом, а не именем. Имя неоднозначно:
+     * после смены ключа под одним именем живут две записи, и поиск
+     * по имени мог бы показать цифры **прежнего** ключа — ровно
+     * в тот момент, когда сверка нужнее всего.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — счёт не разбирается;
+     * [`FfiError::Core`] — такого контакта нет либо свои ключи
+     * не прочитались.
+     */
+    fun `safetyNumberWith`(`accountId`: kotlin.String): kotlin.String
+    
+    /**
      * Закрывает vault и обнуляет его ключ.
      *
      * # Errors
@@ -2983,6 +3021,19 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — отправка не удалась.
      */
     fun `sendTyping`(`peerUsername`: kotlin.String, `active`: kotlin.Boolean, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Отмечает контакт сверенным или снимает отметку.
+     *
+     * 🔴 Прежде кнопка «Отметить сверенным» закрывала экран, и только.
+     * Отметку в продукте не ставил никто.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — счёт не разбирается;
+     * [`FfiError::Core`] — такого контакта нет либо запись не удалась.
+     */
+    fun `setContactVerified`(`accountId`: kotlin.String, `verified`: kotlin.Boolean, `nowMillis`: kotlin.Long)
     
     /**
      * Задаёт таймер исчезающих сообщений для чата.
@@ -3982,6 +4033,37 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Safety number с контактом.
+     *
+     * 🔴 Прежде экран сверки считал цифры по двум **случайным** ключам
+     * (`generate_identity_public_key` дважды). Настоящих ключей
+     * в расчёте не было, и совпасть у собеседников цифры не могли.
+     *
+     * ⚠️ Контакт задаётся счётом, а не именем. Имя неоднозначно:
+     * после смены ключа под одним именем живут две записи, и поиск
+     * по имени мог бы показать цифры **прежнего** ключа — ровно
+     * в тот момент, когда сверка нужнее всего.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — счёт не разбирается;
+     * [`FfiError::Core`] — такого контакта нет либо свои ключи
+     * не прочитались.
+     */
+    @Throws(FfiException::class)override fun `safetyNumberWith`(`accountId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_safety_number_with(
+        it, FfiConverterString.lower(`accountId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Закрывает vault и обнуляет его ключ.
      *
      * # Errors
@@ -4204,6 +4286,29 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_send_typing(
         it, FfiConverterString.lower(`peerUsername`),FfiConverterBoolean.lower(`active`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Отмечает контакт сверенным или снимает отметку.
+     *
+     * 🔴 Прежде кнопка «Отметить сверенным» закрывала экран, и только.
+     * Отметку в продукте не ставил никто.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — счёт не разбирается;
+     * [`FfiError::Core`] — такого контакта нет либо запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `setContactVerified`(`accountId`: kotlin.String, `verified`: kotlin.Boolean, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_contact_verified(
+        it, FfiConverterString.lower(`accountId`),FfiConverterBoolean.lower(`verified`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     
@@ -4943,7 +5048,20 @@ data class FfiContact (
     /**
      * Подтверждён ли контакт сверкой safety number.
      */
-    var `verified`: kotlin.Boolean
+    var `verified`: kotlin.Boolean, 
+    /**
+     * 🔐 Это имя уже известно под **другим** ключом.
+     *
+     * Либо собеседник переустановил приложение или восстановился
+     * из копии, либо кто-то занял его имя, либо подсунутая ссылка
+     * выдаёт чужой ключ за его. Отличить может только сверка
+     * safety number вживую.
+     *
+     * ⚠️ Приложение обязано это показать. Добавление не отменяется
+     * и прежний контакт остаётся на месте: смена ключа заводит
+     * новую запись, а верификация старой на неё не переносится.
+     */
+    var `keyChanged`: kotlin.Boolean
 ) {
     
     companion object
@@ -4960,6 +5078,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -4968,7 +5087,8 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterByteArray.allocationSize(value.`identity`) +
             FfiConverterOptionalString.allocationSize(value.`username`) +
             FfiConverterOptionalString.allocationSize(value.`chatId`) +
-            FfiConverterBoolean.allocationSize(value.`verified`)
+            FfiConverterBoolean.allocationSize(value.`verified`) +
+            FfiConverterBoolean.allocationSize(value.`keyChanged`)
     )
 
     override fun write(value: FfiContact, buf: ByteBuffer) {
@@ -4977,6 +5097,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterOptionalString.write(value.`username`, buf)
             FfiConverterOptionalString.write(value.`chatId`, buf)
             FfiConverterBoolean.write(value.`verified`, buf)
+            FfiConverterBoolean.write(value.`keyChanged`, buf)
     }
 }
 

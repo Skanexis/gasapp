@@ -929,11 +929,27 @@ class ChatActivity : AppCompatActivity() {
 
     private fun timeNow(): String = formatTime(System.currentTimeMillis())
 
+    /**
+     * Открывает сверку safety number с собеседником этого чата.
+     *
+     * 🔐 Собеседник находится по чату, а не по имени. Чат выводится
+     * из обоих identity-ключей и однозначен; имя после смены ключа —
+     * нет, и поиск по нему мог бы показать цифры прежнего ключа.
+     */
     private fun openSafetyNumber(peerName: String) {
-        startActivity(
-            Intent(this, SafetyNumberActivity::class.java)
-                .putExtra(SafetyNumberActivity.EXTRA_PEER_NAME, peerName),
-        )
+        lifecycleScope.launch {
+            val accountId = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().contacts().firstOrNull { it.chatId == chatId }?.accountId
+                }.getOrNull()
+            }
+
+            startActivity(
+                Intent(this@ChatActivity, SafetyNumberActivity::class.java)
+                    .putExtra(SafetyNumberActivity.EXTRA_ACCOUNT_ID, accountId.orEmpty())
+                    .putExtra(SafetyNumberActivity.EXTRA_PEER_NAME, peerName),
+            )
+        }
     }
 
 

@@ -149,11 +149,16 @@ class ContactProfileActivity : AppCompatActivity() {
      * полагаются.
      */
     private fun verify() {
-        val peer = contact?.username ?: return
+        // ⚠️ Прежде здесь стояло `contact?.username ?: return`: контакт
+        // без имени — добавленный по ссылке, где имени нет, — сверить
+        // было нельзя вовсе. Имя нужно только для подписи экрана;
+        // ключ ядро находит по счёту.
+        val current = contact ?: return
 
         startActivity(
             Intent(this, SafetyNumberActivity::class.java)
-                .putExtra(SafetyNumberActivity.EXTRA_PEER_NAME, peer),
+                .putExtra(SafetyNumberActivity.EXTRA_ACCOUNT_ID, current.accountId)
+                .putExtra(SafetyNumberActivity.EXTRA_PEER_NAME, current.username.orEmpty()),
         )
     }
 

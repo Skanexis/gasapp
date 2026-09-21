@@ -35,7 +35,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use aegis_core::client::Client;
+use aegis_core::client::{Client, Contact};
 use aegis_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
     RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest, SendRequest,
@@ -44,7 +44,7 @@ use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::xeddsa;
 use aegis_storage::Storage;
-use aegis_types::{PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
+use aegis_types::{AccountId, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
 use sha2::{Digest, Sha256};
 
 /// Приватный ключ подписи сертификатов у поддельного сервера.
@@ -215,16 +215,6 @@ impl FakeServer {
             .queues
             .get(device_id)
             .map_or(0, Vec::len)
-    }
-
-    /// Сколько запросов пришло по префиксу пути.
-    fn request_count(&self, prefix: &str) -> usize {
-        self.state
-            .borrow()
-            .requests
-            .iter()
-            .filter(|(path, _)| path.starts_with(prefix))
-            .count()
     }
 
     /// Сколько раз устройство публиковало предключи.
@@ -842,12 +832,16 @@ fn link_with_mismatched_name_is_rejected() {
     );
 }
 
-/// 🔐 Смена ключа у известного контакта не проходит молча.
+/// Повторное добавление той же ссылки не задваивает контакт.
 ///
-/// Иначе пересылка одной ссылки подменяла бы ключ собеседника,
-/// которого пользователь уже сверил.
+/// ⚠️ Тест назывался `key_change_via_link_is_rejected` и обещал
+/// в комментарии, что смена ключа «не проходит молча». Проверял он
+/// при этом другое: ту же самую ссылку, добавленную дважды. Смены
+/// ключа в нём не было вовсе, и зелёным он был всегда.
+///
+/// Настоящая проверка — `a_new_key_for_a_known_name_is_flagged` ниже.
 #[test]
-fn key_change_via_link_is_rejected() {
+fn re_adding_the_same_link_is_idempotent() {
     let server = FakeServer::new();
     let dir = tempfile::tempdir().expect("временный каталог");
 
@@ -875,6 +869,269 @@ fn key_change_via_link_is_rejected() {
         alice.contacts().expect("список").len(),
         1,
         "повтор задвоил контакт"
+    );
+}
+
+/// 🔐 Новый ключ под знакомым именем помечается как смена ключа.
+///
+/// # Почему по имени, а не по счёту
+///
+/// Счёт контакта выводится из первых шестнадцати байт его
+/// identity-ключа. Поэтому сменившийся ключ тихо переписать прежнюю
+/// запись **не может** — но и на неё не попадает: он заводит новую.
+/// По счёту смена не видна никогда, и искать её там бесполезно.
+///
+/// Видна она по имени: «то же имя при другом ключе» — это и есть
+/// смена ключа, как её наблюдает получатель.
+///
+/// # Что именно проверяется
+///
+/// Не отказ. Смена бывает законной — переустановка, восстановление
+/// из копии, — и отказ означал бы, что после переустановки
+/// с человеком нельзя связаться вовсе. Проверяется, что признак
+/// выставлен: решать, тот ли это собеседник, человек будет сверкой
+/// safety number, но узнать о смене он обязан.
+#[test]
+fn a_new_key_for_a_known_name_is_flagged() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    let first = alice
+        .add_contact_from_link(&bob.own_contact_link().expect("ссылка Боба"), now())
+        .expect("контакт добавлен");
+
+    assert!(
+        !first.key_changed,
+        "первое добавление не может быть сменой ключа"
+    );
+
+    // Боб переустановил приложение: чистая база, то же имя,
+    // другой identity-ключ. Сервер отдаёт по имени «bob» уже его.
+    let bob_again = Client::new(server.clone(), open_storage(&dir, "bob-again.db"));
+
+    bob_again
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован заново");
+
+    let second = alice
+        .add_contact_from_link(
+            &bob_again.own_contact_link().expect("новая ссылка Боба"),
+            now(),
+        )
+        .expect("контакт добавлен");
+
+    assert_ne!(
+        second.identity, first.identity,
+        "заготовка теста: ключ не сменился, проверять нечего"
+    );
+
+    assert!(
+        second.key_changed,
+        "новый ключ под знакомым именем не помечен как смена ключа"
+    );
+
+    // 🔐 Прежний контакт остаётся на месте: верификация старой записи
+    // не может перенестись на новый ключ.
+    let contacts = alice.contacts().expect("список контактов");
+
+    assert_eq!(
+        contacts.len(),
+        2,
+        "новый ключ должен заводить новую запись, а не переписывать прежнюю"
+    );
+
+    assert!(
+        contacts.iter().all(|contact| contact.key_changed),
+        "имя, известное под двумя ключами, не помечено в списке"
+    );
+}
+
+/// Алиса и Боб, добавившие друг друга по ссылкам.
+///
+/// Возвращает клиентов и контакты, которыми каждый видит другого.
+fn two_mutual_contacts(
+    server: &FakeServer,
+    dir: &tempfile::TempDir,
+) -> (Client<FakeServer>, Client<FakeServer>, Contact, Contact) {
+    let alice = Client::new(server.clone(), open_storage(dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(dir, "bob.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+    bob.register("bob", now(), &mut OsRng)
+        .expect("Боб зарегистрирован");
+
+    let bob_seen_by_alice = alice
+        .add_contact_from_link(&bob.own_contact_link().expect("ссылка Боба"), now())
+        .expect("Алиса добавила Боба");
+    let alice_seen_by_bob = bob
+        .add_contact_from_link(&alice.own_contact_link().expect("ссылка Алисы"), now())
+        .expect("Боб добавил Алису");
+
+    (alice, bob, bob_seen_by_alice, alice_seen_by_bob)
+}
+
+/// 🔐 У собеседников safety number совпадает.
+///
+/// Это единственное свойство, ради которого safety number существует:
+/// два человека сравнивают цифры, и совпадение означает, что ключи
+/// между ними не подменены.
+///
+/// ⚠️ Экран сверки считал цифры по **двум случайным ключам** —
+/// `generateIdentityPublicKey()` дважды на каждое открытие. Совпасть
+/// у собеседников они не могли никогда.
+#[test]
+fn safety_numbers_match_on_both_sides() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let (alice, bob, bob_contact, alice_contact) = two_mutual_contacts(&server, &dir);
+
+    let seen_by_alice = alice
+        .safety_number(&bob_contact.account_id)
+        .expect("safety number у Алисы");
+    let seen_by_bob = bob
+        .safety_number(&alice_contact.account_id)
+        .expect("safety number у Боба");
+
+    assert_eq!(
+        seen_by_alice.chars().filter(char::is_ascii_digit).count(),
+        60,
+        "safety number не из 60 цифр (ADR-022)"
+    );
+
+    assert_eq!(
+        seen_by_alice, seen_by_bob,
+        "у собеседников разные safety number — сверка невозможна"
+    );
+}
+
+/// 🔐 Safety number не меняется от показа к показу.
+///
+/// Прежний экран выдавал новые цифры при каждом открытии: сверить
+/// их с собеседником было нельзя даже в принципе.
+#[test]
+fn a_safety_number_is_the_same_every_time() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let (alice, _bob, bob_contact, _) = two_mutual_contacts(&server, &dir);
+
+    let first = alice
+        .safety_number(&bob_contact.account_id)
+        .expect("первый показ");
+    let second = alice
+        .safety_number(&bob_contact.account_id)
+        .expect("второй показ");
+
+    assert_eq!(first, second, "safety number меняется от показа к показу");
+}
+
+/// 🔐 Подменённый ключ даёт другие цифры.
+///
+/// Ровно то, что сверка должна обнаружить: сервер подсунул Алисе
+/// вместо ключа Боба ключ Мэллори. Цифры Алисы и Боба обязаны
+/// разойтись — иначе сверка ничего не проверяет.
+#[test]
+fn a_substituted_key_shows_a_different_safety_number() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let (alice, bob, _, alice_contact) = two_mutual_contacts(&server, &dir);
+
+    // Мэллори регистрируется под именем Боба — так выглядит подмена
+    // с точки зрения Алисы, которой сервер отдаёт по «bob» чужой ключ.
+    let mallory = Client::new(server.clone(), open_storage(&dir, "mallory.db"));
+    mallory
+        .register("bob", now(), &mut OsRng)
+        .expect("Мэллори заняла имя");
+
+    let impostor = alice
+        .add_contact_from_link(&mallory.own_contact_link().expect("ссылка Мэллори"), now())
+        .expect("Алиса добавила подставной контакт");
+
+    let alice_with_impostor = alice
+        .safety_number(&impostor.account_id)
+        .expect("цифры с подставным");
+    let bob_with_alice = bob
+        .safety_number(&alice_contact.account_id)
+        .expect("цифры у настоящего Боба");
+
+    assert_ne!(
+        alice_with_impostor, bob_with_alice,
+        "подменённый ключ дал те же цифры — сверка его не обнаружит"
+    );
+}
+
+/// 🔐 Отметка о сверке ставится, снимается и доживает до списка.
+///
+/// Прежде кнопка «Отметить сверенным» закрывала экран, и только:
+/// отметку в продукте не ставил никто.
+#[test]
+fn verification_is_recorded_and_can_be_revoked() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let (alice, _bob, bob_contact, _) = two_mutual_contacts(&server, &dir);
+
+    let verified_in_list = |client: &Client<FakeServer>| {
+        client
+            .contacts()
+            .expect("список")
+            .into_iter()
+            .find(|contact| contact.account_id == bob_contact.account_id)
+            .expect("Боб в списке")
+            .verified
+    };
+
+    assert!(!verified_in_list(&alice), "контакт сверен сам собой");
+
+    alice
+        .set_contact_verified(&bob_contact.account_id, true, now())
+        .expect("отметка поставлена");
+
+    assert!(verified_in_list(&alice), "отметка о сверке не сохранилась");
+
+    alice
+        .set_contact_verified(&bob_contact.account_id, false, now())
+        .expect("отметка снята");
+
+    assert!(!verified_in_list(&alice), "снятая отметка осталась");
+}
+
+/// Неизвестный контакт отметить нельзя.
+///
+/// Иначе в таблице сверенных завелась бы запись без ключа,
+/// и сверка относилась бы неизвестно к чему.
+#[test]
+fn an_unknown_contact_cannot_be_verified() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+
+    let stranger = AccountId::from_uuid(uuid::Uuid::from_bytes([9; 16]));
+
+    assert!(
+        alice.set_contact_verified(&stranger, true, now()).is_err(),
+        "отмечен контакт, которого нет в книге"
+    );
+    assert!(
+        alice.safety_number(&stranger).is_err(),
+        "safety number посчитан для контакта, которого нет"
     );
 }
 

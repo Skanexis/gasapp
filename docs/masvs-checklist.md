@@ -82,7 +82,7 @@
 | PLATFORM-1.4 | iOS: URL scheme валидируется | ❌ | Клиент iOS не дошёл до приёма ссылок |
 | PLATFORM-2 | Безопасное использование WebView | ⛔ | WebView не используется нигде. Проверяется `grep -r WebView android/ ios/` — ноль вхождений |
 | PLATFORM-3.1 | `FLAG_SECURE` на Android | ✅ | `core/SecureWindow.kt`; на экранах ключей и файлов — безусловно (`applyAlways`) |
-| PLATFORM-3.2 | Защита от overlay-атак | ✅ | `SecureWindow.blockObscuredTouches` на экранах PIN, хранилища, ключа восстановления, сверки ключей. Сознательно **не** на всех — обоснование в KDoc |
+| PLATFORM-3.2 | Защита от overlay-атак | ✅ | `SecureWindow.blockObscuredTouches` на экранах PIN, хранилища, ключа восстановления, сверки ключей. Сознательно **не** на всех — обоснование в KDoc. ⚠️ Отметка верна узко: касания блокировались и раньше, но **экран сверки до 2026-09 не сверял ничего** — показывал цифры двух случайных ключей, а кнопка «сверено» только закрывала его. Защита от наложенных окон охраняла декорацию. Исправлено: `Client::safety_number`, `Client::set_contact_verified`, 5 тестов в `end_to_end.rs` |
 | PLATFORM-3.3 | iOS: скрытие в App Switcher, детект скриншотов | ❌ | См. STORAGE-2.7 |
 
 ## MASVS-CODE — Качество кода
