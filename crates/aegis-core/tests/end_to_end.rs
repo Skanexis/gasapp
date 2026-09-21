@@ -1135,6 +1135,49 @@ fn an_unknown_contact_cannot_be_verified() {
     );
 }
 
+/// 🔐 Первое сообщение, отправленное до ротации, расшифровывается после неё.
+///
+/// Алиса пишет, пока Боб не в сети. Боб открывает приложение через
+/// восемь дней: сначала обслуживание предключей — оно ротирует
+/// подписанный ключ, — затем приём. Это порядок Android.
+///
+/// Прежде ротация затирала ключ на месте, и такое сообщение терялось
+/// навсегда вместе со всей перепиской, которая за ним шла. Тест
+/// перенесён из аудита.
+#[test]
+fn first_message_sent_before_rotation_still_decrypts() {
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
+    let bob_device = bob_account.device_id.to_string();
+
+    alice
+        .send_message("bob", "пока тебя не было", now(), &mut OsRng)
+        .expect("отправка");
+
+    let later = Timestamp::from_millis(now().as_millis() + 8 * DAY);
+    let maintenance = bob
+        .maintain_prekeys(later, &mut OsRng)
+        .expect("обслуживание");
+    assert!(
+        maintenance.rotated_signed,
+        "заготовка теста: ротация не случилась"
+    );
+
+    assert_eq!(
+        bob.receive_messages(&bob_device, later).expect("приём"),
+        1,
+        "первое сообщение, зашифрованное на прежний ключ, потеряно"
+    );
+}
+
 /// Поиск находит отправленное сообщение.
 #[test]
 fn search_finds_sent_message() {
