@@ -354,12 +354,14 @@ async fn envelope_delivery_round_trip() {
     let state = require_state!();
     let (device_id, private) = register_signing_device(&state, &unique_name("dave"), 0x23).await;
 
-    // Отправка анонимна по замыслу: подпись отправителя и была бы той
-    // меткой, которую убирает sealed sender.
-    let (status, envelope_id) = call(
+    // Обычная отправка — за подписью отправителя: анонимно писать можно
+    // только тому, кто раздал ключ доступа (sealed sender). Здесь
+    // устройство пишет само себе — важен путь, а не собеседник.
+    let (status, envelope_id) = call_signed_json(
         &state,
+        &private,
         "POST",
-        "/v1/messages",
+        &format!("/v1/messages/{device_id}"),
         Some(serde_json::json!({
             "destination_device_id": device_id,
             "ciphertext": hex::encode(b"opaque"),
@@ -412,16 +414,170 @@ async fn envelope_delivery_round_trip() {
     assert_eq!(empty.as_array().map(Vec::len), Some(0), "конверт не удалён");
 }
 
-/// 🔐 Некорректный hex отвергается как плохой запрос, а не роняет сервер.
+/// 🔐 Анонимный конверт без ключа доступа не принимается.
+///
+/// Прежде `POST /v1/messages` был без подписи: любой клал конверты
+/// в любую очередь, не называясь, в обход ключа доступа sealed sender.
+/// Аудитор так и сделал.
 #[tokio::test]
-async fn malformed_hex_is_rejected() {
+async fn an_unsigned_plain_envelope_is_refused() {
     let state = require_state!();
-    let (_account, device_id) = register(&state, &unique_name("erin")).await;
+    let (device_id, _) = register_signing_device(&state, &unique_name("quiet"), 0x61).await;
+
+    for uri in [
+        "/v1/messages".to_owned(),
+        format!("/v1/messages/{device_id}"),
+    ] {
+        let (status, _) = call(
+            &state,
+            "POST",
+            &uri,
+            Some(serde_json::json!({
+                "destination_device_id": device_id,
+                "ciphertext": hex::encode(b"spam"),
+            })),
+        )
+        .await;
+
+        assert_ne!(status, StatusCode::OK, "анонимный конверт принят по {uri}");
+    }
+}
+
+/// 🔐 Подписанный мусор не выжигает бюджет запечатанной отправки.
+///
+/// Прежде обычная и запечатанная отправка делили один бюджет
+/// получателя: мусор по одной выжигал его, и собеседник с верным
+/// ключом доступа получал 429.
+#[tokio::test]
+async fn plain_junk_does_not_starve_sealed_delivery() {
+    let state = require_state!();
+    let (victim, victim_key) = register_signing_device(&state, &unique_name("victim"), 0x62).await;
+    let access_key = [0x7Eu8; 32];
+
+    let (status, _) = call_signed_json(
+        &state,
+        &victim_key,
+        "PUT",
+        &format!("/v1/sealed/access/{victim}"),
+        Some(serde_json::json!({
+            "access_key_hash": hex::encode(<sha2::Sha256 as sha2::Digest>::digest(access_key)),
+            "allow_from_anyone": false,
+        })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "ключ доступа не опубликован"
+    );
+
+    // Несколько аккаунтов злоумышленника, каждый в пределах своего лимита,
+    // вместе исчерпывают бюджет обычной отправки получателя.
+    for seed in 0..3u8 {
+        let (attacker, attacker_key) =
+            register_signing_device(&state, &unique_name("junk"), 0x70 + seed).await;
+
+        for _ in 0..aegis_server_api::rate_limit::MESSAGES_PER_MINUTE {
+            call_signed_json(
+                &state,
+                &attacker_key,
+                "POST",
+                &format!("/v1/messages/{attacker}"),
+                Some(serde_json::json!({
+                    "destination_device_id": victim,
+                    "ciphertext": hex::encode(b"junk"),
+                })),
+            )
+            .await;
+        }
+    }
 
     let (status, _) = call(
         &state,
         "POST",
-        "/v1/messages",
+        "/v1/sealed/messages",
+        Some(serde_json::json!({
+            "destination_device_id": victim,
+            "sealed": hex::encode(b"hello from a friend"),
+            "access_key": hex::encode(access_key),
+        })),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "собеседник с ключом доступа не смог отправить: {status}"
+    );
+}
+
+/// 🔐 Запечатанный мусор без ключа не тратит бюджет собеседников.
+///
+/// Прежде бюджет получателя расходовался до проверки ключа доступа:
+/// попытки без ключа исчерпывали его, и законный собеседник получал 429.
+#[tokio::test]
+async fn sealed_junk_without_a_key_does_not_starve_friends() {
+    let state = require_state!();
+    let (victim, victim_key) =
+        register_signing_device(&state, &unique_name("friendly"), 0x63).await;
+    let access_key = [0x7Du8; 32];
+
+    call_signed_json(
+        &state,
+        &victim_key,
+        "PUT",
+        &format!("/v1/sealed/access/{victim}"),
+        Some(serde_json::json!({
+            "access_key_hash": hex::encode(<sha2::Sha256 as sha2::Digest>::digest(access_key)),
+            "allow_from_anyone": false,
+        })),
+    )
+    .await;
+
+    for _ in 0..(aegis_server_api::rate_limit::MESSAGES_PER_MINUTE * 2) {
+        call(
+            &state,
+            "POST",
+            "/v1/sealed/messages",
+            Some(serde_json::json!({
+                "destination_device_id": victim,
+                "sealed": hex::encode(b"spam"),
+                "access_key": hex::encode([0u8; 32]),
+            })),
+        )
+        .await;
+    }
+
+    let (status, _) = call(
+        &state,
+        "POST",
+        "/v1/sealed/messages",
+        Some(serde_json::json!({
+            "destination_device_id": victim,
+            "sealed": hex::encode(b"hello"),
+            "access_key": hex::encode(access_key),
+        })),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "мусор без ключа выжег бюджет собеседников: {status}"
+    );
+}
+
+/// 🔐 Некорректный hex отвергается как плохой запрос, а не роняет сервер.
+#[tokio::test]
+async fn malformed_hex_is_rejected() {
+    let state = require_state!();
+    let (device_id, private) = register_signing_device(&state, &unique_name("erin"), 0x24).await;
+
+    let (status, _) = call_signed_json(
+        &state,
+        &private,
+        "POST",
+        &format!("/v1/messages/{device_id}"),
         Some(serde_json::json!({
             "destination_device_id": device_id,
             "ciphertext": "не hex",
@@ -920,10 +1076,11 @@ async fn account_deletion_removes_everything() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     // Недоставленный конверт в очереди.
-    let (status, _) = call(
+    let (status, _) = call_signed_json(
         &state,
+        &private,
         "POST",
-        "/v1/messages",
+        &format!("/v1/messages/{device_id}"),
         Some(serde_json::json!({
             "destination_device_id": device_id,
             "ciphertext": hex::encode(b"opaque"),

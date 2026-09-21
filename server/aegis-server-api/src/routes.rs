@@ -47,8 +47,26 @@ pub struct AppState {
     pub pool: PgPool,
     /// Ограничитель discovery — против перебора username.
     pub discovery_limiter: Mutex<RateLimiter>,
-    /// Ограничитель отправки сообщений.
+    /// Ограничитель обычной отправки — по получателю.
     pub message_limiter: Mutex<RateLimiter>,
+    /// Ограничитель обычной отправки — по отправителю.
+    ///
+    /// 🔐 Обычная отправка подписана, поэтому её можно считать по тому,
+    /// кто шлёт: один аккаунт не забьёт чужую очередь, а новый аккаунт
+    /// стоит proof-of-work.
+    pub sender_limiter: Mutex<RateLimiter>,
+    /// Ограничитель запечатанной отправки — по получателю, отдельный.
+    ///
+    /// 🔐 Отдельный от обычного: иначе мусор по одному маршруту
+    /// выжигал бы бюджет получателя и на другом, и законный собеседник
+    /// с ключом доступа получал бы 429.
+    pub sealed_limiter: Mutex<RateLimiter>,
+    /// Ограничитель отвергнутых запечатанных попыток — по получателю.
+    ///
+    /// Попытки без верного ключа доступа считаются здесь, а не в бюджете
+    /// получателя: чужой мусор не должен тратить то, что принадлежит
+    /// его собеседникам.
+    pub sealed_rejected_limiter: Mutex<RateLimiter>,
     /// Ограничитель выдачи prekey bundle.
     ///
     /// 🔐 Отдельный от остальных: выдача расходует одноразовый предключ,
@@ -145,6 +163,18 @@ impl AppState {
                 nodes,
             ))),
             message_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::MESSAGES_PER_MINUTE,
+                nodes,
+            ))),
+            sender_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::MESSAGES_PER_MINUTE,
+                nodes,
+            ))),
+            sealed_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::MESSAGES_PER_MINUTE,
+                nodes,
+            ))),
+            sealed_rejected_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 rate_limit::MESSAGES_PER_MINUTE,
                 nodes,
             ))),
@@ -377,8 +407,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/keys/:device_id", put(publish_keys))
         .route("/v1/keys/:device_id/bundle", get(take_bundle))
         .route("/v1/keys/:device_id/count", get(count_keys))
-        .route("/v1/messages", post(send_message))
-        .route("/v1/messages/:device_id", get(fetch_messages))
+        // 🔐 Обычная отправка — за подписью отправителя, из пути.
+        // Прежде маршрут был `/v1/messages` без подписи: любой клал
+        // конверты в любую очередь анонимно, в обход ключа доступа
+        // sealed sender.
+        .route(
+            "/v1/messages/:device_id",
+            get(fetch_messages).post(send_message),
+        )
         // Sealed sender (раздел 15.2).
         //
         // 🔐 Отправка идёт по отдельному маршруту без аутентификации
@@ -712,15 +748,45 @@ async fn count_keys(
 }
 
 /// Постановка конверта в очередь доставки.
+/// Обычная (незапечатанная) отправка.
+///
+/// # 🔐 Почему за подписью
+///
+/// Анонимно писать можно только тому, кто раздал ключ доступа, — это
+/// и есть смысл sealed sender (`0004_sealed_sender.sql`). Маршрут без
+/// подписи этот запрет обходил: любой клал конверты в любую очередь,
+/// не называясь. Аудитор принял анонимный конверт без ключа.
+///
+/// Подпись не выдаёт серверу ничего нового. Сюда клиент уходит, только
+/// пока ключа доступа собеседника у него нет, то есть с первым
+/// сообщением, — а начальный конверт и так несёт identity-ключ
+/// отправителя открыто.
 async fn send_message(
     State(state): State<Arc<AppState>>,
+    sender: crate::authz::AuthenticatedDevice,
     Json(request): Json<SendRequest>,
 ) -> Result<Json<Uuid>, ApiError> {
+    let now = now_millis();
+
+    // По отправителю: один аккаунт не забивает чужую очередь.
+    let sender_key = rate_limit::key_from_addr(&state.limiter_salt, &sender.device_id.to_string());
+
+    {
+        let mut limiter = state
+            .sender_limiter
+            .lock()
+            .map_err(|_| ApiError::Internal)?;
+
+        if !limiter.allow(sender_key, now) {
+            return Err(ApiError::TooManyRequests);
+        }
+    }
+
+    // По получателю: и многими аккаунтами очередь не переполнить.
     let key = rate_limit::key_from_addr(
         &state.limiter_salt,
         &request.destination_device_id.to_string(),
     );
-    let now = now_millis();
 
     {
         let mut limiter = state
@@ -1179,17 +1245,6 @@ async fn send_sealed_message(
     );
     let now = now_millis();
 
-    {
-        let mut limiter = state
-            .message_limiter
-            .lock()
-            .map_err(|_| ApiError::Internal)?;
-
-        if !limiter.allow(key, now) {
-            return Err(ApiError::TooManyRequests);
-        }
-    }
-
     let access_key = match &request.access_key {
         None => None,
         Some(encoded) => Some(decode_hex(encoded)?),
@@ -1201,6 +1256,25 @@ async fn send_sealed_message(
         access_key.as_deref(),
     )
     .await?;
+
+    // 🔐 Ключ проверяется до расхода бюджета получателя.
+    //
+    // Прежде бюджет тратился первым, и мусор без ключа выжигал его:
+    // собеседник с верным ключом доступа получал 429. Отказы теперь
+    // считаются отдельно — ограничены, но чужого не тратят.
+    let limiter = if allowed {
+        &state.sealed_limiter
+    } else {
+        &state.sealed_rejected_limiter
+    };
+
+    {
+        let mut limiter = limiter.lock().map_err(|_| ApiError::Internal)?;
+
+        if !limiter.allow(key, now) {
+            return Err(ApiError::TooManyRequests);
+        }
+    }
 
     if !allowed {
         // 🔐 Тот же код, что у неверной подписи, и по той же причине:
