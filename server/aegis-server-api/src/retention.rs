@@ -30,7 +30,7 @@ use sqlx::PgPool;
 ///
 /// Время в базе огрублено до часа (миграция 0005), так что конверт
 /// переживает свой срок не больше чем на этот интервал.
-pub const PURGE_INTERVAL: Duration = Duration::from_secs(10 * 60);
+pub const PURGE_INTERVAL: Duration = Duration::from_mins(10);
 
 /// Сколько удалено за один проход.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
