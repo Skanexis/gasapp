@@ -147,12 +147,29 @@ pub async fn register_account(
     let account_id = Uuid::new_v4();
     let device_id = Uuid::new_v4();
 
-    sqlx::query("INSERT INTO accounts (account_id, username, identity_key) VALUES ($1, $2, $3)")
-        .bind(account_id)
-        .bind(username)
-        .bind(identity_key)
-        .execute(&mut *transaction)
-        .await?;
+    // 🔐 Занятое имя — не ошибка базы, а ноль вставленных строк.
+    //
+    // Прежде нарушение уникальности ловилось как ошибка, и Postgres
+    // писал её в свой журнал вместе со строкой `DETAIL: Key
+    // (username)=(…) already exists` и меткой времени. Журнал сервера
+    // превращался в список имён, которые кто-то пытался занять, — при
+    // том что документ о сроках хранения обещает, что журнала
+    // активности нет. `ON CONFLICT DO NOTHING` ошибки не порождает,
+    // и в журнал писать нечего.
+    let inserted = sqlx::query(
+        "INSERT INTO accounts (account_id, username, identity_key) VALUES ($1, $2, $3)
+         ON CONFLICT (username) DO NOTHING",
+    )
+    .bind(account_id)
+    .bind(username)
+    .bind(identity_key)
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+
+    if inserted == 0 {
+        return Err(RepoError::UsernameTaken);
+    }
 
     sqlx::query("INSERT INTO devices (device_id, account_id, identity_key) VALUES ($1, $2, $3)")
         .bind(device_id)
