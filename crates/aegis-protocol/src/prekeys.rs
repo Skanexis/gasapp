@@ -162,8 +162,32 @@ pub fn generate<R: RngCore + CryptoRng>(
     let one_time = generate_one_time_pool(rng);
     let one_time_kem = generate_one_time_kem_pool(rng);
 
-    // В bundle уходит по одному одноразовому ключу из каждого пула:
-    // остальные сервер раздаёт следующим собеседникам.
+    // Одноразовый пост-квантовый предключ уходит **с подписью**:
+    // его подмена даёт атакующему всю пост-квантовую половину
+    // общего секрета (раздел 6.2).
+    let one_time_kem_published = one_time_kem
+        .first()
+        .map(|(id, key)| {
+            let public = key.public_key().as_bytes();
+            let signature = xeddsa::montgomery::sign(&signing, &public)?.to_vec();
+
+            Ok::<_, aegis_types::AegisError>(SignedKemPreKey {
+                id: *id,
+                public: KemPublicKey::new(public),
+                signature,
+            })
+        })
+        .transpose()?;
+
+    // ⚠️ В bundle уходит по одному одноразовому ключу из каждого пула,
+    // а не весь пул. Остальные девяносто девять остаются здесь
+    // и на сервер не попадают вовсе — их публикует обслуживание
+    // (`Client::maintain_prekeys`) отдельным запросом.
+    //
+    // Прежде тут стояло «остальные сервер раздаёт следующим
+    // собеседникам», и это было неправдой: у сервера лежал ровно
+    // один ключ, первый же незнакомец его забирал, и все следующие
+    // первые контакты шли без одноразового предключа.
     let bundle = PreKeyBundle {
         device_id,
         identity_key: *identity.public(),
@@ -180,9 +204,7 @@ pub fn generate<R: RngCore + CryptoRng>(
             public: KemPublicKey::new(kem_public),
             signature: kem_signature,
         },
-        one_time_kem_pre_key: one_time_kem
-            .first()
-            .map(|(id, key)| (*id, KemPublicKey::new(key.public_key().as_bytes()))),
+        one_time_kem_pre_key: one_time_kem_published,
     };
 
     let secrets = PreKeySecrets {
