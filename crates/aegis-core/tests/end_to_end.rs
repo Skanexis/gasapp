@@ -88,6 +88,8 @@ struct ServerState {
     sealed_accepted: usize,
     /// Сколько принято обычных конвертов.
     plain_accepted: usize,
+    /// Сколько раз устройство публиковало предключи.
+    publishes: HashMap<String, usize>,
     /// Путь и заголовки каждого пришедшего запроса.
     ///
     /// Нужны, чтобы проверять не только ответ, но и то, что клиент
@@ -178,6 +180,34 @@ impl FakeServer {
             .insert(device_id.to_owned(), vec![0u8; 32]);
     }
 
+    /// Сколько одноразовых предключей лежит у устройства.
+    ///
+    /// Считается по опубликованному bundle — то есть по тому, что
+    /// сервер реально отдаст спрашивающему.
+    fn one_time_left(&self, device_id: &str) -> usize {
+        self.state
+            .borrow()
+            .bundles
+            .get(device_id)
+            .map_or(0, |bundle| bundle.one_time.len())
+    }
+
+    /// Забирает одноразовый предключ, как это делает `take_bundle`.
+    ///
+    /// Заглушка хранит опубликованное целиком, поэтому расход
+    /// изображается вычёркиванием.
+    fn consume_one_time(&self, device_id: &str) {
+        if let Some(bundle) = self.state.borrow_mut().bundles.get_mut(device_id) {
+            if !bundle.one_time.is_empty() {
+                bundle.one_time.remove(0);
+            }
+
+            if !bundle.one_time_kem.is_empty() {
+                bundle.one_time_kem.remove(0);
+            }
+        }
+    }
+
     /// Сколько конвертов лежит в очереди устройства.
     fn queue_len(&self, device_id: &str) -> usize {
         self.state
@@ -185,6 +215,30 @@ impl FakeServer {
             .queues
             .get(device_id)
             .map_or(0, Vec::len)
+    }
+
+    /// Сколько запросов пришло по префиксу пути.
+    fn request_count(&self, prefix: &str) -> usize {
+        self.state
+            .borrow()
+            .requests
+            .iter()
+            .filter(|(path, _)| path.starts_with(prefix))
+            .count()
+    }
+
+    /// Сколько раз устройство публиковало предключи.
+    ///
+    /// Считается по записям публикации, а не по всем обращениям
+    /// к `/v1/keys/`: обслуживание обязано спрашивать остаток
+    /// и без надобности в публикации.
+    fn publish_count(&self, device_id: &str) -> usize {
+        self.state
+            .borrow()
+            .publishes
+            .get(device_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Заголовки последнего запроса по префиксу пути.
@@ -261,13 +315,49 @@ impl Transport for FakeServer {
                     None => (404, String::new()),
                 }
             }
+            (Method::Get, path) if path.starts_with("/v1/keys/") && path.ends_with("/count") => {
+                // Остаток одноразовых ключей — то, что сервер реально
+                // отдаст спрашивающему. Именно по нему клиент решает,
+                // надо ли пополнять: свой список у него не меняется,
+                // когда ключ забирает чужой.
+                let device_id = path
+                    .trim_start_matches("/v1/keys/")
+                    .trim_end_matches("/count");
+
+                let left = state
+                    .bundles
+                    .get(device_id)
+                    .map_or(0, |bundle| bundle.one_time.len());
+
+                (200, left.to_string())
+            }
             (Method::Put, path) if path.starts_with("/v1/keys/") => {
                 let device_id = path.trim_start_matches("/v1/keys/").to_owned();
                 let parsed: PublishKeysRequest =
                     serde_json::from_str(request.body.as_deref().unwrap_or_default())
                         .map_err(|_| aegis_types::AegisError::Malformed)?;
 
-                state.bundles.insert(device_id, parsed);
+                *state.publishes.entry(device_id.clone()).or_insert(0) += 1;
+
+                // Настоящий сервер дополняет пул (`ON CONFLICT DO
+                // NOTHING`), а не заменяет его. Заглушка, заменявшая
+                // целиком, показала бы пополнение работающим даже
+                // тогда, когда оно затирает остаток.
+                match state.bundles.get_mut(&device_id) {
+                    Some(existing) => {
+                        existing.signed_key_id = parsed.signed_key_id;
+                        existing.signed_public = parsed.signed_public;
+                        existing.signed_signature = parsed.signed_signature;
+                        existing.kem_key_id = parsed.kem_key_id;
+                        existing.kem_public = parsed.kem_public;
+                        existing.kem_signature = parsed.kem_signature;
+                        existing.one_time.extend(parsed.one_time);
+                        existing.one_time_kem.extend(parsed.one_time_kem);
+                    }
+                    None => {
+                        state.bundles.insert(device_id, parsed);
+                    }
+                }
 
                 (200, String::new())
             }
@@ -1677,5 +1767,140 @@ fn exporting_without_an_account_fails() {
             Err(aegis_types::AegisError::SessionNotFound)
         ),
         "выгрузка несуществующего аккаунта объявлена успешной",
+    );
+}
+
+// ---------------------------------------------------------------------------
+//  🔐 Обслуживание предключей
+//
+//  Одноразовый предключ расходуется при каждом первом контакте.
+//  Пул публикуется при регистрации и конечен: без пополнения он
+//  кончается навсегда, и каждая новая переписка заводится без
+//  одноразового ключа — тихо, с успешным ответом сервера.
+// ---------------------------------------------------------------------------
+
+/// 🔐 Исчерпанный пул пополняется.
+///
+/// Главный тест этой пары. До его появления `refill_one_time`
+/// существовала, была покрыта тестами в `aegis-protocol` — и
+/// не вызывалась из продукта ни разу.
+#[test]
+fn an_exhausted_one_time_pool_is_refilled() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let account = alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    let device = account.device_id.to_string();
+
+    let published = server.one_time_left(&device);
+
+    assert!(
+        published > 0,
+        "при регистрации не опубликовано ни одного одноразового ключа",
+    );
+
+    // Кто угодно вычерпывает пул: `take_bundle` подписи не требует.
+    for _ in 0..published {
+        server.consume_one_time(&device);
+    }
+
+    assert_eq!(server.one_time_left(&device), 0, "пул не опустошён");
+
+    let report = alice
+        .maintain_prekeys(now(), &mut OsRng)
+        .expect("обслуживание");
+
+    assert!(report.added_one_time > 0, "пул не пополнен");
+    assert!(
+        server.one_time_left(&device) > 0,
+        "сервер по-прежнему отдаёт пустой пул",
+    );
+}
+
+/// Полный пул не публикуется заново.
+///
+/// Обслуживание вызывается после каждого приёма сообщений. Спросить
+/// остаток у сервера оно обязано всегда — иначе вычерпанный чужими
+/// пул так и выглядел бы полным, — но **публиковать** при полном
+/// пуле нечего, и лишний `PUT` был бы собственным источником
+/// нагрузки.
+#[test]
+fn a_full_pool_is_not_republished() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let account = alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    let device = account.device_id.to_string();
+
+    // ⚠️ После регистрации пул на сервере НЕ полон: `generate`
+    // публикует `one_time.first()` — один ключ из ста. Поэтому
+    // сперва обслуживание доводит пул до полного, и только второй
+    // вызов проверяет, что лишнего он не делает.
+    let first = alice
+        .maintain_prekeys(now(), &mut OsRng)
+        .expect("первое обслуживание");
+
+    assert!(
+        first.added_one_time > 0,
+        "после регистрации пул на сервере уже полон — проверять нечего",
+    );
+
+    let publishes_before = server.publish_count(&device);
+
+    let report = alice
+        .maintain_prekeys(now(), &mut OsRng)
+        .expect("обслуживание");
+
+    assert_eq!(report.added_one_time, 0, "полный пул пополнять не нужно");
+    assert!(!report.rotated_signed, "свежий ключ ротировать не нужно");
+    assert_eq!(
+        server.publish_count(&device),
+        publishes_before,
+        "полный пул опубликован заново без надобности",
+    );
+}
+
+/// 🔐 Подписанный предключ ротируется по сроку.
+///
+/// Срок ограничивает, сколько будущих рукопожатий раскроет
+/// компрометация ключа. Ключ, не меняющийся никогда, делает это
+/// окно бесконечным.
+#[test]
+fn the_signed_prekey_rotates_when_it_is_old() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+
+    let later = aegis_types::Timestamp::from_millis(
+        now().as_millis()
+            + i64::from(aegis_protocol::SIGNED_PRE_KEY_ROTATION_DAYS) * 24 * 60 * 60 * 1000
+            + 1,
+    );
+
+    let report = alice
+        .maintain_prekeys(later, &mut OsRng)
+        .expect("обслуживание");
+
+    assert!(report.rotated_signed, "подписанный предключ не ротирован");
+}
+
+/// Без аккаунта обслуживать нечего.
+#[test]
+fn maintenance_without_an_account_fails() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let client = Client::new(server, open_storage(&dir, "empty.db"));
+
+    assert!(
+        matches!(
+            client.maintain_prekeys(now(), &mut OsRng),
+            Err(aegis_types::AegisError::SessionNotFound)
+        ),
+        "обслуживание без аккаунта объявлено успешным",
     );
 }

@@ -213,19 +213,45 @@ pub fn rotate_signed<R: RngCore + CryptoRng>(
     now: Timestamp,
     rng: &mut R,
 ) -> Result<(SignedPreKey, SignedKemPreKey)> {
+    secrets.signed_pre_key = X25519PrivateKey::generate(rng);
+    secrets.signed_kem = MlKem1024PrivateKey::generate(rng);
+    secrets.signed_pre_key_created = now;
+
+    signed_published(identity, secrets)
+}
+
+/// Собирает публичные части подписанных предключей из секретов.
+///
+/// # Зачем отдельно от [`rotate_signed`]
+///
+/// Публиковать подписанные предключи приходится не только при
+/// ротации: пополнение пула одноразовых ключей идёт тем же запросом
+/// `PUT /v1/keys/{device}`, а он требует и подписанную часть тоже.
+/// Без этой функции вызывающему пришлось бы либо ротировать ключ
+/// без надобности, либо повторить подпись у себя — то есть завести
+/// вторую реализацию, которая однажды разойдётся с первой.
+///
+/// 🔐 Повторный вызов даёт тот же результат: подпись XEdDSA
+/// детерминирована (раздел 3 спецификации), nonce выводится из ключа
+/// и сообщения, а не из случайности. Поэтому опубликовать одну и ту же
+/// подписанную часть дважды безопасно и ничего не меняет.
+///
+/// # Errors
+///
+/// [`AegisError::Crypto`] — сбой подписи.
+///
+/// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
+pub fn signed_published(
+    identity: &IdentityKeyPair,
+    secrets: &PreKeySecrets,
+) -> Result<(SignedPreKey, SignedKemPreKey)> {
     let signing = PrivateKeyBytes::new(*identity.private().expose_secret());
 
-    let signed_pre_key = X25519PrivateKey::generate(rng);
-    let spk_public = signed_pre_key.public_key().as_bytes();
+    let spk_public = secrets.signed_pre_key.public_key().as_bytes();
     let spk_signature = xeddsa::montgomery::sign(&signing, spk_public.as_bytes())?.to_vec();
 
-    let signed_kem = MlKem1024PrivateKey::generate(rng);
-    let kem_public = signed_kem.public_key().as_bytes();
+    let kem_public = secrets.signed_kem.public_key().as_bytes();
     let kem_signature = xeddsa::montgomery::sign(&signing, &kem_public)?.to_vec();
-
-    secrets.signed_pre_key = signed_pre_key;
-    secrets.signed_kem = signed_kem;
-    secrets.signed_pre_key_created = now;
 
     Ok((
         SignedPreKey {
@@ -267,6 +293,8 @@ pub fn refill_one_time<R: RngCore + CryptoRng>(
     // ключ дважды под разными записями.
     let mut next_id = next_free_id(secrets);
 
+    // Пулы пополняются независимо: расход у них общий не всегда,
+    // и дополнять полный пул до сверхполного незачем.
     let mut added = Vec::new();
     while secrets.one_time.len() < target {
         let key = X25519PrivateKey::generate(rng);
@@ -292,6 +320,84 @@ pub fn refill_one_time<R: RngCore + CryptoRng>(
             signature,
         });
         secrets.one_time_kem.push((id, key));
+    }
+
+    Ok((added, added_kem))
+}
+
+/// Выпускает `count` новых одноразовых предключей и добавляет их в пул.
+///
+/// Возвращает публичные части — их нужно отправить на сервер.
+///
+/// # Зачем отдельно от [`refill_one_time`]
+///
+/// [`refill_one_time`] дополняет пул **до полного размера**, считая
+/// по своим же секретам. Этого достаточно, когда ключи расходует сам
+/// владелец, принимая начальные сообщения.
+///
+/// ⚠️ Но расходует их не он. Одноразовый ключ вычёркивается,
+/// когда его **забирает отправитель** — сервер отдаёт bundle и
+/// удаляет запись. Владелец об этом не узнаёт никак: его локальный
+/// список не меняется. Значит после того, как чужой вычерпал пул
+/// на сервере, `refill_one_time` не добавит ничего: локально всё
+/// на месте.
+///
+/// Поэтому пополнять надо по числу, которое знает **сервер**
+/// (`GET /v1/keys/{device}/count`), а эта функция выпускает ровно
+/// столько, сколько попросили.
+///
+/// # ⚠️ Прежние ключи не выбрасываются
+///
+/// Даже те, что сервер уже отдал и удалил. Отправитель, успевший
+/// забрать ключ, пришлёт по нему начальное сообщение — и без
+/// приватной половины оно не расшифруется. Выброшенный ключ
+/// означал бы потерянное сообщение.
+///
+/// # Errors
+///
+/// [`AegisError::Crypto`] — сбой подписи пост-квантового предключа.
+///
+/// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
+pub fn mint_one_time<R: RngCore + CryptoRng>(
+    identity: &IdentityKeyPair,
+    secrets: &mut PreKeySecrets,
+    count: usize,
+    rng: &mut R,
+) -> Result<(
+    Vec<(PreKeyId, aegis_types::PublicKeyBytes)>,
+    Vec<SignedKemPreKey>,
+)> {
+    let signing = PrivateKeyBytes::new(*identity.private().expose_secret());
+
+    // Идентификаторы продолжают нумерацию, а не начинаются заново:
+    // повтор идентификатора означал бы, что сервер выдаст один и тот же
+    // ключ дважды под разными записями.
+    let mut next_id = next_free_id(secrets);
+
+    let mut added = Vec::with_capacity(count);
+    let mut added_kem = Vec::with_capacity(count);
+
+    for _ in 0..count {
+        let key = X25519PrivateKey::generate(rng);
+        let id = PreKeyId::new(next_id);
+        next_id = next_id.saturating_add(1);
+
+        added.push((id, key.public_key().as_bytes()));
+        secrets.one_time.push((id, key));
+
+        let kem = MlKem1024PrivateKey::generate(rng);
+        let kem_id = PreKeyId::new(next_id);
+        next_id = next_id.saturating_add(1);
+
+        let public = kem.public_key().as_bytes();
+        let signature = xeddsa::montgomery::sign(&signing, &public)?.to_vec();
+
+        added_kem.push(SignedKemPreKey {
+            id: kem_id,
+            public: KemPublicKey::new(public),
+            signature,
+        });
+        secrets.one_time_kem.push((kem_id, kem));
     }
 
     Ok((added, added_kem))

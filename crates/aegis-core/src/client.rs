@@ -182,6 +182,26 @@ const EXPORT_FORMAT: &str = "aegis-export-v1";
 /// нужнее всего — у человека с длинной историей.
 const MAX_EXPORTED_MESSAGES: u32 = 10_000;
 
+/// Полный размер пула одноразовых предключей.
+const fn prekeys_pool_size() -> u32 {
+    aegis_protocol::ONE_TIME_PRE_KEY_POOL_SIZE
+}
+
+/// Что сделало обслуживание предключей.
+///
+/// Показывается в центре безопасности: исчерпанный пул одноразовых
+/// предключей — это состояние, которое человек обязан иметь
+/// возможность увидеть.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PreKeyMaintenance {
+    /// Подписанный предключ был заменён новым.
+    pub rotated_signed: bool,
+    /// Сколько одноразовых предключей добавлено в пул.
+    pub added_one_time: u32,
+    /// Сколько осталось в пуле после обслуживания.
+    pub remaining_one_time: u32,
+}
+
 /// Клиент AEGIS.
 pub struct Client<T: Transport> {
     api: ApiClient<T>,
@@ -1363,6 +1383,178 @@ impl<T: Transport> Client<T> {
     /// [`AegisError::Storage`] — смена не удалась.
     pub fn rekey_storage(&self, new_key: &[u8]) -> Result<()> {
         self.storage.rekey(new_key)
+    }
+
+    /// 🔐 Пополняет одноразовые предключи и ротирует подписанный.
+    ///
+    /// # Почему это обязательно вызывать
+    ///
+    /// Одноразовый предключ **расходуется** при каждом первом контакте:
+    /// сервер выдаёт его тому, кто начинает переписку, и вычёркивает.
+    /// Пул конечен ([`ONE_TIME_PRE_KEY_POOL_SIZE`] = 100), публикуется
+    /// при регистрации и без пополнения не восстанавливается никогда.
+    ///
+    /// Когда пул пуст, `take_prekey_bundle` отдаёт bundle с
+    /// `degraded = true`, и каждая новая переписка заводится **без**
+    /// одноразового предключа — теряя и классическую, и
+    /// пост-квантовую половину того вклада в forward secrecy, ради
+    /// которого он существует. Сервер при этом отвечает успехом,
+    /// и ни отправитель, ни получатель ничего не замечают.
+    ///
+    /// ⚠️ `GET /v1/keys/{device}/bundle` **не требует подписи** —
+    /// иначе первый контакт был бы возможен только со знакомыми.
+    /// Значит вычерпать чужой пул может кто угодно: ограничитель
+    /// даёт 10 запросов в минуту, то есть сто ключей за десять минут.
+    /// Без пополнения это ухудшение **навсегда**.
+    ///
+    /// # Почему ротация здесь же
+    ///
+    /// Подписанный предключ живёт [`SIGNED_PRE_KEY_ROTATION_DAYS`]
+    /// дней по замыслу: срок ограничивает, сколько будущих
+    /// рукопожатий раскроет его компрометация. Ключ, не меняющийся
+    /// никогда, делает это окно бесконечным.
+    ///
+    /// Обе задачи решаются одним запросом `PUT /v1/keys/{device}`,
+    /// и разделять их значило бы ходить на сервер дважды.
+    ///
+    /// # Когда вызывать
+    ///
+    /// После открытия хранилища и после приёма сообщений: первое
+    /// покрывает редкий запуск, второе — активную переписку.
+    /// Вызов дёшев, когда делать нечего: без нужды в пополнении
+    /// и ротации он не обращается к сети вовсе.
+    ///
+    /// # Errors
+    ///
+    /// * [`AegisError::SessionNotFound`] — аккаунт не зарегистрирован.
+    /// * [`AegisError::Network`] — публикация не удалась. Секреты при
+    ///   этом **не сохранены**: иначе клиент считал бы опубликованным
+    ///   то, чего сервер не видел, и пул чинился бы только с виду.
+    pub fn maintain_prekeys<R: RngCore + CryptoRng>(
+        &self,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<PreKeyMaintenance> {
+        let device_id = self
+            .storage
+            .load_own_keys()?
+            .and_then(|keys| keys.device_id)
+            .ok_or(AegisError::SessionNotFound)?;
+
+        let (identity, mut secrets) = self.load_identity()?;
+
+        let rotated = secrets.needs_rotation(now);
+
+        if rotated {
+            prekeys::rotate_signed(&identity, &mut secrets, now, rng)?;
+        }
+
+        // 🔐 Остаток спрашивается у сервера, а не считается у себя.
+        //
+        // Одноразовый ключ вычёркивается, когда его **забирает
+        // отправитель**, — владелец об этом не узнаёт, его локальный
+        // список не меняется. Поэтому вычерпанный чужими пул
+        // выглядит изнутри полным, и проверка по своим секретам
+        // (`needs_refill`) не срабатывает никогда.
+        //
+        // Ровно так оно и было: `needs_refill` существовала, была
+        // покрыта тестами и не вызывалась ниоткуда, а даже вызванная
+        // ничего бы не исправила.
+        let on_server = self
+            .api
+            .count_one_time_prekeys(
+                &device_id,
+                auth_headers(
+                    &identity,
+                    "GET",
+                    &format!("/v1/keys/{device_id}/count"),
+                    now,
+                )?,
+            )
+            .unwrap_or(0)
+            .max(0);
+
+        let target = i64::from(prekeys_pool_size());
+        let deficit = usize::try_from(target.saturating_sub(on_server)).unwrap_or(0);
+
+        let (added_one_time, added_kem) = if deficit > 0 {
+            // ⚠️ Прежние приватные ключи не выбрасываются, даже те,
+            // чьи публичные половины сервер уже отдал и удалил:
+            // отправитель, успевший забрать ключ, пришлёт по нему
+            // начальное сообщение, и без приватной половины оно
+            // не расшифруется.
+            prekeys::mint_one_time(&identity, &mut secrets, deficit, rng)?
+        } else {
+            (Vec::new(), Vec::new())
+        };
+
+        let added = u32::try_from(added_one_time.len()).unwrap_or(u32::MAX);
+
+        // Делать нечего — и сети это знать незачем.
+        if !rotated && added == 0 {
+            return Ok(PreKeyMaintenance {
+                rotated_signed: false,
+                added_one_time: 0,
+                remaining_one_time: u32::try_from(on_server).unwrap_or(u32::MAX),
+            });
+        }
+
+        let (signed_pre_key, signed_kem_pre_key) = prekeys::signed_published(&identity, &secrets)?;
+
+        let request = PublishKeysRequest {
+            signed_key_id: i32::try_from(signed_pre_key.id.as_u32()).unwrap_or(i32::MAX),
+            signed_public: hex(signed_pre_key.public.as_bytes()),
+            signed_signature: hex(&signed_pre_key.signature),
+            kem_key_id: i32::try_from(signed_kem_pre_key.id.as_u32()).unwrap_or(i32::MAX),
+            kem_public: hex(signed_kem_pre_key.public.as_bytes()),
+            kem_signature: hex(&signed_kem_pre_key.signature),
+            one_time: added_one_time
+                .iter()
+                .map(|(id, key)| {
+                    (
+                        i32::try_from(id.as_u32()).unwrap_or(i32::MAX),
+                        hex(key.as_bytes()),
+                    )
+                })
+                .collect(),
+            // 🔐 Пост-квантовые одноразовые предключи уходят **с
+            // подписью**: подмена такого ключа даёт атакующему
+            // пост-квантовую половину общего секрета, и схема
+            // держится только на том, что его подлинность
+            // проверяема (раздел 6.2).
+            one_time_kem: added_kem
+                .iter()
+                .map(|key| {
+                    (
+                        i32::try_from(key.id.as_u32()).unwrap_or(i32::MAX),
+                        hex(key.public.as_bytes()),
+                        hex(&key.signature),
+                    )
+                })
+                .collect(),
+        };
+
+        // ⚠️ Публикация до сохранения.
+        //
+        // Порядок обязателен: сохранив секреты первыми и не дойдя
+        // до сервера, клиент считал бы пул пополненным, а сервер
+        // продолжал бы выдавать пустые bundle. Пул чинился бы
+        // только с виду — то есть не чинился бы вовсе.
+        self.api.publish_keys(
+            &device_id,
+            &request,
+            auth_headers(&identity, "PUT", &format!("/v1/keys/{device_id}"), now)?,
+        )?;
+
+        self.persist_secrets(&secrets, now)?;
+
+        Ok(PreKeyMaintenance {
+            rotated_signed: rotated,
+            added_one_time: added,
+            remaining_one_time: u32::try_from(on_server)
+                .unwrap_or(u32::MAX)
+                .saturating_add(added),
+        })
     }
 
     /// 🔐 Собирает выгрузку данных пользователя (MASVS PRIVACY-3.1).
