@@ -356,3 +356,62 @@ fn message_is_received_and_decrypted() {
     assert_eq!(messages[0].text, text, "текст не совпал после расшифровки");
     assert!(!messages[0].outgoing, "входящее помечено исходящим");
 }
+
+/// 🔐 Пул одноразовых предключей наполняется на настоящем сервере.
+///
+/// # Что это проверяет, чего не проверяет заглушка
+///
+/// Весь путь целиком: запрос остатка за подписью, выпуск недостающих
+/// ключей, публикацию с подписями пост-квантовых и то, что сервер их
+/// принял и учёл. Заглушка проверяет договорённость клиента с самим
+/// собой; здесь — с Postgres и настоящим разбором JSON.
+///
+/// # Почему после регистрации в пуле один ключ
+///
+/// `generate` публикует `one_time.first()` — один из ста. Остальные
+/// девяносто девять на сервер не попадают вовсе, и до появления
+/// обслуживания не попадали никогда: первый же незнакомец забирал
+/// единственный, и все следующие первые контакты шли без
+/// одноразового предключа.
+#[test]
+#[ignore = "нужен запущенный сервер: AEGIS_SERVER=http://127.0.0.1:8443"]
+fn the_one_time_pool_is_filled_on_a_real_server() {
+    let (host, port) = server().expect("переменная AEGIS_SERVER не задана");
+    let dir = tempfile::tempdir().expect("каталог");
+
+    let path = dir.path().join("m.db").to_string_lossy().into_owned();
+    let client = Client::new(
+        LocalHttp { host, port },
+        Storage::new(&path, &[0x41; 32]).expect("база"),
+    );
+
+    client
+        .register(&unique("pool"), now(), &mut OsRng)
+        .expect("регистрация");
+
+    let first = client
+        .maintain_prekeys(now(), &mut OsRng)
+        .expect("первое обслуживание");
+
+    assert!(
+        first.added_one_time > 0,
+        "после регистрации пул уже полон — значит проверять нечего",
+    );
+
+    assert_eq!(
+        first.remaining_one_time,
+        aegis_protocol::ONE_TIME_PRE_KEY_POOL_SIZE,
+        "пул наполнен не до полного размера",
+    );
+
+    // Повторное обслуживание ничего не добавляет: сервер уже полон.
+    let second = client
+        .maintain_prekeys(now(), &mut OsRng)
+        .expect("второе обслуживание");
+
+    assert_eq!(second.added_one_time, 0, "полный пул пополнен повторно");
+    assert_eq!(
+        second.remaining_one_time,
+        aegis_protocol::ONE_TIME_PRE_KEY_POOL_SIZE,
+    );
+}
