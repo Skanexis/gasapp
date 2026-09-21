@@ -191,8 +191,13 @@
             android:hint="@string/message_hint"
             android:inputType="textMultiLine|textCapSentences"
             android:maxLines="4"
+            android:saveEnabled="false"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_secondary" />
+        <!-- 🔐 saveEnabled="false": черновик не попадает в сохранённое
+             состояние экрана. Иначе незашифрованный текст лежал бы
+             в памяти системного процесса и восстанавливался бы после
+             гибели процесса приложения — в том числе без PIN. -->
 
         <org.aegis.app.components.AegisButton
             android:id="@+id/send_button"
