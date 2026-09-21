@@ -486,4 +486,13 @@
     <string name="vault_delete_forever">Delete forever</string>
     <string name="vault_deleted">File deleted</string>
     <string name="vault_delete_failed">Could not delete the file</string>
+    <string name="privacy_autolock">Auto-lock</string>
+    <plurals name="autolock_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <plurals name="autolock_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
 </resources>
