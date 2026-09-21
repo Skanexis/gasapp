@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeviceIntegrity
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.SecurityEvents
 import org.aegis.app.core.Settings
 import org.aegis.app.core.TouchTarget
 import org.aegis.app.ui.SettingsRow
@@ -108,6 +109,49 @@ class SecurityCenterActivity : AppCompatActivity() {
         renderScore(checks)
         renderChecks(checks)
         renderRows()
+        renderLog()
+    }
+
+    /**
+     * 🔐 Последние события журнала безопасности.
+     *
+     * Журнал писался, но прочитать его было негде (см. [SecurityEvents]).
+     * Событие неизвестного экрану типа показывается сырым, а не
+     * прячется.
+     */
+    private fun renderLog() {
+        val list = findViewById<LinearLayout>(R.id.security_log)
+        list.removeAllViews()
+
+        val events = runCatching { Core.messenger().securityEvents(LOG_LIMIT) }
+            .getOrDefault(emptyList())
+
+        if (events.isEmpty()) {
+            val row = layoutInflater.inflate(R.layout.item_settings_row, list, false)
+            SettingsRow.bind(root = row, label = R.string.security_log_empty, icon = R.drawable.ic_shield)
+            list.addView(row)
+
+            return
+        }
+
+        val format = java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.SHORT,
+            java.text.DateFormat.SHORT,
+        )
+
+        events.forEach { event ->
+            val row = layoutInflater.inflate(R.layout.item_settings_row, list, false)
+            val label = SecurityEvents.labelFor(event.eventType)
+
+            SettingsRow.bind(
+                root = row,
+                title = label?.let(::getString) ?: event.eventType,
+                value = format.format(java.util.Date(event.timestampMillis)),
+                icon = R.drawable.ic_alert,
+            )
+
+            list.addView(row)
+        }
     }
 
     private fun bindActions() {
@@ -390,6 +434,9 @@ class SecurityCenterActivity : AppCompatActivity() {
     private companion object {
         /** Максимальный уровень drawable. */
         const val MAX_LEVEL = 10_000
+
+        /** Сколько последних событий журнала показывается. */
+        const val LOG_LIMIT = 20u
 
     }
 }

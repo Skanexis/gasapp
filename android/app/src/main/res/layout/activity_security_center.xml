@@ -150,6 +150,19 @@
 
             <include android:id="@+id/security_blocked" layout="@layout/item_settings_row" />
 
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginStart="@dimen/screen_padding"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/security_section_log" />
+
+            <!-- Заполняется кодом: последние события журнала безопасности. -->
+            <LinearLayout
+                android:id="@+id/security_log"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
         </LinearLayout>
     </ScrollView>
 
