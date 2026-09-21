@@ -101,6 +101,11 @@ def check_paths(text, root):
         if "://" in quoted:
             continue
 
+        # Фрагмент маршрута HTTP, а не файл: `/v1/keys/…`, `/count`.
+        # Пути к файлам в чек-листе всегда относительные.
+        if quoted.startswith("/"):
+            continue
+
         # Ссылка на тест внутри файла: `путь::модуль::имя_теста`.
         # Проверяется файл, имя теста — не наше дело.
         quoted = quoted.split("::", 1)[0]

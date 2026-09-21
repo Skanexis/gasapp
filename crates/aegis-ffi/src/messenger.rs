@@ -83,6 +83,17 @@ pub struct FfiAccountDeletion {
     pub attachments: u64,
 }
 
+/// Что сделало обслуживание предключей.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPreKeyMaintenance {
+    /// Подписанный предключ заменён новым.
+    pub rotated_signed: bool,
+    /// Сколько одноразовых предключей добавлено.
+    pub added_one_time: u32,
+    /// Сколько их у сервера после обслуживания.
+    pub remaining_one_time: u32,
+}
+
 /// Ответ HTTP, пришедший от платформы.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiHttpResponse {
@@ -559,6 +570,45 @@ impl Messenger {
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
 
         guard(|| client.rekey_storage(&new_key))
+    }
+
+    /// 🔐 Пополняет одноразовые предключи и ротирует подписанный.
+    ///
+    /// Одноразовый предключ расходуется при каждом первом контакте:
+    /// сервер отдаёт его тому, кто начинает переписку, и вычёркивает.
+    /// Без пополнения пул кончается, и каждая новая переписка
+    /// заводится **без** одноразового ключа — теряя и классическую,
+    /// и пост-квантовую половину вклада в forward secrecy. Сервер
+    /// при этом отвечает успехом, и никто ничего не замечает.
+    ///
+    /// ⚠️ Вызывать после открытия хранилища и после приёма
+    /// сообщений. Когда делать нечего, вызов ограничивается одним
+    /// запросом остатка и в сеть за публикацией не ходит.
+    ///
+    /// Возвращает, сколько ключей добавлено и сколько осталось
+    /// на сервере, — это показывает центр безопасности.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — аккаунт не зарегистрирован либо
+    /// публикация не удалась. Секреты в последнем случае
+    /// не сохраняются: иначе клиент считал бы опубликованным то,
+    /// чего сервер не видел.
+    pub fn maintain_prekeys(&self, now_millis: i64) -> Result<FfiPreKeyMaintenance, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let report = guard(|| {
+            client.maintain_prekeys(
+                aegis_types::Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })?;
+
+        Ok(FfiPreKeyMaintenance {
+            rotated_signed: report.rotated_signed,
+            added_one_time: report.added_one_time,
+            remaining_one_time: report.remaining_one_time,
+        })
     }
 
     /// 🔐 Собирает выгрузку данных пользователя (MASVS PRIVACY-3.1).
