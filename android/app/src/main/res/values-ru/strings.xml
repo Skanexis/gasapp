@@ -528,4 +528,17 @@
     <string name="vault_delete_forever">Удалить навсегда</string>
     <string name="vault_deleted">Файл удалён</string>
     <string name="vault_delete_failed">Не удалось удалить файл</string>
+    <string name="privacy_autolock">Автоблокировка</string>
+    <plurals name="autolock_seconds">
+        <item quantity="one">%d секунда</item>
+        <item quantity="few">%d секунды</item>
+        <item quantity="many">%d секунд</item>
+        <item quantity="other">%d секунды</item>
+    </plurals>
+    <plurals name="autolock_minutes">
+        <item quantity="one">%d минута</item>
+        <item quantity="few">%d минуты</item>
+        <item quantity="many">%d минут</item>
+        <item quantity="other">%d минуты</item>
+    </plurals>
 </resources>

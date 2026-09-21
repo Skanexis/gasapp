@@ -256,7 +256,7 @@ class SecurityCenterActivity : AppCompatActivity() {
             }.getOrNull()
         } ?: return false
 
-        return seconds in 0L..AUTO_LOCK_LIMIT_SECONDS
+        return seconds in 0L..Settings.AUTO_LOCK_RECOMMENDED_MAX
     }
 
     /**
@@ -391,7 +391,5 @@ class SecurityCenterActivity : AppCompatActivity() {
         /** Максимальный уровень drawable. */
         const val MAX_LEVEL = 10_000
 
-        /** Предел автоблокировки, при котором проверка пройдена: пять минут. */
-        const val AUTO_LOCK_LIMIT_SECONDS = 300L
     }
 }

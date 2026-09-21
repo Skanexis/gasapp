@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisSheet
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeleteAccount
@@ -56,6 +57,7 @@ class PrivacyActivity : AppCompatActivity() {
         bindScreenshots()
         bindNotificationPreview()
         bindBiometric()
+        bindAutoLock()
         bindExport()
         bindDeleteAccount()
     }
@@ -316,6 +318,47 @@ class PrivacyActivity : AppCompatActivity() {
      * получил всю переписку, и узнать об этом человек должен
      * до того, как выберет, куда сохранять, — а не после.
      */
+    /**
+     * 🔐 Срок автоблокировки.
+     *
+     * Настройку читали [AutoLock] и центр безопасности, но ни один
+     * экран её не записывал: срок был минутой навсегда, а комментарии
+     * в `Settings` обещали, что его можно поменять.
+     */
+    private fun bindAutoLock() {
+        val current = runCatching {
+            Core.messenger().settingInt(Settings.AUTO_LOCK_SECONDS, Settings.AUTO_LOCK_DEFAULT)
+        }.getOrDefault(Settings.AUTO_LOCK_DEFAULT)
+
+        SettingsRow.bind(
+            root = findViewById(R.id.privacy_autolock),
+            title = getString(R.string.privacy_autolock),
+            value = autoLockLabel(current),
+            icon = R.drawable.ic_clock,
+            onClick = { chooseAutoLock() },
+        )
+    }
+
+    private fun chooseAutoLock() {
+        val sheet = AegisSheet.on(this, R.string.privacy_autolock)
+
+        Settings.AUTO_LOCK_CHOICES.forEach { seconds ->
+            sheet.action(autoLockLabel(seconds)) {
+                // Запись в зашифрованную базу; отказ оставляет прежний срок,
+                // и строка покажет его, а не выбранный.
+                runCatching { Core.messenger().setSettingInt(Settings.AUTO_LOCK_SECONDS, seconds) }
+                bindAutoLock()
+            }
+        }
+
+        sheet.show()
+    }
+
+    private fun autoLockLabel(seconds: Long): String = when {
+        seconds < 60L -> resources.getQuantityString(R.plurals.autolock_seconds, seconds.toInt(), seconds.toInt())
+        else -> resources.getQuantityString(R.plurals.autolock_minutes, (seconds / 60L).toInt(), (seconds / 60L).toInt())
+    }
+
     private fun bindExport() {
         SettingsRow.bind(
             root = findViewById(R.id.privacy_export),
