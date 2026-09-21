@@ -892,6 +892,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -972,6 +974,8 @@ fun uniffi_aegis_checksum_method_messenger_delete_for_everyone(
 fun uniffi_aegis_checksum_method_messenger_delete_vault_file(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_edit_message(
+): Short
+fun uniffi_aegis_checksum_method_messenger_establish_vault_verifier(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_export_data(
 ): Short
@@ -1146,6 +1150,8 @@ fun uniffi_aegis_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUse
 fun uniffi_aegis_fn_method_messenger_delete_vault_file(`ptr`: Pointer,`fileId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_edit_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_establish_vault_verifier(`ptr`: Pointer,`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_export_data(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1498,6 +1504,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_establish_vault_verifier() != 60466.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_export_data() != 23159.toShort()) {
@@ -2600,6 +2609,21 @@ public interface MessengerInterface {
     fun `editMessage`(`peerUsername`: kotlin.String, `targetMessageId`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
+     * Заводит проверочное значение vault по заведомо верному PIN.
+     *
+     * 🔐 Платформа зовёт это **сразу после** того, как база открылась
+     * этим PIN, — единственный момент, когда верность PIN известна.
+     * После этого [`Self::unlock_vault`] отвергает неверный PIN даже
+     * в пустом vault, и опечатка при первом открытии не привязывает
+     * к себе первый добавленный файл.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сбой вывода ключа или записи.
+     */
+    fun `establishVaultVerifier`(`pin`: kotlin.String, `salt`: kotlin.ByteArray)
+    
+    /**
      * 🔐 Собирает выгрузку данных пользователя (MASVS PRIVACY-3.1).
      *
      * Возвращает JSON: имя аккаунта, контакты, переписка и настройки.
@@ -3530,6 +3554,31 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_edit_message(
         it, FfiConverterString.lower(`peerUsername`),FfiConverterString.lower(`targetMessageId`),FfiConverterString.lower(`text`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Заводит проверочное значение vault по заведомо верному PIN.
+     *
+     * 🔐 Платформа зовёт это **сразу после** того, как база открылась
+     * этим PIN, — единственный момент, когда верность PIN известна.
+     * После этого [`Self::unlock_vault`] отвергает неверный PIN даже
+     * в пустом vault, и опечатка при первом открытии не привязывает
+     * к себе первый добавленный файл.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сбой вывода ключа или записи.
+     */
+    @Throws(FfiException::class)override fun `establishVaultVerifier`(`pin`: kotlin.String, `salt`: kotlin.ByteArray)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_establish_vault_verifier(
+        it, FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),_status)
 }
     }
     

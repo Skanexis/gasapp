@@ -2210,6 +2210,25 @@ impl<T: Transport> Client<T> {
         Vault::new(&self.storage, &mut keeper).unlock(pin, salt, now)
     }
 
+    /// Заводит проверочное значение vault по заведомо верному PIN —
+    /// тому, которым только что открылась база (см.
+    /// [`Vault::establish_verifier`]).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой вывода ключа;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn establish_vault_verifier<R: RngCore + CryptoRng>(
+        &self,
+        pin: &str,
+        salt: &[u8],
+        rng: &mut R,
+    ) -> Result<()> {
+        let mut keeper = self.vault.lock().map_err(|_| AegisError::Storage)?;
+
+        Vault::new(&self.storage, &mut keeper).establish_verifier(pin, salt, rng)
+    }
+
     /// Закрывает vault и обнуляет его ключ.
     ///
     /// # Errors
@@ -2458,7 +2477,7 @@ fn parse_bundle(response: &BundleResponse) -> Result<PreKeyBundle> {
 }
 
 /// Кодирует байты в hex.
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     use core::fmt::Write as _;
 
     bytes.iter().fold(String::new(), |mut out, byte| {
@@ -2471,7 +2490,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// Разбирает hex-строку.
-fn unhex(text: &str) -> Result<Vec<u8>> {
+pub(crate) fn unhex(text: &str) -> Result<Vec<u8>> {
     if !text.len().is_multiple_of(2) {
         return Err(AegisError::Malformed);
     }

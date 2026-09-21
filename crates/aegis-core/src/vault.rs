@@ -49,6 +49,31 @@ use aegis_types::{AegisError, MessageId, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
+/// Имя настройки с проверочным значением vault.
+const VERIFIER_SETTING: &str = "vault_verifier";
+
+/// Что заворачивается в ключ vault для проверки.
+///
+/// Значение не секретно: проверка держится на том, что развернуть
+/// его может только верный ключ (AEAD).
+const VERIFIER_PLAINTEXT: [u8; 32] = [0x5A; 32];
+
+/// Выводит ключ vault из PIN: Argon2id — мастер-ключ, HKDF — ключ vault.
+fn derive_vault_key(pin: &str, salt: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
+    let master = aegis_keystore::pin::derive_key(pin, salt)?;
+    let hierarchy = KeyHierarchy::from_master_key(*master.expose_secret())?;
+
+    hierarchy.vault_key()
+}
+
+/// Разворачивается ли проверочное значение этим ключом.
+fn verifier_matches(vault_key: &[u8; 32], stored: &str) -> bool {
+    crate::client::unhex(stored)
+        .ok()
+        .and_then(|wrapped| aegis_keystore::unwrap_key(vault_key, wrapped.as_slice()).ok())
+        .is_some_and(|plain| *plain.expose_secret() == VERIFIER_PLAINTEXT)
+}
+
 /// Размер ключа vault.
 pub const KEY_LEN: usize = 32;
 
@@ -302,13 +327,74 @@ impl<'a> Vault<'a> {
     /// не той длины;
     /// [`AegisError::Crypto`] — сбой вывода ключей.
     pub fn unlock(&mut self, pin: &str, salt: &[u8], now: Timestamp) -> Result<()> {
-        let master = aegis_keystore::pin::derive_key(pin, salt)?;
-        let hierarchy = KeyHierarchy::from_master_key(*master.expose_secret())?;
-        let vault_key = hierarchy.vault_key()?;
+        let vault_key = derive_vault_key(pin, salt)?;
+
+        // 🔐 Неверный PIN vault не открывает.
+        //
+        // Прежде здесь проверки не было вовсе: любой PIN длиной от шести
+        // символов «открывал» vault. Содержимое файлов оставалось
+        // недоступным — ключи файлов не разворачивались, — но список
+        // имён отдавался, а удаление работало. Аудитор открыл чужой
+        // vault PIN-ом 000000.
+        match self.storage.setting_text(VERIFIER_SETTING)? {
+            Some(stored) => {
+                if !verifier_matches(&vault_key, &stored) {
+                    return Err(AegisError::Crypto);
+                }
+            }
+            // Проверочного значения ещё нет — база, заведённая до него.
+            // Тогда ключ сверяется с ключом любого файла: верный ключ
+            // vault его разворачивает, неверный — нет.
+            None => {
+                if let Some(file) = self.storage.list_vault_files(1)?.first() {
+                    aegis_keystore::unwrap_key(&vault_key, &file.wrapped_key)
+                        .map_err(|_| AegisError::Crypto)?;
+                }
+            }
+        }
 
         self.guard.open(vault_key, now);
 
         Ok(())
+    }
+
+    /// Заводит проверочное значение vault по **заведомо верному** PIN.
+    ///
+    /// # Зачем отдельно от [`Self::unlock`]
+    ///
+    /// Верен ли PIN, ядро само узнать не может: ключ базы связан ещё
+    /// и с секретом из аппаратного хранилища платформы. Заведомо верен
+    /// PIN только в одном месте — когда база им только что открылась.
+    /// Туда платформа и зовёт этот метод.
+    ///
+    /// Заводить значение при первом открытии vault было бы ошибкой:
+    /// опечатка в этот момент навсегда привязала бы vault к ней.
+    ///
+    /// Заведённое значение не трогается и не пересчитывается: проверка
+    /// идёт до вывода ключа, так что вход не платит лишнего Argon2id.
+    /// Перенести его на другое устройство нельзя — резервная копия
+    /// текстовых настроек не содержит.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой вывода ключа;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn establish_verifier<R: RngCore + CryptoRng>(
+        &mut self,
+        pin: &str,
+        salt: &[u8],
+        rng: &mut R,
+    ) -> Result<()> {
+        if self.storage.setting_text(VERIFIER_SETTING)?.is_some() {
+            return Ok(());
+        }
+
+        let vault_key = derive_vault_key(pin, salt)?;
+
+        let wrapped = aegis_keystore::wrap_key(&vault_key, &VERIFIER_PLAINTEXT, rng)?;
+
+        self.storage
+            .set_setting_text(VERIFIER_SETTING, &crate::client::hex(&wrapped))
     }
 
     /// Закрывает vault и обнуляет ключ.
@@ -745,10 +831,12 @@ mod file_tests {
         assert_eq!(vault.file_count().expect("счёт"), 1);
     }
 
-    /// 🔐 Неверный PIN даёт другой ключ, и файл не открывается.
+    /// 🔐 Неверный PIN не открывает vault, и файл недоступен.
     ///
-    /// Отдельной проверки PIN не существует: неверный ключ просто
-    /// не разворачивает ключ файла.
+    /// ⚠️ Прежде этот тест утверждал обратное: «отдельной проверки PIN
+    /// не существует», и неверный PIN здесь «открывал» vault — тест
+    /// закреплял дефект как норму. Содержимое тогда не расшифровывалось,
+    /// но список имён отдавался и удаление работало.
     #[test]
     fn wrong_pin_does_not_open_the_file() {
         let (storage, _dir) = open_storage();
@@ -761,11 +849,14 @@ mod file_tests {
             .expect("добавление");
 
         vault.seal();
-        vault.unlock("999999", &SALT, now()).expect("открытие");
 
+        assert!(
+            matches!(vault.unlock("999999", &SALT, now()), Err(AegisError::Crypto)),
+            "неверный PIN открыл vault"
+        );
         assert!(matches!(
             vault.open_file(&sealed.file_id, &sealed.ciphertext, now()),
-            Err(AegisError::Crypto)
+            Err(AegisError::Locked)
         ));
     }
 
