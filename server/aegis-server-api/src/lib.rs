@@ -41,6 +41,7 @@ pub mod hub;
 pub mod pow;
 pub mod push;
 pub mod rate_limit;
+pub mod retention;
 pub mod routes;
 
 pub use auth::{AuthError, CHALLENGE_TTL_MILLIS};

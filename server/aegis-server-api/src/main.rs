@@ -173,6 +173,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //
     // Отдельная задача, а не часть обработчика: она живёт всё время
     // работы процесса и переподключается сама при обрыве связи с базой.
+    // 🔐 Сроки хранения исполняются здесь, а не на словах: до этого
+    // `purge_expired` не вызывал никто, и истёкшее лежало в базе
+    // навсегда (см. `retention`).
+    tokio::spawn(aegis_server_api::retention::run(pool.clone()));
+
     tokio::spawn(aegis_server_api::hub::listen(
         pool,
         Arc::clone(&state.hub),
