@@ -438,10 +438,29 @@ pub async fn enqueue_envelope(
     // Интервал строится умножением на `1 second`, а не через
     // `make_interval(secs => …)`: последний принимает `double precision`,
     // и приведение i64 → f64 теряло бы точность на больших сроках.
+    //
+    // 🔐 Время — с точностью до часа, и в `queued_at`, и в `expires_at`
+    // (миграция 0005). Точный момент постановки — это момент отправки;
+    // рядом с точным временем загрузки вложения он связывал отправителя
+    // с получателем в обход sealed sender.
+    //
+    // Порядок держит позиция в очереди **этого** получателя: на час
+    // приходится много конвертов, а начальное сообщение сессии обязано
+    // прийти раньше следующих. Позиция считается от лежащих в очереди
+    // и сбрасывается вместе с ней — счётчиком полученного она не служит.
     sqlx::query(
         "
-        INSERT INTO envelopes (envelope_id, destination_device_id, ciphertext, expires_at)
-        VALUES ($1, $2, $3, now() + ($4 * INTERVAL '1 second'))
+        INSERT INTO envelopes
+            (envelope_id, destination_device_id, ciphertext, queued_at, expires_at, queue_position)
+        VALUES (
+            $1, $2, $3,
+            date_trunc('hour', now()),
+            date_trunc('hour', now()) + ($4 * INTERVAL '1 second'),
+            COALESCE(
+                (SELECT MAX(queue_position) FROM envelopes WHERE destination_device_id = $2),
+                0
+            ) + 1
+        )
         ",
     )
     .bind(envelope_id)
@@ -471,7 +490,7 @@ pub async fn fetch_envelopes(
         SELECT envelope_id, ciphertext, EXTRACT(EPOCH FROM queued_at)::BIGINT
         FROM envelopes
         WHERE destination_device_id = $1 AND expires_at > now()
-        ORDER BY queued_at
+        ORDER BY queue_position, envelope_id
         LIMIT $2
         ",
     )
@@ -711,8 +730,12 @@ pub async fn store_attachment(
 
     sqlx::query(
         "
-        INSERT INTO attachments (attachment_id, uploader_device_id, payload, expires_at)
-        VALUES ($1, $2, $3, now() + ($4 * INTERVAL '1 second'))
+        INSERT INTO attachments (attachment_id, uploader_device_id, payload, uploaded_at, expires_at)
+        VALUES (
+            $1, $2, $3,
+            date_trunc('hour', now()),
+            date_trunc('hour', now()) + ($4 * INTERVAL '1 second')
+        )
         ",
     )
     .bind(attachment_id)
