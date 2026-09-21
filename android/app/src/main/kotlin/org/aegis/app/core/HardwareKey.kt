@@ -206,7 +206,16 @@ object HardwareKey {
             }
         }
 
-        generator.init(builder.build())
+        // ⚠️ Флаг снимается явно. `setIsStrongBoxBacked` меняет сам
+        // построитель, а не возвращает копию: прежде здесь стояло
+        // `builder.build()`, и «откат» снова просил StrongBox. На любом
+        // устройстве без него — а это эмулятор и многие телефоны —
+        // регистрация не проходила вовсе, а каждый вход засчитывался
+        // как неверный PIN и наращивал задержки `PinAttempts`.
+        //
+        // Нашлось только при первом запуске на эмуляторе: юнит-тесты
+        // хранилища ключей не касаются.
+        generator.init(builder.setIsStrongBoxBacked(false).build())
 
         return generator.generateKey()
     }

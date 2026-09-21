@@ -102,6 +102,7 @@ class OnboardingActivity : AppCompatActivity() {
                     // повторно, и состояния Double Ratchet разошлись бы.
                     Core.unlock(this@OnboardingActivity, pinValue)
                         .register(name, System.currentTimeMillis())
+                        .also { Core.maintainPrekeysNow() }
                 }
             }
 
