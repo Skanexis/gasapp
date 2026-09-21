@@ -385,7 +385,11 @@ impl Transport for FakeServer {
                     None => (404, String::new()),
                 }
             }
-            (Method::Post, "/v1/messages") => {
+            // Обычная отправка теперь за подписью отправителя, и путь
+            // называет его устройство.
+            (Method::Post, path)
+                if path.starts_with("/v1/messages/") && path.matches('/').count() == 3 =>
+            {
                 let parsed: SendRequest =
                     serde_json::from_str(request.body.as_deref().unwrap_or_default())
                         .map_err(|_| aegis_types::AegisError::Malformed)?;
@@ -1176,6 +1180,102 @@ fn first_message_sent_before_rotation_still_decrypts() {
         1,
         "первое сообщение, зашифрованное на прежний ключ, потеряно"
     );
+}
+
+/// 🔐 Неверный PIN не открывает vault с файлами.
+///
+/// Прежде проверки не было: любой PIN «открывал» vault, список имён
+/// отдавался, удаление работало. Тест перенесён из аудита; проверочного
+/// значения здесь нет — это путь базы, заведённой до него.
+#[test]
+fn a_wrong_pin_does_not_open_the_vault() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let owner = Client::new(server, open_storage(&dir, "owner.db"));
+    let salt = [0x33u8; 16];
+
+    owner
+        .unlock_vault("482915", &salt, now())
+        .expect("владелец открывает vault");
+    let sealed = owner
+        .add_vault_file("паспорт.png", b"scan", "/files/1", now(), &mut OsRng)
+        .expect("файл добавлен");
+    owner.seal_vault().expect("vault закрыт");
+
+    let opened = owner.unlock_vault("000000", &salt, now());
+    let names: Vec<String> = owner
+        .vault_files(10, now())
+        .map(|files| files.into_iter().map(|file| file.name).collect())
+        .unwrap_or_default();
+    let deleted = owner.delete_vault_file(&sealed.file_id, now());
+
+    assert!(
+        opened.is_err() && names.is_empty() && deleted.is_err(),
+        "неверный PIN открыл vault: имена {names:?}, удаление {:?}",
+        deleted.map(|path| path.is_some())
+    );
+
+    owner
+        .unlock_vault("482915", &salt, now())
+        .expect("верный PIN открывает");
+}
+
+/// 🔐 Заведённое проверочное значение отвергает неверный PIN и в пустом vault.
+///
+/// Иначе опечатка при первом открытии пустого vault привязала бы
+/// к ней первый же добавленный файл.
+#[test]
+fn a_typo_at_first_vault_open_is_rejected() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let owner = Client::new(server, open_storage(&dir, "owner.db"));
+    let salt = [0x44u8; 16];
+
+    // Так делает платформа сразу после того, как база открылась PIN-ом.
+    owner
+        .establish_vault_verifier("482915", &salt, &mut OsRng)
+        .expect("проверочное значение заведено");
+
+    assert!(
+        owner.unlock_vault("482916", &salt, now()).is_err(),
+        "опечатка открыла пустой vault"
+    );
+    owner
+        .unlock_vault("482915", &salt, now())
+        .expect("верный PIN открывает");
+}
+
+/// 🔐 Повторное заведение не перепривязывает vault, в котором есть файлы.
+///
+/// Файлы завёрнуты в прежний ключ; перевести проверку на другой PIN
+/// значило бы открыть vault ключом, который их не разворачивает.
+#[test]
+fn establishing_again_does_not_rebind_a_vault_with_files() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let owner = Client::new(server, open_storage(&dir, "owner.db"));
+    let salt = [0x55u8; 16];
+
+    owner
+        .establish_vault_verifier("111111", &salt, &mut OsRng)
+        .expect("заведено");
+    owner.unlock_vault("111111", &salt, now()).expect("открыт");
+    owner
+        .add_vault_file("договор.pdf", b"text", "/files/2", now(), &mut OsRng)
+        .expect("файл добавлен");
+    owner.seal_vault().expect("закрыт");
+
+    owner
+        .establish_vault_verifier("222222", &salt, &mut OsRng)
+        .expect("вызов проходит");
+
+    assert!(
+        owner.unlock_vault("222222", &salt, now()).is_err(),
+        "vault с файлами перепривязан к чужому PIN"
+    );
+    owner
+        .unlock_vault("111111", &salt, now())
+        .expect("прежний PIN открывает");
 }
 
 /// Поиск находит отправленное сообщение.

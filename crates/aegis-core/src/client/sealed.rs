@@ -229,10 +229,23 @@ impl<T: Transport> Client<T> {
         let peer = peer_account(peer_identity);
 
         let Some(access_key) = self.storage.contact_access_key(&peer)? else {
-            self.api.send_envelope(&SendRequest {
-                destination_device_id: peer_device.to_owned(),
-                ciphertext: hex(envelope),
-            })?;
+            // 🔐 Без ключа доступа — обычная отправка, за подписью:
+            // анонимно писать можно только тому, кто раздал ключ.
+            let own_device = self
+                .storage
+                .load_own_keys()?
+                .and_then(|keys| keys.device_id)
+                .ok_or(AegisError::SessionNotFound)?;
+            let path = format!("/v1/messages/{own_device}");
+
+            self.api.send_envelope(
+                &own_device,
+                &SendRequest {
+                    destination_device_id: peer_device.to_owned(),
+                    ciphertext: hex(envelope),
+                },
+                super::auth_headers(identity, "POST", &path, now)?,
+            )?;
 
             return Ok(());
         };

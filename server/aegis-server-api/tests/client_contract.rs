@@ -258,7 +258,14 @@ async fn client_send_shape_is_accepted() {
         hex::encode(b"opaque envelope"),
     );
 
-    let (status, _) = call_raw(&state, "POST", "/v1/messages", Some(body)).await;
+    let (status, _) = call_raw_signed(
+        &state,
+        &private,
+        "POST",
+        &format!("/v1/messages/{device_id}"),
+        Some(body),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK, "сервер отверг форму отправки");
 

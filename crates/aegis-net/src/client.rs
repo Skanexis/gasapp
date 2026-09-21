@@ -208,17 +208,29 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
-    /// Отправляет конверт.
+    /// Отправляет конверт — за подписью своего устройства.
+    ///
+    /// 🔐 Анонимно писать можно только тому, кто раздал ключ доступа
+    /// ([`ApiClient::send_sealed`]). Сюда клиент уходит, пока ключа
+    /// собеседника у него нет, то есть с первым сообщением, — а
+    /// начальный конверт и так несёт identity-ключ открыто. Прежде
+    /// маршрут был без подписи, и любой клал конверты в любую очередь.
     ///
     /// # Errors
     ///
     /// * [`AegisError::Malformed`] — конверт превышает лимит 256 КБ.
     /// * [`AegisError::Network`] — сбой соединения либо лимит частоты.
-    pub fn send_envelope(&self, request: &SendRequest) -> Result<String> {
-        let response = self.send(
+    pub fn send_envelope(
+        &self,
+        sender_device_id: &str,
+        request: &SendRequest,
+        auth: Vec<(String, String)>,
+    ) -> Result<String> {
+        let response = self.send_signed(
             Method::Post,
-            "/v1/messages".to_owned(),
+            format!("/v1/messages/{sender_device_id}"),
             Some(to_json(request)?),
+            auth,
         )?;
 
         parse(&response)
