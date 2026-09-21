@@ -886,6 +886,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -976,6 +978,8 @@ fun uniffi_aegis_checksum_method_messenger_forget_backup_chain(
 fun uniffi_aegis_checksum_method_messenger_inspect_backup(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_is_vault_open(
+): Short
+fun uniffi_aegis_checksum_method_messenger_maintain_prekeys(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_maintain_storage(
 ): Short
@@ -1145,6 +1149,8 @@ fun uniffi_aegis_fn_method_messenger_inspect_backup(`ptr`: Pointer,`recoveryKey`
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_is_vault_open(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_aegis_fn_method_messenger_maintain_prekeys(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_maintain_storage(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_method_messenger_messages(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -1495,6 +1501,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_is_vault_open() != 1174.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_maintain_prekeys() != 33045.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_maintain_storage() != 58362.toShort()) {
@@ -2647,6 +2656,32 @@ public interface MessengerInterface {
     fun `isVaultOpen`(`nowMillis`: kotlin.Long): kotlin.Boolean
     
     /**
+     * 🔐 Пополняет одноразовые предключи и ротирует подписанный.
+     *
+     * Одноразовый предключ расходуется при каждом первом контакте:
+     * сервер отдаёт его тому, кто начинает переписку, и вычёркивает.
+     * Без пополнения пул кончается, и каждая новая переписка
+     * заводится **без** одноразового ключа — теряя и классическую,
+     * и пост-квантовую половину вклада в forward secrecy. Сервер
+     * при этом отвечает успехом, и никто ничего не замечает.
+     *
+     * ⚠️ Вызывать после открытия хранилища и после приёма
+     * сообщений. Когда делать нечего, вызов ограничивается одним
+     * запросом остатка и в сеть за публикацией не ходит.
+     *
+     * Возвращает, сколько ключей добавлено и сколько осталось
+     * на сервере, — это показывает центр безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунт не зарегистрирован либо
+     * публикация не удалась. Секреты в последнем случае
+     * не сохраняются: иначе клиент считал бы опубликованным то,
+     * чего сервер не видел.
+     */
+    fun `maintainPrekeys`(`nowMillis`: kotlin.Long): FfiPreKeyMaintenance
+    
+    /**
      * Уплотняет базу, если пришёл срок.
      *
      * Возвращает `true`, если уплотнение выполнено. Вызывать
@@ -3570,6 +3605,43 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_is_vault_open(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * 🔐 Пополняет одноразовые предключи и ротирует подписанный.
+     *
+     * Одноразовый предключ расходуется при каждом первом контакте:
+     * сервер отдаёт его тому, кто начинает переписку, и вычёркивает.
+     * Без пополнения пул кончается, и каждая новая переписка
+     * заводится **без** одноразового ключа — теряя и классическую,
+     * и пост-квантовую половину вклада в forward secrecy. Сервер
+     * при этом отвечает успехом, и никто ничего не замечает.
+     *
+     * ⚠️ Вызывать после открытия хранилища и после приёма
+     * сообщений. Когда делать нечего, вызов ограничивается одним
+     * запросом остатка и в сеть за публикацией не ходит.
+     *
+     * Возвращает, сколько ключей добавлено и сколько осталось
+     * на сервере, — это показывает центр безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — аккаунт не зарегистрирован либо
+     * публикация не удалась. Секреты в последнем случае
+     * не сохраняются: иначе клиент считал бы опубликованным то,
+     * чего сервер не видел.
+     */
+    @Throws(FfiException::class)override fun `maintainPrekeys`(`nowMillis`: kotlin.Long): FfiPreKeyMaintenance {
+            return FfiConverterTypeFfiPreKeyMaintenance.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_maintain_prekeys(
         it, FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
@@ -5114,6 +5186,54 @@ public object FfiConverterTypeFfiMessage: FfiConverterRustBuffer<FfiMessage> {
             FfiConverterLong.write(value.`timestamp`, buf)
             FfiConverterBoolean.write(value.`outgoing`, buf)
             FfiConverterTypeFfiDeliveryStatus.write(value.`status`, buf)
+    }
+}
+
+
+
+/**
+ * Что сделало обслуживание предключей.
+ */
+data class FfiPreKeyMaintenance (
+    /**
+     * Подписанный предключ заменён новым.
+     */
+    var `rotatedSigned`: kotlin.Boolean, 
+    /**
+     * Сколько одноразовых предключей добавлено.
+     */
+    var `addedOneTime`: kotlin.UInt, 
+    /**
+     * Сколько их у сервера после обслуживания.
+     */
+    var `remainingOneTime`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiPreKeyMaintenance: FfiConverterRustBuffer<FfiPreKeyMaintenance> {
+    override fun read(buf: ByteBuffer): FfiPreKeyMaintenance {
+        return FfiPreKeyMaintenance(
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiPreKeyMaintenance) = (
+            FfiConverterBoolean.allocationSize(value.`rotatedSigned`) +
+            FfiConverterUInt.allocationSize(value.`addedOneTime`) +
+            FfiConverterUInt.allocationSize(value.`remainingOneTime`)
+    )
+
+    override fun write(value: FfiPreKeyMaintenance, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`rotatedSigned`, buf)
+            FfiConverterUInt.write(value.`addedOneTime`, buf)
+            FfiConverterUInt.write(value.`remainingOneTime`, buf)
     }
 }
 
