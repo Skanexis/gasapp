@@ -2150,6 +2150,41 @@ impl Storage {
         rows.next().transpose().map_err(storage_error)
     }
 
+    /// Возвращает identity-ключ контакта, известного под этим именем.
+    ///
+    /// # Зачем искать по имени, а не по счёту
+    ///
+    /// 🔐 Счёт контакта выводится из первых шестнадцати байт его
+    /// identity-ключа. Поэтому сменившийся ключ даёт **другой счёт**:
+    /// перезаписать чужую строку он не может, но и на прежнюю
+    /// не попадает. Искать смену по счёту бесполезно — её там
+    /// не видно никогда.
+    ///
+    /// Видно её по имени. Имя выбирает сам контакт, оно не выводится
+    /// из ключа, и «то же имя при другом ключе» — это и есть смена
+    /// ключа, как её наблюдает получатель.
+    ///
+    /// ⚠️ Имя — подсказка, а не удостоверение: занять освободившееся
+    /// имя может кто угодно. Поэтому совпадение имени здесь только
+    /// **повод предупредить**, а не основание доверять или отказывать.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn contact_identity_by_username(&self, username: &str) -> Result<Option<Vec<u8>>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = connection
+            .prepare("SELECT identity_key FROM known_contacts WHERE username = ?")
+            .map_err(storage_error)?;
+
+        let mut rows = statement
+            .query_map(params![username], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(storage_error)?;
+
+        rows.next().transpose().map_err(storage_error)
+    }
+
     /// Отмечает контакт как верифицированный или снимает отметку.
     ///
     /// # Errors

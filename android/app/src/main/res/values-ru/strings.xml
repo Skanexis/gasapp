@@ -145,8 +145,8 @@
     <string name="add_contact_confirm">Добавить</string>
     <string name="add_contact_added">Контакт добавлен: %1$s</string>
     <string name="add_contact_added_unnamed">Контакт добавлен</string>
+    <string name="add_contact_key_changed">«%1$s» уже был у вас с другим ключом. Это может быть переустановка — или подмена. Сверьте safety number при встрече, прежде чем писать.</string>
     <string name="add_contact_invalid">Ссылка не подходит: она не является ссылкой AEGIS либо имя в ней принадлежит другому ключу</string>
-    <string name="add_contact_key_changed">У этого контакта уже известен другой ключ. Добавление отклонено: подтвердите смену ключа сверкой safety number.</string>
     <string name="add_contact_review">Проверьте, кого добавляете. Ссылка не подтверждает имя — его называет тот, кто её сделал.</string>
 
     <!-- Поиск по переписке. -->

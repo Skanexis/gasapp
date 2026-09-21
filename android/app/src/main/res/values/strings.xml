@@ -159,8 +159,8 @@
     <string name="add_contact_confirm">Add</string>
     <string name="add_contact_added">Contact added: %1$s</string>
     <string name="add_contact_added_unnamed">Contact added</string>
+    <string name="add_contact_key_changed">«%1$s» was already in your contacts with a different key. It may be a reinstall — or an impostor. Compare safety numbers in person before writing.</string>
     <string name="add_contact_invalid">This link does not work: it is not an AEGIS link, or the name in it belongs to a different key</string>
-    <string name="add_contact_key_changed">A different key is already known for this contact. The addition was rejected: confirm the key change by comparing the safety number.</string>
     <string name="add_contact_review">Check who you are adding. The link does not confirm the name — it is chosen by whoever made the link.</string>
 
     <string name="search_title">Search</string>

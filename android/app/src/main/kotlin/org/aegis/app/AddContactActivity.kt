@@ -124,6 +124,28 @@ class AddContactActivity : AppCompatActivity() {
     }
 
     private fun showAdded(contact: FfiContact) {
+        // 🔐 Имя уже известно под другим ключом.
+        //
+        // Это может быть переустановка или восстановление из копии —
+        // а может быть подсунутая ссылка, выдающая чужой ключ
+        // за знакомого. Отличить может только сверка вживую, поэтому
+        // человек не просто предупреждается, а сразу попадает на неё.
+        //
+        // ⚠️ Прежний контакт остаётся на месте и своей отметки
+        // о сверке не теряет; новый начинается несверенным.
+        if (contact.keyChanged) {
+            status.text = getString(R.string.add_contact_key_changed, contact.username.orEmpty())
+            input.setText("")
+
+            startActivity(
+                Intent(this, SafetyNumberActivity::class.java)
+                    .putExtra(SafetyNumberActivity.EXTRA_ACCOUNT_ID, contact.accountId)
+                    .putExtra(SafetyNumberActivity.EXTRA_PEER_NAME, contact.username.orEmpty()),
+            )
+
+            return
+        }
+
         status.text = when (val name = contact.username) {
             null -> getString(R.string.add_contact_added_unnamed)
             else -> getString(R.string.add_contact_added, name)

@@ -23,7 +23,7 @@ use std::sync::Mutex;
 use aegis_core::client::Client;
 use aegis_net::client::{HttpRequest, HttpResponse, Transport};
 use aegis_storage::Storage;
-use aegis_types::{AegisError, ChatId, MessageId, Timestamp};
+use aegis_types::{AccountId, AegisError, ChatId, MessageId, Timestamp};
 
 use crate::{guard, FfiError};
 
@@ -191,6 +191,17 @@ pub struct FfiContact {
     pub chat_id: Option<String>,
     /// Подтверждён ли контакт сверкой safety number.
     pub verified: bool,
+    /// 🔐 Это имя уже известно под **другим** ключом.
+    ///
+    /// Либо собеседник переустановил приложение или восстановился
+    /// из копии, либо кто-то занял его имя, либо подсунутая ссылка
+    /// выдаёт чужой ключ за его. Отличить может только сверка
+    /// safety number вживую.
+    ///
+    /// ⚠️ Приложение обязано это показать. Добавление не отменяется
+    /// и прежний контакт остаётся на месте: смена ключа заводит
+    /// новую запись, а верификация старой на неё не переносится.
+    pub key_changed: bool,
 }
 
 /// Найденное сообщение вместе с его чатом.
@@ -471,6 +482,52 @@ impl Messenger {
             guard(|| client.add_contact_from_link(&uri, Timestamp::from_millis(now_millis)))?;
 
         Ok(contact_to_ffi(&contact))
+    }
+
+    /// Safety number с контактом.
+    ///
+    /// 🔴 Прежде экран сверки считал цифры по двум **случайным** ключам
+    /// (`generate_identity_public_key` дважды). Настоящих ключей
+    /// в расчёте не было, и совпасть у собеседников цифры не могли.
+    ///
+    /// ⚠️ Контакт задаётся счётом, а не именем. Имя неоднозначно:
+    /// после смены ключа под одним именем живут две записи, и поиск
+    /// по имени мог бы показать цифры **прежнего** ключа — ровно
+    /// в тот момент, когда сверка нужнее всего.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — счёт не разбирается;
+    /// [`FfiError::Core`] — такого контакта нет либо свои ключи
+    /// не прочитались.
+    pub fn safety_number_with(&self, account_id: String) -> Result<String, FfiError> {
+        let account = parse_account_id(&account_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.safety_number(&account))
+    }
+
+    /// Отмечает контакт сверенным или снимает отметку.
+    ///
+    /// 🔴 Прежде кнопка «Отметить сверенным» закрывала экран, и только.
+    /// Отметку в продукте не ставил никто.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — счёт не разбирается;
+    /// [`FfiError::Core`] — такого контакта нет либо запись не удалась.
+    pub fn set_contact_verified(
+        &self,
+        account_id: String,
+        verified: bool,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let account = parse_account_id(&account_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.set_contact_verified(&account, verified, Timestamp::from_millis(now_millis))
+        })
     }
 
     /// Возвращает ссылку на собственный профиль.
@@ -954,7 +1011,15 @@ fn contact_to_ffi(contact: &aegis_core::client::Contact) -> FfiContact {
         username: contact.username.clone(),
         chat_id: contact.chat_id.map(|id| id.to_string()),
         verified: contact.verified,
+        key_changed: contact.key_changed,
     }
+}
+
+/// Разбирает идентификатор аккаунта, пришедший с платформы.
+fn parse_account_id(raw: &str) -> Result<AccountId, FfiError> {
+    let uuid = uuid::Uuid::parse_str(raw).map_err(|_| FfiError::InvalidArgument)?;
+
+    Ok(AccountId::from_uuid(uuid))
 }
 
 /// Разбирает идентификатор сообщения, пришедший с платформы.
