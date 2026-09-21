@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
+import org.aegis.app.core.Pin
 import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.SecureWindow
 
@@ -249,7 +250,7 @@ class LockActivity : AppCompatActivity() {
     }
 
     private fun append(digit: Char) {
-        if (entered.length >= PIN_LENGTH) {
+        if (entered.length >= Pin.LENGTH) {
             return
         }
 
@@ -259,7 +260,7 @@ class LockActivity : AppCompatActivity() {
 
         // Проверка запускается сама при наборе полной длины: отдельная
         // кнопка «ОК» здесь лишняя, длина PIN фиксирована.
-        if (entered.length == PIN_LENGTH) {
+        if (entered.length == Pin.LENGTH) {
             unlock()
         }
     }
@@ -465,7 +466,6 @@ class LockActivity : AppCompatActivity() {
          * этого достаточно, чтобы перебор на изъятом устройстве занимал
          * годы. Четыре цифры (10 000 вариантов) перебираются за часы.
          */
-        const val PIN_LENGTH = 6
 
         /** Шаг обратного отсчёта задержки. */
         const val COOLDOWN_TICK_MILLIS = 1_000L

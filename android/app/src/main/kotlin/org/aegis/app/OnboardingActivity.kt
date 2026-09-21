@@ -14,7 +14,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisTextField
+import android.text.InputFilter
 import org.aegis.app.core.Core
+import org.aegis.app.core.Pin
 import org.aegis.app.core.SecureWindow
 import uniffi.aegis.FfiException
 
@@ -52,6 +54,12 @@ class OnboardingActivity : AppCompatActivity() {
         progressLabel = findViewById(R.id.onboarding_progress_label)
         createButton = findViewById(R.id.onboarding_create)
 
+        // 🔐 Ограничение длины ставится отсюда, а не из разметки:
+        // в разметке оно было бы вторым местом, где записана
+        // длина PIN, и разойтись с экраном входа ему было бы
+        // ровно так же нечем помешать, как в прошлый раз.
+        pin.filters = arrayOf(InputFilter.LengthFilter(Pin.LENGTH))
+
         createButton.setOnClickListener { register() }
     }
 
@@ -65,8 +73,14 @@ class OnboardingActivity : AppCompatActivity() {
             return
         }
 
-        if (pinValue.length < MIN_PIN_LENGTH) {
-            showError(getString(R.string.onboarding_error_pin_short))
+        // 🔐 Ровно то, что способен набрать экран входа.
+        //
+        // Прежде здесь стояло «не короче шести», а поле принимало
+        // до двенадцати. PIN длиннее шести давал ключ, который
+        // экран входа не воспроизведёт никогда, — база не
+        // открывалась больше ни разу (см. [Pin]).
+        if (!Pin.isAcceptable(pinValue)) {
+            showError(getString(R.string.onboarding_error_pin))
 
             return
         }
@@ -170,7 +184,6 @@ class OnboardingActivity : AppCompatActivity() {
          * с растягиванием Argon2id делают перебор изъятого устройства
          * делом лет, а не часов.
          */
-        private const val MIN_PIN_LENGTH = 6
 
         /** Размер ключа SQLCipher. */
         private const val DATABASE_KEY_SIZE = 32

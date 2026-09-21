@@ -142,8 +142,8 @@
     <string name="new_chat_hint">Enter the other person\'s username</string>
     <string name="new_chat_open">Open</string>
     <string name="onboarding_choose_pin">Choose a PIN — it encrypts your messages on this device</string>
-    <string name="onboarding_pin_hint">at least 6 digits</string>
-    <string name="onboarding_error_pin_short">The PIN must be at least 6 characters</string>
+    <string name="onboarding_pin_hint">6 digits</string>
+    <string name="onboarding_error_pin">The PIN must be exactly 6 digits</string>
 
     <!-- Profile -->
     <string name="profile_title">My profile</string>
