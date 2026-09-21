@@ -127,8 +127,8 @@
     <string name="new_chat_hint">Введите имя пользователя собеседника</string>
     <string name="new_chat_open">Открыть</string>
     <string name="onboarding_choose_pin">Придумайте PIN — им шифруется переписка на устройстве</string>
-    <string name="onboarding_pin_hint">не менее 6 цифр</string>
-    <string name="onboarding_error_pin_short">PIN должен быть не короче 6 символов</string>
+    <string name="onboarding_pin_hint">6 цифр</string>
+    <string name="onboarding_error_pin">PIN — ровно 6 цифр</string>
 
     <!-- Экран профиля: QR и ссылка для обмена контактами. -->
     <string name="profile_title">Мой профиль</string>
