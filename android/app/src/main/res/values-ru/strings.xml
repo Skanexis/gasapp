@@ -541,4 +541,13 @@
         <item quantity="many">%d минут</item>
         <item quantity="other">%d минуты</item>
     </plurals>
+    <string name="security_section_log">Журнал безопасности</string>
+    <string name="security_log_empty">Пока ничего не происходило</string>
+    <string name="security_event_contact_identity_changed">Знакомое имя пришло с другим ключом</string>
+    <string name="security_event_contact_verified">Контакт отмечен сверенным</string>
+    <string name="security_event_contact_verification_revoked">Отметка о сверке снята</string>
+    <string name="security_event_server_key_changed">Сменился ключ sealed sender у сервера</string>
+    <string name="security_event_access_rejected">Получатель отверг наш ключ доступа</string>
+    <string name="security_event_certificate_mismatch">Сертификат отправителя не сошёлся с его ключом</string>
+    <string name="security_event_backup_restored">Восстановление из резервной копии</string>
 </resources>

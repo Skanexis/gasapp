@@ -495,4 +495,13 @@
         <item quantity="one">%d minute</item>
         <item quantity="other">%d minutes</item>
     </plurals>
+    <string name="security_section_log">Security log</string>
+    <string name="security_log_empty">Nothing has happened yet</string>
+    <string name="security_event_contact_identity_changed">A known name arrived with a different key</string>
+    <string name="security_event_contact_verified">Contact marked as verified</string>
+    <string name="security_event_contact_verification_revoked">Contact verification removed</string>
+    <string name="security_event_server_key_changed">The server\'s sealed sender key changed</string>
+    <string name="security_event_access_rejected">A recipient rejected our access key</string>
+    <string name="security_event_certificate_mismatch">A sender certificate did not match its key</string>
+    <string name="security_event_backup_restored">Restored from a backup</string>
 </resources>
