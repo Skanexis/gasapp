@@ -136,14 +136,15 @@ fn unique_name(prefix: &str) -> String {
 #[tokio::test]
 async fn client_register_shape_is_accepted() {
     let state = require_state!();
-    let challenge = [0x42u8; 32];
+    let username = unique_name("wire");
+    let challenge = pow::registration_challenge(&username, &[1u8; 32], &[2u8; 32]);
     let nonce = solve(&challenge);
 
     // Точная форма клиентского запроса: порядок полей неважен,
     // важны имена и типы.
     let body = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
-        unique_name("wire"),
+        username,
         hex::encode([1u8; 32]),
         hex::encode([2u8; 32]),
         hex::encode(challenge),
@@ -167,15 +168,15 @@ async fn client_register_shape_is_accepted() {
 async fn client_publish_keys_shape_is_accepted() {
     let state = require_state!();
 
-    let challenge = [0x42u8; 32];
-    let nonce = solve(&challenge);
-
     // Ключ настоящий: публикация предключей требует подписи, и
     // фиктивные 32 байта для неё не годятся.
     let private: DeviceKey = [0x31u8; 32];
+    let username = unique_name("keys");
+    let challenge = pow::registration_challenge(&username, &[1u8; 32], &public_key(&private));
+    let nonce = solve(&challenge);
     let register = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
-        unique_name("keys"),
+        username,
         hex::encode([1u8; 32]),
         hex::encode(public_key(&private)),
         hex::encode(challenge),
@@ -237,12 +238,13 @@ async fn client_publish_keys_shape_is_accepted() {
 async fn client_send_shape_is_accepted() {
     let state = require_state!();
 
-    let challenge = [0x42u8; 32];
-    let nonce = solve(&challenge);
     let private: DeviceKey = [0x32u8; 32];
+    let username = unique_name("send");
+    let challenge = pow::registration_challenge(&username, &[1u8; 32], &public_key(&private));
+    let nonce = solve(&challenge);
     let register = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
-        unique_name("send"),
+        username,
         hex::encode([1u8; 32]),
         hex::encode(public_key(&private)),
         hex::encode(challenge),
@@ -285,7 +287,7 @@ async fn client_discovery_shape_matches() {
     let state = require_state!();
     let username = unique_name("disco");
 
-    let challenge = [0x42u8; 32];
+    let challenge = pow::registration_challenge(&username, &[1u8; 32], &[2u8; 32]);
     let nonce = solve(&challenge);
     let register = format!(
         r#"{{"username":"{username}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
@@ -333,6 +335,21 @@ fn client_and_server_pow_agree() {
         expected,
         "клиентский и серверный proof-of-work разошлись: \
          регистрация перестанет проходить"
+    );
+}
+
+/// 🔐 Клиент и сервер выводят один челлендж регистрации.
+///
+/// Эталон посчитан независимой реализацией (Python, hashlib); тот же
+/// вектор проверяет клиент (`aegis-net::pow`). Расхождение отвергло бы
+/// все регистрации.
+#[test]
+fn client_and_server_registration_challenge_agree() {
+    let challenge = pow::registration_challenge("alice", &[1u8; 32], &[2u8; 32]);
+
+    assert_eq!(
+        challenge.get(..8).expect("восемь байт"),
+        [0x09, 0x8d, 0x43, 0xfe, 0x4b, 0x0f, 0xa3, 0xea]
     );
 }
 

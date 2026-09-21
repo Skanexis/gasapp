@@ -275,15 +275,17 @@ impl<T: Transport> Client<T> {
         let device_id = DeviceId::generate();
         let (bundle, secrets) = prekeys::generate(&identity, device_id, now, rng)?;
 
-        // Челлендж выбирает клиент: сервер проверяет только сложность,
-        // а состояние про выданные челленджи не хранит — иначе
-        // регистрация стала бы мишенью для DoS.
-        let mut challenge = [0u8; pow::CHALLENGE_LEN];
-        rng.fill_bytes(&mut challenge);
+        // 🔐 Челлендж выводится из самой регистрации — имени и ключей.
+        //
+        // Сервер вычисляет его сам и отвергает любой другой: так одно
+        // решение годится ровно для одного аккаунта. Прежде челлендж был
+        // случайным, и одно решение регистрировало сколько угодно.
+        let identity_bytes = identity.public().public().as_bytes();
+        let challenge = pow::registration_challenge(username, identity_bytes, identity_bytes);
 
         let nonce = pow::solve(&challenge, POW_DIFFICULTY).ok_or(AegisError::Crypto)?;
 
-        let identity_hex = hex(identity.public().public().as_bytes());
+        let identity_hex = hex(identity_bytes);
         let response = self.api.register(&RegisterRequest {
             username: username.to_owned(),
             identity_key: identity_hex.clone(),

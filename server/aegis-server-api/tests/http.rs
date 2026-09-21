@@ -97,7 +97,7 @@ fn solve(challenge: &[u8]) -> u64 {
 
 /// Регистрирует аккаунт, возвращая идентификаторы.
 async fn register(state: &Arc<AppState>, username: &str) -> (Uuid, Uuid) {
-    let challenge = [0x42u8; 32];
+    let challenge = pow::registration_challenge(username, &[1u8; 32], &[2u8; 32]);
     let nonce = solve(&challenge);
 
     let (status, body) = call(
@@ -205,15 +205,20 @@ async fn full_registration_and_key_exchange_flow() {
 async fn registration_without_valid_pow_is_rejected() {
     let state = require_state!();
 
+    let username = unique_name("mallory");
+
+    // Челлендж верный: проверяется именно работа, а не его подлинность.
+    let challenge = pow::registration_challenge(&username, &[1u8; 32], &[2u8; 32]);
+
     let (status, _) = call(
         &state,
         "POST",
         "/v1/accounts/register",
         Some(serde_json::json!({
-            "username": unique_name("mallory"),
+            "username": username,
             "identity_key": hex::encode([1u8; 32]),
             "device_identity_key": hex::encode([2u8; 32]),
-            "pow_challenge": hex::encode([0x42u8; 32]),
+            "pow_challenge": hex::encode(challenge),
             // Заведомо неверное решение.
             "pow_nonce": u64::MAX,
         })),
@@ -221,6 +226,53 @@ async fn registration_without_valid_pow_is_rejected() {
     .await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// 🔐 Одно решение proof-of-work регистрирует один аккаунт.
+///
+/// Прежде сервер проверял работу над любым челленджем, который прислал
+/// клиент, и одно решение регистрировало сколько угодно аккаунтов:
+/// аудитор завёл пять из пяти. Теперь челлендж выводится из имени
+/// и ключей, и чужое решение к новому имени не подходит.
+#[tokio::test]
+async fn one_pow_solution_registers_only_one_account() {
+    let state = require_state!();
+
+    let first = unique_name("spam");
+    let challenge = pow::registration_challenge(&first, &[1u8; 32], &[2u8; 32]);
+    let nonce = solve(&challenge);
+
+    let mut accepted = 0;
+    for index in 0..5 {
+        let username = if index == 0 {
+            first.clone()
+        } else {
+            unique_name("spam")
+        };
+
+        let (status, _) = call(
+            &state,
+            "POST",
+            "/v1/accounts/register",
+            Some(serde_json::json!({
+                "username": username,
+                "identity_key": hex::encode([1u8; 32]),
+                "device_identity_key": hex::encode([2u8; 32]),
+                "pow_challenge": hex::encode(challenge),
+                "pow_nonce": nonce,
+            })),
+        )
+        .await;
+
+        if status == StatusCode::OK {
+            accepted += 1;
+        }
+    }
+
+    assert_eq!(
+        accepted, 1,
+        "одно решение зарегистрировало {accepted} аккаунтов из 5"
+    );
 }
 
 /// 🔐 Занятое имя даёт конфликт, а не подмену аккаунта.
@@ -231,7 +283,7 @@ async fn duplicate_username_conflicts() {
 
     register(&state, &username).await;
 
-    let challenge = [0x42u8; 32];
+    let challenge = pow::registration_challenge(&username, &[9u8; 32], &[9u8; 32]);
     let nonce = solve(&challenge);
     let (status, _) = call(
         &state,
@@ -603,7 +655,7 @@ async fn register_signing_device(
 ) -> (Uuid, DeviceKey) {
     let private: DeviceKey = [seed; 32];
 
-    let challenge = [0x42u8; 32];
+    let challenge = pow::registration_challenge(username, &[1u8; 32], &public_key(&private));
     let nonce = solve(&challenge);
 
     let (status, body) = call(

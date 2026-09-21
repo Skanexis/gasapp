@@ -21,6 +21,38 @@ use sha2::{Digest, Sha256};
 /// Длина челленджа в байтах.
 pub const CHALLENGE_LEN: usize = 32;
 
+/// Домен-разделитель челленджа регистрации.
+const REGISTRATION_DOMAIN: &[u8] = b"AEGIS_POW_REG_v1";
+
+/// Челлендж регистрации: хеш имени и обоих ключей.
+///
+/// 🔐 Сервер вычисляет его сам и отвергает любой другой, так что одно
+/// решение годится ровно для одного аккаунта. Прежде челлендж был
+/// случайным, выбирал его клиент, и одно решение регистрировало сколько
+/// угодно аккаунтов.
+///
+/// Каждое поле идёт с длиной впереди, иначе имя `ab` с ключом `c…`
+/// и имя `a` с ключом `bc…` дали бы один челлендж.
+///
+/// ⚠️ Продублирован на сервере (разные лицензии); совпадение проверяет
+/// `client_contract` сервера и тест ниже — оба по одному эталону.
+#[must_use]
+pub fn registration_challenge(
+    username: &str,
+    identity_key: &[u8],
+    device_identity_key: &[u8],
+) -> [u8; CHALLENGE_LEN] {
+    let mut hasher = Sha256::new();
+    hasher.update(REGISTRATION_DOMAIN);
+
+    for field in [username.as_bytes(), identity_key, device_identity_key] {
+        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(field);
+    }
+
+    hasher.finalize().into()
+}
+
 /// Верхняя граница числа попыток.
 ///
 /// Подбор при штатной сложности укладывается в миллионы попыток.
@@ -72,6 +104,30 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// 🔐 Челлендж регистрации совпадает с эталоном.
+    ///
+    /// Эталон посчитан третьей, независимой реализацией (Python,
+    /// hashlib); тот же вектор проверяет сервер в `client_contract`.
+    /// Расхождение означало бы отказ всех регистраций.
+    #[test]
+    fn registration_challenge_matches_the_reference() {
+        let challenge = registration_challenge("alice", &[1u8; 32], &[2u8; 32]);
+
+        assert_eq!(
+            challenge.get(..8).expect("восемь байт"),
+            [0x09, 0x8d, 0x43, 0xfe, 0x4b, 0x0f, 0xa3, 0xea]
+        );
+    }
+
+    /// Разные имена — разные челленджи: одно решение на один аккаунт.
+    #[test]
+    fn different_usernames_give_different_challenges() {
+        assert_ne!(
+            registration_challenge("alice", &[1u8; 32], &[2u8; 32]),
+            registration_challenge("alicf", &[1u8; 32], &[2u8; 32])
+        );
+    }
     use super::*;
 
     #[test]

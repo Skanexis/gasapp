@@ -446,12 +446,21 @@ async fn register(
     Json(request): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, ApiError> {
     let challenge = decode_hex(&request.pow_challenge)?;
+    let identity = decode_hex(&request.identity_key)?;
+    let device_identity = decode_hex(&request.device_identity_key)?;
+
+    // 🔐 Челлендж обязан быть выведен из этой самой регистрации.
+    //
+    // Прежде сервер проверял работу над любым челленджем, который
+    // прислал клиент, и одно решение регистрировало сколько угодно
+    // аккаунтов. Теперь решение привязано к имени и ключам: для нового
+    // имени его надо искать заново (см. `pow::registration_challenge`).
+    if challenge != pow::registration_challenge(&request.username, &identity, &device_identity) {
+        return Err(ApiError::Unauthorized);
+    }
 
     pow::verify(&challenge, request.pow_nonce, state.pow_difficulty)
         .map_err(|_| ApiError::Unauthorized)?;
-
-    let identity = decode_hex(&request.identity_key)?;
-    let device_identity = decode_hex(&request.device_identity_key)?;
 
     if request.username.is_empty() || request.username.len() > 64 {
         return Err(ApiError::BadRequest);
