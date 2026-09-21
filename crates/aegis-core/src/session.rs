@@ -227,16 +227,76 @@ fn accept_initial(
         None => None,
     };
 
-    let kem_pre_key = if kem_one_time {
-        find_one_time_kem(secrets, kem_pre_key_id)?
+    let one_time_kem = if kem_one_time {
+        Some(find_one_time_kem(secrets, kem_pre_key_id)?)
     } else {
-        &secrets.signed_kem
+        None
     };
 
+    // 🔐 Подписанный предключ перебирается: текущий, затем выведенные.
+    //
+    // Отправитель мог забрать bundle до ротации, а сообщение прочитано
+    // после неё. Прежде ротация затирала ключ на месте, и такое
+    // начальное сообщение не расшифровывалось никогда — вместе со всей
+    // перепиской, которая за ним шла. Идентификатора подписанного
+    // ключа в конверте нет, поэтому выбор — пробой: неверная пара
+    // честно не проходит проверку AEAD первого сообщения.
+    let candidates = core::iter::once((&secrets.signed_pre_key, &secrets.signed_kem)).chain(
+        secrets
+            .retired_signed
+            .iter()
+            .map(|retired| (&retired.signed_pre_key, &retired.signed_kem)),
+    );
+
+    let mut first_failure = None;
+
+    for (signed_pre_key, signed_kem) in candidates {
+        match try_accept(
+            our_identity,
+            signed_pre_key,
+            one_time,
+            one_time_kem.unwrap_or(signed_kem),
+            sender_identity,
+            ephemeral_key,
+            kem_ciphertext,
+            payload,
+            now,
+        ) {
+            Ok((plaintext, ratchet)) => {
+                return Ok(IncomingMessage {
+                    plaintext,
+                    session: ratchet.serialize(),
+                    sender_identity: Some(*sender_identity),
+                    consumed_one_time: one_time_pre_key_id,
+                    consumed_one_time_kem: kem_one_time.then_some(kem_pre_key_id),
+                });
+            }
+            Err(error) => {
+                first_failure.get_or_insert(error);
+            }
+        }
+    }
+
+    Err(first_failure.unwrap_or(AegisError::Crypto))
+}
+
+/// Одна попытка принять начальное сообщение с данной парой ключей.
+#[allow(clippy::too_many_arguments)]
+fn try_accept(
+    our_identity: &IdentityKeyPair,
+    signed_pre_key: &X25519PrivateKey,
+    one_time: Option<&X25519PrivateKey>,
+    kem_pre_key: &aegis_protocol::mlkem::MlKem1024PrivateKey,
+    sender_identity: &PublicKeyBytes,
+    ephemeral_key: &PublicKeyBytes,
+    kem_ciphertext: &[u8],
+    payload: &[u8],
+    now: Timestamp,
+) -> Result<(aegis_types::Plaintext, RatchetState)> {
     let shared = pqxdh::respond(
         &ResponderKeys {
             identity: our_identity,
-            signed_pre_key: &secrets.signed_pre_key,
+            signed_pre_key,
             one_time_pre_key: one_time,
             kem_pre_key,
         },
@@ -247,18 +307,12 @@ fn accept_initial(
 
     // Наша сторона храповика стартует от подписанного предключа:
     // именно его отправитель использовал как их публичный ключ.
-    let our_ratchet = X25519PrivateKey::from_bytes(secrets.signed_pre_key.expose_secret())?;
+    let our_ratchet = X25519PrivateKey::from_bytes(signed_pre_key.expose_secret())?;
     let mut ratchet = RatchetState::accept(shared.expose_secret(), our_ratchet);
 
     let plaintext = ratchet.decrypt(&aegis_types::Ciphertext::new(payload.to_vec()), now)?;
 
-    Ok(IncomingMessage {
-        plaintext,
-        session: ratchet.serialize(),
-        sender_identity: Some(*sender_identity),
-        consumed_one_time: one_time_pre_key_id,
-        consumed_one_time_kem: kem_one_time.then_some(kem_pre_key_id),
-    })
+    Ok((plaintext, ratchet))
 }
 
 /// Находит приватную часть одноразового предключа.

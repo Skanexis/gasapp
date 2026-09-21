@@ -59,7 +59,36 @@ pub struct PreKeySecrets {
     pub signed_kem: MlKem1024PrivateKey,
     /// Одноразовые пост-квантовые предключи.
     pub one_time_kem: Vec<(PreKeyId, MlKem1024PrivateKey)>,
+    /// Подписанные предключи, выведенные из обращения ротацией.
+    ///
+    /// 🔐 Хранятся [`RETIRED_SIGNED_KEEP_DAYS`] суток — столько же живёт
+    /// недоставленный конверт. Начальное сообщение, зашифрованное на
+    /// прежний ключ до ротации, иначе не расшифровалось бы никогда
+    /// (см. [`rotate_signed`]). Новые впереди.
+    pub retired_signed: Vec<RetiredSigned>,
 }
+
+/// Подписанная пара предключей, выведенная из обращения ротацией.
+pub struct RetiredSigned {
+    /// Прежний подписанный предключ X25519.
+    pub signed_pre_key: X25519PrivateKey,
+    /// Прежний подписанный пост-квантовый предключ.
+    pub signed_kem: MlKem1024PrivateKey,
+    /// Когда выведен из обращения.
+    pub retired_at: Timestamp,
+}
+
+/// Сколько суток хранится выведенный подписанный предключ.
+///
+/// Совпадает со сроком жизни недоставленного конверта на сервере:
+/// позже начальное сообщение на этот ключ прийти уже не может.
+pub const RETIRED_SIGNED_KEEP_DAYS: i64 = 30;
+
+/// Предел числа выведенных ключей.
+///
+/// Ротация раз в семь суток даёт за тридцать суток пять ключей;
+/// предел с запасом, чтобы испорченные часы не раздули список.
+pub const MAX_RETIRED_SIGNED: usize = 8;
 
 // Неполнота `Debug` — требование правила 4: приватные предключи
 // не печатаются ни при каких условиях, в выводе только их количество.
@@ -70,6 +99,7 @@ impl core::fmt::Debug for PreKeySecrets {
         f.debug_struct("PreKeySecrets")
             .field("one_time", &self.one_time.len())
             .field("one_time_kem", &self.one_time_kem.len())
+            .field("retired_signed", &self.retired_signed.len())
             .finish()
     }
 }
@@ -213,6 +243,7 @@ pub fn generate<R: RngCore + CryptoRng>(
         one_time,
         signed_kem,
         one_time_kem,
+        retired_signed: Vec::new(),
     };
 
     Ok((bundle, secrets))
@@ -220,9 +251,16 @@ pub fn generate<R: RngCore + CryptoRng>(
 
 /// Ротирует подписанные предключи, сохраняя пулы одноразовых.
 ///
-/// Прежний `SPK` не уничтожается вызывающей стороной немедленно: сообщения,
-/// отправленные до ротации, ещё могут прийти. Срок хранения прежнего ключа
-/// определяет вызывающий код — здесь возвращается только новый набор.
+/// 🔐 Прежняя пара уходит в [`PreKeySecrets::retired_signed`] и хранится
+/// [`RETIRED_SIGNED_KEEP_DAYS`] суток: начальное сообщение, зашифрованное
+/// на неё до ротации, ещё может прийти.
+///
+/// ⚠️ Прежде здесь было написано, что прежний ключ «не уничтожается
+/// немедленно» и что срок его хранения «определяет вызывающий код».
+/// На деле функция затирала его на месте, и хранить было нечего.
+/// Пока ротации не было, это не проявлялось; когда обслуживание
+/// предключей её включило, каждый, кто впервые написал до ротации,
+/// а был прочитан после, терял сообщение вместе со всей перепиской.
 ///
 /// # Errors
 ///
@@ -235,11 +273,38 @@ pub fn rotate_signed<R: RngCore + CryptoRng>(
     now: Timestamp,
     rng: &mut R,
 ) -> Result<(SignedPreKey, SignedKemPreKey)> {
-    secrets.signed_pre_key = X25519PrivateKey::generate(rng);
-    secrets.signed_kem = MlKem1024PrivateKey::generate(rng);
+    let previous_signed =
+        core::mem::replace(&mut secrets.signed_pre_key, X25519PrivateKey::generate(rng));
+    let previous_kem =
+        core::mem::replace(&mut secrets.signed_kem, MlKem1024PrivateKey::generate(rng));
     secrets.signed_pre_key_created = now;
 
+    secrets.retired_signed.insert(
+        0,
+        RetiredSigned {
+            signed_pre_key: previous_signed,
+            signed_kem: previous_kem,
+            retired_at: now,
+        },
+    );
+    prune_retired(secrets, now);
+
     signed_published(identity, secrets)
+}
+
+/// Удаляет выведенные ключи старше срока и сверх предела.
+///
+/// 🔐 Хранить их дольше срока жизни конверта незачем, а каждый лишний
+/// ключ — это прошлое, которое можно расшифровать, отняв устройство.
+pub fn prune_retired(secrets: &mut PreKeySecrets, now: Timestamp) {
+    let keep = RETIRED_SIGNED_KEEP_DAYS.saturating_mul(DAY_MILLIS);
+
+    secrets.retired_signed.retain(|retired| {
+        now.as_millis()
+            .saturating_sub(retired.retired_at.as_millis())
+            <= keep
+    });
+    secrets.retired_signed.truncate(MAX_RETIRED_SIGNED);
 }
 
 /// Собирает публичные части подписанных предключей из секретов.
@@ -485,7 +550,13 @@ pub fn generate_identity<R: RngCore + CryptoRng>(rng: &mut R) -> Result<Identity
 }
 
 /// Версия формата сериализации секретов предключей.
-const SECRETS_VERSION: u8 = 1;
+///
+/// 2 — с выведенными подписанными ключами. Версия 1 читается:
+/// в ней выведенных ключей нет, и список пуст.
+const SECRETS_VERSION: u8 = 2;
+
+/// Прежняя версия формата, без выведенных ключей.
+const SECRETS_VERSION_V1: u8 = 1;
 
 /// Длина seed пост-квантового приватного ключа.
 const KEM_SEED_LEN: usize = crate::mlkem::SEED_LEN;
@@ -525,6 +596,16 @@ impl PreKeySecrets {
             buffer.extend_from_slice(key.expose_secret());
         })?;
 
+        let retired =
+            u32::try_from(self.retired_signed.len()).map_err(|_| AegisError::Malformed)?;
+        out.extend_from_slice(&retired.to_be_bytes());
+
+        for key in &self.retired_signed {
+            out.extend_from_slice(key.signed_pre_key.expose_secret().expose_secret());
+            out.extend_from_slice(key.signed_kem.expose_secret());
+            out.extend_from_slice(&key.retired_at.as_millis().to_be_bytes());
+        }
+
         Ok(out)
     }
 
@@ -538,7 +619,7 @@ impl PreKeySecrets {
         let mut offset = 0usize;
 
         let version = *bytes.first().ok_or(AegisError::Malformed)?;
-        if version != SECRETS_VERSION {
+        if version != SECRETS_VERSION && version != SECRETS_VERSION_V1 {
             return Err(AegisError::Malformed);
         }
         offset = offset.checked_add(1).ok_or(AegisError::Malformed)?;
@@ -566,6 +647,40 @@ impl PreKeySecrets {
             MlKem1024PrivateKey::from_bytes(raw)
         })?;
 
+        let mut retired_signed = Vec::new();
+
+        if version == SECRETS_VERSION {
+            let count_raw: [u8; 4] = take(bytes, &mut offset, 4)?
+                .try_into()
+                .map_err(|_| AegisError::Malformed)?;
+            let count = usize::try_from(u32::from_be_bytes(count_raw))
+                .map_err(|_| AegisError::Malformed)?;
+
+            // Счётчик из базы не доверяется: больше предела здесь
+            // не бывает, и огромное число означало бы порчу.
+            if count > MAX_RETIRED_SIGNED {
+                return Err(AegisError::Malformed);
+            }
+
+            for _ in 0..count {
+                let signed_raw = take(bytes, &mut offset, 32)?;
+                let signed_pre_key = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(
+                    signed_raw.try_into().map_err(|_| AegisError::Malformed)?,
+                ))?;
+                let signed_kem =
+                    MlKem1024PrivateKey::from_bytes(take(bytes, &mut offset, KEM_SEED_LEN)?)?;
+                let retired_raw: [u8; 8] = take(bytes, &mut offset, 8)?
+                    .try_into()
+                    .map_err(|_| AegisError::Malformed)?;
+
+                retired_signed.push(RetiredSigned {
+                    signed_pre_key,
+                    signed_kem,
+                    retired_at: Timestamp::from_millis(i64::from_be_bytes(retired_raw)),
+                });
+            }
+        }
+
         // Хвост означает, что база хранит не то, что мы писали.
         if offset != bytes.len() {
             return Err(AegisError::Malformed);
@@ -577,6 +692,7 @@ impl PreKeySecrets {
             one_time,
             signed_kem,
             one_time_kem,
+            retired_signed,
         })
     }
 }
@@ -877,6 +993,110 @@ mod tests {
             &kem.signature,
         )
         .is_ok());
+    }
+
+    /// 🔐 Ротация сохраняет прежнюю пару, а не затирает её.
+    ///
+    /// Прежде `rotate_signed` заменял ключ на месте, и начальное
+    /// сообщение, отправленное до ротации, не расшифровывалось никогда.
+    #[test]
+    fn rotation_retires_the_previous_pair() {
+        let identity = generate_identity(&mut OsRng).unwrap();
+        let (_, mut secrets) =
+            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+
+        let previous = *secrets.signed_pre_key.expose_secret().expose_secret();
+        let rotate_at = later(i64::from(SIGNED_PRE_KEY_ROTATION_DAYS));
+
+        rotate_signed(&identity, &mut secrets, rotate_at, &mut OsRng).unwrap();
+
+        let retired = secrets
+            .retired_signed
+            .first()
+            .expect("прежняя пара не сохранена");
+        assert_eq!(
+            *retired.signed_pre_key.expose_secret().expose_secret(),
+            previous,
+            "сохранён не тот ключ"
+        );
+        assert_eq!(retired.retired_at.as_millis(), rotate_at.as_millis());
+    }
+
+    /// 🔐 Выведенный ключ живёт срок конверта и не дольше.
+    #[test]
+    fn retired_pairs_expire_with_the_envelope_lifetime() {
+        let identity = generate_identity(&mut OsRng).unwrap();
+        let (_, mut secrets) =
+            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+
+        rotate_signed(&identity, &mut secrets, now(), &mut OsRng).unwrap();
+
+        prune_retired(&mut secrets, later(RETIRED_SIGNED_KEEP_DAYS));
+        assert_eq!(secrets.retired_signed.len(), 1, "удалён раньше срока");
+
+        prune_retired(&mut secrets, later(RETIRED_SIGNED_KEEP_DAYS + 1));
+        assert!(secrets.retired_signed.is_empty(), "пережил срок конверта");
+    }
+
+    /// Выведенных ключей не больше предела, даже при частых ротациях.
+    #[test]
+    fn retired_pairs_are_capped() {
+        let identity = generate_identity(&mut OsRng).unwrap();
+        let (_, mut secrets) =
+            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+
+        for _ in 0..(MAX_RETIRED_SIGNED + 4) {
+            rotate_signed(&identity, &mut secrets, now(), &mut OsRng).unwrap();
+        }
+
+        assert_eq!(secrets.retired_signed.len(), MAX_RETIRED_SIGNED);
+    }
+
+    /// 🔐 Выведенные ключи переживают запись в хранилище.
+    #[test]
+    fn retired_pairs_survive_serialization() {
+        let identity = generate_identity(&mut OsRng).unwrap();
+        let (_, mut secrets) =
+            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        rotate_signed(&identity, &mut secrets, now(), &mut OsRng).unwrap();
+
+        let restored = PreKeySecrets::from_bytes(&secrets.to_bytes().unwrap()).unwrap();
+
+        assert_eq!(
+            restored.retired_signed.len(),
+            1,
+            "выведенный ключ потерян при записи"
+        );
+        assert_eq!(
+            restored.retired_signed[0]
+                .signed_pre_key
+                .expose_secret()
+                .expose_secret(),
+            secrets.retired_signed[0]
+                .signed_pre_key
+                .expose_secret()
+                .expose_secret()
+        );
+    }
+
+    /// 🔐 Секреты старого формата (версия 1) читаются.
+    ///
+    /// Иначе обновление приложения сделало бы базу нечитаемой: ни одно
+    /// входящее сообщение не расшифровалось бы.
+    #[test]
+    fn version_one_secrets_still_parse() {
+        let identity = generate_identity(&mut OsRng).unwrap();
+        let (_, secrets) = generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+
+        // Версия 1 — это версия 2 без хвоста выведенных ключей.
+        let mut bytes = secrets.to_bytes().unwrap();
+        bytes.truncate(bytes.len() - 4);
+        bytes[0] = SECRETS_VERSION_V1;
+
+        let restored = PreKeySecrets::from_bytes(&bytes).expect("версия 1 не читается");
+
+        assert!(restored.retired_signed.is_empty());
+        assert_eq!(restored.one_time.len(), secrets.one_time.len());
     }
 
     /// Ротация сохраняет пулы одноразовых предключей.
