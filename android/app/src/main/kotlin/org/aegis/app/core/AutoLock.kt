@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.SystemClock
 import org.aegis.app.LockActivity
 import org.aegis.app.OnboardingActivity
+import org.aegis.app.RestoreActivity
 
 /**
  * Автоматическое запирание приложения после ухода в фон.
@@ -200,7 +201,54 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
         return seconds.coerceAtLeast(0L) * 1000L
     }
 
-    override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+    /**
+     * 🔐 Экран с перепиской не создаётся при закрытом хранилище.
+     *
+     * # Что здесь чинится
+     *
+     * Система, убившая процесс по памяти, при возвращении восстанавливает
+     * **верхний экран задачи** — например, открытую переписку. В новом
+     * процессе хранилище закрыто, а у [AutoLock] `backgroundedAt == 0`:
+     * отлучки он не видел и запирать не стал. Экран переписки показывал
+     * имя собеседника из extras и черновик из сохранённого состояния —
+     * без PIN.
+     *
+     * # Почему список разрешённых, а не запрещённых
+     *
+     * Без хранилища имеют право открываться только экраны, которые его
+     * и открывают: блокировка, регистрация, восстановление из копии.
+     * Новый экран, добавленный завтра, защищён по умолчанию; при списке
+     * запрещённых его пришлось бы не забыть туда вписать.
+     *
+     * # Почему только экраны приложения
+     *
+     * Чужая активность в этом процессе (системный выбор файла, экран
+     * библиотеки) хранилища не касается, и закрывать её незачем.
+     *
+     * Экран закрывается в `onCreate`, то есть до `onStart`: он не успевает
+     * ни отрисоваться, ни восстановить поля из сохранённого состояния.
+     */
+    override fun onActivityCreated(activity: Activity, state: Bundle?) {
+        if (!activity.javaClass.name.startsWith(APP_PACKAGE)) {
+            return
+        }
+
+        if (activity.javaClass in OPEN_WHILE_LOCKED || Core.isUnlocked) {
+            return
+        }
+
+        lock(activity)
+        activity.finish()
+    }
+
+    /** Экраны, которые сами открывают хранилище и потому работают без него. */
+    private val OPEN_WHILE_LOCKED: Set<Class<out Activity>> = setOf(
+        LockActivity::class.java,
+        OnboardingActivity::class.java,
+        RestoreActivity::class.java,
+    )
+
+    private const val APP_PACKAGE = "org.aegis.app."
 
     override fun onActivityResumed(activity: Activity) = Unit
 
