@@ -323,8 +323,13 @@ class VaultActivity : AppCompatActivity() {
     /** Каталог шифроблобов vault. */
     private fun vaultDir(): File = File(filesDir, "vault").apply { mkdirs() }
 
-    /** Каталог временно расшифрованных файлов. */
-    private fun openDir(): File = File(cacheDir, "vault-open").apply { mkdirs() }
+    /**
+     * Каталог временно расшифрованных файлов.
+     *
+     * Определён в [org.aegis.app.core.VaultTemp]: там же лежит
+     * подметание, которое убирает пережившее гибель процесса.
+     */
+    private fun openDir(): File = org.aegis.app.core.VaultTemp.directory(this)
 
     private fun showStatus(text: String) {
         findViewById<TextView>(R.id.vault_status).apply {

@@ -71,6 +71,13 @@ object AccountWipe {
         // ключ от неё пережил бы удаление.
         runCatching { BiometricUnlock.disable(context) }
 
+        // 🔐 Расшифрованные файлы хранилища лежат в кэше, а не
+        // в filesDir, и списком ниже не покрывались: удаление
+        // аккаунта оставляло их на диске открытым текстом.
+        if (runCatching { VaultTemp.sweep(context) }.isFailure) {
+            clean = false
+        }
+
         runCatching { PinAttempts.forget(context) }
 
         for (name in FILES) {
