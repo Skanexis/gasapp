@@ -26,6 +26,7 @@ import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
+import org.aegis.app.core.PendingSave
 import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.net.NotificationSocket
@@ -68,7 +69,13 @@ class ChatActivity : AppCompatActivity() {
      * 🔐 Расшифрованный файл в памяти. Очищается при уходе с экрана:
      * держать его дольше, чем нужно для сохранения, незачем.
      */
-    private var pendingDownload: ByteArray? = null
+    /**
+     * 🔐 Вложение, для которого спрошено место сохранения.
+     *
+     * Описание, а не содержимое: через диалог выбора места
+     * расшифрованный файл не переезжает (см. [PendingSave]).
+     */
+    private val pendingSave = PendingSave<AttachmentPreview>()
 
     /**
      * Имя пользователя собеседника.
@@ -348,7 +355,13 @@ class ChatActivity : AppCompatActivity() {
         notifications = null
 
         adapter.clear()
-        pendingDownload = null
+
+        // ⚠️ Сохранение вложения здесь не отменяется, и это
+        // не упущение. Диалог выбора места — полноэкранная
+        // активность, то есть этот `onStop` и есть открытый
+        // диалог. Очистка отсюда означала бы, что сохранить
+        // вложение нельзя никогда (см. [PendingSave]).
+        pendingSave.onScreenStopped()
     }
     /**
      * 🔐 Применяет запрет отправки при смене ключа.
@@ -820,12 +833,39 @@ class ChatActivity : AppCompatActivity() {
      * решение осознанное, и место известно ему.
      */
     private fun openAttachment(attachment: AttachmentPreview) {
-        val device = Core.deviceId
-
-        if (device == null) {
+        if (Core.deviceId == null) {
             Toast.makeText(this, R.string.attachment_download_failed, Toast.LENGTH_SHORT).show()
 
             return
+        }
+
+        // 🔐 Сначала место, потом скачивание.
+        //
+        // Обратный порядок означал бы, что расшифрованный файл лежит
+        // в памяти всё время, пока открыт диалог выбора, — а заодно
+        // не работал бы вовсе: `onStop` стирал его до возвращения
+        // из диалога (см. [PendingSave]).
+        pendingSave.begin(attachment)
+        saveAttachment.launch(attachment.name ?: DEFAULT_ATTACHMENT_NAME)
+    }
+
+    /**
+     * Записывает скачанное туда, куда указал пользователь.
+     *
+     * 🔐 Байты держатся в памяти между скачиванием и выбором места:
+     * временный файл на диске был бы копией вне хранилища, которую
+     * подхватили бы системные бэкапы.
+     */
+    private val saveAttachment = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        // 🔐 Описание забирается один раз: повторный вызов вернёт
+        // `null`, и ключ расшифровки в памяти не задержится.
+        val attachment = pendingSave.take()
+        val device = Core.deviceId
+
+        if (uri == null || attachment == null || device == null) {
+            return@registerForActivityResult
         }
 
         Toast.makeText(this, R.string.attachment_downloading, Toast.LENGTH_SHORT).show()
@@ -842,10 +882,24 @@ class ChatActivity : AppCompatActivity() {
             }
 
             if (bytes == null) {
-                // Отказ здесь означает либо недоступную сеть, либо
-                // подменённый на сервере файл: тег чанка не сошёлся.
-                // Второе важнее, поэтому текст говорит о файле,
-                // а не о сети.
+                // 🔐 Запертое хранилище не выдаётся за подмену файла.
+                //
+                // Пока открыт диалог выбора места, автоблокировка
+                // успевает сработать — экран блокировки в этот момент
+                // уже поверх всего, и объяснять что-либо поздно
+                // и незачем.
+                //
+                // ⚠️ Разница не косметическая. «Файл подменён» —
+                // сообщение о нападении. Показанное там, где никакого
+                // нападения нет, оно учит не верить ему и тогда,
+                // когда нападение настоящее.
+                if (!Core.isUnlocked) {
+                    return@launch
+                }
+
+                // Остаётся недоступная сеть либо подменённый
+                // на сервере файл: тег чанка не сошёлся. Второе
+                // важнее, поэтому текст говорит о файле, а не о сети.
                 Toast.makeText(
                     this@ChatActivity,
                     R.string.attachment_tampered,
@@ -855,37 +909,18 @@ class ChatActivity : AppCompatActivity() {
                 return@launch
             }
 
-            pendingDownload = bytes
-            saveAttachment.launch(attachment.name ?: DEFAULT_ATTACHMENT_NAME)
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) } != null
+                }.getOrDefault(false)
+            }
+
+            Toast.makeText(
+                this@ChatActivity,
+                if (saved) R.string.attachment_saved else R.string.attachment_download_failed,
+                Toast.LENGTH_SHORT,
+            ).show()
         }
-    }
-
-    /**
-     * Записывает скачанное туда, куда указал пользователь.
-     *
-     * 🔐 Байты держатся в памяти между скачиванием и выбором места:
-     * временный файл на диске был бы копией вне хранилища, которую
-     * подхватили бы системные бэкапы.
-     */
-    private val saveAttachment = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/octet-stream"),
-    ) { uri ->
-        val bytes = pendingDownload
-        pendingDownload = null
-
-        if (uri == null || bytes == null) {
-            return@registerForActivityResult
-        }
-
-        val saved = runCatching {
-            contentResolver.openOutputStream(uri)?.use { it.write(bytes) } != null
-        }.getOrDefault(false)
-
-        Toast.makeText(
-            this,
-            if (saved) R.string.attachment_saved else R.string.attachment_download_failed,
-            Toast.LENGTH_SHORT,
-        ).show()
     }
 
     private fun formatTime(millis: Long): String =
