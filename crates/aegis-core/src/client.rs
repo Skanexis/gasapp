@@ -2188,14 +2188,19 @@ fn publish_request(bundle: &PreKeyBundle) -> PublishKeysRequest {
                 )
             })
             .collect(),
+        // 🔐 Подпись уходит настоящая, а не пустая строка.
+        //
+        // Прежде здесь стояло `String::new()`: сервер сохранял
+        // одноразовый пост-квантовый предключ без подписи, и
+        // проверить его подлинность было нечем в принципе.
         one_time_kem: bundle
             .one_time_kem_pre_key
             .iter()
-            .map(|(id, key)| {
+            .map(|key| {
                 (
-                    i32::try_from(id.as_u32()).unwrap_or(i32::MAX),
-                    hex(key.as_bytes()),
-                    String::new(),
+                    i32::try_from(key.id.as_u32()).unwrap_or(i32::MAX),
+                    hex(key.public.as_bytes()),
+                    hex(&key.signature),
                 )
             })
             .collect(),
@@ -2226,14 +2231,19 @@ fn parse_bundle(response: &BundleResponse) -> Result<PreKeyBundle> {
             public: KemPublicKey::new(unhex(&response.kem_public)?),
             signature: unhex(&response.kem_signature)?,
         },
+        // 🔐 Подпись одноразового пост-квантового предключа больше
+        // не отбрасывается. Прежде здесь стояло `|(id, key, _)|`,
+        // и третий элемент — подпись — исчезал ровно тут: сервер
+        // её присылал, сетевой слой разбирал, а дальше её не было.
         one_time_kem_pre_key: response
             .one_time_kem
             .as_ref()
-            .map(|(id, key, _)| {
-                Ok::<_, AegisError>((
-                    PreKeyId::new(id.unsigned_abs()),
-                    KemPublicKey::new(unhex(key)?),
-                ))
+            .map(|(id, key, signature)| {
+                Ok::<_, AegisError>(SignedKemPreKey {
+                    id: PreKeyId::new(id.unsigned_abs()),
+                    public: KemPublicKey::new(unhex(key)?),
+                    signature: unhex(signature)?,
+                })
             })
             .transpose()?,
     })

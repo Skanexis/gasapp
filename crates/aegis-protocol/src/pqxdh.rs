@@ -177,6 +177,25 @@ pub fn verify_bundle(bundle: &PreKeyBundle) -> Result<()> {
         &bundle.signed_kem_pre_key.signature,
     )?;
 
+    // 🔐 Одноразовый пост-квантовый предключ — тоже.
+    //
+    // Его подмена даёт атакующему всю пост-квантовую половину общего
+    // секрета: инициатор инкапсулирует в подставленный ключ, и тот,
+    // кто его подставил, эту половину знает. Классическая половина
+    // при этом остаётся целой — но в том и смысл гибрида, что ломать
+    // надо обе.
+    //
+    // ⚠️ Подменить его может сервер: публикация требует подписи
+    // устройства, но хранит и отдаёт bundle сервер. Ровно от этого
+    // подпись и защищает, и ровно она не проверялась.
+    if let Some(one_time_kem) = &bundle.one_time_kem_pre_key {
+        xeddsa::montgomery::verify(
+            owner,
+            one_time_kem.public.as_bytes(),
+            &one_time_kem.signature,
+        )?;
+    }
+
     Ok(())
 }
 
@@ -227,7 +246,10 @@ pub fn initiate<R: RngCore + CryptoRng>(
     // Пост-квантовая составляющая: одноразовый предключ предпочтительнее,
     // подписанный — запасной вариант, он не расходуется.
     let (kem_public_bytes, kem_choice) = match &their_bundle.one_time_kem_pre_key {
-        Some((id, key)) => (key.as_bytes(), KemPreKeyChoice::OneTime(*id)),
+        Some(one_time_kem) => (
+            one_time_kem.public.as_bytes(),
+            KemPreKeyChoice::OneTime(one_time_kem.id),
+        ),
         None => (
             their_bundle.signed_kem_pre_key.public.as_bytes(),
             KemPreKeyChoice::Signed(their_bundle.signed_kem_pre_key.id),
@@ -413,10 +435,14 @@ mod tests {
                     signature: self.sign(&kem_public),
                 },
                 one_time_kem_pre_key: with_one_time_kem.then(|| {
-                    (
-                        PreKeyId::new(4),
-                        KemPublicKey::new(self.one_time_kem.public_key().as_bytes()),
-                    )
+                    let public = self.one_time_kem.public_key().as_bytes();
+                    let signature = self.sign(&public);
+
+                    SignedKemPreKey {
+                        id: PreKeyId::new(4),
+                        public: KemPublicKey::new(public),
+                        signature,
+                    }
                 }),
             }
         }
@@ -530,6 +556,76 @@ mod tests {
             initiate(&initiator, &bundle, &mut OsRng),
             Err(AegisError::InvalidSignature)
         ));
+    }
+
+    /// 🔐 Подменённый **одноразовый** пост-квантовый предключ отвергается.
+    ///
+    /// # Почему это отдельный тест
+    ///
+    /// Подпись подписанного ПК-предключа проверялась и раньше
+    /// (`tampered_kem_pre_key_is_rejected`), а одноразового — нет.
+    /// Сервер её присылал, сетевой слой разбирал, а `parse_bundle`
+    /// отбрасывал третьим элементом кортежа: `|(id, key, _)|`.
+    ///
+    /// # Чем это грозило
+    ///
+    /// Инициатор предпочитает одноразовый ПК-предключ подписанному —
+    /// он и расходуется ради forward secrecy. Значит подменять надо
+    /// было именно его, и именно он не проверялся: инициатор
+    /// инкапсулировал бы в ключ атакующего, и тот знал бы всю
+    /// пост-квантовую половину общего секрета. Классическая половина
+    /// осталась бы цела — но гибрид на то и гибрид, что ломать надо
+    /// обе.
+    ///
+    /// ⚠️ Подменить мог сервер: публикация требует подписи
+    /// устройства, но хранит и отдаёт bundle он.
+    #[test]
+    fn tampered_one_time_kem_pre_key_is_rejected() {
+        let initiator = generate_identity();
+        let responder = Responder::generate();
+        let attacker = MlKem1024PrivateKey::generate(&mut OsRng);
+
+        let mut bundle = responder.bundle(true, true);
+
+        let one_time_kem = bundle
+            .one_time_kem_pre_key
+            .as_mut()
+            .expect("в bundle должен быть одноразовый ПК-предключ");
+
+        one_time_kem.public = KemPublicKey::new(attacker.public_key().as_bytes());
+
+        assert!(
+            matches!(
+                initiate(&initiator, &bundle, &mut OsRng),
+                Err(AegisError::InvalidSignature)
+            ),
+            "подменённый одноразовый ПК-предключ принят",
+        );
+    }
+
+    /// 🔐 Пустая подпись одноразового ПК-предключа отвергается.
+    ///
+    /// Так выглядел ключ, опубликованный прежней версией клиента:
+    /// `publish_request` слал `String::new()` вместо подписи.
+    /// Принять такой ключ значило бы сохранить дыру ради
+    /// совместимости.
+    #[test]
+    fn one_time_kem_pre_key_without_signature_is_rejected() {
+        let initiator = generate_identity();
+        let responder = Responder::generate();
+
+        let mut bundle = responder.bundle(true, true);
+
+        bundle
+            .one_time_kem_pre_key
+            .as_mut()
+            .expect("одноразовый ПК-предключ")
+            .signature = Vec::new();
+
+        assert!(
+            initiate(&initiator, &bundle, &mut OsRng).is_err(),
+            "ключ без подписи принят",
+        );
     }
 
     /// 🔐 Целый bundle, подписанный чужим ключом, отвергается.
