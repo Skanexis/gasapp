@@ -35,6 +35,7 @@
 pub mod auth;
 pub mod authz;
 pub mod certificate;
+pub mod config;
 pub mod health;
 pub mod hub;
 pub mod pow;

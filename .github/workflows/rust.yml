@@ -185,8 +185,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          # 🔐 AEGIS_ALLOW_INSECURE обязателен и здесь тоже.
+          #
+          # Сервер отказывается подниматься без TLS и без ключа подписи
+          # сертификатов — молчаливый откат к незащищённому режиму
+          # запрещён. Тестам защита не нужна, но сказать об этом
+          # приходится вслух, и это верно: иначе тот же самый запуск
+          # однажды оказался бы боевым.
           DATABASE_URL=postgres://aegis:aegis-dev@localhost:5433/aegis \
           AEGIS_BIND=127.0.0.1:8443 \
+          AEGIS_ALLOW_INSECURE=1 \
             server/target/debug/aegis-server-api > server.log 2>&1 &
 
           for _ in $(seq 1 30); do

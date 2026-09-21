@@ -15,6 +15,14 @@
 //!
 //! * `DATABASE_URL` — строка подключения к Postgres. Обязательна.
 //! * `AEGIS_BIND` — адрес прослушивания, по умолчанию `0.0.0.0:8443`.
+//! * `AEGIS_TLS_CERT`, `AEGIS_TLS_KEY` — пути к сертификату и ключу.
+//!   🔐 Обязательны: без них переписка идёт открытым текстом.
+//! * `AEGIS_CERTIFICATE_KEY` — 32 байта hex, которыми подписываются
+//!   сертификаты отправителя. 🔐 Обязателен: без него берётся ключ
+//!   из нулей, а он публично известен, и сертификат подделывает кто
+//!   угодно (`openssl rand -hex 32`).
+//! * `AEGIS_ALLOW_INSECURE=1` — разрешает запуск без двух предыдущих.
+//!   Только для локальной проверки и тестов; см. `config`.
 //!
 //! # Про логи
 //!
@@ -26,6 +34,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use aegis_server_api::config;
 use aegis_server_api::routes::{router, AppState};
 use rand::RngCore as _;
 use sqlx::postgres::PgPoolOptions;
@@ -40,6 +49,26 @@ const DEFAULT_BIND: &str = "0.0.0.0:8443";
 /// Максимум соединений с базой.
 const MAX_DB_CONNECTIONS: u32 = 16;
 
+/// Задан ли ключ подписи сертификатов **и применим ли он**.
+///
+/// ⚠️ Проверяется не наличие переменной, а то, что из неё получился
+/// ключ. `AEGIS_CERTIFICATE_KEY=не-hex` и отсутствие переменной дают
+/// один и тот же результат — нули, — и отличать их по факту наличия
+/// значило бы пропустить опечатку в секрете.
+fn certificate_key_is_configured() -> bool {
+    let Ok(encoded) = std::env::var("AEGIS_CERTIFICATE_KEY") else {
+        return false;
+    };
+
+    let Ok(bytes) = hex::decode(&encoded) else {
+        return false;
+    };
+
+    // Ключ из нулей запрещён и явно заданный: он публично известен,
+    // и записать его руками — то же самое, что не задать.
+    bytes.len() == 32 && bytes.iter().any(|byte| *byte != 0)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -51,6 +80,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let database_url =
         std::env::var("DATABASE_URL").map_err(|_| "не задана переменная окружения DATABASE_URL")?;
+
+    // 🔐 Небезопасная настройка не запускается молча.
+    //
+    // Проверяется до подключения к базе: отказ должен быть быстрым
+    // и не оставлять за собой половину поднятого сервера.
+    //
+    // Подробности и обоснование — в `config`.
+    let tls = (
+        std::env::var("AEGIS_TLS_CERT").ok(),
+        std::env::var("AEGIS_TLS_KEY").ok(),
+    );
+
+    let has_tls = matches!(&tls, (Some(cert), Some(key)) if !cert.is_empty() && !key.is_empty());
+
+    // Ключ считается заданным, только если он **применился**:
+    // переменная из неверного hex даёт те же нули, что и её
+    // отсутствие, и различать их здесь нельзя.
+    let has_certificate_key = certificate_key_is_configured();
+
+    let gaps = config::missing(has_tls, has_certificate_key);
+
+    if !gaps.is_empty() {
+        if std::env::var(config::ALLOW_INSECURE).is_ok() {
+            tracing::warn!(
+                "{}=1: сервер поднят без части защиты — так делать можно только \
+                 в тестах",
+                config::ALLOW_INSECURE
+            );
+        } else {
+            // ⚠️ Печатается здесь, а не возвращается ошибкой.
+            //
+            // `Box<dyn Error>` из строки выводится через `Debug`,
+            // то есть многострочная подсказка превращается в одну
+            // строку с экранированными переносами — ровно то, что
+            // читать нельзя. А она и существует ради чтения.
+            eprintln!("{}", config::refusal(&gaps));
+
+            std::process::exit(1);
+        }
+    }
 
     let bind: SocketAddr = std::env::var("AEGIS_BIND")
         .unwrap_or_else(|_| DEFAULT_BIND.to_owned())
