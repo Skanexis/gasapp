@@ -308,10 +308,11 @@ async fn envelope_round_trips() {
     assert_eq!(first.ciphertext, b"opaque ciphertext");
 }
 
-/// 🔐 Время постановки в очередь округляется до часа.
+/// Время постановки, **выдаваемое клиенту**, округлено до часа.
 ///
-/// Точная метка служила бы признаком для корреляции отправителя
-/// с получателем (раздел 15 плана).
+/// ⚠️ Этот тест проверяет выдачу, а не хранение — и был зелёным,
+/// пока в базе лежало точное время. От дампа защищает то, что
+/// проверяют `stored_envelope_times_are_hour_aligned` и соседние.
 #[tokio::test]
 async fn queued_time_is_bucketed_to_the_hour() {
     let pool = require_pool!();
@@ -328,6 +329,113 @@ async fn queued_time_is_bucketed_to_the_hour() {
     let bucketed = waiting.first().map(|e| e.queued_at_bucketed).unwrap();
 
     assert_eq!(bucketed % 3600, 0, "метка не округлена до часа");
+}
+
+/// Сколько строк таблицы хранят время не кратное часу.
+///
+/// Смотрит на то, что лежит в базе, — то есть ровно на то, что увидел
+/// бы дамп, а не на то, что сервер выдаёт клиенту.
+async fn unaligned(pool: &PgPool, table: &str, column: &str, owner: &str, id: Uuid) -> i64 {
+    sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM {table} WHERE {owner} = $1 AND date_trunc('hour', {column}) <> {column}"
+    ))
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// 🔐 В базе нет точного времени отправки конверта.
+///
+/// Документ о сроках хранения обещал, что сервер не может выдать время
+/// отправки: «перечисленного нет в базе». Оно было — `queued_at` и
+/// `expires_at` хранили момент постановки с точностью до микросекунды.
+/// Округление делалось только при выдаче клиенту.
+#[tokio::test]
+async fn stored_envelope_times_are_hour_aligned() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("kate"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    repo::enqueue_envelope(&pool, device, b"payload", 30 * 24 * 3600)
+        .await
+        .unwrap();
+
+    let rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM envelopes WHERE destination_device_id = $1")
+            .bind(device)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 1, "заготовка теста: конверт не записан");
+
+    for column in ["queued_at", "expires_at"] {
+        assert_eq!(
+            unaligned(&pool, "envelopes", column, "destination_device_id", device).await,
+            0,
+            "envelopes.{column} хранит время точнее часа"
+        );
+    }
+}
+
+/// 🔐 В базе нет точного времени загрузки вложения.
+///
+/// Вложение хранит, кто его загрузил. Точное время загрузки рядом
+/// с точным временем конверта связывало загрузившего с получателем —
+/// то есть обходило sealed sender для любого сообщения с вложением.
+#[tokio::test]
+async fn stored_attachment_times_are_hour_aligned() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("liam"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    repo::store_attachment(&pool, device, &[0xAB; 64], 30 * 24 * 3600)
+        .await
+        .unwrap();
+
+    for column in ["uploaded_at", "expires_at"] {
+        assert_eq!(
+            unaligned(&pool, "attachments", column, "uploader_device_id", device).await,
+            0,
+            "attachments.{column} хранит время точнее часа"
+        );
+    }
+}
+
+/// Конверты одного часа доставляются в порядке отправки.
+///
+/// Время теперь часовое, и порядок держит позиция в очереди получателя.
+/// Начальное сообщение сессии, пришедшее после следующего за ним,
+/// не расшифровалось бы.
+#[tokio::test]
+async fn envelopes_within_one_hour_keep_their_order() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("mona"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    let mut sent = Vec::new();
+    for index in 0u8..8 {
+        sent.push(
+            repo::enqueue_envelope(&pool, device, &[index], 3600)
+                .await
+                .unwrap(),
+        );
+    }
+
+    let delivered: Vec<Uuid> = repo::fetch_envelopes(&pool, device, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|envelope| envelope.envelope_id)
+        .collect();
+
+    assert_eq!(delivered, sent, "конверты одного часа пришли не по порядку");
 }
 
 /// 🔐 Подтверждение доставки удаляет конверт немедленно.
