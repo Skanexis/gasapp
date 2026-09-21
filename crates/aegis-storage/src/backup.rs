@@ -364,6 +364,13 @@ impl Storage {
 
         transaction.commit().map_err(storage_error)?;
 
+        // 🔐 Надгробия удаляют сообщения внутри той же транзакции, что
+        // их вставила; страницы, вытесненные в журнал до фиксации,
+        // могли унести текст с собой. Точка обнуляет журнал.
+        if !data.tombstones.is_empty() {
+            crate::checkpoint_truncate(&connection)?;
+        }
+
         Ok(applied)
     }
 
@@ -736,6 +743,10 @@ impl Storage {
                 params![file_id.as_bytes()],
             )
             .map_err(storage_error)?;
+
+        // 🔐 Описание файла — имя и ключ шифроблоба — не должно
+        // пережить удаление в основном файле базы (см. `checkpoint_truncate`).
+        crate::checkpoint_truncate(&connection)?;
 
         Ok(Some(existing.location))
     }
