@@ -17,8 +17,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
-import org.aegis.app.core.SecureWindow
+import org.aegis.app.components.AegisSheet
 import org.aegis.app.core.Core
+import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.VaultBlob
 import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.FfiVaultFile
 import java.io.File
@@ -167,7 +169,7 @@ class VaultActivity : AppCompatActivity() {
                 title = file.name,
                 value = formatSize(file.size),
                 icon = R.drawable.ic_file,
-                onClick = { openFile(file) },
+                onClick = { showFileActions(file) },
             )
 
             list.addView(row)
@@ -275,6 +277,62 @@ class VaultActivity : AppCompatActivity() {
      * приложения означал бы копию в его кэше, до которой приложению
      * уже не дотянуться.
      */
+    /**
+     * Действия с файлом: открыть или удалить.
+     *
+     * 🔐 Удаление стоит рядом с открытием, а не прячется за долгим
+     * нажатием. Прежде удалить файл из хранилища было нельзя вовсе:
+     * ядро и FFI это умели, экран не звал, а документ о сроках
+     * хранения обещал «до удаления пользователем». Действие, которое
+     * надо угадать, для такого обещания почти так же плохо.
+     */
+    private fun showFileActions(file: FfiVaultFile) {
+        AegisSheet.on(this, file.name)
+            .action(getString(R.string.vault_open), R.drawable.ic_file) { openFile(file) }
+            .action(getString(R.string.vault_delete), R.drawable.ic_trash, destructive = true) {
+                confirmDelete(file)
+            }
+            .show()
+    }
+
+    /** Подтверждение: удаление необратимо, копии нет нигде. */
+    private fun confirmDelete(file: FfiVaultFile) {
+        AegisSheet.on(this, getString(R.string.vault_delete_confirm_title, file.name))
+            .action(getString(R.string.vault_delete_forever), R.drawable.ic_trash, destructive = true) {
+                deleteFile(file)
+            }
+            .show()
+    }
+
+    /**
+     * 🔐 Удаляет файл: запись в базе — ядром, блоб на диске — здесь.
+     *
+     * Порядок именно такой. Сначала ядро убирает запись (и переносит
+     * журнал WAL, чтобы имя и ключ блоба не остались в файле базы),
+     * потом стирается блоб. Обратный порядок при сбое оставил бы запись
+     * без блоба — файл, который числится в хранилище и не открывается.
+     */
+    private fun deleteFile(file: FfiVaultFile) {
+        lifecycleScope.launch {
+            val deleted = withContext(Dispatchers.IO) {
+                runCatching {
+                    val location = Core.messenger().deleteVaultFile(
+                        file.fileId,
+                        System.currentTimeMillis(),
+                    )
+
+                    location?.let { VaultBlob.deleteInside(vaultDir(), it) }
+                }.isSuccess
+            }
+
+            showStatus(
+                getString(if (deleted) R.string.vault_deleted else R.string.vault_delete_failed),
+            )
+
+            render()
+        }
+    }
+
     private fun openFile(file: FfiVaultFile) {
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) {

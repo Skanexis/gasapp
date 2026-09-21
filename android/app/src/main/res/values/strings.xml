@@ -480,4 +480,10 @@
     <string name="privacy_network">Connection</string>
     <string name="network_unavailable_short">Damaged</string>
     <string name="network_requires_android7">Proxy and Tor need Android 7.0 or newer: on older versions the system does not guarantee that the hostname goes through the proxy, and the address would leak over DNS.</string>
+    <string name="vault_open">Open</string>
+    <string name="vault_delete">Delete from the vault</string>
+    <string name="vault_delete_confirm_title">Delete «%1$s»? There is no copy anywhere, and it cannot be recovered.</string>
+    <string name="vault_delete_forever">Delete forever</string>
+    <string name="vault_deleted">File deleted</string>
+    <string name="vault_delete_failed">Could not delete the file</string>
 </resources>

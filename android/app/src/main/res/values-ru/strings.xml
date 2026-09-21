@@ -522,4 +522,10 @@
     <string name="network_unavailable_short">Повреждена</string>
     <string name="network_requires_android7">Прокси и Tor доступны на Android 7.0 и новее: на старых версиях система не гарантирует, что имя сервера уйдёт через прокси, и адрес утекал бы через DNS.</string>
 
+    <string name="vault_open">Открыть</string>
+    <string name="vault_delete">Удалить из хранилища</string>
+    <string name="vault_delete_confirm_title">Удалить «%1$s»? Копии нет нигде, вернуть файл нельзя.</string>
+    <string name="vault_delete_forever">Удалить навсегда</string>
+    <string name="vault_deleted">Файл удалён</string>
+    <string name="vault_delete_failed">Не удалось удалить файл</string>
 </resources>
