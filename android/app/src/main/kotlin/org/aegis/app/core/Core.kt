@@ -204,7 +204,7 @@ object Core {
         val key = deriveKey(context, pin)
 
         if (!legacy) {
-            return open(context, key)
+            return open(context, key).also { establishVaultVerifier(it, pin, salt) }
         }
 
         // Старая база: открывается прежним ключом, затем переезжает
@@ -213,8 +213,24 @@ object Core {
         val opened = open(context, deriveStorageKey(pin, salt))
 
         opened.rekeyStorage(key)
+        establishVaultVerifier(opened, pin, salt)
 
         return opened
+    }
+
+    /**
+     * 🔐 Заводит проверочное значение File Vault.
+     *
+     * Здесь, а не на экране хранилища: база только что открылась этим
+     * PIN, и это единственный момент, когда он заведомо верен. Прежде
+     * vault «открывал» любой PIN — список имён отдавался, удаление
+     * работало.
+     *
+     * Ошибка не мешает войти: vault, у которого значения нет,
+     * сверяет PIN с ключом своих файлов.
+     */
+    private fun establishVaultVerifier(messenger: Messenger, pin: String, salt: ByteArray) {
+        runCatching { messenger.establishVaultVerifier(pin, salt) }
     }
 
     /**

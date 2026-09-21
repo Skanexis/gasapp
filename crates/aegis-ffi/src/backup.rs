@@ -364,6 +364,23 @@ impl Messenger {
         guard(|| client.unlock_vault(&pin, &salt, Timestamp::from_millis(now_millis)))
     }
 
+    /// Заводит проверочное значение vault по заведомо верному PIN.
+    ///
+    /// 🔐 Платформа зовёт это **сразу после** того, как база открылась
+    /// этим PIN, — единственный момент, когда верность PIN известна.
+    /// После этого [`Self::unlock_vault`] отвергает неверный PIN даже
+    /// в пустом vault, и опечатка при первом открытии не привязывает
+    /// к себе первый добавленный файл.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сбой вывода ключа или записи.
+    pub fn establish_vault_verifier(&self, pin: String, salt: Vec<u8>) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.establish_vault_verifier(&pin, &salt, &mut rand_core::OsRng))
+    }
+
     /// Закрывает vault и обнуляет его ключ.
     ///
     /// # Errors
