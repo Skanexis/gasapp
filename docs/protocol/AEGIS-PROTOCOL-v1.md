@@ -187,6 +187,18 @@ number of skipped keys.
 
 ## 6. SPQR Ratchet
 
+> ⚠️ **Implementation status (2026-09): specified and implemented in
+> `aegis-protocol::spqr`, not wired into sessions.** The session layer
+> (`aegis-core::session`) calls `RatchetState::encrypt` / `decrypt`, which
+> pass no post-quantum component; every message key is `MK_classic` alone.
+> The guarantee in §6.3 — "it is never left without one" — does not hold
+> in the current client.
+>
+> What still holds: the Double Ratchet is seeded from the PQXDH secret,
+> which includes ML-KEM-1024, so recorded traffic cannot be decrypted by
+> breaking X25519 alone. What is missing: post-compromise recovery against
+> a quantum adversary, which is what SPQR epochs provide.
+
 The SPQR (Sparse Post-Quantum Ratchet) extends the Double Ratchet with post-quantum security by incorporating ML-KEM-768.
 
 ### 6.1. Ratchet Steps
