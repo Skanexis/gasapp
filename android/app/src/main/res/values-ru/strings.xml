@@ -285,7 +285,7 @@
     <string name="notifications_sender_hint">Показывать, от кого пришло сообщение</string>
     <string name="notifications_sound">Звук</string>
     <string name="notifications_vibrate">Вибрация</string>
-    <string name="notifications_content_note">Сервер присылает только сигнал «есть новое»: ни текста, ни отправителя, ни чата в уведомлении нет. Всё, что настраивается здесь, приложение подставляет само, уже расшифровав сообщение на устройстве.</string>
+    <string name="notifications_content_note">Push-уведомлений пока нет: новые сообщения приходят, пока открыт экран переписки, и при следующем открытии приложения. Когда они появятся, сервер будет присылать только сигнал «есть новое» — без текста, отправителя и чата.</string>
 
     <!-- Внешний вид. -->
     <string name="settings_appearance">Внешний вид</string>
