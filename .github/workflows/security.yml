@@ -166,7 +166,7 @@ jobs:
       # соберёт APK без jniLibs — классы Java от этого не изменятся.
       - name: assemble foss release
         working-directory: android
-        run: ./gradlew --console=plain -q :app:assembleFossRelease
+        run: ./gradlew --console=plain -q :app:assembleFossRelease -PaegisAllowUnreleasable=true
 
       - run: bash tools/check-foss-apk.sh
 

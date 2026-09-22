@@ -65,7 +65,7 @@
 |---|---|---|---|
 | NETWORK-1.1 | TLS 1.3 only | 🟡 | Настройка сервера (`server/deploy`); на клиенте ведёт платформенный стек. Автопроверки нет |
 | NETWORK-1.2 | Нет cleartext | ✅ | `MitmProxyRejectedTest::release_config_forbids_cleartext_everywhere` + `android:usesCleartextTraffic="false"` |
-| NETWORK-2.1 | Два **разных** пина | ✅ | `MitmProxyRejectedTest::release_config_pins_two_distinct_keys`; логика — `aegis-net::pinning` (`MIN_PINS`) |
+| NETWORK-2.1 | Два **разных** пина | 🟡 | Механизм есть: `MitmProxyRejectedTest::release_config_pins_two_distinct_keys`, логика — `aegis-net::pinning` (`MIN_PINS`). ⚠️ **Было ✅ при заглушках**: в `release/res/xml/network_security_config.xml` пины `AAAA…=` и `BBBB…=` — тест проверял, что они разные, и две разные заглушки его проходили. С ними релиз не подключится ни к одному серверу. Теперь сборка релиза с заглушками падает (`app/build.gradle`, проверка в `taskGraph.whenReady`). ✅ — когда будут пины настоящего сервера и резервного ключа |
 | NETWORK-2.2 | Не доверяем пользовательским CA | ✅ | `MitmProxyRejectedTest::release_config_does_not_trust_user_certificates`, `::release_config_has_no_local_ca` |
 | NETWORK-2.3 | 🧪 `mitm_proxy_rejected` | ✅ | `android/app/src/test/.../MitmProxyRejectedTest.kt` (5 тестов) |
 | NETWORK-2.4 | Процедура ротации пинов | ✅ | `docs/ops/cert-pin-rotation.md`, `server/deploy/compute-pin.sh` |
@@ -141,12 +141,12 @@
 | STORAGE | 5 | 2 | 1 | 0 |
 | CRYPTO | 5 | 2 | 0 | 0 |
 | AUTH | 4 | 1 | 0 | 0 |
-| NETWORK | 6 | 1 | 1 | 0 |
+| NETWORK | 5 | 2 | 1 | 0 |
 | PLATFORM | 5 | 0 | 2 | 1 |
 | CODE | 8 | 2 | 1 | 0 |
 | RESILIENCE | 4 | 0 | 3 | 1 |
 | PRIVACY | 4 | 4 | 0 | 0 |
-| **Итого** | **41** | **12** | **8** | **2** |
+| **Итого** | **40** | **13** | **8** | **2** |
 
 ⚠️ Чек-лист **не пройден**. Восемь пунктов не сделаны, и главный
 из них — клиент iOS: на него приходится три ❌ подряд и половина
