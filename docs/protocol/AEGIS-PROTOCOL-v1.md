@@ -263,8 +263,15 @@ attacker a field to manipulate.
 
 The AEAD nonce is derived from the **message key**, not from a counter:
 ```
-Nonce = first_12_bytes(HKDF-SHA-256(salt=none, IKM=message_key)["AEGIS_AEAD_v1_NONCE"])
+Nonce = first_12_bytes(HKDF-SHA-256(salt=none, IKM=message_key)["AEGIS_DR_v1_NONCE"])
 ```
+
+> ⚠️ Corrected 2026-09. This section previously named `AEGIS_AEAD_v1_NONCE`.
+> That label exists, but belongs to the outer sealed-sender AEAD layer
+> (`aead::seal_with_key`); Double Ratchet messages use `AEGIS_DR_v1_NONCE`
+> (`double_ratchet.rs`). The spec check (`tools/check-protocol-spec.py`)
+> passed anyway, because it only verifies that a label occurs somewhere
+> in the code — not that it is used where the spec says.
 
 **Rationale.** A counter-derived nonce is unsafe here: the message counter
 resets to zero on every DH ratchet step, so the (key, nonce) pair would
@@ -304,6 +311,9 @@ document specified — makes them related and breaks the property.
 
 ### 8.3. Hybrid Message Key (Triple Ratchet)
 
+> ⚠️ Implementation status (2026-09): **not in effect** — see §6. Sessions
+> pass no post-quantum component, and the message key is `MK_classic`.
+
 The final message key combines the classical and post-quantum halves:
 ```
 message_key = HKDF-SHA-256(salt=none, IKM=MK_classic || MK_pq)["AEGIS_TripleRatchet_v1"]
@@ -313,30 +323,44 @@ derive the message key (see §10.4).
 
 ## 9. Fingerprint Calculation
 
-### 9.1. Safety Number Calculation
+> ⚠️ Rewritten 2026-09 to match the code (`aegis-protocol::fingerprint`,
+> `aegis-core::client::safety_number_of`). The previous text described
+> a different iteration (`H_i = SHA-512(H_{i-1})`), no version bytes,
+> an identifier "e.g. phone number or username", and no ordering rule —
+> none of which is what the client computes.
 
-Safety numbers are 60-digit decimal numbers derived from the identity keys of two users:
+### 9.1. Fingerprint of one party
 
 ```
-Fingerprint = first_30_bytes(SHA-512^5200(IK_A || identifier))
-SafetyNumber = decimal_display(Fingerprint_A || Fingerprint_B)
+h_0 = SHA-512(0x00 || 0x00 || IK || identifier)
+h_i = SHA-512(h_{i-1} || IK)        for i = 1 .. 5200
+fingerprint = first 30 bytes of h_5200
 ```
 
-Where:
-- `IK_A`: Identity key of user A
-- `identifier`: User identifier (e.g., phone number or username)
-- `SHA-512^5200`: 5200-fold iteration of SHA-512
-- `first_30_bytes`: First 30 bytes of the final hash
-- `decimal_display`: Conversion to 60-digit decimal string (2*30 bytes * 2 hex digits/byte * ~0.415 decimal digits/hex digit)
+In short: `fingerprint = first_30_bytes(SHA-512^5200(...))` — 5200 chained
+rounds, each mixing `IK`, over the version-prefixed input.
 
-### 9.2. Iterative SHA-512
+* `0x00 || 0x00` — fingerprint format version. A different version gives
+  an entirely different fingerprint, so numbers of different versions
+  cannot be mistaken for one another.
+* `IK` is mixed into **every** round, not only the first.
+* `identifier` = the 16-byte account identifier **derived from `IK`**
+  (its first 16 bytes). It is derived rather than taken from the server,
+  because both parties must use the same identifier for each participant,
+  and a server-assigned account id is not known the same way to both
+  (a contact added by name vs. learned from an incoming message).
 
-The iterative SHA-512 computation is defined as:
+### 9.2. Safety number
+
 ```
-H_0 = SHA-512(input)
-H_i = SHA-512(H_{i-1}) for i = 1 to 5199
-Result = H_5199
+(first, second) = sort_lexicographically(fingerprint_A, fingerprint_B)
+safety_number   = digits(first) || digits(second)       -- 60 digits
+digits(fp)      = for each 5-byte group g of fp:
+                      five decimal digits of (big-endian u40(g) mod 100000)
 ```
+
+Sorting makes both parties obtain the same 60 digits although "own" and
+"peer" are swapped between them. Display: 12 groups of 5 digits (ADR-022).
 
 ## 10. Security Considerations
 
@@ -355,6 +379,12 @@ adversary holding the captured state. Implementations MUST NOT describe PCS
 as instantaneous.
 
 ### 10.3. Quantum Resistance
+
+> ⚠️ Implementation status (2026-09): SPQR is not wired into sessions (§6).
+> What holds today: the Double Ratchet is seeded from the PQXDH secret, so
+> recorded traffic is not decrypted by breaking X25519 alone. What does not
+> hold: post-compromise recovery against a quantum adversary.
+
 PQXDH protects the initial exchange, SPQR the remainder of the session.
 Because the message key derives from both halves (§8.3), an adversary must
 break **both** X25519 and ML-KEM. If ML-KEM were broken classically — as
@@ -428,6 +458,14 @@ All nonces and ephemeral keys should be generated using cryptographically secure
 
 ### 12.5. Key Validation
 All received public keys should be validated for correct format and membership in the appropriate group.
+
+> ⚠️ Implementation note (2026-09): X25519 public keys are checked for
+> length only. Subgroup membership is **deliberately not** checked
+> (`x25519.rs`), and non-contributory (e.g. all-zero) shared secrets are
+> **not** rejected either. In PQXDH a low-order key substituted for the
+> unsigned one-time prekey zeroes only that DH term; the other DH terms
+> and the ML-KEM secret still bind the key. Rejecting non-contributory
+> results is defence in depth that the implementation does not have.
 
 ### 12.6. Replay Protection
 Implementations should include replay protection mechanisms, such as message counters or timestamps.
