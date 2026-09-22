@@ -94,6 +94,14 @@ class AegisSheet private constructor(
             container.addView(rowFor(item, container, dialog))
         }
 
+        // До setContentView: после того как у окна есть содержимое,
+        // requestFeature бросает AndroidRuntimeException. Прежде вызов
+        // стоял ниже, в блоке window, и каждая панель приложения — меню
+        // чата, вложения, действия над сообщением, реакции, таймер,
+        // автоблокировка, «открыть/удалить» в хранилище — роняла
+        // приложение при открытии. Ни один тест панель не показывал;
+        // нашёл DialogScreenshotTest, подтверждено на эмуляторе.
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(view)
 
         dialog.window?.apply {
@@ -108,8 +116,6 @@ class AegisSheet private constructor(
             // экран не должен выглядеть доступным для нажатия.
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             setDimAmount(DIM_AMOUNT)
-
-            requestFeature(Window.FEATURE_NO_TITLE)
         }
 
         dialog.show()
