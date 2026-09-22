@@ -210,6 +210,15 @@ async fn registration_without_valid_pow_is_rejected() {
     // Челлендж верный: проверяется именно работа, а не его подлинность.
     let challenge = pow::registration_challenge(&username, &[1u8; 32], &[2u8; 32]);
 
+    // Неверное решение — проверенно неверное для этого челленджа.
+    // Прежде здесь стоял `u64::MAX` как «заведомо неверное»: имя
+    // случайное, а при тестовой сложности в 4 бита случайный nonce
+    // проходит с вероятностью 1/16 — тест падал в каждом шестнадцатом
+    // прогоне.
+    let wrong = (0..u64::MAX)
+        .find(|nonce| pow::verify(&challenge, *nonce, common::TEST_DIFFICULTY).is_err())
+        .expect("неверное решение находится");
+
     let (status, _) = call(
         &state,
         "POST",
@@ -219,8 +228,7 @@ async fn registration_without_valid_pow_is_rejected() {
             "identity_key": hex::encode([1u8; 32]),
             "device_identity_key": hex::encode([2u8; 32]),
             "pow_challenge": hex::encode(challenge),
-            // Заведомо неверное решение.
-            "pow_nonce": u64::MAX,
+            "pow_nonce": wrong,
         })),
     )
     .await;
