@@ -142,9 +142,12 @@ pub fn signed_request(
     content_type: &str,
     body: Vec<u8>,
 ) -> Request<Body> {
+    use sha2::{Digest as _, Sha256};
+
     let issued_at = now_millis();
     let path = uri.split('?').next().unwrap_or(uri);
-    let message = aegis_server_api::authz::signed_message(method, path, issued_at);
+    let body_sha256: [u8; 32] = Sha256::digest(&body).into();
+    let message = aegis_server_api::authz::signed_message(method, path, issued_at, &body_sha256);
     let signature = client_sign(private, &message);
 
     Request::builder()
@@ -152,6 +155,7 @@ pub fn signed_request(
         .uri(uri)
         .header("x-aegis-signature", hex::encode(signature))
         .header("x-aegis-issued-at", issued_at.to_string())
+        .header("x-aegis-body-sha256", hex::encode(body_sha256))
         .header("content-type", content_type)
         .body(Body::from(body))
         .unwrap()

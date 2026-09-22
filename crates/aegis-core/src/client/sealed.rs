@@ -64,7 +64,7 @@ use rand_core::{CryptoRng, RngCore};
 use sha2::{Digest, Sha256};
 
 use super::{
-    auth_headers, derive_chat_id, hex, parse_bundle, parse_public_key, peer_account, unhex, Client,
+    derive_chat_id, hex, parse_bundle, parse_public_key, peer_account, unhex, Client, DeviceSigner,
 };
 use crate::session;
 
@@ -115,7 +115,6 @@ impl<T: Transport> Client<T> {
         }
 
         let device_id = self.own_device_id()?.ok_or(AegisError::SessionNotFound)?;
-        let path = format!("/v1/sealed/access/{device_id}");
         let hash = Sha256::digest(own.key);
 
         self.api.publish_sealed_access(
@@ -124,7 +123,7 @@ impl<T: Transport> Client<T> {
                 access_key_hash: hex(hash.as_slice()),
                 allow_from_anyone: false,
             },
-            auth_headers(identity, "PUT", &path, now)?,
+            &DeviceSigner::new(identity, now),
         )?;
 
         // Отметка ставится после ответа сервера: ключ, отмеченный
@@ -171,11 +170,10 @@ impl<T: Transport> Client<T> {
         }
 
         let device_id = self.own_device_id()?.ok_or(AegisError::SessionNotFound)?;
-        let path = format!("/v1/sealed/certificate/{device_id}");
 
         let response = self
             .api
-            .fetch_certificate(&device_id, auth_headers(identity, "GET", &path, now)?)?;
+            .fetch_certificate(&device_id, &DeviceSigner::new(identity, now))?;
 
         let certificate = SenderCertificate::from_bytes(&unhex(&response.certificate)?)?;
         let server_key = parse_public_key(&response.server_key)?;
@@ -236,7 +234,6 @@ impl<T: Transport> Client<T> {
                 .load_own_keys()?
                 .and_then(|keys| keys.device_id)
                 .ok_or(AegisError::SessionNotFound)?;
-            let path = format!("/v1/messages/{own_device}");
 
             self.api.send_envelope(
                 &own_device,
@@ -244,7 +241,7 @@ impl<T: Transport> Client<T> {
                     destination_device_id: peer_device.to_owned(),
                     ciphertext: hex(envelope),
                 },
-                super::auth_headers(identity, "POST", &path, now)?,
+                &DeviceSigner::new(identity, now),
             )?;
 
             return Ok(());

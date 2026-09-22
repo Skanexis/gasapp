@@ -315,12 +315,7 @@ impl<T: Transport> Client<T> {
         self.api.publish_keys(
             &server_device_id.to_string(),
             &publish_request(&bundle),
-            auth_headers(
-                &identity,
-                "PUT",
-                &format!("/v1/keys/{server_device_id}"),
-                now,
-            )?,
+            &DeviceSigner::new(&identity, now),
         )?;
 
         Ok(Account {
@@ -704,10 +699,9 @@ impl<T: Transport> Client<T> {
     #[allow(clippy::too_many_lines)]
     pub fn receive_messages(&self, device_id: &str, now: Timestamp) -> Result<usize> {
         let (identity, mut secrets) = self.load_identity()?;
-        let envelopes = self.api.fetch_envelopes(
-            device_id,
-            auth_headers(&identity, "GET", &format!("/v1/messages/{device_id}"), now)?,
-        )?;
+        let envelopes = self
+            .api
+            .fetch_envelopes(device_id, &DeviceSigner::new(&identity, now))?;
 
         let mut accepted = 0usize;
 
@@ -750,12 +744,7 @@ impl<T: Transport> Client<T> {
                     self.api.acknowledge(
                         device_id,
                         &envelope.envelope_id,
-                        auth_headers(
-                            &identity,
-                            "DELETE",
-                            &format!("/v1/messages/{device_id}/{}", envelope.envelope_id),
-                            now,
-                        )?,
+                        &DeviceSigner::new(&identity, now),
                     )?;
                     continue;
                 }
@@ -965,12 +954,7 @@ impl<T: Transport> Client<T> {
             self.api.acknowledge(
                 device_id,
                 &envelope.envelope_id,
-                auth_headers(
-                    &identity,
-                    "DELETE",
-                    &format!("/v1/messages/{device_id}/{}", envelope.envelope_id),
-                    now,
-                )?,
+                &DeviceSigner::new(&identity, now),
             )?;
             if counts {
                 accepted = accepted.saturating_add(1);
@@ -1304,16 +1288,9 @@ impl<T: Transport> Client<T> {
         }
 
         let (identity, _) = self.load_identity()?;
-        let location = self.api.upload_attachment(
-            device_id,
-            payload,
-            auth_headers(
-                &identity,
-                "POST",
-                &format!("/v1/attachments/{device_id}"),
-                now,
-            )?,
-        )?;
+        let location =
+            self.api
+                .upload_attachment(device_id, payload, &DeviceSigner::new(&identity, now))?;
 
         let descriptor = AttachmentDescriptor {
             kind: file.kind,
@@ -1356,12 +1333,11 @@ impl<T: Transport> Client<T> {
         descriptor.validate()?;
 
         let (identity, _) = self.load_identity()?;
-        let path = format!("/v1/attachments/{device_id}/{}", descriptor.location);
 
         let payload = self.api.download_attachment(
             device_id,
             &descriptor.location,
-            auth_headers(&identity, "GET", &path, now)?,
+            &DeviceSigner::new(&identity, now),
         )?;
 
         // Длина блоба однозначно следует из размера файла: столько-то
@@ -1776,15 +1752,7 @@ impl<T: Transport> Client<T> {
         // ничего бы не исправила.
         let on_server = self
             .api
-            .count_one_time_prekeys(
-                &device_id,
-                auth_headers(
-                    &identity,
-                    "GET",
-                    &format!("/v1/keys/{device_id}/count"),
-                    now,
-                )?,
-            )
+            .count_one_time_prekeys(&device_id, &DeviceSigner::new(&identity, now))
             .unwrap_or(0)
             .max(0);
 
@@ -1854,11 +1822,8 @@ impl<T: Transport> Client<T> {
         // до сервера, клиент считал бы пул пополненным, а сервер
         // продолжал бы выдавать пустые bundle. Пул чинился бы
         // только с виду — то есть не чинился бы вовсе.
-        self.api.publish_keys(
-            &device_id,
-            &request,
-            auth_headers(&identity, "PUT", &format!("/v1/keys/{device_id}"), now)?,
-        )?;
+        self.api
+            .publish_keys(&device_id, &request, &DeviceSigner::new(&identity, now))?;
 
         self.persist_secrets(&secrets, now)?;
 
@@ -2016,14 +1981,9 @@ impl<T: Transport> Client<T> {
 
         let (identity, _) = self.load_identity()?;
 
-        let auth = auth_headers(
-            &identity,
-            "DELETE",
-            &format!("/v1/accounts/{device_id}"),
-            now,
-        )?;
-
-        let response = self.api.delete_account(&device_id, auth)?;
+        let response = self
+            .api
+            .delete_account(&device_id, &DeviceSigner::new(&identity, now))?;
 
         Ok(AccountDeletionReport {
             devices: response.devices,
@@ -2066,7 +2026,13 @@ impl<T: Transport> Client<T> {
 
         // Путь обязан совпадать с тем, что клиент поставит в строку
         // запроса, байт в байт: сервер подписывает `parts.uri.path()`.
-        auth_headers(&identity, "GET", &format!("/v1/ws/{device_id}"), now)
+        // Тела у рукопожатия нет: подписывается хеш пустого тела.
+        aegis_net::auth::signature_headers(
+            &DeviceSigner::new(&identity, now),
+            "GET",
+            &format!("/v1/ws/{device_id}"),
+            b"",
+        )
     }
 
     /// Удаляет истёкшие сообщения.
@@ -2692,47 +2658,35 @@ fn parse_uuid(text: &str) -> Result<uuid::Uuid> {
     uuid::Uuid::parse_str(text).map_err(|_| AegisError::Malformed)
 }
 
-/// Домен-разделитель подписи запроса.
+/// Подписывает запросы ключом устройства.
 ///
-/// Обязан совпадать с серверным (`aegis-server-api/authz`). Клиент
-/// под Apache-2.0, сервер под AGPL-3.0, поэтому общей константы быть
-/// не может — расхождение ловит тест на совместимость.
-const AUTH_DOMAIN: &[u8] = b"AEGIS_AUTH_v1";
-
-/// Собирает подписанные заголовки для запроса.
+/// Что подписывается — метод, путь, время выпуска и SHA-256 тела —
+/// собирает сетевой слой из того, что уходит в сеть
+/// (`aegis_net::auth::RequestSigner`); здесь только подпись.
 ///
-/// # Что подписывается
-///
-/// Метод, путь и время выпуска — то есть **конкретный запрос**.
-/// Подпись под свободным челленджем годилась бы для любого действия:
-/// перехватив её у чтения очереди, атакующий предъявил бы её при
-/// подмене предключей.
-///
-/// # Errors
-///
-/// [`AegisError::Crypto`] — подпись не построилась.
-fn auth_headers(
-    identity: &IdentityKeyPair,
-    method: &str,
-    path: &str,
+/// 🔐 Прежде ядро собирало подписываемое сообщение само: без тела —
+/// подпись `PUT` предключей подходила к любым предключам, — и с путём,
+/// который отдельно собирал ещё и сетевой клиент. Теперь подписано
+/// ровно отправленное.
+pub(crate) struct DeviceSigner<'a> {
+    identity: &'a IdentityKeyPair,
     now: Timestamp,
-) -> Result<Vec<(String, String)>> {
-    let issued_at = now.as_millis();
+}
 
-    let mut message = Vec::new();
-    message.extend_from_slice(AUTH_DOMAIN);
-    message.push(b'\n');
-    message.extend_from_slice(method.as_bytes());
-    message.push(b'\n');
-    message.extend_from_slice(path.as_bytes());
-    message.push(b'\n');
-    message.extend_from_slice(issued_at.to_string().as_bytes());
+impl<'a> DeviceSigner<'a> {
+    pub(crate) const fn new(identity: &'a IdentityKeyPair, now: Timestamp) -> Self {
+        Self { identity, now }
+    }
+}
 
-    let private = aegis_types::PrivateKeyBytes::new(*identity.private().expose_secret());
-    let signature = aegis_protocol::xeddsa::montgomery::sign(&private, &message)?;
+impl aegis_net::auth::RequestSigner for DeviceSigner<'_> {
+    fn issued_at(&self) -> i64 {
+        self.now.as_millis()
+    }
 
-    Ok(vec![
-        ("x-aegis-signature".to_owned(), hex(&signature)),
-        ("x-aegis-issued-at".to_owned(), issued_at.to_string()),
-    ])
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
+        let private = aegis_types::PrivateKeyBytes::new(*self.identity.private().expose_secret());
+
+        Ok(aegis_protocol::xeddsa::montgomery::sign(&private, message)?.to_vec())
+    }
 }

@@ -470,6 +470,15 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/attachments/:device_id/:attachment_id",
             get(download_attachment),
         )
+        // 🔐 Подписанные запросы — через проверку подписи и тела
+        // (`authz::verify_signed_request`). `route_layer`, а не `layer`:
+        // слой работает после маршрутизации, когда устройство из пути
+        // известно. Надет на все маршруты выше — неподписанные проходят
+        // его насквозь.
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::authz::verify_signed_request,
+        ))
         .with_state(state)
 }
 
