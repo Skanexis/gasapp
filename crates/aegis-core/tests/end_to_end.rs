@@ -1805,6 +1805,143 @@ fn an_attachment_is_deleted_for_everyone_too() {
     assert!(texts_of(&bob).is_empty(), "вложение осталось у получателя");
 }
 
+/// Кладёт в очередь устройства конверт, снятый с неё раньше, —
+/// ровно то, что может сделать оператор сервера.
+fn replay_into_queue(server: &FakeServer, device_id: &str, captured: &EnvelopeResponse) {
+    let mut state = server.state.borrow_mut();
+    let envelope_id = FakeServer::next_uuid(&mut state);
+
+    state
+        .queues
+        .entry(device_id.to_owned())
+        .or_default()
+        .push(EnvelopeResponse {
+            envelope_id,
+            ciphertext: captured.ciphertext.clone(),
+            queued_at_bucketed: 0,
+        });
+}
+
+/// Алиса начинает переписку с Бобом без одноразовых ключей и получает
+/// ответ; возвращает снятую оператором копию конверта инициации.
+fn conversation_without_one_time_keys(
+    server: &FakeServer,
+    alice: &Client<FakeServer>,
+    bob: &Client<FakeServer>,
+    alice_device: &str,
+    bob_device: &str,
+) -> EnvelopeResponse {
+    // Сервер отдаёт Алисе bundle Боба без одноразовых ключей —
+    // исчерпанный пул или намеренно вырезанный: одноразовый ключ
+    // не подписан, и отличить одно от другого клиенту нечем.
+    server.drain_one_time(bob_device);
+
+    alice
+        .send_message("bob", "первое", now(), &mut OsRng)
+        .expect("отправка");
+
+    // Оператор снимает копию конверта инициации (первый в очереди).
+    let initial = server.state.borrow().queues[bob_device][0].clone();
+
+    assert_eq!(bob.receive_messages(bob_device, now()).expect("приём"), 1);
+
+    bob.send_message("alice", "ответ", now(), &mut OsRng)
+        .expect("ответ");
+    assert_eq!(
+        alice.receive_messages(alice_device, now()).expect("приём"),
+        1
+    );
+
+    initial
+}
+
+/// 🔐 Повтор конверта инициации не сбрасывает сессию получателя.
+///
+/// Защита от повтора держалась только на одноразовых предключах.
+/// Сервер, не выдавший их, мог спустя сколько угодно времени положить
+/// в очередь копию давно принятого конверта инициации: клиент принимал
+/// её как новую сессию и затирал действующую — переписка молча вставала.
+/// Тест перенесён из аудита (АУДИТ-1).
+#[test]
+fn a_replayed_initial_envelope_does_not_reset_the_session() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let initial =
+        conversation_without_one_time_keys(&server, &alice, &bob, &alice_device, &bob_device);
+
+    replay_into_queue(&server, &bob_device, &initial);
+    bob.receive_messages(&bob_device, now())
+        .expect("приём повтора");
+    assert_eq!(server.queue_len(&bob_device), 0, "повтор не подтверждён");
+
+    alice
+        .send_message("bob", "второе", now(), &mut OsRng)
+        .expect("второе");
+    assert_eq!(
+        bob.receive_messages(&bob_device, now()).expect("приём"),
+        1,
+        "повтор старого конверта инициации сбросил сессию Боба: \
+         сообщение Алисы больше не расшифровывается"
+    );
+
+    assert!(
+        bob.security_events(50)
+            .expect("журнал")
+            .iter()
+            .any(|event| event.0 == "initial_envelope_replayed"),
+        "повтор не записан в журнал"
+    );
+    assert_eq!(
+        texts_of(&bob)
+            .iter()
+            .filter(|text| text.as_str() == "первое")
+            .count(),
+        1,
+        "повтор показал сообщение второй раз"
+    );
+}
+
+/// 🔐 Повтор отвергается и после ротации подписанного предключа.
+///
+/// Выведенный предключ ещё месяц принимает конверты инициации, а значит,
+/// и их повторы. Запись о принятом конверте обязана жить столько же:
+/// забытая при ротации, она вернула бы ровно ту дыру, которую закрывает.
+#[test]
+fn a_replay_after_signed_prekey_rotation_is_still_rejected() {
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let initial =
+        conversation_without_one_time_keys(&server, &alice, &bob, &alice_device, &bob_device);
+
+    let after_rotation = Timestamp::from_millis(now().as_millis() + 8 * DAY);
+    assert!(
+        bob.maintain_prekeys(after_rotation, &mut OsRng)
+            .expect("обслуживание")
+            .rotated_signed,
+        "заготовка теста: ротация не случилась"
+    );
+
+    replay_into_queue(&server, &bob_device, &initial);
+    bob.receive_messages(&bob_device, after_rotation)
+        .expect("приём повтора");
+
+    alice
+        .send_message("bob", "после ротации", after_rotation, &mut OsRng)
+        .expect("отправка");
+    assert_eq!(
+        bob.receive_messages(&bob_device, after_rotation)
+            .expect("приём"),
+        1,
+        "повтор после ротации сбросил сессию"
+    );
+}
+
 /// Поиск находит отправленное сообщение.
 #[test]
 fn search_finds_sent_message() {

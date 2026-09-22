@@ -470,6 +470,17 @@ All received public keys should be validated for correct format and membership i
 ### 12.6. Replay Protection
 Implementations should include replay protection mechanisms, such as message counters or timestamps.
 
+> Implementation note (2026-09). Messages inside a session are protected
+> by the Double Ratchet: a message key is deleted once used. Initial
+> (PQXDH) envelopes were protected only by one-time prekeys — and the
+> server may withhold those (an exhausted pool looks the same). A replayed
+> initial envelope without them was accepted as a new session and replaced
+> the live one. The recipient now records the sender's base key of every
+> accepted initial envelope and drops a repeat without touching the
+> session, logging `initial_envelope_replayed`. A record is kept for as
+> long as the signed prekey that accepted the envelope exists (current or
+> retired): without that key a replay does not decrypt anyway.
+
 ### 12.7. Message Size Limits
 Implementations should enforce reasonable limits on message sizes to prevent resource exhaustion attacks.
 
