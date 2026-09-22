@@ -385,7 +385,9 @@ class VaultActivity : AppCompatActivity() {
     }
 
     /** Каталог шифроблобов vault. */
-    private fun vaultDir(): File = File(filesDir, "vault").apply { mkdirs() }
+    // Имя каталога — одно на приложение: его же стирает AccountWipe.
+    private fun vaultDir(): File =
+        File(filesDir, org.aegis.app.core.AccountWipe.VAULT_DIRECTORY).apply { mkdirs() }
 
     /**
      * Каталог временно расшифрованных файлов.

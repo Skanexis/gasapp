@@ -80,6 +80,16 @@ object AccountWipe {
 
         runCatching { PinAttempts.forget(context) }
 
+        // 🔐 Шифроблобы File Vault — в filesDir/vault, каталогом, и прежде
+        // списком ниже не покрывались: экран обещал удалить «файлы»,
+        // а блобы переживали удаление аккаунта. Они зашифрованы, но
+        // ключ от них — это PIN, и удалённый аккаунт не должен оставлять
+        // на диске ничего, что можно перебирать.
+        val vault = File(context.filesDir, VAULT_DIRECTORY)
+        if (vault.exists() && !runCatching { vault.deleteRecursively() }.getOrDefault(false)) {
+            clean = false
+        }
+
         for (name in FILES) {
             val file = File(context.filesDir, name)
 
@@ -97,7 +107,9 @@ object AccountWipe {
         // в процессе и после выхода не сработает.
         runCatching { SecureClipboard.clear(context) }
 
-        return clean && FILES.none { File(context.filesDir, it).exists() }
+        return clean &&
+            FILES.none { File(context.filesDir, it).exists() } &&
+            !File(context.filesDir, VAULT_DIRECTORY).exists()
     }
 
     /**
@@ -108,6 +120,9 @@ object AccountWipe {
      * `aegis.db`, оставив `aegis.db-wal`, значит оставить часть
      * переписки.
      */
+    /** Каталог шифроблобов File Vault (см. `VaultActivity.vaultDir`). */
+    const val VAULT_DIRECTORY = "vault"
+
     private val FILES = listOf(
         "aegis.db",
         "aegis.db-wal",
