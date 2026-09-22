@@ -56,7 +56,20 @@ readonly DB_USER="${AEGIS_DB_USER:-aegis}"
 # Публичная, а не приватная: машина, делающая бэкап, не должна уметь
 # его прочитать. Иначе взлом сервера даёт и текущие данные,
 # и всю историю.
-readonly AGE_RECIPIENT="${AEGIS_BACKUP_AGE_RECIPIENT:-}"
+#
+# Берётся из переменной, а если её нет — из файла, который пишет
+# rotate-backup-key.sh. ⚠️ Прежде читалась только переменная: ротация
+# писала нового получателя в файл, которого этот скрипт не видел, и
+# копии продолжали шифроваться прежним ключом — тем, который ротация
+# предлагала со временем удалить. А строка cron ниже переменную
+# не задаёт вовсе.
+readonly RECIPIENT_FILE="${AEGIS_BACKUP_RECIPIENT_FILE:-/etc/aegis/backup-recipient}"
+
+AGE_RECIPIENT="${AEGIS_BACKUP_AGE_RECIPIENT:-}"
+if [[ -z "$AGE_RECIPIENT" && -r "$RECIPIENT_FILE" ]]; then
+    AGE_RECIPIENT="$(tr -d '[:space:]' < "$RECIPIENT_FILE")"
+fi
+readonly AGE_RECIPIENT
 
 # Сколько бэкапов хранить.
 #
@@ -73,6 +86,20 @@ mkdir -p "$TARGET"
 # 🔐 Права до создания файла, а не после: между созданием и chmod
 # файл читается всеми, и этого окна достаточно.
 umask 077
+
+# 🔐 Открытый дамп не переживает сбой.
+#
+# Ловушка на любой выход: если шифрование не удалось — нет age, кончилось
+# место, неверный получатель, — set -e обрывает скрипт, и без неё
+# незашифрованный дамп со связкой «кто зарегистрирован» оставался бы
+# в каталоге копий. Проверено: так и было.
+KEEP_PLAINTEXT=0
+cleanup() {
+    if [[ "$KEEP_PLAINTEXT" != "1" && -f "$DUMP" ]]; then
+        shred --remove --zero "$DUMP" 2>/dev/null || rm -f "$DUMP"
+    fi
+}
+trap cleanup EXIT
 
 echo "снимок базы ${DB_NAME} без конвертов и вложений"
 
@@ -116,11 +143,23 @@ if [[ -n "$AGE_RECIPIENT" ]]; then
     shred --remove --zero "$DUMP" 2>/dev/null || rm -f "$DUMP"
 
     readonly RESULT="${DUMP}.age"
-else
-    echo "⚠️  AEGIS_BACKUP_AGE_RECIPIENT не задан: бэкап НЕ зашифрован" >&2
-    echo "⚠️  Он содержит связку «кто зарегистрирован» целиком" >&2
+elif [[ "${AEGIS_BACKUP_ALLOW_PLAINTEXT:-}" == "1" ]]; then
+    # Только явно — для проверки на стенде. Случайно так не выйдет.
+    echo "⚠️  бэкап НЕ зашифрован (AEGIS_BACKUP_ALLOW_PLAINTEXT=1)" >&2
 
+    KEEP_PLAINTEXT=1
     readonly RESULT="$DUMP"
+else
+    # 🔐 Без получателя копия не остаётся на диске.
+    #
+    # Прежде здесь было предупреждение в stderr — которое при запуске
+    # из cron никто не читает, — а незашифрованный дамп со связкой
+    # «кто зарегистрирован» оставался лежать.
+    echo "ОШИБКА: получатель шифрования не задан" >&2
+    echo "  ни AEGIS_BACKUP_AGE_RECIPIENT, ни файла $RECIPIENT_FILE" >&2
+    shred --remove --zero "$DUMP" 2>/dev/null || rm -f "$DUMP"
+
+    exit 1
 fi
 
 echo "готово: ${RESULT}"

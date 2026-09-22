@@ -113,7 +113,7 @@ echo "новый получатель записан в $RECIPIENT_FILE"
 echo
 echo "Дальше:"
 echo "  1. Скопируйте $RECIPIENT_FILE на сервер бэкапов (VPS-4)"
-echo "  2. Убедитесь, что там AEGIS_BACKUP_AGE_RECIPIENT читает этот файл"
+echo "  2. backup.sh читает этот файл сам, если AEGIS_BACKUP_AGE_RECIPIENT не задан"
 echo "  3. 🔐 Приватный ключ ($NEW_KEY) на сервер НЕ копируйте"
 echo
 echo "Ключи, которые можно удалить сегодня:"
