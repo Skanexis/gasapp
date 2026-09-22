@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Проверки на эмуляторе Android (android/app/src/androidTest).
+#
+# Robolectric подменяет окна своими тенями. Крах панели действий
+# в PhoneWindow.requestFeature модульные тесты увидели лишь случайно,
+# а проверки на устройстве до этой правки не запускал никто: две из трёх
+# в androidTest падали на каждом прогоне — ждали демонстрационных данных
+# и экрана, который сторож блокировки давно закрывает, — и этого никто
+# не видел.
+#
+# Нужна нативная библиотека: NativeCoreOnDeviceTest проверяет, что ядро
+# загружается и считает на ART. Собирается тем же закреплённым
+# контейнером, что и релиз, — только под x86_64, ABI эмулятора.
+#
+# Эмулятор в CI дорог (десятки минут), поэтому не на каждый PR:
+# по main, ночью и вручную.
+
+name: android-device
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  connected:
+    name: instrumentation tests on an emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: build core for the emulator ABI in the pinned container
+        run: |
+          docker build -f tools/Dockerfile.android -t aegis-android tools/
+          docker run --rm -v "$PWD":/work -w /work aegis-android \
+            tools/build-rust-android.sh --abi x86_64
+
+      # Аппаратное ускорение: без KVM эмулятор за разумное время
+      # не загрузится.
+      - name: enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # foss: без Google Play Services на образе эмулятора. Экрану входа
+      # нужен только файл базы — его ставит правило StandInAccount,
+      # так что тесты не зависят от состояния устройства.
+      - name: instrumentation tests (foss flavor)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: android
+          script: ./gradlew --console=plain :app:connectedFossDebugAndroidTest -PaegisAllowUnreleasable=true
