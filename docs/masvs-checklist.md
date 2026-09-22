@@ -97,7 +97,7 @@
 | CODE-2.5 | Stack canaries, PIE, RELRO | 🟡 | Умолчания NDK для API 28; отдельной проверки `checksec` в CI нет |
 | CODE-3.1 | `cargo-audit` в CI | ✅ | `security.yml`, job `supply chain` |
 | CODE-3.2 | `cargo-deny` allow-list | ✅ | `security.yml` + `deny.toml` |
-| CODE-3.3 | Dependabot / Renovate | ❌ | Не настроено |
+| CODE-3.3 | Dependabot / Renovate | ✅ | `.github/dependabot.yml` (bb0f672): cargo для `/crates` и `/server` еженедельно, `/fuzz` ежемесячно, gradle для `/android`, github-actions для корня; криптографические крейты — отдельной группой, чтобы их обновление не тонуло в общем PR. ⚠️ До 2026-09 строка стояла ❌ «не настроено» — файл к тому времени уже был |
 | CODE-4.1 | Ошибки не раскрывают детали | ✅ | `aegis-types::tests::error_messages_do_not_leak_detail` — перебирает все варианты `AegisError` |
 | CODE-4.2 | Fail-closed при ошибке крипто | ✅ | `AegisError::Crypto` без детализации; `aegis-ffi` оборачивает панику в ошибку (`catch_unwind`), `panic = "abort"` сознательно не включён |
 
@@ -109,7 +109,7 @@
 | RESILIENCE-1.2 | Требовать экран блокировки | ✅ | `DeviceIntegrity::hasScreenLock` (`isDeviceSecure`), проверка в центре безопасности ведёт в системные настройки |
 | RESILIENCE-1.3 | Android key attestation | ❌ | Не реализовано. Предпосылка появилась: ключ в Keystore теперь есть (`core/HardwareKey.kt`), аттестовать стало что |
 | RESILIENCE-2.1 | Проверка подписи APK во время выполнения | ❌ | Не реализовано |
-| RESILIENCE-2.2 | Reproducible builds | ❌ | Не сделано. `ndkVersion` и `abiFilters` закреплены — это предпосылка, но не сама воспроизводимость |
+| RESILIENCE-2.2 | Reproducible builds | 🟡 | `tools/reproducible-build.sh --twice` (bb0f672) собирает ревизию дважды — со сносом каталогов сборки и пересборкой ядра — и сверяет суммы: `libaegis.so` под обе ABI и неподписанные APK обоих flavor'ов совпали побайтово. Закреплены Rust, NDK, зависимости, Gradle/AGP, набор ABI. 🟡, а не ✅: совпадение получено на одной машине; сверка со второй (эталон — контейнер `tools/Dockerfile.android`, как в релизном workflow) и воспроизводимость **подписанного** APK не проверены. ⚠️ До 2026-09 строка стояла ❌ «не сделано» |
 | RESILIENCE-3 | Детект отладчика | ⛔ | Сознательно не делается: ломает работу добросовестных исследователей, на которых держится bug bounty. Прямая оговорка раздела 25 |
 | RESILIENCE-4.1 | R8 для Kotlin | ✅ | См. CODE-2.3 |
 | RESILIENCE-4.2 | Symbol stripping для Rust | ✅ | См. CODE-2.4 |
@@ -143,10 +143,10 @@
 | AUTH | 5 | 0 | 0 | 0 |
 | NETWORK | 5 | 2 | 1 | 0 |
 | PLATFORM | 5 | 0 | 2 | 1 |
-| CODE | 8 | 2 | 1 | 0 |
-| RESILIENCE | 4 | 0 | 3 | 1 |
+| CODE | 9 | 2 | 0 | 0 |
+| RESILIENCE | 4 | 1 | 2 | 1 |
 | PRIVACY | 4 | 4 | 0 | 0 |
-| **Итого** | **42** | **11** | **8** | **2** |
+| **Итого** | **43** | **12** | **6** | **2** |
 
 ⚠️ Чек-лист **не пройден**. Восемь пунктов не сделаны, и главный
 из них — клиент iOS: на него приходится три ❌ подряд и половина
