@@ -43,7 +43,7 @@ use aegis_net::api::{
 use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::xeddsa;
-use aegis_storage::Storage;
+use aegis_storage::{MessageStatus, Storage};
 use aegis_types::{AccountId, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
 use sha2::{Digest, Sha256};
 
@@ -373,24 +373,36 @@ impl Transport for FakeServer {
                     .cloned()
                     .unwrap_or_default();
 
-                match state.bundles.get(&device_id) {
-                    Some(keys) => (
-                        200,
-                        serde_json::to_string(&BundleResponse {
-                            device_id,
-                            identity_key: identity,
-                            signed_key_id: keys.signed_key_id,
-                            signed_public: keys.signed_public.clone(),
-                            signed_signature: keys.signed_signature.clone(),
-                            kem_key_id: keys.kem_key_id,
-                            kem_public: keys.kem_public.clone(),
-                            kem_signature: keys.kem_signature.clone(),
-                            one_time: keys.one_time.first().cloned(),
-                            one_time_kem: keys.one_time_kem.first().cloned(),
-                            degraded: false,
-                        })
-                        .unwrap_or_default(),
-                    ),
+                match state.bundles.get_mut(&device_id) {
+                    Some(keys) => {
+                        // Одноразовый ключ выдаётся один раз и уходит
+                        // из пула — как на настоящем сервере (`DELETE …
+                        // FOR UPDATE SKIP LOCKED`). Прежде подделка
+                        // отдавала `first()`, не вычёркивая: два новых
+                        // собеседника получали один ключ, и первое
+                        // сообщение второго не расшифровывалось.
+                        let one_time = (!keys.one_time.is_empty()).then(|| keys.one_time.remove(0));
+                        let one_time_kem =
+                            (!keys.one_time_kem.is_empty()).then(|| keys.one_time_kem.remove(0));
+
+                        (
+                            200,
+                            serde_json::to_string(&BundleResponse {
+                                device_id,
+                                identity_key: identity,
+                                signed_key_id: keys.signed_key_id,
+                                signed_public: keys.signed_public.clone(),
+                                signed_signature: keys.signed_signature.clone(),
+                                kem_key_id: keys.kem_key_id,
+                                kem_public: keys.kem_public.clone(),
+                                kem_signature: keys.kem_signature.clone(),
+                                one_time,
+                                one_time_kem,
+                                degraded: false,
+                            })
+                            .unwrap_or_default(),
+                        )
+                    }
                     None => (404, String::new()),
                 }
             }
@@ -1449,6 +1461,348 @@ fn a_normal_session_start_is_not_recorded_as_degraded() {
             .all(|event| event.0 != "session_started_without_one_time_key"),
         "обычное начало записано как ослабленное"
     );
+}
+
+/// Алиса и Боб, зарегистрированные на одном сервере, и их устройства.
+fn alice_and_bob(
+    server: &FakeServer,
+    dir: &tempfile::TempDir,
+) -> (Client<FakeServer>, Client<FakeServer>, String, String) {
+    let alice = Client::new(server.clone(), open_storage(dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(dir, "bob.db"));
+
+    let alice_device = alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса")
+        .device_id
+        .to_string();
+    let bob_device = bob
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб")
+        .device_id
+        .to_string();
+
+    (alice, bob, alice_device, bob_device)
+}
+
+/// Тексты сообщений единственного чата клиента.
+fn texts_of(client: &Client<FakeServer>) -> Vec<String> {
+    let chat = client.chats().expect("чаты")[0];
+
+    client
+        .messages(&chat, 50)
+        .expect("сообщения")
+        .into_iter()
+        .map(|message| message.text)
+        .collect()
+}
+
+/// Момент через `seconds` секунд после [`now`].
+fn later(seconds: i64) -> Timestamp {
+    Timestamp::from_millis(now().as_millis() + seconds * 1_000)
+}
+
+/// 🔐 «Удалить у всех» удаляет у получателя.
+///
+/// Идентификатор сообщения каждая сторона выдумывала сама, а
+/// `Content::Text` его не нёс: `Delete { target }` называл сообщение
+/// идентификатором отправителя, которого у получателя не было, и
+/// удаление тихо ничего не находило. Интерфейс при этом говорил
+/// «удаление запрошено». Тест перенесён из аудита (АУДИТ-6).
+#[test]
+fn delete_for_everyone_deletes_at_the_recipient() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _, bob_device) = alice_and_bob(&server, &dir);
+
+    let sent = alice
+        .send_message("bob", "адрес: улица Ленина, 5", now(), &mut OsRng)
+        .expect("отправка");
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+
+    alice
+        .delete_for_everyone("bob", &sent, now(), &mut OsRng)
+        .expect("просьба удалить отправлена");
+    bob.receive_messages(&bob_device, now())
+        .expect("приём просьбы");
+    assert_eq!(
+        server.queue_len(&bob_device),
+        0,
+        "просьба расшифрована, разобрана и подтверждена — дошла"
+    );
+
+    let remaining = texts_of(&bob);
+    assert!(
+        remaining.is_empty(),
+        "сообщение осталось у получателя после «удалить у всех»: {remaining:?}"
+    );
+}
+
+/// Правка доходит до получателя.
+///
+/// Та же причина, что у удаления: правка называла сообщение
+/// идентификатором, которого у получателя не было.
+#[test]
+fn an_edit_reaches_the_recipient() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _, bob_device) = alice_and_bob(&server, &dir);
+
+    let sent = alice
+        .send_message("bob", "встречаемся в пять", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    alice
+        .edit_message("bob", &sent, "встречаемся в шесть", now(), &mut OsRng)
+        .expect("правка");
+    bob.receive_messages(&bob_device, now())
+        .expect("приём правки");
+
+    assert_eq!(texts_of(&bob), vec!["встречаемся в шесть".to_owned()]);
+    assert_eq!(texts_of(&alice), vec!["встречаемся в шесть".to_owned()]);
+}
+
+/// 🔐 Собеседник не правит и не удаляет **наши** сообщения у нас.
+///
+/// С общими идентификаторами собеседник знает идентификаторы наших
+/// сообщений — он их получал. Прежде правка и удаление применялись
+/// к любому найденному сообщению: Боб переписал бы слова Алисы
+/// в её же переписке или стёр бы их.
+#[test]
+fn a_peer_cannot_edit_or_delete_our_messages() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let first = alice
+        .send_message("bob", "я согласна на 100", now(), &mut OsRng)
+        .expect("отправка");
+    let second = alice
+        .send_message("bob", "и это тоже моё", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    // Боб пользуется обычным клиентом: правка и удаление уходят
+    // с идентификаторами сообщений Алисы — теми, под которыми они
+    // лежат у него.
+    bob.edit_message("alice", &first, "я согласна на 1000", now(), &mut OsRng)
+        .expect("правка ушла");
+    bob.delete_for_everyone("alice", &second, now(), &mut OsRng)
+        .expect("удаление ушло");
+
+    alice
+        .receive_messages(&alice_device, now())
+        .expect("приём у Алисы");
+    assert_eq!(server.queue_len(&alice_device), 0, "всё дошло и разобрано");
+
+    assert_eq!(
+        texts_of(&alice),
+        vec!["я согласна на 100".to_owned(), "и это тоже моё".to_owned()],
+        "собеседник переписал или стёр сообщения Алисы у неё"
+    );
+}
+
+/// 🔐 Удаление, названное идентификатором сообщения из **другого**
+/// чата, ничего не трогает.
+///
+/// Карол пишет Алисе; идентификатор этого сообщения оказался у Боба
+/// (Карол переслала, утечка — не важно как). Удаление от Боба
+/// не должно стирать переписку Алисы с Карол.
+#[test]
+fn a_peer_cannot_delete_a_message_of_another_chat() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+    let carol = Client::new(server.clone(), open_storage(&dir, "carol.db"));
+    carol.register("carol", now(), &mut OsRng).expect("Карол");
+
+    // У Алисы два чата: с Бобом и с Карол.
+    bob.send_message("alice", "привет от Боба", now(), &mut OsRng)
+        .expect("Боб пишет");
+    let carols = carol
+        .send_message("alice", "секрет Карол", now(), &mut OsRng)
+        .expect("Карол пишет");
+    alice
+        .receive_messages(&alice_device, now())
+        .expect("приём у Алисы");
+
+    bob.delete_for_everyone("alice", &carols, now(), &mut OsRng)
+        .expect("удаление ушло");
+    alice
+        .receive_messages(&alice_device, now())
+        .expect("приём удаления");
+    assert_eq!(
+        server.queue_len(&alice_device),
+        0,
+        "удаление дошло и разобрано"
+    );
+    let _ = bob_device;
+
+    let everything: Vec<String> = alice
+        .chats()
+        .expect("чаты")
+        .iter()
+        .flat_map(|chat| alice.messages(chat, 50).expect("сообщения"))
+        .map(|message| message.text)
+        .collect();
+
+    assert!(
+        everything.contains(&"секрет Карол".to_owned()),
+        "удаление из чата с Бобом стёрло сообщение из чата с Карол: {everything:?}"
+    );
+}
+
+/// Квитанция о прочтении отмечает прочитанными наши сообщения —
+/// до названного включительно, и не дальше.
+///
+/// Прежде квитанция доходила и выбрасывалась, а называла она
+/// идентификатор, которого у отправителя не было: отметка «прочитано»
+/// не появлялась никогда, хотя собеседник включал передачу присутствия
+/// ради неё.
+#[test]
+fn a_read_receipt_marks_our_messages_read_up_to_it() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let first = alice
+        .send_message("bob", "первое", now(), &mut OsRng)
+        .expect("отправка");
+    let second = alice
+        .send_message("bob", "второе", later(1), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, later(2)).expect("приём");
+
+    // Третье уходит позже, чем Боб прочитал второе.
+    let third = alice
+        .send_message("bob", "третье", later(3), &mut OsRng)
+        .expect("отправка");
+
+    // Как приложение: квитанция называет последнее входящее из переписки
+    // Боба — идентификатор, под которым сообщение лежит **у него**.
+    // Идентификатор отправителя тест не подставляет: иначе он прошёл бы
+    // и тогда, когда у сторон идентификаторы разные.
+    let bob_chat = bob.chats().expect("чаты")[0];
+    let last_seen = bob
+        .messages(&bob_chat, 50)
+        .expect("сообщения")
+        .into_iter()
+        .rfind(|message| !message.outgoing)
+        .expect("входящее")
+        .message_id;
+
+    bob.set_presence_sharing(true).expect("присутствие");
+    bob.send_read_receipt("alice", &last_seen, later(4), &mut OsRng)
+        .expect("квитанция");
+    alice
+        .receive_messages(&alice_device, later(5))
+        .expect("приём квитанции");
+
+    let chat = alice.chats().expect("чаты")[0];
+    let status_of = |id: &aegis_types::MessageId| {
+        alice
+            .messages(&chat, 50)
+            .expect("сообщения")
+            .into_iter()
+            .find(|message| message.message_id == *id)
+            .expect("сообщение на месте")
+            .status
+    };
+
+    assert_eq!(status_of(&first), MessageStatus::Read, "первое не отмечено");
+    assert_eq!(
+        status_of(&second),
+        MessageStatus::Read,
+        "названное не отмечено"
+    );
+    assert_eq!(
+        status_of(&third),
+        MessageStatus::Sent,
+        "отмечено то, что ушло после прочитанного"
+    );
+}
+
+/// 🔐 Квитанция не отмечает сообщения самого собеседника.
+///
+/// Прочитанность — сведение о чужом чтении наших сообщений. Квитанция,
+/// названная сообщением собеседника, не должна менять ни его, ни наши.
+#[test]
+fn a_read_receipt_naming_the_peers_own_message_marks_nothing() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "от Алисы", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let bobs = bob
+        .send_message("alice", "от Боба", later(1), &mut OsRng)
+        .expect("ответ");
+    alice
+        .receive_messages(&alice_device, later(2))
+        .expect("приём ответа");
+
+    bob.set_presence_sharing(true).expect("присутствие");
+    bob.send_read_receipt("alice", &bobs, later(3), &mut OsRng)
+        .expect("квитанция");
+    alice
+        .receive_messages(&alice_device, later(4))
+        .expect("приём квитанции");
+
+    let chat = alice.chats().expect("чаты")[0];
+    let read: Vec<String> = alice
+        .messages(&chat, 50)
+        .expect("сообщения")
+        .into_iter()
+        .filter(|message| message.status == MessageStatus::Read)
+        .map(|message| message.text)
+        .collect();
+
+    assert!(read.is_empty(), "отмечено прочитанным: {read:?}");
+}
+
+/// У вложения тот же идентификатор у обеих сторон — удаление
+/// сообщения с файлом доходит так же, как удаление текста.
+#[test]
+fn an_attachment_is_deleted_for_everyone_too() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_device,
+            &AttachmentFile {
+                kind: AttachmentKind::Document,
+                bytes: vec![7; 1_000],
+                name: Some("договор.pdf".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            "подпиши",
+            now(),
+            &mut OsRng,
+        )
+        .expect("вложение отправлено");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    let chat = alice.chats().expect("чаты")[0];
+    let sent = alice.messages(&chat, 10).expect("сообщения")[0].message_id;
+
+    alice
+        .delete_for_everyone("bob", &sent, now(), &mut OsRng)
+        .expect("удаление");
+    bob.receive_messages(&bob_device, now())
+        .expect("приём удаления");
+
+    assert!(texts_of(&bob).is_empty(), "вложение осталось у получателя");
 }
 
 /// Поиск находит отправленное сообщение.

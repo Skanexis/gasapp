@@ -74,7 +74,7 @@ const KIND_ACCESS_KEY: u8 = 8;
 pub const ACCESS_KEY_LEN: usize = 32;
 
 /// Длина идентификатора сообщения.
-const MESSAGE_ID_LEN: usize = 16;
+pub const MESSAGE_ID_LEN: usize = 16;
 
 /// Содержимое сообщения.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +90,19 @@ pub enum Content {
         /// который собеседник, возможно, уже удалил, возвращается
         /// к нему обратно.
         reply_to: Option<[u8; MESSAGE_ID_LEN]>,
+        /// Идентификатор сообщения, выбранный отправителем.
+        ///
+        /// 🔐 Общий для обеих сторон: правка, удаление, реакция
+        /// и квитанция ссылаются на сообщение по нему. Прежде его не было,
+        /// и идентификатор каждая сторона выдумывала сама: ссылок
+        /// отправителя получатель не находил — «удалить у всех»
+        /// не удаляло, правка не правила, квитанция ничего не отмечала.
+        ///
+        /// ⚠️ Выбран собеседником, то есть не доверен: получатель
+        /// не даёт ему заменить уже сохранённое сообщение и принимает
+        /// правку и удаление только для сообщений этого же собеседника
+        /// в этом же чате.
+        id: [u8; MESSAGE_ID_LEN],
     },
 
     /// Вложения с подписью.
@@ -105,6 +118,19 @@ pub enum Content {
         descriptors: Vec<Vec<u8>>,
         /// Ответ на сообщение.
         reply_to: Option<[u8; MESSAGE_ID_LEN]>,
+        /// Идентификатор сообщения — как у [`Content::Text`].
+        ///
+        /// 🔐 Общий для обеих сторон: правка, удаление, реакция
+        /// и квитанция ссылаются на сообщение по нему. Прежде его не было,
+        /// и идентификатор каждая сторона выдумывала сама: ссылок
+        /// отправителя получатель не находил — «удалить у всех»
+        /// не удаляло, правка не правила, квитанция ничего не отмечала.
+        ///
+        /// ⚠️ Выбран собеседником, то есть не доверен: получатель
+        /// не даёт ему заменить уже сохранённое сообщение и принимает
+        /// правку и удаление только для сообщений этого же собеседника
+        /// в этом же чате.
+        id: [u8; MESSAGE_ID_LEN],
     },
 
     /// Реакция на сообщение.
@@ -246,15 +272,20 @@ impl Content {
         let mut out = vec![CONTENT_VERSION];
 
         match self {
-            Self::Text { body, reply_to } => {
+            Self::Text { body, reply_to, id } => {
                 out.push(KIND_TEXT);
                 write_text(&mut out, body)?;
                 write_optional_id(&mut out, reply_to.as_ref());
+                // Идентификатор — последним: содержимое без него (так
+                // писали прежние версии) обрывается ровно на нём
+                // и отвергается, а не читается со сдвигом.
+                out.extend_from_slice(id);
             }
             Self::Attachments {
                 body,
                 descriptors,
                 reply_to,
+                id,
             } => {
                 if descriptors.len() > MAX_ATTACHMENTS {
                     return Err(AegisError::Malformed);
@@ -269,6 +300,8 @@ impl Content {
                 for descriptor in descriptors {
                     write_bytes(&mut out, descriptor)?;
                 }
+
+                out.extend_from_slice(id);
             }
             Self::Reaction { target, emoji } => {
                 if emoji.len() > MAX_REACTION_BYTES {
@@ -344,6 +377,7 @@ impl Content {
             KIND_TEXT => Self::Text {
                 body: reader.take_text()?,
                 reply_to: reader.take_optional_id()?,
+                id: reader.take_id()?,
             },
             KIND_ATTACHMENTS => {
                 let body = reader.take_text()?;
@@ -363,6 +397,7 @@ impl Content {
                     body,
                     descriptors,
                     reply_to,
+                    id: reader.take_id()?,
                 }
             }
             KIND_REACTION => {
@@ -595,6 +630,7 @@ mod tests {
         let content = Content::Text {
             body: "привет".to_owned(),
             reply_to: None,
+            id: id(0x2a),
         };
 
         let bytes = content.to_bytes().expect("сериализация");
@@ -602,11 +638,34 @@ mod tests {
         assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
     }
 
+    /// 🔐 Идентификатор, выбранный отправителем, доезжает до получателя,
+    /// а текст без него — формат прежних версий — отвергается, а не
+    /// читается с идентификатором, собранным из соседних байтов.
+    #[test]
+    fn text_carries_the_sender_id_and_is_rejected_without_it() {
+        let full = Content::Text {
+            body: "привет".to_owned(),
+            reply_to: None,
+            id: id(0x2a),
+        }
+        .to_unpadded_bytes()
+        .expect("сериализация");
+
+        match Content::from_unpadded_bytes(&full).expect("разбор") {
+            Content::Text { id: received, .. } => assert_eq!(received, id(0x2a)),
+            other => panic!("не текст: {other:?}"),
+        }
+
+        let without_id = full.get(..full.len() - MESSAGE_ID_LEN).expect("длина");
+        assert!(Content::from_unpadded_bytes(without_id).is_err());
+    }
+
     #[test]
     fn reply_round_trips() {
         let content = Content::Text {
             body: "ответ".to_owned(),
             reply_to: Some(id(7)),
+            id: id(0x2a),
         };
 
         let bytes = content.to_bytes().expect("сериализация");
@@ -620,6 +679,7 @@ mod tests {
             body: "смотри".to_owned(),
             descriptors: vec![vec![1, 2, 3], vec![4, 5]],
             reply_to: Some(id(9)),
+            id: id(0x2a),
         };
 
         let bytes = content.to_bytes().expect("сериализация");
@@ -702,6 +762,7 @@ mod tests {
             body: "текст".to_owned(),
             descriptors: vec![vec![1, 2, 3]],
             reply_to: Some(id(5)),
+            id: id(0x2a),
         }
         .to_bytes()
         .expect("сериализация");
@@ -743,12 +804,14 @@ mod tests {
             Content::Text {
                 body: "ок".to_owned(),
                 reply_to: None,
+                id: id(0x2a),
             },
             Content::Delete { target: id(1) },
             Content::Typing { active: true },
             Content::Text {
                 body: "а".repeat(2000),
                 reply_to: Some(id(2)),
+                id: id(0x2a),
             },
         ];
 
@@ -770,6 +833,7 @@ mod tests {
         let short = Content::Text {
             body: "ок".to_owned(),
             reply_to: None,
+            id: id(0x2a),
         }
         .to_bytes()
         .expect("сериализация");
@@ -777,6 +841,7 @@ mod tests {
         let long = Content::Text {
             body: "я не приду, потому что ".repeat(8),
             reply_to: None,
+            id: id(0x2a),
         }
         .to_bytes()
         .expect("сериализация");
@@ -815,6 +880,7 @@ mod tests {
         let content = Content::Text {
             body: "a".repeat(MAX_TEXT_BYTES + 1),
             reply_to: None,
+            id: id(0x2a),
         };
 
         assert!(content.to_bytes().is_err());
@@ -826,6 +892,7 @@ mod tests {
             body: String::new(),
             descriptors: vec![vec![1]; MAX_ATTACHMENTS + 1],
             reply_to: None,
+            id: id(0x2a),
         };
 
         assert!(content.to_bytes().is_err());

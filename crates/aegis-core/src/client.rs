@@ -352,6 +352,12 @@ impl<T: Transport> Client<T> {
         let peer_identity = parse_public_key(&peer.identity_key)?;
 
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
+
+        // Идентификатор выбирается до шифрования и уезжает внутри
+        // содержимого: по нему собеседник найдёт сообщение, когда придёт
+        // правка, удаление или квитанция (см. `Content::Text::id`).
+        let message_id = MessageId::generate();
+
         // Тело сообщения — структурированное содержимое, а не голый
         // текст: получатель обязан отличить текст от реакции и правки,
         // и это различие лежит под шифрованием.
@@ -359,6 +365,7 @@ impl<T: Transport> Client<T> {
             Content::Text {
                 body: text.to_owned(),
                 reply_to: None,
+                id: *message_id.as_uuid().as_bytes(),
             }
             .to_bytes()?,
         );
@@ -403,7 +410,6 @@ impl<T: Transport> Client<T> {
         self.storage
             .save_session(&chat_id, &outgoing.session, now)?;
 
-        let message_id = MessageId::generate();
         self.store_message(
             &chat_id,
             message_id,
@@ -786,39 +792,53 @@ impl<T: Transport> Client<T> {
             let counts = !matches!(content, Content::AccessKey { .. });
 
             match content {
-                Content::Text { body, .. } => {
-                    let message_id = MessageId::generate();
-                    self.store_message(
+                Content::Text { body, id, .. } => {
+                    // Под идентификатором отправителя: иначе его правки
+                    // и удаления здесь не нашли бы сообщения.
+                    let message_id = MessageId::from_uuid(uuid::Uuid::from_bytes(id));
+
+                    // 🔐 Занятый идентификатор — повтор или подделка:
+                    // прежнее сообщение не заменяется (см.
+                    // `Storage::insert_message`), новое не сохраняется.
+                    if self.store_message(
                         &chat_id,
                         message_id,
                         &body,
                         now,
                         false,
                         MessageStatus::Delivered,
-                    )?;
-                    self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                    )? {
+                        self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                    }
                 }
 
                 Content::Attachments {
-                    body, descriptors, ..
+                    body,
+                    descriptors,
+                    id,
+                    ..
                 } => {
-                    let message_id = MessageId::generate();
-                    self.store_message(
+                    let message_id = MessageId::from_uuid(uuid::Uuid::from_bytes(id));
+
+                    // Описания — только к новому сообщению: к чужому,
+                    // уже сохранённому, собеседник не приставит своих
+                    // вложений.
+                    if self.store_message(
                         &chat_id,
                         message_id,
                         &body,
                         now,
                         false,
                         MessageStatus::Delivered,
-                    )?;
+                    )? {
+                        // 🔐 Описания сохраняются вместе с сообщением.
+                        // Без них вложение недоступно: адрес файла
+                        // на сервере и ключ к нему есть только здесь,
+                        // а второй раз сообщение не придёт.
+                        self.store_descriptors(&message_id, &descriptors, now)?;
 
-                    // 🔐 Описания сохраняются вместе с сообщением.
-                    // Без них вложение недоступно: адрес файла
-                    // на сервере и ключ к нему есть только здесь,
-                    // а второй раз сообщение не придёт.
-                    self.store_descriptors(&message_id, &descriptors, now)?;
-
-                    self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                        self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                    }
                 }
 
                 Content::Edit { target, body } => {
@@ -826,22 +846,38 @@ impl<T: Transport> Client<T> {
                     // Если его нет — собеседник правит то, чего мы
                     // не получали; создавать сообщение задним числом
                     // нельзя, оно появилось бы без контекста.
-                    self.storage.edit_message(
-                        &MessageId::from_uuid(uuid::Uuid::from_bytes(target)),
-                        &body,
-                        now,
-                    )?;
+                    let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
+
+                    if self.written_by_peer(&target, &chat_id)? {
+                        self.storage.edit_message(&target, &body, now)?;
+                    }
                 }
 
                 Content::Delete { target } => {
-                    // 🔐 Удаление выполняется без подтверждения:
+                    // Удаление выполняется без подтверждения:
                     // отправитель просит убрать своё сообщение,
                     // и отказ означал бы, что «удалить у всех»
-                    // не работает.
-                    self.storage.delete_message(
-                        &MessageId::from_uuid(uuid::Uuid::from_bytes(target)),
-                        now,
-                    )?;
+                    // не работает. Но только своё — см. `written_by_peer`.
+                    let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
+
+                    if self.written_by_peer(&target, &chat_id)? {
+                        self.storage.delete_message(&target, now)?;
+                    }
+                }
+
+                Content::ReadReceipt { until } => {
+                    // Квитанция отмечает прочитанными наши сообщения
+                    // этого чата до названного включительно. Уходят
+                    // квитанции, только если передачу присутствия
+                    // включил собеседник, — решение за ним.
+                    if let Some(own) = self.storage.get_account_id()? {
+                        self.storage.mark_read_until(
+                            &chat_id,
+                            &own,
+                            &MessageId::from_uuid(uuid::Uuid::from_bytes(until)),
+                            now,
+                        )?;
+                    }
                 }
 
                 Content::AccessKey {
@@ -864,7 +900,7 @@ impl<T: Transport> Client<T> {
                     }
                 }
 
-                Content::Reaction { .. } | Content::Typing { .. } | Content::ReadReceipt { .. } => {
+                Content::Reaction { .. } | Content::Typing { .. } => {
                     // Ничего не сохраняется, но по разным причинам.
                     //
                     // Реакции приходят и снимаются многократно: держать
@@ -1114,12 +1150,16 @@ impl<T: Transport> Client<T> {
 
         let encoded = descriptor.to_bytes()?;
 
+        // Общий с получателем идентификатор — как у текста.
+        let message_id = MessageId::generate();
+
         let chat_id = self.send_content(
             peer_username,
             &Content::Attachments {
                 body: body.to_owned(),
                 descriptors: vec![encoded.clone()],
                 reply_to: None,
+                id: *message_id.as_uuid().as_bytes(),
             },
             now,
             rng,
@@ -1131,7 +1171,6 @@ impl<T: Transport> Client<T> {
         //
         // Сохраняется после отправки: запись о неушедшем сообщении
         // показала бы в переписке то, чего собеседник не получал.
-        let message_id = MessageId::generate();
         self.store_message(&chat_id, message_id, body, now, true, MessageStatus::Sent)?;
         self.store_descriptors(&message_id, &[encoded], now)?;
         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
@@ -2108,7 +2147,38 @@ impl<T: Transport> Client<T> {
         )
     }
 
-    /// Сохраняет сообщение в хранилище.
+    /// Написано ли сообщение собеседником этого чата.
+    ///
+    /// # 🔐 Зачем
+    ///
+    /// Правка и удаление приходят от собеседника и называют сообщение
+    /// идентификатором. Прежде они применялись к любому найденному:
+    /// пока идентификаторы у сторон не совпадали, это было незаметно,
+    /// но с общими идентификаторами собеседник правил бы и удалял
+    /// **наши** сообщения у нас — он знает их идентификаторы, потому что
+    /// их получал, — а зная идентификатор из другого чата, трогал бы
+    /// и чужую переписку. Здесь допускается только его собственное
+    /// сообщение и только в чате с ним.
+    ///
+    /// Входящие сообщения помечены идентификатором чата вместо
+    /// отправителя (см. `store_message`), поэтому «его» — это «в этом
+    /// чате и не наше».
+    fn written_by_peer(&self, message: &MessageId, chat_id: &ChatId) -> Result<bool> {
+        let Some((chat, sender)) = self.storage.message_origin(message)? else {
+            return Ok(false);
+        };
+
+        let own = self.storage.get_account_id()?;
+
+        Ok(chat == *chat_id && own.as_ref() != Some(&sender))
+    }
+
+    /// Сохраняет новое сообщение в хранилище.
+    ///
+    /// Возвращает `false`, если идентификатор уже занят: существующее
+    /// сообщение не заменяется (см. [`Storage::insert_message`]). Для
+    /// своих сообщений это невозможно на практике — идентификатор
+    /// только что создан случайно; для входящих — повтор или подделка.
     fn store_message(
         &self,
         chat_id: &ChatId,
@@ -2117,7 +2187,7 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         outgoing: bool,
         status: MessageStatus,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let sender = if outgoing {
             self.storage
                 .get_account_id()?
@@ -2129,7 +2199,7 @@ impl<T: Transport> Client<T> {
             AccountId::from_uuid(*chat_id.as_uuid())
         };
 
-        self.storage.save_message(&StoredMessage {
+        self.storage.insert_message(&StoredMessage {
             id: message_id,
             chat_id: *chat_id,
             sender_id: sender,

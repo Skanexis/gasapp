@@ -1523,6 +1523,137 @@ impl Storage {
         Ok(())
     }
 
+    /// Сохраняет **новое** сообщение; существующее не заменяется.
+    ///
+    /// Возвращает `false`, если сообщение с таким идентификатором уже
+    /// есть — тогда в базе ничего не меняется.
+    ///
+    /// # 🔐 Зачем отдельно от [`Storage::save_message`]
+    ///
+    /// Идентификатор входящего сообщения выбирает собеседник
+    /// (`Content::Text::id`). `save_message` пишет `INSERT OR REPLACE`,
+    /// и сообщение с идентификатором уже сохранённого **заменило бы**
+    /// его — собеседник, знающий идентификаторы наших сообщений ему
+    /// (он их получал), переписал бы наш текст у нас же. Здесь
+    /// совпадение означает повтор или подделку, и прежняя строка
+    /// остаётся как была.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn insert_message(&self, message: &StoredMessage) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let inserted = connection
+            .execute(
+                "
+            INSERT INTO messages
+                (message_id, chat_id, sender_id, timestamp, content, status,
+                 message_type, created_at, expires_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (message_id) DO NOTHING
+            ",
+                params![
+                    message.id.as_bytes(),
+                    message.chat_id.as_bytes(),
+                    message.sender_id.as_bytes(),
+                    message.timestamp.as_millis(),
+                    message.content.as_bytes(),
+                    i64::from(message.status.as_u8()),
+                    i64::from(message.message_type),
+                    message.timestamp.as_millis(),
+                    message.expires_at.map(|expiry| expiry.as_millis()),
+                    message.timestamp.as_millis(),
+                ],
+            )
+            .map_err(storage_error)?;
+
+        Ok(inserted == 1)
+    }
+
+    /// Чат и отправитель сообщения, если оно есть.
+    ///
+    /// 🔐 По ним получатель решает, вправе ли собеседник править или
+    /// удалять сообщение: только своё и только в своём чате.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn message_origin(&self, id: &MessageId) -> Result<Option<(ChatId, AccountId)>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = connection
+            .prepare("SELECT chat_id, sender_id FROM messages WHERE message_id = ?")
+            .map_err(storage_error)?;
+
+        let mut rows = statement
+            .query_map(params![id.as_bytes()], |row| {
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(storage_error)?;
+
+        match rows.next().transpose().map_err(storage_error)? {
+            Some((chat, sender)) => Ok(Some((
+                ChatId::from_uuid(uuid_from_slice(&chat)?),
+                AccountId::from_uuid(uuid_from_slice(&sender)?),
+            ))),
+            None => Ok(None),
+        }
+    }
+
+    /// Отмечает прочитанными свои сообщения чата — до указанного
+    /// включительно.
+    ///
+    /// Квитанция называет последнее прочитанное, а не каждое (см.
+    /// `Content::ReadReceipt`), поэтому прочитанным считается всё своё,
+    /// что в чате не позже него. Время сравнивается своё: и у названного
+    /// сообщения, и у остальных оно записано этим же устройством.
+    ///
+    /// 🔐 Затрагиваются только **свои** сообщения **этого** чата:
+    /// квитанция от собеседника не может отметить ни его собственные
+    /// сообщения, ни переписку с кем-то другим. Отмечаются только
+    /// отправленные и доставленные: неотправленное прочитанным быть
+    /// не может, и отметка скрыла бы сбой отправки.
+    ///
+    /// Возвращает число отмеченных сообщений.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn mark_read_until(
+        &self,
+        chat_id: &ChatId,
+        own: &AccountId,
+        until: &MessageId,
+        now: Timestamp,
+    ) -> Result<usize> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "
+            UPDATE messages SET status = ?, updated_at = ?
+            WHERE chat_id = ? AND sender_id = ? AND status IN (?, ?)
+              AND timestamp <= (
+                  SELECT timestamp FROM messages
+                  WHERE message_id = ? AND chat_id = ? AND sender_id = ?
+              )
+            ",
+                params![
+                    i64::from(MessageStatus::Read.as_u8()),
+                    now.as_millis(),
+                    chat_id.as_bytes(),
+                    own.as_bytes(),
+                    i64::from(MessageStatus::Sent.as_u8()),
+                    i64::from(MessageStatus::Delivered.as_u8()),
+                    until.as_bytes(),
+                    chat_id.as_bytes(),
+                    own.as_bytes(),
+                ],
+            )
+            .map_err(storage_error)
+    }
+
     /// Загружает сообщения чата, новые в конце.
     ///
     /// `limit` ограничивает выборку: история чата не помещается в память
