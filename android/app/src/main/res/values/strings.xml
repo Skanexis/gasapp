@@ -199,8 +199,8 @@
     <!-- Calls -->
     <string name="calls_filter_all">All</string>
     <string name="calls_filter_missed">Missed</string>
-    <string name="calls_empty">No calls yet</string>
-    <string name="calls_encrypted_note">All calls are end-to-end encrypted</string>
+    <string name="calls_empty">There are no calls in this version</string>
+    <string name="calls_encrypted_note">When calls arrive, they will be end-to-end encrypted, like your messages</string>
     <string name="call_back">Call</string>
     <string name="call_incoming">Incoming · %1$s</string>
     <string name="call_outgoing">Outgoing · %1$s</string>
