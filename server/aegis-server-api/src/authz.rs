@@ -48,13 +48,30 @@ use crate::auth;
 use crate::routes::{ApiError, AppState};
 
 /// Домен-разделитель подписи запроса.
-const AUTH_DOMAIN: &[u8] = b"AEGIS_AUTH_v1";
+const AUTH_DOMAIN: &[u8] = b"AEGIS_AUTH_v2";
 
 /// Заголовок с подписью, hex.
 const SIGNATURE_HEADER: &str = "x-aegis-signature";
 
 /// Заголовок с временем выпуска подписи, миллисекунды.
 const ISSUED_AT_HEADER: &str = "x-aegis-issued-at";
+
+/// Заголовок с SHA-256 тела запроса, hex.
+///
+/// 🔐 Хеш тела входит в подпись (`AEGIS_AUTH_v2`). В v1 его не было,
+/// и тот, кто видел запрос открытым (прокси, завершающий TLS, его
+/// журнал), пять минут мог предъявлять подпись с **другим** телом —
+/// например, к `PUT` предключей подложить свои. Заголовком он едет,
+/// чтобы подпись проверялась до чтения тела: тела тех, кто не доказал,
+/// кто он, сервер не буферизует.
+const BODY_SHA256_HEADER: &str = "x-aegis-body-sha256";
+
+/// Предел тела подписанного запроса.
+///
+/// Тело читается целиком, чтобы сверить хеш, — уже после проверки
+/// подписи. Предел — наибольший из маршрутов (вложения): свои пределы
+/// маршрутов дальше действуют как прежде.
+const MAX_SIGNED_BODY_BYTES: usize = aegis_server_db::MAX_ATTACHMENT_BYTES;
 
 /// Устройство, чья подпись проверена.
 ///
@@ -67,6 +84,14 @@ pub struct AuthenticatedDevice {
     pub device_id: Uuid,
 }
 
+/// Извлекатель отдаёт устройство, подпись которого проверил
+/// [`verify_signed_request`].
+///
+/// 🔐 Сам он ничего не проверяет и без отметки промежуточного слоя
+/// отвечает отказом. Так маршрут, на который слой почему-то не надет,
+/// закрыт, а не открыт: забытая проверка тела не превращается в запрос,
+/// принятый без неё.
+///
 /// Извлекатель привязан к конкретному состоянию `Arc<AppState>`.
 ///
 /// Обобщение по `S` выглядит аккуратнее, но требует, чтобы состояние
@@ -79,51 +104,120 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedDevice {
 
     async fn from_request_parts(
         parts: &mut Parts,
-        state: &Arc<AppState>,
+        _state: &Arc<AppState>,
     ) -> Result<Self, Self::Rejection> {
-        // Устройство берётся из пути: подписывающий обязан быть тем,
-        // о чьих данных идёт речь. Идентификатор из заголовка позволил
-        // бы подписать своим ключом запрос к чужой очереди.
-        //
-        // Путь бывает двух форм — `/…/{device}` и `/…/{device}/{envelope}`,
-        // поэтому сначала пробуется одиночный параметр, затем пара.
-        // Брать «первый параметр» вслепую нельзя: порядок в кортеже
-        // задаётся маршрутом, и молчаливая опора на него сломалась бы
-        // при добавлении маршрута с другим порядком.
-        let device_id = if let Ok(Path(id)) = Path::<Uuid>::from_request_parts(parts, state).await {
-            id
-        } else {
-            let Path((id, _)) = Path::<(Uuid, Uuid)>::from_request_parts(parts, state)
-                .await
-                .map_err(|_| ApiError::Unauthorized)?;
+        parts
+            .extensions
+            .get::<Self>()
+            .copied()
+            .ok_or(ApiError::Unauthorized)
+    }
+}
 
-            id
-        };
-
-        let signature = header_bytes(parts, SIGNATURE_HEADER)?;
-        let issued_at = header_i64(parts, ISSUED_AT_HEADER)?;
-
-        auth::check_freshness(issued_at, crate::routes::now_millis())
-            .map_err(|_| ApiError::Unauthorized)?;
-
-        // Публичный ключ берётся из базы, а не из запроса: иначе
-        // клиент подсунул бы свой и подписал что угодно.
-        let device = aegis_server_db::repo::list_devices_by_id(&state.pool, device_id)
+/// Проверяет подпись по заголовкам и возвращает устройство и хеш тела,
+/// под которым она сделана.
+async fn verify_parts(
+    parts: &mut Parts,
+    state: &Arc<AppState>,
+) -> Result<(AuthenticatedDevice, [u8; 32]), ApiError> {
+    // Устройство берётся из пути: подписывающий обязан быть тем,
+    // о чьих данных идёт речь. Идентификатор из заголовка позволил
+    // бы подписать своим ключом запрос к чужой очереди.
+    //
+    // Путь бывает двух форм — `/…/{device}` и `/…/{device}/{envelope}`,
+    // поэтому сначала пробуется одиночный параметр, затем пара.
+    // Брать «первый параметр» вслепую нельзя: порядок в кортеже
+    // задаётся маршрутом, и молчаливая опора на него сломалась бы
+    // при добавлении маршрута с другим порядком.
+    let device_id = if let Ok(Path(id)) = Path::<Uuid>::from_request_parts(parts, state).await {
+        id
+    } else {
+        let Path((id, _)) = Path::<(Uuid, Uuid)>::from_request_parts(parts, state)
             .await
             .map_err(|_| ApiError::Unauthorized)?;
 
-        let identity: [u8; 32] = device
-            .identity_key
-            .try_into()
-            .map_err(|_| ApiError::Unauthorized)?;
+        id
+    };
 
-        let message = signed_message(parts.method.as_str(), parts.uri.path(), issued_at);
+    let signature = header_bytes(parts, SIGNATURE_HEADER)?;
+    let issued_at = header_i64(parts, ISSUED_AT_HEADER)?;
+    let body_sha256: [u8; 32] = header_bytes(parts, BODY_SHA256_HEADER)?
+        .try_into()
+        .map_err(|_| ApiError::Unauthorized)?;
 
-        auth::verify_challenge_signature(&identity, &message, &signature)
-            .map_err(|_| ApiError::Unauthorized)?;
+    auth::check_freshness(issued_at, crate::routes::now_millis())
+        .map_err(|_| ApiError::Unauthorized)?;
 
-        Ok(Self { device_id })
+    // Публичный ключ берётся из базы, а не из запроса: иначе
+    // клиент подсунул бы свой и подписал что угодно.
+    let device = aegis_server_db::repo::list_devices_by_id(&state.pool, device_id)
+        .await
+        .map_err(|_| ApiError::Unauthorized)?;
+
+    let identity: [u8; 32] = device
+        .identity_key
+        .try_into()
+        .map_err(|_| ApiError::Unauthorized)?;
+
+    let message = signed_message(
+        parts.method.as_str(),
+        parts.uri.path(),
+        issued_at,
+        &body_sha256,
+    );
+
+    auth::verify_challenge_signature(&identity, &message, &signature)
+        .map_err(|_| ApiError::Unauthorized)?;
+
+    Ok((AuthenticatedDevice { device_id }, body_sha256))
+}
+
+/// Промежуточный слой подписанных запросов.
+///
+/// Запрос без подписи проходит как есть: его маршрут либо не требует
+/// подписи, либо откажет сам — извлекатель [`AuthenticatedDevice`]
+/// без отметки этого слоя не пропускает. Подписанный запрос:
+///
+/// 1. подпись проверяется **по заголовкам**, до чтения тела;
+/// 2. тело читается и сверяется с хешем, под которым сделана подпись;
+/// 3. устройство отмечается в запросе, и тело возвращается на место.
+///
+/// Надевается через `route_layer`: после маршрутизации устройство из
+/// пути уже известно.
+pub async fn verify_signed_request(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+    use sha2::{Digest as _, Sha256};
+
+    if !request.headers().contains_key(SIGNATURE_HEADER) {
+        return next.run(request).await;
     }
+
+    let (mut parts, body) = request.into_parts();
+
+    let (device, body_sha256) = match verify_parts(&mut parts, &state).await {
+        Ok(verified) => verified,
+        Err(error) => return error.into_response(),
+    };
+
+    let Ok(bytes) = axum::body::to_bytes(body, MAX_SIGNED_BODY_BYTES).await else {
+        return ApiError::PayloadTooLarge.into_response();
+    };
+
+    if Sha256::digest(&bytes).as_slice() != body_sha256.as_slice() {
+        return ApiError::Unauthorized.into_response();
+    }
+
+    parts.extensions.insert(device);
+
+    next.run(axum::extract::Request::from_parts(
+        parts,
+        axum::body::Body::from(bytes),
+    ))
+    .await
 }
 
 /// Собирает сообщение, которое подписывает клиент.
@@ -132,13 +226,13 @@ impl FromRequestParts<Arc<AppState>> for AuthenticatedDevice {
 /// хотя бы в одном байте отвергнет все запросы, и причину такого
 /// отказа искать долго.
 #[must_use]
-pub fn signed_message(method: &str, path: &str, issued_at: i64) -> Vec<u8> {
+pub fn signed_message(method: &str, path: &str, issued_at: i64, body_sha256: &[u8; 32]) -> Vec<u8> {
     let mut message = Vec::with_capacity(
         AUTH_DOMAIN
             .len()
             .saturating_add(method.len())
             .saturating_add(path.len())
-            .saturating_add(32),
+            .saturating_add(32 + 64),
     );
 
     message.extend_from_slice(AUTH_DOMAIN);
@@ -148,6 +242,8 @@ pub fn signed_message(method: &str, path: &str, issued_at: i64) -> Vec<u8> {
     message.extend_from_slice(path.as_bytes());
     message.push(b'\n');
     message.extend_from_slice(issued_at.to_string().as_bytes());
+    message.push(b'\n');
+    message.extend_from_slice(hex::encode(body_sha256).as_bytes());
 
     message
 }
@@ -181,10 +277,19 @@ mod tests {
     ///
     /// Иначе подпись запроса на чтение очереди годилась бы для замены
     /// предключей — а это подмена личности.
+    /// 🔐 Подпись привязана к телу: в v1 его в подписи не было.
+    #[test]
+    fn message_depends_on_body() {
+        assert_ne!(
+            signed_message("PUT", "/v1/keys/abc", 1, &[1; 32]),
+            signed_message("PUT", "/v1/keys/abc", 1, &[2; 32])
+        );
+    }
+
     #[test]
     fn message_depends_on_method() {
-        let read = signed_message("GET", "/v1/messages/abc", 1);
-        let write = signed_message("PUT", "/v1/messages/abc", 1);
+        let read = signed_message("GET", "/v1/messages/abc", 1, &[0; 32]);
+        let write = signed_message("PUT", "/v1/messages/abc", 1, &[0; 32]);
 
         assert_ne!(read, write);
     }
@@ -194,8 +299,8 @@ mod tests {
     /// Иначе подпись запроса к своей очереди годилась бы для чужой.
     #[test]
     fn message_depends_on_path() {
-        let mine = signed_message("GET", "/v1/messages/mine", 1);
-        let theirs = signed_message("GET", "/v1/messages/theirs", 1);
+        let mine = signed_message("GET", "/v1/messages/mine", 1, &[0; 32]);
+        let theirs = signed_message("GET", "/v1/messages/theirs", 1, &[0; 32]);
 
         assert_ne!(mine, theirs);
     }
@@ -203,8 +308,8 @@ mod tests {
     /// Подпись привязана ко времени выпуска.
     #[test]
     fn message_depends_on_time() {
-        let first = signed_message("GET", "/v1/messages/abc", 1);
-        let second = signed_message("GET", "/v1/messages/abc", 2);
+        let first = signed_message("GET", "/v1/messages/abc", 1, &[0; 32]);
+        let second = signed_message("GET", "/v1/messages/abc", 2, &[0; 32]);
 
         assert_ne!(first, second);
     }
@@ -215,7 +320,7 @@ mod tests {
     /// подпись предключа, — можно было бы предъявить здесь.
     #[test]
     fn message_starts_with_domain() {
-        let message = signed_message("GET", "/v1/messages/abc", 1);
+        let message = signed_message("GET", "/v1/messages/abc", 1, &[0; 32]);
 
         assert!(message.starts_with(AUTH_DOMAIN));
     }
@@ -226,8 +331,8 @@ mod tests {
     /// давали бы одну и ту же подпись.
     #[test]
     fn fields_cannot_be_confused() {
-        let first = signed_message("GET", "/ab", 1);
-        let second = signed_message("GETA", "/b", 1);
+        let first = signed_message("GET", "/ab", 1, &[0; 32]);
+        let second = signed_message("GETA", "/b", 1, &[0; 32]);
 
         assert_ne!(first, second);
     }

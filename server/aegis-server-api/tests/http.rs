@@ -898,6 +898,81 @@ async fn call_signed_json(
     (status, value)
 }
 
+/// Отправляет подписанный запрос, подменив тело после подписи.
+async fn call_with_body(
+    state: &Arc<AppState>,
+    request: axum::http::Request<axum::body::Body>,
+    body: Vec<u8>,
+) -> StatusCode {
+    let (parts, _) = request.into_parts();
+    let request = axum::http::Request::from_parts(parts, axum::body::Body::from(body));
+
+    aegis_server_api::router(Arc::clone(state))
+        .oneshot(request)
+        .await
+        .unwrap()
+        .status()
+}
+
+/// 🔐 Подпись одного тела не подходит к другому.
+///
+/// В v1 тела в подписи не было: кто видел запрос открытым — прокси,
+/// завершающий TLS, его журнал, — пять минут предъявлял подпись
+/// с другим телом. Для `PUT` предключей это подмена личности; здесь
+/// проверяется на загрузке вложения, где тело — сырые байты.
+#[tokio::test]
+async fn a_signature_does_not_cover_a_different_body() {
+    let state = require_state!();
+    let (device_id, private) = register_signing_device(&state, &unique_name("swapper"), 0x21).await;
+    let uri = format!("/v1/attachments/{device_id}");
+
+    let signed = || {
+        common::signed_request(
+            &private,
+            "POST",
+            &uri,
+            "application/octet-stream",
+            vec![0x01; 64],
+        )
+    };
+
+    assert_eq!(
+        call_with_body(&state, signed(), vec![0x01; 64]).await,
+        StatusCode::OK,
+        "заготовка теста: подписанное тело не принято"
+    );
+    assert_eq!(
+        call_with_body(&state, signed(), vec![0x02; 64]).await,
+        StatusCode::UNAUTHORIZED,
+        "подпись одного тела принята с другим"
+    );
+}
+
+/// 🔐 Запрос без хеша тела — формат v1 — отвергается.
+#[tokio::test]
+async fn a_request_without_the_body_hash_is_refused() {
+    let state = require_state!();
+    let (device_id, private) =
+        register_signing_device(&state, &unique_name("oldclient"), 0x22).await;
+
+    let mut request = common::signed_request(
+        &private,
+        "GET",
+        &format!("/v1/keys/{device_id}/count"),
+        "application/json",
+        Vec::new(),
+    );
+    request.headers_mut().remove("x-aegis-body-sha256");
+
+    let status = aegis_server_api::router(Arc::clone(&state))
+        .oneshot(request)
+        .await
+        .unwrap()
+        .status();
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
 /// Вложение загружается и скачивается без изменений.
 #[tokio::test]
 async fn attachment_round_trips() {

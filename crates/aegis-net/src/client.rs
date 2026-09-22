@@ -168,13 +168,13 @@ impl<T: Transport> ApiClient<T> {
         &self,
         device_id: &str,
         request: &PublishKeysRequest,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<()> {
         let response = self.send_signed(
             Method::Put,
             format!("/v1/keys/{device_id}"),
             Some(to_json(request)?),
-            auth,
+            signer,
         )?;
 
         check_status(&response)
@@ -224,13 +224,13 @@ impl<T: Transport> ApiClient<T> {
         &self,
         sender_device_id: &str,
         request: &SendRequest,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<String> {
         let response = self.send_signed(
             Method::Post,
             format!("/v1/messages/{sender_device_id}"),
             Some(to_json(request)?),
-            auth,
+            signer,
         )?;
 
         parse(&response)
@@ -271,13 +271,13 @@ impl<T: Transport> ApiClient<T> {
         &self,
         device_id: &str,
         request: &SealedAccessRequest,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<()> {
         self.send_signed(
             Method::Put,
             format!("/v1/sealed/access/{device_id}"),
             Some(to_json(request)?),
-            auth,
+            signer,
         )?;
 
         Ok(())
@@ -293,13 +293,13 @@ impl<T: Transport> ApiClient<T> {
     pub fn fetch_certificate(
         &self,
         device_id: &str,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<CertificateResponse> {
         let response = self.send_signed(
             Method::Get,
             format!("/v1/sealed/certificate/{device_id}"),
             None,
-            auth,
+            signer,
         )?;
 
         parse(&response)
@@ -314,13 +314,13 @@ impl<T: Transport> ApiClient<T> {
         &self,
         device_id: &str,
         request: &SealedReportRequest,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<SealedReportResponse> {
         let response = self.send_signed(
             Method::Post,
             format!("/v1/sealed/report/{device_id}"),
             Some(to_json(request)?),
-            auth,
+            signer,
         )?;
 
         parse(&response)
@@ -334,10 +334,14 @@ impl<T: Transport> ApiClient<T> {
     pub fn fetch_envelopes(
         &self,
         device_id: &str,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<Vec<EnvelopeResponse>> {
-        let response =
-            self.send_signed(Method::Get, format!("/v1/messages/{device_id}"), None, auth)?;
+        let response = self.send_signed(
+            Method::Get,
+            format!("/v1/messages/{device_id}"),
+            None,
+            signer,
+        )?;
 
         parse(&response)
     }
@@ -351,13 +355,13 @@ impl<T: Transport> ApiClient<T> {
         &self,
         device_id: &str,
         envelope_id: &str,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<()> {
         let response = self.send_signed(
             Method::Delete,
             format!("/v1/messages/{device_id}/{envelope_id}"),
             None,
-            auth,
+            signer,
         )?;
 
         check_status(&response)
@@ -385,13 +389,13 @@ impl<T: Transport> ApiClient<T> {
     pub fn count_one_time_prekeys(
         &self,
         device_id: &str,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<i64> {
         let response = self.send_signed(
             Method::Get,
             format!("/v1/keys/{device_id}/count"),
             None,
-            auth,
+            signer,
         )?;
 
         parse(&response)
@@ -415,13 +419,13 @@ impl<T: Transport> ApiClient<T> {
     pub fn delete_account(
         &self,
         device_id: &str,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<AccountDeletedResponse> {
         let response = self.send_signed(
             Method::Delete,
             format!("/v1/accounts/{device_id}"),
             None,
-            auth,
+            signer,
         )?;
 
         parse(&response)
@@ -429,15 +433,33 @@ impl<T: Transport> ApiClient<T> {
 
     /// Выполняет запрос и переводит код ответа в ошибку домена.
     fn send(&self, method: Method, path: String, body: Option<String>) -> Result<HttpResponse> {
-        self.send_signed(method, path, body, Vec::new())
+        self.execute(method, path, body, Vec::new())
     }
 
-    /// Выполняет запрос с дополнительными заголовками.
+    /// Выполняет запрос за подписью устройства.
     ///
-    /// Заголовки собирает вызывающая сторона: подпись требует
-    /// приватного ключа, а сетевой клиент его не видит и видеть
-    /// не должен — ключи живут в ядре и не покидают его.
+    /// Подписываются ровно метод, путь и тело, которые уходят в сеть
+    /// (см. [`crate::auth::RequestSigner`]). Приватного ключа здесь нет:
+    /// подпись делает ядро.
     fn send_signed(
+        &self,
+        method: Method,
+        path: String,
+        body: Option<String>,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<HttpResponse> {
+        let headers = crate::auth::signature_headers(
+            signer,
+            method.as_str(),
+            &path,
+            body.as_deref().unwrap_or("").as_bytes(),
+        )?;
+
+        self.execute(method, path, body, headers)
+    }
+
+    /// Выполняет запрос с готовыми заголовками.
+    fn execute(
         &self,
         method: Method,
         path: String,
@@ -467,8 +489,10 @@ impl<T: Transport> ApiClient<T> {
         method: Method,
         path: String,
         payload: Vec<u8>,
-        headers: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<HttpResponse> {
+        let headers = crate::auth::signature_headers(signer, method.as_str(), &path, &payload)?;
+
         let response = self.transport.execute(&HttpRequest {
             method,
             path,
@@ -498,13 +522,13 @@ impl<T: Transport> ApiClient<T> {
         &self,
         device_id: &str,
         payload: Vec<u8>,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<String> {
         let response = self.send_binary(
             Method::Post,
             format!("/v1/attachments/{device_id}"),
             payload,
-            auth,
+            signer,
         )?;
 
         parse(&response)
@@ -523,13 +547,13 @@ impl<T: Transport> ApiClient<T> {
         &self,
         device_id: &str,
         attachment_id: &str,
-        auth: Vec<(String, String)>,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<Vec<u8>> {
         let response = self.send_signed(
             Method::Get,
             format!("/v1/attachments/{device_id}/{attachment_id}"),
             None,
-            auth,
+            signer,
         )?;
 
         Ok(response.binary_body)
@@ -606,6 +630,32 @@ mod tests {
 
             self.responses.borrow_mut().pop().ok_or(AegisError::Network)
         }
+    }
+
+    /// Подписывающая сторона для тестов: подпись — само сообщение.
+    ///
+    /// По ней видно, что именно подписано: метод, путь, время и хеш тела.
+    struct TestSigner;
+
+    impl crate::auth::RequestSigner for TestSigner {
+        fn issued_at(&self) -> i64 {
+            1_700_000_000_000
+        }
+
+        fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
+            Ok(message.to_vec())
+        }
+    }
+
+    fn header<'a>(request: &'a HttpRequest, name: &str) -> &'a str {
+        request
+            .headers
+            .iter()
+            .find(|(key, _)| key == name)
+            .map_or_else(
+                || panic!("нет заголовка {name}"),
+                |(_, value)| value.as_str(),
+            )
     }
 
     fn register_request() -> RegisterRequest {
@@ -718,7 +768,7 @@ mod tests {
             r#"[{"envelope_id":"env-1","ciphertext":"aabb","queued_at_bucketed":1700000000}]"#;
         let client = ApiClient::new(FakeTransport::with(200, body));
 
-        let envelopes = client.fetch_envelopes("dev-1", Vec::new()).unwrap();
+        let envelopes = client.fetch_envelopes("dev-1", &TestSigner).unwrap();
 
         assert_eq!(envelopes.len(), 1);
         assert_eq!(
@@ -733,7 +783,7 @@ mod tests {
         let body = r#"[{"envelope_id":"e","ciphertext":"aa","queued_at_bucketed":1699999200}]"#;
         let client = ApiClient::new(FakeTransport::with(200, body));
 
-        let envelopes = client.fetch_envelopes("dev-1", Vec::new()).unwrap();
+        let envelopes = client.fetch_envelopes("dev-1", &TestSigner).unwrap();
         let bucketed = envelopes.first().map_or(1, |e| e.queued_at_bucketed);
 
         assert_eq!(bucketed % 3600, 0);
@@ -743,7 +793,7 @@ mod tests {
     fn acknowledge_uses_delete_with_both_ids() {
         let client = ApiClient::new(FakeTransport::with(204, ""));
 
-        client.acknowledge("dev-1", "env-1", Vec::new()).unwrap();
+        client.acknowledge("dev-1", "env-1", &TestSigner).unwrap();
 
         let sent = client.transport.last_request();
         assert_eq!(sent.method, Method::Delete);
@@ -765,12 +815,47 @@ mod tests {
             one_time_kem: Vec::new(),
         };
 
-        client.publish_keys("dev-1", &request, Vec::new()).unwrap();
+        client.publish_keys("dev-1", &request, &TestSigner).unwrap();
 
         let sent = client.transport.last_request();
         assert_eq!(sent.method, Method::Put);
         assert_eq!(sent.path, "/v1/keys/dev-1");
         assert!(sent.body.is_some());
+    }
+
+    /// 🔐 Подписано ровно отправленное тело: хеш в заголовке и в подписи —
+    /// от тех байтов, что ушли в сеть. В v1 тела в подписи не было,
+    /// и подпись `PUT` предключей подходила к любым предключам.
+    #[test]
+    fn a_signed_request_covers_the_body_it_sends() {
+        let client = ApiClient::new(FakeTransport::with(204, ""));
+        let request = PublishKeysRequest {
+            signed_key_id: 1,
+            signed_public: "aa".to_owned(),
+            signed_signature: "bb".to_owned(),
+            kem_key_id: 2,
+            kem_public: "cc".to_owned(),
+            kem_signature: "dd".to_owned(),
+            one_time: Vec::new(),
+            one_time_kem: Vec::new(),
+        };
+
+        client.publish_keys("dev-1", &request, &TestSigner).unwrap();
+
+        let sent = client.transport.last_request();
+        let body = sent.body.clone().expect("тело");
+        let digest = crate::auth::body_sha256(body.as_bytes());
+        let expected =
+            crate::auth::signed_message("PUT", "/v1/keys/dev-1", 1_700_000_000_000, &digest);
+
+        let hex = crate::auth::to_hex;
+
+        assert_eq!(header(&sent, crate::auth::BODY_SHA256_HEADER), hex(&digest));
+        assert_eq!(header(&sent, crate::auth::SIGNATURE_HEADER), hex(&expected));
+        assert_eq!(
+            header(&sent, crate::auth::ISSUED_AT_HEADER),
+            "1700000000000"
+        );
     }
 
     /// Сбой транспорта доходит до вызывающего как сетевая ошибка.

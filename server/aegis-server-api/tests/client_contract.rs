@@ -360,6 +360,12 @@ fn client_and_server_registration_challenge_agree() {
     );
 }
 
+/// SHA-256 пустого тела — у GET и DELETE, в том числе у сокета.
+const EMPTY_BODY_SHA256: [u8; 32] = [
+    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+    0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+];
+
 /// 🔐 Клиент и сервер собирают одно сообщение для подписи.
 ///
 /// Клиент под Apache-2.0, сервер под AGPL-3.0, поэтому общего крейта
@@ -374,12 +380,18 @@ fn client_and_server_registration_challenge_agree() {
 /// `aegis-net/src/auth.rs`.
 #[test]
 fn client_and_server_sign_the_same_message() {
-    let message =
-        aegis_server_api::authz::signed_message("GET", "/v1/messages/abc", 1_700_000_000_000);
+    let message = aegis_server_api::authz::signed_message(
+        "GET",
+        "/v1/messages/abc",
+        1_700_000_000_000,
+        &EMPTY_BODY_SHA256,
+    );
 
     assert_eq!(
         message,
-        b"AEGIS_AUTH_v1\nGET\n/v1/messages/abc\n1700000000000".to_vec(),
+        b"AEGIS_AUTH_v2\nGET\n/v1/messages/abc\n1700000000000\n\
+          e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            .to_vec(),
         "клиент и сервер разошлись в формате подписи: все запросы будут отвергнуты"
     );
 }
@@ -408,10 +420,12 @@ fn websocket_path_signs_like_every_other_route() {
         "GET",
         &format!("/v1/ws/{device}"),
         1_700_000_000_000,
+        &EMPTY_BODY_SHA256,
     );
 
     let expected =
-        b"AEGIS_AUTH_v1\nGET\n/v1/ws/0f8fad5b-d9cb-469f-a165-70867728950e\n1700000000000";
+        b"AEGIS_AUTH_v2\nGET\n/v1/ws/0f8fad5b-d9cb-469f-a165-70867728950e\n1700000000000\n\
+          e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     assert_eq!(
         message,
