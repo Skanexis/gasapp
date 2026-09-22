@@ -295,7 +295,7 @@
     <string name="notifications_sender_hint">Show who the message came from</string>
     <string name="notifications_sound">Sound</string>
     <string name="notifications_vibrate">Vibration</string>
-    <string name="notifications_content_note">Push notifications are not available yet: new messages arrive while a conversation is open and the next time you open the app. When they arrive, the server will send only a \"there is something new\" signal — no text, no sender and no chat.</string>
+    <string name="notifications_content_note">Push notifications are not available yet: new messages arrive while the app is open and the next time you open the app. When they arrive, the server will send only a \"there is something new\" signal — no text, no sender and no chat.</string>
 
     <!-- Appearance -->
     <string name="settings_appearance">Appearance</string>

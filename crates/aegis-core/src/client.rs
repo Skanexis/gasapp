@@ -844,7 +844,10 @@ impl<T: Transport> Client<T> {
                     )?;
                 }
 
-                Content::AccessKey { key } => {
+                Content::AccessKey {
+                    key,
+                    sender_username,
+                } => {
                     // 🔐 Ключ сохраняется только за собеседником,
                     // установленным криптографически: identity из PQXDH
                     // либо из привязанного сертификата. Сообщение
@@ -853,6 +856,11 @@ impl<T: Transport> Client<T> {
                     if let Some(peer) = sender {
                         self.storage
                             .save_contact_access_key(&peer_account(&peer), &key, now)?;
+
+                        // Имя, которым собеседнику можно ответить.
+                        if let Some(name) = sender_username {
+                            self.accept_claimed_username(&peer, &name, &chat_id, now)?;
+                        }
                     }
                 }
 
@@ -1472,6 +1480,44 @@ impl<T: Transport> Client<T> {
         )?;
 
         Ok(())
+    }
+
+    /// Принимает имя, которым назвался собеседник, — если оно его.
+    ///
+    /// 🔐 Заявленное имя сверяется с discovery: сервер обязан отдать
+    /// по нему тот же identity-ключ, что у отправителя. Иначе
+    /// назвавшийся чужим именем получил бы наш ответ — точнее, ответ
+    /// ушёл бы настоящему владельцу имени, в другой чат, и человек
+    /// не понял бы, кому написал.
+    ///
+    /// Сбой сети — не повод падать: имя примется со следующим
+    /// сообщением, несущим ключ доступа.
+    fn accept_claimed_username(
+        &self,
+        peer: &PublicKeyBytes,
+        name: &str,
+        chat_id: &ChatId,
+        now: Timestamp,
+    ) -> Result<()> {
+        let Ok(found) = self.api.discover(name) else {
+            return Ok(());
+        };
+
+        let Ok(advertised) = parse_public_key(&found.identity_key) else {
+            return Ok(());
+        };
+
+        if advertised.as_bytes() != peer.as_bytes() {
+            return Ok(());
+        }
+
+        self.storage.save_contact(
+            &peer_account(peer),
+            peer.as_bytes(),
+            Some(name),
+            Some(chat_id),
+            now,
+        )
     }
 
     /// Перечисляет контакты, недавно добавленные первыми.

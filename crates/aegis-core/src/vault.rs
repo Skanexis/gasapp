@@ -851,7 +851,10 @@ mod file_tests {
         vault.seal();
 
         assert!(
-            matches!(vault.unlock("999999", &SALT, now()), Err(AegisError::Crypto)),
+            matches!(
+                vault.unlock("999999", &SALT, now()),
+                Err(AegisError::Crypto)
+            ),
             "неверный PIN открыл vault"
         );
         assert!(matches!(

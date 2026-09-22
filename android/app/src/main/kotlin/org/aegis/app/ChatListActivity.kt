@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.TouchTarget
+import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
@@ -39,6 +40,13 @@ class ChatListActivity : AppCompatActivity() {
     private lateinit var adapter: ChatListAdapter
     private lateinit var list: RecyclerView
     private lateinit var empty: TextView
+
+    /**
+     * Сокет уведомлений, пока открыт список.
+     *
+     * Без него новый чат появлялся бы только при переоткрытии экрана.
+     */
+    private var notifications: NotificationSocket? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,12 +100,26 @@ class ChatListActivity : AppCompatActivity() {
      */
     override fun onStop() {
         super.onStop()
+
+        notifications?.close()
+        notifications = null
+
         adapter.clear()
     }
 
     override fun onStart() {
         super.onStart()
         loadChats()
+
+        // Новый конверт — повод забрать очередь заново: так появляется
+        // чат от человека, который написал впервые.
+        Core.deviceId?.let { device ->
+            notifications = NotificationSocket(
+                baseUrl = BuildConfig.AEGIS_SERVER_URL,
+                deviceId = device,
+                onEnvelope = { runOnUiThread { loadChats() } },
+            ).also { it.connect() }
+        }
     }
 
     /**
@@ -112,28 +134,52 @@ class ChatListActivity : AppCompatActivity() {
                 runCatching {
                     val messenger = Core.messenger()
 
+                    // 🔐 Сначала — очередь на сервере.
+                    //
+                    // Прежде входящие забирал только экран переписки,
+                    // а он существует лишь для уже известного чата.
+                    // Первое сообщение от нового собеседника не
+                    // забиралось никогда: открыть было нечего. Нашлось
+                    // только живым обменом с эмулятором — два конверта
+                    // лежали на сервере, а список показывал «нет чатов».
+                    //
+                    // Приём общий на весь аккаунт, а не на чат, поэтому
+                    // одного вызова хватает на все переписки. Сбой сети
+                    // не мешает показать то, что уже есть.
+                    Core.deviceId?.let { device ->
+                        runCatching { messenger.receiveMessages(device, System.currentTimeMillis()) }
+                    }
+
+                    // Собеседник каждого чата: имя, которым ему отвечают,
+                    // и отметка о сверке.
+                    val contacts = messenger.contacts().associateBy { it.chatId }
+
                     messenger.chats().map { chatId ->
                         // Одно последнее сообщение на чат: превью — это
                         // именно оно, а загружать переписку целиком ради
                         // одной строки значило бы расшифровывать всё
                         // при каждом открытии списка.
-                        chatId to messenger.messages(chatId, PREVIEW_LIMIT).lastOrNull()
+                        Triple(chatId, messenger.messages(chatId, PREVIEW_LIMIT).lastOrNull(), contacts[chatId])
                     }
                 }.getOrDefault(emptyList())
             }
 
             render(
-                chats.map { (chatId, last) ->
+                chats.map { (chatId, last, contact) ->
+                    val username = contact?.username.orEmpty()
+
                     ChatSummary(
                         chatId = chatId,
                         // Имя собеседника хранится с контактом, а не
-                        // с чатом; пока контакт не добавлен, показывается
+                        // с чатом; пока оно неизвестно, показывается
                         // начало идентификатора — этого хватает, чтобы
                         // отличать чаты друг от друга.
-                        name = chatId.take(CHAT_LABEL_CHARS),
+                        name = username.ifEmpty { chatId.take(CHAT_LABEL_CHARS) },
                         preview = last?.text.orEmpty(),
                         time = last?.let { formatTime(it.timestamp) }.orEmpty(),
-                        verified = false,
+                        // Прежде здесь стояло `false` для всех чатов.
+                        verified = contact?.verified == true,
+                        peerUsername = username,
                     )
                 },
             )
@@ -218,6 +264,9 @@ class ChatListActivity : AppCompatActivity() {
             Intent(this, ChatActivity::class.java)
                 .putExtra(ChatActivity.EXTRA_CHAT_ID, chat.chatId)
                 .putExtra(ChatActivity.EXTRA_CHAT_NAME, chat.name)
+                // 🔐 Без имени собеседника экран переписки не мог
+                // отправить ни слова — прежде оно здесь не передавалось.
+                .putExtra(ChatActivity.EXTRA_PEER_USERNAME, chat.peerUsername)
                 .putExtra(ChatActivity.EXTRA_VERIFIED, chat.verified),
         )
     }

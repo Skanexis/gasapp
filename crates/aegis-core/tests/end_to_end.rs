@@ -1278,6 +1278,111 @@ fn establishing_again_does_not_rebind_a_vault_with_files() {
         .expect("прежний PIN открывает");
 }
 
+/// 🔐 На первое сообщение от нового собеседника можно ответить.
+///
+/// Начальный конверт несёт только identity-ключ отправителя — ни имени,
+/// ни устройства. Прежде ответить было нечем: чат появлялся, а отправка
+/// в него падала. Нашлось живым обменом с эмулятором: сообщение пришло,
+/// ответ не ушёл. Теперь имя едет под шифрованием вместе с ключом доступа.
+#[test]
+fn a_first_contact_can_be_answered() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    let alice_account = alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    // Боб Алису не знает: она пишет первой.
+    alice
+        .send_message("bob", "привет, мы не знакомы", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_account.device_id.to_string(), now())
+        .expect("приём");
+
+    let chat = bob
+        .chats()
+        .expect("чаты")
+        .into_iter()
+        .next()
+        .expect("чат появился");
+    let known = bob
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .find(|contact| contact.chat_id == Some(chat))
+        .expect("собеседник этого чата не известен");
+
+    assert_eq!(
+        known.username.as_deref(),
+        Some("alice"),
+        "имя собеседника неизвестно — ответить нечем"
+    );
+
+    bob.send_message("alice", "привет, теперь знакомы", now(), &mut OsRng)
+        .expect("ответ");
+
+    assert!(
+        alice
+            .receive_messages(&alice_account.device_id.to_string(), now())
+            .expect("приём")
+            >= 1,
+        "ответ не дошёл"
+    );
+}
+
+/// 🔐 Чужое заявленное имя не принимается.
+///
+/// Мэллори называется «alice». Прими Боб это на слово — его ответ ушёл
+/// бы настоящей Алисе, в другой чат. Имя принимается, только если
+/// discovery по нему возвращает identity-ключ самого отправителя.
+#[test]
+fn a_claimed_username_that_is_not_the_senders_is_ignored() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    let mallory = Client::new(server.clone(), open_storage(&dir, "mallory.db"));
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
+    mallory
+        .register("mallory", now(), &mut OsRng)
+        .expect("Мэллори");
+
+    // Мэллори переписывает своё имя в собственной базе на «alice».
+    let forged = open_storage(&dir, "mallory.db");
+    let keys = forged.load_own_keys().expect("чтение").expect("ключи есть");
+    forged
+        .save_own_keys(
+            &keys.identity_private,
+            &keys.identity_public,
+            &keys.prekey_secrets,
+            keys.device_id.as_deref(),
+            Some("alice"),
+            now(),
+        )
+        .expect("имя подменено");
+    drop(forged);
+
+    mallory
+        .send_message("bob", "это я, Алиса", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_account.device_id.to_string(), now())
+        .expect("приём");
+
+    assert!(
+        bob.contacts()
+            .expect("контакты")
+            .iter()
+            .all(|contact| contact.username.as_deref() != Some("alice")),
+        "Боб принял чужое имя «alice» от Мэллори"
+    );
+}
+
 /// Поиск находит отправленное сообщение.
 #[test]
 fn search_finds_sent_message() {

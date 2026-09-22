@@ -326,6 +326,7 @@ class ChatActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
 
+        resolvePeerUsername()
         reload()
         fetchIncoming()
 
@@ -468,6 +469,32 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Находит имя собеседника по чату, если его не передали.
+     *
+     * Собеседник, написавший первым, называет себя позже — в сообщении
+     * с ключом доступа (`Content::AccessKey`), — и имя появляется
+     * у контакта уже после того, как чат открыли. Без имени отправить
+     * в чат нельзя: ядро ищет собеседника по нему.
+     */
+    private fun resolvePeerUsername() {
+        if (peerUsername.isNotEmpty() || chatId.isEmpty()) {
+            return
+        }
+
+        lifecycleScope.launch {
+            val found = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().contacts().firstOrNull { it.chatId == chatId }?.username
+                }.getOrNull()
+            }
+
+            if (!found.isNullOrEmpty()) {
+                peerUsername = found
+            }
+        }
+    }
+
     /** Забирает входящие сообщения с сервера. */
     private fun fetchIncoming() {
         val device = Core.deviceId ?: return
@@ -482,6 +509,7 @@ class ChatActivity : AppCompatActivity() {
 
             if (received > 0u) {
                 reload()
+                resolvePeerUsername()
             }
         }
     }
