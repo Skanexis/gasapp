@@ -415,3 +415,77 @@ fn the_one_time_pool_is_filled_on_a_real_server() {
         aegis_protocol::ONE_TIME_PRE_KEY_POOL_SIZE,
     );
 }
+
+/// 🔐 Ручная сквозная проверка с настоящим устройством.
+///
+/// Регистрирует нового собеседника, пишет пользователю `AEGIS_PEER`
+/// (например, аккаунту в приложении на эмуляторе) и ждёт ответа до
+/// `AEGIS_WAIT_SECONDS` секунд (по умолчанию 180). Ответ печатается.
+///
+/// Проверяет то, чего не видит ни один автоматический тест: что
+/// клиент на Rust и приложение на Android договариваются через
+/// настоящий сервер — discovery, bundle с подписями, PQXDH, подписанная
+/// отправка, приём и расшифровка на телефоне, ответ обратно.
+///
+/// ```text
+/// AEGIS_SERVER=http://127.0.0.1:8080 AEGIS_PEER=bob_e2e \
+///     cargo test -p aegis-core --test live_server talk_to -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "ручная проверка с устройством: AEGIS_SERVER и AEGIS_PEER"]
+fn talk_to_an_existing_user() {
+    let (host, port) = server().expect("переменная AEGIS_SERVER не задана");
+    let peer = std::env::var("AEGIS_PEER").expect("переменная AEGIS_PEER не задана");
+    let wait = std::env::var("AEGIS_WAIT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(180);
+
+    let dir = tempfile::tempdir().expect("каталог");
+    let path = dir.path().join("carol.db").to_string_lossy().into_owned();
+    let carol = Client::new(
+        LocalHttp { host, port },
+        Storage::new(&path, &[0x5C; 32]).expect("база"),
+    );
+
+    let name = unique("carol");
+    let account = carol
+        .register(&name, now(), &mut OsRng)
+        .expect("регистрация");
+    let device = account.device_id.to_string();
+
+    carol
+        .send_message(&peer, "привет с другой стороны", now(), &mut OsRng)
+        .expect("отправка");
+    println!("отправлено от {name} к {peer}; жду ответа до {wait} с");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(wait);
+
+    loop {
+        if carol.receive_messages(&device, now()).expect("приём") > 0 {
+            break;
+        }
+
+        assert!(
+            std::time::Instant::now() < deadline,
+            "ответа от {peer} нет за {wait} с"
+        );
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    let chats = carol.chats().expect("чаты");
+    let messages = carol.messages(&chats[0], 10).expect("сообщения");
+
+    for message in &messages {
+        println!(
+            "{} {}",
+            if message.outgoing { "→" } else { "←" },
+            message.text
+        );
+    }
+
+    assert!(
+        messages.iter().any(|message| !message.outgoing),
+        "входящего ответа нет"
+    );
+}

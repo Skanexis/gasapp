@@ -194,6 +194,19 @@ pub enum Content {
     AccessKey {
         /// Сам ключ.
         key: [u8; ACCESS_KEY_LEN],
+        /// Собственное имя отправителя — чтобы ему можно было ответить.
+        ///
+        /// 🔐 Начальный конверт несёт только identity-ключ отправителя:
+        /// ни имени, ни устройства. Ответить на него было нечем, и первое
+        /// сообщение от нового собеседника оставалось без ответа — чат
+        /// был, отправка в него падала. Имя едет здесь, под шифрованием:
+        /// получатель его узнаёт, сервер нет.
+        ///
+        /// ⚠️ Это заявление, а не удостоверение: получатель принимает имя,
+        /// только если discovery по нему возвращает тот же identity-ключ.
+        /// Иначе назвавшийся «alice» получил бы ответ, ушедший настоящей
+        /// Алисе в другой чат.
+        sender_username: Option<String>,
     },
 }
 
@@ -283,9 +296,19 @@ impl Content {
                 out.push(KIND_READ_RECEIPT);
                 out.extend_from_slice(until);
             }
-            Self::AccessKey { key } => {
+            Self::AccessKey {
+                key,
+                sender_username,
+            } => {
                 out.push(KIND_ACCESS_KEY);
                 out.extend_from_slice(key);
+
+                // Хвост необязателен: сообщение без него читается как
+                // «имени нет» — так писали прежние версии.
+                if let Some(name) = sender_username {
+                    out.push(1);
+                    write_text(&mut out, name)?;
+                }
             }
         }
 
@@ -376,6 +399,14 @@ impl Content {
             },
             KIND_ACCESS_KEY => Self::AccessKey {
                 key: reader.take_access_key()?,
+                sender_username: if reader.at_end() {
+                    None
+                } else {
+                    match reader.take_u8()? {
+                        1 => Some(reader.take_text()?),
+                        _ => return Err(AegisError::Malformed),
+                    }
+                },
             },
             _ => return Err(AegisError::Malformed),
         };
@@ -428,6 +459,11 @@ struct Reader<'a> {
 impl<'a> Reader<'a> {
     const fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
+    }
+
+    /// Прочитано ли всё.
+    const fn at_end(&self) -> bool {
+        self.offset >= self.bytes.len()
     }
 
     fn take_slice(&mut self, len: usize) -> Result<&'a [u8]> {
@@ -520,6 +556,35 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Имя отправителя переживает кодирование, а его отсутствие —
+    /// формат прежних версий — читается как «имени нет».
+    #[test]
+    fn access_key_carries_the_sender_username() {
+        let with_name = Content::AccessKey {
+            key: [7; ACCESS_KEY_LEN],
+            sender_username: Some("алиса".to_owned()),
+        };
+        let bytes = with_name.to_bytes().expect("кодируется");
+        assert_eq!(Content::from_bytes(&bytes).expect("читается"), with_name);
+
+        let old_format = Content::AccessKey {
+            key: [7; ACCESS_KEY_LEN],
+            sender_username: None,
+        };
+        // Без дополнения: длина без имени — версия, тип и сам ключ,
+        // ровно как у прежних версий.
+        let bytes = old_format.to_unpadded_bytes().expect("кодируется");
+        assert_eq!(
+            bytes.len(),
+            2 + ACCESS_KEY_LEN,
+            "без имени формат обязан остаться прежним"
+        );
+        assert_eq!(
+            Content::from_unpadded_bytes(&bytes).expect("читается"),
+            old_format
+        );
+    }
 
     fn id(value: u8) -> [u8; MESSAGE_ID_LEN] {
         [value; MESSAGE_ID_LEN]
@@ -803,6 +868,7 @@ mod tests {
     fn access_key_round_trips() {
         let content = Content::AccessKey {
             key: [0x5Au8; ACCESS_KEY_LEN],
+            sender_username: None,
         };
         let bytes = content.to_bytes().expect("сериализация");
 
@@ -819,9 +885,12 @@ mod tests {
     #[test]
     fn access_key_is_carried_whole() {
         let key = [0x33u8; ACCESS_KEY_LEN];
-        let bytes = Content::AccessKey { key }
-            .to_unpadded_bytes()
-            .expect("сериализация");
+        let bytes = Content::AccessKey {
+            key,
+            sender_username: None,
+        }
+        .to_unpadded_bytes()
+        .expect("сериализация");
 
         assert!(
             bytes.windows(ACCESS_KEY_LEN).any(|window| window == key),
@@ -834,6 +903,7 @@ mod tests {
     fn truncated_access_key_is_rejected() {
         let mut bytes = Content::AccessKey {
             key: [0x11u8; ACCESS_KEY_LEN],
+            sender_username: None,
         }
         .to_unpadded_bytes()
         .expect("сериализация");

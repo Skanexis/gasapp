@@ -290,7 +290,15 @@ impl<T: Transport> Client<T> {
         rng: &mut R,
     ) -> Result<SessionState> {
         let own_key = self.ensure_access_key(identity, now, rng)?;
-        let share = Plaintext::new(Content::AccessKey { key: own_key }.to_bytes()?);
+        // Своё имя — чтобы собеседник, которому мы пишем первыми, мог
+        // ответить: начальный конверт имени не несёт.
+        let share = Plaintext::new(
+            Content::AccessKey {
+                key: own_key,
+                sender_username: self.own_username()?,
+            }
+            .to_bytes()?,
+        );
 
         let outgoing = if let Some(state) = existing {
             session::continue_session(&state, &share)?
