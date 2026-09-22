@@ -19,13 +19,21 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
+# ⚠️ Список обязан совпадать с [[bin]] в Cargo.toml — как и матрица
+# в .github/workflows/fuzz.yml. Прежде здесь было шесть таргетов из
+# девяти: backup_restore, parse_sealed_sender и parse_contact_link
+# локально не фаззились никогда.
 $targets = @(
     "chunk_reassembly",
     "parse_message",
+    "parse_content",
     "decrypt_session",
     "parse_prekey_bundle",
     "parse_session_state",
-    "parse_safety_number"
+    "parse_safety_number",
+    "backup_restore",
+    "parse_sealed_sender",
+    "parse_contact_link"
 )
 
 if (-not (docker images -q $Image)) {
