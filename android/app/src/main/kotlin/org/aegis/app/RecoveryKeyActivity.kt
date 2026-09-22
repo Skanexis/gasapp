@@ -59,9 +59,16 @@ class RecoveryKeyActivity : AppCompatActivity() {
 
         findViewById<ImageView>(R.id.key_back).setOnClickListener { finish() }
 
-        val generated = runCatching { generateRecoveryKey() }.getOrNull()
+        // 🔐 Повторный показ — того же ключа, а не нового.
+        //
+        // Прежде «Показать ещё раз» открывал этот экран без ключа, и он
+        // выпускал новый. Человек, переписавший половину групп, дописывал
+        // вторую половину от другого ключа — и бумажная копия не
+        // восстанавливала ничего.
+        val shown = intent.getStringExtra(EXTRA_EXISTING_KEY)
+            ?: runCatching { generateRecoveryKey() }.getOrNull()?.display
 
-        if (generated == null) {
+        if (shown == null) {
             // Сбой генератора случайных чисел — не то, о чём можно
             // умолчать: ключ, выведенный из плохой энтропии, хуже
             // отсутствия ключа.
@@ -71,11 +78,11 @@ class RecoveryKeyActivity : AppCompatActivity() {
             return
         }
 
-        recoveryKey = generated.display
+        recoveryKey = shown
 
         // Группы разносятся по строкам: 52 символа в одну строку
         // на телефоне не читаются, а переписывать их придётся руками.
-        findViewById<TextView>(R.id.key_value).text = wrap(generated.display)
+        findViewById<TextView>(R.id.key_value).text = wrap(shown)
 
         findViewById<AegisButton>(R.id.key_written).setOnClickListener { confirm() }
     }
@@ -122,9 +129,15 @@ class RecoveryKeyActivity : AppCompatActivity() {
             .joinToString("\n")
     }
 
-    private companion object {
+    companion object {
+        /**
+         * Уже показанный ключ — для повторного показа.
+         *
+         * Без него экран выпускает новый ключ.
+         */
+        const val EXTRA_EXISTING_KEY: String = "existing_recovery_key"
 
         /** Сколько групп помещается в строку на телефоне. */
-        const val GROUPS_PER_LINE = 3
+        private const val GROUPS_PER_LINE = 3
     }
 }

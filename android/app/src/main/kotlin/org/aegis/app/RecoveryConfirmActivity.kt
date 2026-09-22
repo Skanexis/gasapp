@@ -136,7 +136,14 @@ class RecoveryConfirmActivity : AppCompatActivity() {
      * иначе он либо угадывает, либо теряет ключ навсегда.
      */
     private fun showAgain() {
-        startActivity(Intent(this, RecoveryKeyActivity::class.java))
+        // 🔐 Тот же ключ, что переписывается, — иначе экран выпустит новый,
+        // и на бумаге окажутся группы от двух разных ключей.
+        val key = recoveryKey ?: intent.getStringExtra(EXTRA_KEY)
+
+        startActivity(
+            Intent(this, RecoveryKeyActivity::class.java)
+                .putExtra(RecoveryKeyActivity.EXTRA_EXISTING_KEY, key),
+        )
         finish()
     }
 
