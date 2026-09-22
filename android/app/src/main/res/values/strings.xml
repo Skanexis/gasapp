@@ -265,6 +265,7 @@
     <string name="privacy_biometric_enabled">Fingerprint unlock is on.</string>
     <string name="privacy_biometric_disabled">Fingerprint unlock is off.</string>
     <string name="privacy_biometric_failed">Could not turn on fingerprint unlock. Your PIN still works.</string>
+    <string name="privacy_biometric_wrong_pin">Wrong PIN — fingerprint unlock is not turned on.</string>
     <string name="privacy_biometric_not_enrolled">Add a fingerprint in system settings first.</string>
     <string name="privacy_biometric_unsupported">This device has no strong fingerprint sensor.</string>
     <string name="privacy_export">Export my data</string>

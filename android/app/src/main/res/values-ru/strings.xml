@@ -255,6 +255,7 @@
     <string name="privacy_biometric_enabled">Вход по отпечатку включён.</string>
     <string name="privacy_biometric_disabled">Вход по отпечатку выключен.</string>
     <string name="privacy_biometric_failed">Не удалось включить вход по отпечатку. PIN продолжает работать.</string>
+    <string name="privacy_biometric_wrong_pin">Неверный PIN — вход по отпечатку не включён.</string>
     <string name="privacy_biometric_not_enrolled">Сначала добавьте отпечаток в настройках системы.</string>
     <string name="privacy_biometric_unsupported">На этом устройстве нет надёжного датчика отпечатка.</string>
     <string name="privacy_export">Выгрузить мои данные</string>
