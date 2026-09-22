@@ -19,6 +19,8 @@ axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 axum-server.workspace = true
+rustls.workspace = true
+rustls-pemfile.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -34,6 +36,12 @@ subtle.workspace = true
 hex.workspace = true
 
 [dev-dependencies]
+tokio-rustls.workspace = true
+rcgen.workspace = true
+# 🔐 TLS 1.2 включается только для проверки: клиент теста обязан уметь
+# его предложить, иначе тест доказывал бы лишь то, что rustls собран
+# без этой возможности, — а проверяется отказ сервера.
+rustls = { workspace = true, features = ["tls12"] }
 tower = { workspace = true, features = ["util"] }
 
 [features]

@@ -194,9 +194,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("AEGIS_TLS_CERT"),
         std::env::var("AEGIS_TLS_KEY"),
     ) {
-        let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+        // 🔐 Только TLS 1.3 — список версий задан явно
+        // (`tls::config_from_pem`), а не оставлен умолчаниям rustls:
+        // умолчание зависит от набора возможностей в графе зависимостей
+        // и могло бы вернуть TLS 1.2 при любом обновлении.
+        let certificate = tokio::fs::read(&cert)
             .await
-            .map_err(|error| format!("не удалось прочитать сертификат: {error}"))?;
+            .map_err(|error| format!("не читается сертификат {cert}: {error}"))?;
+        let private_key = tokio::fs::read(&key)
+            .await
+            .map_err(|error| format!("не читается ключ {key}: {error}"))?;
+
+        let config = axum_server::tls_rustls::RustlsConfig::from_config(
+            aegis_server_api::tls::config_from_pem(&certificate, &private_key)
+                .map_err(|error| format!("не удалось настроить TLS: {error}"))?,
+        );
 
         tracing::info!(address = %bind, "сервер AEGIS слушает по TLS");
 
