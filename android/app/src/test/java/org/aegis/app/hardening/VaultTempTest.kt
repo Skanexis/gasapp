@@ -95,6 +95,26 @@ class VaultTempTest {
     }
 
     /**
+     * 🔐 Удаление аккаунта уносит и шифроблобы File Vault.
+     *
+     * Они лежат каталогом в `filesDir/vault` и прежним списком файлов
+     * не покрывались: экран обещал удалить «файлы», а блобы оставались.
+     * Нашёл аудитор.
+     */
+    @Test
+    fun deleting_the_account_removes_vault_blobs() {
+        val vault = File(context.filesDir, AccountWipe.VAULT_DIRECTORY).apply { mkdirs() }
+        val blob = File(vault, "123.enc").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+
+        assertTrue("тест не подготовил блоб", blob.exists())
+
+        AccountWipe.wipe(context)
+
+        assertFalse("шифроблоб хранилища пережил удаление аккаунта", blob.exists())
+        assertFalse("каталог хранилища пережил удаление аккаунта", vault.exists())
+    }
+
+    /**
      * Подметание не трогает остальной кэш.
      *
      * Кэш — общий для приложения, и удаление аккаунта не должно
