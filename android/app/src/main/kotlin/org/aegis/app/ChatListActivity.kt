@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.TouchTarget
+import org.aegis.app.core.showSecure
 import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
@@ -227,6 +228,9 @@ class ChatListActivity : AppCompatActivity() {
             setTextColor(getColor(R.color.text_primary))
             setHintTextColor(getColor(R.color.text_tertiary))
             setPadding(48, 32, 48, 32)
+
+            // 🔐 Имена собеседников не попадают в словарь клавиатуры.
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         }
 
         androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
@@ -240,7 +244,7 @@ class ChatListActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     private fun openChatWith(username: String) {

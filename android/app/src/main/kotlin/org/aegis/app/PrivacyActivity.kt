@@ -18,6 +18,7 @@ import org.aegis.app.core.Core
 import org.aegis.app.core.DeleteAccount
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
+import org.aegis.app.core.showSecure
 import org.aegis.app.ui.SettingsRow
 import org.aegis.app.ui.SettingsToggle
 
@@ -222,7 +223,7 @@ class PrivacyActivity : AppCompatActivity() {
                 input.text.clear()
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     /**
@@ -377,7 +378,7 @@ class PrivacyActivity : AppCompatActivity() {
                 createExportFile.launch(exportFileName())
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     /**
@@ -465,7 +466,7 @@ class PrivacyActivity : AppCompatActivity() {
                 confirmDeleteAccountFinally()
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     /** Второе подтверждение: последняя возможность отказаться. */
@@ -477,7 +478,7 @@ class PrivacyActivity : AppCompatActivity() {
                 runDeleteAccount()
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     /**

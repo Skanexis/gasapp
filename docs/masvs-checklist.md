@@ -33,7 +33,7 @@
 | STORAGE-2.2 | Нет данных в системном backup | ✅ | `android:allowBackup="false"` + `android:dataExtractionRules` в `android/app/src/main/AndroidManifest.xml` |
 | STORAGE-2.3 | Нет данных в кэше клавиатуры | ✅ | `android/app/src/test/.../KeyboardLearningTest.kt` — перебирает **все** `R.layout`, не список полей |
 | STORAGE-2.4 | Буфер обмена не дольше 60 секунд | ✅ | `core/SecureClipboard.kt` + `SecureClipboardTest` (8 тестов): пометка, жизнь до срока, исчезновение после, очистка при запирании, свой срок у второго копирования, чужое содержимое не трогается. Время двигается `idleFor`, а не ожиданием |
-| STORAGE-2.5 | Нет данных в снимках переключателя задач | 🟡 | `core/SecureWindow.kt` вызывается на всех экранах; проверено чтением. Автопроверки «`FLAG_SECURE` стоит на каждом экране» нет — она требует инструментального прогона |
+| STORAGE-2.5 | Нет данных в снимках переключателя задач | 🟡 | `core/SecureWindow.kt` вызывается на всех экранах; проверено чтением. Диалоги и панели наследуют флаг экрана (`showSecure`, `SecureWindow.inherit`; `DialogScreenshotTest`) — до 2026-09 ни один диалог флага не ставил. Автопроверки «`FLAG_SECURE` стоит на каждом экране» нет — она требует инструментального прогона |
 | STORAGE-2.6 | Нет превью vault-файлов в системном кэше | 🟡 | `VaultActivity`: список без миниатюр, расшифрованный файл — во временный каталог с удалением при закрытии. Проверено чтением |
 | STORAGE-2.7 | iOS: `NSFileProtectionComplete`, исключение из iCloud | ❌ | Клиент iOS остановлен на UI-ките; проверить на Windows нечем |
 
@@ -81,7 +81,7 @@
 | PLATFORM-1.3 | Deep link валидируется и фаззится | ✅ | `aegis-protocol::contact_link::parse`; фаззинг — `fuzz/fuzz_targets/parse_contact_link.rs`, зеркало на стабильном компиляторе — `tests/fuzz_corpus.rs::contact_link_parsing_never_panics` |
 | PLATFORM-1.4 | iOS: URL scheme валидируется | ❌ | Клиент iOS не дошёл до приёма ссылок |
 | PLATFORM-2 | Безопасное использование WebView | ⛔ | WebView не используется нигде. Проверяется `grep -r WebView android/ ios/` — ноль вхождений |
-| PLATFORM-3.1 | `FLAG_SECURE` на Android | ✅ | `core/SecureWindow.kt`; на экранах ключей и файлов — безусловно (`applyAlways`) |
+| PLATFORM-3.1 | `FLAG_SECURE` на Android | ✅ | `core/SecureWindow.kt`; на экранах ключей и файлов — безусловно (`applyAlways`). Диалоги и панели действий — отдельные окна и флаг наследуют явно; диалог ввода ключа восстановления — безусловно (`DialogScreenshotTest`, флаг окна панели подтверждён на эмуляторе). ⚠️ До 2026-09 отметка стояла, хотя ни один диалог флага не ставил |
 | PLATFORM-3.2 | Защита от overlay-атак | ✅ | `SecureWindow.blockObscuredTouches` на экранах PIN, хранилища, ключа восстановления, сверки ключей. Сознательно **не** на всех — обоснование в KDoc. ⚠️ Отметка верна узко: касания блокировались и раньше, но **экран сверки до 2026-09 не сверял ничего** — показывал цифры двух случайных ключей, а кнопка «сверено» только закрывала его. Защита от наложенных окон охраняла декорацию. Исправлено: `Client::safety_number`, `Client::set_contact_verified`, 5 тестов в `end_to_end.rs` |
 | PLATFORM-3.3 | iOS: скрытие в App Switcher, детект скриншотов | ❌ | См. STORAGE-2.7 |
 

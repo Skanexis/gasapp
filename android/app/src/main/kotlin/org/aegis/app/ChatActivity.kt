@@ -29,6 +29,7 @@ import org.aegis.app.core.Core
 import org.aegis.app.core.PendingSave
 import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.showSecure
 import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.AttachmentKindMark
 import org.aegis.app.ui.AttachmentPreview
@@ -799,7 +800,7 @@ class ChatActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(R.string.action_cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     /**
@@ -823,7 +824,7 @@ class ChatActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(R.string.action_cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     /**

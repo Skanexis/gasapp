@@ -118,6 +118,10 @@ class AegisSheet private constructor(
             setDimAmount(DIM_AMOUNT)
         }
 
+        // 🔐 Панель — отдельное окно: запрет снимков экрана на неё
+        // сам не переходит (см. SecureWindow.inherit).
+        org.aegis.app.core.SecureWindow.inherit(dialog, activity)
+
         dialog.show()
     }
 
