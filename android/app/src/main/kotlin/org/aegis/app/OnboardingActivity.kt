@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisTextField
 import android.text.InputFilter
+import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
 import org.aegis.app.core.SecureWindow
@@ -103,6 +104,23 @@ class OnboardingActivity : AppCompatActivity() {
                     Core.unlock(this@OnboardingActivity, pinValue)
                         .register(name, System.currentTimeMillis())
                         .also { Core.maintainPrekeysNow() }
+                }.onFailure {
+                    // 🔐 Незарегистрированная база стирается.
+                    //
+                    // Прежде она оставалась — открытой и под ключом
+                    // из первого PIN. Повторная попытка с другим PIN
+                    // получала тот же открытый мессенджер: аккаунт
+                    // регистрировался, а база так и оставалась под
+                    // первым PIN, который человек уже считал
+                    // сменённым, — после блокировки новый PIN её
+                    // не открывал, и счётчик неверных попыток вёл
+                    // к стиранию. А после перезапуска существующий
+                    // файл базы выглядел аккаунтом: вместо регистрации
+                    // открывался экран входа — в базу, где аккаунта нет.
+                    //
+                    // Сюда приходят только сбои открытия и регистрации:
+                    // пополнение предключей идёт в фоне и не бросает.
+                    AccountWipe.wipe(this@OnboardingActivity)
                 }
             }
 
