@@ -44,6 +44,15 @@ jobs:
       - name: doc tests
         run: cargo test --manifest-path crates/Cargo.toml --workspace --doc
 
+      # Документация собирается без предупреждений. Неразрешённая ссылка
+      # в rustdoc — чаще всего устаревшее утверждение: так нашлось
+      # обещание ошибки `AegisError::NotFound`, которой нет (404 приходит
+      # как `SessionNotFound`), и ссылки на переименованные константы.
+      - name: docs build without warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --manifest-path crates/Cargo.toml --workspace --no-deps
+
       # Cargo.lock обязан быть в репозитории и актуальным:
       # без этого сборка не воспроизводима.
       - name: Cargo.lock is committed and up to date
@@ -117,6 +126,11 @@ jobs:
         run: >-
           cargo clippy --manifest-path server/Cargo.toml
           --workspace --all-targets --all-features
+
+      - name: docs build without warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --manifest-path server/Cargo.toml --workspace --no-deps
 
       # Схему готовит сам набор тестов (server/test-support/schema.rs):
       # миграции применяются под консультативной блокировкой, один раз

@@ -542,7 +542,7 @@ impl<T: Transport> ApiClient<T> {
     /// # Errors
     ///
     /// [`AegisError::Network`] при сбое соединения;
-    /// [`AegisError::NotFound`] — вложения нет либо срок истёк.
+    /// [`AegisError::SessionNotFound`] — вложения нет либо срок истёк.
     pub fn download_attachment(
         &self,
         device_id: &str,
