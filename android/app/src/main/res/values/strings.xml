@@ -445,10 +445,9 @@
     <string name="security_check_recovery">Recovery key created</string>
     <string name="security_check_backup">Backup newer than a week</string>
     <string name="security_check_contacts">All contacts compared</string>
-    <string name="security_check_sealed">Sender hidden from the server</string>
+    <string name="security_check_sealed">Sealed sender on — except the first message to a new contact</string>
     <string name="security_check_address">IP address hidden by a proxy or Tor</string>
     <string name="security_check_screenshots">Screenshots blocked</string>
-    <string name="security_check_preview">Message text hidden in notifications</string>
     <string name="security_check_autolock">Auto-lock no longer than 5 minutes</string>
     <string name="security_check_screen_lock">Device screen lock</string>
     <string name="security_check_screen_lock_hint">Without it the phone is open to anyone who picks it up</string>
