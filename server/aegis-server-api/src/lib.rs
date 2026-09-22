@@ -47,6 +47,7 @@ pub mod push;
 pub mod rate_limit;
 pub mod retention;
 pub mod routes;
+pub mod tls;
 
 pub use auth::{AuthError, CHALLENGE_TTL_MILLIS};
 pub use pow::{PowError, DEFAULT_DIFFICULTY};

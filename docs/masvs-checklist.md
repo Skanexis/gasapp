@@ -63,7 +63,7 @@
 
 | # | Требование | Статус | Чем проверено |
 |---|---|---|---|
-| NETWORK-1.1 | TLS 1.3 only | 🟡 | Настройка сервера (`server/deploy`); на клиенте ведёт платформенный стек. Автопроверки нет |
+| NETWORK-1.1 | TLS 1.3 only | ✅ | Версия задана явно в коде сервера (`aegis-server-api::tls`: `builder_with_protocol_versions(&[&TLS13])`), а не оставлена умолчаниям rustls. Тест `tls.rs` проверяет настоящим рукопожатием: TLS 1.3 соединяется, TLS 1.2 отвергается — причём клиент теста умеет TLS 1.2 (возможность `tls12` включена в dev-зависимостях), иначе тест доказывал бы лишь сборку без неё. Мутация «версии по умолчанию» роняет его. На живом узле сверено openssl: `tlsv1 alert protocol version` для 1.2, `TLS_AES_256_GCM_SHA384` для 1.3. ⚠️ Прежде версия зависела от набора возможностей в графе зависимостей: `rustls/tls12`, включённая любой из них, вернула бы TLS 1.2 молча. На клиенте ведёт платформенный стек, но сервер 1.2 не примет |
 | NETWORK-1.2 | Нет cleartext | ✅ | `MitmProxyRejectedTest::release_config_forbids_cleartext_everywhere` + `android:usesCleartextTraffic="false"` |
 | NETWORK-2.1 | Два **разных** пина | 🟡 | Механизм есть: `MitmProxyRejectedTest::release_config_pins_two_distinct_keys`, логика — `aegis-net::pinning` (`MIN_PINS`). ⚠️ **Было ✅ при заглушках**: в `release/res/xml/network_security_config.xml` пины `AAAA…=` и `BBBB…=` — тест проверял, что они разные, и две разные заглушки его проходили. С ними релиз не подключится ни к одному серверу. Теперь сборка релиза с заглушками падает (`app/build.gradle`, проверка в `taskGraph.whenReady`). ✅ — когда будут пины настоящего сервера и резервного ключа |
 | NETWORK-2.2 | Не доверяем пользовательским CA | ✅ | `MitmProxyRejectedTest::release_config_does_not_trust_user_certificates`, `::release_config_has_no_local_ca` |
@@ -141,12 +141,12 @@
 | STORAGE | 6 | 1 | 1 | 0 |
 | CRYPTO | 5 | 2 | 0 | 0 |
 | AUTH | 5 | 0 | 0 | 0 |
-| NETWORK | 5 | 2 | 1 | 0 |
+| NETWORK | 6 | 1 | 1 | 0 |
 | PLATFORM | 5 | 0 | 2 | 1 |
 | CODE | 9 | 2 | 0 | 0 |
 | RESILIENCE | 4 | 1 | 2 | 1 |
 | PRIVACY | 5 | 3 | 0 | 0 |
-| **Итого** | **44** | **11** | **6** | **2** |
+| **Итого** | **45** | **10** | **6** | **2** |
 
 ⚠️ Чек-лист **не пройден**. Восемь пунктов не сделаны, и главный
 из них — клиент iOS: на него приходится три ❌ подряд и половина
