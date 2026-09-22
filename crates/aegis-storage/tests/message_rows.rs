@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Строки сообщений: удаление с вложениями.
+//! Строки сообщений: удаление с вложениями и сохранение без замены.
 
 #![allow(clippy::expect_used)]
 
@@ -109,4 +109,31 @@ fn an_expired_message_with_an_attachment_is_purged() {
         .load_attachments(&with_file)
         .expect("чтение")
         .is_empty());
+}
+
+/// 🔐 Сохранение нового сообщения не заменяет существующее.
+///
+/// Идентификатор входящего сообщения выбирает собеседник. Сообщение
+/// с идентификатором уже сохранённого не должно его переписать —
+/// ни текст, ни чат.
+#[test]
+fn inserting_under_a_taken_id_changes_nothing() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let storage = open(&dir);
+    let ours = ChatId::generate();
+    let id = MessageId::generate();
+
+    assert!(storage
+        .insert_message(&message(id, ours, "моё", None))
+        .expect("первое"));
+
+    let replaced = storage
+        .insert_message(&message(id, ChatId::generate(), "подделка", None))
+        .expect("второе");
+
+    assert!(!replaced, "занятый идентификатор принят");
+
+    let kept = storage.load_messages(&ours, 10).expect("чтение");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].content.as_bytes(), "моё".as_bytes());
 }
