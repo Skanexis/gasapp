@@ -116,6 +116,7 @@ jobs:
         target:
           - chunk_reassembly
           - parse_message
+          - parse_content
           - decrypt_session
           - parse_prekey_bundle
           - parse_session_state

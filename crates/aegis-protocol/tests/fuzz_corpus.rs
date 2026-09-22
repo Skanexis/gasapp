@@ -31,6 +31,7 @@
 
 use aegis_protocol::{
     contact_link::ContactLink,
+    content::Content,
     double_ratchet::RatchetState,
     keys::{
         IdentityKey, KemPublicKey, PreKeyBundle, PreKeyId, SessionState, SignedKemPreKey,
@@ -383,4 +384,43 @@ fn contact_link_parsing_never_panics() {
     // Ноль дошедших до разбора ссылок означал бы, что вторая половина
     // теста ничего не проверяет.
     assert!(reached > 0, "ни одна сгенерированная ссылка не разобралась");
+}
+
+/// Таргет `parse_content`: содержимое сообщения после расшифровки.
+///
+/// Приходит от собеседника — его реализация, его длины и флаги. Вход
+/// начинается с настоящей версии и типа: случайный первый байт почти
+/// всегда отвергался бы на версии, и до разбора полей генератор
+/// не доходил бы. Разобранное обязано записываться и читаться обратно
+/// в то же самое: иначе писатель и читатель проверяют разные пределы.
+#[test]
+fn content_parsing_never_panics_and_round_trips() {
+    let mut rng = Rng::new(0x0C02_7E27);
+    let mut parsed = 0usize;
+
+    for _ in 0..ITERATIONS * 5 {
+        let kind = u8::try_from(rng.next_u64() % 9).unwrap_or(1);
+        let mut bytes = vec![1, kind];
+        bytes.extend(rng.bytes(96));
+
+        if let Ok(content) = Content::from_unpadded_bytes(&bytes) {
+            parsed += 1;
+
+            let again = content
+                .to_unpadded_bytes()
+                .expect("разобранное содержимое обязано записываться");
+
+            assert_eq!(
+                Content::from_unpadded_bytes(&again).expect("записанное обязано читаться"),
+                content,
+            );
+        }
+
+        // И путь с padding — им идёт настоящий вход.
+        let _ = Content::from_bytes(&bytes);
+    }
+
+    // Защита от пустой проверки: если ни один вход не разобрался,
+    // ветка с проверкой туда-обратно не выполнялась ни разу.
+    assert!(parsed > 0, "ни один вход не разобрался — проверка пуста");
 }

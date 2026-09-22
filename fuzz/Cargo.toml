@@ -37,6 +37,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "parse_content"
+path = "fuzz_targets/parse_content.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "decrypt_session"
 path = "fuzz_targets/decrypt_session.rs"
 test = false
