@@ -1968,6 +1968,27 @@ impl Storage {
             )
             .map_err(storage_error)?;
 
+        // 🔐 Сначала описания вложений истёкших сообщений (в них ключи
+        // файлов): `attachments` ссылается на `messages` внешним ключом,
+        // а собранный SQLite (и с SQLCipher) проверяет внешние ключи
+        // по умолчанию. Прежде одно истёкшее сообщение с файлом роняло
+        // весь запрос ниже — и с этого момента не исчезало уже ничего.
+        // Приложение глотает ошибку чистки (`Core.kt`), так что сбой был
+        // молчаливым: переписка, которую считали исчезнувшей, копилась
+        // на диске.
+        transaction
+            .execute(
+                "
+            DELETE FROM attachments
+            WHERE message_id IN (
+                SELECT message_id FROM messages
+                WHERE expires_at IS NOT NULL AND expires_at <= ?
+            )
+            ",
+                params![now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
         // Одним запросом: чистка по одному сообщению пережила бы сбой
         // посреди себя, оставив часть истёкших на диске.
         let removed = transaction
@@ -2037,6 +2058,19 @@ impl Storage {
             VALUES (?, ?)
             ",
                 params![id.as_bytes(), now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
+        // 🔐 Сначала описания вложений (в них ключи файлов): `attachments`
+        // ссылается на `messages` внешним ключом, а собранный SQLite
+        // (и с SQLCipher) проверяет внешние ключи по умолчанию. Прежде
+        // описания здесь не удалялись вовсе, и для сообщения с файлом
+        // запрос ниже отвергался: «удалить у меня» и «удалить у всех»
+        // падали ошибкой хранилища.
+        transaction
+            .execute(
+                "DELETE FROM attachments WHERE message_id = ?",
+                params![id.as_bytes()],
             )
             .map_err(storage_error)?;
 
