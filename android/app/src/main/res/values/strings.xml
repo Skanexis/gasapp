@@ -142,7 +142,6 @@
     <string name="new_chat_hint">Enter the other person\'s username</string>
     <string name="new_chat_open">Open</string>
     <string name="onboarding_choose_pin">Choose a PIN — it encrypts your messages on this device</string>
-    <string name="onboarding_pin_hint">6 digits</string>
     <string name="onboarding_error_pin">The PIN must be exactly 6 digits</string>
 
     <!-- Profile -->
@@ -412,9 +411,9 @@
     <!-- File vault -->
     <string name="vault_title">File vault</string>
     <string name="vault_sealed_explain">The vault is closed behind a second factor. Even with the app unlocked, you have to confirm yourself again to reach the files.</string>
-    <string name="vault_pin_hint">PIN</string>
     <string name="vault_unlock">Open the vault</string>
     <string name="vault_unlock_failed">Could not open it</string>
+    <string name="vault_pin_incomplete">Enter all six digits of your PIN</string>
     <string name="vault_seal">Close the vault</string>
     <string name="vault_sealed">The vault is closed</string>
     <string name="vault_reauth_note">The vault closes after a minute of inactivity and whenever the app goes into the background.</string>

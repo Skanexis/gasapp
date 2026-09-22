@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisTextField
-import android.text.InputFilter
+import org.aegis.app.components.PinPad
 import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
@@ -32,7 +32,7 @@ import uniffi.aegis.FfiException
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var username: AegisTextField
-    private lateinit var pin: AegisTextField
+    private lateinit var pin: PinPad
     private lateinit var error: TextView
     private lateinit var progress: ProgressBar
     private lateinit var progressLabel: TextView
@@ -49,30 +49,33 @@ class OnboardingActivity : AppCompatActivity() {
         setContentView(R.layout.activity_onboarding)
 
         username = findViewById(R.id.onboarding_username)
-        pin = findViewById(R.id.onboarding_pin)
+        // 🔐 PIN — своей клавиатурой, не системной (см. [PinPad]).
+        pin = PinPad(findViewById(android.R.id.content))
         error = findViewById(R.id.onboarding_error)
         progress = findViewById(R.id.onboarding_progress)
         progressLabel = findViewById(R.id.onboarding_progress_label)
         createButton = findViewById(R.id.onboarding_create)
-
-        // 🔐 Ограничение длины ставится отсюда, а не из разметки:
-        // в разметке оно было бы вторым местом, где записана
-        // длина PIN, и разойтись с экраном входа ему было бы
-        // ровно так же нечем помешать, как в прошлый раз.
-        pin.filters = arrayOf(InputFilter.LengthFilter(Pin.LENGTH))
 
         createButton.setOnClickListener { register() }
     }
 
     private fun register() {
         val name = username.text?.toString()?.trim().orEmpty()
-        val pinValue = pin.text?.toString().orEmpty()
 
         if (name.length < MIN_USERNAME_LENGTH) {
             showError(getString(R.string.onboarding_error_short))
 
             return
         }
+
+        if (!pin.isComplete) {
+            showError(getString(R.string.onboarding_error_pin))
+
+            return
+        }
+
+        // Забирается с затиранием буфера: клавиатура PIN не хранит.
+        val pinValue = pin.take()
 
         // 🔐 Ровно то, что способен набрать экран входа.
         //
@@ -159,6 +162,7 @@ class OnboardingActivity : AppCompatActivity() {
         // нажатие запустило бы вторую регистрацию поверх первой.
         createButton.isEnabled = !working
         username.isEnabled = !working
+        pin.setEnabled(!working)
 
         val visibility = if (working) View.VISIBLE else View.GONE
         progress.visibility = visibility
