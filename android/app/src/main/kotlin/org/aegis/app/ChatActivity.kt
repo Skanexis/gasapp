@@ -7,8 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -60,9 +58,6 @@ class ChatActivity : AppCompatActivity() {
 
     /** Идентификатор чата в хранилище. */
     private var chatId: String = ""
-
-    /** Когда последний раз уходил индикатор набора. */
-    private var lastTypingSent: Long = 0L
 
     /**
      * Скачанное вложение, ожидающее выбора места сохранения.
@@ -151,16 +146,12 @@ class ChatActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.attach_button).setOnClickListener { chooseAttachment() }
         findViewById<ImageView>(R.id.chat_menu).setOnClickListener { showChatMenu() }
 
-        input.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(text: Editable?) {
-                onTyping(text?.isNotEmpty() == true)
-            }
-
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
-
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
-        })
-
+        // 🔐 Индикатор набора не отправляется. Приложение собеседника
+        // его не показывает — ядро выбрасывает его при приёме, — а
+        // конверт, ушедший в момент набора, сообщал серверу, когда
+        // человек печатает, и ничего не давал взамен. Прежде он уходил
+        // при включённой передаче присутствия, а настройка обещала,
+        // что собеседник увидит набор.
         applySendGuard()
     }
 
@@ -560,39 +551,6 @@ class ChatActivity : AppCompatActivity() {
         }.getOrNull()
 
     /**
-     * Сообщает собеседнику, что пользователь печатает.
-     *
-     * # Про частоту
-     *
-     * Сигнал уходит не на каждую букву, а не чаще раза в несколько
-     * секунд: иначе слово из пяти букв породило бы пять сетевых
-     * запросов, и по их числу наблюдатель канала оценил бы длину
-     * сообщения ещё до отправки.
-     *
-     * 🔐 Ядро молча ничего не делает, если передача присутствия
-     * выключена, — проверять настройку здесь не нужно и не следует:
-     * второе место, где принимается то же решение, рано или поздно
-     * разойдётся с первым.
-     */
-    private fun onTyping(active: Boolean) {
-        val now = System.currentTimeMillis()
-
-        if (active && now - lastTypingSent < TYPING_INTERVAL_MILLIS) {
-            return
-        }
-
-        lastTypingSent = if (active) now else 0L
-
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    Core.messenger().sendTyping(peerUsername, active, now)
-                }
-            }
-        }
-    }
-
-    /**
      * Отправляет квитанцию о прочтении последнего сообщения.
      *
      * Квитанция указывает последнее прочитанное, а не каждое:
@@ -697,10 +655,12 @@ class ChatActivity : AppCompatActivity() {
      * ему откажут, значит предлагать то, чего он сделать не может.
      */
     private fun showMessageActions(message: MessageItem) {
+        // ⚠️ Пункта «Реакция» нет, пока реакции не хранятся и не
+        // показываются: ни у отправителя, ни у получателя ядро их
+        // не сохраняет. Прежде пункт был, реакция уходила и пропадала,
+        // а пользователь считал, что собеседник её видит. Прежний
+        // выбор эмодзи — в истории этого файла.
         val sheet = AegisSheet.on(this, R.string.message_actions)
-            .action(getString(R.string.message_react), R.drawable.ic_reaction) {
-                reactTo(message)
-            }
             .action(getString(R.string.message_copy), R.drawable.ic_copy) {
                 copyMessage(message)
             }
@@ -718,31 +678,6 @@ class ChatActivity : AppCompatActivity() {
                 destructive = true,
             ) {
                 confirmDelete(message)
-            }
-        }
-
-        sheet.show()
-    }
-
-    /**
-     * Ставит реакцию на сообщение.
-     *
-     * Набор эмодзи короткий и заданный: свободный ввод превратил бы
-     * реакцию во второе поле сообщения, а её смысл — в одном нажатии.
-     */
-    private fun reactTo(message: MessageItem) {
-        val sheet = AegisSheet.on(this, R.string.message_react)
-
-        for ((symbol, name) in REACTIONS) {
-            sheet.emoji(symbol, name) {
-                runAction {
-                    Core.messenger().sendReaction(
-                        peerUsername,
-                        message.messageId,
-                        symbol,
-                        System.currentTimeMillis(),
-                    )
-                }
             }
         }
 
@@ -999,15 +934,6 @@ class ChatActivity : AppCompatActivity() {
          * во второе поле сообщения, а её смысл — в одном нажатии.
          */
         /**
-         * Не чаще раза в столько миллисекунд уходит индикатор набора.
-         *
-         * Иначе слово из пяти букв породило бы пять запросов, и
-         * по их числу наблюдатель канала оценил бы длину сообщения
-         * ещё до отправки.
-         */
-        private const val TYPING_INTERVAL_MILLIS = 4_000L
-
-        /**
          * Сроки исчезающих сообщений.
          *
          * Ноль выключает таймер. Набор короткий: длинный список
@@ -1019,15 +945,6 @@ class ChatActivity : AppCompatActivity() {
             R.string.disappearing_hour to 3_600u,
             R.string.disappearing_day to 86_400u,
             R.string.disappearing_week to 604_800u,
-        )
-
-        private val REACTIONS = listOf(
-            "👍" to "Нравится",
-            "❤️" to "Сердце",
-            "😂" to "Смешно",
-            "😮" to "Удивление",
-            "😢" to "Грусть",
-            "🙏" to "Спасибо",
         )
 
         /**
