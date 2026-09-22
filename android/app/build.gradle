@@ -369,3 +369,49 @@ dependencies {
     androidTestImplementation 'androidx.test:core-ktx:1.6.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
 }
+// 🔐 Релиз не собирается с заглушками.
+//
+// Без этой проверки `assembleGmsRelease` без свойств давал APK, который
+// выглядел готовым и не работал ни у кого:
+// * адрес сервера по умолчанию — `https://10.0.2.2:8443`, то есть адрес
+//   хоста из эмулятора;
+// * пины сертификата в release/res/xml/network_security_config.xml —
+//   заглушки `AAAA…=` и `BBBB…=`: соединение с настоящим сервером
+//   отвергалось бы, а пункт MASVS NETWORK-2.1 при этом стоял ✅
+//   («два разных пина» — две разные заглушки);
+// * ключа подписи нет — APK неподписан.
+//
+// Для проверочной сборки на стенде (R8, запуск на эмуляторе) проверка
+// снимается явно: -PaegisAllowUnreleasable=true. Случайно так не выйдет.
+gradle.taskGraph.whenReady { graph ->
+    def releasing = graph.allTasks.any { task ->
+        task.project == project && task.name ==~ /(assemble|bundle|package)\w*Release/
+    }
+
+    if (!releasing || project.hasProperty('aegisAllowUnreleasable')) {
+        return
+    }
+
+    def problems = []
+
+    if (!project.hasProperty('aegisServerUrl')) {
+        problems << "не задан aegisServerUrl — релиз указал бы на 10.0.2.2"
+    }
+
+    def pins = file('src/release/res/xml/network_security_config.xml').text
+    if (pins.contains('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=') ||
+            pins.contains('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=')) {
+        problems << "пины сертификата в release/res/xml/network_security_config.xml — заглушки"
+    }
+
+    if (!project.hasProperty('aegisKeystore')) {
+        problems << "не задан aegisKeystore — APK вышел бы неподписанным"
+    }
+
+    if (!problems.isEmpty()) {
+        throw new GradleException(
+            "Релиз не собирается:\n  • " + problems.join("\n  • ") +
+                "\nДля проверочной сборки на стенде: -PaegisAllowUnreleasable=true"
+        )
+    }
+}

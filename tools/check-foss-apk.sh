@@ -56,7 +56,7 @@ EXPECTED='Lorg/aegis/app/'
 
 if [[ -z "$APK" ]]; then
   echo "сборка foss-release…"
-  (cd "$ROOT/android" && ./gradlew --console=plain -q :app:assembleFossRelease)
+  (cd "$ROOT/android" && ./gradlew --console=plain -q :app:assembleFossRelease -PaegisAllowUnreleasable=true)
 
   # Только release и только этот flavor.
   #

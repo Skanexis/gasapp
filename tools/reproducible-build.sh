@@ -144,7 +144,7 @@ else
   echo "     в jniLibs, — то есть неизвестно к какой сборке."
 fi
 
-(cd "$ROOT/android" && ./gradlew --no-daemon :app:assembleGmsRelease :app:assembleFossRelease)
+(cd "$ROOT/android" && ./gradlew --no-daemon :app:assembleGmsRelease :app:assembleFossRelease -PaegisAllowUnreleasable=true)
 
 # --- Подсчёт сумм ------------------------------------------------------------
 
@@ -207,7 +207,7 @@ if [[ "$TWICE" -eq 1 ]]; then
 
   bash "$ROOT/tools/build-rust-android.sh" "${ABI_FLAGS[@]}"
 
-  (cd "$ROOT/android" && ./gradlew --no-daemon -q :app:assembleGmsRelease :app:assembleFossRelease)
+  (cd "$ROOT/android" && ./gradlew --no-daemon -q :app:assembleGmsRelease :app:assembleFossRelease -PaegisAllowUnreleasable=true)
 
   SECOND=$(sums)
 
