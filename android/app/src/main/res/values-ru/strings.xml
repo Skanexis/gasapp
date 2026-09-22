@@ -461,10 +461,9 @@
     <string name="security_check_recovery">Ключ восстановления создан</string>
     <string name="security_check_backup">Резервная копия свежее недели</string>
     <string name="security_check_contacts">Все контакты сверены</string>
-    <string name="security_check_sealed">Отправитель скрыт от сервера</string>
+    <string name="security_check_sealed">Sealed sender включён — кроме первого сообщения новому собеседнику</string>
     <string name="security_check_address">IP-адрес скрыт прокси или Tor</string>
     <string name="security_check_screenshots">Снимки экрана заблокированы</string>
-    <string name="security_check_preview">Текст скрыт в уведомлениях</string>
     <string name="security_check_autolock">Автоблокировка не дольше 5 минут</string>
 
     <!--
