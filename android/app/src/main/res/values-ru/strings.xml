@@ -188,8 +188,8 @@
     <!-- Журнал звонков. -->
     <string name="calls_filter_all">Все</string>
     <string name="calls_filter_missed">Пропущенные</string>
-    <string name="calls_empty">Звонков пока нет</string>
-    <string name="calls_encrypted_note">Все звонки защищены сквозным шифрованием</string>
+    <string name="calls_empty">Звонков в этой версии нет</string>
+    <string name="calls_encrypted_note">Когда звонки появятся, они будут защищены сквозным шифрованием, как переписка</string>
     <string name="call_back">Позвонить</string>
     <string name="call_incoming">Входящий · %1$s</string>
     <string name="call_outgoing">Исходящий · %1$s</string>
