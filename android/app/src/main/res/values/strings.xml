@@ -211,7 +211,6 @@
     <!-- Message actions -->
     <string name="message_edited">edited</string>
     <string name="message_actions">Actions</string>
-    <string name="message_react">React</string>
     <string name="message_reply">Reply</string>
     <string name="message_edit">Edit</string>
     <string name="message_copy">Copy</string>
@@ -234,14 +233,14 @@
     <string name="disappearing_hour">After an hour</string>
     <string name="disappearing_day">After a day</string>
     <string name="disappearing_week">After a week</string>
-    <string name="presence_enable">Turn on: the other person will see when you are typing and reading</string>
+    <string name="presence_enable">Turn on: the other person will see when you have read their messages</string>
     <string name="presence_disable">Turn off</string>
 
     <!-- Privacy -->
     <string name="privacy_section_contacts">What others can see</string>
     <string name="privacy_section_device">This device</string>
     <string name="privacy_presence">Presence indicators</string>
-    <string name="privacy_presence_hint">The other person sees when you are typing and when you have read a message</string>
+    <string name="privacy_presence_hint">The other person sees when you have read their messages</string>
     <string name="privacy_last_seen">Last seen</string>
     <string name="privacy_last_seen_hint">The other person sees when you were last online</string>
     <string name="privacy_screenshots">Block screenshots</string>

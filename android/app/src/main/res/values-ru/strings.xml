@@ -200,7 +200,6 @@
     <!-- Действия над сообщением. -->
     <string name="message_edited">изменено</string>
     <string name="message_actions">Действия</string>
-    <string name="message_react">Реакция</string>
     <string name="message_reply">Ответить</string>
     <string name="message_edit">Изменить</string>
     <string name="message_copy">Копировать</string>
@@ -224,14 +223,14 @@
     <string name="disappearing_hour">Через час</string>
     <string name="disappearing_day">Через сутки</string>
     <string name="disappearing_week">Через неделю</string>
-    <string name="presence_enable">Включить: собеседник увидит, когда вы печатаете и читаете</string>
+    <string name="presence_enable">Включить: собеседник увидит, что вы прочитали его сообщения</string>
     <string name="presence_disable">Выключить</string>
 
     <!-- Приватность. -->
     <string name="privacy_section_contacts">Что видят собеседники</string>
     <string name="privacy_section_device">Это устройство</string>
     <string name="privacy_presence">Индикаторы присутствия</string>
-    <string name="privacy_presence_hint">Собеседник увидит, когда вы печатаете и прочитали сообщение</string>
+    <string name="privacy_presence_hint">Собеседник увидит, что вы прочитали его сообщения</string>
     <string name="privacy_last_seen">Время последнего входа</string>
     <string name="privacy_last_seen_hint">Собеседник увидит, когда вы последний раз были в сети</string>
     <string name="privacy_screenshots">Блокировать снимки экрана</string>
