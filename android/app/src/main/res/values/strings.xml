@@ -504,4 +504,17 @@
     <string name="security_event_backup_restored">Restored from a backup</string>
     <string name="security_event_degraded_session">A conversation started without the peer\'s one-time key</string>
     <string name="security_event_initial_replayed">A repeated copy of an old message start was rejected</string>
+
+    <!--
+      🔐 Пределы защиты. Каждая строка сверена с кодом; меняется код —
+      меняется строка.
+    -->
+    <string name="about_section_limits">What this does not protect from</string>
+    <string name="about_limit_first_message">The first message to a new contact is not sealed: the server sees who wrote to whom. The rest of the conversation is sealed.</string>
+    <string name="about_limit_address">The server sees your IP address and the time of a request. Only a proxy or Tor hides that, in Settings → Connection.</string>
+    <string name="about_limit_notifications">There are no notifications: messages arrive while the app is open.</string>
+    <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>
+    <string name="about_limit_recovery_key">Lose the recovery key and the backup cannot be read. Not by us either.</string>
+    <string name="about_limit_peer">The other person has already seen your message: they can photograph or remember it. “Delete for everyone” is a request, not a guarantee.</string>
+    <string name="about_limit_calls">There are no calls in this version.</string>
 </resources>

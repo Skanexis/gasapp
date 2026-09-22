@@ -550,4 +550,17 @@
     <string name="security_event_backup_restored">Восстановление из резервной копии</string>
     <string name="security_event_degraded_session">Переписка начата без одноразового ключа собеседника</string>
     <string name="security_event_initial_replayed">Отвергнута повторная копия начала старой переписки</string>
+
+    <!--
+      🔐 Пределы защиты. Каждая строка сверена с кодом; меняется код —
+      меняется строка.
+    -->
+    <string name="about_section_limits">Чего это не защищает</string>
+    <string name="about_limit_first_message">Первое сообщение новому собеседнику не запечатано: сервер видит, кто кому написал. Дальше переписка запечатана.</string>
+    <string name="about_limit_address">Сервер видит ваш IP-адрес и время запроса. Скрывает их только прокси или Tor — «Настройки» → «Соединение».</string>
+    <string name="about_limit_notifications">Уведомлений нет: сообщения приходят, пока приложение открыто.</string>
+    <string name="about_limit_backup">Исчезающих сообщений в резервной копии нет. Удалённое сообщение остаётся в копиях, сделанных до удаления.</string>
+    <string name="about_limit_recovery_key">Потеряете ключ восстановления — копию не прочитает никто. Мы тоже.</string>
+    <string name="about_limit_peer">Собеседник уже видел сообщение: он может его сфотографировать или запомнить. «Удалить у всех» — просьба, а не гарантия.</string>
+    <string name="about_limit_calls">Звонков в этой версии нет.</string>
 </resources>

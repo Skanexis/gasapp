@@ -97,6 +97,71 @@
                 android:layout_marginTop="@dimen/space_m"
                 android:text="@string/about_note" />
 
+            <!--
+              🔐 Пределы защиты — на экране, а не только в политике
+              приватности: человек решает, чем пользоваться, по тому,
+              что видит в приложении. Каждый пункт сверен с кодом
+              (MASVS PRIVACY-2.2).
+            -->
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/about_section_limits" />
+
+            <LinearLayout
+                style="@style/AegisPanel"
+                android:id="@+id/about_limits">
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_first_message" />
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_address" />
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_notifications" />
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_backup" />
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_recovery_key" />
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_peer" />
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_calls" />
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 
