@@ -44,12 +44,14 @@
             <TextView
                 style="@style/AegisText.H3"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:text="@string/identity_changed_headline" />
 
             <TextView
                 android:id="@+id/identity_changed_summary"
                 style="@style/AegisText.Body.Secondary"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_s"
                 android:text="@string/identity_changed_restored" />
 
@@ -60,11 +62,13 @@
                 <TextView
                     style="@style/AegisText.Body"
                     android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="@string/identity_changed_explain" />
 
                 <TextView
                     style="@style/AegisText.Caption.Muted"
                     android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_m"
                     android:text="@string/identity_changed_why" />
             </LinearLayout>
@@ -81,6 +85,7 @@
                 <TextView
                     style="@style/AegisText.Caption"
                     android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="@string/identity_changed_not_restored" />
             </LinearLayout>
 

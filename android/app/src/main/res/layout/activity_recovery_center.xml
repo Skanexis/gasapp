@@ -48,6 +48,7 @@
             <TextView
                 style="@style/AegisText.Body.Secondary"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:text="@string/recovery_intro" />
 
             <!--
@@ -83,6 +84,7 @@
                     android:id="@+id/recovery_last"
                     style="@style/AegisText.Caption.Muted"
                     android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
                     tools:text="Последняя копия: 2 часа назад" />
             </LinearLayout>
@@ -134,6 +136,7 @@
                 android:id="@+id/recovery_status"
                 style="@style/AegisText.Caption"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
                 android:visibility="gone"
                 tools:text="Копия собрана: 128 записей"
@@ -150,6 +153,7 @@
                 <TextView
                     style="@style/AegisText.Body"
                     android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="@string/recovery_warning"
                     android:textColor="@color/status_warn" />
             </LinearLayout>

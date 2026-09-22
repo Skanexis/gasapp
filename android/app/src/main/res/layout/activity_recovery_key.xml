@@ -50,6 +50,7 @@
             <TextView
                 style="@style/AegisText.Body"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:text="@string/recovery_key_explain" />
 
             <!--
@@ -66,6 +67,7 @@
                     android:id="@+id/key_value"
                     style="@style/AegisText.Mono"
                     android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:lineSpacingMultiplier="1.4"
                     android:textIsSelectable="false"
                     tools:text="AEGIS-7F2K-9QMD-X4RT-B81N-KV5C-2WPH-E6JZ-3A5T-M9XN-P2QW-R7YK-4DV6-H8CF" />
@@ -78,6 +80,7 @@
             <TextView
                 style="@style/AegisText.Body"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/recovery_key_once"
                 android:textColor="@color/status_warn" />
@@ -85,6 +88,7 @@
             <TextView
                 style="@style/AegisText.Caption.Muted"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_s"
                 android:text="@string/recovery_key_no_screenshot" />
 

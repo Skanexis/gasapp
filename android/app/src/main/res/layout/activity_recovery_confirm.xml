@@ -50,6 +50,7 @@
             <TextView
                 style="@style/AegisText.Body"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:text="@string/recovery_confirm_explain" />
 
             <LinearLayout
@@ -117,6 +118,7 @@
                 android:id="@+id/confirm_status"
                 style="@style/AegisText.Caption"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
                 android:visibility="gone"
                 tools:text="Группы не совпали"
