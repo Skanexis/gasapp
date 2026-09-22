@@ -103,7 +103,9 @@ pub const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 pub const MAX_WAVEFORM_POINTS: usize = 256;
 
 /// Описание вложения.
-#[derive(Debug, Clone)]
+/// 🔐 `Debug` написан вручную и ключа файла не печатает: прежде он был
+/// выведен и отдавал ключ расшифровки вложения байт за байтом.
+#[derive(Clone)]
 pub struct AttachmentDescriptor {
     /// Тип вложения.
     pub kind: AttachmentKind,
@@ -143,6 +145,23 @@ pub struct AttachmentDescriptor {
     ///
     /// 🔐 Ключ отдельный от ключа файла — см. модуль `preview`.
     pub preview: Option<PreviewRef>,
+}
+
+// Неполнота `Debug` — намеренная: ключ файла не печатается.
+#[allow(clippy::missing_fields_in_debug)]
+impl core::fmt::Debug for AttachmentDescriptor {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AttachmentDescriptor")
+            .field("kind", &self.kind)
+            .field("location", &self.location)
+            .field("size", &self.size)
+            .field("name", &self.name)
+            .field("description", &self.description)
+            .field("duration_millis", &self.duration_millis)
+            .field("waveform", &self.waveform)
+            .field("preview", &self.preview)
+            .finish()
+    }
 }
 
 /// Ссылка на превью.
@@ -507,6 +526,26 @@ mod tests {
     }
 
     /// Описание переживает круг сериализации.
+    /// 🔐 Ключ файла не печатается в `Debug`.
+    ///
+    /// Прежде `Debug` был выведен и отдавал ключ расшифровки вложения.
+    #[test]
+    fn debug_does_not_print_the_file_key() {
+        let mut descriptor = document();
+        descriptor.key = [0xE7; KEY_LEN];
+
+        let rendered = format!("{descriptor:?}");
+
+        assert!(
+            !rendered.contains("231, 231, 231"),
+            "ключ файла напечатан: {rendered}"
+        );
+        assert!(
+            rendered.contains("AttachmentDescriptor"),
+            "заготовка теста: Debug пуст"
+        );
+    }
+
     #[test]
     fn descriptor_round_trips() {
         let mut original = document();

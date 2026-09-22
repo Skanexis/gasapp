@@ -196,14 +196,19 @@ impl MessageStatus {
 }
 
 /// Собственные ключи устройства, прочитанные из хранилища.
-#[derive(Debug, Clone)]
+///
+/// 🔐 `Debug` написан вручную и приватных частей не печатает, а при
+/// уничтожении они обнуляются. Прежде `Debug` был выведен и отдавал
+/// приватный identity-ключ и секреты предключей байт за байтом —
+/// любой `{:?}` в журнале или сообщении об ошибке выдал бы их целиком.
+#[derive(Clone)]
 pub struct OwnKeys {
-    /// Приватная часть identity-пары.
-    pub identity_private: Vec<u8>,
+    /// Приватная часть identity-пары — обнуляется при уничтожении.
+    pub identity_private: zeroize::Zeroizing<Vec<u8>>,
     /// Публичная часть identity-пары.
     pub identity_public: Vec<u8>,
-    /// Сериализованные секреты предключей.
-    pub prekey_secrets: Vec<u8>,
+    /// Сериализованные секреты предключей — обнуляются при уничтожении.
+    pub prekey_secrets: zeroize::Zeroizing<Vec<u8>>,
     /// Идентификатор устройства, выданный сервером при регистрации.
     ///
     /// Строка, потому что сервер выдаёт UUID. Прежде поле было `u32`
@@ -214,6 +219,18 @@ pub struct OwnKeys {
     pub device_id: Option<String>,
     /// Занятое имя пользователя, если оно уже зарегистрировано.
     pub username: Option<String>,
+}
+
+// Неполнота `Debug` — намеренная: приватные части не печатаются.
+#[allow(clippy::missing_fields_in_debug)]
+impl core::fmt::Debug for OwnKeys {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("OwnKeys")
+            .field("identity_public", &self.identity_public)
+            .field("device_id", &self.device_id)
+            .field("username", &self.username)
+            .finish()
+    }
 }
 
 /// Строка списка чатов.
@@ -1293,9 +1310,9 @@ impl Storage {
         };
 
         Ok(Some(OwnKeys {
-            identity_private: row.get(0).map_err(storage_error)?,
+            identity_private: zeroize::Zeroizing::new(row.get(0).map_err(storage_error)?),
             identity_public: row.get(1).map_err(storage_error)?,
-            prekey_secrets: row.get(2).map_err(storage_error)?,
+            prekey_secrets: zeroize::Zeroizing::new(row.get(2).map_err(storage_error)?),
             device_id: row.get(3).map_err(storage_error)?,
             username: row.get(4).map_err(storage_error)?,
         }))
@@ -3241,9 +3258,9 @@ mod tests {
             .expect("чтение удалось")
             .expect("ключи на месте");
 
-        assert_eq!(loaded.identity_private, vec![0x11; 32]);
+        assert_eq!(*loaded.identity_private, vec![0x11; 32]);
         assert_eq!(loaded.identity_public, vec![0x22; 32]);
-        assert_eq!(loaded.prekey_secrets, vec![0x33; 64]);
+        assert_eq!(*loaded.prekey_secrets, vec![0x33; 64]);
         assert_eq!(
             loaded.device_id.as_deref(),
             Some("11111111-2222-3333-4444-555555555555")
@@ -3981,7 +3998,7 @@ mod tests {
             .expect("чтение")
             .expect("ключи на месте");
 
-        assert_eq!(keys.identity_private, vec![0xAA; 32]);
+        assert_eq!(*keys.identity_private, vec![0xAA; 32]);
         assert_eq!(keys.identity_public, vec![0xBB; 32]);
         assert_eq!(keys.username.as_deref(), Some("alice"));
 
