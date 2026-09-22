@@ -96,6 +96,10 @@ struct ServerState {
     /// **отправил**: подпись под запросом видна только здесь —
     /// в ответе её нет, и её отсутствие выглядело бы как успех.
     requests: Vec<(String, Vec<(String, String)>)>,
+
+    /// После скольких успешных подтверждений доставки сервер начинает
+    /// отвечать 500 — сбой посреди пачки.
+    acks_before_failure: Option<usize>,
 }
 
 /// Поддельный сервер, разделяемый между клиентами.
@@ -215,6 +219,11 @@ impl FakeServer {
             bundle.one_time.clear();
             bundle.one_time_kem.clear();
         }
+    }
+
+    /// Подтверждения доставки начнут отказывать после `count` успешных.
+    fn fail_acknowledgements_after(&self, count: usize) {
+        self.state.borrow_mut().acks_before_failure = Some(count);
     }
 
     /// Сколько конвертов лежит в очереди устройства.
@@ -588,7 +597,16 @@ impl Transport for FakeServer {
                     )
                 }
             }
+            (Method::Delete, path)
+                if path.starts_with("/v1/messages/") && state.acks_before_failure == Some(0) =>
+            {
+                (500, String::new())
+            }
             (Method::Delete, path) if path.starts_with("/v1/messages/") => {
+                if let Some(left) = state.acks_before_failure.as_mut() {
+                    *left -= 1;
+                }
+
                 // Подтверждение доставки: сервер удаляет конверт.
                 let remainder = path.trim_start_matches("/v1/messages/");
                 if let Some((device_id, envelope_id)) = remainder.split_once('/') {
@@ -1939,6 +1957,53 @@ fn a_replay_after_signed_prekey_rotation_is_still_rejected() {
             .expect("приём"),
         1,
         "повтор после ротации сбросил сессию"
+    );
+}
+
+/// Число одноразовых предключей, приватные части которых лежат на диске.
+fn one_time_secrets_on_disk(dir: &tempfile::TempDir, name: &str) -> usize {
+    let keys = open_storage(dir, name)
+        .load_own_keys()
+        .expect("чтение")
+        .expect("ключи");
+
+    aegis_protocol::prekeys::PreKeySecrets::from_bytes(&keys.prekey_secrets)
+        .expect("секреты")
+        .one_time
+        .len()
+}
+
+/// 🔐 Израсходованный одноразовый предключ стирается с диска, даже если
+/// приём прервался посреди пачки.
+///
+/// Секреты сохранялись одним разом в конце пачки, а подтверждение шло
+/// по конверту. Сбой подтверждения на втором конверте прерывал приём:
+/// первый, уже подтверждённый и удалённый с сервера, повторно не придёт,
+/// а приватная часть его одноразового предключа оставалась на диске —
+/// та, стирание которой и даёт первому сообщению прямую секретность.
+#[test]
+fn a_consumed_one_time_key_leaves_the_disk_even_if_the_batch_fails() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "первое", now(), &mut OsRng)
+        .expect("отправка");
+    let before = one_time_secrets_on_disk(&dir, "bob.db");
+
+    // Первый конверт — начальный, с одноразовым ключом; его подтверждение
+    // проходит, следующее — нет.
+    server.fail_acknowledgements_after(1);
+    assert!(
+        bob.receive_messages(&bob_device, now()).is_err(),
+        "заготовка теста: приём не прервался"
+    );
+
+    assert_eq!(
+        one_time_secrets_on_disk(&dir, "bob.db"),
+        before - 1,
+        "одноразовый предключ подтверждённого конверта остался на диске"
     );
 }
 
