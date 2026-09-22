@@ -210,6 +210,12 @@ class VaultActivity : AppCompatActivity() {
             if (outcome.isFailure) {
                 button.isError = true
                 showStatus(getString(R.string.vault_unlock_failed))
+            } else {
+                // Отказ прошлой попытки не должен висеть над открытым
+                // хранилищем: «не удалось открыть» при открытом vault
+                // заставляет усомниться, что он открыт своим PIN.
+                button.isError = false
+                findViewById<TextView>(R.id.vault_status).visibility = View.GONE
             }
 
             render()
