@@ -32,6 +32,9 @@ object Core {
 
     private var messenger: Messenger? = null
 
+    /** Отпечаток ключа открытой базы — для проверки PIN (см. [keyOpensStorage]). */
+    private val openedKey = OpenedKey()
+
     /**
      * Идентификатор устройства, выданный сервером при регистрации.
      *
@@ -75,6 +78,7 @@ object Core {
         )
 
         messenger = opened
+        openedKey.remember(key)
 
         // 🔐 Прокси применяется сразу после открытия базы — до первого
         // сетевого запроса. Настройка живёт в зашифрованной базе, поэтому
@@ -220,6 +224,7 @@ object Core {
         val opened = open(context, deriveStorageKey(pin, salt))
 
         opened.rekeyStorage(key)
+        openedKey.remember(key)
         establishVaultVerifier(opened, pin, salt)
 
         return opened
@@ -259,6 +264,17 @@ object Core {
      */
     fun deriveKey(context: Context, pin: String): ByteArray =
         deriveStorageKeyBound(pin, salt(context), HardwareKey.secret(context))
+
+    /**
+     * 🔐 Открыта ли база именно этим ключом.
+     *
+     * Для включения биометрии: ключ, выведенный из введённого PIN,
+     * запечатывается в конверт Keystore только если он и открывает
+     * базу. Прежде он запечатывался как есть — опечатка в PIN давала
+     * «включённую» биометрию, которая базу не открывала никогда.
+     */
+    @Synchronized
+    fun keyOpensStorage(key: ByteArray): Boolean = openedKey.matches(key)
 
     /**
      * 🔐 Открывает хранилище ключом из биометрического конверта.
@@ -333,6 +349,7 @@ object Core {
     fun close() {
         messenger?.close()
         messenger = null
+        openedKey.forget()
 
         // 🔐 Кеш сбрасывается вместе с хранилищем: идентификатор
         // устройства — это сведение об аккаунте, и держать его после

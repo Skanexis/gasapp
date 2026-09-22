@@ -208,8 +208,10 @@ class PrivacyActivity : AppCompatActivity() {
         val input = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or
                 android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            // 🔐 Клавиатура не запоминает PIN для подсказок.
+            // 🔐 Клавиатура не запоминает PIN для подсказок, а поле
+            // не сохраняет его в состоянии экрана.
             imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            isSaveEnabled = false
             setTextColor(
                 androidx.core.content.ContextCompat.getColor(context, R.color.text_primary),
             )
@@ -278,18 +280,33 @@ class PrivacyActivity : AppCompatActivity() {
                     val key = Core.deriveKey(applicationContext, pin)
 
                     try {
-                        BiometricUnlock.seal(applicationContext, result, key)
+                        // 🔐 Запечатывается только ключ, который открывает
+                        // базу. Прежде PIN не проверялся: опечатка давала
+                        // «включённую» биометрию, которая не открывала
+                        // базу никогда, — а человек узнавал об этом, уже
+                        // забыв PIN в расчёте на отпечаток.
+                        if (Core.keyOpensStorage(key)) {
+                            BiometricUnlock.seal(applicationContext, result, key)
+                            true
+                        } else {
+                            false
+                        }
                     } finally {
                         key.fill(0)
                     }
                 }
             }
 
-            if (sealed.isSuccess) {
-                toast(R.string.privacy_biometric_enabled)
-            } else {
-                BiometricUnlock.disable(applicationContext)
-                toast(R.string.privacy_biometric_failed)
+            when (sealed.getOrNull()) {
+                true -> toast(R.string.privacy_biometric_enabled)
+                false -> {
+                    BiometricUnlock.disable(applicationContext)
+                    toast(R.string.privacy_biometric_wrong_pin)
+                }
+                null -> {
+                    BiometricUnlock.disable(applicationContext)
+                    toast(R.string.privacy_biometric_failed)
+                }
             }
 
             bindBiometric()
