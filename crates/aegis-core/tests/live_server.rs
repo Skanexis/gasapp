@@ -489,3 +489,105 @@ fn talk_to_an_existing_user() {
         "входящего ответа нет"
     );
 }
+
+/// Печатает переписку клиента: направление, статус и текст.
+fn print_chat(client: &Client<LocalHttp>, title: &str) {
+    println!("---- {title} ----");
+
+    for chat in client.chats().expect("чаты") {
+        for message in client.messages(&chat, 50).expect("сообщения") {
+            println!(
+                "{} [{:?}] {}",
+                if message.outgoing { "→" } else { "←" },
+                message.status,
+                message.text
+            );
+        }
+    }
+}
+
+/// Правка, удаление у всех и квитанции — между клиентом на Rust
+/// и приложением на Android через настоящий сервер.
+///
+/// Дейв пишет два сообщения и ждёт ответа. Затем правит первое,
+/// удаляет второе у всех и следит за перепиской, печатая её при каждом
+/// изменении: так видно и то, что сделано в приложении, — правку,
+/// удаление у всех, отметку «прочитано».
+///
+/// ```text
+/// AEGIS_SERVER=http://127.0.0.1:9080 AEGIS_PEER=bob_e2e AEGIS_WATCH_SECONDS=300 \
+///     cargo test -p aegis-core --test live_server edits_and_deletes -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "ручная проверка с устройством: AEGIS_SERVER и AEGIS_PEER"]
+fn edits_and_deletes_with_an_existing_user() {
+    let (host, port) = server().expect("переменная AEGIS_SERVER не задана");
+    let peer = std::env::var("AEGIS_PEER").expect("переменная AEGIS_PEER не задана");
+    let seconds = |name: &str, default: u64| {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(default)
+    };
+    let wait = seconds("AEGIS_WAIT_SECONDS", 180);
+    let watch = seconds("AEGIS_WATCH_SECONDS", 300);
+
+    let dir = tempfile::tempdir().expect("каталог");
+    let path = dir.path().join("dave.db").to_string_lossy().into_owned();
+    let dave = Client::new(
+        LocalHttp { host, port },
+        Storage::new(&path, &[0x5D; 32]).expect("база"),
+    );
+
+    let name = unique("dave");
+    let device = dave
+        .register(&name, now(), &mut OsRng)
+        .expect("регистрация")
+        .device_id
+        .to_string();
+
+    let first = dave
+        .send_message(&peer, "дейв: первое — будет исправлено", now(), &mut OsRng)
+        .expect("первое");
+    let second = dave
+        .send_message(
+            &peer,
+            "дейв: второе — будет удалено у всех",
+            now(),
+            &mut OsRng,
+        )
+        .expect("второе");
+    println!("{name} → {peer}: два сообщения; жду ответа до {wait} с");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(wait);
+    while dave.receive_messages(&device, now()).expect("приём") == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "ответа от {peer} нет за {wait} с"
+        );
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+    print_chat(&dave, "ответ получен");
+
+    dave.edit_message(
+        &peer,
+        &first,
+        "дейв: первое — ИСПРАВЛЕНО",
+        now(),
+        &mut OsRng,
+    )
+    .expect("правка");
+    dave.delete_for_everyone(&peer, &second, now(), &mut OsRng)
+        .expect("удаление у всех");
+    println!("правка первого и удаление второго отправлены; слежу {watch} с");
+
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(watch);
+    while std::time::Instant::now() < until {
+        if dave.receive_messages(&device, now()).expect("приём") > 0 {
+            print_chat(&dave, "изменение");
+        }
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    print_chat(&dave, "итог");
+}
