@@ -86,17 +86,25 @@
                         android:layout_height="wrap_content"
                         tools:text="В хранилище 3 файла" />
 
-                    <EditText
-                        android:id="@+id/vault_pin"
-                        style="@style/AegisInput"
+                    <!-- 🔐 PIN — своей клавиатурой, не системной (см. PinPad) -->
+                    <LinearLayout
                         android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_m"
-                        android:autofillHints=""
-                        android:hint="@string/vault_pin_hint"
-                        android:importantForAutofill="no"
-                        android:imeOptions="flagNoPersonalizedLearning"
-                        android:inputType="numberPassword"
-                        android:textColor="@color/text_primary" />
+                        android:gravity="center_horizontal"
+                        android:orientation="vertical">
+
+                        <include
+                            layout="@layout/view_pin_dots"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+
+                        <include
+                            layout="@layout/view_pin_keypad"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp" />
+                    </LinearLayout>
 
                     <org.aegis.app.components.AegisButton
                         android:id="@+id/vault_unlock"

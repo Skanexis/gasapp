@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisSheet
+import org.aegis.app.components.PinPad
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeleteAccount
@@ -203,29 +204,33 @@ class PrivacyActivity : AppCompatActivity() {
         }
     }
 
-    /** Спрашивает PIN и запечатывает ключ базы. */
+    /**
+     * Спрашивает PIN и запечатывает ключ базы.
+     *
+     * 🔐 PIN — своей клавиатурой, не системной (см. [PinPad]): прежде здесь
+     * было текстовое поле, и каждую цифру получала системная клавиатура.
+     * Окно защищено от снимков всегда, а не по настройке: на записи экрана
+     * видно, какие клавиши нажаты.
+     */
     private fun askPinThenEnableBiometric() {
-        val input = android.widget.EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
-                android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            // 🔐 Клавиатура не запоминает PIN для подсказок, а поле
-            // не сохраняет его в состоянии экрана.
-            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-            isSaveEnabled = false
-            setTextColor(
-                androidx.core.content.ContextCompat.getColor(context, R.color.text_primary),
-            )
+        val view = layoutInflater.inflate(R.layout.dialog_pin, null)
+        var dialog: androidx.appcompat.app.AlertDialog? = null
+
+        PinPad(view) { pad ->
+            val pin = pad.take()
+            dialog?.dismiss()
+            enableBiometric(pin)
         }
 
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
+        dialog = androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
             .setTitle(R.string.privacy_biometric_pin_title)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                enableBiometric(input.text.toString())
-                input.text.clear()
-            }
+            .setView(view)
             .setNegativeButton(android.R.string.cancel, null)
-            .showSecure(this)
+            .create()
+            .also {
+                SecureWindow.always(it)
+                it.show()
+            }
     }
 
     /**

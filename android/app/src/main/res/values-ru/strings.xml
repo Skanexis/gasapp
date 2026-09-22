@@ -127,7 +127,6 @@
     <string name="new_chat_hint">Введите имя пользователя собеседника</string>
     <string name="new_chat_open">Открыть</string>
     <string name="onboarding_choose_pin">Придумайте PIN — им шифруется переписка на устройстве</string>
-    <string name="onboarding_pin_hint">6 цифр</string>
     <string name="onboarding_error_pin">PIN — ровно 6 цифр</string>
 
     <!-- Экран профиля: QR и ссылка для обмена контактами. -->
@@ -414,9 +413,9 @@
     <!-- File Vault (раздел 11.4). -->
     <string name="vault_title">Хранилище файлов</string>
     <string name="vault_sealed_explain">Хранилище закрыто вторым фактором. Даже при разблокированном приложении для доступа к файлам нужно подтвердить себя заново.</string>
-    <string name="vault_pin_hint">PIN</string>
     <string name="vault_unlock">Открыть хранилище</string>
     <string name="vault_unlock_failed">Открыть не удалось</string>
+    <string name="vault_pin_incomplete">Введите все шесть цифр PIN</string>
     <string name="vault_seal">Закрыть хранилище</string>
     <string name="vault_sealed">Хранилище закрыто</string>
     <string name="vault_reauth_note">Хранилище закрывается через минуту бездействия и при переходе приложения в фон.</string>

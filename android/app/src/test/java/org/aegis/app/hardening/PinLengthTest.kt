@@ -5,7 +5,7 @@ package org.aegis.app.hardening
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import android.widget.EditText
+import android.view.View
 import androidx.test.core.app.ApplicationProvider
 import org.aegis.app.OnboardingActivity
 import org.aegis.app.R
@@ -17,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -110,27 +111,32 @@ class PinLengthTest {
     }
 
     /**
-     * 🔐 Поле регистрации не принимает больше, чем наберёт экран входа.
+     * 🔐 Клавиатура регистрации не набирает больше, чем экран входа.
      *
-     * Ограничение ставится из кода ([Pin.LENGTH]), а не из разметки:
-     * в разметке оно было бы ещё одной записью длины.
+     * PIN набирается своей клавиатурой ([org.aegis.app.components.PinPad]),
+     * и предел — [Pin.LENGTH]. Двенадцать нажатий оставляют шесть цифр.
      */
     @Test
-    fun the_registration_field_stops_at_the_lock_screen_length() {
-        // ⚠️ Настоящая активность, а не раздутая разметка: ограничение
-        // ставит `onCreate`. Поставь его тест сам — он проверял бы
-        // `LengthFilter`, а не приложение.
+    fun the_registration_keypad_stops_at_the_lock_screen_length() {
+        // ⚠️ Настоящая активность, а не раздутая разметка: клавиатуру
+        // привязывает `onCreate`. Привяжи её тест сам — он проверял бы
+        // свою привязку, а не приложение.
         val controller = Robolectric.buildActivity(OnboardingActivity::class.java).setup()
 
         try {
-            val field = controller.get().findViewById<EditText>(R.id.onboarding_pin)
+            val root = controller.get().window.decorView
+            repeat(12) { root.findViewById<View>(R.id.key_1).performClick() }
 
-            field.setText("123456789012")
+            val dots = root.findViewById<ViewGroup>(R.id.pin_dots)
+            val filled = (0 until dots.childCount).count { index ->
+                shadowOf(dots.getChildAt(index).background).createdFromResId ==
+                    R.drawable.bg_pin_dot_filled
+            }
 
             assertEquals(
-                "поле регистрации приняло PIN длиннее набираемого",
+                "клавиатура регистрации набрала PIN длиннее набираемого на входе",
                 Pin.LENGTH,
-                field.text.length,
+                filled,
             )
         } finally {
             // ⚠️ Закрыть обязательно, и вот почему.

@@ -53,7 +53,9 @@ class FailedRegistrationTest {
         assertTrue("заготовка теста: базы нет", Core.hasAccount(activity))
 
         activity.findViewById<EditText>(R.id.onboarding_username).setText("alice")
-        activity.findViewById<EditText>(R.id.onboarding_pin).setText("482915")
+        for (key in listOf(R.id.key_4, R.id.key_8, R.id.key_2, R.id.key_9, R.id.key_1, R.id.key_5)) {
+            activity.findViewById<View>(key).performClick()
+        }
         activity.findViewById<Button>(R.id.onboarding_create).performClick()
 
         val error = activity.findViewById<TextView>(R.id.onboarding_error)

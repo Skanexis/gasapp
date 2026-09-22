@@ -49,20 +49,11 @@
         android:textSize="12sp" />
 
     <!-- Шесть точек: показывают длину введённого, но не сам PIN -->
-    <LinearLayout
-        android:id="@+id/pin_dots"
+    <include
+        layout="@layout/view_pin_dots"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:orientation="horizontal">
-
-        <View style="@style/AegisPinDot" />
-        <View style="@style/AegisPinDot" />
-        <View style="@style/AegisPinDot" />
-        <View style="@style/AegisPinDot" />
-        <View style="@style/AegisPinDot" />
-        <View style="@style/AegisPinDot" />
-    </LinearLayout>
+        android:layout_marginTop="24dp" />
 
     <TextView
         android:id="@+id/pin_error"
@@ -76,40 +67,10 @@
         tools:visibility="visible" />
 
     <!-- Цифровая клавиатура: три колонки, клавиши 56dp по макету -->
-    <GridLayout
-        android:id="@+id/keypad"
+    <include
+        layout="@layout/view_pin_keypad"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:columnCount="3">
-
-        <TextView android:id="@+id/key_1" style="@style/AegisKeypadKey" android:text="1" />
-        <TextView android:id="@+id/key_2" style="@style/AegisKeypadKey" android:text="2" />
-        <TextView android:id="@+id/key_3" style="@style/AegisKeypadKey" android:text="3" />
-        <TextView android:id="@+id/key_4" style="@style/AegisKeypadKey" android:text="4" />
-        <TextView android:id="@+id/key_5" style="@style/AegisKeypadKey" android:text="5" />
-        <TextView android:id="@+id/key_6" style="@style/AegisKeypadKey" android:text="6" />
-        <TextView android:id="@+id/key_7" style="@style/AegisKeypadKey" android:text="7" />
-        <TextView android:id="@+id/key_8" style="@style/AegisKeypadKey" android:text="8" />
-        <TextView android:id="@+id/key_9" style="@style/AegisKeypadKey" android:text="9" />
-
-        <!-- Пустая клетка слева от нуля: в макете здесь биометрия,
-             она появится вместе с интеграцией BiometricPrompt -->
-        <Space
-            android:layout_width="72dp"
-            android:layout_height="56dp" />
-
-        <TextView android:id="@+id/key_0" style="@style/AegisKeypadKey" android:text="0" />
-
-        <ImageView
-            android:id="@+id/key_delete"
-            android:layout_width="72dp"
-            android:layout_height="56dp"
-            android:background="@drawable/bg_keypad_key"
-            android:contentDescription="@string/delete_digit"
-            android:padding="16dp"
-            android:src="@drawable/ic_back"
-            app:tint="@color/text_muted" />
-    </GridLayout>
+        android:layout_marginTop="18dp" />
 
 </LinearLayout>

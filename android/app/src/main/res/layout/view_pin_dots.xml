@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Точки PIN: показывают длину введённого, но не сам PIN.
+
+  Шесть — Pin.LENGTH; PinLengthTest сверяет число точек с константой.
+  Общая для экрана входа и всех мест, где PIN набирается своей
+  клавиатурой (PinPad).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/pin_dots"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal">
+
+    <View style="@style/AegisPinDot" />
+    <View style="@style/AegisPinDot" />
+    <View style="@style/AegisPinDot" />
+    <View style="@style/AegisPinDot" />
+    <View style="@style/AegisPinDot" />
+    <View style="@style/AegisPinDot" />
+</LinearLayout>

@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -18,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisSheet
+import org.aegis.app.components.PinPad
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.VaultBlob
@@ -64,6 +64,9 @@ import java.io.File
  */
 class VaultActivity : AppCompatActivity() {
 
+    /** Клавиатура PIN хранилища. */
+    private lateinit var vaultPin: PinPad
+
     /**
      * Временные файлы, созданные при просмотре.
      *
@@ -100,6 +103,11 @@ class VaultActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.vault_back).setOnClickListener { finish() }
         findViewById<ImageView>(R.id.vault_seal).setOnClickListener { seal() }
         findViewById<AegisButton>(R.id.vault_unlock).setOnClickListener { unlock() }
+
+        // 🔐 PIN — своей клавиатурой, не системной (см. [PinPad]);
+        // набранные шесть цифр открывают хранилище сразу, как на экране
+        // входа.
+        vaultPin = PinPad(findViewById(android.R.id.content)) { unlock() }
         findViewById<AegisButton>(R.id.vault_add).setOnClickListener { pickFileToAdd() }
 
         render()
@@ -183,8 +191,15 @@ class VaultActivity : AppCompatActivity() {
      * `K_vault` целиком в Rust, и в памяти Kotlin его нет никогда.
      */
     private fun unlock() {
-        val field = findViewById<EditText>(R.id.vault_pin)
-        val pin = field.text.toString()
+        if (!vaultPin.isComplete) {
+            showStatus(getString(R.string.vault_pin_incomplete))
+
+            return
+        }
+
+        // 🔐 Забирается с затиранием: PIN не остаётся на экране,
+        // к которому вернутся через переключатель задач.
+        val pin = vaultPin.take()
         val button = findViewById<AegisButton>(R.id.vault_unlock)
 
         button.isLoading = true
@@ -203,9 +218,6 @@ class VaultActivity : AppCompatActivity() {
             }
 
             button.isLoading = false
-            // 🔐 Поле очищается в любом случае: PIN не должен остаться
-            // на экране, к которому вернутся через переключатель задач.
-            field.setText("")
 
             if (outcome.isFailure) {
                 button.isError = true
