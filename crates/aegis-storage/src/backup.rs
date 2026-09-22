@@ -338,15 +338,18 @@ impl Storage {
         // 🔐 Надгробия применяются последними: сообщение, удалённое
         // позже, чем оно попало в копию, обязано остаться удалённым.
         for tombstone in &data.tombstones {
+            // Описания вложений — раньше сообщения: внешний ключ
+            // `attachments → messages` проверяется, и при обратном
+            // порядке надгробие сообщения с файлом роняло импорт копии.
             transaction
                 .execute(
-                    "DELETE FROM messages WHERE message_id = ?",
+                    "DELETE FROM attachments WHERE message_id = ?",
                     params![tombstone.as_bytes()],
                 )
                 .map_err(storage_error)?;
             transaction
                 .execute(
-                    "DELETE FROM attachments WHERE message_id = ?",
+                    "DELETE FROM messages WHERE message_id = ?",
                     params![tombstone.as_bytes()],
                 )
                 .map_err(storage_error)?;
@@ -1362,6 +1365,46 @@ mod tests {
         storage.import_from_backup(&data).expect("импорт");
 
         assert!(storage.load_messages(&chat, 10).unwrap().is_empty());
+    }
+
+    /// 🔐 Надгробие убирает при импорте и сообщение с вложением.
+    ///
+    /// Прежде сообщение удалялось раньше описаний вложений, и внешний
+    /// ключ `attachments → messages` ронял импорт копии целиком.
+    #[test]
+    fn import_applies_a_tombstone_to_a_message_with_an_attachment() {
+        let (storage, _dir) = open_temp();
+        let chat = ChatId::generate();
+        let stored = message(chat, now());
+
+        storage.save_message(&stored).unwrap();
+        storage
+            .save_attachment(&StoredAttachment {
+                message_id: stored.id,
+                attachment_type: 1,
+                description: Some("фото".to_owned()),
+                size: 1024,
+                created_at: now(),
+                descriptor: Some(vec![0x77; 32]),
+            })
+            .unwrap();
+
+        let data = BackupExport {
+            account_id: None,
+            username: None,
+            messages: Vec::new(),
+            contacts: Vec::new(),
+            chats: Vec::new(),
+            attachments: Vec::new(),
+            settings: Vec::new(),
+            tombstones: vec![stored.id],
+            watermark: later(1_000),
+        };
+
+        storage.import_from_backup(&data).expect("импорт");
+
+        assert!(storage.load_messages(&chat, 10).unwrap().is_empty());
+        assert!(storage.load_attachments(&stored.id).unwrap().is_empty());
     }
 
     /// Повторный импорт не задваивает вложения.
