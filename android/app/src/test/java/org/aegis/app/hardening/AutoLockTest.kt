@@ -80,7 +80,9 @@ class AutoLockTest {
         // каждое событие пришло бы дважды — от Robolectric и от теста.
         application.unregisterActivityLifecycleCallbacks(AutoLock)
 
-        activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        resetAutoLock()
+
+        activity =Robolectric.buildActivity(Activity::class.java).setup().get()
         shadowOf(activity).clearNextStartedActivities()
 
         // Приложение на переднем плане: один видимый экран.
@@ -204,5 +206,21 @@ class AutoLockTest {
 
     private fun advance(millis: Long) {
         ShadowSystemClock.advanceBy(Duration.ofMillis(millis))
+    }
+
+    /**
+     * Сбрасывает состояние [AutoLock] перед тестом.
+     *
+     * [AutoLock] — объект, и Robolectric держит его между тестами одной
+     * песочницы. Экран, запущенный другим тестом и не остановленный,
+     * оставлял счётчик видимых экранов ненулевым, и здесь уход в фон
+     * не распознавался: тесты зависели от порядка и упали, когда перед
+     * ними по алфавиту встал ActionSheetOpensTest. Сброс — отражением,
+     * чтобы не заводить в защитном коде ручку «обнулить счётчик».
+     */
+    private fun resetAutoLock() {
+        for ((name, value) in listOf("visible" to 0, "backgroundedAt" to 0L)) {
+            AutoLock::class.java.getDeclaredField(name).apply { isAccessible = true }.set(null, value)
+        }
     }
 }
