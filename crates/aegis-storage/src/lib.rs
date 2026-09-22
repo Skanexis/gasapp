@@ -1890,7 +1890,14 @@ impl Storage {
         )
         .map_err(storage_error)?;
 
-        Ok(())
+        // 🔐 Прежний текст не остаётся в журнале.
+        //
+        // В режиме WAL страница с исходным текстом лежала кадром в `-wal`
+        // до автоматической контрольной точки: правка, которую человек
+        // сделал, чтобы убрать написанное, оставляла написанное на диске
+        // (аудит, Н8). Удаление и чистка по сроку ставят точку сразу —
+        // правка теперь тоже.
+        checkpoint_truncate(&conn)
     }
 
     /// Ищет сообщения по подстроке.
@@ -3016,6 +3023,44 @@ mod tests {
                 "{candidate} не зашифрован"
             );
         }
+    }
+
+    /// 🔐 После правки журнал WAL пуст: прежнего текста в нём нет.
+    ///
+    /// Кадр со страницей исходного текста лежал в `-wal` до автоматической
+    /// контрольной точки — то есть правка, сделанная, чтобы убрать
+    /// написанное, оставляла его на диске.
+    #[test]
+    fn editing_a_message_leaves_no_wal_frames() {
+        let (storage, _dir, path) = open_temp(&test_key());
+        let chat = ChatId::generate();
+        let stored = StoredMessage {
+            id: MessageId::generate(),
+            chat_id: chat,
+            sender_id: AccountId::generate(),
+            timestamp: now(),
+            content: Ciphertext::new(b"first version".to_vec()),
+            status: MessageStatus::Delivered,
+            message_type: 0,
+            expires_at: None,
+        };
+
+        storage.save_message(&stored).unwrap();
+        let wal = format!("{path}-wal");
+        assert!(
+            std::fs::metadata(&wal).map_or(0, |meta| meta.len()) > 0,
+            "заготовка теста: запись не прошла через журнал"
+        );
+
+        storage
+            .edit_message(&stored.id, "second version", now())
+            .unwrap();
+
+        assert_eq!(
+            std::fs::metadata(&wal).map_or(0, |meta| meta.len()),
+            0,
+            "после правки в журнале остались кадры — с ними и прежний текст"
+        );
     }
 
     /// Журнал безопасности пишется и не теряет события.
