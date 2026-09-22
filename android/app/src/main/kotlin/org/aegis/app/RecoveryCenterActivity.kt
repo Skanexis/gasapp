@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.showSecure
 import uniffi.aegis.validateRecoveryKey
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -189,6 +190,15 @@ class RecoveryCenterActivity : AppCompatActivity() {
                 android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or
                 android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.text_primary))
+
+            // 🔐 Клавиатура не учится на ключе восстановления, а поле
+            // не сохраняет его в состоянии экрана. Прежде поле создавалось
+            // без этих флагов: запрет подсказок (NO_SUGGESTIONS) клавиатура
+            // вправе не считать запретом обучения, и ключ, открывающий всю
+            // копию переписки, мог попасть в её словарь. KeyboardLearningTest
+            // этого не видел — он проверяет только поля из разметки.
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            isSaveEnabled = false
         }
 
         androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
@@ -206,7 +216,13 @@ class RecoveryCenterActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create()
+            .also {
+                // 🔐 Всегда, а не по настройке: здесь вводится ключ,
+                // открывающий всю копию переписки.
+                SecureWindow.always(it)
+                it.show()
+            }
     }
 
     private fun runBackup(key: String) {
@@ -310,7 +326,7 @@ class RecoveryCenterActivity : AppCompatActivity() {
                 render()
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .showSecure(this)
     }
 
     private fun showStatus(text: String) {

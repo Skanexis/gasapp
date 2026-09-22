@@ -3,6 +3,7 @@
 package org.aegis.app.core
 
 import android.app.Activity
+import android.app.Dialog
 import android.view.WindowManager
 
 /**
@@ -110,6 +111,40 @@ object SecureWindow {
         activity.window.decorView.filterTouchesWhenObscured = true
     }
 
+    /**
+     * 🔐 Диалог наследует запрет снимков от своего экрана.
+     *
+     * Диалог — отдельное окно, и `FLAG_SECURE` экрана на него
+     * не переходит. Прежде ни один диалог приложения флага не ставил:
+     * снимок экрана и превью в переключателе задач показывали их
+     * содержимое — имена файлов хранилища, имена собеседников, поля
+     * ввода, — даже когда сам экран был защищён.
+     *
+     * Вызывается до `show()`: флаг, поставленный после, опоздал бы
+     * на первый кадр.
+     */
+    fun inherit(dialog: Dialog, host: Activity) {
+        val flags = host.window.attributes.flags
+
+        if (flags and WindowManager.LayoutParams.FLAG_SECURE != 0) {
+            dialog.window?.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE,
+            )
+        }
+    }
+
+    /**
+     * Ставит `FLAG_SECURE` на диалог независимо от настройки — для
+     * диалогов, где вводится ключ восстановления.
+     */
+    fun always(dialog: Dialog) {
+        dialog.window?.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE,
+        )
+    }
+
     private fun setSecure(activity: Activity) {
         activity.window.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
@@ -117,3 +152,22 @@ object SecureWindow {
         )
     }
 }
+
+/**
+ * Показывает диалог, унаследовавший запрет снимков от экрана.
+ *
+ * 🔐 Флаг ставится **до** показа (см. [SecureWindow.inherit]).
+ */
+fun androidx.appcompat.app.AlertDialog.Builder.showSecure(
+    host: Activity,
+): androidx.appcompat.app.AlertDialog = create().also {
+    SecureWindow.inherit(it, host)
+    it.show()
+}
+
+/** То же для платформенного `AlertDialog`. */
+fun android.app.AlertDialog.Builder.showSecure(host: Activity): android.app.AlertDialog =
+    create().also {
+        SecureWindow.inherit(it, host)
+        it.show()
+    }
