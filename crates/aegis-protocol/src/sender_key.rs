@@ -101,7 +101,11 @@ pub struct SenderKeyState {
 ///
 /// 🔐 Уходит по уже установленным pairwise-сессиям, то есть под
 /// сквозным шифрованием. Сервер видит только шифротекст.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// 🔐 `Debug` написан вручную и ключа цепочки не печатает: по нему
+/// расшифровываются все сообщения отправителя в группе с этого номера.
+/// Прежде `Debug` был выведен и отдавал ключ байт за байтом.
+#[derive(Clone, PartialEq, Eq)]
 pub struct SenderKeyDistribution {
     /// Ключ цепочки на момент раздачи.
     pub chain_key: [u8; CHAIN_KEY_LEN],
@@ -115,6 +119,17 @@ pub struct SenderKeyDistribution {
 
     /// Публичная часть подписывающей пары.
     pub signing_public: PublicKeyBytes,
+}
+
+// Неполнота `Debug` — намеренная: ключ цепочки не печатается.
+#[allow(clippy::missing_fields_in_debug)]
+impl core::fmt::Debug for SenderKeyDistribution {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SenderKeyDistribution")
+            .field("counter", &self.counter)
+            .field("signing_public", &self.signing_public)
+            .finish()
+    }
 }
 
 /// Состояние получателя для одного отправителя.
@@ -342,6 +357,21 @@ mod tests {
 
     fn now() -> i64 {
         1_700_000_000_000
+    }
+
+    /// 🔐 Ключ цепочки не печатается в `Debug`.
+    #[test]
+    fn distribution_debug_does_not_print_the_chain_key() {
+        let mut distribution = SenderKeyState::generate(now(), &mut OsRng).distribution();
+        distribution.chain_key = [0xC5; CHAIN_KEY_LEN];
+
+        let rendered = format!("{distribution:?}");
+
+        assert!(
+            !rendered.contains("197, 197, 197"),
+            "ключ цепочки напечатан: {rendered}"
+        );
+        assert!(rendered.contains("counter"), "заготовка теста: Debug пуст");
     }
 
     #[test]

@@ -77,7 +77,10 @@ pub const MAX_STRING_LEN: usize = 1024;
 /// В базе текст открытый (её шифрует SQLCipher целиком), и в копию
 /// он попадает открытым; защищает его шифрование всей копии ключом
 /// восстановления (Argon2id + AEAD).
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// 🔐 `Debug` написан вручную и текста не печатает: прежде он был
+/// выведен, и любой `{:?}` над копией выдавал переписку целиком.
+#[derive(Clone, PartialEq, Eq)]
 pub struct MessageRecord {
     /// Идентификатор сообщения.
     pub id: [u8; ID_LEN],
@@ -87,7 +90,8 @@ pub struct MessageRecord {
     pub sender_id: [u8; ID_LEN],
     /// Время отправки в миллисекундах.
     pub timestamp_millis: i64,
-    /// Зашифрованное содержимое.
+    /// Содержимое — **открытый текст** (см. выше: шифруется копия
+    /// целиком, а не это поле). Прежде здесь было «зашифрованное».
     pub content: Vec<u8>,
     /// Статус доставки.
     pub status: u8,
@@ -130,7 +134,9 @@ pub struct ChatRecord {
 }
 
 /// Метаданные вложения в копии.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// 🔐 `Debug` написан вручную и описания не печатает: в нём ключ файла.
+#[derive(Clone, PartialEq, Eq)]
 pub struct AttachmentRecord {
     /// Сообщение, к которому относится вложение.
     pub message_id: [u8; ID_LEN],
@@ -144,6 +150,36 @@ pub struct AttachmentRecord {
     pub created_at_millis: i64,
     /// Сериализованное описание — адрес блоба и ключ расшифровки.
     pub descriptor: Option<Vec<u8>>,
+}
+
+impl core::fmt::Debug for MessageRecord {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MessageRecord")
+            .field("id", &self.id)
+            .field("chat_id", &self.chat_id)
+            .field("sender_id", &self.sender_id)
+            .field("timestamp_millis", &self.timestamp_millis)
+            // Только длина: сам текст — переписка.
+            .field("content", &format_args!("<{} байт>", self.content.len()))
+            .field("status", &self.status)
+            .field("message_type", &self.message_type)
+            .field("expires_at_millis", &self.expires_at_millis)
+            .finish()
+    }
+}
+
+impl core::fmt::Debug for AttachmentRecord {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AttachmentRecord")
+            .field("message_id", &self.message_id)
+            .field("attachment_type", &self.attachment_type)
+            .field("description", &self.description)
+            .field("size", &self.size)
+            .field("created_at_millis", &self.created_at_millis)
+            // Только есть ли описание: его байты — ключ файла.
+            .field("descriptor", &self.descriptor.as_ref().map(|_| "<скрыто>"))
+            .finish()
+    }
 }
 
 /// Настройка в копии.
@@ -765,6 +801,33 @@ impl Cursor<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 🔐 Ни текст сообщения, ни описание вложения не печатаются в `Debug`.
+    #[test]
+    fn records_debug_does_not_print_text_or_file_keys() {
+        let mut record = message(1);
+        record.content = b"PAROL-OT-SEIFA".to_vec();
+        let attachment = AttachmentRecord {
+            message_id: [1; ID_LEN],
+            attachment_type: 1,
+            description: None,
+            size: 10,
+            created_at_millis: 0,
+            descriptor: Some(vec![0xB9; 48]),
+        };
+
+        let rendered = format!("{record:?} {attachment:?}");
+
+        assert!(!rendered.contains("PAROL"), "текст напечатан: {rendered}");
+        assert!(
+            !rendered.contains(&format!("{:?}", b"PAROL-OT-SEIFA".to_vec())),
+            "текст напечатан байтами: {rendered}"
+        );
+        assert!(
+            !rendered.contains("185, 185, 185"),
+            "описание вложения напечатано: {rendered}"
+        );
+    }
 
     fn message(id: u8) -> MessageRecord {
         MessageRecord {

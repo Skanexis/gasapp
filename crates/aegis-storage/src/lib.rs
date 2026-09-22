@@ -302,7 +302,12 @@ pub struct StoredMessage {
 ///
 /// Сам файл лежит в файловой системе в зашифрованном виде; здесь только
 /// то, что нужно для отображения списка и очистки.
-#[derive(Clone, Debug)]
+///
+/// 🔐 `Debug` написан вручную и описания не печатает: в нём ключ
+/// расшифровки файла. Прежде `Debug` был выведен и отдавал описание
+/// байт за байтом — то, от чего `AttachmentDescriptor` уже был закрыт
+/// ручным `Debug`, здесь лежало в сериализованном виде.
+#[derive(Clone)]
 pub struct StoredAttachment {
     /// Сообщение, к которому относится вложение.
     pub message_id: MessageId,
@@ -324,6 +329,20 @@ pub struct StoredAttachment {
     /// `None` у записей, созданных до версии схемы 4: тогда описание
     /// не сохранялось, и скачать те вложения уже нельзя.
     pub descriptor: Option<Vec<u8>>,
+}
+
+impl core::fmt::Debug for StoredAttachment {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StoredAttachment")
+            .field("message_id", &self.message_id)
+            .field("attachment_type", &self.attachment_type)
+            .field("description", &self.description)
+            .field("size", &self.size)
+            .field("created_at", &self.created_at)
+            // Только есть ли описание: его байты — ключ файла.
+            .field("descriptor", &self.descriptor.as_ref().map(|_| "<скрыто>"))
+            .finish()
+    }
 }
 
 /// Структура для хранения состояния хранилища.

@@ -45,3 +45,28 @@ fn own_keys_debug_does_not_print_secrets() {
     );
     assert!(rendered.contains("OwnKeys"), "заготовка теста: Debug пуст");
 }
+
+/// 🔐 Описание вложения — с ключом файла — не печатается в `Debug`.
+#[test]
+fn stored_attachment_debug_does_not_print_the_descriptor() {
+    let attachment = aegis_storage::StoredAttachment {
+        message_id: aegis_types::MessageId::from_uuid(uuid::Uuid::nil()),
+        attachment_type: 1,
+        description: Some("фото".to_owned()),
+        size: 1_024,
+        created_at: Timestamp::from_millis(1),
+        // Узнаваемый байт: `Debug` вектора печатает его как «171, 171, …».
+        descriptor: Some(vec![0xAB; 48]),
+    };
+
+    let printed = format!("{attachment:?}");
+
+    assert!(
+        !printed.contains("171, 171"),
+        "описание с ключом файла попало в Debug: {printed}"
+    );
+    assert!(
+        printed.contains("фото"),
+        "Debug потерял безопасные поля: {printed}"
+    );
+}
