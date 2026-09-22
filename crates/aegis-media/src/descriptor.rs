@@ -165,12 +165,26 @@ impl core::fmt::Debug for AttachmentDescriptor {
 }
 
 /// Ссылка на превью.
-#[derive(Debug, Clone)]
+///
+/// 🔐 `Debug` написан вручную и ключа превью не печатает. Прежде он был
+/// выведен, и ручной `Debug` описания, скрывший ключ файла, печатал
+/// ключ превью через поле `preview`.
+#[derive(Clone)]
 pub struct PreviewRef {
     /// Адрес шифроблоба превью.
     pub location: String,
     /// Ключ превью.
     pub key: [u8; KEY_LEN],
+}
+
+// Неполнота `Debug` — намеренная: ключ превью не печатается.
+#[allow(clippy::missing_fields_in_debug)]
+impl core::fmt::Debug for PreviewRef {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PreviewRef")
+            .field("location", &self.location)
+            .finish()
+    }
 }
 
 impl AttachmentDescriptor {
@@ -533,12 +547,22 @@ mod tests {
     fn debug_does_not_print_the_file_key() {
         let mut descriptor = document();
         descriptor.key = [0xE7; KEY_LEN];
+        // С превью: его ключ печатался через поле `preview`, и прежний
+        // тест этого не видел — в его описании превью не было.
+        descriptor.preview = Some(PreviewRef {
+            location: "blob-preview".to_owned(),
+            key: [0xD3; KEY_LEN],
+        });
 
         let rendered = format!("{descriptor:?}");
 
         assert!(
             !rendered.contains("231, 231, 231"),
             "ключ файла напечатан: {rendered}"
+        );
+        assert!(
+            !rendered.contains("211, 211, 211"),
+            "ключ превью напечатан: {rendered}"
         );
         assert!(
             rendered.contains("AttachmentDescriptor"),
