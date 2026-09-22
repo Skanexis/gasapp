@@ -48,6 +48,7 @@
             <TextView
                 style="@style/AegisText.Body.Secondary"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:text="@string/network_intro" />
 
             <TextView
@@ -132,6 +133,7 @@
                 android:id="@+id/network_mode_hint"
                 style="@style/AegisText.Caption.Muted"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_s"
                 tools:text="@string/network_hint_orbot" />
 
@@ -139,6 +141,7 @@
                 android:id="@+id/network_status"
                 style="@style/AegisText.Caption"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
                 android:visibility="gone"
                 tools:text="@string/network_saved"
@@ -159,6 +162,7 @@
                 <TextView
                     style="@style/AegisText.Caption"
                     android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="@string/network_limits" />
             </LinearLayout>
 
