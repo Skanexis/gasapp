@@ -382,7 +382,7 @@
 
     <!-- Restore -->
     <string name="restore_title">Restore from a backup</string>
-    <string name="restore_intro">Pick the backup files in the order they were made: the full snapshot first, then the increments. If even one file is missing, nothing is restored — a partial restore would look like a complete one.</string>
+    <string name="restore_intro">Pick the backup files in the order they were made: the full snapshot first, then the increments. If a file in the middle is missing, nothing is restored. The newest files the app cannot check: without them the restore succeeds and brings back an older state — including messages you deleted later.</string>
     <string name="restore_section_files">Backup files</string>
     <string name="restore_section_key">Recovery key</string>
     <string name="restore_pick">Choose files</string>
@@ -395,7 +395,7 @@
     <string name="restore_confirm">Restore</string>
     <string name="restore_done">Records restored: %1$d</string>
     <string name="restore_failed">Restore failed: wrong key, or the chain of files is incomplete</string>
-    <string name="restore_note">Messages, contacts and settings will be restored. This device will get a new security key — that is normal, and we explain why.</string>
+    <string name="restore_note">Messages, contacts and settings will be restored. Disappearing messages are not in backups. This device will get a new security key — that is normal, and we explain why.</string>
 
     <!-- Identity changed after a restore -->
     <string name="identity_changed_title">Restore complete</string>

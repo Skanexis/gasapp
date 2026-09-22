@@ -852,7 +852,13 @@ fn read_messages(connection: &Connection, threshold: i64) -> Result<Vec<StoredMe
         SELECT message_id, chat_id, sender_id, timestamp, content,
                status, message_type, expires_at
         FROM messages
+        -- 🔐 Исчезающие сообщения в копию не попадают. Выгруженная копия
+        -- живёт у того, кто её хранит, и стереть из неё по таймеру нечем:
+        -- снимок, сделанный до истечения, держал бы текст всегда. Прежде
+        -- они попадали в копию вместе со сроком, и срок действовал только
+        -- на устройстве.
         WHERE COALESCE(updated_at, created_at) > ?
+          AND expires_at IS NULL
         ORDER BY timestamp ASC, rowid ASC
         ",
         )
@@ -985,7 +991,12 @@ fn read_attachments(connection: &Connection, threshold: i64) -> Result<Vec<Store
             "
         SELECT message_id, attachment_type, description, size, created_at, descriptor
         FROM attachments
+        -- Описания вложений исчезающих сообщений — тоже: в них ключи
+        -- файлов, и по ним файл скачивается с сервера, пока он там лежит.
         WHERE created_at > ?
+          AND message_id NOT IN (
+              SELECT message_id FROM messages WHERE expires_at IS NOT NULL
+          )
         ORDER BY created_at ASC
         ",
         )
@@ -1365,6 +1376,52 @@ mod tests {
         storage.import_from_backup(&data).expect("импорт");
 
         assert!(storage.load_messages(&chat, 10).unwrap().is_empty());
+    }
+
+    /// 🔐 Исчезающее сообщение и его вложение в копию не попадают.
+    ///
+    /// Срок действовал только на устройстве: в копии сообщение лежало
+    /// вместе со сроком, и снимок, сделанный до истечения, держал текст
+    /// всегда — у того, кто хранит файлы копии.
+    #[test]
+    fn disappearing_messages_are_not_exported() {
+        let (storage, _dir) = open_temp();
+        let chat = ChatId::generate();
+
+        let lasting = message(chat, now());
+        let vanishing = StoredMessage {
+            id: MessageId::generate(),
+            expires_at: Some(later(60_000)),
+            ..message(chat, now())
+        };
+
+        storage.save_message(&lasting).unwrap();
+        storage.save_message(&vanishing).unwrap();
+        storage
+            .save_attachment(&StoredAttachment {
+                message_id: vanishing.id,
+                attachment_type: 1,
+                description: Some("фото".to_owned()),
+                size: 1024,
+                created_at: now(),
+                descriptor: Some(vec![0x77; 32]),
+            })
+            .unwrap();
+
+        let export = storage
+            .export_for_backup(None, later(1_000))
+            .expect("выгрузка");
+
+        let exported: Vec<MessageId> = export.messages.iter().map(|row| row.id).collect();
+        assert_eq!(
+            exported,
+            vec![lasting.id],
+            "исчезающее сообщение попало в копию"
+        );
+        assert!(
+            export.attachments.is_empty(),
+            "описание вложения исчезающего сообщения попало в копию"
+        );
     }
 
     /// 🔐 Надгробие убирает при импорте и сообщение с вложением.
