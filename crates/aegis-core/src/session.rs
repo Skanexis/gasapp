@@ -52,6 +52,21 @@ pub struct OutgoingMessage {
     pub degraded: bool,
 }
 
+/// Ключи принятого конверта инициации — по ним узнаётся его повтор.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InitialKeys {
+    /// Одноразовый ключ отправителя из PQXDH (base key). Свежий для
+    /// каждой новой сессии: второй конверт инициации с тем же ключом —
+    /// только повтор первого.
+    pub base_key: PublicKeyBytes,
+    /// Публичная часть нашего подписанного предключа, принявшего конверт.
+    ///
+    /// Пока этот предключ жив (текущий или выведенный), повтор
+    /// расшифровывается; когда его нет — не расшифровывается и сам.
+    /// Поэтому запись о принятом конверте нужна ровно столько же.
+    pub signed_pre_key: PublicKeyBytes,
+}
+
 /// Результат разбора входящего сообщения.
 #[derive(Debug)]
 pub struct IncomingMessage {
@@ -68,6 +83,8 @@ pub struct IncomingMessage {
     pub consumed_one_time: Option<PreKeyId>,
     /// Израсходованный одноразовый пост-квантовый предключ.
     pub consumed_one_time_kem: Option<PreKeyId>,
+    /// Ключи конверта инициации; `None` для сообщения в сессии.
+    pub initial: Option<InitialKeys>,
 }
 
 /// Начинает новую сессию и шифрует первое сообщение.
@@ -200,6 +217,7 @@ pub fn receive(
                 sender_identity: None,
                 consumed_one_time: None,
                 consumed_one_time_kem: None,
+                initial: None,
             })
         }
     }
@@ -269,6 +287,10 @@ fn accept_initial(
                     sender_identity: Some(*sender_identity),
                     consumed_one_time: one_time_pre_key_id,
                     consumed_one_time_kem: kem_one_time.then_some(kem_pre_key_id),
+                    initial: Some(InitialKeys {
+                        base_key: *ephemeral_key,
+                        signed_pre_key: signed_pre_key.public_key().as_bytes(),
+                    }),
                 });
             }
             Err(error) => {

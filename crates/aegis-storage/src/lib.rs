@@ -1166,6 +1166,28 @@ impl Storage {
             )
             .map_err(storage_error)?;
 
+        // 🔐 Принятые конверты инициации — по их base key.
+        //
+        // Защита от повтора держалась только на одноразовых предключах:
+        // израсходованный не находится, и повтор отвергается. Но сервер
+        // волен их не выдать (исчерпанный пул выглядит так же), и тогда
+        // копия старого конверта инициации принималась как новая сессия
+        // и затирала действующую — переписка молча вставала. Запись
+        // живёт, пока жив подписанный предключ, принявший конверт:
+        // без него повтор не расшифруется и так.
+        connection
+            .execute(
+                "
+            CREATE TABLE IF NOT EXISTS accepted_initial (
+                base_key       BLOB PRIMARY KEY,
+                signed_pre_key BLOB NOT NULL,
+                accepted_at    INTEGER NOT NULL
+            )
+            ",
+                [],
+            )
+            .map_err(storage_error)?;
+
         Ok(())
     }
 
@@ -1521,6 +1543,96 @@ impl Storage {
             .map_err(storage_error)?;
 
         Ok(())
+    }
+
+    /// Принимался ли уже конверт инициации с этим base key.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn initial_accepted(&self, base_key: &[u8]) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = connection
+            .prepare("SELECT 1 FROM accepted_initial WHERE base_key = ?")
+            .map_err(storage_error)?;
+
+        statement.exists(params![base_key]).map_err(storage_error)
+    }
+
+    /// Запоминает принятый конверт инициации.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn remember_initial(
+        &self,
+        base_key: &[u8],
+        signed_pre_key: &[u8],
+        now: Timestamp,
+    ) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "
+            INSERT OR IGNORE INTO accepted_initial (base_key, signed_pre_key, accepted_at)
+            VALUES (?, ?, ?)
+            ",
+                params![base_key, signed_pre_key, now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Забывает принятые конверты, чьих подписанных предключей больше нет.
+    ///
+    /// `live` — публичные части подписанных предключей, которые ещё
+    /// принимают конверты инициации (текущий и выведенные). Конверт,
+    /// принятый ключом не из списка, повторить нельзя: расшифровать его
+    /// уже нечем. Возвращает число забытых записей.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — удаление не удалось.
+    pub fn forget_initials_except(&self, live: &[Vec<u8>]) -> Result<usize> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+        let transaction = connection.unchecked_transaction().map_err(storage_error)?;
+
+        let stale: Vec<Vec<u8>> = {
+            let mut statement = transaction
+                .prepare("SELECT base_key, signed_pre_key FROM accepted_initial")
+                .map_err(storage_error)?;
+
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+                })
+                .map_err(storage_error)?;
+
+            let mut stale = Vec::new();
+            for row in rows {
+                let (base_key, signed) = row.map_err(storage_error)?;
+                if !live.contains(&signed) {
+                    stale.push(base_key);
+                }
+            }
+            stale
+        };
+
+        for base_key in &stale {
+            transaction
+                .execute(
+                    "DELETE FROM accepted_initial WHERE base_key = ?",
+                    params![base_key],
+                )
+                .map_err(storage_error)?;
+        }
+
+        transaction.commit().map_err(storage_error)?;
+
+        Ok(stale.len())
     }
 
     /// Сохраняет **новое** сообщение; существующее не заменяется.

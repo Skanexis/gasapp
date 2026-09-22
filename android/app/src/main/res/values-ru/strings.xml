@@ -550,4 +550,5 @@
     <string name="security_event_certificate_mismatch">Сертификат отправителя не сошёлся с его ключом</string>
     <string name="security_event_backup_restored">Восстановление из резервной копии</string>
     <string name="security_event_degraded_session">Переписка начата без одноразового ключа собеседника</string>
+    <string name="security_event_initial_replayed">Отвергнута повторная копия начала старой переписки</string>
 </resources>

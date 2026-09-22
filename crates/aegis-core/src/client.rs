@@ -733,6 +733,34 @@ impl<T: Transport> Client<T> {
                 continue;
             };
 
+            // 🔐 Повтор принятого конверта инициации не трогает сессию.
+            //
+            // Конверт инициации самодостаточен: расшифровывается им
+            // одним, пока жив наш подписанный предключ. Без одноразового
+            // предключа — сервер волен его не выдать — ничто не мешало
+            // оператору положить в очередь копию давно принятого конверта,
+            // и она устанавливала сессию заново поверх действующей:
+            // переписка молча вставала. Повтор подтверждается (иначе
+            // приходил бы снова и снова) и пишется в журнал; сессия,
+            // контакт и переписка не меняются.
+            if let Some(initial) = incoming.initial {
+                if self.storage.initial_accepted(initial.base_key.as_bytes())? {
+                    self.storage
+                        .log_security_event("initial_envelope_replayed", None, now)?;
+                    self.api.acknowledge(
+                        device_id,
+                        &envelope.envelope_id,
+                        auth_headers(
+                            &identity,
+                            "DELETE",
+                            &format!("/v1/messages/{device_id}/{}", envelope.envelope_id),
+                            now,
+                        )?,
+                    )?;
+                    continue;
+                }
+            }
+
             // 🔐 Сертификат обязан принадлежать собеседнику этой сессии,
             // иначе чужой сертификат, снятый с полученного конверта,
             // позволял бы выдать своё сообщение за чужое.
@@ -777,6 +805,15 @@ impl<T: Transport> Client<T> {
 
             self.storage
                 .save_session(&chat_id, &incoming.session, now)?;
+
+            // Запоминается вместе с сессией, которую конверт установил.
+            if let Some(initial) = incoming.initial {
+                self.storage.remember_initial(
+                    initial.base_key.as_bytes(),
+                    initial.signed_pre_key.as_bytes(),
+                    now,
+                )?;
+            }
 
             // Разбор содержимого. Сообщение от собеседника с новой
             // версией клиента отвергается целиком, а не сохраняется
@@ -2144,7 +2181,25 @@ impl<T: Transport> Client<T> {
             keys.device_id.as_deref(),
             keys.username.as_deref(),
             now,
-        )
+        )?;
+
+        // Записи о принятых конвертах живут, пока жив принявший их
+        // подписанный предключ (см. `Storage::forget_initials_except`).
+        // Здесь — единственное место, где набор предключей меняется
+        // на диске, поэтому и чистка здесь.
+        let live: Vec<Vec<u8>> = core::iter::once(&secrets.signed_pre_key)
+            .chain(
+                secrets
+                    .retired_signed
+                    .iter()
+                    .map(|retired| &retired.signed_pre_key),
+            )
+            .map(|key| key.public_key().as_bytes().as_bytes().to_vec())
+            .collect();
+
+        self.storage.forget_initials_except(&live)?;
+
+        Ok(())
     }
 
     /// Написано ли сообщение собеседником этого чата.
