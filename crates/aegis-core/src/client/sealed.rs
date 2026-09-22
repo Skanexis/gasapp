@@ -306,7 +306,25 @@ impl<T: Transport> Client<T> {
             let response = self.api.fetch_bundle(peer_device)?;
             let bundle = parse_bundle(&response)?;
 
-            session::start_session(identity, &bundle, &share, rng)?
+            let started = session::start_session(identity, &bundle, &share, rng)?;
+
+            // 🔐 Начало без одноразового ключа собеседника — в журнал.
+            //
+            // Такая сессия теряет вклад одноразового ключа в прямую
+            // секретность первого сообщения. Бывает от исчерпания пула,
+            // но так же выглядит и сервер, намеренно не выдающий
+            // одноразовые ключи. Прежде флаг `degraded` вычислялся
+            // и выбрасывался: заметить систематическое исчерпание было
+            // нечем, хотя комментарий обещал показ в центре безопасности.
+            if started.degraded {
+                self.storage.log_security_event(
+                    "session_started_without_one_time_key",
+                    None,
+                    now,
+                )?;
+            }
+
+            started
         };
 
         // Сессия сохраняется до отправки — тот же порядок, что у любого

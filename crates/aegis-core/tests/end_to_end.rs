@@ -208,6 +208,15 @@ impl FakeServer {
         }
     }
 
+    /// Забирает **все** одноразовые предключи устройства — как сервер,
+    /// который их не выдаёт, или как вычерпавший пул злоумышленник.
+    fn drain_one_time(&self, device_id: &str) {
+        if let Some(bundle) = self.state.borrow_mut().bundles.get_mut(device_id) {
+            bundle.one_time.clear();
+            bundle.one_time_kem.clear();
+        }
+    }
+
     /// Сколько конвертов лежит в очереди устройства.
     fn queue_len(&self, device_id: &str) -> usize {
         self.state
@@ -1380,6 +1389,65 @@ fn a_claimed_username_that_is_not_the_senders_is_ignored() {
             .iter()
             .all(|contact| contact.username.as_deref() != Some("alice")),
         "Боб принял чужое имя «alice» от Мэллори"
+    );
+}
+
+/// 🔐 Сессия без одноразового ключа собеседника записывается в журнал.
+///
+/// Флаг `degraded` вычислялся и выбрасывался. Систематическое начало
+/// без одноразовых ключей — признак того, что пул собеседника вычерпан
+/// или сервер их не выдаёт, и заметить это было нечем. Тест перенесён
+/// из аудита.
+#[test]
+fn a_session_started_without_one_time_keys_is_recorded() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    server.drain_one_time(&bob_account.device_id.to_string());
+
+    alice
+        .send_message("bob", "без одноразовых ключей", now(), &mut OsRng)
+        .expect("отправка");
+
+    let events = alice.security_events(50).expect("журнал");
+
+    assert!(
+        events
+            .iter()
+            .any(|event| event.0 == "session_started_without_one_time_key"),
+        "сессия без одноразовых ключей не записана: {events:?}"
+    );
+}
+
+/// С одноразовым ключом ничего тревожного не пишется.
+#[test]
+fn a_normal_session_start_is_not_recorded_as_degraded() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    alice
+        .send_message("bob", "обычное начало", now(), &mut OsRng)
+        .expect("отправка");
+
+    assert!(
+        alice
+            .security_events(50)
+            .expect("журнал")
+            .iter()
+            .all(|event| event.0 != "session_started_without_one_time_key"),
+        "обычное начало записано как ослабленное"
     );
 }
 

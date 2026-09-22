@@ -38,6 +38,7 @@ object SecurityEvents {
         "sealed_sender_access_rejected" to R.string.security_event_access_rejected,
         "sealed_sender_certificate_mismatch" to R.string.security_event_certificate_mismatch,
         "backup_restored" to R.string.security_event_backup_restored,
+        "session_started_without_one_time_key" to R.string.security_event_degraded_session,
     )
 
     /** Подпись события либо `null`, если тип неизвестен этому экрану. */
