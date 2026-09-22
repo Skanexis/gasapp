@@ -504,4 +504,5 @@
     <string name="security_event_access_rejected">A recipient rejected our access key</string>
     <string name="security_event_certificate_mismatch">A sender certificate did not match its key</string>
     <string name="security_event_backup_restored">Restored from a backup</string>
+    <string name="security_event_degraded_session">A conversation started without the peer\'s one-time key</string>
 </resources>
