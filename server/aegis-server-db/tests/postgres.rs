@@ -406,6 +406,95 @@ async fn stored_attachment_times_are_hour_aligned() {
     }
 }
 
+/// 🔐 В базе нет точного времени публикации подписанного предключа.
+///
+/// Момент публикации — момент, когда устройство было в сети; ряд таких
+/// моментов выдавал распорядок владельца. 0005 это место пропустила.
+#[tokio::test]
+async fn stored_prekey_time_is_hour_aligned() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("nina"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    // Дважды: вставка берёт умолчание столбца, обновление — выражение
+    // в запросе. Точным могло остаться любое из двух.
+    for _ in 0..2 {
+        repo::publish_prekeys(
+            &pool,
+            device,
+            (1, &[0x11; 32], &[0xAA; 64]),
+            (2, &[0x22; 1568], &[0xBB; 64]),
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unaligned(&pool, "signed_prekeys", "updated_at", "device_id", device).await,
+            0,
+            "signed_prekeys.updated_at хранит время точнее часа"
+        );
+    }
+}
+
+/// 🔐 Жалоба на аккаунт хранится с часовой точностью и уходит вместе
+/// с ним.
+///
+/// Жалобы переживали удаление: `reported_account` ни на что
+/// не ссылался, и после удаления в базе оставалось «на этот аккаунт
+/// жаловались вот эти устройства».
+#[tokio::test]
+async fn reports_about_an_account_are_hour_aligned_and_leave_with_it() {
+    let pool = require_pool!();
+    let (reported_account, reported_device) =
+        repo::register_account(&pool, &unique_name("oscar"), &[3u8; 32], &[4u8; 32])
+            .await
+            .unwrap();
+    let (_complainant, complainant_device) =
+        repo::register_account(&pool, &unique_name("pia"), &[5u8; 32], &[6u8; 32])
+            .await
+            .unwrap();
+
+    assert!(
+        repo::record_sealed_sender_report(
+            &pool,
+            reported_account,
+            reported_device,
+            complainant_device
+        )
+        .await
+        .unwrap(),
+        "заготовка теста: жалоба не записана"
+    );
+    assert_eq!(
+        unaligned(
+            &pool,
+            "sealed_sender_reports",
+            "created_at",
+            "reported_account",
+            reported_account
+        )
+        .await,
+        0,
+        "sealed_sender_reports.created_at хранит время точнее часа"
+    );
+
+    repo::delete_account(&pool, reported_device).await.unwrap();
+
+    let left: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sealed_sender_reports WHERE reported_account = $1",
+    )
+    .bind(reported_account)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(left, 0, "жалобы на удалённый аккаунт остались в базе");
+}
+
 /// Конверты одного часа доставляются в порядке отправки.
 ///
 /// Время теперь часовое, и порядок держит позиция в очереди получателя.

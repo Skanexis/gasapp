@@ -275,7 +275,9 @@ pub async fn publish_prekeys(
             kem_key_id    = excluded.kem_key_id,
             kem_public    = excluded.kem_public,
             kem_signature = excluded.kem_signature,
-            updated_at    = now()
+            -- До часа: точный момент публикации — распорядок владельца
+            -- (миграция 0006).
+            updated_at    = date_trunc('hour', now())
         ",
     )
     .bind(device_id)
