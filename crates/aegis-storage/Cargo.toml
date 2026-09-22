@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 aegis-types.workspace = true
+zeroize.workspace = true
 # Хранилище сохраняет и загружает `SessionState` как непрозрачный блоб.
 # Разбирать состояние ratchet оно не умеет и не должно (раздел 11 плана).
 aegis-protocol.workspace = true
