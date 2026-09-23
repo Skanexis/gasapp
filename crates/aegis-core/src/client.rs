@@ -123,6 +123,13 @@ pub struct Contact {
     /// а не переписывает старую. Верификация старой записи не
     /// переносится на новую никогда.
     pub key_changed: bool,
+    /// 🔐 Ключ этого контакта заменён другим под тем же именем —
+    /// сверкой нового вживую или явным его принятием
+    /// ([`Client::accept_contact_identity`]).
+    ///
+    /// Переписка остаётся для чтения; отправлять в неё нельзя: имя
+    /// ведёт теперь к другому ключу.
+    pub replaced: bool,
 }
 
 /// Найденное сообщение вместе с чатом, которому оно принадлежит.
@@ -345,6 +352,10 @@ impl<T: Transport> Client<T> {
 
         let peer = self.api.discover(peer_username)?;
         let peer_identity = parse_public_key(&peer.identity_key)?;
+
+        // 🔐 До шифрования: ключ, названный сервером, обязан быть тем,
+        // что известен для этого имени (см. `check_advertised_identity`).
+        self.check_advertised_identity(peer_username, &peer_identity, now)?;
 
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
 
@@ -628,6 +639,11 @@ impl<T: Transport> Client<T> {
 
         let peer = self.api.discover(peer_username)?;
         let peer_identity = parse_public_key(&peer.identity_key)?;
+
+        // 🔐 Та же проверка, что в `send_message`: реакция, правка
+        // и вложение уходят тем же ключом, что и текст.
+        self.check_advertised_identity(peer_username, &peer_identity, now)?;
+
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
 
         let plaintext = Plaintext::new(content.to_bytes()?);
@@ -1127,6 +1143,7 @@ impl<T: Transport> Client<T> {
             chat_id: Some(chat_id),
             verified: false,
             key_changed,
+            replaced: false,
         })
     }
 
@@ -1544,7 +1561,137 @@ impl<T: Transport> Client<T> {
             now,
         )?;
 
+        // 🔐 Сверка вживую и есть выбор между ключами одного имени:
+        // сверенный ключ остаётся за именем, остальные заменяются.
+        if verified {
+            self.keep_only_for_name(contact, now)?;
+        }
+
         Ok(())
+    }
+
+    /// 🔐 Принимает ключ контакта без сверки: имя остаётся за ним.
+    ///
+    /// Путь для законной смены ключа — переустановки или
+    /// восстановления у собеседника, — когда встретиться и сверить
+    /// safety number нельзя. Прочие записи того же имени заменяются,
+    /// и отправка по имени снова разрешена — этому ключу.
+    ///
+    /// ⚠️ Это решение человека, а не приложения: ядро не может
+    /// отличить переустановку от подмены. Интерфейс обязан сказать
+    /// об этом до нажатия. Решение пишется в журнал безопасности.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Malformed`] — такого контакта нет или у него нет имени;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn accept_contact_identity(&self, contact: &AccountId, now: Timestamp) -> Result<()> {
+        self.keep_only_for_name(contact, now)?;
+
+        self.storage
+            .log_security_event("contact_identity_accepted", None, now)
+    }
+
+    /// Оставляет за именем контакта только его запись.
+    fn keep_only_for_name(&self, contact: &AccountId, now: Timestamp) -> Result<()> {
+        let row = self
+            .storage
+            .list_contacts(MAX_CONTACTS_TO_LIST)?
+            .into_iter()
+            .find(|row| &row.account_id == contact)
+            .ok_or(AegisError::Malformed)?;
+
+        let Some(name) = row.username else {
+            // Без имени отправка по имени невозможна, и делить нечего.
+            return Ok(());
+        };
+
+        self.storage.restore_contact(contact)?;
+        self.storage.replace_other_contacts(&name, contact, now)?;
+
+        Ok(())
+    }
+
+    /// 🔐 Ключ, который сервер назвал для имени, сверяется с известным.
+    ///
+    /// # Что здесь чинится
+    ///
+    /// Отправка адресуется по имени: ядро спрашивает сервер, какой
+    /// ключ у `alice`, и шифрует ему. Прежде ответ сервера **не
+    /// сверялся ни с чем**. Сервер — злонамеренный, взломанный или
+    /// принуждённый — мог назвать свой ключ, и следующее же сообщение
+    /// уходило ему. Сверка safety number этому не мешала: её отметка
+    /// лежала в базе, а путь отправки её не читал. То есть сквозное
+    /// шифрование держалось на честности сервера — ровно на том,
+    /// от чего оно должно защищать (раздел 3, противник A1).
+    ///
+    /// # Правило
+    ///
+    /// Разрешено, только если:
+    ///
+    ///  * имя не известно ни под каким ключом — первый контакт; иного
+    ///    источника ключа, кроме сервера, тут нет (доверие при первом
+    ///    использовании, как у Signal); или
+    ///  * за именем ровно одна действующая запись, и её ключ совпадает
+    ///    с названным.
+    ///
+    /// Во всех остальных случаях — [`AegisError::IdentityChanged`], до
+    /// шифрования. Если названный ключ новый, он записывается контактом
+    /// под тем же именем: человек увидит два контакта с одним именем
+    /// (`key_changed`) и выберет — сверкой вживую
+    /// ([`Client::set_contact_verified`]) или явным принятием
+    /// ([`Client::accept_contact_identity`]).
+    ///
+    /// Два действующих ключа под одним именем запрещают отправку
+    /// **обоим**: иначе сообщение из одного чата молча уходило бы
+    /// в другой — туда, куда указывает сервер, а не туда, где человек
+    /// печатал.
+    fn check_advertised_identity(
+        &self,
+        name: &str,
+        advertised: &PublicKeyBytes,
+        now: Timestamp,
+    ) -> Result<()> {
+        let known = self.storage.active_contacts_by_username(name)?;
+
+        // Заменённая запись под именем всегда соседствует с действующей
+        // (той, что её заменила), поэтому «нет действующих» означает,
+        // что имя не известно вовсе.
+        if known.is_empty() {
+            return Ok(());
+        }
+
+        if let [(_, identity, _)] = known.as_slice() {
+            if identity.as_slice() == advertised.as_bytes() {
+                return Ok(());
+            }
+        }
+
+        let advertised_known = known
+            .iter()
+            .any(|(_, identity, _)| identity.as_slice() == advertised.as_bytes());
+
+        if !advertised_known {
+            // Новый (или вернувшийся) ключ записывается, чтобы смена
+            // была видна, а не только отказ.
+            let (own, _) = self.load_identity()?;
+            let account = peer_account(advertised);
+            let chat_id = derive_chat_id(own.public().public(), advertised);
+
+            self.storage.save_contact(
+                &account,
+                advertised.as_bytes(),
+                Some(name),
+                Some(&chat_id),
+                now,
+            )?;
+            self.storage.restore_contact(&account)?;
+
+            self.storage
+                .log_security_event("contact_identity_changed", None, now)?;
+        }
+
+        Err(AegisError::IdentityChanged)
     }
 
     /// Принимает имя, которым назвался собеседник, — если оно его.
@@ -1606,7 +1753,9 @@ impl<T: Transport> Client<T> {
         // number, а не догадка приложения.
         let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
 
-        for row in &rows {
+        // Заменённые записи имени не делят: выбор между ключами
+        // уже сделан человеком.
+        for row in rows.iter().filter(|row| !row.replaced) {
             if let Some(name) = row.username.as_deref() {
                 let count = seen.entry(name).or_insert(0);
                 *count = count.saturating_add(1);
@@ -1621,10 +1770,11 @@ impl<T: Transport> Client<T> {
 
         rows.into_iter()
             .map(|row| {
-                let key_changed = row
-                    .username
-                    .as_deref()
-                    .is_some_and(|name| ambiguous.contains(name));
+                let key_changed = !row.replaced
+                    && row
+                        .username
+                        .as_deref()
+                        .is_some_and(|name| ambiguous.contains(name));
 
                 Ok(Contact {
                     account_id: row.account_id,
@@ -1638,6 +1788,7 @@ impl<T: Transport> Client<T> {
                     chat_id: row.chat_id,
                     verified: row.verified,
                     key_changed,
+                    replaced: row.replaced,
                 })
             })
             .collect()

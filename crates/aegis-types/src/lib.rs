@@ -90,6 +90,19 @@ pub enum AegisError {
     /// Данные не прошли валидацию.
     #[error("malformed data")]
     Malformed,
+
+    /// 🔐 Сервер называет для собеседника не тот ключ, что известен.
+    ///
+    /// Отправка отменена до того, как что-либо зашифровано: сообщение,
+    /// ушедшее на подставленный ключ, не вернуть. Снимается только
+    /// явным действием человека — сверкой safety number вживую или
+    /// сознательным принятием нового ключа.
+    ///
+    /// Отдельный вариант, а не [`AegisError::Malformed`]: интерфейсу
+    /// нужно отличить «данные испорчены» от «возможно, подмена»
+    /// и показать второе как предупреждение, а не как сбой.
+    #[error("peer identity changed")]
+    IdentityChanged,
 }
 
 /// Результат операции AEGIS.
@@ -119,6 +132,7 @@ mod tests {
             AegisError::Uninitialized,
             AegisError::Network,
             AegisError::Malformed,
+            AegisError::IdentityChanged,
         ];
 
         // Проверка полноты: если в перечислении появится новый вариант,
@@ -135,7 +149,8 @@ mod tests {
                 | AegisError::Locked
                 | AegisError::Uninitialized
                 | AegisError::Network
-                | AegisError::Malformed => {}
+                | AegisError::Malformed
+                | AegisError::IdentityChanged => {}
             }
         }
 

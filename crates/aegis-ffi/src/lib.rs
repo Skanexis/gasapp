@@ -48,7 +48,17 @@ const FINGERPRINT_LEN: usize = 30;
 pub enum FfiError {
     /// Ошибка ядра AEGIS.
     #[error("aegis error: {0}")]
-    Core(#[from] AegisError),
+    Core(AegisError),
+
+    /// 🔐 Сервер называет для собеседника не тот ключ, что известен.
+    ///
+    /// Отдельным вариантом, а не текстом внутри [`FfiError::Core`]:
+    /// интерфейс показывает это как предупреждение о возможной
+    /// подмене и ведёт к выбору ключа, а не как сбой отправки.
+    /// Разбирать для этого строку ошибки значило бы завязать
+    /// безопасность на формулировку.
+    #[error("peer identity changed")]
+    IdentityChanged,
 
     /// Входные данные не прошли валидацию на границе.
     #[error("invalid argument")]
@@ -60,6 +70,15 @@ pub enum FfiError {
     /// значения переменных, а значит потенциально — чувствительные данные.
     #[error("internal error")]
     Panic,
+}
+
+impl From<AegisError> for FfiError {
+    fn from(error: AegisError) -> Self {
+        match error {
+            AegisError::IdentityChanged => Self::IdentityChanged,
+            other => Self::Core(other),
+        }
+    }
 }
 
 /// Выполняет операцию ядра, не позволяя панике пересечь границу FFI.
@@ -90,7 +109,9 @@ where
     F: FnOnce() -> Result<T, AegisError>,
 {
     match catch_unwind(AssertUnwindSafe(operation)) {
-        Ok(result) => result.map_err(FfiError::Core),
+        // Через `From`, а не `FfiError::Core`: смена ключа собеседника
+        // обязана дойти до интерфейса своим вариантом.
+        Ok(result) => result.map_err(FfiError::from),
         Err(_) => Err(FfiError::Panic),
     }
 }
@@ -299,6 +320,14 @@ mod tests {
     fn guard_converts_core_errors() {
         let result: Result<(), _> = guard(|| Err(AegisError::Locked));
         assert!(matches!(result, Err(FfiError::Core(AegisError::Locked))));
+    }
+
+    /// 🔐 Смена ключа собеседника доходит до интерфейса своим вариантом,
+    /// а не строкой внутри `Core`, которую пришлось бы разбирать.
+    #[test]
+    fn identity_change_crosses_the_boundary_as_its_own_variant() {
+        let result: Result<(), _> = guard(|| Err(AegisError::IdentityChanged));
+        assert!(matches!(result, Err(FfiError::IdentityChanged)));
     }
 
     /// Паника не должна пересекать границу FFI.
