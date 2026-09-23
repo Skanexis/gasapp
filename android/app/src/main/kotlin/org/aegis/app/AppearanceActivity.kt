@@ -5,6 +5,8 @@ package org.aegis.app
 import android.os.Bundle
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
+import org.aegis.app.components.AegisSheet
+import org.aegis.app.core.Language
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.SettingsRow
 
@@ -35,8 +37,8 @@ class AppearanceActivity : AppCompatActivity() {
 
         findViewById<ImageView>(R.id.appearance_back).setOnClickListener { finish() }
 
-        // Строки справочные: значения не меняются, поэтому шеврона
-        // у них нет — стрелка обещала бы переход, которого не будет.
+        // Тема справочная: значение не меняется, поэтому шеврона у неё
+        // нет — стрелка обещала бы переход, которого не будет.
         SettingsRow.bind(
             root = findViewById(R.id.appearance_theme),
             label = R.string.appearance_theme,
@@ -47,8 +49,23 @@ class AppearanceActivity : AppCompatActivity() {
         SettingsRow.bind(
             root = findViewById(R.id.appearance_language),
             label = R.string.appearance_language,
-            value = getString(R.string.appearance_language_value),
+            value = Language.displayName(Language.current(this)),
             icon = R.drawable.ic_chat,
+            onClick = ::chooseLanguage,
         )
+    }
+
+    private fun chooseLanguage() {
+        val sheet = AegisSheet.on(this, R.string.appearance_language)
+
+        for (tag in Language.CHOICES) {
+            sheet.action(Language.displayName(tag)) {
+                if (tag != Language.current(this)) {
+                    Language.set(this, tag)
+                }
+            }
+        }
+
+        sheet.show()
     }
 }

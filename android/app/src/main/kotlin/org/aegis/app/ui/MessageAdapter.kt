@@ -208,7 +208,7 @@ class MessageAdapter(
                 },
             )
 
-            attachmentSize.text = formatSize(attachment.size)
+            attachmentSize.text = FileSize.format(itemView.context, attachment.size)
 
             attachmentIcon.setImageResource(
                 when (attachment.kind) {
@@ -220,17 +220,6 @@ class MessageAdapter(
             attachmentRow.setOnClickListener { onAttachmentClick?.invoke(attachment) }
         }
 
-        /** Размер в привычных единицах. */
-        private fun formatSize(bytes: Long): String = when {
-            bytes >= 1024L * 1024L -> String.format(
-                java.util.Locale.getDefault(),
-                "%.1f МБ",
-                bytes / (1024.0 * 1024.0),
-            )
-
-            bytes >= 1024L -> "${bytes / 1024} КБ"
-            else -> "$bytes Б"
-        }
 
 
         private val container: LinearLayout = view.findViewById(R.id.message_container)

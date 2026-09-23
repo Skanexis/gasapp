@@ -84,7 +84,7 @@
     <!-- Safety number -->
     <string name="safety_number_title">Safety number</string>
     <string name="safety_number_qr_description">Safety number QR code</string>
-    <string name="safety_number_hint">Compare these 60 digits with the other person face to face or over video. If they match, your conversation is protected against a substituted key.</string>
+    <string name="safety_number_hint">Compare these 60 digits with the other person face to face or over video. If they match, your conversation is protected against key substitution.</string>
     <string name="mark_verified">Mark as compared</string>
     <string name="clear_verified">Remove the mark</string>
     <string name="safety_number_peer">Comparing with %1$s</string>
@@ -131,7 +131,7 @@
 
     <!-- Onboarding -->
     <string name="onboarding_tagline">An end-to-end encrypted messenger built to resist quantum computers</string>
-    <string name="onboarding_audit_warning">Has not passed an independent audit. Do not rely on it where life or liberty is at stake.</string>
+    <string name="onboarding_audit_warning">Not independently audited. Do not rely on it where life or liberty is at stake.</string>
     <string name="onboarding_choose_username">Choose a username — this is how others will find you</string>
     <string name="onboarding_username_hint">username</string>
     <string name="onboarding_create">Create account</string>
@@ -148,9 +148,9 @@
     <string name="profile_title">My profile</string>
     <string name="profile_no_username">No username set</string>
     <string name="profile_qr_description">Profile QR code: show it to someone so they can add you</string>
-    <string name="profile_link_hint">Show the code to someone standing next to you, or send them the link. The key travels past the server, not through it.</string>
+    <string name="profile_link_hint">Show the code to someone next to you, or send them the link. The key reaches them without going through the server.</string>
     <string name="profile_copy">Copy link</string>
-    <string name="profile_share">Send link</string>
+    <string name="profile_share">Share link</string>
     <string name="profile_copied">Link copied</string>
 
     <string name="add_contact_title">Add contact</string>
@@ -158,9 +158,9 @@
     <string name="add_contact_confirm">Add</string>
     <string name="add_contact_added">Contact added: %1$s</string>
     <string name="add_contact_added_unnamed">Contact added</string>
-    <string name="add_contact_key_changed">«%1$s» was already in your contacts with a different key. It may be a reinstall — or an impostor. Compare safety numbers in person before writing.</string>
-    <string name="add_contact_invalid">This link does not work: it is not an AEGIS link, or the name in it belongs to a different key</string>
-    <string name="add_contact_review">Check who you are adding. The link does not confirm the name — it is chosen by whoever made the link.</string>
+    <string name="add_contact_key_changed">“%1$s” was already in your contacts with a different key. It may be a reinstall — or an impostor. Compare safety numbers in person before messaging them.</string>
+    <string name="add_contact_invalid">This link is not valid: either it is not an AEGIS link, or the name in it belongs to a different key</string>
+    <string name="add_contact_review">Check who you are adding. The link does not prove the name — whoever made the link chose it.</string>
 
     <string name="search_title">Search</string>
     <string name="search_hint">Search your messages</string>
@@ -192,14 +192,14 @@
     <string name="contact_profile_verify">Compare safety number</string>
     <string name="contact_profile_verified">Key compared in person</string>
     <string name="contact_profile_unverified">Key not compared</string>
-    <string name="contact_profile_unverified_hint">Until the key is compared, there is no way to be sure you are talking to the person the contact claims to be.</string>
+    <string name="contact_profile_unverified_hint">Until the key is compared, you cannot be sure you are talking to the person this contact claims to be.</string>
     <string name="contact_profile_open_chat">Open conversation</string>
     <string name="contact_profile_key">Identity key</string>
 
     <!-- Calls -->
     <string name="calls_filter_all">All</string>
     <string name="calls_filter_missed">Missed</string>
-    <string name="calls_empty">There are no calls in this version</string>
+    <string name="calls_empty">Calls are not available in this version</string>
     <string name="calls_encrypted_note">When calls arrive, they will be end-to-end encrypted, like your messages</string>
     <string name="call_back">Call</string>
     <string name="call_incoming">Incoming · %1$s</string>
@@ -218,8 +218,8 @@
     <string name="message_edit_title">Edit message</string>
     <string name="message_edit_hint">New text</string>
     <string name="message_delete_title">Delete for everyone?</string>
-    <string name="message_delete_body">The message disappears for you right away. For the other person — when the request reaches them: they have already seen the text and may remember it.</string>
-    <string name="message_action_failed">Could not do that</string>
+    <string name="message_delete_body">The message disappears for you right away, and for the other person once the request reaches them. They have already seen the text and may remember it.</string>
+    <string name="message_action_failed">Action failed</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
     <string name="action_delete">Delete</string>
@@ -243,10 +243,10 @@
     <string name="privacy_last_seen">Last seen</string>
     <string name="privacy_last_seen_hint">The other person sees when you were last online</string>
     <string name="privacy_screenshots">Block screenshots</string>
-    <string name="privacy_screenshots_hint">Your messages stay out of screenshots and out of the recent apps preview</string>
+    <string name="privacy_screenshots_hint">Keeps your messages out of screenshots and the recent apps preview</string>
     <string name="privacy_preview">Message text in notifications</string>
     <string name="privacy_preview_hint">Show the message on the lock screen</string>
-    <string name="privacy_limits_note">Blocking screenshots only works on this device. It does not stop someone photographing the screen with another phone, and it does not restrict the other person: they saw your message and could have saved it.</string>
+    <string name="privacy_limits_note">Blocking screenshots only works on this device. It does not stop someone from photographing the screen with another phone, and it does not restrict the other person: they saw your message and could have saved it.</string>
 
     <!--
         🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
@@ -255,7 +255,7 @@
         человек должен до нажатия, а не после: вернуть удалённый
         аккаунт нельзя ни ему, ни оператору сервера.
     -->
-            <string name="lock_biometric_title">Unlock AEGIS</string>
+    <string name="lock_biometric_title">Unlock AEGIS</string>
     <string name="lock_biometric_subtitle">Use your fingerprint instead of typing the PIN</string>
     <string name="lock_biometric_use_pin">Use PIN</string>
     <string name="privacy_biometric">Unlock with fingerprint</string>
@@ -294,7 +294,7 @@
     <string name="notifications_sender_hint">Show who the message came from</string>
     <string name="notifications_sound">Sound</string>
     <string name="notifications_vibrate">Vibration</string>
-    <string name="notifications_content_note">Push notifications are not available yet: new messages arrive while the app is open and the next time you open the app. When they arrive, the server will send only a \"there is something new\" signal — no text, no sender and no chat.</string>
+    <string name="notifications_content_note">Push notifications are not available yet: new messages arrive while the app is open, or the next time you open it. Once push is added, the server will send only a “something new” signal — no text, no sender and no chat.</string>
 
     <!-- Appearance -->
     <string name="settings_appearance">Appearance</string>
@@ -302,27 +302,26 @@
     <string name="appearance_section_text">Text</string>
     <string name="appearance_theme">Style</string>
     <string name="appearance_theme_value">Dark</string>
-    <string name="appearance_theme_note">The app is drawn for a dark background. A light theme would mean a second palette and a second chance to get the colour of a security state wrong — so there isn\'t one.</string>
+    <string name="appearance_theme_note">The app is designed for a dark background. A light theme would mean a second palette and a second chance to get the color of a security state wrong — so there isn\'t one.</string>
     <string name="appearance_language">Language</string>
-    <string name="appearance_language_value">System</string>
-    <string name="appearance_language_note">The language follows your system settings.</string>
+    <string name="appearance_language_note">English is the default. Russian is also available.</string>
 
     <!-- Storage -->
     <string name="settings_storage">Storage</string>
-    <string name="storage_section_usage">Used</string>
+    <string name="storage_section_usage">Usage</string>
     <string name="storage_section_cleanup">Cleanup</string>
     <string name="storage_messages">Messages</string>
     <string name="storage_attachments">Attachments</string>
     <string name="storage_purge_expired">Delete expired messages</string>
     <string name="storage_clear_cache">Clear downloaded files</string>
-    <string name="storage_cleanup_note">Deletion cannot be undone: the server keeps no copies, and there will be nowhere to restore from.</string>
+    <string name="storage_cleanup_note">Deletion cannot be undone: the server keeps no copies, so there is nothing to restore from.</string>
     <string name="storage_purged">Messages deleted: %1$d</string>
     <string name="storage_cleared">Downloaded files deleted</string>
 
     <!-- Devices -->
     <string name="devices_section_current">This device</string>
     <string name="devices_this">Current device</string>
-    <string name="devices_note">Every linked device reads all of your messages. Linking will arrive together with sync between devices; for now the account is reachable only from here.</string>
+    <string name="devices_note">Every linked device can read all of your messages. Device linking will come with multi-device sync; for now, your account works only on this device.</string>
 
     <!-- About -->
     <string name="about_section_version">Versions</string>
@@ -344,8 +343,8 @@
 
     <!-- Recovery -->
     <string name="recovery_title">Recovery</string>
-    <string name="recovery_intro">Your backup is encrypted with a recovery key. Only you have that key: neither the server nor we can decrypt the backup.</string>
-    <string name="recovery_section_state">State</string>
+    <string name="recovery_intro">Your backup is encrypted with a recovery key. Only you have that key: neither we nor the server can decrypt the backup.</string>
+    <string name="recovery_section_state">Status</string>
     <string name="recovery_section_actions">Actions</string>
     <string name="recovery_pill_encrypted">Backup is encrypted</string>
     <string name="recovery_pill_server_cannot">The server cannot decrypt it</string>
@@ -360,29 +359,29 @@
     <string name="recovery_new_key_warning">Earlier backups stay encrypted with the old key — the app cannot re-encrypt them. Keep the old key for as long as you need those backups.</string>
     <string name="recovery_new_key_confirm">Create new</string>
     <string name="recovery_key_needed">Enter your recovery key</string>
-    <string name="recovery_created">Backup built: %1$d records, generation %2$d</string>
-    <string name="recovery_failed">Could not build the backup</string>
+    <string name="recovery_created">Backup created: %1$d records, generation %2$d</string>
+    <string name="recovery_failed">Could not create the backup</string>
     <string name="recovery_saved">Backup file saved</string>
     <string name="recovery_save_failed">Could not save the file</string>
-    <string name="recovery_not_saved">Backup was built but not saved</string>
+    <string name="recovery_not_saved">Backup created but not saved</string>
     <string name="recovery_warning">If you lose this key, your data cannot be recovered. Not even by us. There is no reset by email or SMS — and that is exactly why nobody else can read your messages.</string>
     <string name="recovery_key_title">Recovery key</string>
-    <string name="recovery_key_explain">Copy this key onto paper and keep it away from your phone. It decrypts all of your backups.</string>
-    <string name="recovery_key_once">The key is shown once. The app does not keep it — there will be nowhere to look it up again.</string>
+    <string name="recovery_key_explain">Write this key down on paper and keep it away from your phone. It decrypts all of your backups.</string>
+    <string name="recovery_key_once">The key is shown only once. The app does not keep it, so you will not be able to look it up later.</string>
     <string name="recovery_key_no_screenshot">Screenshots are blocked here: a key in a screenshot would land in your gallery, and from there in the cloud.</string>
     <string name="recovery_key_written">I have written the key down</string>
     <string name="recovery_key_failed">Could not create the key</string>
-    <string name="recovery_confirm_title">Key check</string>
-    <string name="recovery_confirm_explain">Enter three groups from the key you wrote down. The check is here so that you are not left without access to your own data: it cannot be recovered without the key.</string>
+    <string name="recovery_confirm_title">Check your key</string>
+    <string name="recovery_confirm_explain">Enter three groups from the key you wrote down. This check is here so you don\'t lose access to your own data: without the key, it cannot be recovered.</string>
     <string name="recovery_confirm_group">Group %1$d</string>
     <string name="recovery_confirm_hint">XXXX</string>
     <string name="recovery_confirm_submit">Confirm</string>
     <string name="recovery_confirm_show_again">Show the key again</string>
-    <string name="recovery_confirm_mismatch">The groups did not match. Check against what you wrote down.</string>
+    <string name="recovery_confirm_mismatch">The groups did not match. Check them against what you wrote down.</string>
 
     <!-- Restore -->
     <string name="restore_title">Restore from a backup</string>
-    <string name="restore_intro">Pick the backup files in the order they were made: the full snapshot first, then the increments. If a file in the middle is missing, nothing is restored. The newest files the app cannot check: without them the restore succeeds and brings back an older state — including messages you deleted later.</string>
+    <string name="restore_intro">Pick the backup files in the order they were made: the full snapshot first, then the increments. If a file in the middle is missing, nothing is restored. The app cannot check for the newest files: without them, the restore still succeeds but brings back an older state — including messages you deleted later.</string>
     <string name="restore_section_files">Backup files</string>
     <string name="restore_section_key">Recovery key</string>
     <string name="restore_pick">Choose files</string>
@@ -394,8 +393,8 @@
     <string name="restore_key_invalid">There is a typo in the key</string>
     <string name="restore_confirm">Restore</string>
     <string name="restore_done">Records restored: %1$d</string>
-    <string name="restore_failed">Restore failed: wrong key, or the chain of files is incomplete</string>
-    <string name="restore_note">Messages, contacts and settings will be restored. Disappearing messages are not in backups. This device will get a new security key — that is normal, and we explain why.</string>
+    <string name="restore_failed">Restore failed: wrong key, or files are missing from the chain</string>
+    <string name="restore_note">Messages, contacts and settings will be restored. Disappearing messages are not in backups. This device will get a new security key — that is normal, and we\'ll explain why.</string>
 
     <!-- Identity changed after a restore -->
     <string name="identity_changed_title">Restore complete</string>
@@ -404,15 +403,15 @@
     <string name="identity_changed_restored_count">Records restored: %1$d.</string>
     <string name="identity_changed_explain">Your contacts will see a warning that your security key changed. After a restore this is normal: the device gets a new key, and the old one is not carried over.</string>
     <string name="identity_changed_why">Keys are not carried over on purpose. Moving the old encryption state across would mean two different messages could be encrypted with the same key — and that reveals what they say. A changed security key is the price of that never happening.</string>
-    <string name="identity_changed_not_restored">Not restored: active secure sessions — they will be established again with the first message.</string>
+    <string name="identity_changed_not_restored">Not restored: active secure sessions. They will be set up again with the first message.</string>
     <string name="identity_changed_verify">Compare keys with your contacts</string>
     <string name="identity_changed_later">Later</string>
 
     <!-- File vault -->
     <string name="vault_title">File vault</string>
-    <string name="vault_sealed_explain">The vault is closed behind a second factor. Even with the app unlocked, you have to confirm yourself again to reach the files.</string>
+    <string name="vault_sealed_explain">The vault is protected by a second factor. Even when the app is unlocked, you have to confirm it\'s you again to reach the files.</string>
     <string name="vault_unlock">Open the vault</string>
-    <string name="vault_unlock_failed">Could not open it</string>
+    <string name="vault_unlock_failed">Could not open the vault</string>
     <string name="vault_pin_incomplete">Enter all six digits of your PIN</string>
     <string name="vault_seal">Close the vault</string>
     <string name="vault_sealed">The vault is closed</string>
@@ -442,16 +441,16 @@
         <item quantity="other">%1$d items need attention</item>
     </plurals>
     <string name="security_check_recovery">Recovery key created</string>
-    <string name="security_check_backup">Backup newer than a week</string>
+    <string name="security_check_backup">Backup within the last week</string>
     <string name="security_check_contacts">All contacts compared</string>
     <string name="security_check_sealed">Sealed sender on — except the first message to a new contact</string>
     <string name="security_check_address">IP address hidden by a proxy or Tor</string>
     <string name="security_check_screenshots">Screenshots blocked</string>
-    <string name="security_check_autolock">Auto-lock no longer than 5 minutes</string>
+    <string name="security_check_autolock">Auto-lock at 5 minutes or less</string>
     <string name="security_check_screen_lock">Device screen lock</string>
     <string name="security_check_screen_lock_hint">Without it the phone is open to anyone who picks it up</string>
-    <string name="security_check_root">Device without root</string>
-    <string name="security_check_root_hint">Signs of root found — other apps may be able to read your data</string>
+    <string name="security_check_root">Device not rooted</string>
+    <string name="security_check_root_hint">Signs of rooting found — other apps may be able to read your data</string>
     <string name="security_check_passed">Yes</string>
     <string name="security_check_failed">No</string>
     <string name="security_check_unverified">Not compared: %1$d</string>
@@ -464,23 +463,23 @@
     <string name="network_mode_orbot">Tor via Orbot</string>
     <string name="network_mode_socks">SOCKS5 proxy</string>
     <string name="network_hint_direct">The server sees your IP address.</string>
-    <string name="network_hint_orbot">Requires Orbot installed and running. If it is off, the app will not connect — it will not fall back to a direct connection.</string>
+    <string name="network_hint_orbot">Requires Orbot to be installed and running. If it is off, the app will not connect — it will not fall back to a direct connection.</string>
     <string name="network_hint_socks">All requests and notifications go through the proxy you specify. If it is unreachable, the app will not connect — it will not fall back to a direct connection.</string>
     <string name="network_host_hint">Proxy address</string>
     <string name="network_port_hint">Port</string>
     <string name="network_save">Save</string>
     <string name="network_saved">Saved. New connections use the method you chose.</string>
-    <string name="network_invalid">The address or port is not valid. Give a hostname or IP address without a scheme or path; usernames and passwords are not supported.</string>
+    <string name="network_invalid">The address or port is not valid. Enter a hostname or IP address without a scheme or path; usernames and passwords are not supported.</string>
     <string name="network_save_failed">Could not save the setting</string>
     <string name="network_limits">A proxy can see that you use AEGIS, and when. Tor hides your address from the server, but not from the Tor entry node. Over Tor the connection is less stable, and notifications may arrive late.</string>
-    <string name="network_unavailable">The network setting is damaged — connections are blocked until you choose a connection method again.</string>
+    <string name="network_unavailable">The network setting is corrupted — connections are blocked until you choose a connection method again.</string>
     <string name="privacy_section_network">Network</string>
     <string name="privacy_network">Connection</string>
-    <string name="network_unavailable_short">Damaged</string>
+    <string name="network_unavailable_short">Corrupted</string>
     <string name="network_requires_android7">Proxy and Tor need Android 7.0 or newer: on older versions the system does not guarantee that the hostname goes through the proxy, and the address would leak over DNS.</string>
     <string name="vault_open">Open</string>
     <string name="vault_delete">Delete from the vault</string>
-    <string name="vault_delete_confirm_title">Delete «%1$s»? There is no copy anywhere, and it cannot be recovered.</string>
+    <string name="vault_delete_confirm_title">Delete “%1$s”? There is no copy anywhere, and it cannot be recovered.</string>
     <string name="vault_delete_forever">Delete forever</string>
     <string name="vault_deleted">File deleted</string>
     <string name="vault_delete_failed">Could not delete the file</string>
@@ -495,26 +494,31 @@
     </plurals>
     <string name="security_section_log">Security log</string>
     <string name="security_log_empty">Nothing has happened yet</string>
-    <string name="security_event_contact_identity_changed">A known name arrived with a different key</string>
+    <string name="security_event_contact_identity_changed">A known username arrived with a different key</string>
     <string name="security_event_contact_verified">Contact marked as verified</string>
     <string name="security_event_contact_verification_revoked">Contact verification removed</string>
     <string name="security_event_server_key_changed">The server\'s sealed sender key changed</string>
-    <string name="security_event_access_rejected">A recipient rejected our access key</string>
+    <string name="security_event_access_rejected">A recipient rejected your access key</string>
     <string name="security_event_certificate_mismatch">A sender certificate did not match its key</string>
     <string name="security_event_backup_restored">Restored from a backup</string>
-    <string name="security_event_degraded_session">A conversation started without the peer\'s one-time key</string>
-    <string name="security_event_initial_replayed">A repeated copy of an old message start was rejected</string>
+    <string name="security_event_degraded_session">A conversation started without the other person\'s one-time key</string>
+    <string name="security_event_initial_replayed">A replayed start of an old conversation was rejected</string>
 
     <!--
       🔐 Пределы защиты. Каждая строка сверена с кодом; меняется код —
       меняется строка.
     -->
-    <string name="about_section_limits">What this does not protect from</string>
+    <string name="about_section_limits">What AEGIS does not protect against</string>
     <string name="about_limit_first_message">The first message to a new contact is not sealed: the server sees who wrote to whom. The rest of the conversation is sealed.</string>
-    <string name="about_limit_address">The server sees your IP address and the time of a request. Only a proxy or Tor hides that, in Settings → Connection.</string>
-    <string name="about_limit_notifications">There are no notifications: messages arrive while the app is open.</string>
+    <string name="about_limit_address">The server sees your IP address and the time of each request. Only a proxy or Tor hides that (Settings → Connection).</string>
+    <string name="about_limit_notifications">There are no push notifications: messages arrive while the app is open.</string>
     <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>
-    <string name="about_limit_recovery_key">Lose the recovery key and the backup cannot be read. Not by us either.</string>
+    <string name="about_limit_recovery_key">If you lose the recovery key, the backup cannot be read. Not even by us.</string>
     <string name="about_limit_peer">The other person has already seen your message: they can photograph or remember it. “Delete for everyone” is a request, not a guarantee.</string>
     <string name="about_limit_calls">There are no calls in this version.</string>
+
+    <!-- File sizes, 1024-based. -->
+    <string name="size_bytes">%1$d B</string>
+    <string name="size_kb">%1$d KB</string>
+    <string name="size_mb">%1$.1f MB</string>
 </resources>

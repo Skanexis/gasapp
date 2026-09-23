@@ -21,6 +21,7 @@ import org.aegis.app.components.PinPad
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.VaultBlob
+import org.aegis.app.ui.FileSize
 import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.FfiVaultFile
 import java.io.File
@@ -175,7 +176,7 @@ class VaultActivity : AppCompatActivity() {
             SettingsRow.bind(
                 root = row,
                 title = file.name,
-                value = formatSize(file.size),
+                value = FileSize.format(this, file.size),
                 icon = R.drawable.ic_file,
                 onClick = { showFileActions(file) },
             )
@@ -416,17 +417,6 @@ class VaultActivity : AppCompatActivity() {
         }
     }
 
-    /** Размер файла в том же виде, что на экране хранилища. */
-    private fun formatSize(bytes: Long): String = when {
-        bytes >= 1024L * 1024L -> String.format(
-            java.util.Locale.getDefault(),
-            "%.1f МБ",
-            bytes / (1024.0 * 1024.0),
-        )
-
-        bytes >= 1024L -> "${bytes / 1024} КБ"
-        else -> "$bytes Б"
-    }
 
     private companion object {
 

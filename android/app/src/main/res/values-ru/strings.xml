@@ -294,8 +294,7 @@
     <string name="appearance_theme_value">Тёмное</string>
     <string name="appearance_theme_note">Приложение нарисовано под тёмный фон. Светлая тема означала бы вторую палитру и вторую возможность ошибиться в том, каким цветом показано состояние безопасности, — поэтому её нет.</string>
     <string name="appearance_language">Язык</string>
-    <string name="appearance_language_value">Системный</string>
-    <string name="appearance_language_note">Язык берётся из настроек системы.</string>
+    <string name="appearance_language_note">По умолчанию — английский. Также доступен русский.</string>
 
     <!-- Хранилище. -->
     <string name="settings_storage">Хранилище</string>
@@ -563,4 +562,9 @@
     <string name="about_limit_recovery_key">Потеряете ключ восстановления — копию не прочитает никто. Мы тоже.</string>
     <string name="about_limit_peer">Собеседник уже видел сообщение: он может его сфотографировать или запомнить. «Удалить у всех» — просьба, а не гарантия.</string>
     <string name="about_limit_calls">Звонков в этой версии нет.</string>
+
+    <!-- Размеры файлов, по 1024. -->
+    <string name="size_bytes">%1$d Б</string>
+    <string name="size_kb">%1$d КБ</string>
+    <string name="size_mb">%1$.1f МБ</string>
 </resources>
