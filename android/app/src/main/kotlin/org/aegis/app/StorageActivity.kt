@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.ui.FileSize
 import org.aegis.app.ui.SettingsRow
 import java.io.File
 
@@ -45,14 +46,14 @@ class StorageActivity : AppCompatActivity() {
         SettingsRow.bind(
             root = findViewById(R.id.storage_messages),
             label = R.string.storage_messages,
-            value = formatSize(databaseSize()),
+            value = FileSize.format(this, databaseSize()),
             icon = R.drawable.ic_chat,
         )
 
         SettingsRow.bind(
             root = findViewById(R.id.storage_attachments),
             label = R.string.storage_attachments,
-            value = formatSize(cacheSize()),
+            value = FileSize.format(this, cacheSize()),
             icon = R.drawable.ic_file,
         )
 
@@ -131,16 +132,6 @@ class StorageActivity : AppCompatActivity() {
             cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
         }.getOrDefault(0L)
 
-    private fun formatSize(bytes: Long): String = when {
-        bytes >= 1024L * 1024L -> String.format(
-            java.util.Locale.getDefault(),
-            "%.1f МБ",
-            bytes / (1024.0 * 1024.0),
-        )
-
-        bytes >= 1024L -> "${bytes / 1024} КБ"
-        else -> "$bytes Б"
-    }
 
     private companion object {
         /** Имя файла базы: то же, что в Core. */
