@@ -505,6 +505,10 @@ fn record_to_contact(record: &ContactRecord) -> ContactRow {
             .map(|raw| ChatId::from_uuid(uuid::Uuid::from_bytes(raw))),
         verified: record.verified,
         added_at: record.added_at_millis,
+        // Замена ключа в копию не попадает (формат копии её не несёт):
+        // после восстановления неоднозначность имени придётся снять
+        // заново — это безопаснее, чем молча считать её снятой.
+        replaced: false,
     }
 }
 

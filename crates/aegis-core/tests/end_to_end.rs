@@ -44,7 +44,7 @@ use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::xeddsa;
 use aegis_storage::{MessageStatus, Storage};
-use aegis_types::{AccountId, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
+use aegis_types::{AccountId, AegisError, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
 use sha2::{Digest, Sha256};
 
 /// Приватный ключ подписи сертификатов у поддельного сервера.
@@ -113,6 +113,31 @@ impl FakeServer {
         Self {
             state: std::rc::Rc::new(RefCell::new(ServerState::default())),
         }
+    }
+
+    /// Запись discovery для имени: идентификатор аккаунта и ключ.
+    fn account_entry(&self, name: &str) -> (String, String) {
+        self.state.borrow().accounts[name].clone()
+    }
+
+    /// 🔐 Сервер начинает называть для имени другую запись.
+    ///
+    /// Так выглядит подмена ключа злонамеренным или взломанным
+    /// сервером: ответ discovery — всё, что клиент о нём знает.
+    fn point_name(&self, name: &str, entry: (String, String)) {
+        self.state
+            .borrow_mut()
+            .accounts
+            .insert(name.to_owned(), entry);
+    }
+
+    /// Сколько конвертов ждёт устройство.
+    fn queued_for(&self, device_id: &str) -> usize {
+        self.state
+            .borrow()
+            .queues
+            .get(device_id)
+            .map_or(0, Vec::len)
     }
 
     /// Возвращает копии всех загруженных блобов.
@@ -3105,4 +3130,281 @@ fn message_length_is_hidden_by_padding() {
         short_len, long_len,
         "по размеру конверта видно длину сообщения: {short_len} против {long_len}",
     );
+}
+
+// --- 🔐 Подмена ключа сервером -------------------------------------------
+//
+// Отправка адресуется по имени, и ключ собеседника называет сервер.
+// Прежде этот ответ не сверялся ни с чем: сервер, назвавший свой ключ
+// для «bob», получал следующее же сообщение — даже в сверенный чат.
+// Тесты ниже — `identity_change_blocks_send` раздела 24.4.
+
+/// Алиса и Боб знакомы; Мэллори готов выдать себя за Боба.
+///
+/// Мэллори регистрируется под своим именем, а сервер затем начинает
+/// отдавать его запись по имени «bob».
+fn substitution_setup(
+    server: &FakeServer,
+    dir: &tempfile::TempDir,
+) -> (
+    Client<FakeServer>,
+    Client<FakeServer>,
+    Contact,
+    Client<FakeServer>,
+    String,
+    (String, String),
+) {
+    let (alice, bob, bob_seen_by_alice, _) = two_mutual_contacts(server, dir);
+
+    alice
+        .send_message("bob", "до подмены", now(), &mut OsRng)
+        .expect("до подмены сообщение уходит");
+
+    let mallory = Client::new(server.clone(), open_storage(dir, "mallory.db"));
+    let mallory_device = mallory
+        .register("mallory", now(), &mut OsRng)
+        .expect("Мэллори зарегистрирован")
+        .device_id
+        .to_string();
+
+    let genuine = server.account_entry("bob");
+    server.point_name("bob", server.account_entry("mallory"));
+
+    (
+        alice,
+        bob,
+        bob_seen_by_alice,
+        mallory,
+        mallory_device,
+        genuine,
+    )
+}
+
+/// 🔐 Подставленный ключ не получает следующее сообщение.
+#[test]
+fn a_substituted_key_does_not_receive_the_next_message() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _, _mallory, mallory_device, _) = substitution_setup(&server, &dir);
+
+    let result = alice.send_message("bob", "секрет", later(1), &mut OsRng);
+
+    assert!(
+        matches!(result, Err(AegisError::IdentityChanged)),
+        "сообщение ушло на ключ, подставленный сервером: {result:?}"
+    );
+    assert_eq!(
+        server.queued_for(&mallory_device),
+        0,
+        "подставленный ключ получил конверт"
+    );
+}
+
+/// 🔐 То же для сверенного контакта — строка раздела 24.4 дословно.
+#[test]
+fn identity_change_blocks_send_to_a_verified_contact() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, bob_seen_by_alice, _mallory, mallory_device, _) =
+        substitution_setup(&server, &dir);
+
+    alice
+        .set_contact_verified(&bob_seen_by_alice.account_id, true, now())
+        .expect("Боб сверен");
+
+    let result = alice.send_message("bob", "секрет", later(1), &mut OsRng);
+
+    assert!(
+        matches!(result, Err(AegisError::IdentityChanged)),
+        "{result:?}"
+    );
+    assert_eq!(server.queued_for(&mallory_device), 0);
+}
+
+/// 🔐 Реакции, правки и вложения идут той же проверкой, что и текст.
+#[test]
+fn a_substituted_key_does_not_receive_other_content_either() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _, _mallory, mallory_device, _) = substitution_setup(&server, &dir);
+
+    let target = aegis_types::MessageId::generate();
+    let result = alice.send_reaction("bob", &target, "👍", later(1), &mut OsRng);
+
+    assert!(
+        matches!(result, Err(AegisError::IdentityChanged)),
+        "{result:?}"
+    );
+    assert_eq!(server.queued_for(&mallory_device), 0);
+}
+
+/// 🔐 Смена видна, а не только отказ: новый ключ — второй контакт с тем же именем.
+#[test]
+fn a_refused_substitution_is_recorded_and_flagged() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _, _mallory, _, _) = substitution_setup(&server, &dir);
+
+    let _ = alice.send_message("bob", "секрет", later(1), &mut OsRng);
+
+    let named_bob: Vec<Contact> = alice
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .filter(|contact| contact.username.as_deref() == Some("bob"))
+        .collect();
+
+    assert_eq!(named_bob.len(), 2, "новый ключ не записан контактом");
+    assert!(
+        named_bob.iter().all(|contact| contact.key_changed),
+        "имя под двумя ключами не помечено"
+    );
+}
+
+/// 🔐 Пока под именем два ключа, отказ — для обоих чатов.
+///
+/// Иначе сообщение, набранное в одном чате, молча уходило бы в другой —
+/// туда, куда указывает сервер.
+#[test]
+fn two_keys_under_one_name_block_both() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _, _mallory, _, genuine) = substitution_setup(&server, &dir);
+
+    let _ = alice.send_message("bob", "секрет", later(1), &mut OsRng);
+
+    // Сервер вернул настоящий ключ — но имя уже неоднозначно.
+    server.point_name("bob", genuine);
+
+    let result = alice.send_message("bob", "секрет", later(2), &mut OsRng);
+
+    assert!(
+        matches!(result, Err(AegisError::IdentityChanged)),
+        "{result:?}"
+    );
+}
+
+/// Явное принятие нового ключа возобновляет отправку — ему.
+#[test]
+fn accepting_the_new_key_resumes_sending_to_it() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, bob_seen_by_alice, mallory, mallory_device, _) =
+        substitution_setup(&server, &dir);
+
+    let _ = alice.send_message("bob", "секрет", later(1), &mut OsRng);
+
+    let new_key = alice
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .find(|contact| {
+            contact.username.as_deref() == Some("bob")
+                && contact.identity != bob_seen_by_alice.identity
+        })
+        .expect("новый ключ записан");
+
+    alice
+        .accept_contact_identity(&new_key.account_id, later(2))
+        .expect("новый ключ принят");
+
+    alice
+        .send_message("bob", "после принятия", later(3), &mut OsRng)
+        .expect("после принятия отправка разрешена");
+
+    // Принятый ключ получает и читает сообщение.
+    mallory
+        .receive_messages(&mallory_device, later(4))
+        .expect("приём");
+    assert!(
+        texts_of(&mallory)
+            .iter()
+            .any(|text| text == "после принятия"),
+        "принятый ключ не получил сообщение"
+    );
+
+    let contacts = alice.contacts().expect("контакты");
+    let old = contacts
+        .iter()
+        .find(|contact| contact.account_id == bob_seen_by_alice.account_id)
+        .expect("прежний контакт остался");
+
+    assert!(old.replaced, "прежний ключ не помечен заменённым");
+    assert!(
+        contacts.iter().all(|contact| !contact.key_changed),
+        "после выбора имя всё ещё помечено неоднозначным"
+    );
+}
+
+/// Сверка нового ключа вживую — тот же выбор, что и принятие.
+#[test]
+fn verifying_the_new_key_in_person_resolves_the_name() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, bob_seen_by_alice, _mallory, _, _) = substitution_setup(&server, &dir);
+
+    let _ = alice.send_message("bob", "секрет", later(1), &mut OsRng);
+
+    let new_key = alice
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .find(|contact| {
+            contact.username.as_deref() == Some("bob")
+                && contact.identity != bob_seen_by_alice.identity
+        })
+        .expect("новый ключ записан");
+
+    alice
+        .set_contact_verified(&new_key.account_id, true, later(2))
+        .expect("сверен");
+
+    alice
+        .send_message("bob", "после сверки", later(3), &mut OsRng)
+        .expect("после сверки отправка разрешена");
+}
+
+/// 🔐 Сервер, вернувшийся к прежнему — заменённому — ключу, снова получает отказ.
+#[test]
+fn switching_back_to_a_replaced_key_is_refused_again() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, bob_seen_by_alice, _mallory, _, genuine) = substitution_setup(&server, &dir);
+
+    let _ = alice.send_message("bob", "секрет", later(1), &mut OsRng);
+
+    let new_key = alice
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .find(|contact| {
+            contact.username.as_deref() == Some("bob")
+                && contact.identity != bob_seen_by_alice.identity
+        })
+        .expect("новый ключ записан");
+
+    alice
+        .accept_contact_identity(&new_key.account_id, later(2))
+        .expect("принят");
+
+    server.point_name("bob", genuine);
+
+    let result = alice.send_message("bob", "обратно", later(3), &mut OsRng);
+
+    assert!(
+        matches!(result, Err(AegisError::IdentityChanged)),
+        "{result:?}"
+    );
+}
+
+/// Незнакомое имя — первый контакт: ключу сервера верят, иного источника нет.
+#[test]
+fn an_unknown_name_is_trusted_on_first_use() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _, _) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "привет", now(), &mut OsRng)
+        .expect("первый контакт разрешён");
 }

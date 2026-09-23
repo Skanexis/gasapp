@@ -262,6 +262,11 @@ pub struct ContactRow {
     pub verified: bool,
     /// Когда контакт добавлен, в миллисекундах.
     pub added_at: Option<i64>,
+    /// 🔐 Ключ контакта заменён другим под тем же именем.
+    ///
+    /// Переписка с ним остаётся, отправка в неё — нет: имя теперь
+    /// ведёт к другому ключу, и сообщение ушло бы не в этот чат.
+    pub replaced: bool,
 }
 
 /// Сообщение в том виде, в каком оно лежит в базе.
@@ -359,7 +364,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 6;
+    const SCHEMA_VERSION: i32 = 7;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -632,6 +637,25 @@ impl Storage {
                 6 => {
                     Self::create_sealed_sender_tables(&transaction)?;
                     Self::create_text_settings_table(&transaction)?;
+                }
+                // 6 → 7: замена ключа контакта.
+                //
+                // 🔐 Когда сервер начинает называть для имени другой ключ,
+                // у имени оказывается две записи, и отправка по нему
+                // запрещается, пока человек не выберет одну — сверкой
+                // вживую или явным принятием нового ключа. Выбор
+                // запоминается здесь: прежняя запись получает время
+                // замены и перестаёт участвовать в отправке.
+                //
+                // Пусто у всех существующих строк: до этой версии замены
+                // не было, и выдумывать её нельзя.
+                7 => {
+                    transaction
+                        .execute(
+                            "ALTER TABLE known_contacts ADD COLUMN replaced_at INTEGER",
+                            [],
+                        )
+                        .map_err(storage_error)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
@@ -2467,7 +2491,8 @@ impl Storage {
                     c.username,
                     c.chat_id,
                     c.added_at,
-                    (v.account_id IS NOT NULL) AS verified
+                    (v.account_id IS NOT NULL) AS verified,
+                    (c.replaced_at IS NOT NULL) AS replaced
                 FROM known_contacts AS c
                 LEFT JOIN verified_contacts AS v
                     ON v.account_id = c.account_id
@@ -2486,6 +2511,7 @@ impl Storage {
                     row.get::<_, Option<Vec<u8>>>(3)?,
                     row.get::<_, Option<i64>>(4)?,
                     row.get::<_, bool>(5)?,
+                    row.get::<_, bool>(6)?,
                 ))
             })
             .map_err(storage_error)?;
@@ -2493,7 +2519,7 @@ impl Storage {
         let mut contacts = Vec::new();
 
         for row in rows {
-            let (raw_account, identity_key, username, raw_chat, added_at, verified) =
+            let (raw_account, identity_key, username, raw_chat, added_at, verified, replaced) =
                 row.map_err(storage_error)?;
 
             contacts.push(ContactRow {
@@ -2506,10 +2532,107 @@ impl Storage {
                 },
                 verified,
                 added_at,
+                replaced,
             });
         }
 
         Ok(contacts)
+    }
+
+    /// Действующие записи контакта под этим именем: счёт, ключ, сверен ли.
+    ///
+    /// Заменённые ([`ContactRow::replaced`]) не входят: они больше
+    /// не отвечают за имя. Основа проверки ключа при отправке
+    /// (`aegis-core`, `check_advertised_identity`).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось.
+    pub fn active_contacts_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Vec<(AccountId, Vec<u8>, bool)>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT c.account_id, c.identity_key, (v.account_id IS NOT NULL)
+                FROM known_contacts AS c
+                LEFT JOIN verified_contacts AS v ON v.account_id = c.account_id
+                WHERE c.username = ? AND c.replaced_at IS NULL
+                ",
+            )
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map(params![username], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, bool>(2)?,
+                ))
+            })
+            .map_err(storage_error)?;
+
+        let mut out = Vec::new();
+
+        for row in rows {
+            let (account, identity, verified) = row.map_err(storage_error)?;
+            out.push((
+                AccountId::from_uuid(uuid_from_slice(&account)?),
+                identity,
+                verified,
+            ));
+        }
+
+        Ok(out)
+    }
+
+    /// Возвращает запись контакта в действие: сервер снова называет её ключ.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn restore_contact(&self, account: &AccountId) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "UPDATE known_contacts SET replaced_at = NULL WHERE account_id = ?",
+                params![account.as_bytes()],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// 🔐 Оставляет за именем одну запись — `keep`, остальные помечает заменёнными.
+    ///
+    /// Вызывается только явным решением человека: сверкой ключа
+    /// вживую или принятием нового ключа. Возвращает число
+    /// заменённых записей.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn replace_other_contacts(
+        &self,
+        username: &str,
+        keep: &AccountId,
+        now: Timestamp,
+    ) -> Result<usize> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "
+                UPDATE known_contacts SET replaced_at = ?
+                WHERE username = ? AND account_id != ? AND replaced_at IS NULL
+                ",
+                params![now.as_millis(), username, keep.as_bytes()],
+            )
+            .map_err(storage_error)
     }
 
     /// Возвращает известный identity-ключ контакта.
@@ -4254,6 +4377,8 @@ mod tests {
                 // Столбец времени изменения добавляет миграция 4 → 5;
                 // без отката она повторилась бы на дубликате столбца.
                 "ALTER TABLE messages DROP COLUMN updated_at",
+                // Столбец замены ключа добавляет миграция 6 → 7.
+                "ALTER TABLE known_contacts DROP COLUMN replaced_at",
                 // own_keys откатывать не нужно: миграция 2 → 3
                 // пересоздаёт таблицу целиком и переживает повтор.
                 "UPDATE schema_version SET version = 1 WHERE id = 1",
@@ -4317,6 +4442,8 @@ mod tests {
                 // таблице и упала на дубликате.
                 "ALTER TABLE attachments DROP COLUMN descriptor",
                 "ALTER TABLE messages DROP COLUMN updated_at",
+                // Столбец замены ключа добавляет миграция 6 → 7.
+                "ALTER TABLE known_contacts DROP COLUMN replaced_at",
                 "UPDATE schema_version SET version = 2 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");

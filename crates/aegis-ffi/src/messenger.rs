@@ -202,6 +202,11 @@ pub struct FfiContact {
     /// и прежний контакт остаётся на месте: смена ключа заводит
     /// новую запись, а верификация старой на неё не переносится.
     pub key_changed: bool,
+    /// 🔐 Ключ контакта заменён другим под тем же именем.
+    ///
+    /// Переписка остаётся для чтения, отправлять в неё нельзя: имя
+    /// ведёт теперь к другому ключу.
+    pub replaced: bool,
 }
 
 /// Найденное сообщение вместе с его чатом.
@@ -528,6 +533,27 @@ impl Messenger {
         guard(|| {
             client.set_contact_verified(&account, verified, Timestamp::from_millis(now_millis))
         })
+    }
+
+    /// 🔐 Принимает ключ контакта без сверки: имя остаётся за ним.
+    ///
+    /// Путь для законной смены ключа у собеседника, когда встретиться
+    /// и сверить safety number нельзя. Прочие записи того же имени
+    /// становятся заменёнными. Решение пишется в журнал безопасности.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — счёт не разбирается;
+    /// [`FfiError::Core`] — такого контакта нет либо запись не удалась.
+    pub fn accept_contact_identity(
+        &self,
+        account_id: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let account = parse_account_id(&account_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| client.accept_contact_identity(&account, Timestamp::from_millis(now_millis)))
     }
 
     /// Возвращает ссылку на собственный профиль.
@@ -1012,6 +1038,7 @@ fn contact_to_ffi(contact: &aegis_core::client::Contact) -> FfiContact {
         chat_id: contact.chat_id.map(|id| id.to_string()),
         verified: contact.verified,
         key_changed: contact.key_changed,
+        replaced: contact.replaced,
     }
 }
 

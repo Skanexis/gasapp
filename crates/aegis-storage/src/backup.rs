@@ -942,6 +942,7 @@ fn read_contacts(connection: &Connection) -> Result<Vec<ContactRow>> {
             chat_id,
             verified,
             added_at,
+            replaced: false,
         });
     }
 
