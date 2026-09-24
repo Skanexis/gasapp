@@ -669,6 +669,9 @@ pub struct FfiContactLink {
     /// Identity-ключ контакта, 32 байта.
     pub identity: Vec<u8>,
 
+    /// Хеш пост-квантовой половины identity, 32 байта.
+    pub pq_identity_hash: Vec<u8>,
+
     /// Имя, предложенное владельцем ссылки.
     ///
     /// 🔐 Подсказка для интерфейса, не более: имя выбирает тот, кто
@@ -692,11 +695,16 @@ pub struct FfiContactLink {
 #[uniffi::export]
 pub fn contact_link_uri(
     identity: Vec<u8>,
+    pq_identity_hash: Vec<u8>,
     display_name: Option<String>,
 ) -> Result<String, FfiError> {
     guard(|| {
         let link = aegis_protocol::contact_link::ContactLink {
             identity: identity_from_bytes(&identity)?,
+            pq_identity_hash: pq_identity_hash
+                .as_slice()
+                .try_into()
+                .map_err(|_| AegisError::Malformed)?,
             display_name,
         };
 
@@ -723,6 +731,7 @@ pub fn parse_contact_link(uri: String) -> Result<FfiContactLink, FfiError> {
 
     Ok(FfiContactLink {
         identity: link.identity.as_bytes().to_vec(),
+        pq_identity_hash: link.pq_identity_hash.to_vec(),
         display_name: link.display_name,
     })
 }
@@ -781,7 +790,7 @@ mod contact_link_tests {
 
     #[test]
     fn link_round_trips_across_the_boundary() {
-        let uri = contact_link_uri(identity(), Some("Иван".to_owned())).expect("ссылка");
+        let uri = contact_link_uri(identity(), vec![0x5A; 32], Some("Иван".to_owned())).expect("ссылка");
         let parsed = parse_contact_link(uri).expect("разбор");
 
         assert_eq!(parsed.identity, identity());
@@ -790,7 +799,7 @@ mod contact_link_tests {
 
     #[test]
     fn link_without_name_round_trips() {
-        let uri = contact_link_uri(identity(), None).expect("ссылка");
+        let uri = contact_link_uri(identity(), vec![0x5A; 32], None).expect("ссылка");
         let parsed = parse_contact_link(uri).expect("разбор");
 
         assert_eq!(parsed.identity, identity());
@@ -810,7 +819,7 @@ mod contact_link_tests {
     fn wrong_identity_length_is_rejected() {
         for length in [0usize, 31, 33, 64] {
             assert!(
-                contact_link_uri(vec![0; length], None).is_err(),
+                contact_link_uri(vec![0; length], vec![0x5A; 32], None).is_err(),
                 "ключ длиной {length} принят"
             );
         }
@@ -827,7 +836,7 @@ mod contact_link_tests {
 
     #[test]
     fn qr_is_built_for_profile() {
-        let uri = contact_link_uri(identity(), Some("Иван".to_owned())).expect("ссылка");
+        let uri = contact_link_uri(identity(), vec![0x5A; 32], Some("Иван".to_owned())).expect("ссылка");
         let matrix = contact_link_qr(uri).expect("код");
 
         assert!(matrix.size >= 21);

@@ -37,6 +37,7 @@ pub mod group;
 pub mod keys;
 pub mod mlkem;
 pub mod padding;
+pub mod pq_identity;
 pub mod pqxdh;
 pub mod prekeys;
 pub mod protocol_engine;

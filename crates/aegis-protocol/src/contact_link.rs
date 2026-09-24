@@ -52,6 +52,9 @@ const PREFIX: &str = "aegis://contact/";
 /// 52 символа несут 260 бит, из которых четыре последних — нули.
 const ENCODED_KEY_LEN: usize = 52;
 
+/// Разделитель ключа и хеша пост-квантовой половины в пути ссылки.
+const KEY_SEPARATOR: char = '.';
+
 /// Предел длины отображаемого имени.
 ///
 /// 🔐 Имя приходит из ссылки, то есть от кого угодно, и попадает
@@ -77,6 +80,14 @@ pub struct ContactLink {
     /// Identity-ключ контакта.
     pub identity: PublicKeyBytes,
 
+    /// 🔐 Хеш пост-квантовой половины identity (`pq_identity::pq_identity_hash`).
+    ///
+    /// Сам ключ ML-DSA (1952 байта) в QR не поместится; хеша достаточно:
+    /// ключ приходит от сервера и принимается, только если его хеш
+    /// совпадает с этим. Ссылка без хеша подтверждала бы лишь
+    /// классическую половину — её подделал бы квантовый противник.
+    pub pq_identity_hash: [u8; 32],
+
     /// Имя, которое предложил владелец ссылки.
     ///
     /// 🔐 Подсказка для интерфейса, не более. Имя выбирает тот, кто
@@ -94,9 +105,16 @@ impl ContactLink {
     /// [`AegisError::Malformed`] — имя длиннее [`MAX_DISPLAY_NAME_LEN`]
     /// либо содержит символы, ломающие отображение.
     pub fn to_uri(&self) -> Result<String> {
-        let mut uri = String::with_capacity(PREFIX.len().saturating_add(ENCODED_KEY_LEN));
+        let mut uri = String::with_capacity(
+            PREFIX
+                .len()
+                .saturating_add(ENCODED_KEY_LEN.saturating_mul(2))
+                .saturating_add(1),
+        );
         uri.push_str(PREFIX);
         uri.push_str(&encode_base32(self.identity.as_bytes()));
+        uri.push(KEY_SEPARATOR);
+        uri.push_str(&encode_base32(&self.pq_identity_hash));
 
         if let Some(name) = &self.display_name {
             validate_name(name)?;
@@ -142,7 +160,13 @@ impl ContactLink {
             return Err(AegisError::Malformed);
         }
 
-        let identity = PublicKeyBytes::new(decode_key(encoded)?);
+        // Ключ и хеш пост-квантовой половины — через одну точку;
+        // ссылка без хеша (прежний формат) не принимается.
+        let (identity_part, pq_part) = encoded
+            .split_once(KEY_SEPARATOR)
+            .ok_or(AegisError::Malformed)?;
+        let identity = PublicKeyBytes::new(decode_key(identity_part)?);
+        let pq_identity_hash = decode_key(pq_part)?;
 
         let display_name = match query {
             None => None,
@@ -151,6 +175,7 @@ impl ContactLink {
 
         Ok(Self {
             identity,
+            pq_identity_hash,
             display_name,
         })
     }
@@ -370,6 +395,7 @@ mod tests {
     fn link_round_trips() {
         let link = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: Some("Иван".to_owned()),
         };
 
@@ -382,6 +408,7 @@ mod tests {
     fn link_without_name_round_trips() {
         let link = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         };
 
@@ -415,6 +442,7 @@ mod tests {
     fn extra_path_segments_are_rejected() {
         let uri = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -432,6 +460,7 @@ mod tests {
     fn unknown_parameters_are_rejected() {
         let uri = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -454,6 +483,7 @@ mod tests {
         for name in ["Иван\u{202E}gpj.exe", "две\nстроки", "таб\tуляция"] {
             let link = ContactLink {
                 identity: identity(),
+                pq_identity_hash: [0x5A; 32],
                 display_name: Some(name.to_owned()),
             };
 
@@ -465,6 +495,7 @@ mod tests {
     fn oversized_name_is_rejected() {
         let link = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: Some("я".repeat(MAX_DISPLAY_NAME_LEN.saturating_add(1))),
         };
 
@@ -476,6 +507,7 @@ mod tests {
     fn cyrillic_name_at_limit_round_trips() {
         let link = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: Some("я".repeat(MAX_DISPLAY_NAME_LEN)),
         };
 
@@ -527,6 +559,7 @@ mod tests {
     fn lowercase_key_is_accepted() {
         let uri = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -551,6 +584,7 @@ mod tests {
     fn nonzero_padding_bits_are_rejected() {
         let uri = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -581,6 +615,7 @@ mod tests {
     fn different_keys_give_different_links() {
         let first = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -588,6 +623,7 @@ mod tests {
 
         let second = ContactLink {
             identity: PublicKeyBytes::new([0xff; 32]),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -604,6 +640,7 @@ mod tests {
     fn name_with_separators_round_trips() {
         let link = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: Some("Иван и Мария?".to_owned()),
         };
 
@@ -618,6 +655,7 @@ mod tests {
     fn malformed_percent_encoding_is_rejected() {
         let uri = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -651,6 +689,7 @@ mod tests {
     fn parse_and_rebuild_agree() {
         let base = ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: None,
         }
         .to_uri()
@@ -701,6 +740,7 @@ mod tests {
     fn qr_is_built_from_link() {
         let matrix = contact_qr(&ContactLink {
             identity: identity(),
+            pq_identity_hash: [0x5A; 32],
             display_name: Some("Иван".to_owned()),
         })
         .expect("код");

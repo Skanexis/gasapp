@@ -120,6 +120,50 @@ impl Fingerprint {
         Self(out)
     }
 
+    /// Отпечаток гибридной identity: классический ключ ‖ хеш
+    /// пост-квантовой половины (`pq_identity::pq_identity_hash`).
+    ///
+    /// ```text
+    /// K  = IK ‖ H(PQ)
+    /// h₀ = SHA-512(0x00 ‖ 0x01 ‖ K ‖ identifier)
+    /// hᵢ = SHA-512(hᵢ₋₁ ‖ K)          — 5200 раундов
+    /// ```
+    ///
+    /// 🔐 Версия формата — `0x00 0x01`: отпечаток гибридной identity
+    /// нельзя принять за отпечаток одной классической. Сверка safety
+    /// number покрывает обе половины — подмена ML-DSA-ключа сервером
+    /// меняет цифры так же, как подмена классического.
+    #[must_use]
+    pub fn compute_hybrid(
+        identity: &PublicKeyBytes,
+        pq_identity_hash: &[u8; 32],
+        identifier: &[u8],
+    ) -> Self {
+        let mut key = [0u8; 64];
+        key[..32].copy_from_slice(identity.as_bytes());
+        key[32..].copy_from_slice(pq_identity_hash);
+
+        let mut hash = Sha512::new();
+        hash.update([0x00, 0x01]);
+        hash.update(key);
+        hash.update(identifier);
+        let mut current = hash.finalize();
+
+        for _ in 0..FINGERPRINT_ROUNDS {
+            let mut round = Sha512::new();
+            round.update(current);
+            round.update(key);
+            current = round.finalize();
+        }
+
+        let mut out = [0u8; FINGERPRINT_BYTES];
+        if let Some(prefix) = current.get(..FINGERPRINT_BYTES) {
+            out.copy_from_slice(prefix);
+        }
+
+        Self(out)
+    }
+
     /// Преобразует отпечаток в 30 десятичных цифр (6 групп по 5).
     ///
     /// Каждые 5 байт трактуются как big-endian число и приводятся по модулю
@@ -300,6 +344,26 @@ impl fmt::Debug for SafetyNumber {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 🔐 Подмена пост-квантовой половины меняет отпечаток, а гибридный
+    /// отпечаток не совпадает с классическим того же ключа.
+    #[test]
+    fn hybrid_fingerprint_covers_the_pq_half() {
+        let key = PublicKeyBytes::new([7; 32]);
+
+        assert_ne!(
+            Fingerprint::compute_hybrid(&key, &[1; 32], b"alice"),
+            Fingerprint::compute_hybrid(&key, &[2; 32], b"alice")
+        );
+        assert_ne!(
+            Fingerprint::compute_hybrid(&key, &[1; 32], b"alice"),
+            Fingerprint::compute(&key, b"alice")
+        );
+        assert_eq!(
+            Fingerprint::compute_hybrid(&key, &[1; 32], b"alice"),
+            Fingerprint::compute_hybrid(&key, &[1; 32], b"alice")
+        );
+    }
 
     /// Отпечаток детерминирован: те же входы дают тот же результат.
     #[test]

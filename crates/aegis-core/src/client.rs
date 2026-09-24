@@ -51,9 +51,11 @@ use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
 use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 
 mod network;
+mod pq;
 mod requests;
 mod sealed;
 
+use aegis_protocol::pq_identity::PqIdentityKeyPair;
 pub use aegis_storage::requests::ChatRequest;
 use aegis_types::{
     canonical_username, AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext,
@@ -293,8 +295,11 @@ impl<T: Transport> Client<T> {
         // сервером отвергается, но и уходить туда ему незачем.
         let username = &canonical_username(username)?;
         let identity = prekeys::generate_identity(rng)?;
+        // 🔐 Пост-квантовая половина identity — со своим seed
+        // (см. `aegis_protocol::pq_identity`).
+        let pq = PqIdentityKeyPair::generate(rng);
         let device_id = DeviceId::generate();
-        let (bundle, secrets) = prekeys::generate(&identity, device_id, now, rng)?;
+        let (bundle, secrets) = prekeys::generate(&identity, &pq, device_id, now, rng)?;
 
         // 🔐 Челлендж выводится из самой регистрации — имени и ключей.
         //
@@ -311,6 +316,8 @@ impl<T: Transport> Client<T> {
             username: username.to_owned(),
             identity_key: identity_hex.clone(),
             device_identity_key: identity_hex,
+            pq_identity_key: hex(&pq.public()),
+            identity_binding: hex(&aegis_protocol::pq_identity::bind(&identity, &pq)?),
             pow_challenge: hex(&challenge),
             pow_nonce: nonce,
         })?;
@@ -332,6 +339,9 @@ impl<T: Transport> Client<T> {
             now,
         )?;
         self.storage.set_account_id(&account_id, now)?;
+        self.storage.init_own_pq_identity(pq.seed())?;
+        // Сервер записал половину вместе с аккаунтом.
+        self.storage.mark_own_pq_identity_published(now)?;
 
         let mut request = publish_request(&bundle);
         let (kem_public, kem_signature) = self.sealed_kem_publication(&identity, rng)?;
@@ -379,9 +389,13 @@ impl<T: Transport> Client<T> {
         // что известен для этого имени (см. `check_advertised_identity`).
         self.check_advertised_identity(peer_username, &peer_identity, now)?;
 
-        // 🔐 Ключ ML-KEM sealed sender получателя — с проверенной подписью
-        // его identity-ключа (см. `verified_sealed_kem`).
-        let peer_kem = verified_sealed_kem(&peer, &peer_identity)?;
+        // 🔐 Пост-квантовая половина identity получателя — привязанная
+        // и сверенная с запомненной (см. `client::pq`).
+        let peer_pq = self.verified_peer_pq(&peer, &peer_identity, now)?;
+
+        // 🔐 Ключ ML-KEM sealed sender получателя — с проверенной
+        // гибридной подписью (см. `verified_sealed_kem`).
+        let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
 
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
 
@@ -677,7 +691,8 @@ impl<T: Transport> Client<T> {
         // и вложение уходят тем же ключом, что и текст.
         self.check_advertised_identity(peer_username, &peer_identity, now)?;
 
-        let peer_kem = verified_sealed_kem(&peer, &peer_identity)?;
+        let peer_pq = self.verified_peer_pq(&peer, &peer_identity, now)?;
+        let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
 
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
 
@@ -1138,6 +1153,25 @@ impl<T: Transport> Client<T> {
                     return Err(AegisError::Malformed);
                 }
 
+                // 🔐 То же — для пост-квантовой половины: хеш в ссылке
+                // пришёл от собеседника, ключ — от сервера.
+                if let (Some(pq_public), Some(binding)) =
+                    (&peer.pq_identity_key, &peer.identity_binding)
+                {
+                    let pq_public = unhex(pq_public)?;
+                    aegis_protocol::pq_identity::verify_binding(
+                        &advertised,
+                        &pq_public,
+                        &unhex(binding)?,
+                    )?;
+
+                    if aegis_protocol::pq_identity::pq_identity_hash(&pq_public)
+                        != link.pq_identity_hash
+                    {
+                        return Err(AegisError::Malformed);
+                    }
+                }
+
                 // Счёт — из ключа, как у всех прочих путей (входящее
                 // сообщение, поиск по имени). Прежде здесь брался счёт
                 // сервера, и один человек с одним ключом заводил две
@@ -1197,6 +1231,19 @@ impl<T: Transport> Client<T> {
         // сервера: сервер его только сверил (выше) и подменить не мог.
         self.storage.mark_contact_confirmed_by_link(&account_id)?;
 
+        // Хеш пост-квантовой половины — тоже со ссылки: он главнее
+        // запомненного с сервера. Расхождение — повод для журнала.
+        if self
+            .storage
+            .contact_pq_hash(&account_id)?
+            .is_some_and(|known| known != link.pq_identity_hash)
+        {
+            self.storage
+                .log_security_event("pq_identity_changed", None, now)?;
+        }
+        self.storage
+            .set_contact_pq_hash(&account_id, &link.pq_identity_hash)?;
+
         Ok(Contact {
             account_id,
             identity: link.identity,
@@ -1227,6 +1274,10 @@ impl<T: Transport> Client<T> {
 
         self.bind_advertised_identity(name, &advertised, now)?;
 
+        // Пост-квантовая половина — запоминается сразу: safety number
+        // считается по обеим, а сверять человек будет до первой отправки.
+        self.verified_peer_pq(&peer, &advertised, now)?;
+
         let account = peer_account(&advertised);
 
         self.contacts()?
@@ -1247,6 +1298,7 @@ impl<T: Transport> Client<T> {
 
         ContactLink {
             identity: *identity.public().public(),
+            pq_identity_hash: self.own_pq_hash()?,
             display_name: username,
         }
         .to_uri()
@@ -1634,7 +1686,9 @@ impl<T: Transport> Client<T> {
                 .map_err(|_| AegisError::Malformed)?,
         );
 
-        Ok(safety_number_of(&own, &peer))
+        // 🔐 Гибридные отпечатки: сверка покрывает и пост-квантовую
+        // половину (см. `client::pq`).
+        Ok(self.hybrid_safety_number(&own, &peer)?.to_display_block())
     }
 
     /// Отмечает контакт сверенным или снимает отметку.
@@ -1893,7 +1947,14 @@ impl<T: Transport> Client<T> {
             Some(name),
             Some(chat_id),
             now,
-        )
+        )?;
+
+        // Пост-квантовая половина собеседника, начавшего переписку:
+        // без неё safety number не посчитать. Подмена здесь — запись
+        // в журнал и отказ при отправке, но не повод потерять имя.
+        let _ = self.verified_peer_pq(&found, &advertised, now);
+
+        Ok(())
     }
 
     /// Перечисляет контакты, недавно добавленные первыми.
@@ -2061,11 +2122,12 @@ impl<T: Transport> Client<T> {
             .ok_or(AegisError::SessionNotFound)?;
 
         let (identity, mut secrets) = self.load_identity()?;
+        let pq = self.own_pq_identity()?;
 
         let rotated = secrets.needs_rotation(now);
 
         if rotated {
-            prekeys::rotate_signed(&identity, &mut secrets, now, rng)?;
+            prekeys::rotate_signed(&identity, &pq, &mut secrets, now, rng)?;
         }
 
         // 🔐 Остаток спрашивается у сервера, а не считается у себя.
@@ -2094,7 +2156,7 @@ impl<T: Transport> Client<T> {
             // отправитель, успевший забрать ключ, пришлёт по нему
             // начальное сообщение, и без приватной половины оно
             // не расшифруется.
-            prekeys::mint_one_time(&identity, &mut secrets, deficit, rng)?
+            prekeys::mint_one_time(&identity, &pq, &mut secrets, deficit, rng)?
         } else {
             (Vec::new(), Vec::new())
         };
@@ -2123,8 +2185,12 @@ impl<T: Transport> Client<T> {
             .own_sealed_kem()?
             .is_none_or(|(_, published)| published.is_none());
 
+        // 🔐 Пост-квантовая половина identity, ещё не бывшая на сервере:
+        // у аккаунтов, заведённых до гибридной identity.
+        let pq_pending = self.pending_pq_publication(&identity)?;
+
         // Делать нечего — и сети это знать незачем.
-        if !rotated && added == 0 && !kem_unpublished {
+        if !rotated && added == 0 && !kem_unpublished && pq_pending.is_none() {
             return Ok(PreKeyMaintenance {
                 rotated_signed: false,
                 added_one_time: 0,
@@ -2132,7 +2198,8 @@ impl<T: Transport> Client<T> {
             });
         }
 
-        let (signed_pre_key, signed_kem_pre_key) = prekeys::signed_published(&identity, &secrets)?;
+        let (signed_pre_key, signed_kem_pre_key) =
+            prekeys::signed_published(&identity, &pq, &secrets)?;
 
         let request = PublishKeysRequest {
             signed_key_id: i32::try_from(signed_pre_key.id.as_u32()).unwrap_or(i32::MAX),
@@ -2167,6 +2234,8 @@ impl<T: Transport> Client<T> {
                 .collect(),
             sealed_kem_public: None,
             sealed_kem_signature: None,
+            pq_identity_key: pq_pending.as_ref().map(|(public, _)| public.clone()),
+            identity_binding: pq_pending.as_ref().map(|(_, binding)| binding.clone()),
         };
 
         let mut request = request;
@@ -2182,6 +2251,16 @@ impl<T: Transport> Client<T> {
         // только с виду — то есть не чинился бы вовсе.
         self.api
             .publish_keys(&device_id, &request, &DeviceSigner::new(&identity, now))?;
+
+        // Ключ ML-KEM sealed sender ушёл на сервер этим запросом.
+        //
+        // ⚠️ Прежде отметка не ставилась: после смены ключа он
+        // переотправлялся при каждом обслуживании, а срок следующей
+        // смены (он считается от публикации) не наступал никогда.
+        self.storage.mark_own_sealed_kem_published(now)?;
+        if pq_pending.is_some() {
+            self.storage.mark_own_pq_identity_published(now)?;
+        }
 
         self.persist_secrets(&secrets, now)?;
 
@@ -2895,6 +2974,8 @@ fn peer_account(identity: &PublicKeyBytes) -> AccountId {
 /// Собирает запрос на публикацию предключей.
 fn publish_request(bundle: &PreKeyBundle) -> PublishKeysRequest {
     PublishKeysRequest {
+        pq_identity_key: None,
+        identity_binding: None,
         signed_key_id: i32::try_from(bundle.signed_pre_key.id.as_u32()).unwrap_or(i32::MAX),
         signed_public: hex(bundle.signed_pre_key.public.as_bytes()),
         signed_signature: hex(&bundle.signed_pre_key.signature),
@@ -2952,6 +3033,7 @@ fn publish_request(bundle: &PreKeyBundle) -> PublishKeysRequest {
 fn verified_sealed_kem(
     peer: &aegis_net::api::DiscoveryResponse,
     peer_identity: &PublicKeyBytes,
+    peer_pq: &[u8],
 ) -> Result<Vec<u8>> {
     let (Some(public), Some(signature)) = (&peer.sealed_kem_public, &peer.sealed_kem_signature)
     else {
@@ -2961,7 +3043,12 @@ fn verified_sealed_kem(
     let public = unhex(public)?;
     let signature = unhex(signature)?;
 
-    aegis_protocol::sealed_sender::verify_sealed_kem_key(peer_identity, &public, &signature)?;
+    aegis_protocol::sealed_sender::verify_sealed_kem_key(
+        peer_identity,
+        peer_pq,
+        &public,
+        &signature,
+    )?;
 
     Ok(public)
 }
@@ -2973,6 +3060,21 @@ fn parse_bundle(response: &BundleResponse) -> Result<PreKeyBundle> {
     Ok(PreKeyBundle {
         device_id,
         identity_key: IdentityKey::new(parse_public_key(&response.identity_key)?),
+        // 🔐 Без пост-квантовой половины bundle не принимается:
+        // гибридные подписи проверить нечем, а откат на одну
+        // классическую мог бы навязать сервер.
+        pq_identity: unhex(
+            response
+                .pq_identity_key
+                .as_ref()
+                .ok_or(AegisError::Uninitialized)?,
+        )?,
+        identity_binding: unhex(
+            response
+                .identity_binding
+                .as_ref()
+                .ok_or(AegisError::Uninitialized)?,
+        )?,
         signed_pre_key: SignedPreKey {
             id: PreKeyId::new(response.signed_key_id.unsigned_abs()),
             public: parse_public_key(&response.signed_public)?,

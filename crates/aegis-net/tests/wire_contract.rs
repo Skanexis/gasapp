@@ -43,6 +43,8 @@ fn register_request_matches_server_contract() {
         username: "alice".to_owned(),
         identity_key: "aa".to_owned(),
         device_identity_key: "bb".to_owned(),
+        pq_identity_key: "dd".to_owned(),
+        identity_binding: "ee".to_owned(),
         pow_challenge: "cc".to_owned(),
         pow_nonce: 1,
     };
@@ -53,9 +55,11 @@ fn register_request_matches_server_contract() {
         field_names(&json),
         vec![
             "device_identity_key",
+            "identity_binding",
             "identity_key",
             "pow_challenge",
             "pow_nonce",
+            "pq_identity_key",
             "username",
         ]
     );
@@ -104,6 +108,8 @@ fn publish_keys_matches_server_contract() {
         one_time_kem: vec![(20, "ff".to_owned(), "99".to_owned())],
         sealed_kem_public: None,
         sealed_kem_signature: None,
+        pq_identity_key: None,
+        identity_binding: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();

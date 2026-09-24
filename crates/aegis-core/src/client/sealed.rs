@@ -174,10 +174,8 @@ impl<T: Transport> Client<T> {
         _rng: &mut R,
     ) -> Result<(String, String)> {
         let public = self.own_sealed_kem_key()?.public_key().as_bytes();
-        let signature = sealed_sender::sign_sealed_kem_key(
-            &PrivateKeyBytes::new(*identity.private().expose_secret()),
-            &public,
-        )?;
+        let signature =
+            sealed_sender::sign_sealed_kem_key(identity, &self.own_pq_identity()?, &public)?;
 
         Ok((hex(&public), hex(&signature)))
     }
@@ -395,6 +393,14 @@ impl<T: Transport> Client<T> {
         } else {
             let response = self.api.fetch_bundle(peer_device)?;
             let bundle = parse_bundle(&response)?;
+
+            // 🔐 Bundle обязан принадлежать тому, кому пишем: и
+            // классическая, и пост-квантовая половины — те же, что
+            // проверены и запомнены по discovery.
+            if bundle.identity_key.public() != peer_identity {
+                return Err(AegisError::IdentityChanged);
+            }
+            self.remember_peer_pq(&peer_account(peer_identity), &bundle.pq_identity, now)?;
 
             let started = session::start_session(identity, &bundle, &share, rng)?;
 

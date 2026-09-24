@@ -244,6 +244,12 @@ pub struct RegisterRequest {
     pub identity_key: String,
     /// Публичный identity-ключ первого устройства, hex.
     pub device_identity_key: String,
+    /// 🔐 Пост-квантовая половина identity — ключ ML-DSA-65, hex.
+    #[serde(default)]
+    pub pq_identity_key: Option<String>,
+    /// Гибридная привязка половин identity, hex.
+    #[serde(default)]
+    pub identity_binding: Option<String>,
     /// Челлендж proof-of-work, hex.
     pub pow_challenge: String,
     /// Решение proof-of-work.
@@ -285,6 +291,12 @@ pub struct DiscoveryResponse {
     /// Подпись ключа ML-KEM sealed sender, hex.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sealed_kem_signature: Option<String>,
+    /// Пост-квантовая половина identity, hex.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pq_identity_key: Option<String>,
+    /// Гибридная привязка половин identity, hex.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity_binding: Option<String>,
 }
 
 /// Регистрация токена push-уведомлений.
@@ -322,6 +334,12 @@ pub struct PublishKeysRequest {
     /// Подпись ключа ML-KEM sealed sender identity-ключом, hex.
     #[serde(default)]
     pub sealed_kem_signature: Option<String>,
+    /// Пост-квантовая половина identity — у аккаунтов, заведённых без неё.
+    #[serde(default)]
+    pub pq_identity_key: Option<String>,
+    /// Гибридная привязка половин identity.
+    #[serde(default)]
+    pub identity_binding: Option<String>,
 }
 
 /// Выдаваемый prekey bundle.
@@ -331,6 +349,12 @@ pub struct BundleResponse {
     pub device_id: Uuid,
     /// Identity-ключ устройства, hex.
     pub identity_key: String,
+    /// Пост-квантовая половина identity владельца, hex.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pq_identity_key: Option<String>,
+    /// Гибридная привязка половин identity, hex.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity_binding: Option<String>,
     /// Идентификатор подписанного предключа.
     pub signed_key_id: i32,
     /// Публичная часть подписанного предключа, hex.
@@ -507,8 +531,18 @@ async fn register(
         return Err(ApiError::BadRequest);
     }
 
+    // 🔐 Пост-квантовая половина identity обязательна: без неё гибридные
+    // подписи клиентов не проверить. Сервер проверяет только длины —
+    // подлинность проверяют клиенты.
+    let (pq_public, binding) = decode_pq_identity(
+        request.pq_identity_key.as_deref(),
+        request.identity_binding.as_deref(),
+    )?
+    .ok_or(ApiError::BadRequest)?;
+
     let (account_id, device_id) =
         repo::register_account(&state.pool, &request.username, &identity, &device_identity).await?;
+    repo::set_pq_identity(&state.pool, account_id, &pq_public, &binding).await?;
 
     Ok(Json(RegisterResponse {
         account_id,
@@ -615,6 +649,7 @@ async fn discovery(
         Some(first) => repo::sealed_kem_of(&state.pool, first.device_id).await?,
         None => None,
     };
+    let pq = repo::pq_identity_of(&state.pool, account.account_id).await?;
 
     Ok(Json(DiscoveryResponse {
         account_id: account.account_id,
@@ -624,14 +659,46 @@ async fn discovery(
         sealed_kem_signature: sealed_kem
             .as_ref()
             .map(|(_, signature)| hex::encode(signature)),
+        pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
+        identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
     }))
+}
+
+/// Длина ключа ML-DSA-65.
+const PQ_IDENTITY_KEY_LEN: usize = 1952;
+
+/// Длина гибридной подписи: XEdDSA (64) ‖ ML-DSA-65 (3309).
+const HYBRID_SIGNATURE_LEN: usize = 3373;
+
+/// Разбирает пост-квантовую половину identity; `None` — не прислана.
+///
+/// Прислана наполовину или не той длины — отказ: неполная половина
+/// выглядела бы у клиентов подменой.
+fn decode_pq_identity(
+    public: Option<&str>,
+    binding: Option<&str>,
+) -> Result<Option<(Vec<u8>, Vec<u8>)>, ApiError> {
+    match (public, binding) {
+        (None, None) => Ok(None),
+        (Some(public), Some(binding)) => {
+            let public = decode_hex(public)?;
+            let binding = decode_hex(binding)?;
+
+            if public.len() != PQ_IDENTITY_KEY_LEN || binding.len() != HYBRID_SIGNATURE_LEN {
+                return Err(ApiError::BadRequest);
+            }
+
+            Ok(Some((public, binding)))
+        }
+        _ => Err(ApiError::BadRequest),
+    }
 }
 
 /// Длина открытого ключа ML-KEM-1024.
 const SEALED_KEM_PUBLIC_LEN: usize = 1568;
 
 /// Длина подписи XEdDSA.
-const SEALED_KEM_SIGNATURE_LEN: usize = 64;
+const SEALED_KEM_SIGNATURE_LEN: usize = HYBRID_SIGNATURE_LEN;
 
 /// Публикация предключей устройства.
 ///
@@ -688,6 +755,13 @@ async fn publish_keys(
         _ => return Err(ApiError::BadRequest),
     };
 
+    // Разбирается до записи: неверная половина не должна оставить
+    // опубликованными предключи без неё.
+    let pq_update = decode_pq_identity(
+        request.pq_identity_key.as_deref(),
+        request.identity_binding.as_deref(),
+    )?;
+
     repo::publish_prekeys(
         &state.pool,
         device_id,
@@ -700,6 +774,12 @@ async fn publish_keys(
 
     if let Some((public, signature)) = sealed_kem {
         repo::set_sealed_kem(&state.pool, device_id, &public, &signature).await?;
+    }
+
+    // Пост-квантовая половина identity — у аккаунтов, заведённых без неё.
+    if let Some((public, binding)) = pq_update {
+        let account = repo::account_of_device(&state.pool, device_id).await?;
+        repo::set_pq_identity(&state.pool, account, &public, &binding).await?;
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -752,9 +832,14 @@ async fn take_bundle(
     let bundle = repo::take_prekey_bundle(&state.pool, device_id).await?;
     let degraded = bundle.one_time.is_none() || bundle.one_time_kem.is_none();
 
+    let account = repo::account_of_device(&state.pool, bundle.device_id).await?;
+    let pq = repo::pq_identity_of(&state.pool, account).await?;
+
     Ok(Json(BundleResponse {
         device_id: bundle.device_id,
         identity_key: hex::encode(bundle.identity_key),
+        pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
+        identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
         signed_key_id: bundle.signed_key_id,
         signed_public: hex::encode(bundle.signed_public),
         signed_signature: hex::encode(bundle.signed_signature),

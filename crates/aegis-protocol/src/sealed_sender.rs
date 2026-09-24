@@ -479,32 +479,46 @@ fn derive_key(
     Ok(Secret::new(key))
 }
 
-/// Подписывает ключ ML-KEM sealed sender identity-ключом устройства.
+/// Подписывает ключ ML-KEM sealed sender — гибридно: identity-ключом
+/// (XEdDSA) и пост-квантовой половиной identity (ML-DSA-65).
 ///
 /// # Errors
 ///
 /// [`AegisError::Crypto`] — сбой подписи.
 pub fn sign_sealed_kem_key(
-    identity_private: &aegis_types::PrivateKeyBytes,
+    identity: &crate::keys::IdentityKeyPair,
+    pq: &crate::pq_identity::PqIdentityKeyPair,
     kem_public: &[u8],
 ) -> Result<Vec<u8>> {
     let mut message = KEM_SIGNATURE_DOMAIN.to_vec();
     message.extend_from_slice(kem_public);
 
-    Ok(xeddsa::montgomery::sign(identity_private, &message)?.to_vec())
+    crate::pq_identity::hybrid_sign(
+        identity,
+        pq,
+        crate::pq_identity::SEALED_KEM_DOMAIN,
+        &message,
+    )
 }
 
-/// Проверяет подпись ключа ML-KEM sealed sender identity-ключом владельца.
+/// Проверяет гибридную подпись ключа ML-KEM sealed sender.
 ///
 /// 🔐 Ключ приходит от сервера. Без этой проверки сервер подставил бы
 /// свой ключ ML-KEM, и пост-квантовая половина внешнего слоя была бы
-/// у него на руках.
+/// у него на руках. Подпись гибридная: подделка классической половины
+/// (квантовым противником) её не проходит.
+///
+/// `owner_pq` — пост-квантовая половина identity владельца; её
+/// привязку к `owner_identity` проверяет вызывающий
+/// (`pq_identity::verify_binding`).
 ///
 /// # Errors
 ///
-/// [`AegisError::Crypto`] — подпись не сходится или ключ не разбирается.
+/// [`AegisError::Crypto`] — ключ не разбирается;
+/// [`AegisError::InvalidSignature`] — подпись не сходится.
 pub fn verify_sealed_kem_key(
     owner_identity: &PublicKeyBytes,
+    owner_pq: &[u8],
     kem_public: &[u8],
     signature: &[u8],
 ) -> Result<()> {
@@ -513,7 +527,13 @@ pub fn verify_sealed_kem_key(
     let mut message = KEM_SIGNATURE_DOMAIN.to_vec();
     message.extend_from_slice(kem_public);
 
-    xeddsa::montgomery::verify(owner_identity, &message, signature)
+    crate::pq_identity::hybrid_verify(
+        owner_identity,
+        owner_pq,
+        crate::pq_identity::SEALED_KEM_DOMAIN,
+        &message,
+        signature,
+    )
 }
 
 /// Выводит nonce из эфемерного ключа.
@@ -1108,24 +1128,43 @@ mod tests {
     /// sealed sender.
     #[test]
     fn sealed_kem_signature_is_domain_separated() {
-        let owner = X25519PrivateKey::generate(&mut OsRng);
-        let owner_public = xeddsa::montgomery::public_key(&owner.expose_secret()).expect("ключ");
+        let owner = crate::prekeys::generate_identity(&mut OsRng).expect("identity");
+        let pq = crate::pq_identity::PqIdentityKeyPair::generate(&mut OsRng);
+        let owner_public = *owner.public().public();
         let kem = MlKem1024PrivateKey::generate(&mut OsRng)
             .public_key()
             .as_bytes();
 
-        let signature = sign_sealed_kem_key(&owner.expose_secret(), &kem).expect("подпись");
-        verify_sealed_kem_key(&owner_public, &kem, &signature).expect("своя подпись");
+        let signature = sign_sealed_kem_key(&owner, &pq, &kem).expect("подпись");
+        verify_sealed_kem_key(&owner_public, &pq.public(), &kem, &signature).expect("своя подпись");
 
-        let raw = xeddsa::montgomery::sign(&owner.expose_secret(), &kem).expect("подпись");
+        // Гибридная подпись предключа (другой домен) не годится.
+        let prekey_signature = crate::pq_identity::hybrid_sign(
+            &owner,
+            &pq,
+            crate::pq_identity::KEM_PRE_KEY_DOMAIN,
+            &kem,
+        )
+        .expect("подпись");
         assert!(
-            verify_sealed_kem_key(&owner_public, &kem, &raw).is_err(),
+            verify_sealed_kem_key(&owner_public, &pq.public(), &kem, &prekey_signature).is_err(),
             "подпись предключа принята за подпись ключа sealed sender"
         );
 
         let other = MlKem1024PrivateKey::generate(&mut OsRng)
             .public_key()
             .as_bytes();
-        assert!(verify_sealed_kem_key(&owner_public, &other, &signature).is_err());
+        assert!(verify_sealed_kem_key(&owner_public, &pq.public(), &other, &signature).is_err());
+
+        // 🔐 Одной классической подписи мало: квантовый противник
+        // подделал бы именно её.
+        let mut message = KEM_SIGNATURE_DOMAIN.to_vec();
+        message.extend_from_slice(&kem);
+        let classical = xeddsa::montgomery::sign(
+            &aegis_types::PrivateKeyBytes::new(*owner.private().expose_secret()),
+            &message,
+        )
+        .expect("подпись");
+        assert!(verify_sealed_kem_key(&owner_public, &pq.public(), &kem, &classical).is_err());
     }
 }

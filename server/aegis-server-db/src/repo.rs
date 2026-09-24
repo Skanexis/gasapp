@@ -1151,3 +1151,66 @@ pub async fn purge_inactive_accounts(pool: &PgPool) -> Result<u64, RepoError> {
 
     Ok(result.rows_affected())
 }
+
+/// Пост-квантовая половина identity аккаунта (миграция 0012):
+/// открытый ключ ML-DSA-65 и гибридная привязка к классическому.
+pub type PqIdentity = (Vec<u8>, Vec<u8>);
+
+/// Записывает пост-квантовую половину identity аккаунта.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы (в том числе неверная длина).
+pub async fn set_pq_identity(
+    pool: &PgPool,
+    account_id: Uuid,
+    public: &[u8],
+    binding: &[u8],
+) -> Result<(), RepoError> {
+    sqlx::query(
+        "UPDATE accounts SET pq_identity_key = $2, identity_binding = $3 WHERE account_id = $1",
+    )
+    .bind(account_id)
+    .bind(public)
+    .bind(binding)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Пост-квантовая половина identity аккаунта, если опубликована.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn pq_identity_of(
+    pool: &PgPool,
+    account_id: Uuid,
+) -> Result<Option<PqIdentity>, RepoError> {
+    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT pq_identity_key, identity_binding FROM accounts WHERE account_id = $1",
+    )
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(match row {
+        Some((Some(public), Some(binding))) => Some((public, binding)),
+        _ => None,
+    })
+}
+
+/// Аккаунт устройства.
+///
+/// # Errors
+///
+/// [`RepoError::NotFound`] — устройства нет; [`RepoError::Database`] — сбой базы.
+pub async fn account_of_device(pool: &PgPool, device_id: Uuid) -> Result<Uuid, RepoError> {
+    let account: Uuid = sqlx::query_scalar("SELECT account_id FROM devices WHERE device_id = $1")
+        .bind(device_id)
+        .fetch_one(pool)
+        .await?;
+
+    Ok(account)
+}

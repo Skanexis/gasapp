@@ -623,6 +623,8 @@ mod tests {
             username: "alice".to_owned(),
             identity_key: "aa".to_owned(),
             device_identity_key: "bb".to_owned(),
+            pq_identity_key: "dd".to_owned(),
+            identity_binding: "ee".to_owned(),
             pow_challenge: "cc".to_owned(),
             pow_nonce: 7,
         }
@@ -775,6 +777,8 @@ mod tests {
             one_time_kem: Vec::new(),
             sealed_kem_public: None,
             sealed_kem_signature: None,
+            pq_identity_key: None,
+            identity_binding: None,
         };
 
         client.publish_keys("dev-1", &request, &TestSigner).unwrap();
@@ -802,6 +806,8 @@ mod tests {
             one_time_kem: Vec::new(),
             sealed_kem_public: None,
             sealed_kem_signature: None,
+            pq_identity_key: None,
+            identity_binding: None,
         };
 
         client.publish_keys("dev-1", &request, &TestSigner).unwrap();

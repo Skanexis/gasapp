@@ -229,6 +229,8 @@ fn prekey_bundle_with_random_signature_is_always_rejected() {
         let bundle = PreKeyBundle {
             device_id: DeviceId::generate(),
             identity_key: IdentityKey::new(PublicKeyBytes::new(identity)),
+            pq_identity: rng.bytes(1952),
+            identity_binding: rng.bytes(3373),
             signed_pre_key: SignedPreKey {
                 id: PreKeyId::new(1),
                 public: PublicKeyBytes::new(signed),
@@ -339,6 +341,7 @@ fn contact_link_parsing_never_panics() {
 
         let base = ContactLink {
             identity: PublicKeyBytes::new(identity),
+            pq_identity_hash: identity,
             display_name: None,
         }
         .to_uri()

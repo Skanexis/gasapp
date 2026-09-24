@@ -230,12 +230,13 @@ mod tests {
         x25519::X25519PrivateKey,
         xeddsa,
     };
-    use aegis_types::{DeviceId, PrivateKeyBytes, Secret};
+    use aegis_types::{DeviceId, Secret};
     use rand_core::OsRng;
 
     /// Комплект ключей получателя: публичный bundle и приватные части.
     struct Responder {
         identity: IdentityKeyPair,
+        pq: crate::pq_identity::PqIdentityKeyPair,
         signed_pre_key: X25519PrivateKey,
         signed_kem: MlKem1024PrivateKey,
     }
@@ -255,17 +256,14 @@ mod tests {
         fn generate() -> Self {
             Self {
                 identity: generate_identity(),
+                pq: crate::pq_identity::PqIdentityKeyPair::generate(&mut OsRng),
                 signed_pre_key: X25519PrivateKey::generate(&mut OsRng),
                 signed_kem: MlKem1024PrivateKey::generate(&mut OsRng),
             }
         }
 
-        fn sign(&self, message: &[u8]) -> Vec<u8> {
-            let private = PrivateKeyBytes::new(*self.identity.private().expose_secret());
-
-            xeddsa::montgomery::sign(&private, message)
-                .unwrap()
-                .to_vec()
+        fn sign(&self, domain: &[u8], message: &[u8]) -> Vec<u8> {
+            crate::pq_identity::hybrid_sign(&self.identity, &self.pq, domain, message).unwrap()
         }
 
         fn bundle(&self) -> PreKeyBundle {
@@ -275,10 +273,15 @@ mod tests {
             PreKeyBundle {
                 device_id: DeviceId::generate(),
                 identity_key: *self.identity.public(),
+                pq_identity: self.pq.public(),
+                identity_binding: crate::pq_identity::bind(&self.identity, &self.pq).unwrap(),
                 signed_pre_key: SignedPreKey {
                     id: PreKeyId::new(1),
                     public: spk_public,
-                    signature: self.sign(spk_public.as_bytes()),
+                    signature: self.sign(
+                        crate::pq_identity::SIGNED_PRE_KEY_DOMAIN,
+                        spk_public.as_bytes(),
+                    ),
                 },
                 // Одноразовые предключи опущены: PQXDH это допускает,
                 // помечая bundle как degraded.
@@ -286,7 +289,7 @@ mod tests {
                 signed_kem_pre_key: SignedKemPreKey {
                     id: PreKeyId::new(2),
                     public: KemPublicKey::new(kem_public.clone()),
-                    signature: self.sign(&kem_public),
+                    signature: self.sign(crate::pq_identity::KEM_PRE_KEY_DOMAIN, &kem_public),
                 },
                 one_time_kem_pre_key: None,
             }

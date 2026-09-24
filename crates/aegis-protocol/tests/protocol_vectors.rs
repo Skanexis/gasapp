@@ -150,8 +150,14 @@ fn pqxdh_shared_secret_is_stable() {
 
     let alice = prekeys::generate_identity(&mut rng).expect("identity");
     let bob = prekeys::generate_identity(&mut rng).expect("identity");
-    let (bundle, _) =
-        prekeys::generate(&bob, DeviceId::generate(), now(), &mut rng).expect("предключи");
+    let (bundle, _) = prekeys::generate(
+        &bob,
+        &aegis_protocol::pq_identity::PqIdentityKeyPair::from_seed(&[0x42; 32]),
+        DeviceId::generate(),
+        now(),
+        &mut rng,
+    )
+    .expect("предключи");
 
     let output = pqxdh::initiate(&alice, &bundle, &mut rng).expect("инициация");
 

@@ -108,6 +108,8 @@ async fn register(state: &Arc<AppState>, username: &str) -> (Uuid, Uuid) {
             "username": username,
             "identity_key": hex::encode([1u8; 32]),
             "device_identity_key": hex::encode([2u8; 32]),
+            "pq_identity_key": hex::encode([0x51u8; 1952]),
+            "identity_binding": hex::encode([0x52u8; 3373]),
             "pow_challenge": hex::encode(challenge),
             "pow_nonce": nonce,
         })),
@@ -228,6 +230,8 @@ async fn registration_without_valid_pow_is_rejected() {
             "username": username,
             "identity_key": hex::encode([1u8; 32]),
             "device_identity_key": hex::encode([2u8; 32]),
+            "pq_identity_key": hex::encode([0x51u8; 1952]),
+            "identity_binding": hex::encode([0x52u8; 3373]),
             "pow_challenge": hex::encode(challenge),
             "pow_nonce": wrong,
         })),
@@ -267,6 +271,8 @@ async fn one_pow_solution_registers_only_one_account() {
                 "username": username,
                 "identity_key": hex::encode([1u8; 32]),
                 "device_identity_key": hex::encode([2u8; 32]),
+                "pq_identity_key": hex::encode([0x51u8; 1952]),
+                "identity_binding": hex::encode([0x52u8; 3373]),
                 "pow_challenge": hex::encode(challenge),
                 "pow_nonce": nonce,
             })),
@@ -302,6 +308,8 @@ async fn duplicate_username_conflicts() {
             "username": username,
             "identity_key": hex::encode([9u8; 32]),
             "device_identity_key": hex::encode([9u8; 32]),
+            "pq_identity_key": hex::encode([0x51u8; 1952]),
+            "identity_binding": hex::encode([0x52u8; 3373]),
             "pow_challenge": hex::encode(challenge),
             "pow_nonce": nonce,
         })),
@@ -859,6 +867,8 @@ async fn register_signing_device(
             "username": username,
             "identity_key": hex::encode([1u8; 32]),
             "device_identity_key": hex::encode(public_key(&private)),
+            "pq_identity_key": hex::encode([0x51u8; 1952]),
+            "identity_binding": hex::encode([0x52u8; 3373]),
             "pow_challenge": hex::encode(challenge),
             "pow_nonce": nonce,
         })),
@@ -897,6 +907,8 @@ async fn lookalike_usernames_are_refused() {
                 "username": lookalike,
                 "identity_key": hex::encode([1u8; 32]),
                 "device_identity_key": hex::encode(public_key(&private)),
+                "pq_identity_key": hex::encode([0x51u8; 1952]),
+                "identity_binding": hex::encode([0x52u8; 3373]),
                 "pow_challenge": hex::encode(challenge),
                 "pow_nonce": nonce,
             })),
@@ -1494,7 +1506,7 @@ async fn sealed_kem_key_is_published_and_discovered() {
     assert_eq!(
         publish(
             Some(hex::encode([0x55u8; 100])),
-            Some(hex::encode([0x66u8; 64]))
+            Some(hex::encode([0x66u8; 3373]))
         )
         .await,
         StatusCode::BAD_REQUEST
@@ -1507,7 +1519,7 @@ async fn sealed_kem_key_is_published_and_discovered() {
     assert_eq!(
         publish(
             Some(hex::encode([0x55u8; 1568])),
-            Some(hex::encode([0x66u8; 64]))
+            Some(hex::encode([0x66u8; 3373]))
         )
         .await,
         StatusCode::NO_CONTENT
@@ -1528,7 +1540,7 @@ async fn sealed_kem_key_is_published_and_discovered() {
     );
     assert_eq!(
         body["sealed_kem_signature"],
-        serde_json::json!(hex::encode([0x66u8; 64]))
+        serde_json::json!(hex::encode([0x66u8; 3373]))
     );
 
     // Публикация без ключа прежний не стирает.
