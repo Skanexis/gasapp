@@ -829,6 +829,11 @@ async fn fetch_messages(
         return Err(ApiError::Unauthorized);
     }
 
+    // Активность аккаунта — месяцем (миграция 0011): год без входа
+    // удаляет аккаунт и освобождает имя. Приложение забирает очередь
+    // при каждом открытии, так что этого места достаточно.
+    repo::touch_account_activity(&state.pool, device_id).await?;
+
     let envelopes = repo::fetch_envelopes(&state.pool, device_id, 100).await?;
 
     Ok(Json(

@@ -35,7 +35,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use aegis_core::client::{Client, Contact};
+use aegis_core::client::{ChatRequest, Client, Contact};
 use aegis_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
     RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest,
@@ -1863,6 +1863,10 @@ fn a_read_receipt_marks_our_messages_read_up_to_it() {
         .expect("входящее")
         .message_id;
 
+    // Переписку начала Алиса: у Боба это запрос, и квитанции уходят
+    // только после его согласия.
+    bob.accept_chat(&bob_chat, later(4), &mut OsRng)
+        .expect("принятие");
     bob.set_presence_sharing(true).expect("присутствие");
     bob.send_read_receipt("alice", &last_seen, later(4), &mut OsRng)
         .expect("квитанция");
@@ -4088,5 +4092,114 @@ fn a_new_account_publishes_its_access_key_without_writing_to_anyone() {
             .expect("отчёт")
             .sealed_sender_enabled,
         "ключ доступа не опубликован без отправки"
+    );
+}
+
+/// 🔐 Первое сообщение от собеседника — запрос: до принятия ему
+/// не уходят ни квитанции, ни «печатает…».
+#[test]
+fn a_first_message_is_a_request_until_accepted() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice.set_presence_sharing(true).expect("настройка");
+    bob.set_presence_sharing(true).expect("настройка");
+
+    let sent = alice
+        .send_message("bob", "привет, это Алиса", now(), &mut OsRng)
+        .expect("отправка");
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+
+    let alice_chat = alice.chats().expect("чаты")[0];
+    let bob_chat = bob.chats().expect("чаты")[0];
+    assert_eq!(
+        alice.chat_request(&alice_chat).expect("состояние"),
+        Some(ChatRequest::Outgoing)
+    );
+    assert_eq!(
+        bob.chat_request(&bob_chat).expect("состояние"),
+        Some(ChatRequest::Incoming)
+    );
+
+    // Непринятый запрос: квитанция и «печатает…» не уходят.
+    bob.send_read_receipt("alice", &sent, now(), &mut OsRng)
+        .expect("квитанция молча пропущена");
+    bob.send_typing("alice", true, now(), &mut OsRng)
+        .expect("индикатор молча пропущен");
+    assert_eq!(
+        alice.receive_messages(&alice_device, now()).expect("приём"),
+        0,
+        "незнакомец узнал, что сообщение прочли"
+    );
+    assert_eq!(
+        alice.chat_request(&alice_chat).expect("состояние"),
+        Some(ChatRequest::Outgoing),
+        "запрос у Алисы закрылся без ответа Боба"
+    );
+
+    // Принятие: у Боба — сразу, у Алисы — когда дойдёт ключ доступа.
+    bob.accept_chat(&bob_chat, now(), &mut OsRng)
+        .expect("принятие");
+    assert_eq!(
+        bob.chat_request(&bob_chat).expect("состояние"),
+        Some(ChatRequest::Settled)
+    );
+
+    alice.receive_messages(&alice_device, now()).expect("приём");
+    assert_eq!(
+        alice.chat_request(&alice_chat).expect("состояние"),
+        Some(ChatRequest::Settled),
+        "Алиса не узнала о принятии"
+    );
+}
+
+/// Собственный ответ в запрос — согласие.
+#[test]
+fn replying_to_a_request_accepts_it() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "привет", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let bob_chat = bob.chats().expect("чаты")[0];
+
+    bob.send_message("alice", "привет-привет", now(), &mut OsRng)
+        .expect("ответ");
+
+    assert_eq!(
+        bob.chat_request(&bob_chat).expect("состояние"),
+        Some(ChatRequest::Settled)
+    );
+}
+
+/// 🔐 Отклонённый запрос исчезает целиком, и в ответ не уходит ничего.
+#[test]
+fn declining_a_request_deletes_it_silently() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "купи курс", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let bob_chat = bob.chats().expect("чаты")[0];
+
+    bob.decline_chat(&bob_chat, now()).expect("отказ");
+
+    assert!(
+        bob.chats().expect("чаты").is_empty(),
+        "отклонённый чат остался"
+    );
+    assert!(bob.messages(&bob_chat, 10).expect("сообщения").is_empty());
+    assert_eq!(bob.chat_request(&bob_chat).expect("состояние"), None);
+    assert_eq!(
+        alice.receive_messages(&alice_device, now()).expect("приём"),
+        0,
+        "отказ что-то отправил незнакомцу"
     );
 }

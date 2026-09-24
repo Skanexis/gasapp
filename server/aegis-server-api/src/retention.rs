@@ -39,6 +39,8 @@ pub struct Purged {
     pub envelopes: u64,
     /// Вложений.
     pub attachments: u64,
+    /// Аккаунтов, не появлявшихся год (миграция 0011).
+    pub accounts: u64,
 }
 
 /// Удаляет истёкшие конверты и вложения — один раз.
@@ -50,6 +52,7 @@ pub async fn purge_once(pool: &PgPool) -> Result<Purged, RepoError> {
     Ok(Purged {
         envelopes: repo::purge_expired(pool).await?,
         attachments: repo::purge_expired_attachments(pool).await?,
+        accounts: repo::purge_inactive_accounts(pool).await?,
     })
 }
 
@@ -66,10 +69,11 @@ pub async fn run(pool: PgPool) {
 
         match purge_once(&pool).await {
             // Только числа: ни идентификаторов, ни устройств.
-            Ok(purged) if purged.envelopes > 0 || purged.attachments > 0 => {
+            Ok(purged) if purged.envelopes > 0 || purged.attachments > 0 || purged.accounts > 0 => {
                 tracing::info!(
                     envelopes = purged.envelopes,
                     attachments = purged.attachments,
+                    accounts = purged.accounts,
                     "удалено истёкшее"
                 );
             }

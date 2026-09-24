@@ -51,8 +51,10 @@ use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
 use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 
 mod network;
+mod requests;
 mod sealed;
 
+pub use aegis_storage::requests::ChatRequest;
 use aegis_types::{
     canonical_username, AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext,
     PublicKeyBytes, Result, Timestamp,
@@ -406,6 +408,8 @@ impl<T: Transport> Client<T> {
         // восстановления из резервной копии.
         let existing = self.storage.load_session(&chat_id)?;
 
+        self.note_outgoing(&chat_id, existing.is_none())?;
+
         // Устройство собеседника: bundle и доставка адресуются по нему.
         // Берётся первое из списка — многоустройственная доставка
         // появится вместе с синхронизацией (раздел 13.1).
@@ -582,7 +586,7 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<()> {
-        if !self.storage.presence_sharing_enabled()? {
+        if !self.storage.presence_sharing_enabled()? || self.request_pending_with(peer_username)? {
             return Ok(());
         }
 
@@ -610,7 +614,9 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<()> {
-        if !self.storage.presence_sharing_enabled()? {
+        // 🔐 Непринятому запросу квитанций нет: они подтвердили бы
+        // незнакомцу, что человек в сети и прочёл, до его согласия.
+        if !self.storage.presence_sharing_enabled()? || self.request_pending_with(peer_username)? {
             return Ok(());
         }
 
@@ -690,6 +696,8 @@ impl<T: Transport> Client<T> {
         // заново и нашего ключа у него, возможно, нет. Иначе его ответы
         // так и шли бы незапечатанными, раскрывая серверу отправителя.
         let existing = self.storage.load_session(&chat_id)?;
+
+        self.note_outgoing(&chat_id, existing.is_none())?;
 
         let session = match existing {
             Some(state) if self.storage.access_key_shared_with(&peer)? => state,
@@ -828,6 +836,22 @@ impl<T: Transport> Client<T> {
                     .as_ref()
                     .map(|certificate| certificate.identity_key)
             });
+
+            // 🔐 Запрос на переписку. Новый чат, начатый собеседником, —
+            // запрос: отвечать (квитанциями, «печатает…») нельзя, пока
+            // человек его не примет. Любое содержимое в чате, который
+            // начали мы, значит, что собеседник откликнулся.
+            match self.storage.chat_request_state(&chat_id)? {
+                None if incoming.sender_identity.is_some() => {
+                    self.storage
+                        .set_chat_request_state(&chat_id, ChatRequest::Incoming)?;
+                }
+                Some(ChatRequest::Outgoing) => {
+                    self.storage
+                        .set_chat_request_state(&chat_id, ChatRequest::Settled)?;
+                }
+                _ => {}
+            }
 
             if let Some(peer) = incoming.sender_identity {
                 self.storage
