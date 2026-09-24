@@ -25,6 +25,7 @@ import org.aegis.app.core.SecureWindow
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiException
 import uniffi.aegis.FfiProxy
+import uniffi.aegis.canonicalUsername
 
 /**
  * Онбординг: регистрация первого аккаунта.
@@ -77,12 +78,20 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun register() {
-        val name = username.text?.toString()?.trim().orEmpty()
-
-        if (name.length < MIN_USERNAME_LENGTH) {
-            showError(getString(R.string.onboarding_error_short))
+        // 🔐 Правило имени — ядра, а не экрана: строчные латинские буквы,
+        // цифры и `_`. Двойник «аlice» с кириллической «а» здесь
+        // отвергается, а «Alice» становится «alice».
+        val raw = username.text?.toString().orEmpty()
+        val name = try {
+            canonicalUsername(raw)
+        } catch (_: FfiException) {
+            showError(getString(R.string.onboarding_error_username))
 
             return
+        } catch (_: LinkageError) {
+            // Ядро не загрузилось — это не ошибка имени. Регистрация ниже
+            // упадёт на том же и сотрёт базу, как при любом сбое.
+            raw.trim()
         }
 
         if (!pin.isComplete) {
@@ -261,14 +270,6 @@ class OnboardingActivity : AppCompatActivity() {
 
         /** Пакет Orbot. */
         private const val ORBOT_PACKAGE = "org.torproject.android"
-
-        /**
-         * Минимальная длина имени.
-         *
-         * Короткие имена вычерпываются перебором, и злоумышленник смог
-         * бы занять их все до появления настоящих пользователей.
-         */
-        private const val MIN_USERNAME_LENGTH = 3
 
         /**
          * Минимальная длина PIN.
