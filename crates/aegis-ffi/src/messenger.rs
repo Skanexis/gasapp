@@ -20,7 +20,7 @@
 
 use std::sync::Mutex;
 
-use aegis_core::client::Client;
+use aegis_core::client::{ChatRequest, Client};
 use aegis_net::client::{HttpRequest, HttpResponse, Transport};
 use aegis_storage::Storage;
 use aegis_types::{AccountId, AegisError, ChatId, MessageId, Timestamp};
@@ -225,6 +225,27 @@ pub struct FfiSearchHit {
     pub message: FfiMessage,
 }
 
+/// Состояние запроса на переписку (см. `aegis_core::client::ChatRequest`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiChatRequest {
+    /// Обычная переписка.
+    Settled,
+    /// 🔐 Запрос от незнакомца: читать можно, отвечать — после принятия.
+    Incoming,
+    /// Мы начали переписку, собеседник ещё не ответил.
+    Outgoing,
+}
+
+impl From<ChatRequest> for FfiChatRequest {
+    fn from(state: ChatRequest) -> Self {
+        match state {
+            ChatRequest::Settled => Self::Settled,
+            ChatRequest::Incoming => Self::Incoming,
+            ChatRequest::Outgoing => Self::Outgoing,
+        }
+    }
+}
+
 /// Статус доставки сообщения.
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
 pub enum FfiDeliveryStatus {
@@ -387,6 +408,55 @@ impl Messenger {
         let chats = guard(|| client.chats())?;
 
         Ok(chats.iter().map(ToString::to_string).collect())
+    }
+
+    /// Состояние запроса на переписку. Чата ещё нет — обычная переписка.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+    pub fn chat_request(&self, chat_id: String) -> Result<FfiChatRequest, FfiError> {
+        let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let state = guard(|| client.chat_request(&ChatId::from_uuid(parsed)))?;
+
+        Ok(state.map_or(FfiChatRequest::Settled, FfiChatRequest::from))
+    }
+
+    /// Принимает запрос на переписку (см. `Client::accept_chat`).
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+    pub fn accept_chat(&self, chat_id: String, now_millis: i64) -> Result<(), FfiError> {
+        let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.accept_chat(
+                &ChatId::from_uuid(parsed),
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// 🔐 Отклоняет запрос: переписка удаляется, в ответ не уходит ничего.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+    pub fn decline_chat(&self, chat_id: String, now_millis: i64) -> Result<(), FfiError> {
+        let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        guard(|| {
+            client.decline_chat(
+                &ChatId::from_uuid(parsed),
+                Timestamp::from_millis(now_millis),
+            )
+        })
     }
 
     /// Возвращает сообщения чата.

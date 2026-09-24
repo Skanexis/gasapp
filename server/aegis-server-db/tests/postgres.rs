@@ -720,3 +720,71 @@ async fn identifying_times_and_device_names_are_not_stored() {
         );
     }
 }
+
+/// 🔐 Аккаунт, не появлявшийся год, удаляется вместе с именем,
+/// а активный остаётся (миграция 0011).
+#[tokio::test]
+async fn an_account_inactive_for_a_year_is_removed_and_frees_its_name() {
+    let pool = require_pool!();
+    let idle = unique_name("idle");
+    let active = unique_name("active");
+
+    repo::register_account(&pool, &idle, &[1u8; 32], &[2u8; 32])
+        .await
+        .unwrap();
+    let (_, active_device) = repo::register_account(&pool, &active, &[3u8; 32], &[4u8; 32])
+        .await
+        .unwrap();
+
+    // Тринадцать месяцев назад — у обоих; активный потом появляется.
+    sqlx::query(
+        "UPDATE accounts SET active_month = (date_trunc('month', now()) - interval '13 months')::date
+         WHERE username = ANY($1)",
+    )
+    .bind(vec![idle.clone(), active.clone()])
+    .execute(&pool)
+    .await
+    .unwrap();
+    repo::touch_account_activity(&pool, active_device)
+        .await
+        .unwrap();
+
+    repo::purge_inactive_accounts(&pool).await.unwrap();
+
+    assert!(
+        repo::find_by_username(&pool, &idle).await.is_err(),
+        "брошенный аккаунт пережил год"
+    );
+    assert!(
+        repo::find_by_username(&pool, &active).await.is_ok(),
+        "удалён аккаунт, который заходил"
+    );
+
+    // Имя свободно: его можно занять заново.
+    repo::register_account(&pool, &idle, &[5u8; 32], &[6u8; 32])
+        .await
+        .expect("имя освободилось");
+}
+
+/// Одиннадцать месяцев без входа — ещё не год.
+#[tokio::test]
+async fn an_account_inactive_for_eleven_months_stays() {
+    let pool = require_pool!();
+    let name = unique_name("recent");
+
+    repo::register_account(&pool, &name, &[1u8; 32], &[2u8; 32])
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE accounts SET active_month = (date_trunc('month', now()) - interval '11 months')::date
+         WHERE username = $1",
+    )
+    .bind(&name)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    repo::purge_inactive_accounts(&pool).await.unwrap();
+
+    assert!(repo::find_by_username(&pool, &name).await.is_ok());
+}

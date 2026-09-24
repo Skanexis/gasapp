@@ -25,6 +25,7 @@
 //! опознаваемых строк, ни заголовка `SQLite format 3`.
 
 pub mod backup;
+pub mod requests;
 pub mod sealed;
 
 pub use backup::{BackupChainState, BackupExport, ChatBackupRow, VaultFileRow};
@@ -366,7 +367,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 10;
+    const SCHEMA_VERSION: i32 = 11;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -715,6 +716,19 @@ impl Storage {
                                 retired_at INTEGER NOT NULL
                             )
                             ",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                // 10 → 11: запросы на переписку (модуль `requests`).
+                //
+                // Ноль у существующих чатов: переписка, которая уже идёт,
+                // запросом задним числом не становится.
+                11 => {
+                    transaction
+                        .execute(
+                            "ALTER TABLE chat_states
+                             ADD COLUMN request_state INTEGER NOT NULL DEFAULT 0",
                             [],
                         )
                         .map_err(storage_error)?;
@@ -4476,6 +4490,8 @@ mod tests {
                 "ALTER TABLE known_contacts DROP COLUMN replaced_at",
                 // Признак ключа из ссылки — миграция 8 → 9.
                 "ALTER TABLE known_contacts DROP COLUMN confirmed_by_link",
+                // Состояние запроса на переписку — миграция 10 → 11.
+                "ALTER TABLE chat_states DROP COLUMN request_state",
                 // own_keys откатывать не нужно: миграция 2 → 3
                 // пересоздаёт таблицу целиком и переживает повтор.
                 "UPDATE schema_version SET version = 1 WHERE id = 1",
@@ -4543,6 +4559,8 @@ mod tests {
                 "ALTER TABLE known_contacts DROP COLUMN replaced_at",
                 // Признак ключа из ссылки — миграция 8 → 9.
                 "ALTER TABLE known_contacts DROP COLUMN confirmed_by_link",
+                // Состояние запроса на переписку — миграция 10 → 11.
+                "ALTER TABLE chat_states DROP COLUMN request_state",
                 "UPDATE schema_version SET version = 2 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");

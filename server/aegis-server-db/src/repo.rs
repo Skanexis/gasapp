@@ -1102,3 +1102,52 @@ pub async fn sealed_sender_report_count(
 
     Ok(row.0)
 }
+
+/// Сколько месяцев без входа аккаунт живёт (миграция 0011).
+pub const INACTIVE_ACCOUNT_MONTHS: i32 = 12;
+
+/// Отмечает, что аккаунт устройства был активен в этом месяце.
+///
+/// Пишет не чаще раза в месяц: условие `active_month < …` делает
+/// повторные вызовы пустыми, и частые запросы клиента не превращаются
+/// в поток записей.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn touch_account_activity(pool: &PgPool, device_id: Uuid) -> Result<(), RepoError> {
+    sqlx::query(
+        "
+        UPDATE accounts SET active_month = date_trunc('month', now())::date
+        WHERE account_id = (SELECT account_id FROM devices WHERE device_id = $1)
+          AND active_month < date_trunc('month', now())::date
+        ",
+    )
+    .bind(device_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Удаляет аккаунты, не появлявшиеся [`INACTIVE_ACCOUNT_MONTHS`] месяцев.
+///
+/// Каскады схемы уносят устройства, ключи, очереди и токены — то же,
+/// что при удалении владельцем. Имя освобождается.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn purge_inactive_accounts(pool: &PgPool) -> Result<u64, RepoError> {
+    let result = sqlx::query(
+        "
+        DELETE FROM accounts
+        WHERE active_month < (date_trunc('month', now()) - make_interval(months => $1))::date
+        ",
+    )
+    .bind(INACTIVE_ACCOUNT_MONTHS)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
+}
