@@ -135,15 +135,6 @@ pub struct BundleResponse {
     pub degraded: bool,
 }
 
-/// Отправка конверта.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SendRequest {
-    /// Устройство-получатель.
-    pub destination_device_id: String,
-    /// Шифротекст конверта, hex. Сервер его не разбирает.
-    pub ciphertext: String,
-}
-
 /// Конверт, ожидающий доставки.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvelopeResponse {

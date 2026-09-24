@@ -45,7 +45,7 @@ async fn a_purge_removes_expired_rows_and_keeps_live_ones() {
 
     let (_account, device) = repo::register_account(
         pool,
-        &format!("retention-{}", Uuid::new_v4()),
+        &format!("retention_{}", &Uuid::new_v4().simple().to_string()[..16]),
         &[1u8; 32],
         &[2u8; 32],
     )

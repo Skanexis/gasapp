@@ -126,7 +126,8 @@ fn solve(challenge: &[u8]) -> u64 {
 }
 
 fn unique_name(prefix: &str) -> String {
-    format!("{prefix}-{}", Uuid::new_v4())
+    // Каноничное имя: строчные буквы, цифры и `_`, не длиннее 32.
+    format!("{prefix}_{}", &Uuid::new_v4().simple().to_string()[..16])
 }
 
 /// 🔐 Клиентская форма регистрации принимается сервером.
@@ -253,19 +254,20 @@ async fn client_send_shape_is_accepted() {
     let (_, account) = call_raw(&state, "POST", "/v1/accounts/register", Some(register)).await;
     let device_id = account["device_id"].as_str().unwrap();
 
+    // Форма `aegis_net::api::SealedSendRequest` первого контакта:
+    // ключа доступа нет, есть решение proof-of-work. Незапечатанной
+    // отправки у сервера нет вовсе.
+    let sealed = b"opaque envelope";
+    let challenge = pow::first_contact_challenge(device_id, sealed);
+    let pow_nonce = (0u64..1 << 26)
+        .find(|nonce| pow::verify(&challenge, *nonce, pow::FIRST_CONTACT_DIFFICULTY).is_ok())
+        .expect("решение находится");
     let body = format!(
-        r#"{{"destination_device_id":"{device_id}","ciphertext":"{}"}}"#,
-        hex::encode(b"opaque envelope"),
+        r#"{{"destination_device_id":"{device_id}","sealed":"{}","access_key":null,"pow_nonce":{pow_nonce}}}"#,
+        hex::encode(sealed),
     );
 
-    let (status, _) = call_raw_signed(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/messages/{device_id}"),
-        Some(body),
-    )
-    .await;
+    let (status, _) = call_raw(&state, "POST", "/v1/sealed/messages", Some(body)).await;
 
     assert_eq!(status, StatusCode::OK, "сервер отверг форму отправки");
 

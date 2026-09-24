@@ -20,13 +20,16 @@ use aegis_types::{AegisError, Result};
 /// ```
 /// use aegis_protocol::ProtocolVersion;
 ///
-/// assert!(ProtocolVersion::parse(1).is_ok());
+/// assert!(ProtocolVersion::parse(2).is_ok());
 ///
 /// // Понижение до версии без пост-квантового ratchet невозможно.
 /// assert!(ProtocolVersion::parse(0).is_err());
 ///
+/// // Версия 1 — прежняя сборка: её рукопожатие несовместимо.
+/// assert!(ProtocolVersion::parse(1).is_err());
+///
 /// // Неизвестная будущая версия тоже отвергается: мы не знаем её семантики.
-/// assert!(ProtocolVersion::parse(2).is_err());
+/// assert!(ProtocolVersion::parse(3).is_err());
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct ProtocolVersion(u8);
@@ -34,16 +37,29 @@ pub struct ProtocolVersion(u8);
 impl ProtocolVersion {
     /// Версия 1: PQXDH + Triple Ratchet (Double Ratchet ⊕ SPQR).
     ///
-    /// Пост-квантовая составляющая обязательна и не отключается (ADR-021).
+    /// Больше не принимается: рукопожатие версии 2 с ней несовместимо.
     pub const V1: Self = Self(1);
 
+    /// Версия 2: версия 1, плюс
+    ///
+    /// * PQXDH v2 — соль HKDF из хеша транскрипта (identity-ключи,
+    ///   эфемерный ключ, предключ, шифротекст KEM);
+    /// * гибридный sealed sender `0xA2` (X25519 + ML-KEM-1024) —
+    ///   отправитель скрыт и от квантового противника;
+    /// * отказ от невкладного X25519.
+    ///
+    /// Номер стоит первым байтом каждого конверта
+    /// ([`crate::envelope::ENVELOPE_VERSION`]): клиент прежней сборки
+    /// получает явный отказ, а не молча нерасшифровываемое сообщение.
+    pub const V2: Self = Self(2);
+
     /// Версия, которую отправляет этот клиент.
-    pub const CURRENT: Self = Self::V1;
+    pub const CURRENT: Self = Self::V2;
 
     /// Минимальная версия, которую этот клиент готов принять.
     ///
     /// Совпадает с [`Self::CURRENT`] намеренно: механизма деградации нет.
-    pub const MINIMUM_SUPPORTED: Self = Self::V1;
+    pub const MINIMUM_SUPPORTED: Self = Self::V2;
 
     /// Разбирает номер версии из входящего сообщения.
     ///
@@ -91,7 +107,17 @@ mod tests {
 
     #[test]
     fn current_version_is_accepted() {
-        assert_eq!(ProtocolVersion::parse(1).unwrap(), ProtocolVersion::V1);
+        assert_eq!(ProtocolVersion::parse(2).unwrap(), ProtocolVersion::V2);
+    }
+
+    /// 🔐 Версия 1 — прежнее рукопожатие (нулевая соль PQXDH, sealed
+    /// sender на одной кривой). Принять её — значит согласиться на него.
+    #[test]
+    fn version_one_is_no_longer_accepted() {
+        assert!(matches!(
+            ProtocolVersion::parse(1),
+            Err(AegisError::UnsupportedProtocolVersion)
+        ));
     }
 
     /// Версию из будущего принимать нельзя: мы не знаем, что она означает.
@@ -99,7 +125,7 @@ mod tests {
     /// снисходительный разбор.
     #[test]
     fn unknown_future_versions_are_rejected() {
-        for raw in [2u8, 3, 42, 127, 255] {
+        for raw in [3u8, 4, 42, 127, 255] {
             assert!(
                 ProtocolVersion::parse(raw).is_err(),
                 "версия {raw} не должна приниматься"
@@ -113,7 +139,7 @@ mod tests {
         let accepted: Vec<u8> = (0u8..=255)
             .filter(|v| ProtocolVersion::parse(*v).is_ok())
             .collect();
-        assert_eq!(accepted, vec![1]);
+        assert_eq!(accepted, vec![2]);
     }
 
     #[test]

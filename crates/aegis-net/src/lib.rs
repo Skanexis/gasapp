@@ -36,7 +36,7 @@ pub mod queue;
 
 pub use api::{
     AccountDeletedResponse, BundleResponse, DiscoveryResponse, EnvelopeResponse,
-    PublishKeysRequest, RegisterRequest, RegisterResponse, SendRequest,
+    PublishKeysRequest, RegisterRequest, RegisterResponse,
 };
 pub use client::{ApiClient, HttpRequest, HttpResponse, Method, Transport};
 pub use pinning::{pin_from_spki, PinSet, MIN_PINS, PIN_LEN};

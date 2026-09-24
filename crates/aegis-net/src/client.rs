@@ -26,7 +26,7 @@ use aegis_types::{AegisError, Result};
 use crate::api::{
     AccountDeletedResponse, BundleResponse, CertificateResponse, DiscoveryResponse,
     EnvelopeResponse, PublishKeysRequest, RegisterRequest, RegisterResponse, SealedAccessRequest,
-    SealedReportRequest, SealedReportResponse, SealedSendRequest, SendRequest,
+    SealedReportRequest, SealedReportResponse, SealedSendRequest,
 };
 
 /// Метод HTTP.
@@ -152,6 +152,12 @@ impl<T: Transport> ApiClient<T> {
     ///   частоты: повторить запрос имеет смысл позже, поэтому вариант
     ///   тот же, что у сетевого сбоя.
     pub fn discover(&self, username: &str) -> Result<DiscoveryResponse> {
+        // 🔐 Неканоничное имя на сервер не уходит: такого аккаунта
+        // нет и быть не может, а запрос выдал бы, кого искали.
+        if !aegis_types::is_canonical_username(username) {
+            return Err(AegisError::InvalidUsername);
+        }
+
         let response = self.send(
             Method::Get,
             format!("/v1/discovery/username/{username}"),
@@ -211,41 +217,15 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
-    /// Отправляет конверт — за подписью своего устройства.
-    ///
-    /// 🔐 Анонимно писать можно только тому, кто раздал ключ доступа
-    /// ([`ApiClient::send_sealed`]). Сюда клиент уходит, пока ключа
-    /// собеседника у него нет, то есть с первым сообщением, — а
-    /// начальный конверт и так несёт identity-ключ открыто. Прежде
-    /// маршрут был без подписи, и любой клал конверты в любую очередь.
-    ///
-    /// # Errors
-    ///
-    /// * [`AegisError::Malformed`] — конверт превышает лимит 256 КБ.
-    /// * [`AegisError::Network`] — сбой соединения либо лимит частоты.
-    pub fn send_envelope(
-        &self,
-        sender_device_id: &str,
-        request: &SendRequest,
-        signer: &dyn crate::auth::RequestSigner,
-    ) -> Result<String> {
-        let response = self.send_signed(
-            Method::Post,
-            format!("/v1/messages/{sender_device_id}"),
-            Some(to_json(request)?),
-            signer,
-        )?;
-
-        parse(&response)
-    }
-
     /// Отправляет запечатанный конверт, не называя отправителя.
     ///
-    /// # 🔐 Чем это отличается от [`ApiClient::send_envelope`]
+    /// # 🔐 Единственный путь отправки
     ///
     /// Запрос не подписывается: сервер не узнаёт, кто отправитель.
     /// Право на отправку доказывается ключом доступа получателя,
-    /// который тот раздал своим собеседникам внутри переписки.
+    /// который тот раздал своим собеседникам внутри переписки, а для
+    /// первого сообщения — proof-of-work над конвертом. Подписанной
+    /// отправки у сервера нет.
     ///
     /// Что сервер всё равно видит: IP отправителя и время. От этого
     /// защищает Tor или прокси (ADR-024), а не sealed sender.
