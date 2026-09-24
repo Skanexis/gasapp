@@ -216,6 +216,9 @@ impl From<RepoError> for ApiError {
         match error {
             RepoError::NotFound => Self::NotFound,
             RepoError::UsernameTaken => Self::Conflict,
+            // Повтор перепривязки — отказ авторизации, а не «конфликт»:
+            // отличать их вслух незачем.
+            RepoError::Conflict => Self::Unauthorized,
             RepoError::EnvelopeTooLarge | RepoError::AttachmentTooLarge => Self::PayloadTooLarge,
             // Исчерпанная квота — не «слишком большой файл»: тот же
             // файл пройдёт, когда прежние вложения истекут. 507 говорит
@@ -250,6 +253,12 @@ pub struct RegisterRequest {
     /// Гибридная привязка половин identity, hex.
     #[serde(default)]
     pub identity_binding: Option<String>,
+    /// Ключ восстановления аккаунта — классическая половина, hex.
+    #[serde(default)]
+    pub recovery_key: Option<String>,
+    /// Ключ восстановления аккаунта — ML-DSA-65, hex.
+    #[serde(default)]
+    pub recovery_pq_key: Option<String>,
     /// Челлендж proof-of-work, hex.
     pub pow_challenge: String,
     /// Решение proof-of-work.
@@ -407,6 +416,10 @@ pub struct VerifyRequest {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/accounts/register", post(register))
+        // 🔐 Перепривязка аккаунта к новой identity — без подписи
+        // устройства (старых устройств у человека уже нет): право
+        // доказывает подпись ключа восстановления (см. `recovery`).
+        .route("/v1/accounts/recover", post(recover_account))
         // 🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
         //
         // Адресуется устройством, а не аккаунтом: право доказывается
@@ -544,6 +557,20 @@ async fn register(
         repo::register_account(&state.pool, &request.username, &identity, &device_identity).await?;
     repo::set_pq_identity(&state.pool, account_id, &pq_public, &binding).await?;
 
+    // Ключ восстановления аккаунта: без него имя не пережило бы
+    // переустановку. Необязателен для запроса — клиенты прежних
+    // сборок его не присылают.
+    if let (Some(public), Some(pq_public)) = (&request.recovery_key, &request.recovery_pq_key) {
+        let public = decode_hex(public)?;
+        let pq_public = decode_hex(pq_public)?;
+
+        if public.len() != 32 || pq_public.len() != PQ_IDENTITY_KEY_LEN {
+            return Err(ApiError::BadRequest);
+        }
+
+        repo::set_recovery_key(&state.pool, account_id, &public, &pq_public).await?;
+    }
+
     Ok(Json(RegisterResponse {
         account_id,
         device_id,
@@ -661,6 +688,114 @@ async fn discovery(
             .map(|(_, signature)| hex::encode(signature)),
         pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
         identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
+    }))
+}
+
+/// Запрос перепривязки аккаунта к новой identity.
+#[derive(Debug, Deserialize)]
+pub struct RecoverRequest {
+    /// Имя аккаунта.
+    pub username: String,
+    /// Новый identity-ключ, hex.
+    pub identity_key: String,
+    /// Identity-ключ нового устройства, hex.
+    pub device_identity_key: String,
+    /// Пост-квантовая половина новой identity, hex.
+    pub pq_identity_key: String,
+    /// Её привязка, hex.
+    pub identity_binding: String,
+    /// Момент подписи, мс.
+    pub issued_at: i64,
+    /// Гибридная подпись ключа восстановления, hex.
+    pub signature: String,
+}
+
+/// Перепривязывает аккаунт к новой identity (см. модуль `recovery`).
+///
+/// # 🔐 Что проверяется
+///
+/// * имя каноническое и аккаунт существует;
+/// * у аккаунта есть ключ восстановления, и гибридная подпись запроса
+///   сходится обеими половинами;
+/// * момент подписи — в пределах пяти минут от часов сервера и новее
+///   прошлой перепривязки: перехваченный запрос не повторить.
+///
+/// Любой отказ — `401`, одинаково: «нет такого имени», «нет ключа»
+/// и «подпись не та» наружу не различаются.
+async fn recover_account(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<RecoverRequest>,
+) -> Result<Json<RegisterResponse>, ApiError> {
+    if !aegis_server_db::is_canonical_username(&request.username) {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Тот же ограничитель, что у discovery, и тот же ключ — имя.
+    {
+        let key = rate_limit::key_from_addr(&state.limiter_salt, &request.username);
+        let mut limiter = state
+            .discovery_limiter
+            .lock()
+            .map_err(|_| ApiError::Internal)?;
+
+        if !limiter.allow(key, now_millis()) {
+            return Err(ApiError::TooManyRequests);
+        }
+    }
+
+    let identity = decode_hex(&request.identity_key)?;
+    let device_identity = decode_hex(&request.device_identity_key)?;
+    let signature = decode_hex(&request.signature)?;
+    let (pq_public, binding) = decode_pq_identity(
+        Some(&request.pq_identity_key),
+        Some(&request.identity_binding),
+    )?
+    .ok_or(ApiError::BadRequest)?;
+
+    if identity.len() != 32 || device_identity.len() != 32 {
+        return Err(ApiError::BadRequest);
+    }
+
+    if now_millis().abs_diff(request.issued_at) > crate::recovery::MAX_SKEW_MILLIS.unsigned_abs() {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let account = repo::find_by_username(&state.pool, &request.username)
+        .await
+        .map_err(|_| ApiError::Unauthorized)?;
+    let (recovery_key, recovery_pq_key) = repo::recovery_key_of(&state.pool, account.account_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+
+    let message = crate::recovery::message(
+        &request.username,
+        &identity,
+        &device_identity,
+        &pq_public,
+        &binding,
+        request.issued_at,
+    );
+
+    if !crate::recovery::verify(&recovery_key, &recovery_pq_key, &message, &signature) {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let device_id = repo::rebind_account(
+        &state.pool,
+        account.account_id,
+        repo::Rebind {
+            identity_key: &identity,
+            device_identity_key: &device_identity,
+            pq_identity_key: &pq_public,
+            identity_binding: &binding,
+            issued_at_millis: request.issued_at,
+        },
+    )
+    .await?;
+
+    Ok(Json(RegisterResponse {
+        account_id: account.account_id,
+        device_id,
     }))
 }
 

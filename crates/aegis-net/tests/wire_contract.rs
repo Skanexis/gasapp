@@ -45,6 +45,8 @@ fn register_request_matches_server_contract() {
         device_identity_key: "bb".to_owned(),
         pq_identity_key: "dd".to_owned(),
         identity_binding: "ee".to_owned(),
+        recovery_key: None,
+        recovery_pq_key: None,
         pow_challenge: "cc".to_owned(),
         pow_nonce: 1,
     };

@@ -25,8 +25,8 @@ use aegis_types::{AegisError, Result};
 
 use crate::api::{
     AccountDeletedResponse, BundleResponse, CertificateResponse, DiscoveryResponse,
-    EnvelopeResponse, PublishKeysRequest, RegisterRequest, RegisterResponse, SealedAccessRequest,
-    SealedReportRequest, SealedReportResponse, SealedSendRequest,
+    EnvelopeResponse, PublishKeysRequest, RecoverAccountRequest, RegisterRequest, RegisterResponse,
+    SealedAccessRequest, SealedReportRequest, SealedReportResponse, SealedSendRequest,
 };
 
 /// Метод HTTP.
@@ -137,6 +137,24 @@ impl<T: Transport> ApiClient<T> {
         let response = self.send(
             Method::Post,
             "/v1/accounts/register".to_owned(),
+            Some(to_json(request)?),
+        )?;
+
+        parse(&response)
+    }
+
+    /// Перепривязывает аккаунт к новой identity (восстановление
+    /// на новом устройстве). Без подписи устройства: право доказывает
+    /// подпись ключа восстановления внутри запроса.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] — сбой соединения либо отказ сервера
+    /// (не тот ключ, нет такого имени, повтор запроса — одинаково).
+    pub fn recover_account(&self, request: &RecoverAccountRequest) -> Result<RegisterResponse> {
+        let response = self.send(
+            Method::Post,
+            "/v1/accounts/recover".to_owned(),
             Some(to_json(request)?),
         )?;
 
@@ -625,6 +643,8 @@ mod tests {
             device_identity_key: "bb".to_owned(),
             pq_identity_key: "dd".to_owned(),
             identity_binding: "ee".to_owned(),
+            recovery_key: None,
+            recovery_pq_key: None,
             pow_challenge: "cc".to_owned(),
             pow_nonce: 7,
         }

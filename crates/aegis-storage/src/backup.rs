@@ -93,6 +93,11 @@ pub struct BackupExport {
     pub settings: Vec<(String, i64)>,
     /// Надгробия удалённых сообщений.
     pub tombstones: Vec<MessageId>,
+    /// 🔐 Секрет ключа восстановления аккаунта: им новая установка
+    /// возвращает себе имя. Не identity-ключ — тот в копию не входит.
+    pub account_recovery: Option<[u8; crate::pq::ACCOUNT_RECOVERY_LEN]>,
+    /// Хеши пост-квантовых половин контактов.
+    pub contact_pq_hashes: Vec<(AccountId, [u8; crate::pq::PQ_HASH_LEN])>,
     /// Отметка, которую нужно запомнить после успешной выгрузки.
     pub watermark: Timestamp,
 }
@@ -176,6 +181,8 @@ impl Storage {
             attachments: read_attachments(&connection, threshold)?,
             settings: read_settings(&connection)?,
             tombstones: read_tombstones(&connection, threshold)?,
+            account_recovery: read_account_recovery(&connection)?,
+            contact_pq_hashes: read_contact_pq_hashes(&connection)?,
             watermark: now,
         })
     }
@@ -211,6 +218,16 @@ impl Storage {
         let transaction = connection.unchecked_transaction().map_err(storage_error)?;
 
         let mut applied = 0usize;
+
+        // Секрет восстановления аккаунта — если копия его несёт.
+        if let Some(secret) = &data.account_recovery {
+            transaction
+                .execute(
+                    "INSERT OR REPLACE INTO own_account_recovery (id, secret) VALUES (1, ?)",
+                    params![secret.as_slice()],
+                )
+                .map_err(storage_error)?;
+        }
 
         for message in &data.messages {
             transaction
@@ -323,6 +340,17 @@ impl Storage {
                 )
                 .map_err(storage_error)?;
             applied = applied.saturating_add(1);
+        }
+
+        // Хеши пост-квантовых половин — после контактов: строка контакта
+        // уже есть.
+        for (account, hash) in &data.contact_pq_hashes {
+            transaction
+                .execute(
+                    "UPDATE known_contacts SET pq_identity_hash = ? WHERE account_id = ?",
+                    params![hash.as_slice(), account.as_bytes()],
+                )
+                .map_err(storage_error)?;
         }
 
         for (key, value) in &data.settings {
@@ -822,6 +850,55 @@ impl Storage {
 }
 
 /// Читает идентификатор аккаунта и имя пользователя.
+fn read_contact_pq_hashes(
+    connection: &Connection,
+) -> Result<Vec<(AccountId, [u8; crate::pq::PQ_HASH_LEN])>> {
+    let mut statement = connection
+        .prepare("SELECT account_id, pq_identity_hash FROM known_contacts WHERE pq_identity_hash IS NOT NULL")
+        .map_err(storage_error)?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(storage_error)?;
+
+    let mut out = Vec::new();
+
+    for row in rows {
+        let (account, hash) = row.map_err(storage_error)?;
+        out.push((
+            AccountId::from_uuid(uuid_from_slice(&account)?),
+            hash.as_slice()
+                .try_into()
+                .map_err(|_| AegisError::Storage)?,
+        ));
+    }
+
+    Ok(out)
+}
+
+fn read_account_recovery(
+    connection: &Connection,
+) -> Result<Option<[u8; crate::pq::ACCOUNT_RECOVERY_LEN]>> {
+    let row = connection.query_row(
+        "SELECT secret FROM own_account_recovery WHERE id = 1",
+        [],
+        |row| row.get::<_, Vec<u8>>(0),
+    );
+
+    match row {
+        Ok(secret) => Ok(Some(
+            secret
+                .as_slice()
+                .try_into()
+                .map_err(|_| AegisError::Storage)?,
+        )),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(storage_error(error)),
+    }
+}
+
 fn read_account(connection: &Connection) -> Result<(Option<AccountId>, Option<String>)> {
     let account = connection
         .query_row("SELECT account_id FROM account WHERE id = 1", [], |row| {
@@ -1372,6 +1449,8 @@ mod tests {
             attachments: Vec::new(),
             settings: Vec::new(),
             tombstones: vec![stored.id],
+            account_recovery: None,
+            contact_pq_hashes: Vec::new(),
             watermark: later(1_000),
         };
 
@@ -1457,6 +1536,8 @@ mod tests {
             attachments: Vec::new(),
             settings: Vec::new(),
             tombstones: vec![stored.id],
+            account_recovery: None,
+            contact_pq_hashes: Vec::new(),
             watermark: later(1_000),
         };
 

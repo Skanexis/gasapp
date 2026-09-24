@@ -34,7 +34,9 @@ use aegis_backup::RecoveryKey;
 use aegis_media::attachment::{self, AttachmentKey};
 use aegis_media::descriptor::{AttachmentDescriptor, AttachmentKind};
 use aegis_media::scrub;
-use aegis_net::api::{BundleResponse, PublishKeysRequest, RegisterRequest};
+use aegis_net::api::{
+    BundleResponse, PublishKeysRequest, RecoverAccountRequest, RegisterRequest, RegisterResponse,
+};
 use aegis_net::client::{ApiClient, Transport};
 use aegis_net::pow;
 use aegis_protocol::contact_link::ContactLink;
@@ -55,6 +57,7 @@ mod pq;
 mod requests;
 mod sealed;
 
+use aegis_protocol::account_recovery::AccountRecoveryKey;
 use aegis_protocol::pq_identity::PqIdentityKeyPair;
 pub use aegis_storage::requests::ChatRequest;
 use aegis_types::{
@@ -298,6 +301,9 @@ impl<T: Transport> Client<T> {
         // 🔐 Пост-квантовая половина identity — со своим seed
         // (см. `aegis_protocol::pq_identity`).
         let pq = PqIdentityKeyPair::generate(rng);
+        // 🔐 Ключ восстановления аккаунта: им новая установка вернёт
+        // себе это имя (см. `aegis_protocol::account_recovery`).
+        let recovery = AccountRecoveryKey::generate(rng)?;
         let device_id = DeviceId::generate();
         let (bundle, secrets) = prekeys::generate(&identity, &pq, device_id, now, rng)?;
 
@@ -318,10 +324,106 @@ impl<T: Transport> Client<T> {
             device_identity_key: identity_hex,
             pq_identity_key: hex(&pq.public()),
             identity_binding: hex(&aegis_protocol::pq_identity::bind(&identity, &pq)?),
+            recovery_key: Some(hex(recovery.public().as_bytes())),
+            recovery_pq_key: Some(hex(&recovery.pq_public())),
             pow_challenge: hex(&challenge),
             pow_nonce: nonce,
         })?;
 
+        self.storage.set_own_account_recovery(&recovery.secret())?;
+
+        self.finish_enrollment(
+            &identity, &pq, &bundle, &secrets, &response, username, now, rng,
+        )
+    }
+
+    /// Возвращает аккаунт на новое устройство по резервной копии —
+    /// **с прежним именем**.
+    ///
+    /// # Как
+    ///
+    /// 1. Копия восстанавливается в эту (пустую) базу: переписка,
+    ///    контакты и секрет ключа восстановления аккаунта.
+    /// 2. Создаётся **новая** identity: приватный identity-ключ между
+    ///    устройствами не копируется (раздел 13.1).
+    /// 3. Ключ восстановления подписывает запрос «перепривяжи аккаунт
+    ///    с этим именем к новой identity»; сервер, проверив подпись,
+    ///    удаляет прежние устройства и заводит новое.
+    ///
+    /// Собеседники увидят смену ключа — так и задумано (12.5).
+    ///
+    /// # Errors
+    ///
+    /// * [`AegisError::Crypto`] — не тот ключ копии;
+    /// * [`AegisError::Malformed`] — цепочка копии разорвана;
+    /// * [`AegisError::Uninitialized`] — в копии нет ключа восстановления
+    ///   аккаунта или имени (копия сделана до их появления);
+    /// * [`AegisError::Network`] — сервер отказал либо недоступен.
+    pub fn recover_account<R: RngCore + CryptoRng>(
+        &self,
+        backup_key: &RecoveryKey,
+        links: &[Vec<u8>],
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<(Account, RestoreOutcome)> {
+        let outcome = BackupService::new(&self.storage).restore(backup_key, links, now)?;
+
+        let username = outcome.username.clone().ok_or(AegisError::Uninitialized)?;
+        let username = &canonical_username(&username)?;
+        let secret = self
+            .storage
+            .own_account_recovery()?
+            .ok_or(AegisError::Uninitialized)?;
+        let recovery = AccountRecoveryKey::from_secret(&secret)?;
+
+        let identity = prekeys::generate_identity(rng)?;
+        let pq = PqIdentityKeyPair::generate(rng);
+        let device_id = DeviceId::generate();
+        let (bundle, secrets) = prekeys::generate(&identity, &pq, device_id, now, rng)?;
+
+        let identity_bytes = identity.public().public().as_bytes();
+        let pq_public = pq.public();
+        let binding = aegis_protocol::pq_identity::bind(&identity, &pq)?;
+        let request = aegis_protocol::account_recovery::RecoverRequest {
+            username,
+            identity_key: identity_bytes,
+            device_identity_key: identity_bytes,
+            pq_identity_key: &pq_public,
+            identity_binding: &binding,
+            issued_at_millis: now.as_millis(),
+        };
+
+        let response = self.api.recover_account(&RecoverAccountRequest {
+            username: username.clone(),
+            identity_key: hex(identity_bytes),
+            device_identity_key: hex(identity_bytes),
+            pq_identity_key: hex(&pq_public),
+            identity_binding: hex(&binding),
+            issued_at: now.as_millis(),
+            signature: hex(&recovery.sign(&request)?),
+        })?;
+
+        let account = self.finish_enrollment(
+            &identity, &pq, &bundle, &secrets, &response, username, now, rng,
+        )?;
+
+        Ok((account, outcome))
+    }
+
+    /// Завершает регистрацию или возвращение аккаунта: ключи
+    /// в хранилище, предключи и ключ sealed sender — на сервер.
+    #[allow(clippy::too_many_arguments)]
+    fn finish_enrollment<R: RngCore + CryptoRng>(
+        &self,
+        identity: &IdentityKeyPair,
+        pq: &PqIdentityKeyPair,
+        bundle: &PreKeyBundle,
+        secrets: &prekeys::PreKeySecrets,
+        response: &RegisterResponse,
+        username: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Account> {
         let account_id = parse_uuid(&response.account_id).map(AccountId::from_uuid)?;
         let server_device_id = parse_uuid(&response.device_id).map(DeviceId::from_uuid)?;
 
@@ -343,15 +445,15 @@ impl<T: Transport> Client<T> {
         // Сервер записал половину вместе с аккаунтом.
         self.storage.mark_own_pq_identity_published(now)?;
 
-        let mut request = publish_request(&bundle);
-        let (kem_public, kem_signature) = self.sealed_kem_publication(&identity, rng)?;
+        let mut request = publish_request(bundle);
+        let (kem_public, kem_signature) = self.sealed_kem_publication(identity, rng)?;
         request.sealed_kem_public = Some(kem_public);
         request.sealed_kem_signature = Some(kem_signature);
 
         self.api.publish_keys(
             &server_device_id.to_string(),
             &request,
-            &DeviceSigner::new(&identity, now),
+            &DeviceSigner::new(identity, now),
         )?;
         self.storage.mark_own_sealed_kem_published(now)?;
 
