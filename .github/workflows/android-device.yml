@@ -47,6 +47,12 @@ jobs:
           docker run --rm -v "$PWD":/work -w /work aegis-android \
             tools/build-rust-android.sh --abi x86_64
 
+      # 🔐 CODE-2.5 на той библиотеке, что поедет на эмулятор.
+      - name: check native hardening
+        run: |
+          docker run --rm -v "$PWD":/work -w /work aegis-android \
+            bash tools/check-so-hardening.sh
+
       # Аппаратное ускорение: без KVM эмулятор за разумное время
       # не загрузится.
       - name: enable KVM

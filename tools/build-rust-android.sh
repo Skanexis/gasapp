@@ -77,6 +77,26 @@ for abi in "${ABIS[@]}"; do
   TARGET_FLAGS+=(-t "$abi")
 done
 
+# 🔐 Защита Си-части ядра от эксплуатации (MASVS CODE-2.5).
+#
+# SQLCipher и OpenSSL собираются крейтом cc, а он флагов защиты
+# не добавляет: до 2026-09 в libaegis.so не было ни одной канарейки
+# стека и ни одной проверки _FORTIFY_SOURCE, хотя чек-лист считал их
+# «умолчаниями NDK». Именно Си-код разбирает содержимое базы
+# и выполняет шифрование страниц — там переполнение буфера
+# возможно, в отличие от Rust.
+#
+# Проверяется tools/check-so-hardening.sh по собранной библиотеке.
+#
+# Флаги по тройкам, а не общий CFLAGS: общий ушёл бы и в сборку
+# для хоста. Крейт cc читает CFLAGS_<тройка> и передаёт его и в
+# openssl-src. Bionic без оптимизации _FORTIFY_SOURCE молча не
+# применяет, поэтому в отладочной сборке проверка его не найдёт.
+HARDENING_CFLAGS="-fstack-protector-strong -D_FORTIFY_SOURCE=2"
+for triple in aarch64_linux_android armv7_linux_androideabi x86_64_linux_android i686_linux_android; do
+  export "CFLAGS_${triple}=${HARDENING_CFLAGS}"
+done
+
 # `cargo ndk` читает Cargo.toml из текущего каталога, а не из
 # --manifest-path: тот передаётся дальше, во вложенный `cargo build`.
 # Без смены каталога сборка падает с «could not find Cargo.toml».
@@ -146,7 +166,16 @@ echo "  сгенерировано файлов Kotlin: $generated_count"
 # Библиотека без экспортируемых символов собирается без единой ошибки
 # и падает только в рантайме при первом вызове — проверяем сразу.
 
-READELF="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -name 'llvm-readelf*' -type f 2>/dev/null | head -1)"
+# ⚠️ Без `-type f`: в NDK r27 llvm-readelf — символическая ссылка
+# на llvm-readobj, и `-type f` её не находил. Проверка ниже всё это
+# время печатала «?» и пропускалась — в том числе в CI.
+READELF="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -name 'llvm-readelf*' 2>/dev/null | head -1)"
+
+# Нечем проверить — значит не проверено: ошибка, а не пропуск.
+if [[ -z "$READELF" ]]; then
+  echo "error: llvm-readelf не найден в $ANDROID_NDK_HOME — проверить библиотеки нечем" >&2
+  exit 1
+fi
 
 echo
 echo "результат:"
@@ -161,21 +190,17 @@ for abi in "${ABIS[@]}"; do
 
   size=$(wc -c < "$lib")
 
-  if [[ -n "$READELF" ]]; then
-    exported=$("$READELF" --dyn-syms "$lib" 2>/dev/null \
-      | grep -cE '^\s+[0-9]+:' || true)
-    undefined=$("$READELF" --dyn-syms "$lib" 2>/dev/null \
-      | grep -cE '^\s+[0-9]+:.*\sUND\s' || true)
-    defined=$((exported - undefined))
+  exported=$("$READELF" --dyn-syms "$lib" 2>/dev/null \
+    | grep -cE '^\s+[0-9]+:' || true)
+  undefined=$("$READELF" --dyn-syms "$lib" 2>/dev/null \
+    | grep -cE '^\s+[0-9]+:.*\sUND\s' || true)
+  defined=$((exported - undefined))
 
-    if [[ "$defined" -eq 0 ]]; then
-      echo "  ✗ $abi — ноль экспортируемых символов (${size} байт)"
-      failures=$((failures + 1))
-    else
-      echo "  ✓ $abi — ${defined} символов, ${size} байт"
-    fi
+  if [[ "$defined" -eq 0 ]]; then
+    echo "  ✗ $abi — ноль экспортируемых символов (${size} байт)"
+    failures=$((failures + 1))
   else
-    echo "  ? $abi — ${size} байт (llvm-readelf не найден, проверка пропущена)"
+    echo "  ✓ $abi — ${defined} символов, ${size} байт"
   fi
 done
 
