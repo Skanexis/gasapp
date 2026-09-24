@@ -466,8 +466,9 @@ pub fn router(state: Arc<AppState>) -> Router {
             post(upload_attachment)
                 .layer(axum::extract::DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES)),
         )
+        // 🔐 Скачивание — без подписи (см. `download_attachment`).
         .route(
-            "/v1/attachments/:device_id/:attachment_id",
+            "/v1/attachments/blob/:attachment_id",
             get(download_attachment),
         )
         // 🔐 Подписанные запросы — через проверку подписи и тела
@@ -1082,13 +1083,14 @@ async fn upload_attachment(
 /// (122 бита), а содержимое зашифровано ключом, которого у сервера нет.
 /// Угадавший адрес получит шифроблоб без ключа.
 ///
-/// Аутентификация всё же требуется: она не защищает конкретный файл,
-/// но не даёт анонимно перебирать адреса и качать чужой трафик.
+/// # 🔐 Почему без подписи
 ///
-/// Устройство стоит в пути **только** ради этой подписи: экстрактор
-/// берёт идентификатор оттуда, и без него подписывать было бы нечего.
-/// Совпадения с загрузившим никто не требует — его сервер не знает
-/// и знать не должен.
+/// Прежде скачивание требовало подписи устройства. Загружает вложение
+/// отправитель за своей подписью, и подпись скачивающего по тому же
+/// адресу давала серверу пару «кто кому прислал файл» — при том что
+/// sealed sender прятал отправителя самого сообщения. Перебор адресов
+/// подпись не останавливала (адрес — 122 случайных бита), а от объёма
+/// трафика защищает ограничитель на балансировщике.
 ///
 /// # Errors
 ///
@@ -1096,8 +1098,7 @@ async fn upload_attachment(
 /// * [`ApiError::Internal`] — сбой базы.
 async fn download_attachment(
     State(state): State<Arc<AppState>>,
-    _device: crate::authz::AuthenticatedDevice,
-    Path((_device_id, attachment_id)): Path<(Uuid, Uuid)>,
+    Path(attachment_id): Path<Uuid>,
 ) -> Result<Vec<u8>, ApiError> {
     let payload = repo::fetch_attachment(&state.pool, attachment_id).await?;
 
@@ -1141,6 +1142,10 @@ pub struct SealedSendRequest {
     /// Получатель раздаёт его своим собеседникам внутри E2EE-переписки.
     /// Сервер сверяет его с хешем, не узнавая, кто предъявил.
     pub access_key: Option<String>,
+    /// Решение proof-of-work первого контакта — вместо ключа доступа,
+    /// которого у отправителя ещё нет (`pow::first_contact_challenge`).
+    #[serde(default)]
+    pub pow_nonce: Option<u64>,
 }
 
 /// Жалоба на спам, отправленный через sealed sender.
@@ -1259,12 +1264,36 @@ async fn send_sealed_message(
         Some(encoded) => Some(decode_hex(encoded)?),
     };
 
-    let allowed = repo::check_sealed_sender_access(
+    let sealed = decode_hex(&request.sealed)?;
+
+    let by_key = repo::check_sealed_sender_access(
         &state.pool,
         request.destination_device_id,
         access_key.as_deref(),
     )
     .await?;
+
+    // 🔐 Первый контакт: ключа доступа у отправителя ещё нет, и право
+    // на анонимную отправку доказывается работой над этим конвертом
+    // этому получателю. Прежде такое сообщение шло за подписью
+    // отправителя. Устройство проверяется на существование: очередь
+    // несуществующего дала бы сбой базы, отличимый от отказа, — оракул
+    // «кто зарегистрирован».
+    let allowed = by_key
+        || match request.pow_nonce {
+            None => false,
+            Some(nonce) => {
+                let challenge = crate::pow::first_contact_challenge(
+                    &request.destination_device_id.to_string(),
+                    &sealed,
+                );
+
+                crate::pow::verify(&challenge, nonce, crate::pow::FIRST_CONTACT_DIFFICULTY).is_ok()
+                    && repo::device_subject(&state.pool, request.destination_device_id)
+                        .await
+                        .is_ok()
+            }
+        };
 
     // 🔐 Ключ проверяется до расхода бюджета получателя.
     //
@@ -1291,8 +1320,6 @@ async fn send_sealed_message(
         // по которому перебором выясняется, кто зарегистрирован.
         return Err(ApiError::Unauthorized);
     }
-
-    let sealed = decode_hex(&request.sealed)?;
 
     let envelope_id = repo::enqueue_envelope(
         &state.pool,

@@ -575,6 +575,71 @@ async fn sealed_junk_without_a_key_does_not_starve_friends() {
     );
 }
 
+/// Подбирает решение первого контакта для конверта этому получателю.
+fn solve_first_contact(destination: Uuid, sealed: &[u8]) -> u64 {
+    let challenge = pow::first_contact_challenge(&destination.to_string(), sealed);
+
+    (0u64..1 << 26)
+        .find(|nonce| pow::verify(&challenge, *nonce, pow::FIRST_CONTACT_DIFFICULTY).is_ok())
+        .expect("решение находится")
+}
+
+/// 🔐 Первое сообщение приходит запечатанным: без ключа доступа,
+/// с proof-of-work.
+///
+/// Прежде первое сообщение шло за подписью отправителя: ключа доступа
+/// получателя у него ещё нет. Сервер видел, кто начал переписку с кем.
+#[tokio::test]
+async fn first_contact_is_sealed_with_proof_of_work() {
+    let state = require_state!();
+    let (stranger, _) = register_signing_device(&state, &unique_name("stranger"), 0x71).await;
+    let sealed = b"first sealed envelope";
+
+    let send = |destination: Uuid, body: &'static [u8], nonce: u64| {
+        let state = Arc::clone(&state);
+        async move {
+            call(
+                &state,
+                "POST",
+                "/v1/sealed/messages",
+                Some(serde_json::json!({
+                    "destination_device_id": destination,
+                    "sealed": hex::encode(body),
+                    "access_key": null,
+                    "pow_nonce": nonce,
+                })),
+            )
+            .await
+            .0
+        }
+    };
+
+    let nonce = solve_first_contact(stranger, sealed);
+
+    assert_eq!(
+        send(stranger, sealed, nonce).await,
+        StatusCode::OK,
+        "запечатанный первый контакт с верной работой не принят"
+    );
+
+    // Решение для одного конверта не годится для другого.
+    assert_eq!(
+        send(stranger, b"another envelope here", nonce).await,
+        StatusCode::UNAUTHORIZED,
+        "решение перенеслось на другой конверт"
+    );
+
+    // Несуществующее устройство — тот же отказ, что у неверной работы:
+    // иначе это оракул «кто зарегистрирован».
+    let nobody = Uuid::new_v4();
+    let nobody_nonce = solve_first_contact(nobody, sealed);
+    assert_eq!(
+        send(nobody, sealed, nobody_nonce).await,
+        StatusCode::UNAUTHORIZED,
+        "несуществующее устройство отвечает иначе, чем неверная работа"
+    );
+}
+
 /// 🔐 Некорректный hex отвергается как плохой запрос, а не роняет сервер.
 #[tokio::test]
 async fn malformed_hex_is_rejected() {
@@ -995,11 +1060,10 @@ async fn attachment_round_trips() {
 
     let attachment_id: Uuid = serde_json::from_slice::<Uuid>(&body).expect("адрес вложения");
 
-    let (status, downloaded) = call_signed(
+    let (status, downloaded) = call_unsigned(
         &state,
-        &private,
         "GET",
-        &format!("/v1/attachments/{device_id}/{attachment_id}"),
+        &format!("/v1/attachments/blob/{attachment_id}"),
         Vec::new(),
     )
     .await;
@@ -1008,13 +1072,42 @@ async fn attachment_round_trips() {
     assert_eq!(downloaded, payload, "вложение изменилось при хранении");
 }
 
-/// 🔐 Без подписи вложение не загрузить и не скачать.
+/// Запрос без заголовков подписи: так ходит получатель вложения.
+async fn call_unsigned(
+    state: &Arc<AppState>,
+    method: &str,
+    uri: &str,
+    body: Vec<u8>,
+) -> (StatusCode, Vec<u8>) {
+    let response = aegis_server_api::router(Arc::clone(state))
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec();
+
+    (status, bytes)
+}
+
+/// 🔐 Загрузка — за подписью, скачивание — без неё.
 ///
-/// Подпись не защищает конкретный файл — адрес случаен, а содержимое
-/// зашифровано, — но не даёт анонимно перебирать адреса и качать
-/// чужой трафик.
+/// Загрузку подпись связывает с квотой устройства. Скачивание прежде
+/// тоже требовало подписи — и сервер получал пару «кто загрузил → кто
+/// скачал», то есть кто кому прислал файл. Адрес вложения — 122
+/// случайных бита, содержимое зашифровано: подпись скачивающего
+/// защищала только эту связь.
 #[tokio::test]
-async fn attachment_requires_authentication() {
+async fn attachment_upload_is_signed_and_download_is_anonymous() {
     let state = require_state!();
     let (device_id, private) = register_signing_device(&state, &unique_name("anon"), 0x12).await;
 
@@ -1030,33 +1123,28 @@ async fn attachment_requires_authentication() {
     assert_eq!(status, StatusCode::OK);
     let attachment_id: Uuid = serde_json::from_slice::<Uuid>(&body).expect("адрес вложения");
 
-    // Те же запросы без заголовков подписи.
-    for (method, uri) in [
-        ("POST", format!("/v1/attachments/{device_id}")),
-        (
-            "GET",
-            format!("/v1/attachments/{device_id}/{attachment_id}"),
-        ),
-    ] {
-        let router = aegis_server_api::router(Arc::clone(&state));
+    let (status, _) = call_unsigned(
+        &state,
+        "POST",
+        &format!("/v1/attachments/{device_id}"),
+        vec![0x11u8; 128],
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "загрузка прошла без подписи"
+    );
 
-        let response = router
-            .oneshot(
-                Request::builder()
-                    .method(method)
-                    .uri(&uri)
-                    .body(Body::from(vec![0x11u8; 128]))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+    let uri = format!("/v1/attachments/blob/{attachment_id}");
+    assert!(
+        !uri.contains(&device_id.to_string()),
+        "в адресе скачивания устройство"
+    );
 
-        assert_eq!(
-            response.status(),
-            StatusCode::UNAUTHORIZED,
-            "{method} {uri} прошёл без подписи"
-        );
-    }
+    let (status, downloaded) = call_unsigned(&state, "GET", &uri, Vec::new()).await;
+    assert_eq!(status, StatusCode::OK, "анонимное скачивание не прошло");
+    assert_eq!(downloaded, vec![0x11u8; 128]);
 }
 
 /// 🔐 Чужой подписью загрузить в чужую квоту нельзя.
@@ -1107,13 +1195,10 @@ async fn empty_attachment_is_rejected() {
 #[tokio::test]
 async fn missing_attachment_returns_not_found() {
     let state = require_state!();
-    let (device_id, private) = register_signing_device(&state, &unique_name("seeker"), 0x15).await;
-
-    let (status, _) = call_signed(
+    let (status, _) = call_unsigned(
         &state,
-        &private,
         "GET",
-        &format!("/v1/attachments/{device_id}/{}", Uuid::new_v4()),
+        &format!("/v1/attachments/blob/{}", Uuid::new_v4()),
         Vec::new(),
     )
     .await;

@@ -236,6 +236,7 @@ fn sealed_send_request_matches_server_contract() {
         destination_device_id: "11111111-1111-1111-1111-111111111111".to_owned(),
         sealed: "aabb".to_owned(),
         access_key: Some("ccdd".to_owned()),
+        pow_nonce: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();
@@ -257,6 +258,7 @@ fn sealed_send_request_keeps_absent_access_key() {
         destination_device_id: "11111111-1111-1111-1111-111111111111".to_owned(),
         sealed: "aabb".to_owned(),
         access_key: None,
+        pow_nonce: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();
@@ -265,6 +267,28 @@ fn sealed_send_request_keeps_absent_access_key() {
         json.contains("\"access_key\":null"),
         "форма изменилась: {json}"
     );
+}
+
+/// 🔐 Первый контакт: ключа доступа нет, есть решение proof-of-work.
+///
+/// Имя и тип поля совпадают с серверными — иначе каждое первое
+/// сообщение отвергалось бы, и запечатать его было бы нечем.
+#[test]
+fn sealed_send_request_carries_first_contact_pow() {
+    let request = SealedSendRequest {
+        destination_device_id: "11111111-1111-1111-1111-111111111111".to_owned(),
+        sealed: "aabb".to_owned(),
+        access_key: None,
+        pow_nonce: Some(7),
+    };
+
+    let json = serde_json::to_string(&request).unwrap();
+
+    assert_eq!(
+        field_names(&json),
+        vec!["access_key", "destination_device_id", "pow_nonce", "sealed"]
+    );
+    assert!(json.contains("\"pow_nonce\":7"), "форма изменилась: {json}");
 }
 
 /// Поля публикации ключа доступа совпадают с серверными.

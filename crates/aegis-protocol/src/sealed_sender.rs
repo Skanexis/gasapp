@@ -285,7 +285,7 @@ pub fn seal<R: RngCore + CryptoRng>(
     let ephemeral = X25519PrivateKey::generate(rng);
     let ephemeral_public = ephemeral.public_key().as_bytes();
 
-    let shared = Zeroizing::new(ephemeral.diffie_hellman(&recipient));
+    let shared = Zeroizing::new(ephemeral.diffie_hellman(&recipient)?);
     let key = derive_key(&shared, &ephemeral_public, recipient_identity)?;
 
     let mut plaintext = Vec::new();
@@ -348,7 +348,7 @@ pub fn unseal(recipient_private: &X25519PrivateKey, raw: &[u8]) -> Result<Sealed
     let ephemeral = X25519PublicKey::from_bytes(ephemeral_public)?;
     let recipient_public = recipient_private.public_key().as_bytes();
 
-    let shared = Zeroizing::new(recipient_private.diffie_hellman(&ephemeral));
+    let shared = Zeroizing::new(recipient_private.diffie_hellman(&ephemeral)?);
     let key = derive_key(&shared, &ephemeral_public, &recipient_public)?;
 
     let plaintext = crate::aead::open_with_key(

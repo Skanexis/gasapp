@@ -102,6 +102,21 @@ struct ServerState {
     acks_before_failure: Option<usize>,
 }
 
+/// Старшие нулевые биты — проверка решения proof-of-work.
+fn leading_zero_bits(bytes: &[u8]) -> u32 {
+    let mut total = 0;
+
+    for byte in bytes {
+        total += byte.leading_zeros();
+
+        if *byte != 0 {
+            break;
+        }
+    }
+
+    total
+}
+
 /// Поддельный сервер, разделяемый между клиентами.
 #[derive(Clone)]
 struct FakeServer {
@@ -547,7 +562,7 @@ impl Transport for FakeServer {
 
                 // Как настоящий сервер: хеш предъявленного ключа сверяется
                 // с опубликованным, отправитель при этом не называется.
-                let allowed = match (
+                let by_key = match (
                     state.access_hashes.get(&parsed.destination_device_id),
                     presented,
                 ) {
@@ -556,6 +571,24 @@ impl Transport for FakeServer {
                     }
                     _ => false,
                 };
+
+                // Первый контакт: вместо ключа доступа — работа над этим
+                // конвертом этому получателю, как на настоящем сервере.
+                let by_work = parsed.pow_nonce.is_some_and(|nonce| {
+                    let sealed = hex::decode(&parsed.sealed).unwrap_or_default();
+                    let challenge = aegis_net::pow::first_contact_challenge(
+                        &parsed.destination_device_id,
+                        &sealed,
+                    );
+
+                    leading_zero_bits(&aegis_net::pow::hash(&challenge, nonce))
+                        >= aegis_net::pow::FIRST_CONTACT_DIFFICULTY
+                        && state
+                            .device_identity
+                            .contains_key(&parsed.destination_device_id)
+                });
+
+                let allowed = by_key || by_work;
 
                 if allowed {
                     state.sealed_accepted += 1;
@@ -2499,10 +2532,17 @@ fn conversation_becomes_sealed_after_first_exchange() {
         .send_message("bob", "первое", now(), &mut OsRng)
         .expect("отправка");
 
+    // 🔐 Первое сообщение тоже запечатано: ключа доступа Боба у Алисы
+    // нет, и право на анонимную отправку она доказала работой. Прежде
+    // оно уходило за подписью, и сервер видел, кто начал переписку.
+    assert!(
+        server.sealed_accepted() >= 1,
+        "первое сообщение не запечатано"
+    );
     assert_eq!(
-        server.sealed_accepted(),
+        server.plain_accepted(),
         0,
-        "первое сообщение запечатано без ключа доступа получателя"
+        "первое сообщение ушло за подписью отправителя"
     );
     assert_eq!(
         bob.receive_messages(&bob_device, now()).expect("приём"),
@@ -2605,14 +2645,105 @@ fn rejected_access_key_does_not_fall_back_to_plain() {
         "отказ не записан в журнал безопасности"
     );
 
-    // Устаревший ключ забыт: следующая попытка — видимая пользователю,
-    // обычным путём. Сообщение доходит, пропуск ключа храповик переживает.
+    // Устаревший ключ забыт: следующая попытка — видимая пользователю
+    // и снова запечатанная, теперь с proof-of-work, как первый контакт.
+    // Сообщение доходит, пропуск ключа храповик переживает.
     alice
         .send_message("bob", "повтор", now(), &mut OsRng)
         .expect("повтор");
 
-    assert_eq!(server.plain_accepted(), plain_before + 1);
+    assert_eq!(
+        server.plain_accepted(),
+        plain_before,
+        "после отказа ключа сообщение ушло за подписью"
+    );
     assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+}
+
+/// 🔐 За всю переписку сервер не получает ни одного конверта с отправителем.
+///
+/// Первое сообщение, ответ, служебные ключи доступа, реакция и вложение —
+/// всё запечатано. Скачивание вложения уходит без подписи: прежде
+/// пара «кто загрузил → кто скачал» выдавала, кто кому прислал файл.
+#[test]
+fn the_server_never_learns_who_sent_what() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let first = alice
+        .send_message("bob", "привет", now(), &mut OsRng)
+        .expect("первое сообщение");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    bob.send_message("alice", "и тебе", now(), &mut OsRng)
+        .expect("ответ");
+    alice.receive_messages(&alice_device, now()).expect("приём");
+    bob.send_reaction("alice", &first, "👍", now(), &mut OsRng)
+        .expect("реакция");
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_device,
+            &aegis_core::client::AttachmentFile {
+                kind: aegis_media::descriptor::AttachmentKind::Document,
+                bytes: vec![0x42; 5_000],
+                name: Some("отчёт.pdf".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            "",
+            now(),
+            &mut OsRng,
+        )
+        .expect("вложение отправлено");
+
+    assert_eq!(
+        server.plain_accepted(),
+        0,
+        "конверт ушёл за подписью отправителя"
+    );
+
+    for device in [&alice_device, &bob_device] {
+        for envelope in server.queued(device) {
+            assert!(
+                sealed_sender::is_sealed(&envelope),
+                "в очереди незапечатанный конверт"
+            );
+        }
+    }
+
+    // Скачивание вложения — без подписи и без устройства в пути.
+    let descriptor = alice
+        .upload_attachment(
+            &alice_device,
+            &aegis_core::client::AttachmentFile {
+                kind: aegis_media::descriptor::AttachmentKind::Document,
+                bytes: vec![0x42; 5_000],
+                name: None,
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            now(),
+            &mut OsRng,
+        )
+        .expect("описание построено");
+
+    bob.fetch_attachment(&bob_device, &descriptor, now())
+        .expect("вложение скачано");
+
+    let headers = server
+        .last_request("/v1/attachments/blob/")
+        .expect("скачивание не по анонимному адресу");
+
+    assert!(
+        headers
+            .iter()
+            .all(|(name, _)| !name.to_ascii_lowercase().starts_with("x-aegis")),
+        "скачивание вложения подписано: {headers:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -3407,4 +3538,126 @@ fn an_unknown_name_is_trusted_on_first_use() {
     alice
         .send_message("bob", "привет", now(), &mut OsRng)
         .expect("первый контакт разрешён");
+}
+
+// --- 🔐 Метаданные вложений ------------------------------------------------
+
+/// Минимальный JPEG с EXIF: GPS-координаты и модель камеры.
+fn photo_with_location() -> Vec<u8> {
+    let segment = |marker: u8, payload: &[u8]| {
+        let mut out = vec![0xFF, marker];
+        out.extend_from_slice(&u16::try_from(payload.len() + 2).unwrap_or(0).to_be_bytes());
+        out.extend_from_slice(payload);
+        out
+    };
+
+    let mut exif = b"Exif\0\0MM\0\x2A\0\0\0\x08\0\0\0\0\0\0".to_vec();
+    exif.extend_from_slice(b"GPSLatitude 55.7558 GPSLongitude 37.6173 Model Pixel 8 Pro");
+
+    let mut jpeg = vec![0xFF, 0xD8];
+    jpeg.extend(segment(0xE1, &exif));
+    jpeg.extend(segment(0xDB, &[0u8; 65]));
+    jpeg.extend(segment(0xC0, &[8, 0, 16, 0, 16, 1, 1, 0x11, 0]));
+    jpeg.extend(segment(0xDA, &[1, 1, 0, 0, 63, 0]));
+    jpeg.extend_from_slice(&[0x12, 0x34, 0x56, 0xFF, 0xD9]);
+    jpeg
+}
+
+/// 🔐 Фото приходит без координат, модели камеры и имени файла.
+#[test]
+fn a_photo_arrives_without_its_metadata() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let descriptor = alice
+        .upload_attachment(
+            &alice_device,
+            &AttachmentFile {
+                kind: AttachmentKind::Image,
+                bytes: photo_with_location(),
+                name: Some("IMG_20260924_183005.jpg".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            now(),
+            &mut OsRng,
+        )
+        .expect("фото загружено");
+
+    assert_eq!(
+        descriptor.name, None,
+        "имя фото с датой съёмки ушло собеседнику"
+    );
+
+    let received = bob
+        .fetch_attachment(&bob_device, &descriptor, now())
+        .expect("фото скачано");
+
+    for leak in [&b"GPSLatitude"[..], b"55.7558", b"Pixel 8 Pro"] {
+        assert!(
+            !received.windows(leak.len()).any(|window| window == leak),
+            "в фото осталось {}",
+            String::from_utf8_lossy(leak)
+        );
+    }
+    assert!(
+        received.ends_with(&[0x12, 0x34, 0x56, 0xFF, 0xD9]),
+        "кадр испорчен"
+    );
+}
+
+/// 🔐 Сервер видит не точный размер файла, а его порядок (Padmé).
+#[test]
+fn the_server_sees_only_a_padded_size() {
+    use aegis_core::client::AttachmentFile;
+    use aegis_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let upload = |len: usize| {
+        alice
+            .upload_attachment(
+                &alice_device,
+                &AttachmentFile {
+                    kind: AttachmentKind::Document,
+                    bytes: vec![0x5A; len],
+                    name: Some("файл.bin".to_owned()),
+                    description: None,
+                    duration_millis: None,
+                    waveform: None,
+                },
+                now(),
+                &mut OsRng,
+            )
+            .expect("загружено")
+    };
+
+    let first = upload(1_000_001);
+    let second = upload(1_010_000);
+
+    let mut sizes: Vec<usize> = server.stored_attachments().iter().map(Vec::len).collect();
+    sizes.dedup();
+
+    assert_eq!(sizes.len(), 1, "размеры блобов различимы: {sizes:?}");
+
+    // А получатель получает ровно свой файл.
+    assert_eq!(
+        bob.fetch_attachment(&bob_device, &first, now())
+            .expect("первый")
+            .len(),
+        1_000_001
+    );
+    assert_eq!(
+        bob.fetch_attachment(&bob_device, &second, now())
+            .expect("второй")
+            .len(),
+        1_010_000
+    );
 }

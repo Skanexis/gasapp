@@ -17,15 +17,23 @@
 //!     │  дальше в обе стороны — запечатанное   │
 //! ```
 //!
-//! # ⚠️ Почему первое сообщение не запечатано
+//! # 🔐 Первое сообщение тоже запечатано
 //!
-//! Сервер пропускает анонимный конверт только с ключом доступа
-//! получателя, а ключ получатель раздаёт внутри переписки. Пока
-//! переписки нет, ключа нет, и доказать право на анонимную отправку
-//! нечем. Первое сообщение новой сессии поэтому уходит обычным путём.
-//! Это та же граница, что у Signal для незнакомых отправителей, и она
-//! записана здесь явно, чтобы никто не принял sealed sender за защиту
-//! самого первого контакта.
+//! Сервер пропускает анонимный конверт с ключом доступа получателя,
+//! а ключ получатель раздаёт внутри переписки. Пока переписки нет,
+//! ключа нет. Прежде первое сообщение поэтому уходило обычным путём,
+//! **за подписью отправителя**, и сервер видел, кто начал переписку
+//! с кем, — то есть строил социальный граф по первым контактам.
+//!
+//! Теперь право на анонимную отправку без ключа доказывается работой:
+//! proof-of-work над челленджем из устройства получателя и хеша
+//! самого конверта (`aegis_net::pow::first_contact_challenge`).
+//! Решение одноразово — для другого конверта нужна новая работа, —
+//! и дорого для рассылки спама тысячам адресатов. Работа нужна только
+//! до первого ответа: он приносит ключ доступа собеседника.
+//!
+//! Обычной отправки за подписью клиент больше не делает вовсе:
+//! сервер не получает от него ни одного конверта с отправителем.
 //!
 //! # 🔐 Почему нет тихого отката на обычную отправку
 //!
@@ -50,8 +58,9 @@
 //! сервер и так может выписать поддельный сертификат (см.
 //! `aegis-protocol::sealed_sender`).
 
-use aegis_net::api::{SealedAccessRequest, SealedSendRequest, SendRequest};
+use aegis_net::api::{SealedAccessRequest, SealedSendRequest};
 use aegis_net::client::Transport;
+use aegis_net::pow;
 use aegis_protocol::content::{Content, ACCESS_KEY_LEN};
 use aegis_protocol::keys::{IdentityKeyPair, SessionState};
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
@@ -226,34 +235,30 @@ impl<T: Transport> Client<T> {
     ) -> Result<()> {
         let peer = peer_account(peer_identity);
 
-        let Some(access_key) = self.storage.contact_access_key(&peer)? else {
-            // 🔐 Без ключа доступа — обычная отправка, за подписью:
-            // анонимно писать можно только тому, кто раздал ключ.
-            let own_device = self
-                .storage
-                .load_own_keys()?
-                .and_then(|keys| keys.device_id)
-                .ok_or(AegisError::SessionNotFound)?;
-
-            self.api.send_envelope(
-                &own_device,
-                &SendRequest {
-                    destination_device_id: peer_device.to_owned(),
-                    ciphertext: hex(envelope),
-                },
-                &DeviceSigner::new(identity, now),
-            )?;
-
-            return Ok(());
-        };
+        let access_key = self.storage.contact_access_key(&peer)?;
 
         let (certificate, _) = self.ensure_certificate(identity, now, false)?;
         let sealed = sealed_sender::seal(peer_identity, &certificate, envelope, rng)?;
 
+        // 🔐 Без ключа доступа — тоже запечатано, но с proof-of-work
+        // (см. описание модуля). Отправки за подписью здесь нет:
+        // она раскрыла бы серверу отправителя первого сообщения.
+        let pow_nonce = match access_key {
+            Some(_) => None,
+            None => Some(
+                pow::solve(
+                    &pow::first_contact_challenge(peer_device, &sealed),
+                    pow::FIRST_CONTACT_DIFFICULTY,
+                )
+                .ok_or(AegisError::Crypto)?,
+            ),
+        };
+
         let outcome = self.api.send_sealed(&SealedSendRequest {
             destination_device_id: peer_device.to_owned(),
             sealed: hex(&sealed),
-            access_key: Some(hex(&access_key)),
+            access_key: access_key.map(|key| hex(&key)),
+            pow_nonce,
         });
 
         match outcome {

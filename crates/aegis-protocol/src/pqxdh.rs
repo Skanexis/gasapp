@@ -227,11 +227,11 @@ pub fn initiate<R: RngCore + CryptoRng>(
     let ephemeral_public = ephemeral.public_key().as_bytes();
 
     // DH1 = DH(IK_A, SPK_B) — аутентифицирует инициатора.
-    let dh1 = Zeroizing::new(our_identity_private.diffie_hellman(&their_signed_pre_key));
+    let dh1 = Zeroizing::new(our_identity_private.diffie_hellman(&their_signed_pre_key)?);
     // DH2 = DH(EK_A, IK_B) — аутентифицирует получателя.
-    let dh2 = Zeroizing::new(ephemeral.diffie_hellman(&their_identity));
+    let dh2 = Zeroizing::new(ephemeral.diffie_hellman(&their_identity)?);
     // DH3 = DH(EK_A, SPK_B) — forward secrecy.
-    let dh3 = Zeroizing::new(ephemeral.diffie_hellman(&their_signed_pre_key));
+    let dh3 = Zeroizing::new(ephemeral.diffie_hellman(&their_signed_pre_key)?);
 
     // DH4 = DH(EK_A, OPK_B) — есть только пока пул одноразовых не исчерпан.
     let one_time = their_bundle
@@ -239,7 +239,7 @@ pub fn initiate<R: RngCore + CryptoRng>(
         .as_ref()
         .map(|(id, public)| -> Result<_> {
             let peer = X25519PublicKey::from_bytes(*public)?;
-            Ok((*id, Zeroizing::new(ephemeral.diffie_hellman(&peer))))
+            Ok((*id, Zeroizing::new(ephemeral.diffie_hellman(&peer)?)))
         })
         .transpose()?;
 
@@ -302,13 +302,16 @@ pub fn respond(
 
     // Зеркало инициатора: в DH1 участвует наш подписанный предключ и их
     // identity-ключ, в DH2 — наш identity-ключ и их эфемерный.
-    let dh1 = Zeroizing::new(keys.signed_pre_key.diffie_hellman(&their_identity));
-    let dh2 = Zeroizing::new(our_identity_private.diffie_hellman(&their_ephemeral));
-    let dh3 = Zeroizing::new(keys.signed_pre_key.diffie_hellman(&their_ephemeral));
+    let dh1 = Zeroizing::new(keys.signed_pre_key.diffie_hellman(&their_identity)?);
+    let dh2 = Zeroizing::new(our_identity_private.diffie_hellman(&their_ephemeral)?);
+    let dh3 = Zeroizing::new(keys.signed_pre_key.diffie_hellman(&their_ephemeral)?);
 
     let dh4 = keys
         .one_time_pre_key
-        .map(|private| Zeroizing::new(private.diffie_hellman(&their_ephemeral)));
+        .map(|private| -> Result<_> {
+            Ok(Zeroizing::new(private.diffie_hellman(&their_ephemeral)?))
+        })
+        .transpose()?;
 
     let kem_shared = Zeroizing::new(keys.kem_pre_key.decapsulate(kem_ciphertext)?);
 

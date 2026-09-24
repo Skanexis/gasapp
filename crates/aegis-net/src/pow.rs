@@ -53,6 +53,47 @@ pub fn registration_challenge(
     hasher.finalize().into()
 }
 
+/// Домен-разделитель челленджа первого контакта.
+const FIRST_CONTACT_DOMAIN: &[u8] = b"AEGIS_POW_FIRST_v1";
+
+/// Сложность proof-of-work первого контакта, в битах.
+///
+/// 🔐 Первое сообщение новому собеседнику уходит запечатанным, хотя
+/// ключа доступа получателя у отправителя ещё нет: право на анонимную
+/// отправку доказывается работой, а не личностью. Без этого первое
+/// сообщение шло за подписью отправителя, и сервер видел, кто начал
+/// переписку с кем.
+///
+/// 18 бит — около четверти миллиона хешей: доли секунды на телефоне
+/// и заметная цена для того, кто рассылает спам тысячам адресатов.
+/// Работа нужна только до первого ответа — он приносит ключ доступа.
+pub const FIRST_CONTACT_DIFFICULTY: u32 = 18;
+
+/// Челлендж первого контакта: устройство получателя и хеш конверта.
+///
+/// 🔐 Привязка к конверту делает решение одноразовым: для другого
+/// сообщения или другого получателя нужна новая работа. Сервер
+/// вычисляет челлендж сам из того, что пришло, — подставить чужой
+/// нечем.
+///
+/// Устройство — в каноническом виде сервера: UUID строчными буквами.
+///
+/// ⚠️ Продублирован на сервере (разные лицензии); совпадение проверяет
+/// эталон ниже и тот же эталон на сервере.
+#[must_use]
+pub fn first_contact_challenge(destination_device_id: &str, sealed: &[u8]) -> [u8; CHALLENGE_LEN] {
+    let destination = destination_device_id.to_ascii_lowercase();
+    let sealed_hash = Sha256::digest(sealed);
+
+    let mut hasher = Sha256::new();
+    hasher.update(FIRST_CONTACT_DOMAIN);
+    for field in [destination.as_bytes(), sealed_hash.as_slice()] {
+        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(field);
+    }
+    hasher.finalize().into()
+}
+
 /// Верхняя граница числа попыток.
 ///
 /// Подбор при штатной сложности укладывается в миллионы попыток.
@@ -117,6 +158,44 @@ mod tests {
         assert_eq!(
             challenge.get(..8).expect("восемь байт"),
             [0x09, 0x8d, 0x43, 0xfe, 0x4b, 0x0f, 0xa3, 0xea]
+        );
+    }
+
+    /// Эталон посчитан независимой реализацией (Python, hashlib);
+    /// тот же вектор проверяет сервер. Расхождение означало бы отказ
+    /// каждого первого сообщения.
+    #[test]
+    fn first_contact_challenge_matches_the_reference() {
+        let challenge = first_contact_challenge("00000000-0000-0000-0000-000000000001", &[1, 2, 3]);
+
+        assert_eq!(
+            challenge.get(..8).expect("восемь байт"),
+            [0x14, 0x11, 0x06, 0xfa, 0x70, 0xb8, 0xb0, 0x95]
+        );
+    }
+
+    /// 🔐 Решение не переносится на другой конверт или другого получателя.
+    #[test]
+    fn first_contact_challenge_binds_envelope_and_recipient() {
+        let base = first_contact_challenge("00000000-0000-0000-0000-000000000001", &[1, 2, 3]);
+
+        assert_ne!(
+            base,
+            first_contact_challenge("00000000-0000-0000-0000-000000000002", &[1, 2, 3])
+        );
+        assert_ne!(
+            base,
+            first_contact_challenge("00000000-0000-0000-0000-000000000001", &[1, 2, 4])
+        );
+        // Регистр UUID не меняет челлендж: сервер пишет строчными.
+        assert_eq!(
+            base,
+            first_contact_challenge(
+                "00000000-0000-0000-0000-000000000001"
+                    .to_uppercase()
+                    .as_str(),
+                &[1, 2, 3]
+            )
         );
     }
 

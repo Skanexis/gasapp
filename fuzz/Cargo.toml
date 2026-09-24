@@ -20,6 +20,9 @@ aegis-types = { path = "../crates/aegis-types" }
 # Разбор файла резервной копии: заголовок читается до проверки тега,
 # то есть на данных, подконтрольных тому, у кого файл.
 aegis-backup = { path = "../crates/aegis-backup" }
+# Очистка метаданных вложений: разбирает JPEG/PNG/WebP/GIF/MP4/MP3,
+# которые пишет кто угодно.
+aegis-media = { path = "../crates/aegis-media" }
 # Версия совпадает с той, что использует `aegis-protocol`: иначе типы
 # источника случайности окажутся разными и не подойдут по трейтам.
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
@@ -81,5 +84,11 @@ doc = false
 [[bin]]
 name = "parse_contact_link"
 path = "fuzz_targets/parse_contact_link.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "scrub_attachment"
+path = "fuzz_targets/scrub_attachment.rs"
 test = false
 doc = false

@@ -109,6 +109,41 @@ const OUTPUT_LEN: usize = 32;
 /// приходится на каждый запрос, включая мусорные.
 pub const DEFAULT_DIFFICULTY: u32 = 20;
 
+/// Домен-разделитель челленджа первого контакта.
+const FIRST_CONTACT_DOMAIN: &[u8] = b"AEGIS_POW_FIRST_v1";
+
+/// Сложность proof-of-work первого контакта, в битах.
+///
+/// 🔐 Первое сообщение новому собеседнику приходит запечатанным без
+/// ключа доступа получателя: право на анонимную отправку доказывается
+/// работой. Прежде такое сообщение шло за подписью отправителя,
+/// и сервер видел, кто начал переписку с кем.
+///
+/// ⚠️ Совпадает с `aegis-net::pow::FIRST_CONTACT_DIFFICULTY`.
+pub const FIRST_CONTACT_DIFFICULTY: u32 = 18;
+
+/// Челлендж первого контакта: устройство получателя и хеш конверта.
+///
+/// Сервер вычисляет его сам из запроса — подставить другой нечем,
+/// и одно решение годится ровно для одного конверта одному
+/// получателю.
+///
+/// ⚠️ Продублирован в `aegis-net::pow` (разные лицензии); эталон —
+/// тест ниже и тот же вектор у клиента.
+#[must_use]
+pub fn first_contact_challenge(destination_device_id: &str, sealed: &[u8]) -> [u8; CHALLENGE_LEN] {
+    let destination = destination_device_id.to_ascii_lowercase();
+    let sealed_hash = Sha256::digest(sealed);
+
+    let mut hasher = Sha256::new();
+    hasher.update(FIRST_CONTACT_DOMAIN);
+    for field in [destination.as_bytes(), sealed_hash.as_slice()] {
+        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(field);
+    }
+    hasher.finalize().into()
+}
+
 /// Потолок сложности.
 ///
 /// Существует, чтобы ошибка в конфигурации не превратила регистрацию
@@ -189,6 +224,18 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// Эталон посчитан независимой реализацией (Python, hashlib);
+    /// тот же вектор у клиента в `aegis-net::pow`.
+    #[test]
+    fn first_contact_challenge_matches_the_reference() {
+        let challenge = first_contact_challenge("00000000-0000-0000-0000-000000000001", &[1, 2, 3]);
+
+        assert_eq!(
+            challenge.get(..8),
+            Some(&[0x14, 0x11, 0x06, 0xfa, 0x70, 0xb8, 0xb0, 0x95][..])
+        );
+    }
     use super::*;
 
     /// Малая сложность для тестов: полноценный `PoW` считался бы секундами.

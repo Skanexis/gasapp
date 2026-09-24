@@ -33,6 +33,7 @@ use std::sync::Mutex;
 use aegis_backup::RecoveryKey;
 use aegis_media::attachment::{self, AttachmentKey};
 use aegis_media::descriptor::{AttachmentDescriptor, AttachmentKind};
+use aegis_media::scrub;
 use aegis_net::api::{BundleResponse, PublishKeysRequest, RegisterRequest};
 use aegis_net::client::{ApiClient, Transport};
 use aegis_net::pow;
@@ -1297,11 +1298,23 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<AttachmentDescriptor> {
-        let size = u64::try_from(file.bytes.len()).map_err(|_| AegisError::Malformed)?;
+        // 🔐 Метаданные удаляются до шифрования: GPS, модель камеры,
+        // время съёмки, миниатюры, геометка видео (`aegis_media::scrub`).
+        // Файл известного формата, который не разбирается, не уходит
+        // вовсе — иначе ушёл бы со всеми метаданными.
+        let scrubbed = scrub::scrub(&file.bytes)?;
+
+        let size = u64::try_from(scrubbed.bytes.len()).map_err(|_| AegisError::Malformed)?;
 
         if size > MAX_ATTACHMENT_BYTES {
             return Err(AegisError::Malformed);
         }
+
+        // 🔐 Длина дополняется до сетки Padmé: сервер видит длину блоба,
+        // а точная длина узнаваема — по ней видно, что один и тот же
+        // файл получили разные люди. Настоящая длина — в описании.
+        let mut plaintext = scrubbed.bytes;
+        plaintext.resize(attachment::padded_len(plaintext.len())?, 0);
 
         let key = AttachmentKey::generate(rng);
 
@@ -1311,7 +1324,7 @@ impl<T: Transport> Client<T> {
         // на стомегабайтный файл.
         let mut payload = Vec::new();
 
-        for (index, chunk) in file.bytes.chunks(attachment::CHUNK_SIZE).enumerate() {
+        for (index, chunk) in plaintext.chunks(attachment::CHUNK_SIZE).enumerate() {
             let index = u32::try_from(index).map_err(|_| AegisError::Malformed)?;
 
             payload.extend_from_slice(&attachment::seal_chunk(&key, index, chunk)?);
@@ -1327,7 +1340,14 @@ impl<T: Transport> Client<T> {
             location,
             key: *key.expose(),
             size,
-            name: file.name.clone(),
+            // 🔐 У фото, видео и звука имя не передаётся: «IMG_20260924_
+            // 183005.jpg» — это дата и секунда съёмки, «PXL_…» — модель
+            // телефона. Имя документа выбирает человек, и оно остаётся.
+            name: if scrubbed.format.is_media() {
+                None
+            } else {
+                file.name.clone()
+            },
             description: file.description.clone(),
             duration_millis: file.duration_millis,
             waveform: file.waveform.clone(),
@@ -1362,13 +1382,13 @@ impl<T: Transport> Client<T> {
     ) -> Result<Vec<u8>> {
         descriptor.validate()?;
 
-        let (identity, _) = self.load_identity()?;
+        // 🔐 Без подписи: скачивание не должно связывать получателя
+        // с отправителем (см. `aegis_net::client::download_attachment`).
+        // Устройство и время больше не нужны; параметры оставлены,
+        // чтобы не ломать интерфейс FFI.
+        let _ = (device_id, now);
 
-        let payload = self.api.download_attachment(
-            device_id,
-            &descriptor.location,
-            &DeviceSigner::new(&identity, now),
-        )?;
+        let payload = self.api.download_attachment(&descriptor.location)?;
 
         // Длина блоба однозначно следует из размера файла: столько-то
         // полных чанков плюс остаток, и на каждый — свой тег.
@@ -1386,6 +1406,10 @@ impl<T: Transport> Client<T> {
 
             plaintext.extend_from_slice(&attachment::open_chunk(&key, index, chunk)?);
         }
+
+        // Дополнение Padmé отбрасывается: настоящая длина — в описании,
+        // пришедшем внутри зашифрованного сообщения.
+        plaintext.truncate(usize::try_from(descriptor.size).map_err(|_| AegisError::Malformed)?);
 
         Ok(plaintext)
     }
@@ -2656,7 +2680,8 @@ const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
 /// длину плюс тег. Пустой файл вложением не отправляется, поэтому
 /// нулевой размер сюда не приходит.
 fn expected_payload_len(size: u64) -> Result<usize> {
-    let size = usize::try_from(size).map_err(|_| AegisError::Malformed)?;
+    // Шифруется дополненный до сетки Padmé файл (см. `upload_attachment`).
+    let size = attachment::padded_len(usize::try_from(size).map_err(|_| AegisError::Malformed)?)?;
     let chunks = attachment::chunk_count(size)?;
     let chunks = usize::try_from(chunks).map_err(|_| AegisError::Malformed)?;
 

@@ -16,7 +16,13 @@
 //! ошибкой, а не паникой, и не пытается выделить память по числу
 //! из файла.
 
-#![allow(clippy::expect_used, clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+#![allow(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    // Генератор намеренно режет 64-битное слово до байта и индекса.
+    clippy::cast_possible_truncation
+)]
 
 use aegis_backup::archive::ArchiveHeader;
 use aegis_backup::bundle::{BackupBundle, ContactRecord, MessageRecord, ID_LEN};
@@ -148,7 +154,7 @@ fn mutated_archives_never_panic_and_never_restore() {
         .expect("файл копии");
 
     assert!(
-        BackupChain::restore(&key, &[original.clone()]).is_ok(),
+        BackupChain::restore(&key, std::slice::from_ref(&original)).is_ok(),
         "заготовка теста: нетронутый файл не восстанавливается"
     );
 

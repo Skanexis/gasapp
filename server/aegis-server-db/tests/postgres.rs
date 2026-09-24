@@ -666,3 +666,34 @@ async fn account_deletion_cascades() {
     assert_eq!(devices.0, 0, "устройства пережили удаление аккаунта");
     assert_eq!(envelopes.0, 0, "конверты пережили удаление аккаунта");
 }
+
+/// 🔐 Сервер не хранит время регистрации, присутствие и имя устройства.
+///
+/// Столбцы заполнялись умолчаниями базы и не читались ни одним запросом
+/// (миграция 0007). Проверка — по самой схеме: вернуть такой столбец
+/// «для удобства» значит снова завести журнал того, кто и когда
+/// появился и был в сети.
+#[tokio::test]
+async fn identifying_times_and_device_names_are_not_stored() {
+    let pool = require_pool!();
+
+    let columns: Vec<(String, String)> = sqlx::query_as(
+        "SELECT table_name::text, column_name::text FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name IN ('accounts', 'devices')",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    assert!(!columns.is_empty(), "заготовка теста: таблиц нет");
+
+    for (table, column) in &columns {
+        assert!(
+            !matches!(
+                column.as_str(),
+                "created_at" | "last_seen_at" | "device_name"
+            ),
+            "{table}.{column} снова хранится"
+        );
+    }
+}
