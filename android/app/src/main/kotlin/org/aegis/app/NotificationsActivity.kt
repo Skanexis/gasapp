@@ -57,14 +57,14 @@ class NotificationsActivity : AppCompatActivity() {
         SettingsToggle.bind(
             root = findViewById(R.id.notifications_sound),
             label = R.string.notifications_sound,
-            icon = R.drawable.ic_alert,
+            icon = R.drawable.ic_bell,
             checked = readBool(Settings.NOTIFICATION_SOUND, default = true),
         ) { wanted -> writeBool(Settings.NOTIFICATION_SOUND, wanted) }
 
         SettingsToggle.bind(
             root = findViewById(R.id.notifications_vibrate),
             label = R.string.notifications_vibrate,
-            icon = R.drawable.ic_phone,
+            icon = R.drawable.ic_mobile,
             checked = readBool(NOTIFICATION_VIBRATE, default = true),
         ) { wanted -> writeBool(NOTIFICATION_VIBRATE, wanted) }
     }
