@@ -55,7 +55,7 @@
 
                 <include
                     android:id="@+id/devices_this"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
             </LinearLayout>
             <TextView
                 style="@style/AegisCaption"

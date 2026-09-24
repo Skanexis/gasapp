@@ -103,22 +103,22 @@ class SettingsActivity : AppCompatActivity() {
             value = null,
             accent = true,
         )
-        bindRow(R.id.settings_privacy, R.drawable.ic_lock, R.string.settings_privacy, null)
+        bindRow(R.id.settings_privacy, R.drawable.ic_eye_off, R.string.settings_privacy, null)
         bindRow(
             R.id.settings_notifications,
-            R.drawable.ic_alert,
+            R.drawable.ic_bell,
             R.string.settings_notifications,
             getString(R.string.notifications_private),
         )
         bindRow(
             R.id.settings_appearance,
-            R.drawable.ic_settings,
+            R.drawable.ic_moon,
             R.string.settings_appearance,
             getString(R.string.appearance_theme_value),
         )
         bindRow(
             R.id.settings_storage,
-            R.drawable.ic_file,
+            R.drawable.ic_database,
             R.string.settings_storage,
             null,
         )
@@ -134,15 +134,15 @@ class SettingsActivity : AppCompatActivity() {
         )
         bindRow(
             R.id.settings_vault,
-            R.drawable.ic_lock,
+            R.drawable.ic_vault,
             R.string.settings_vault,
             null,
         )
 
         // Устройство ровно одно, пока нет связывания: показывать
         // выдуманное число рядом с настройкой безопасности нельзя.
-        bindRow(R.id.settings_devices, R.drawable.ic_users, R.string.settings_devices, "1")
-        bindRow(R.id.settings_about, R.drawable.ic_key, R.string.settings_about, null)
+        bindRow(R.id.settings_devices, R.drawable.ic_mobile, R.string.settings_devices, "1")
+        bindRow(R.id.settings_about, R.drawable.ic_info, R.string.settings_about, null)
 
         open(R.id.settings_security, SecurityCenterActivity::class.java)
         open(R.id.settings_privacy, PrivacyActivity::class.java)

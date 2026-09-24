@@ -46,28 +46,23 @@
     -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="44dp"
+        android:layout_marginStart="@dimen/screen_padding"
+        android:layout_marginEnd="@dimen/screen_padding"
+        android:layout_marginBottom="@dimen/space_s"
+        android:background="@drawable/bg_segmented"
         android:orientation="horizontal"
-        android:paddingStart="@dimen/screen_padding"
-        android:paddingEnd="@dimen/screen_padding"
-        android:paddingBottom="@dimen/space_s">
+        android:padding="4dp">
 
-        <org.aegis.app.components.AegisButton
+        <TextView
             android:id="@+id/calls_filter_all"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/calls_filter_all"
-            app:buttonSize="small"
-            app:buttonVariant="secondary" />
+            style="@style/AegisSegment"
+            android:text="@string/calls_filter_all" />
 
-        <org.aegis.app.components.AegisButton
+        <TextView
             android:id="@+id/calls_filter_missed"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_s"
-            android:text="@string/calls_filter_missed"
-            app:buttonSize="small"
-            app:buttonVariant="ghost" />
+            style="@style/AegisSegment"
+            android:text="@string/calls_filter_missed" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView

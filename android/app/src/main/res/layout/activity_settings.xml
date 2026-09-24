@@ -58,7 +58,8 @@
                         android:gravity="center"
                         android:textColor="@color/accent_base"
                         android:textSize="16sp"
-                        android:fontFamily="@font/inter_semibold"
+                        android:fontFamily="@font/inter"
+                        android:textFontWeight="600"
                         tools:text="MK" />
 
                     <!--
@@ -100,7 +101,8 @@
                         android:layout_height="wrap_content"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp"
-                        android:fontFamily="@font/inter_semibold"
+                        android:fontFamily="@font/inter"
+                        android:textFontWeight="600"
                         tools:text="Maria Keller" />
 
                     <TextView

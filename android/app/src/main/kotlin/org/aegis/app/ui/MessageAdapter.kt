@@ -11,6 +11,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import org.aegis.app.R
 
@@ -144,9 +145,27 @@ class MessageAdapter(
 
     /** Заменяет содержимое переписки. */
     fun submit(items: List<MessageItem>) {
+        // Разница, а не перерисовка всего списка: обновление приходит
+        // на каждое событие сокета, и полная перерисовка мигала строками
+        // и сбивала прокрутку.
+        val old = messages.toList()
+        val diff = DiffUtil.calculateDiff(
+            object : DiffUtil.Callback() {
+                override fun getOldListSize() = old.size
+
+                override fun getNewListSize() = items.size
+
+                override fun areItemsTheSame(oldPosition: Int, newPosition: Int) =
+                    old[oldPosition].messageId == items[newPosition].messageId
+
+                override fun areContentsTheSame(oldPosition: Int, newPosition: Int) =
+                    old[oldPosition] == items[newPosition]
+            },
+        )
+
         messages.clear()
         messages.addAll(items)
-        notifyDataSetChanged()
+        diff.dispatchUpdatesTo(this)
     }
 
     /** Добавляет одно сообщение в конец. */

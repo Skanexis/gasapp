@@ -88,7 +88,7 @@ class PrivacyActivity : AppCompatActivity() {
             root = findViewById(R.id.privacy_network),
             label = R.string.privacy_network,
             value = getString(NetworkActivity.labelFor(mode)),
-            icon = R.drawable.ic_shield,
+            icon = R.drawable.ic_globe,
             onClick = { startActivity(Intent(this, NetworkActivity::class.java)) },
         )
     }
@@ -98,7 +98,7 @@ class PrivacyActivity : AppCompatActivity() {
             root = findViewById(R.id.privacy_presence),
             label = R.string.privacy_presence,
             hint = R.string.privacy_presence_hint,
-            icon = R.drawable.ic_edit,
+            icon = R.drawable.ic_check,
             checked = readBool(Settings.PRESENCE, default = false),
         ) { wanted -> writeBool(Settings.PRESENCE, wanted) }
     }
@@ -126,7 +126,7 @@ class PrivacyActivity : AppCompatActivity() {
             root = findViewById(R.id.privacy_screenshots),
             label = R.string.privacy_screenshots,
             hint = R.string.privacy_screenshots_hint,
-            icon = R.drawable.ic_shield,
+            icon = R.drawable.ic_eye_off,
             checked = readBool(Settings.BLOCK_SCREENSHOTS, default = true),
         ) { wanted -> writeBool(Settings.BLOCK_SCREENSHOTS, wanted) }
     }
@@ -136,7 +136,7 @@ class PrivacyActivity : AppCompatActivity() {
             root = findViewById(R.id.privacy_preview),
             label = R.string.privacy_preview,
             hint = R.string.privacy_preview_hint,
-            icon = R.drawable.ic_alert,
+            icon = R.drawable.ic_bell,
             checked = readBool(Settings.NOTIFICATION_PREVIEW, default = false),
         ) { wanted -> writeBool(Settings.NOTIFICATION_PREVIEW, wanted) }
     }
@@ -171,7 +171,7 @@ class PrivacyActivity : AppCompatActivity() {
             root = row,
             label = R.string.privacy_biometric,
             hint = R.string.privacy_biometric_hint,
-            icon = R.drawable.ic_shield,
+            icon = R.drawable.ic_key,
             checked = BiometricUnlock.isEnabled(this),
         ) { wanted ->
             if (!wanted) {
@@ -426,7 +426,7 @@ class PrivacyActivity : AppCompatActivity() {
         SettingsRow.bind(
             root = findViewById(R.id.privacy_export),
             label = R.string.privacy_export,
-            icon = R.drawable.ic_shield,
+            icon = R.drawable.ic_file,
             onClick = { confirmExport() },
         )
     }

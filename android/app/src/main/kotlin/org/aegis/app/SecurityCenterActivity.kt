@@ -430,12 +430,17 @@ class SecurityCenterActivity : AppCompatActivity() {
         checks.sortedBy { it.passed }.forEach { check ->
             val row = layoutInflater.inflate(R.layout.item_settings_row, list, false)
 
+            // Короткое пояснение («Не сверено: 3») — значением справа,
+            // длинное — второй строкой под подписью.
+            val verdict = getString(
+                if (check.passed) R.string.security_check_passed else R.string.security_check_failed,
+            )
+            val longDetail = check.detail?.takeIf { it.length > SHORT_DETAIL_CHARS }
+
             SettingsRow.bind(
                 root = row,
                 label = check.label,
-                value = check.detail ?: getString(
-                    if (check.passed) R.string.security_check_passed else R.string.security_check_failed,
-                ),
+                value = if (longDetail != null) verdict else check.detail ?: verdict,
                 icon = if (check.passed) R.drawable.ic_shield else R.drawable.ic_alert,
                 // Переход предлагается только к непройденной проверке:
                 // исправлять пройденную незачем.
@@ -443,6 +448,10 @@ class SecurityCenterActivity : AppCompatActivity() {
             )
 
             row.findViewById<TextView>(R.id.row_value).setTextColor(statusColor(check.passed))
+            row.findViewById<TextView>(R.id.row_detail).apply {
+                visibility = if (longDetail != null) View.VISIBLE else View.GONE
+                text = longDetail
+            }
 
             list.addView(row)
         }
@@ -520,6 +529,9 @@ class SecurityCenterActivity : AppCompatActivity() {
     private companion object {
         /** Максимальный уровень drawable. */
         const val MAX_LEVEL = 10_000
+
+        /** Пояснение длиннее — второй строкой, а не значением справа. */
+        const val SHORT_DETAIL_CHARS = 24
 
         /** Сколько последних событий журнала показывается. */
         const val LOG_LIMIT = 20u

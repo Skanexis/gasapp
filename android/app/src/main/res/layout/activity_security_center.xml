@@ -72,7 +72,8 @@
                 android:gravity="center"
                 android:textColor="@color/status_ok"
                 android:textSize="12sp"
-                android:fontFamily="@font/inter_semibold"
+                android:fontFamily="@font/inter"
+                android:textFontWeight="600"
                 tools:text="6/8" />
         </FrameLayout>
 
@@ -90,7 +91,8 @@
                 android:text="@string/security_attention_title"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
-                android:fontFamily="@font/inter_semibold" />
+                android:fontFamily="@font/inter"
+                android:textFontWeight="600" />
 
             <TextView
                 android:id="@+id/score_subtitle"

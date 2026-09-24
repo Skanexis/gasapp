@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import org.aegis.app.R
 
@@ -48,9 +49,27 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
 
     /** Заменяет содержимое списка. */
     fun submit(items: List<ChatSummary>) {
+        // Разница, а не перерисовка всего списка: обновление приходит
+        // на каждое событие сокета, и полная перерисовка мигала строками
+        // и сбивала прокрутку.
+        val old = chats.toList()
+        val diff = DiffUtil.calculateDiff(
+            object : DiffUtil.Callback() {
+                override fun getOldListSize() = old.size
+
+                override fun getNewListSize() = items.size
+
+                override fun areItemsTheSame(oldPosition: Int, newPosition: Int) =
+                    old[oldPosition].chatId == items[newPosition].chatId
+
+                override fun areContentsTheSame(oldPosition: Int, newPosition: Int) =
+                    old[oldPosition] == items[newPosition]
+            },
+        )
+
         chats.clear()
         chats.addAll(items)
-        notifyDataSetChanged()
+        diff.dispatchUpdatesTo(this)
     }
 
     /**
@@ -96,7 +115,7 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
         /** Заполняет строку данными чата. */
         fun bind(chat: ChatSummary) {
             // Инициалы, а не фото: см. комментарий в раскладке.
-            avatar.text = initials(chat.name)
+            avatar.text = initialsOf(chat.name)
             name.text = chat.name
             preview.text = chat.preview
             time.text = chat.time
@@ -128,23 +147,6 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
             }
 
             itemView.setOnClickListener { onClick(chat) }
-        }
-
-        /**
-         * Инициалы для аватара.
-         *
-         * Берутся две буквы из разных слов, как в макете («Lena Novak»
-         * даёт «LN»). Одна буква хуже различает контакты в длинном
-         * списке.
-         */
-        private fun initials(name: String): String {
-            val parts = name.split(' ').filter { it.isNotEmpty() }
-
-            return when {
-                parts.size >= 2 -> "${parts[0].first()}${parts[1].first()}".uppercase()
-                parts.isNotEmpty() -> parts[0].take(2).uppercase()
-                else -> "?"
-            }
         }
     }
 }

@@ -20,7 +20,8 @@
         android:text="@string/search_title"
         android:textColor="@color/text_primary"
         android:textSize="20sp"
-        android:fontFamily="@font/inter_bold" />
+        android:fontFamily="@font/inter"
+        android:textFontWeight="700" />
 
     <org.aegis.app.components.AegisTextField
         android:id="@+id/search_query"

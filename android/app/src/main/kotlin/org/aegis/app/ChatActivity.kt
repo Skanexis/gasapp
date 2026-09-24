@@ -36,6 +36,7 @@ import org.aegis.app.ui.AttachmentPreview
 import org.aegis.app.ui.DeliveryMark
 import org.aegis.app.ui.MessageAdapter
 import org.aegis.app.ui.MessageItem
+import org.aegis.app.ui.initialsOf
 import uniffi.aegis.FfiAttachmentFile
 import uniffi.aegis.FfiException
 import uniffi.aegis.FfiAttachmentKind
@@ -52,7 +53,7 @@ class ChatActivity : AppCompatActivity() {
 
     private lateinit var adapter: MessageAdapter
     private lateinit var input: AegisTextField
-    private lateinit var sendButton: AegisButton
+    private lateinit var sendButton: View
     private lateinit var keyChangeBanner: LinearLayout
 
     /** Сверял ли пользователь safety number этого контакта. */
@@ -123,7 +124,8 @@ class ChatActivity : AppCompatActivity() {
         wasVerified = intent.getBooleanExtra(EXTRA_VERIFIED, false)
 
         findViewById<TextView>(R.id.chat_title).text = chatName
-        findViewById<TextView>(R.id.chat_back).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.chat_avatar).text = initialsOf(chatName)
+        findViewById<View>(R.id.chat_back).setOnClickListener { finish() }
 
         input = findViewById(R.id.message_input)
         sendButton = findViewById(R.id.send_button)
