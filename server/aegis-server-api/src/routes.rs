@@ -292,6 +292,16 @@ pub struct DiscoveryResponse {
     /// Список, а не одно устройство: у аккаунта их несколько, и
     /// сообщение доставляется каждому (раздел 13.1).
     pub device_ids: Vec<Uuid>,
+    /// Ключ ML-KEM-1024 sealed sender первого устройства, hex.
+    ///
+    /// 🔐 Без него отправитель не может запечатать конверт гибридно,
+    /// и имя отправителя защищала бы одна кривая X25519. Подписан
+    /// identity-ключом владельца — подпись проверяет отправитель.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_public: Option<String>,
+    /// Подпись ключа ML-KEM sealed sender, hex.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_signature: Option<String>,
 }
 
 /// Регистрация токена push-уведомлений.
@@ -323,6 +333,12 @@ pub struct PublishKeysRequest {
     /// Одноразовые пост-квантовые: идентификатор, ключ, подпись.
     #[serde(default)]
     pub one_time_kem: Vec<(i32, String, String)>,
+    /// Ключ ML-KEM-1024 sealed sender устройства, hex.
+    #[serde(default)]
+    pub sealed_kem_public: Option<String>,
+    /// Подпись ключа ML-KEM sealed sender identity-ключом, hex.
+    #[serde(default)]
+    pub sealed_kem_signature: Option<String>,
 }
 
 /// Выдаваемый prekey bundle.
@@ -610,12 +626,27 @@ async fn discovery(
     // второй round-trip перед каждой первой отправкой.
     let devices = repo::list_devices(&state.pool, account.account_id).await?;
 
+    let sealed_kem = match devices.first() {
+        Some(first) => repo::sealed_kem_of(&state.pool, first.device_id).await?,
+        None => None,
+    };
+
     Ok(Json(DiscoveryResponse {
         account_id: account.account_id,
         identity_key: hex::encode(account.identity_key),
         device_ids: devices.into_iter().map(|device| device.device_id).collect(),
+        sealed_kem_public: sealed_kem.as_ref().map(|(public, _)| hex::encode(public)),
+        sealed_kem_signature: sealed_kem
+            .as_ref()
+            .map(|(_, signature)| hex::encode(signature)),
     }))
 }
+
+/// Длина открытого ключа ML-KEM-1024.
+const SEALED_KEM_PUBLIC_LEN: usize = 1568;
+
+/// Длина подписи XEdDSA.
+const SEALED_KEM_SIGNATURE_LEN: usize = 64;
 
 /// Публикация предключей устройства.
 ///
@@ -654,6 +685,24 @@ async fn publish_keys(
         .map(|(id, key, signature)| Ok((*id, decode_hex(key)?, decode_hex(signature)?)))
         .collect::<Result<Vec<_>, ApiError>>()?;
 
+    // Ключ sealed sender: длины проверяются до базы — неверная длина
+    // означает испорченный запрос, а не сбой сервера.
+    let sealed_kem = match (&request.sealed_kem_public, &request.sealed_kem_signature) {
+        (Some(public), Some(signature)) => {
+            let public = decode_hex(public)?;
+            let signature = decode_hex(signature)?;
+
+            if public.len() != SEALED_KEM_PUBLIC_LEN || signature.len() != SEALED_KEM_SIGNATURE_LEN
+            {
+                return Err(ApiError::BadRequest);
+            }
+
+            Some((public, signature))
+        }
+        (None, None) => None,
+        _ => return Err(ApiError::BadRequest),
+    };
+
     repo::publish_prekeys(
         &state.pool,
         device_id,
@@ -663,6 +712,10 @@ async fn publish_keys(
         &one_time_kem,
     )
     .await?;
+
+    if let Some((public, signature)) = sealed_kem {
+        repo::set_sealed_kem(&state.pool, device_id, &public, &signature).await?;
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

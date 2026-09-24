@@ -101,12 +101,32 @@ Where:
 Upon receiving the PQXDH message, both parties compute the shared secret as:
 
 ```
+T  = SHA-256("AEGIS_PQXDH_v2_TRANSCRIPT" || IK_A || IK_B || EK_A || SPK_B
+             || len(CT_pq) as u64 big-endian || CT_pq)
+
 SK = HKDF-SHA-256(
-    salt = 32 zero bytes,
+    salt = T,
     IKM  = F || DH1 || DH2 || DH3 || [DH4] || SS_pq,
-    info = "AEGIS_PQXDH_v1_X25519_MLKEM1024"
+    info = "AEGIS_PQXDH_v2_X25519_MLKEM1024_TRANSCRIPT"
 )
 ```
+
+**Transcript binding (v2, 2026-09).** The salt is the hash of the public
+transcript: both identity keys, the initiator's ephemeral key, the
+responder's signed pre-key and the ML-KEM ciphertext. Version 1 used a
+zero salt and no associated data, deviating from X3DH/PQXDH, which require
+`AD = IK_A || IK_B`. This was not exploitable — both identities already
+enter the secret through DH1 and DH2 — but the parties never confirmed
+that they saw the same exchange, and PQXDH revision 3 recommends binding
+the KEM ciphertext. Binding the transcript into the root is stronger than
+AD on the first message alone: every later key derives from the root, so
+any disagreement makes the very first message fail to decrypt. The KEM
+public key needs no separate binding: the ML-KEM shared secret is derived
+with `H(ek)`.
+
+**Contributory DH.** Every X25519 computation rejects a non-contributory
+result (a small-order peer key would otherwise yield an all-zero secret
+known to anyone).
 
 Where:
 - `F`: 32 bytes of 0xFF for domain separation
@@ -396,13 +416,41 @@ Protocol version 1 mandates the post-quantum ratchet. Version 0 is rejected
 outright, and no version negotiation exists — negotiation is itself the
 channel through which downgrade attacks are mounted.
 
-### 10.4. Deniability
+### 10.4. Sealed Sender Outer Layer
+
+Every envelope travels sealed: the server learns the recipient device, never
+the sender. The outer layer is a hybrid KEM:
+
+```
+header = 0xA2 || EK (X25519, ephemeral) || CT_kem (ML-KEM-1024 to PK_kem_B)
+salt   = SHA-256("AEGIS_SEALED_SENDER_v2_SALT" || EK || IK_B || SHA-256(PK_kem_B) || CT_kem)
+key    = HKDF-SHA-256(salt, DH(EK, IK_B) || SS_kem, "AEGIS_SEALED_SENDER_v2_X25519_MLKEM1024")
+body   = AES-256-GCM(key, nonce = EK[..12], plaintext = cert || envelope, AAD = header)
+```
+
+`PK_kem_B` is a long-term per-device ML-KEM-1024 key, signed by the
+recipient's identity key over `"AEGIS_SEALED_KEM_v1" || PK_kem_B` and served
+by discovery. The sender verifies the signature; a missing key aborts the
+send rather than falling back to X25519 alone. The classical-only format
+`0xA1` is rejected.
+
+Why hybrid: the message content was already protected by the post-quantum
+ratchet, but the sender's identity rested on X25519 alone. An adversary
+recording envelopes today could, with a quantum computer later, recover who
+wrote to whom. Now both X25519 and ML-KEM must be broken.
+
+The first envelope to a new contact carries no access key; the right to send
+anonymously is proven by proof-of-work over the recipient device and the
+envelope hash (18 bits, `AEGIS_POW_FIRST_v1`) instead of the sender's
+signature.
+
+### 10.5. Deniability
 Messages do not contain signatures that bind them to a specific sender.
 
-### 10.5. Insider Security
+### 10.6. Insider Security
 Server compromise does not reveal message contents due to end-to-end encryption.
 
-### 10.6. Side-Channel Resistance
+### 10.7. Side-Channel Resistance
 All implementations should use constant-time algorithms for security-critical operations.
 
 ## 11. Test Vectors

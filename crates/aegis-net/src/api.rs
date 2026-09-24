@@ -59,6 +59,17 @@ pub struct DiscoveryResponse {
     /// аккаунту, поэтому без этого списка первая отправка невозможна.
     #[serde(default)]
     pub device_ids: Vec<String>,
+    /// Ключ ML-KEM-1024 sealed sender первого устройства, hex.
+    ///
+    /// 🔐 Нужен, чтобы запечатать конверт гибридно: без него имя
+    /// отправителя защищала бы только кривая X25519. Подписан
+    /// identity-ключом владельца; подпись проверяет отправитель —
+    /// сервер ключ раздаёт, но подменить не может.
+    #[serde(default)]
+    pub sealed_kem_public: Option<String>,
+    /// Подпись ключа ML-KEM sealed sender, hex.
+    #[serde(default)]
+    pub sealed_kem_signature: Option<String>,
 }
 
 /// Публикация предключей устройства.
@@ -82,6 +93,15 @@ pub struct PublishKeysRequest {
     /// Одноразовые пост-квантовые: идентификатор, ключ, подпись.
     #[serde(default)]
     pub one_time_kem: Vec<(i32, String, String)>,
+    /// Ключ ML-KEM-1024 sealed sender устройства, hex.
+    ///
+    /// Долгоживущий: публикуется один раз и больше не меняется.
+    /// Отдаётся отправителям через discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_public: Option<String>,
+    /// Подпись ключа ML-KEM sealed sender identity-ключом, hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_signature: Option<String>,
 }
 
 /// Prekey bundle, полученный с сервера.

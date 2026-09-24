@@ -25,11 +25,26 @@
 //!
 //! # Как разрывается замкнутый круг
 //!
-//! Отправитель шифрует конверт **вторым, внешним слоем** — простым
-//! ECIES на X25519: эфемерная пара, DH с identity-ключом получателя,
-//! HKDF, AEAD. Получатель разворачивает внешний слой своим приватным
-//! identity-ключом, достаёт оттуда и сертификат отправителя, и
-//! обычный конверт, и дальше всё идёт как прежде.
+//! Отправитель шифрует конверт **вторым, внешним слоем** — гибридным
+//! KEM: эфемерный X25519 с identity-ключом получателя **и** ML-KEM-1024
+//! с ключом sealed sender получателя, затем HKDF и AEAD. Получатель
+//! разворачивает внешний слой своими приватными ключами, достаёт оттуда
+//! и сертификат отправителя, и обычный конверт, и дальше всё идёт как
+//! прежде.
+//!
+//! # 🔐 Почему гибрид
+//!
+//! Прежде внешний слой был только X25519. Содержимое сообщений при этом
+//! защищал пост-квантовый храповик, а **имя отправителя** — только
+//! классическая кривая: противник, записывающий трафик сервера сегодня,
+//! с квантовым компьютером завтра восстановил бы, кто кому писал, за
+//! всю историю. Социальный граф — ровно то, что sealed sender прячет.
+//! Теперь для этого нужно сломать и X25519, и ML-KEM-1024.
+//!
+//! Ключ ML-KEM получателя долгоживущий, свой у устройства, и подписан
+//! его identity-ключом с доменным разделителем
+//! ([`sign_sealed_kem_key`] / [`verify_sealed_kem_key`]): сервер
+//! раздаёт его, но подменить не может — подпись проверяет отправитель.
 //!
 //! Внешний слой не даёт ни forward secrecy, ни защиты после
 //! компрометации — он и не должен: за это отвечает Double Ratchet
@@ -68,6 +83,7 @@ use rand_core::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::aead::{hkdf_sha256, KEY_LEN};
+use crate::mlkem::{MlKem1024PrivateKey, MlKem1024PublicKey};
 use crate::x25519::{X25519PrivateKey, X25519PublicKey};
 use crate::xeddsa;
 
@@ -83,7 +99,11 @@ use crate::xeddsa;
 ///
 /// Сервер различие видит и так: конверты приходят по разным маршрутам.
 /// Отдельная метка поэтому не сообщает ему ничего нового.
-pub const SEALED_VERSION: u8 = 0xA1;
+///
+/// `0xA2` — гибридный формат (X25519 + ML-KEM-1024). Прежний `0xA1`,
+/// только X25519, не принимается: откат на него был бы понижением
+/// защиты, которое мог бы навязать тот, кто подделывает конверты.
+pub const SEALED_VERSION: u8 = 0xA2;
 
 // Совпадение меток сломало бы различение молча, поэтому оно
 // запрещено на этапе компиляции, а не тестом.
@@ -111,7 +131,20 @@ const ID_LEN: usize = 16;
 const KEY_BYTES: usize = 32;
 
 /// Метка HKDF для ключа внешнего слоя.
-const INFO_SEAL: &[u8] = b"AEGIS_SEALED_SENDER_v1";
+const INFO_SEAL: &[u8] = b"AEGIS_SEALED_SENDER_v2_X25519_MLKEM1024";
+
+/// Домен-разделитель соли внешнего слоя.
+const SALT_DOMAIN: &[u8] = b"AEGIS_SEALED_SENDER_v2_SALT";
+
+/// Домен-разделитель подписи ключа ML-KEM sealed sender.
+///
+/// 🔐 Тот же identity-ключ подписывает и KEM-предключи PQXDH — голые
+/// байты ключа. Без разделителя подпись старого предключа годилась бы
+/// как подпись ключа sealed sender, и сервер мог бы подставить её.
+const KEM_SIGNATURE_DOMAIN: &[u8] = b"AEGIS_SEALED_KEM_v1";
+
+/// Длина шифротекста ML-KEM-1024.
+const KEM_CIPHERTEXT_LEN: usize = MlKem1024PublicKey::CIPHERTEXT_LEN;
 
 /// Предел размера запечатанного конверта.
 ///
@@ -273,11 +306,13 @@ pub struct SealedContents {
 /// [`AegisError::Crypto`] — сбой вывода ключа или шифрования.
 pub fn seal<R: RngCore + CryptoRng>(
     recipient_identity: &PublicKeyBytes,
+    recipient_kem_public: &[u8],
     certificate: &SenderCertificate,
     envelope: &[u8],
     rng: &mut R,
 ) -> Result<Vec<u8>> {
     let recipient = X25519PublicKey::from_bytes(*recipient_identity)?;
+    let recipient_kem = MlKem1024PublicKey::from_bytes(recipient_kem_public)?;
 
     // Эфемерная пара на каждое сообщение: постоянная связала бы
     // сообщения одного отправителя между собой, и sealed sender
@@ -286,7 +321,26 @@ pub fn seal<R: RngCore + CryptoRng>(
     let ephemeral_public = ephemeral.public_key().as_bytes();
 
     let shared = Zeroizing::new(ephemeral.diffie_hellman(&recipient)?);
-    let key = derive_key(&shared, &ephemeral_public, recipient_identity)?;
+    let (kem_shared, kem_ciphertext) = recipient_kem.encapsulate(rng);
+    let kem_shared = Zeroizing::new(kem_shared);
+
+    let key = derive_key(
+        &shared,
+        &kem_shared,
+        &ephemeral_public,
+        recipient_identity,
+        recipient_kem_public,
+        &kem_ciphertext,
+    )?;
+
+    let mut header = Vec::with_capacity(
+        1usize
+            .saturating_add(KEY_BYTES)
+            .saturating_add(KEM_CIPHERTEXT_LEN),
+    );
+    header.push(SEALED_VERSION);
+    header.extend_from_slice(ephemeral_public.as_bytes());
+    header.extend_from_slice(&kem_ciphertext);
 
     let mut plaintext = Vec::new();
     let certificate_bytes = certificate.to_bytes();
@@ -295,21 +349,17 @@ pub fn seal<R: RngCore + CryptoRng>(
     plaintext.extend_from_slice(&certificate_bytes);
     plaintext.extend_from_slice(envelope);
 
-    // AAD — эфемерный ключ: он лежит открытым, и без привязки его
-    // можно было бы подменить, оставив шифротекст прежним.
+    // AAD — весь открытый заголовок: версия, эфемерный ключ и
+    // шифротекст KEM. Без привязки их можно было бы подменить,
+    // оставив шифротекст AEAD прежним.
     let ciphertext = crate::aead::seal_with_key(
         key.expose_secret(),
         &nonce_from(&ephemeral_public),
         &plaintext,
-        ephemeral_public.as_bytes(),
+        &header,
     )?;
 
-    // Ёмкость считается с насыщением: это подсказка аллокатору,
-    // и переполнение здесь не должно ронять отправку.
-    let capacity = ciphertext.len().saturating_add(KEY_BYTES).saturating_add(1);
-    let mut out = Vec::with_capacity(capacity);
-    out.push(SEALED_VERSION);
-    out.extend_from_slice(ephemeral_public.as_bytes());
+    let mut out = header;
     out.extend_from_slice(&ciphertext);
 
     if out.len() > MAX_SEALED_LEN {
@@ -331,7 +381,11 @@ pub fn seal<R: RngCore + CryptoRng>(
 /// либо неразбираемый сертификат;
 /// [`AegisError::Crypto`] — тег не сходится: конверт не нам либо
 /// изменён.
-pub fn unseal(recipient_private: &X25519PrivateKey, raw: &[u8]) -> Result<SealedContents> {
+pub fn unseal(
+    recipient_private: &X25519PrivateKey,
+    recipient_kem: &MlKem1024PrivateKey,
+    raw: &[u8],
+) -> Result<SealedContents> {
     if raw.len() > MAX_SEALED_LEN {
         return Err(AegisError::Malformed);
     }
@@ -343,19 +397,31 @@ pub fn unseal(recipient_private: &X25519PrivateKey, raw: &[u8]) -> Result<Sealed
     }
 
     let ephemeral_public = PublicKeyBytes::new(take_array::<KEY_BYTES>(raw, &mut offset)?);
+    let kem_ciphertext = take(raw, &mut offset, KEM_CIPHERTEXT_LEN)?;
+    let header = raw.get(..offset).ok_or(AegisError::Malformed)?;
     let ciphertext = raw.get(offset..).ok_or(AegisError::Malformed)?;
 
     let ephemeral = X25519PublicKey::from_bytes(ephemeral_public)?;
     let recipient_public = recipient_private.public_key().as_bytes();
+    let recipient_kem_public = recipient_kem.public_key().as_bytes();
 
     let shared = Zeroizing::new(recipient_private.diffie_hellman(&ephemeral)?);
-    let key = derive_key(&shared, &ephemeral_public, &recipient_public)?;
+    let kem_shared = Zeroizing::new(recipient_kem.decapsulate(kem_ciphertext)?);
+
+    let key = derive_key(
+        &shared,
+        &kem_shared,
+        &ephemeral_public,
+        &recipient_public,
+        &recipient_kem_public,
+        kem_ciphertext,
+    )?;
 
     let plaintext = crate::aead::open_with_key(
         key.expose_secret(),
         &nonce_from(&ephemeral_public),
         ciphertext,
-        ephemeral_public.as_bytes(),
+        header,
     )?;
 
     let mut inner = 0usize;
@@ -375,25 +441,79 @@ pub fn unseal(recipient_private: &X25519PrivateKey, raw: &[u8]) -> Result<Sealed
     })
 }
 
-/// Выводит ключ внешнего слоя.
+/// Выводит ключ внешнего слоя из обеих составляющих.
 ///
-/// 🔐 В HKDF входит не только общий секрет, но и оба публичных
-/// ключа. Без этого один и тот же секрет давал бы один ключ в
-/// разных контекстах, и шифротекст, снятый с одного получателя,
-/// можно было бы переадресовать другому.
+/// `ikm = DH ‖ секрет KEM`: знание одной половины не даёт ключа.
+/// Соль — хеш всего, что сторонам должно совпасть: эфемерного ключа,
+/// обоих ключей получателя и шифротекста KEM. Расхождение в любом
+/// из них даёт другой ключ, а не тот же ключ другого обмена.
 fn derive_key(
     shared: &[u8; 32],
+    kem_shared: &[u8; 32],
     ephemeral_public: &PublicKeyBytes,
-    recipient_public: &PublicKeyBytes,
+    recipient_identity: &PublicKeyBytes,
+    recipient_kem_public: &[u8],
+    kem_ciphertext: &[u8],
 ) -> Result<Secret<[u8; KEY_LEN]>> {
-    let mut salt = Vec::with_capacity(KEY_BYTES * 2);
-    salt.extend_from_slice(ephemeral_public.as_bytes());
-    salt.extend_from_slice(recipient_public.as_bytes());
+    use sha2::{Digest, Sha256};
+
+    let mut salt = Sha256::new();
+    salt.update(SALT_DOMAIN);
+    salt.update(ephemeral_public.as_bytes());
+    salt.update(recipient_identity.as_bytes());
+    salt.update(Sha256::digest(recipient_kem_public));
+    salt.update(kem_ciphertext);
+    let salt: [u8; 32] = salt.finalize().into();
+
+    let mut ikm = Zeroizing::new([0u8; 64]);
+    ikm.get_mut(..32)
+        .ok_or(AegisError::Crypto)?
+        .copy_from_slice(shared);
+    ikm.get_mut(32..)
+        .ok_or(AegisError::Crypto)?
+        .copy_from_slice(kem_shared);
 
     let mut key = [0u8; KEY_LEN];
-    hkdf_sha256(Some(&salt), shared, INFO_SEAL, &mut key)?;
+    hkdf_sha256(Some(&salt), ikm.as_slice(), INFO_SEAL, &mut key)?;
 
     Ok(Secret::new(key))
+}
+
+/// Подписывает ключ ML-KEM sealed sender identity-ключом устройства.
+///
+/// # Errors
+///
+/// [`AegisError::Crypto`] — сбой подписи.
+pub fn sign_sealed_kem_key(
+    identity_private: &aegis_types::PrivateKeyBytes,
+    kem_public: &[u8],
+) -> Result<Vec<u8>> {
+    let mut message = KEM_SIGNATURE_DOMAIN.to_vec();
+    message.extend_from_slice(kem_public);
+
+    Ok(xeddsa::montgomery::sign(identity_private, &message)?.to_vec())
+}
+
+/// Проверяет подпись ключа ML-KEM sealed sender identity-ключом владельца.
+///
+/// 🔐 Ключ приходит от сервера. Без этой проверки сервер подставил бы
+/// свой ключ ML-KEM, и пост-квантовая половина внешнего слоя была бы
+/// у него на руках.
+///
+/// # Errors
+///
+/// [`AegisError::Crypto`] — подпись не сходится или ключ не разбирается.
+pub fn verify_sealed_kem_key(
+    owner_identity: &PublicKeyBytes,
+    kem_public: &[u8],
+    signature: &[u8],
+) -> Result<()> {
+    MlKem1024PublicKey::from_bytes(kem_public)?;
+
+    let mut message = KEM_SIGNATURE_DOMAIN.to_vec();
+    message.extend_from_slice(kem_public);
+
+    xeddsa::montgomery::verify(owner_identity, &message, signature)
 }
 
 /// Выводит nonce из эфемерного ключа.
@@ -489,6 +609,17 @@ mod tests {
         1_760_000_000_000
     }
 
+    /// Ключ ML-KEM получателя, выведенный из его X25519-ключа —
+    /// чтобы у каждого получателя в тестах был свой и тот же.
+    fn kem_for(recipient: &X25519PrivateKey) -> MlKem1024PrivateKey {
+        let secret = *recipient.expose_secret().expose_secret();
+        let mut seed = [0u8; crate::mlkem::SEED_LEN];
+        seed[..32].copy_from_slice(&secret);
+        seed[32..].copy_from_slice(&secret);
+
+        MlKem1024PrivateKey::from_seed(seed)
+    }
+
     /// Запечатанный конверт разворачивается получателем.
     #[test]
     fn sealed_envelope_round_trips() {
@@ -504,13 +635,14 @@ mod tests {
 
         let sealed = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             ENVELOPE_CANARY,
             &mut OsRng,
         )
         .expect("запечатывание");
 
-        let opened = unseal(&recipient, &sealed).expect("разворачивание");
+        let opened = unseal(&recipient, &kem_for(&recipient), &sealed).expect("разворачивание");
 
         assert_eq!(opened.envelope, ENVELOPE_CANARY);
         assert_eq!(opened.certificate, certificate);
@@ -546,6 +678,7 @@ mod tests {
 
         let sealed = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             &inner,
             &mut OsRng,
@@ -582,6 +715,7 @@ mod tests {
 
         let sealed = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             ENVELOPE_CANARY,
             &mut OsRng,
@@ -589,7 +723,7 @@ mod tests {
         .expect("запечатывание");
 
         assert!(matches!(
-            unseal(&stranger, &sealed),
+            unseal(&stranger, &kem_for(&stranger), &sealed),
             Err(AegisError::Crypto)
         ));
     }
@@ -612,6 +746,7 @@ mod tests {
 
         let first = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             ENVELOPE_CANARY,
             &mut OsRng,
@@ -619,6 +754,7 @@ mod tests {
         .expect("запечатывание");
         let second = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             ENVELOPE_CANARY,
             &mut OsRng,
@@ -653,6 +789,7 @@ mod tests {
 
         let sealed = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             ENVELOPE_CANARY,
             &mut OsRng,
@@ -666,7 +803,7 @@ mod tests {
             }
 
             assert!(
-                unseal(&recipient, &damaged).is_err(),
+                unseal(&recipient, &kem_for(&recipient), &damaged).is_err(),
                 "порча байта {position} осталась незамеченной"
             );
         }
@@ -820,6 +957,7 @@ mod tests {
         );
         let sealed = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             ENVELOPE_CANARY,
             &mut OsRng,
@@ -830,7 +968,7 @@ mod tests {
             let slice = sealed.get(..length).expect("срез");
 
             assert!(
-                unseal(&recipient, slice).is_err(),
+                unseal(&recipient, &kem_for(&recipient), slice).is_err(),
                 "обрубок {length} разобрался"
             );
         }
@@ -886,6 +1024,7 @@ mod tests {
         );
         let sealed = seal(
             &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
             &certificate,
             &plain,
             &mut OsRng,
@@ -902,7 +1041,91 @@ mod tests {
     fn garbage_is_rejected() {
         let recipient = X25519PrivateKey::generate(&mut OsRng);
 
-        assert!(unseal(&recipient, b"").is_err());
-        assert!(unseal(&recipient, b"not a sealed envelope at all").is_err());
+        assert!(unseal(&recipient, &kem_for(&recipient), b"").is_err());
+        assert!(unseal(
+            &recipient,
+            &kem_for(&recipient),
+            b"not a sealed envelope at all"
+        )
+        .is_err());
+    }
+
+    /// 🔐 Гибрид: знание одной половины не раскрывает отправителя.
+    ///
+    /// Противник, сломавший X25519 (квантовый компьютер), знает
+    /// приватный ключ получателя на кривой — но без ключа ML-KEM
+    /// конверт не открыть. И наоборот.
+    #[test]
+    fn one_half_of_the_hybrid_is_not_enough() {
+        let (server_private, _) = server_key();
+        let sender = X25519PrivateKey::generate(&mut OsRng);
+        let recipient = X25519PrivateKey::generate(&mut OsRng);
+        let certificate = certificate_for(
+            &sender.public_key().as_bytes(),
+            &server_private,
+            now() + DEFAULT_VALIDITY_MILLIS,
+        );
+
+        let sealed = seal(
+            &recipient.public_key().as_bytes(),
+            &kem_for(&recipient).public_key().as_bytes(),
+            &certificate,
+            ENVELOPE_CANARY,
+            &mut OsRng,
+        )
+        .expect("запечатывание");
+
+        let wrong_kem = MlKem1024PrivateKey::generate(&mut OsRng);
+        assert!(
+            unseal(&recipient, &wrong_kem, &sealed).is_err(),
+            "кривая без ML-KEM раскрыла отправителя"
+        );
+
+        let wrong_curve = X25519PrivateKey::generate(&mut OsRng);
+        assert!(
+            unseal(&wrong_curve, &kem_for(&recipient), &sealed).is_err(),
+            "ML-KEM без кривой раскрыл отправителя"
+        );
+
+        assert!(unseal(&recipient, &kem_for(&recipient), &sealed).is_ok());
+    }
+
+    /// 🔐 Прежний формат — только X25519 — не принимается.
+    #[test]
+    fn the_classical_only_format_is_rejected() {
+        let recipient = X25519PrivateKey::generate(&mut OsRng);
+        let mut legacy = vec![0xA1];
+        legacy.extend_from_slice(&[7u8; 200]);
+
+        assert!(!is_sealed(&legacy));
+        assert!(unseal(&recipient, &kem_for(&recipient), &legacy).is_err());
+    }
+
+    /// 🔐 Подпись ключа ML-KEM — с доменом; подпись голых байт не годится.
+    ///
+    /// Тот же identity-ключ подписывает KEM-предключи PQXDH голыми
+    /// байтами. Без домена сервер выдал бы старый предключ за ключ
+    /// sealed sender.
+    #[test]
+    fn sealed_kem_signature_is_domain_separated() {
+        let owner = X25519PrivateKey::generate(&mut OsRng);
+        let owner_public = xeddsa::montgomery::public_key(&owner.expose_secret()).expect("ключ");
+        let kem = MlKem1024PrivateKey::generate(&mut OsRng)
+            .public_key()
+            .as_bytes();
+
+        let signature = sign_sealed_kem_key(&owner.expose_secret(), &kem).expect("подпись");
+        verify_sealed_kem_key(&owner_public, &kem, &signature).expect("своя подпись");
+
+        let raw = xeddsa::montgomery::sign(&owner.expose_secret(), &kem).expect("подпись");
+        assert!(
+            verify_sealed_kem_key(&owner_public, &kem, &raw).is_err(),
+            "подпись предключа принята за подпись ключа sealed sender"
+        );
+
+        let other = MlKem1024PrivateKey::generate(&mut OsRng)
+            .public_key()
+            .as_bytes();
+        assert!(verify_sealed_kem_key(&owner_public, &other, &signature).is_err());
     }
 }

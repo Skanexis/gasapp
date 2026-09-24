@@ -816,6 +816,8 @@ mod tests {
             kem_signature: "dd".to_owned(),
             one_time: vec![(10, "ee".to_owned())],
             one_time_kem: Vec::new(),
+            sealed_kem_public: None,
+            sealed_kem_signature: None,
         };
 
         client.publish_keys("dev-1", &request, &TestSigner).unwrap();
@@ -841,6 +843,8 @@ mod tests {
             kem_signature: "dd".to_owned(),
             one_time: Vec::new(),
             one_time_kem: Vec::new(),
+            sealed_kem_public: None,
+            sealed_kem_signature: None,
         };
 
         client.publish_keys("dev-1", &request, &TestSigner).unwrap();

@@ -65,14 +65,62 @@ const KDF_PREFIX_F: [u8; 32] = [0xFF; 32];
 ///
 /// Содержит версию и обе схемы: смена любой из них меняет метку, поэтому
 /// секреты разных версий протокола невозможно перепутать.
-const KDF_INFO: &[u8] = b"AEGIS_PQXDH_v1_X25519_MLKEM1024";
-
-/// Соль HKDF: 32 нулевых байта, как в X3DH.
 ///
-/// Фиксированная соль допустима, потому что энтропия целиком приходит из
-/// DH-составляющих входного материала, а разделение доменов обеспечивают
-/// [`KDF_PREFIX_F`] и [`KDF_INFO`].
-const KDF_SALT: [u8; 32] = [0u8; 32];
+/// v2 — с привязкой к транскрипту (см. [`transcript_hash`]).
+const KDF_INFO: &[u8] = b"AEGIS_PQXDH_v2_X25519_MLKEM1024_TRANSCRIPT";
+
+/// Домен-разделитель хеша транскрипта.
+const TRANSCRIPT_DOMAIN: &[u8] = b"AEGIS_PQXDH_v2_TRANSCRIPT";
+
+/// 🔐 Хеш открытой части обмена — соль HKDF.
+///
+/// # Что здесь чинится
+///
+/// Спецификации X3DH/PQXDH требуют, чтобы стороны согласовали
+/// identity-ключи друг друга: `AD = IK_A ‖ IK_B` в AEAD первого
+/// сообщения. Прежде AD не было вовсе — аутентифицировался только
+/// заголовок храповика — и соль HKDF была нулевой. Эксплуатируемой
+/// дыры это не давало: оба identity-ключа входят в общий секрет через
+/// DH1 и DH2, и подмена любого из них даёт другой ключ. Но стороны не
+/// подтверждали явно, что видят **один и тот же** обмен — эфемерный
+/// ключ, предключ, шифротекст KEM, — а третья ревизия PQXDH (2024)
+/// прямо рекомендует привязывать шифротекст KEM к ключу сессии.
+///
+/// # Как
+///
+/// Весь открытый транскрипт хешируется в соль: identity-ключи обеих
+/// сторон, эфемерный ключ инициатора, подписанный предключ получателя
+/// и шифротекст ML-KEM. Это сильнее, чем AD одного первого сообщения:
+/// все ключи сессии выводятся из корня, и расхождение сторон в любом
+/// элементе транскрипта даёт другой корень — первое же сообщение
+/// не расшифруется. Открытый ключ KEM отдельно не нужен: общий
+/// секрет ML-KEM выводится с `H(ek)` и уже привязан к нему.
+///
+/// Каждое поле — фиксированной длины, кроме шифротекста, и тот идёт
+/// с длиной впереди: разные транскрипты не склеиваются в один.
+fn transcript_hash(
+    initiator_identity: &PublicKeyBytes,
+    responder_identity: &PublicKeyBytes,
+    initiator_ephemeral: &PublicKeyBytes,
+    responder_signed_pre_key: &PublicKeyBytes,
+    kem_ciphertext: &[u8],
+) -> [u8; 32] {
+    use sha2::Digest;
+
+    let mut hasher = Sha256::new();
+    hasher.update(TRANSCRIPT_DOMAIN);
+    hasher.update(initiator_identity.as_bytes());
+    hasher.update(responder_identity.as_bytes());
+    hasher.update(initiator_ephemeral.as_bytes());
+    hasher.update(responder_signed_pre_key.as_bytes());
+    hasher.update(
+        u64::try_from(kem_ciphertext.len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes(),
+    );
+    hasher.update(kem_ciphertext);
+    hasher.finalize().into()
+}
 
 /// Общий секрет PQXDH.
 ///
@@ -259,8 +307,17 @@ pub fn initiate<R: RngCore + CryptoRng>(
     let (kem_shared, kem_ciphertext) = kem_public.encapsulate(rng);
     let kem_shared = Zeroizing::new(kem_shared);
 
+    let transcript = transcript_hash(
+        our_identity.public().public(),
+        their_bundle.identity_key.public(),
+        &ephemeral_public,
+        &their_bundle.signed_pre_key.public,
+        &kem_ciphertext,
+    );
+
     let one_time_dh = one_time.as_ref().map(|(_, dh)| dh.as_slice());
-    let shared_secret = derive_shared_secret(&dh1, &dh2, &dh3, one_time_dh, &kem_shared)?;
+    let shared_secret =
+        derive_shared_secret(&dh1, &dh2, &dh3, one_time_dh, &kem_shared, &transcript)?;
 
     Ok(InitiatorOutput {
         shared_secret,
@@ -315,12 +372,21 @@ pub fn respond(
 
     let kem_shared = Zeroizing::new(keys.kem_pre_key.decapsulate(kem_ciphertext)?);
 
+    let transcript = transcript_hash(
+        initiator_identity,
+        keys.identity.public().public(),
+        initiator_ephemeral,
+        &keys.signed_pre_key.public_key().as_bytes(),
+        kem_ciphertext,
+    );
+
     derive_shared_secret(
         &dh1,
         &dh2,
         &dh3,
         dh4.as_ref().map(|dh| dh.as_slice()),
         &kem_shared,
+        &transcript,
     )
 }
 
@@ -339,6 +405,7 @@ fn derive_shared_secret(
     dh3: &[u8; 32],
     dh4: Option<&[u8]>,
     kem_shared: &[u8; 32],
+    transcript: &[u8; 32],
 ) -> Result<SharedSecret> {
     // Вход KDF — секретный материал: обнуляется при выходе из области видимости.
     let mut ikm = Zeroizing::new(Vec::with_capacity(32 * 6));
@@ -352,7 +419,7 @@ fn derive_shared_secret(
     }
     ikm.extend_from_slice(kem_shared);
 
-    let hkdf = Hkdf::<Sha256>::new(Some(&KDF_SALT), &ikm);
+    let hkdf = Hkdf::<Sha256>::new(Some(transcript), &ikm);
     let mut output = [0u8; SHARED_SECRET_LEN];
     hkdf.expand(KDF_INFO, &mut output)
         .map_err(|_| AegisError::Crypto)?;
@@ -766,8 +833,9 @@ mod tests {
         let dh = [7u8; 32];
         let kem = [9u8; 32];
 
-        let absent = derive_shared_secret(&dh, &dh, &dh, None, &kem).unwrap();
-        let zeroed = derive_shared_secret(&dh, &dh, &dh, Some(&[0u8; 32]), &kem).unwrap();
+        let absent = derive_shared_secret(&dh, &dh, &dh, None, &kem, &[7u8; 32]).unwrap();
+        let zeroed =
+            derive_shared_secret(&dh, &dh, &dh, Some(&[0u8; 32]), &kem, &[7u8; 32]).unwrap();
 
         assert_ne!(absent.expose_secret(), zeroed.expose_secret());
     }
@@ -784,8 +852,8 @@ mod tests {
         let c = [3u8; 32];
         let kem = [4u8; 32];
 
-        let straight = derive_shared_secret(&a, &b, &c, None, &kem).unwrap();
-        let swapped = derive_shared_secret(&b, &a, &c, None, &kem).unwrap();
+        let straight = derive_shared_secret(&a, &b, &c, None, &kem, &[7u8; 32]).unwrap();
+        let swapped = derive_shared_secret(&b, &a, &c, None, &kem, &[7u8; 32]).unwrap();
 
         assert_ne!(straight.expose_secret(), swapped.expose_secret());
     }
@@ -796,5 +864,39 @@ mod tests {
         let secret = SharedSecret(Secret::new([0xAB; SHARED_SECRET_LEN]));
 
         assert_eq!(format!("{secret:?}"), "SharedSecret<redacted>");
+    }
+
+    /// 🔐 Любое поле транскрипта меняет соль, а значит и ключ сессии.
+    ///
+    /// Стороны, увидевшие разные identity-ключи, разный эфемерный ключ,
+    /// предключ или шифротекст KEM, не получат общий корень.
+    #[test]
+    fn every_transcript_field_is_bound() {
+        let key = |byte: u8| PublicKeyBytes::new([byte; 32]);
+        let base = transcript_hash(&key(1), &key(2), &key(3), &key(4), &[5u8; 16]);
+
+        let variants = [
+            transcript_hash(&key(9), &key(2), &key(3), &key(4), &[5u8; 16]),
+            transcript_hash(&key(1), &key(9), &key(3), &key(4), &[5u8; 16]),
+            transcript_hash(&key(1), &key(2), &key(9), &key(4), &[5u8; 16]),
+            transcript_hash(&key(1), &key(2), &key(3), &key(9), &[5u8; 16]),
+            transcript_hash(&key(1), &key(2), &key(3), &key(4), &[9u8; 16]),
+            // Роли не взаимозаменяемы: A→B и B→A — разные обмены.
+            transcript_hash(&key(2), &key(1), &key(3), &key(4), &[5u8; 16]),
+        ];
+
+        for variant in variants {
+            assert_ne!(variant, base, "поле транскрипта не привязано");
+        }
+
+        let dh = [3u8; 32];
+        let kem = [4u8; 32];
+        let one = derive_shared_secret(&dh, &dh, &dh, None, &kem, &base).expect("ключ");
+        let other = derive_shared_secret(&dh, &dh, &dh, None, &kem, &variants[0]).expect("ключ");
+        assert_ne!(
+            one.expose_secret(),
+            other.expose_secret(),
+            "соль не влияет на ключ"
+        );
     }
 }

@@ -63,6 +63,7 @@ use aegis_net::client::Transport;
 use aegis_net::pow;
 use aegis_protocol::content::{Content, ACCESS_KEY_LEN};
 use aegis_protocol::keys::{IdentityKeyPair, SessionState};
+use aegis_protocol::mlkem::MlKem1024PrivateKey;
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::x25519::X25519PrivateKey;
 use aegis_storage::sealed::StoredCertificate;
@@ -97,6 +98,41 @@ impl<T: Transport> Client<T> {
             .storage
             .own_access_key()?
             .is_some_and(|own| own.published_at.is_some()))
+    }
+
+    /// Собственный ключ ML-KEM sealed sender; заводится при первом обращении.
+    ///
+    /// 🔐 Seed — в зашифрованной базе. Им разворачивается пост-квантовая
+    /// половина внешнего слоя каждого входящего конверта.
+    pub(super) fn own_sealed_kem_key(&self) -> Result<MlKem1024PrivateKey> {
+        if let Some((seed, _)) = self.storage.own_sealed_kem()? {
+            return Ok(MlKem1024PrivateKey::from_seed(seed));
+        }
+
+        let mut seed = zeroize::Zeroizing::new([0u8; aegis_storage::sealed::SEALED_KEM_SEED_LEN]);
+        rand_core::OsRng.fill_bytes(seed.as_mut());
+        self.storage.init_own_sealed_kem(&seed)?;
+
+        // Перечитывается, а не возвращается сгенерированный: при гонке
+        // двух потоков в базе останется первый, и ключ обязан быть им.
+        let (stored, _) = self.storage.own_sealed_kem()?.ok_or(AegisError::Storage)?;
+
+        Ok(MlKem1024PrivateKey::from_seed(stored))
+    }
+
+    /// Открытая часть ключа ML-KEM sealed sender и её подпись, hex.
+    pub(super) fn sealed_kem_publication<R: RngCore + CryptoRng>(
+        &self,
+        identity: &IdentityKeyPair,
+        _rng: &mut R,
+    ) -> Result<(String, String)> {
+        let public = self.own_sealed_kem_key()?.public_key().as_bytes();
+        let signature = sealed_sender::sign_sealed_kem_key(
+            &PrivateKeyBytes::new(*identity.private().expose_secret()),
+            &public,
+        )?;
+
+        Ok((hex(&public), hex(&signature)))
     }
 
     /// Заводит и публикует собственный ключ доступа, если это ещё не сделано.
@@ -224,11 +260,13 @@ impl<T: Transport> Client<T> {
     /// [`AegisError::InvalidSignature`] — сервер отверг ключ доступа;
     /// ключ забыт, отправка **не** повторена обычным путём (см. модуль);
     /// [`AegisError::Network`] — сервер недоступен.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn deliver<R: RngCore + CryptoRng>(
         &self,
         identity: &IdentityKeyPair,
         peer_identity: &PublicKeyBytes,
         peer_device: &str,
+        peer_kem: &[u8],
         envelope: &[u8],
         now: Timestamp,
         rng: &mut R,
@@ -238,7 +276,9 @@ impl<T: Transport> Client<T> {
         let access_key = self.storage.contact_access_key(&peer)?;
 
         let (certificate, _) = self.ensure_certificate(identity, now, false)?;
-        let sealed = sealed_sender::seal(peer_identity, &certificate, envelope, rng)?;
+        // 🔐 Гибрид X25519 + ML-KEM-1024: имя отправителя не раскроет
+        // и тот, кто записал трафик сейчас и получит квантовый компьютер потом.
+        let sealed = sealed_sender::seal(peer_identity, peer_kem, &certificate, envelope, rng)?;
 
         // 🔐 Без ключа доступа — тоже запечатано, но с proof-of-work
         // (см. описание модуля). Отправки за подписью здесь нет:
@@ -288,6 +328,7 @@ impl<T: Transport> Client<T> {
         existing: Option<SessionState>,
         peer_identity: &PublicKeyBytes,
         peer_device: &str,
+        peer_kem: &[u8],
         now: Timestamp,
         rng: &mut R,
     ) -> Result<SessionState> {
@@ -336,6 +377,7 @@ impl<T: Transport> Client<T> {
             identity,
             peer_identity,
             peer_device,
+            peer_kem,
             &outgoing.envelope,
             now,
             rng,
@@ -423,7 +465,8 @@ impl<T: Transport> Client<T> {
         let private = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(
             *identity.private().expose_secret(),
         ))?;
-        let contents = sealed_sender::unseal(&private, raw)?;
+        let kem = self.own_sealed_kem_key()?;
+        let contents = sealed_sender::unseal(&private, &kem, raw)?;
         let moment = validity_moment(queued_at_seconds, now);
 
         let (_, server_key) = self.ensure_certificate(identity, now, false)?;
