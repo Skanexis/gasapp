@@ -601,10 +601,19 @@
     <string name="about_limit_backup">Исчезающих сообщений в резервной копии нет. Удалённое сообщение остаётся в копиях, сделанных до удаления.</string>
     <string name="about_limit_recovery_key">Потеряете ключ восстановления — копию не прочитает никто. Мы тоже.</string>
     <string name="about_limit_peer">Собеседник уже видел сообщение: он может его сфотографировать или запомнить. «Удалить у всех» — просьба, а не гарантия.</string>
+    <string name="about_limit_inactive">Имя закреплено за аккаунтом, пока аккаунт существует: переустановка приложения его не освобождает. Чтобы сохранить имя на новом телефоне, восстановите резервную копию. Аккаунт, который никто не открывал 12 месяцев, удаляется, и его имя освобождается.</string>
     <string name="about_limit_calls">Звонков в этой версии нет.</string>
 
     <!-- Размеры файлов, по 1024. -->
     <string name="size_bytes">%1$d Б</string>
     <string name="size_kb">%1$d КБ</string>
     <string name="size_mb">%1$.1f МБ</string>
+    <string name="request_title">%1$s хочет начать переписку</string>
+    <string name="request_body">Вы ещё не общались. Пока вы не примете запрос, собеседник не получает отметок о прочтении и не видит, что вы печатаете. Если отклонить, переписка удалится, а он ничего не узнает.</string>
+    <string name="request_accept">Принять</string>
+    <string name="request_decline">Отклонить</string>
+    <string name="request_decline_title">Отклонить запрос?</string>
+    <string name="request_decline_body">Переписка удалится с этого устройства. Собеседник не получит уведомления и не узнает, что вы её прочли.</string>
+    <string name="request_awaiting">Запрос отправлен. Переписка начнётся, когда собеседник примет его или ответит.</string>
+    <string name="request_badge">Запрос</string>
 </resources>

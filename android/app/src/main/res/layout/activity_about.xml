@@ -160,6 +160,13 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_s"
                 android:text="@string/about_limit_calls" />
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/about_limit_inactive" />
             </LinearLayout>
 
         </LinearLayout>

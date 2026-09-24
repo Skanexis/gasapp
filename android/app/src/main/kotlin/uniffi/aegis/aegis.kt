@@ -898,6 +898,12 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -959,6 +965,8 @@ fun uniffi_aegis_checksum_func_validate_recovery_key(
 ): Short
 fun uniffi_aegis_checksum_method_httptransport_execute(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_accept_chat(
+): Short
 fun uniffi_aegis_checksum_method_messenger_add_contact_from_link(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_add_vault_file(
@@ -967,11 +975,15 @@ fun uniffi_aegis_checksum_method_messenger_attachments_of(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_backup_status(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_chat_request(
+): Short
 fun uniffi_aegis_checksum_method_messenger_chats(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_contacts(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_create_backup(
+): Short
+fun uniffi_aegis_checksum_method_messenger_decline_chat(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_delete_account(
 ): Short
@@ -1137,6 +1149,8 @@ fun uniffi_aegis_fn_free_messenger(`ptr`: Pointer,uniffi_out_err: UniffiRustCall
 ): Unit
 fun uniffi_aegis_fn_constructor_messenger_open(`databasePath`: RustBuffer.ByValue,`databaseKey`: RustBuffer.ByValue,`transport`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
+fun uniffi_aegis_fn_method_messenger_accept_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_add_contact_from_link(`ptr`: Pointer,`uri`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_add_vault_file(`ptr`: Pointer,`name`: RustBuffer.ByValue,`contents`: RustBuffer.ByValue,`location`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1145,12 +1159,16 @@ fun uniffi_aegis_fn_method_messenger_attachments_of(`ptr`: Pointer,`messageId`: 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_backup_status(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_chat_request(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_chats(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_contacts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_create_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`deviceLabel`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_decline_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_delete_account(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1488,6 +1506,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 53468.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_accept_chat() != 62841.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_add_contact_from_link() != 19449.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1500,6 +1521,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_backup_status() != 58549.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_chat_request() != 45022.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_chats() != 582.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1507,6 +1531,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_create_backup() != 41989.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_decline_chat() != 2709.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_delete_account() != 38024.toShort()) {
@@ -2470,6 +2497,15 @@ public object FfiConverterTypeHttpTransport: FfiConverter<HttpTransport, Pointer
 public interface MessengerInterface {
     
     /**
+     * Принимает запрос на переписку (см. `Client::accept_chat`).
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    fun `acceptChat`(`chatId`: kotlin.String, `nowMillis`: kotlin.Long)
+    
+    /**
      * Добавляет контакт по ссылке `aegis://contact/...`.
      *
      * # 🔐 Про доверие к ссылке
@@ -2524,6 +2560,15 @@ public interface MessengerInterface {
     fun `backupStatus`(): FfiBackupStatus
     
     /**
+     * Состояние запроса на переписку. Чата ещё нет — обычная переписка.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    fun `chatRequest`(`chatId`: kotlin.String): FfiChatRequest
+    
+    /**
      * Перечисляет чаты в порядке последней активности.
      *
      * # Errors
@@ -2553,6 +2598,15 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — сбой чтения базы или шифрования.
      */
     fun `createBackup`(`recoveryKey`: kotlin.String, `deviceLabel`: kotlin.String?, `nowMillis`: kotlin.Long): FfiBackup
+    
+    /**
+     * 🔐 Отклоняет запрос: переписка удаляется, в ответ не уходит ничего.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    fun `declineChat`(`chatId`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
      * 🔐 Удаляет аккаунт на сервере (MASVS PRIVACY-3.2).
@@ -3316,6 +3370,25 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Принимает запрос на переписку (см. `Client::accept_chat`).
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    @Throws(FfiException::class)override fun `acceptChat`(`chatId`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_accept_chat(
+        it, FfiConverterString.lower(`chatId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Добавляет контакт по ссылке `aegis://contact/...`.
      *
      * # 🔐 Про доверие к ссылке
@@ -3414,6 +3487,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Состояние запроса на переписку. Чата ещё нет — обычная переписка.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    @Throws(FfiException::class)override fun `chatRequest`(`chatId`: kotlin.String): FfiChatRequest {
+            return FfiConverterTypeFfiChatRequest.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_chat_request(
+        it, FfiConverterString.lower(`chatId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Перечисляет чаты в порядке последней активности.
      *
      * # Errors
@@ -3474,6 +3567,25 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     }
     )
     }
+    
+
+    
+    /**
+     * 🔐 Отклоняет запрос: переписка удаляется, в ответ не уходит ничего.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    @Throws(FfiException::class)override fun `declineChat`(`chatId`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_decline_chat(
+        it, FfiConverterString.lower(`chatId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
     
 
     
@@ -5937,6 +6049,49 @@ public object FfiConverterTypeFfiAttachmentKind: FfiConverterRustBuffer<FfiAttac
     override fun allocationSize(value: FfiAttachmentKind) = 4UL
 
     override fun write(value: FfiAttachmentKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Состояние запроса на переписку (см. `aegis_core::client::ChatRequest`).
+ */
+
+enum class FfiChatRequest {
+    
+    /**
+     * Обычная переписка.
+     */
+    SETTLED,
+    /**
+     * 🔐 Запрос от незнакомца: читать можно, отвечать — после принятия.
+     */
+    INCOMING,
+    /**
+     * Мы начали переписку, собеседник ещё не ответил.
+     */
+    OUTGOING;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiChatRequest: FfiConverterRustBuffer<FfiChatRequest> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiChatRequest.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiChatRequest) = 4UL
+
+    override fun write(value: FfiChatRequest, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }

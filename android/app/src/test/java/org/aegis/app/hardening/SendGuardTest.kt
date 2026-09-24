@@ -42,4 +42,22 @@ class SendGuardTest {
         assertEquals(Mode.CHOOSE_KEY, SendGuard.decide(keyChanged = true, replaced = false, keyConfirmed = false))
         assertEquals(Mode.REPLACED, SendGuard.decide(keyChanged = false, replaced = true, keyConfirmed = false))
     }
+
+    /** 🔐 Непринятый запрос закрыт до согласия — даже при сверенном ключе. */
+    @Test
+    fun an_incoming_request_waits_for_consent() {
+        assertEquals(
+            Mode.REQUEST,
+            SendGuard.decide(keyChanged = false, replaced = false, keyConfirmed = true, request = true),
+        )
+        assertEquals(
+            Mode.REQUEST,
+            SendGuard.decide(keyChanged = false, replaced = false, keyConfirmed = false, request = true),
+        )
+        // Смена ключа важнее: о ней надо сказать первой.
+        assertEquals(
+            Mode.CHOOSE_KEY,
+            SendGuard.decide(keyChanged = true, replaced = false, keyConfirmed = true, request = true),
+        )
+    }
 }

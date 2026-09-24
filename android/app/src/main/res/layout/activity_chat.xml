@@ -152,6 +152,36 @@
             android:text="@string/verify_safety_number"
             app:buttonSize="small"
             app:buttonVariant="primary" />
+
+        <!-- Запрос на переписку: «Принять» и «Отклонить». -->
+        <LinearLayout
+            android:id="@+id/request_actions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/request_accept"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/request_accept"
+                app:buttonSize="small"
+                app:buttonVariant="primary" />
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/request_decline"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_s"
+                android:layout_weight="1"
+                android:text="@string/request_decline"
+                app:buttonSize="small"
+                app:buttonVariant="secondary" />
+        </LinearLayout>
     </LinearLayout>
 
         <!--
@@ -183,6 +213,22 @@
             android:textFontWeight="600"
             app:drawableStartCompat="@drawable/ic_lock_small"
             app:drawableTint="@color/accent_base" />
+
+        <!-- Мы начали переписку, собеседник ещё не ответил. -->
+        <TextView
+            android:id="@+id/request_awaiting"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginStart="@dimen/space_l"
+            android:layout_marginEnd="@dimen/space_l"
+            android:layout_marginBottom="4dp"
+            android:gravity="center"
+            android:text="@string/request_awaiting"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:visibility="visible" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/message_list"
