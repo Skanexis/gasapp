@@ -1279,7 +1279,7 @@ fun uniffi_aegis_fn_func_compute_fingerprint(`identityKey`: RustBuffer.ByValue,`
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_contact_link_qr(`uri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_aegis_fn_func_contact_link_uri(`identity`: RustBuffer.ByValue,`displayName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_aegis_fn_func_contact_link_uri(`identity`: RustBuffer.ByValue,`pqIdentityHash`: RustBuffer.ByValue,`displayName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1455,7 +1455,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_contact_link_qr() != 48647.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_func_contact_link_uri() != 47386.toShort()) {
+    if (lib.uniffi_aegis_checksum_func_contact_link_uri() != 64653.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_core_version() != 35856.toShort()) {
@@ -5346,6 +5346,10 @@ data class FfiContactLink (
      */
     var `identity`: kotlin.ByteArray, 
     /**
+     * Хеш пост-квантовой половины identity, 32 байта.
+     */
+    var `pqIdentityHash`: kotlin.ByteArray, 
+    /**
      * Имя, предложенное владельцем ссылки.
      *
      * 🔐 Подсказка для интерфейса, не более: имя выбирает тот, кто
@@ -5366,17 +5370,20 @@ public object FfiConverterTypeFfiContactLink: FfiConverterRustBuffer<FfiContactL
     override fun read(buf: ByteBuffer): FfiContactLink {
         return FfiContactLink(
             FfiConverterByteArray.read(buf),
+            FfiConverterByteArray.read(buf),
             FfiConverterOptionalString.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiContactLink) = (
             FfiConverterByteArray.allocationSize(value.`identity`) +
+            FfiConverterByteArray.allocationSize(value.`pqIdentityHash`) +
             FfiConverterOptionalString.allocationSize(value.`displayName`)
     )
 
     override fun write(value: FfiContactLink, buf: ByteBuffer) {
             FfiConverterByteArray.write(value.`identity`, buf)
+            FfiConverterByteArray.write(value.`pqIdentityHash`, buf)
             FfiConverterOptionalString.write(value.`displayName`, buf)
     }
 }
@@ -7063,11 +7070,11 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
          * [`FfiError::Core`] — ключ не 32 байта либо имя слишком длинное
          * или содержит управляющие символы.
          */
-    @Throws(FfiException::class) fun `contactLinkUri`(`identity`: kotlin.ByteArray, `displayName`: kotlin.String?): kotlin.String {
+    @Throws(FfiException::class) fun `contactLinkUri`(`identity`: kotlin.ByteArray, `pqIdentityHash`: kotlin.ByteArray, `displayName`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_contact_link_uri(
-        FfiConverterByteArray.lower(`identity`),FfiConverterOptionalString.lower(`displayName`),_status)
+        FfiConverterByteArray.lower(`identity`),FfiConverterByteArray.lower(`pqIdentityHash`),FfiConverterOptionalString.lower(`displayName`),_status)
 }
     )
     }
