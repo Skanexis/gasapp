@@ -382,7 +382,15 @@ digits(fp)      = for each 5-byte group g of fp:
 Sorting makes both parties obtain the same 60 digits although "own" and
 "peer" are swapped between them. Display: 12 groups of 5 digits (ADR-022).
 
-### 9.3. Key confirmation before sending
+### 9.3. Usernames
+
+A username is canonical: lowercase ASCII letters, digits and `_`, starting
+with a letter, 3 to 32 characters. Clients lowercase ASCII input and strip a
+leading `@`; anything else that does not fit is refused, never cleaned up.
+The server and its database enforce the same rule. Without it, `alice`,
+`Alice` and `аlice` (Cyrillic `а`) were distinct accounts that look alike.
+
+### 9.4. Key confirmation before sending
 
 A peer's identity key obtained from the server by username is **not trusted
 for sending**. A client refuses to encrypt to it (`PeerUnconfirmed`) until the
@@ -422,9 +430,11 @@ happened to the SIKE and Rainbow candidates — security degrades to the
 Double Ratchet level rather than collapsing; symmetrically, ML-KEM covers
 the arrival of a quantum computer.
 
-Protocol version 1 mandates the post-quantum ratchet. Version 0 is rejected
-outright, and no version negotiation exists — negotiation is itself the
-channel through which downgrade attacks are mounted.
+Protocol version 2 mandates the post-quantum ratchet. It is carried as the
+first byte of every envelope. Version 0 is rejected outright; version 1
+(zero-salt PQXDH, X25519-only sealed sender) is rejected too. No version
+negotiation exists — negotiation is itself the channel through which
+downgrade attacks are mounted.
 
 ### 10.4. Sealed Sender Outer Layer
 
@@ -438,9 +448,12 @@ key    = HKDF-SHA-256(salt, DH(EK, IK_B) || SS_kem, "AEGIS_SEALED_SENDER_v2_X255
 body   = AES-256-GCM(key, nonce = EK[..12], plaintext = cert || envelope, AAD = header)
 ```
 
-`PK_kem_B` is a long-term per-device ML-KEM-1024 key, signed by the
-recipient's identity key over `"AEGIS_SEALED_KEM_v1" || PK_kem_B` and served
-by discovery. The sender verifies the signature; a missing key aborts the
+`PK_kem_B` is a per-device ML-KEM-1024 key, signed by the recipient's
+identity key over `"AEGIS_SEALED_KEM_v1" || PK_kem_B` and served by
+discovery. It is replaced 7 days after publication; retired keys are kept
+for 30 days (the envelope lifetime on the server, at most 8 keys) and then
+erased, and an envelope is opened with the current key first, then with the
+retired ones. The sender verifies the signature; a missing key aborts the
 send rather than falling back to X25519 alone. The classical-only format
 `0xA1` is rejected.
 
