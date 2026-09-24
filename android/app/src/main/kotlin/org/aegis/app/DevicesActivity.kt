@@ -35,7 +35,7 @@ class DevicesActivity : AppCompatActivity() {
             root = findViewById(R.id.devices_this),
             label = R.string.devices_this,
             value = shortDeviceId(),
-            icon = R.drawable.ic_phone,
+            icon = R.drawable.ic_mobile,
         )
     }
 

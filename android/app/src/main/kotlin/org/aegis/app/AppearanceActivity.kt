@@ -43,14 +43,14 @@ class AppearanceActivity : AppCompatActivity() {
             root = findViewById(R.id.appearance_theme),
             label = R.string.appearance_theme,
             value = getString(R.string.appearance_theme_value),
-            icon = R.drawable.ic_settings,
+            icon = R.drawable.ic_moon,
         )
 
         SettingsRow.bind(
             root = findViewById(R.id.appearance_language),
             label = R.string.appearance_language,
             value = Language.displayName(Language.current(this)),
-            icon = R.drawable.ic_chat,
+            icon = R.drawable.ic_globe,
             onClick = ::chooseLanguage,
         )
     }
