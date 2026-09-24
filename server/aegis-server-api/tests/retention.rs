@@ -59,12 +59,8 @@ async fn a_purge_removes_expired_rows_and_keeps_live_ones() {
     let live_envelope = repo::enqueue_envelope(pool, device, b"new", 3600)
         .await
         .unwrap();
-    let expired_attachment = repo::store_attachment(pool, device, &[1; 32], 0)
-        .await
-        .unwrap();
-    let live_attachment = repo::store_attachment(pool, device, &[2; 32], 3600)
-        .await
-        .unwrap();
+    let expired_attachment = repo::store_attachment(pool, &[1; 32], 0).await.unwrap();
+    let live_attachment = repo::store_attachment(pool, &[2; 32], 3600).await.unwrap();
 
     let purged = retention::purge_once(pool).await.unwrap();
 

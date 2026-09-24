@@ -97,6 +97,10 @@ pub struct ChatMessage {
 
 /// Контакт в том виде, в каком его показывает приложение.
 #[derive(Debug, Clone)]
+// Четыре независимых признака для показа — не состояние, которое
+// следовало бы свести в перечисление: контакт бывает сверен и заменён,
+// подтверждён ссылкой и с неоднозначным именем одновременно.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Contact {
     /// Идентификатор аккаунта.
     pub account_id: AccountId,
@@ -131,6 +135,10 @@ pub struct Contact {
     /// Переписка остаётся для чтения; отправлять в неё нельзя: имя
     /// ведёт теперь к другому ключу.
     pub replaced: bool,
+    /// 🔐 Ключ подтверждён вне сервера: сверкой safety number или
+    /// ссылкой/QR самого контакта. Без этого отправка запрещена
+    /// ([`AegisError::PeerUnconfirmed`]).
+    pub key_confirmed: bool,
 }
 
 /// Найденное сообщение вместе с чатом, которому оно принадлежит.
@@ -1099,10 +1107,11 @@ impl<T: Transport> Client<T> {
                     return Err(AegisError::Malformed);
                 }
 
-                (
-                    AccountId::from_uuid(parse_uuid(&peer.account_id)?),
-                    Some(name.clone()),
-                )
+                // Счёт — из ключа, как у всех прочих путей (входящее
+                // сообщение, поиск по имени). Прежде здесь брался счёт
+                // сервера, и один человек с одним ключом заводил две
+                // записи: по ссылке и по первому сообщению.
+                (peer_account(&link.identity), Some(name.clone()))
             }
         };
 
@@ -1153,6 +1162,10 @@ impl<T: Transport> Client<T> {
             now,
         )?;
 
+        // 🔐 Ключ пришёл из ссылки или QR самого собеседника, а не от
+        // сервера: сервер его только сверил (выше) и подменить не мог.
+        self.storage.mark_contact_confirmed_by_link(&account_id)?;
+
         Ok(Contact {
             account_id,
             identity: link.identity,
@@ -1161,7 +1174,33 @@ impl<T: Transport> Client<T> {
             verified: false,
             key_changed,
             replaced: false,
+            key_confirmed: true,
         })
+    }
+
+    /// Находит собеседника по имени и записывает контактом — без отправки.
+    ///
+    /// Ключ, названный сервером, проходит те же проверки, что и при
+    /// отправке: смена ключа известного имени — [`AegisError::IdentityChanged`].
+    /// Незнакомое имя записывается **неподтверждённым**: интерфейс сразу
+    /// показывает safety number для сверки, а не ждёт отказа отправки.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] — имя не найдено или сеть недоступна;
+    /// [`AegisError::IdentityChanged`] — сервер называет другой ключ.
+    pub fn discover_contact(&self, name: &str, now: Timestamp) -> Result<Contact> {
+        let peer = self.api.discover(name)?;
+        let advertised = parse_public_key(&peer.identity_key)?;
+
+        self.bind_advertised_identity(name, &advertised, now)?;
+
+        let account = peer_account(&advertised);
+
+        self.contacts()?
+            .into_iter()
+            .find(|contact| contact.account_id == account)
+            .ok_or(AegisError::Storage)
     }
 
     /// Возвращает ссылку на собственный профиль.
@@ -1346,10 +1385,19 @@ impl<T: Transport> Client<T> {
             payload.extend_from_slice(&attachment::seal_chunk(&key, index, chunk)?);
         }
 
-        let (identity, _) = self.load_identity()?;
-        let location =
-            self.api
-                .upload_attachment(device_id, payload, &DeviceSigner::new(&identity, now))?;
+        // 🔐 Загрузка анонимна: право на место — работа над этим блобом,
+        // а не подпись устройства (см. `ApiClient::upload_attachment`).
+        // Устройство и время больше не нужны; параметры оставлены ради
+        // интерфейса FFI.
+        let _ = (device_id, now);
+
+        let nonce = aegis_net::pow::solve(
+            &aegis_net::pow::upload_challenge(&payload),
+            aegis_net::pow::upload_difficulty(payload.len()),
+        )
+        .ok_or(AegisError::Crypto)?;
+
+        let location = self.api.upload_attachment(payload, nonce)?;
 
         let descriptor = AttachmentDescriptor {
             kind: file.kind,
@@ -1692,19 +1740,57 @@ impl<T: Transport> Client<T> {
         advertised: &PublicKeyBytes,
         now: Timestamp,
     ) -> Result<()> {
+        let confirmed = self.bind_advertised_identity(name, advertised, now)?;
+
+        // 🔐 Ключ, который назвал только сервер, не годится для отправки:
+        // сервер мог подставить свой, и первое же сообщение ушло бы ему.
+        // Годится ключ, подтверждённый вне сервера, — сверкой safety
+        // number или ссылкой/QR самого собеседника.
+        if confirmed {
+            Ok(())
+        } else {
+            Err(AegisError::PeerUnconfirmed)
+        }
+    }
+
+    /// Сверяет ключ, названный сервером, с известными для имени.
+    ///
+    /// Возвращает, подтверждён ли он вне сервера. Незнакомое имя
+    /// записывается контактом — неподтверждённым: так интерфейс может
+    /// показать safety number для сверки ещё до первого сообщения.
+    fn bind_advertised_identity(
+        &self,
+        name: &str,
+        advertised: &PublicKeyBytes,
+        now: Timestamp,
+    ) -> Result<bool> {
         let known = self.storage.active_contacts_by_username(name)?;
 
         // Заменённая запись под именем всегда соседствует с действующей
         // (той, что её заменила), поэтому «нет действующих» означает,
         // что имя не известно вовсе.
         if known.is_empty() {
-            return Ok(());
+            let (own, _) = self.load_identity()?;
+            let chat_id = derive_chat_id(own.public().public(), advertised);
+
+            self.storage.save_contact(
+                &peer_account(advertised),
+                advertised.as_bytes(),
+                Some(name),
+                Some(&chat_id),
+                now,
+            )?;
+
+            return Ok(false);
         }
 
-        if let [(_, identity, _)] = known.as_slice() {
-            if identity.as_slice() == advertised.as_bytes() {
-                return Ok(());
-            }
+        // Все действующие записи — один и тот же ключ: имя однозначно.
+        // Подтверждение любой из них подтверждает ключ.
+        if known
+            .iter()
+            .all(|(_, identity, _)| identity.as_slice() == advertised.as_bytes())
+        {
+            return Ok(known.iter().any(|(_, _, confirmed)| *confirmed));
         }
 
         let advertised_known = known
@@ -1829,6 +1915,7 @@ impl<T: Transport> Client<T> {
                     verified: row.verified,
                     key_changed,
                     replaced: row.replaced,
+                    key_confirmed: row.verified || row.confirmed_by_link,
                 })
             })
             .collect()

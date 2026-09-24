@@ -177,6 +177,10 @@ pub struct FfiMessage {
 
 /// Контакт для показа в интерфейсе.
 #[derive(Debug, Clone, uniffi::Record)]
+// Четыре независимых признака для показа — не состояние, которое
+// следовало бы свести в перечисление: контакт бывает сверен и заменён,
+// подтверждён ссылкой и с неоднозначным именем одновременно.
+#[allow(clippy::struct_excessive_bools)]
 pub struct FfiContact {
     /// Идентификатор аккаунта.
     pub account_id: String,
@@ -207,6 +211,9 @@ pub struct FfiContact {
     /// Переписка остаётся для чтения, отправлять в неё нельзя: имя
     /// ведёт теперь к другому ключу.
     pub replaced: bool,
+    /// 🔐 Ключ подтверждён вне сервера — сверкой safety number или
+    /// ссылкой/QR самого контакта. Без этого писать нельзя.
+    pub key_confirmed: bool,
 }
 
 /// Найденное сообщение вместе с его чатом.
@@ -535,25 +542,24 @@ impl Messenger {
         })
     }
 
-    /// 🔐 Принимает ключ контакта без сверки: имя остаётся за ним.
+    /// Находит собеседника по имени и записывает контактом — без отправки.
     ///
-    /// Путь для законной смены ключа у собеседника, когда встретиться
-    /// и сверить safety number нельзя. Прочие записи того же имени
-    /// становятся заменёнными. Решение пишется в журнал безопасности.
+    /// Контакт, найденный так, **не подтверждён**: его ключ назвал сервер.
+    /// Интерфейс сразу ведёт к сверке safety number.
     ///
     /// # Errors
     ///
-    /// [`FfiError::InvalidArgument`] — счёт не разбирается;
-    /// [`FfiError::Core`] — такого контакта нет либо запись не удалась.
-    pub fn accept_contact_identity(
+    /// [`FfiError::Core`] — имя не найдено или сеть недоступна;
+    /// [`FfiError::IdentityChanged`] — сервер называет для имени другой ключ.
+    pub fn discover_contact(
         &self,
-        account_id: String,
+        username: String,
         now_millis: i64,
-    ) -> Result<(), FfiError> {
-        let account = parse_account_id(&account_id)?;
+    ) -> Result<FfiContact, FfiError> {
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
 
-        guard(|| client.accept_contact_identity(&account, Timestamp::from_millis(now_millis)))
+        guard(|| client.discover_contact(&username, Timestamp::from_millis(now_millis)))
+            .map(|contact| contact_to_ffi(&contact))
     }
 
     /// Возвращает ссылку на собственный профиль.
@@ -1039,6 +1045,7 @@ fn contact_to_ffi(contact: &aegis_core::client::Contact) -> FfiContact {
         verified: contact.verified,
         key_changed: contact.key_changed,
         replaced: contact.replaced,
+        key_confirmed: contact.key_confirmed,
     }
 }
 

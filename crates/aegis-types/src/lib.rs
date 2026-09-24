@@ -103,6 +103,16 @@ pub enum AegisError {
     /// и показать второе как предупреждение, а не как сбой.
     #[error("peer identity changed")]
     IdentityChanged,
+
+    /// 🔐 Ключ собеседника не подтверждён вне сервера.
+    ///
+    /// Писать можно только тому, чей identity-ключ пришёл не от
+    /// сервера: сверкой safety number (при встрече, по видео) либо
+    /// из ссылки или QR-кода самого собеседника. Ключ, который назвал
+    /// только сервер, сервер мог подставить — и первое же сообщение
+    /// ушло бы ему.
+    #[error("peer not confirmed")]
+    PeerUnconfirmed,
 }
 
 /// Результат операции AEGIS.
@@ -133,6 +143,7 @@ mod tests {
             AegisError::Network,
             AegisError::Malformed,
             AegisError::IdentityChanged,
+            AegisError::PeerUnconfirmed,
         ];
 
         // Проверка полноты: если в перечислении появится новый вариант,
@@ -150,7 +161,8 @@ mod tests {
                 | AegisError::Uninitialized
                 | AegisError::Network
                 | AegisError::Malformed
-                | AegisError::IdentityChanged => {}
+                | AegisError::IdentityChanged
+                | AegisError::PeerUnconfirmed => {}
             }
         }
 

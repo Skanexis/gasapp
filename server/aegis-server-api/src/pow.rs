@@ -144,6 +144,51 @@ pub fn first_contact_challenge(destination_device_id: &str, sealed: &[u8]) -> [u
     hasher.finalize().into()
 }
 
+/// Домен-разделитель челленджа анонимной загрузки вложения.
+const UPLOAD_DOMAIN: &[u8] = b"AEGIS_POW_UPLOAD_v1";
+
+/// Базовая сложность загрузки вложения, в битах.
+const UPLOAD_BASE_DIFFICULTY: u32 = 16;
+
+/// Челлендж загрузки: хеш самого блоба.
+///
+/// 🔐 Загрузка анонимна — подпись устройства связала бы файл с тем,
+/// кто его прислал. Право на место на диске доказывается работой над
+/// **этим** блобом: решение не переносится на другой.
+///
+/// ⚠️ Продублирован на другой стороне (разные лицензии); эталон — тест.
+#[must_use]
+pub fn upload_challenge(payload: &[u8]) -> [u8; CHALLENGE_LEN] {
+    let payload_hash = Sha256::digest(payload);
+
+    let mut hasher = Sha256::new();
+    hasher.update(UPLOAD_DOMAIN);
+    hasher.update(
+        u64::try_from(payload_hash.len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes(),
+    );
+    hasher.update(payload_hash);
+    hasher.finalize().into()
+}
+
+/// Сложность загрузки: 16 бит плюс бит на каждое удвоение мегабайт.
+///
+/// Место на диске — то, что анонимная загрузка позволяет тратить,
+/// поэтому цена растёт с размером: маленький файл — мгновенно,
+/// стомегабайтный — 23 бита, секунды на телефоне при минутах
+/// самой передачи.
+#[must_use]
+pub fn upload_difficulty(len: usize) -> u32 {
+    const MIB: usize = 1 << 20;
+
+    let megabytes = len.div_ceil(MIB).max(1);
+    // ⌈log2 n⌉: число бит, нужных для n − 1.
+    let doublings = usize::BITS.saturating_sub(megabytes.saturating_sub(1).leading_zeros());
+
+    UPLOAD_BASE_DIFFICULTY.saturating_add(doublings)
+}
+
 /// Потолок сложности.
 ///
 /// Существует, чтобы ошибка в конфигурации не превратила регистрацию
@@ -224,6 +269,16 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// Эталон посчитан независимой реализацией (Python); тот же у клиента.
+    #[test]
+    fn upload_challenge_matches_the_reference() {
+        assert_eq!(
+            upload_challenge(&[1, 2, 3]).get(..8),
+            Some(&[0xa7, 0x49, 0x03, 0x93, 0x15, 0x5f, 0xe3, 0x98][..])
+        );
+        assert_eq!(upload_difficulty(100 << 20), 23);
+    }
 
     /// Эталон посчитан независимой реализацией (Python, hashlib);
     /// тот же вектор у клиента в `aegis-net::pow`.

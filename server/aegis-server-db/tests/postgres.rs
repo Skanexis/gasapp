@@ -393,7 +393,7 @@ async fn stored_attachment_times_are_hour_aligned() {
             .await
             .unwrap();
 
-    repo::store_attachment(&pool, device, &[0xAB; 64], 30 * 24 * 3600)
+    repo::store_attachment(&pool, &[0xAB; 64], 30 * 24 * 3600)
         .await
         .unwrap();
 
