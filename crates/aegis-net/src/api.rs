@@ -31,6 +31,11 @@ pub struct RegisterRequest {
     pub identity_key: String,
     /// Публичный identity-ключ первого устройства, hex.
     pub device_identity_key: String,
+    /// 🔐 Пост-квантовая половина identity — открытый ключ ML-DSA-65, hex
+    /// (`aegis_protocol::pq_identity`).
+    pub pq_identity_key: String,
+    /// Привязка половин identity друг к другу — гибридная подпись, hex.
+    pub identity_binding: String,
     /// Челлендж proof-of-work, hex.
     pub pow_challenge: String,
     /// Решение proof-of-work.
@@ -70,6 +75,13 @@ pub struct DiscoveryResponse {
     /// Подпись ключа ML-KEM sealed sender, hex.
     #[serde(default)]
     pub sealed_kem_signature: Option<String>,
+    /// 🔐 Пост-квантовая половина identity — открытый ключ ML-DSA-65, hex
+    /// (`aegis_protocol::pq_identity`).
+    #[serde(default)]
+    pub pq_identity_key: Option<String>,
+    /// Привязка половин identity друг к другу — гибридная подпись, hex.
+    #[serde(default)]
+    pub identity_binding: Option<String>,
 }
 
 /// Публикация предключей устройства.
@@ -102,6 +114,16 @@ pub struct PublishKeysRequest {
     /// Подпись ключа ML-KEM sealed sender identity-ключом, hex.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sealed_kem_signature: Option<String>,
+    /// 🔐 Пост-квантовая половина identity — открытый ключ ML-DSA-65, hex
+    /// (`aegis_protocol::pq_identity`).
+    ///
+    /// Для аккаунтов, заведённых до гибридной identity: сервер
+    /// записывает её с первой же публикацией ключей.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pq_identity_key: Option<String>,
+    /// Привязка половин identity друг к другу — гибридная подпись, hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_binding: Option<String>,
 }
 
 /// Prekey bundle, полученный с сервера.
@@ -111,6 +133,13 @@ pub struct BundleResponse {
     pub device_id: String,
     /// Identity-ключ устройства, hex.
     pub identity_key: String,
+    /// 🔐 Пост-квантовая половина identity — открытый ключ ML-DSA-65, hex
+    /// (`aegis_protocol::pq_identity`).
+    #[serde(default)]
+    pub pq_identity_key: Option<String>,
+    /// Привязка половин identity друг к другу — гибридная подпись, hex.
+    #[serde(default)]
+    pub identity_binding: Option<String>,
     /// Идентификатор подписанного предключа.
     pub signed_key_id: i32,
     /// Публичная часть подписанного предключа, hex.

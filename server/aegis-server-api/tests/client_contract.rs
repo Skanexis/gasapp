@@ -125,6 +125,18 @@ fn solve(challenge: &[u8]) -> u64 {
         .expect("решение находится")
 }
 
+/// Поля пост-квантовой половины identity для тела регистрации.
+///
+/// Сервер проверяет только длины (ключ ML-DSA-65 — 1952 байта,
+/// гибридная привязка — 3373): подлинность проверяют клиенты.
+fn pq_fields() -> String {
+    format!(
+        r#""pq_identity_key":"{}","identity_binding":"{}","#,
+        hex::encode([0x51u8; 1952]),
+        hex::encode([0x52u8; 3373]),
+    )
+}
+
 fn unique_name(prefix: &str) -> String {
     // Каноничное имя: строчные буквы, цифры и `_`, не длиннее 32.
     format!("{prefix}_{}", &Uuid::new_v4().simple().to_string()[..16])
@@ -144,12 +156,13 @@ async fn client_register_shape_is_accepted() {
     // Точная форма клиентского запроса: порядок полей неважен,
     // важны имена и типы.
     let body = format!(
-        r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
+        r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
         username,
         hex::encode([1u8; 32]),
         hex::encode([2u8; 32]),
         hex::encode(challenge),
         nonce,
+        pq = pq_fields(),
     );
 
     let (status, response) = call_raw(&state, "POST", "/v1/accounts/register", Some(body)).await;
@@ -176,12 +189,13 @@ async fn client_publish_keys_shape_is_accepted() {
     let challenge = pow::registration_challenge(&username, &[1u8; 32], &public_key(&private));
     let nonce = solve(&challenge);
     let register = format!(
-        r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
+        r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
         username,
         hex::encode([1u8; 32]),
         hex::encode(public_key(&private)),
         hex::encode(challenge),
         nonce,
+        pq = pq_fields(),
     );
     let (_, account) = call_raw(&state, "POST", "/v1/accounts/register", Some(register)).await;
     let device_id = account["device_id"].as_str().unwrap();
@@ -244,12 +258,13 @@ async fn client_send_shape_is_accepted() {
     let challenge = pow::registration_challenge(&username, &[1u8; 32], &public_key(&private));
     let nonce = solve(&challenge);
     let register = format!(
-        r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
+        r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
         username,
         hex::encode([1u8; 32]),
         hex::encode(public_key(&private)),
         hex::encode(challenge),
         nonce,
+        pq = pq_fields(),
     );
     let (_, account) = call_raw(&state, "POST", "/v1/accounts/register", Some(register)).await;
     let device_id = account["device_id"].as_str().unwrap();
@@ -299,11 +314,12 @@ async fn client_discovery_shape_matches() {
     let challenge = pow::registration_challenge(&username, &[1u8; 32], &[2u8; 32]);
     let nonce = solve(&challenge);
     let register = format!(
-        r#"{{"username":"{username}","identity_key":"{}","device_identity_key":"{}","pow_challenge":"{}","pow_nonce":{}}}"#,
+        r#"{{"username":"{username}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
         hex::encode([1u8; 32]),
         hex::encode([2u8; 32]),
         hex::encode(challenge),
         nonce,
+        pq = pq_fields(),
     );
     call_raw(&state, "POST", "/v1/accounts/register", Some(register)).await;
 

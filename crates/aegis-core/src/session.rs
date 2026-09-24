@@ -408,8 +408,14 @@ mod tests {
         let alice = prekeys::generate_identity(&mut OsRng).expect("identity");
         let bob = prekeys::generate_identity(&mut OsRng).expect("identity");
 
-        let (bundle, secrets) =
-            prekeys::generate(&bob, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (bundle, secrets) = prekeys::generate(
+            &bob,
+            &aegis_protocol::pq_identity::PqIdentityKeyPair::from_seed(&[0x33; 32]),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let text = Plaintext::new(b"attack at dawn".to_vec());
         let outgoing = start_session(&alice, &bundle, &text, &mut OsRng).expect("сессия начата");
@@ -433,8 +439,14 @@ mod tests {
         let alice = prekeys::generate_identity(&mut OsRng).expect("identity");
         let bob = prekeys::generate_identity(&mut OsRng).expect("identity");
 
-        let (bundle, secrets) =
-            prekeys::generate(&bob, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (bundle, secrets) = prekeys::generate(
+            &bob,
+            &aegis_protocol::pq_identity::PqIdentityKeyPair::from_seed(&[0x33; 32]),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let first = Plaintext::new(b"first".to_vec());
         let outgoing = start_session(&alice, &bundle, &first, &mut OsRng).expect("сессия");
@@ -484,8 +496,14 @@ mod tests {
         let alice = prekeys::generate_identity(&mut OsRng).expect("identity");
         let bob = prekeys::generate_identity(&mut OsRng).expect("identity");
 
-        let (bundle, _) =
-            prekeys::generate(&bob, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (bundle, _) = prekeys::generate(
+            &bob,
+            &aegis_protocol::pq_identity::PqIdentityKeyPair::from_seed(&[0x33; 32]),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let canary = b"ATTACK-AT-DAWN-CANARY";
         let outgoing = start_session(
@@ -514,8 +532,14 @@ mod tests {
         let alice = prekeys::generate_identity(&mut OsRng).expect("identity");
         let bob = prekeys::generate_identity(&mut OsRng).expect("identity");
 
-        let (bundle, secrets) =
-            prekeys::generate(&bob, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (bundle, secrets) = prekeys::generate(
+            &bob,
+            &aegis_protocol::pq_identity::PqIdentityKeyPair::from_seed(&[0x33; 32]),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let outgoing = start_session(
             &alice,
@@ -563,8 +587,14 @@ mod tests {
     #[test]
     fn message_without_session_is_reported_as_missing_session() {
         let bob = prekeys::generate_identity(&mut OsRng).expect("identity");
-        let (_, secrets) =
-            prekeys::generate(&bob, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (_, secrets) = prekeys::generate(
+            &bob,
+            &aegis_protocol::pq_identity::PqIdentityKeyPair::from_seed(&[0x33; 32]),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let envelope = Envelope::Message {
             payload: vec![0u8; 64],

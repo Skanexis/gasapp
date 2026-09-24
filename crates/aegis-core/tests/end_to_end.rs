@@ -62,6 +62,9 @@ use rand_core::OsRng;
 struct ServerState {
     /// Аккаунты по имени: идентификатор аккаунта и identity-ключ.
     accounts: HashMap<String, (String, String)>,
+    /// Пост-квантовая половина identity и привязка — по классическому
+    /// ключу (hex).
+    pq: HashMap<String, (String, String)>,
     /// Устройство аккаунта.
     devices: HashMap<String, String>,
     /// Опубликованные предключи по устройству.
@@ -144,6 +147,20 @@ impl FakeServer {
             .borrow_mut()
             .accounts
             .insert(name.to_owned(), entry);
+    }
+
+    /// Сколько раз устройства публиковали ключи — всего.
+    fn total_publishes(&self) -> usize {
+        self.state.borrow().publishes.values().sum()
+    }
+
+    /// 🔐 Сервер подменяет пост-квантовую половину identity владельца
+    /// классического ключа (hex).
+    fn replace_pq(&self, identity: &str, replacement: (String, String)) {
+        self.state
+            .borrow_mut()
+            .pq
+            .insert(identity.to_owned(), replacement);
     }
 
     /// 🔐 Сервер подменяет ключ ML-KEM sealed sender устройства.
@@ -351,6 +368,13 @@ impl Transport for FakeServer {
                     parsed.username.clone(),
                     (account_id.clone(), parsed.identity_key.clone()),
                 );
+                state.pq.insert(
+                    parsed.identity_key.clone(),
+                    (
+                        parsed.pq_identity_key.clone(),
+                        parsed.identity_binding.clone(),
+                    ),
+                );
                 state.devices.insert(account_id.clone(), device_id.clone());
                 state
                     .device_identity
@@ -371,6 +395,7 @@ impl Transport for FakeServer {
                 match state.accounts.get(username) {
                     Some((account_id, identity_key)) => {
                         let device_id = state.devices.get(account_id).cloned().unwrap_or_default();
+                        let pq = state.pq.get(identity_key).cloned();
 
                         (
                             200,
@@ -386,6 +411,8 @@ impl Transport for FakeServer {
                                     .get(&device_id)
                                     .and_then(|bundle| bundle.sealed_kem_signature.clone()),
                                 device_ids: vec![device_id],
+                                pq_identity_key: pq.as_ref().map(|(public, _)| public.clone()),
+                                identity_binding: pq.map(|(_, binding)| binding),
                             })
                             .unwrap_or_default(),
                         )
@@ -416,6 +443,16 @@ impl Transport for FakeServer {
                         .map_err(|_| aegis_types::AegisError::Malformed)?;
 
                 *state.publishes.entry(device_id.clone()).or_insert(0) += 1;
+
+                // Пост-квантовая половина — у аккаунтов, заведённых без неё.
+                if let (Some(public), Some(binding)) = (
+                    parsed.pq_identity_key.clone(),
+                    parsed.identity_binding.clone(),
+                ) {
+                    if let Some(identity) = state.device_identity.get(&device_id).cloned() {
+                        state.pq.insert(identity, (public, binding));
+                    }
+                }
 
                 // Настоящий сервер дополняет пул (`ON CONFLICT DO
                 // NOTHING`), а не заменяет его. Заглушка, заменявшая
@@ -459,6 +496,8 @@ impl Transport for FakeServer {
                     .cloned()
                     .unwrap_or_default();
 
+                let pq = state.pq.get(&identity).cloned();
+
                 match state.bundles.get_mut(&device_id) {
                     Some(keys) => {
                         // Одноразовый ключ выдаётся один раз и уходит
@@ -475,6 +514,8 @@ impl Transport for FakeServer {
                             200,
                             serde_json::to_string(&BundleResponse {
                                 device_id,
+                                pq_identity_key: pq.as_ref().map(|(public, _)| public.clone()),
+                                identity_binding: pq.map(|(_, binding)| binding),
                                 identity_key: identity,
                                 signed_key_id: keys.signed_key_id,
                                 signed_public: keys.signed_public.clone(),
@@ -3875,12 +3916,13 @@ fn a_substituted_sealed_kem_key_is_refused() {
     let (alice, _bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
 
     // Ключ ML-KEM, подписанный не Бобом.
-    let forger = aegis_protocol::x25519::X25519PrivateKey::generate(&mut OsRng);
+    let forger = aegis_protocol::prekeys::generate_identity(&mut OsRng).expect("identity");
+    let forger_pq = aegis_protocol::pq_identity::PqIdentityKeyPair::generate(&mut OsRng);
     let forged_kem = aegis_protocol::mlkem::MlKem1024PrivateKey::generate(&mut OsRng)
         .public_key()
         .as_bytes();
     let forged_signature =
-        aegis_protocol::sealed_sender::sign_sealed_kem_key(&forger.expose_secret(), &forged_kem)
+        aegis_protocol::sealed_sender::sign_sealed_kem_key(&forger, &forger_pq, &forged_kem)
             .expect("подпись");
 
     server.replace_sealed_kem(
@@ -3935,8 +3977,108 @@ fn the_sealed_kem_key_is_published_at_registration() {
             .expect("32 байта"),
     );
 
-    aegis_protocol::sealed_sender::verify_sealed_kem_key(&identity, &public, &signature)
+    let pq = hex::decode(found.pq_identity_key.expect("половина опубликована")).expect("hex");
+    let binding = hex::decode(found.identity_binding.expect("привязка")).expect("hex");
+
+    aegis_protocol::pq_identity::verify_binding(&identity, &pq, &binding)
+        .expect("привязка половин");
+    aegis_protocol::sealed_sender::verify_sealed_kem_key(&identity, &pq, &public, &signature)
         .expect("подпись владельца");
+}
+
+/// 🔐 Сервер подменяет пост-квантовую половину собеседника — своей,
+/// со своей же привязкой к **своему** классическому ключу. Привязка
+/// к настоящему классическому ключу не сходится: отправки нет.
+#[test]
+fn a_substituted_pq_identity_is_refused() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let (_, bob_identity) = server.account_entry("bob");
+    let forger = aegis_protocol::prekeys::generate_identity(&mut OsRng).expect("identity");
+    let forger_pq = aegis_protocol::pq_identity::PqIdentityKeyPair::generate(&mut OsRng);
+    let binding = aegis_protocol::pq_identity::bind(&forger, &forger_pq).expect("привязка");
+    server.replace_pq(
+        &bob_identity,
+        (hex::encode(forger_pq.public()), hex::encode(binding)),
+    );
+
+    let result = alice.send_message("bob", "секрет", now(), &mut OsRng);
+
+    assert!(
+        result.is_err(),
+        "отправлено при чужой пост-квантовой половине"
+    );
+    assert_eq!(server.queued_for(&bob_device), 0);
+}
+
+/// 🔐 Подмена пост-квантовой половины **после** первой встречи —
+/// `IdentityChanged`, даже если сервер сумел подделать привязку
+/// (квантовый противник подделает классическую подпись). Хеш
+/// запомнен и входит в safety number.
+#[test]
+fn a_changed_pq_identity_after_first_contact_is_refused() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "первое", now(), &mut OsRng)
+        .expect("первое сообщение");
+    let before = server.queued_for(&bob_device);
+
+    // Подменённая половина с «верной» привязкой: в тесте её можно
+    // сделать только своим ключом, поэтому проверяется порядок —
+    // сверка хеша срабатывает и без неё.
+    let (_, bob_identity) = server.account_entry("bob");
+    let other_pq = aegis_protocol::pq_identity::PqIdentityKeyPair::generate(&mut OsRng);
+    let stranger = aegis_protocol::prekeys::generate_identity(&mut OsRng).expect("identity");
+    server.replace_pq(
+        &bob_identity,
+        (
+            hex::encode(other_pq.public()),
+            hex::encode(aegis_protocol::pq_identity::bind(&stranger, &other_pq).expect("привязка")),
+        ),
+    );
+
+    assert!(alice
+        .send_message("bob", "второе", now(), &mut OsRng)
+        .is_err());
+    assert_eq!(
+        server.queued_for(&bob_device),
+        before,
+        "ушло под чужой половиной"
+    );
+}
+
+/// Safety number одинаков у обеих сторон и зависит от пост-квантовых
+/// половин.
+#[test]
+fn the_safety_number_is_hybrid_and_symmetric() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, _bob_device) = alice_and_bob(&server, &dir);
+
+    let bob_account = alice
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .find(|contact| contact.username.as_deref() == Some("bob"))
+        .expect("Боб")
+        .account_id;
+    let alice_account = bob
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .find(|contact| contact.username.as_deref() == Some("alice"))
+        .expect("Алиса")
+        .account_id;
+
+    assert_eq!(
+        alice.safety_number(&bob_account).expect("у Алисы"),
+        bob.safety_number(&alice_account).expect("у Боба")
+    );
 }
 
 /// Ключ ML-KEM sealed sender, опубликованный на сервере, в hex.
@@ -4202,4 +4344,44 @@ fn declining_a_request_deletes_it_silently() {
         0,
         "отказ что-то отправил незнакомцу"
     );
+}
+
+/// 🔐 Ключ ML-KEM sealed sender сменяется не один раз, а каждую неделю.
+///
+/// Прежде после смены обслуживание не отмечало новый ключ
+/// опубликованным: срок следующей смены не наступал никогда,
+/// а ключ переотправлялся при каждом запуске.
+#[test]
+fn the_sealed_kem_key_keeps_rotating() {
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (_alice, bob, _alice_device, _bob_device) = alice_and_bob(&server, &dir);
+
+    let first = published_sealed_kem(&server, "bob");
+
+    let week = Timestamp::from_millis(now().as_millis() + 8 * DAY);
+    bob.maintain_prekeys(week, &mut OsRng)
+        .expect("обслуживание");
+    let second = published_sealed_kem(&server, "bob");
+
+    // На следующий день делать нечего: ключ свежий и опубликован.
+    let publishes = server.total_publishes();
+    let next_day = Timestamp::from_millis(week.as_millis() + DAY);
+    bob.maintain_prekeys(next_day, &mut OsRng)
+        .expect("обслуживание");
+    assert_eq!(
+        server.total_publishes(),
+        publishes,
+        "свежий ключ переотправлен"
+    );
+
+    let two_weeks = Timestamp::from_millis(week.as_millis() + 8 * DAY);
+    bob.maintain_prekeys(two_weeks, &mut OsRng)
+        .expect("обслуживание");
+    let third = published_sealed_kem(&server, "bob");
+
+    assert_ne!(first, second, "первая смена не случилась");
+    assert_ne!(second, third, "вторая смена не случилась");
 }

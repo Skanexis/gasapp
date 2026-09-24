@@ -28,6 +28,10 @@ curve25519-dalek = { version = "=4.1.3", features = ["zeroize"] }
 ed25519-dalek = { version = "=2.1.1", features = ["zeroize"] }
 thiserror = "2.0"
 ml-kem = { version = "=0.3.2", features = ["zeroize"] }
+# ML-DSA-65 (FIPS 204): пост-квантовая половина identity (модуль `pq_identity`).
+# Та же линейка RustCrypto, что ml-kem; ключ выводится из своего seed,
+# поэтому rand_core крейта не нужен.
+ml-dsa = { version = "=0.1.1", default-features = false, features = ["alloc", "zeroize"] }
 # ml-kem 0.3 работает с rand_core 0.10, остальной крейт — с 0.6.4 из workspace.
 # Версии несовместимы по трейтам, поэтому 0.10 подключается под псевдонимом
 # и используется ровно в одном месте — мосте `RngBridge` в модуле `mlkem`.

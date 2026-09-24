@@ -46,8 +46,8 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{
     keys::{IdentityKeyPair, PreKeyBundle, PreKeyId},
     mlkem::{MlKem1024PrivateKey, MlKem1024PublicKey},
+    pq_identity,
     x25519::{X25519PrivateKey, X25519PublicKey},
-    xeddsa,
 };
 
 /// Длина общего секрета PQXDH в байтах.
@@ -212,15 +212,27 @@ pub struct ResponderKeys<'a> {
 pub fn verify_bundle(bundle: &PreKeyBundle) -> Result<()> {
     // Ключ владельца bundle — единственный, чья подпись здесь что-то значит.
     let owner = bundle.identity_key.public();
+    let owner_pq = bundle.pq_identity.as_slice();
 
-    xeddsa::montgomery::verify(
+    // 🔐 Сначала — что пост-квантовая половина принадлежит тому же
+    // владельцу: иначе сервер выдал бы свой ML-DSA-ключ рядом
+    // с настоящим классическим, и гибридные подписи ниже проверялись бы
+    // его ключом.
+    pq_identity::verify_binding(owner, owner_pq, &bundle.identity_binding)?;
+
+    // Подписи гибридные: XEdDSA ‖ ML-DSA-65, обе обязаны сойтись.
+    pq_identity::hybrid_verify(
         owner,
+        owner_pq,
+        pq_identity::SIGNED_PRE_KEY_DOMAIN,
         bundle.signed_pre_key.public.as_bytes(),
         &bundle.signed_pre_key.signature,
     )?;
 
-    xeddsa::montgomery::verify(
+    pq_identity::hybrid_verify(
         owner,
+        owner_pq,
+        pq_identity::KEM_PRE_KEY_DOMAIN,
         bundle.signed_kem_pre_key.public.as_bytes(),
         &bundle.signed_kem_pre_key.signature,
     )?;
@@ -237,8 +249,10 @@ pub fn verify_bundle(bundle: &PreKeyBundle) -> Result<()> {
     // устройства, но хранит и отдаёт bundle сервер. Ровно от этого
     // подпись и защищает, и ровно она не проверялась.
     if let Some(one_time_kem) = &bundle.one_time_kem_pre_key {
-        xeddsa::montgomery::verify(
+        pq_identity::hybrid_verify(
             owner,
+            owner_pq,
+            pq_identity::ONE_TIME_KEM_DOMAIN,
             one_time_kem.public.as_bytes(),
             &one_time_kem.signature,
         )?;
@@ -434,7 +448,11 @@ fn derive_shared_secret(
 mod tests {
     use super::*;
     use crate::keys::{IdentityKey, KemPublicKey, SignedKemPreKey, SignedPreKey};
-    use aegis_types::{DeviceId, PrivateKeyBytes};
+    use crate::pq_identity::{
+        PqIdentityKeyPair, KEM_PRE_KEY_DOMAIN, ONE_TIME_KEM_DOMAIN, SIGNED_PRE_KEY_DOMAIN,
+    };
+    use crate::xeddsa;
+    use aegis_types::DeviceId;
     use rand_core::OsRng;
 
     /// Создаёт пару identity-ключей.
@@ -455,6 +473,7 @@ mod tests {
     /// Полный комплект ключей получателя: публичный bundle и приватные части.
     struct Responder {
         identity: IdentityKeyPair,
+        pq: PqIdentityKeyPair,
         signed_pre_key: X25519PrivateKey,
         one_time_pre_key: X25519PrivateKey,
         signed_kem: MlKem1024PrivateKey,
@@ -465,6 +484,7 @@ mod tests {
         fn generate() -> Self {
             Self {
                 identity: generate_identity(),
+                pq: PqIdentityKeyPair::generate(&mut OsRng),
                 signed_pre_key: X25519PrivateKey::generate(&mut OsRng),
                 one_time_pre_key: X25519PrivateKey::generate(&mut OsRng),
                 signed_kem: MlKem1024PrivateKey::generate(&mut OsRng),
@@ -472,13 +492,9 @@ mod tests {
             }
         }
 
-        /// Подписывает данные identity-ключом получателя.
-        fn sign(&self, message: &[u8]) -> Vec<u8> {
-            let private = PrivateKeyBytes::new(*self.identity.private().expose_secret());
-
-            xeddsa::montgomery::sign(&private, message)
-                .unwrap()
-                .to_vec()
+        /// Подписывает данные гибридно — обеими половинами identity получателя.
+        fn sign(&self, domain: &[u8], message: &[u8]) -> Vec<u8> {
+            crate::pq_identity::hybrid_sign(&self.identity, &self.pq, domain, message).unwrap()
         }
 
         fn bundle(&self, with_one_time: bool, with_one_time_kem: bool) -> PreKeyBundle {
@@ -488,10 +504,12 @@ mod tests {
             PreKeyBundle {
                 device_id: DeviceId::generate(),
                 identity_key: *self.identity.public(),
+                pq_identity: self.pq.public(),
+                identity_binding: crate::pq_identity::bind(&self.identity, &self.pq).unwrap(),
                 signed_pre_key: SignedPreKey {
                     id: PreKeyId::new(1),
                     public: spk_public,
-                    signature: self.sign(spk_public.as_bytes()),
+                    signature: self.sign(SIGNED_PRE_KEY_DOMAIN, spk_public.as_bytes()),
                 },
                 one_time_pre_key: with_one_time.then(|| {
                     (
@@ -502,11 +520,11 @@ mod tests {
                 signed_kem_pre_key: SignedKemPreKey {
                     id: PreKeyId::new(3),
                     public: KemPublicKey::new(kem_public.clone()),
-                    signature: self.sign(&kem_public),
+                    signature: self.sign(KEM_PRE_KEY_DOMAIN, &kem_public),
                 },
                 one_time_kem_pre_key: with_one_time_kem.then(|| {
                     let public = self.one_time_kem.public_key().as_bytes();
-                    let signature = self.sign(&public);
+                    let signature = self.sign(ONE_TIME_KEM_DOMAIN, &public);
 
                     SignedKemPreKey {
                         id: PreKeyId::new(4),
@@ -723,6 +741,38 @@ mod tests {
     }
 
     /// 🔐 Испорченная подпись отвергается, а не игнорируется.
+    /// 🔐 Сервер выдаёт свой ML-DSA-ключ рядом с настоящим
+    /// классическим — привязка половин не сходится.
+    #[test]
+    fn a_foreign_pq_identity_is_rejected() {
+        let responder = Responder::generate();
+        let mut bundle = responder.bundle(true, true);
+
+        bundle.pq_identity = PqIdentityKeyPair::generate(&mut OsRng).public();
+
+        assert!(matches!(
+            verify_bundle(&bundle),
+            Err(AegisError::InvalidSignature)
+        ));
+    }
+
+    /// 🔐 Подписи только классической половиной — то, что подделал бы
+    /// квантовый противник, — не проходят, даже с верной привязкой.
+    #[test]
+    fn classical_only_signatures_are_rejected() {
+        let responder = Responder::generate();
+        let mut bundle = responder.bundle(false, false);
+        let private =
+            aegis_types::PrivateKeyBytes::new(*responder.identity.private().expose_secret());
+
+        bundle.signed_pre_key.signature =
+            xeddsa::montgomery::sign(&private, bundle.signed_pre_key.public.as_bytes())
+                .unwrap()
+                .to_vec();
+
+        assert!(verify_bundle(&bundle).is_err());
+    }
+
     #[test]
     fn corrupted_signature_is_rejected() {
         let initiator = generate_identity();

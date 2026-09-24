@@ -158,6 +158,12 @@ pub struct PreKeyBundle {
     pub device_id: DeviceId,
     /// Публичный identity-ключ устройства.
     pub identity_key: IdentityKey,
+    /// 🔐 Пост-квантовая половина identity — открытый ключ ML-DSA-65
+    /// (см. `pq_identity`). Подписи предключей гибридные: проверяются
+    /// и ею, и классической.
+    pub pq_identity: Vec<u8>,
+    /// Привязка половин identity друг к другу (`pq_identity::bind`).
+    pub identity_binding: Vec<u8>,
     /// Подписанный предключ, ротация раз в 7 дней.
     pub signed_pre_key: SignedPreKey,
     /// Одноразовый предключ. Может отсутствовать, если пул исчерпан.
@@ -245,6 +251,8 @@ mod tests {
         PreKeyBundle {
             device_id: DeviceId::generate(),
             identity_key: IdentityKey::new(PublicKeyBytes::new([1; 32])),
+            pq_identity: vec![6; 1952],
+            identity_binding: Vec::new(),
             signed_pre_key: SignedPreKey {
                 id: PreKeyId::new(1),
                 public: PublicKeyBytes::new([2; 32]),

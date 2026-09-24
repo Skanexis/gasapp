@@ -25,6 +25,7 @@
 //! опознаваемых строк, ни заголовка `SQLite format 3`.
 
 pub mod backup;
+pub mod pq;
 pub mod requests;
 pub mod sealed;
 
@@ -367,7 +368,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 11;
+    const SCHEMA_VERSION: i32 = 12;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -729,6 +730,30 @@ impl Storage {
                         .execute(
                             "ALTER TABLE chat_states
                              ADD COLUMN request_state INTEGER NOT NULL DEFAULT 0",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                // 11 → 12: пост-квантовая половина identity (модуль `pq`).
+                //
+                // Своя — seed ML-DSA-65; у контактов — хеш их половины:
+                // сверка и обнаружение подмены покрывают обе.
+                12 => {
+                    transaction
+                        .execute(
+                            "
+                            CREATE TABLE IF NOT EXISTS own_pq_identity (
+                                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                                seed         BLOB NOT NULL,
+                                published_at INTEGER
+                            )
+                            ",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                    transaction
+                        .execute(
+                            "ALTER TABLE known_contacts ADD COLUMN pq_identity_hash BLOB",
                             [],
                         )
                         .map_err(storage_error)?;
@@ -4492,6 +4517,8 @@ mod tests {
                 "ALTER TABLE known_contacts DROP COLUMN confirmed_by_link",
                 // Состояние запроса на переписку — миграция 10 → 11.
                 "ALTER TABLE chat_states DROP COLUMN request_state",
+                // Хеш пост-квантовой половины — миграция 11 → 12.
+                "ALTER TABLE known_contacts DROP COLUMN pq_identity_hash",
                 // own_keys откатывать не нужно: миграция 2 → 3
                 // пересоздаёт таблицу целиком и переживает повтор.
                 "UPDATE schema_version SET version = 1 WHERE id = 1",
@@ -4561,6 +4588,8 @@ mod tests {
                 "ALTER TABLE known_contacts DROP COLUMN confirmed_by_link",
                 // Состояние запроса на переписку — миграция 10 → 11.
                 "ALTER TABLE chat_states DROP COLUMN request_state",
+                // Хеш пост-квантовой половины — миграция 11 → 12.
+                "ALTER TABLE known_contacts DROP COLUMN pq_identity_hash",
                 "UPDATE schema_version SET version = 2 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");

@@ -36,6 +36,10 @@ use crate::{
         SignedPreKey,
     },
     mlkem::MlKem1024PrivateKey,
+    pq_identity::{
+        bind, hybrid_sign, PqIdentityKeyPair, KEM_PRE_KEY_DOMAIN, ONE_TIME_KEM_DOMAIN,
+        SIGNED_PRE_KEY_DOMAIN,
+    },
     x25519::X25519PrivateKey,
     xeddsa, ONE_TIME_PRE_KEY_POOL_SIZE, ONE_TIME_PRE_KEY_REFILL_THRESHOLD,
     SIGNED_PRE_KEY_ROTATION_DAYS,
@@ -173,20 +177,19 @@ impl PreKeySecrets {
 /// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
 pub fn generate<R: RngCore + CryptoRng>(
     identity: &IdentityKeyPair,
+    pq: &PqIdentityKeyPair,
     device_id: aegis_types::DeviceId,
     now: Timestamp,
     rng: &mut R,
 ) -> Result<(PreKeyBundle, PreKeySecrets)> {
-    let signing = PrivateKeyBytes::new(*identity.private().expose_secret());
-
     // Подписанные предключи.
     let signed_pre_key = X25519PrivateKey::generate(rng);
     let spk_public = signed_pre_key.public_key().as_bytes();
-    let spk_signature = xeddsa::montgomery::sign(&signing, spk_public.as_bytes())?.to_vec();
+    let spk_signature = hybrid_sign(identity, pq, SIGNED_PRE_KEY_DOMAIN, spk_public.as_bytes())?;
 
     let signed_kem = MlKem1024PrivateKey::generate(rng);
     let kem_public = signed_kem.public_key().as_bytes();
-    let kem_signature = xeddsa::montgomery::sign(&signing, &kem_public)?.to_vec();
+    let kem_signature = hybrid_sign(identity, pq, KEM_PRE_KEY_DOMAIN, &kem_public)?;
 
     // Пулы одноразовых предключей.
     let one_time = generate_one_time_pool(rng);
@@ -199,7 +202,7 @@ pub fn generate<R: RngCore + CryptoRng>(
         .first()
         .map(|(id, key)| {
             let public = key.public_key().as_bytes();
-            let signature = xeddsa::montgomery::sign(&signing, &public)?.to_vec();
+            let signature = hybrid_sign(identity, pq, ONE_TIME_KEM_DOMAIN, &public)?;
 
             Ok::<_, aegis_types::AegisError>(SignedKemPreKey {
                 id: *id,
@@ -221,6 +224,8 @@ pub fn generate<R: RngCore + CryptoRng>(
     let bundle = PreKeyBundle {
         device_id,
         identity_key: *identity.public(),
+        pq_identity: pq.public(),
+        identity_binding: bind(identity, pq)?,
         signed_pre_key: SignedPreKey {
             id: PreKeyId::new(0),
             public: spk_public,
@@ -269,6 +274,7 @@ pub fn generate<R: RngCore + CryptoRng>(
 /// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
 pub fn rotate_signed<R: RngCore + CryptoRng>(
     identity: &IdentityKeyPair,
+    pq: &PqIdentityKeyPair,
     secrets: &mut PreKeySecrets,
     now: Timestamp,
     rng: &mut R,
@@ -289,7 +295,7 @@ pub fn rotate_signed<R: RngCore + CryptoRng>(
     );
     prune_retired(secrets, now);
 
-    signed_published(identity, secrets)
+    signed_published(identity, pq, secrets)
 }
 
 /// Удаляет выведенные ключи старше срока и сверх предела.
@@ -330,15 +336,14 @@ pub fn prune_retired(secrets: &mut PreKeySecrets, now: Timestamp) {
 /// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
 pub fn signed_published(
     identity: &IdentityKeyPair,
+    pq: &PqIdentityKeyPair,
     secrets: &PreKeySecrets,
 ) -> Result<(SignedPreKey, SignedKemPreKey)> {
-    let signing = PrivateKeyBytes::new(*identity.private().expose_secret());
-
     let spk_public = secrets.signed_pre_key.public_key().as_bytes();
-    let spk_signature = xeddsa::montgomery::sign(&signing, spk_public.as_bytes())?.to_vec();
+    let spk_signature = hybrid_sign(identity, pq, SIGNED_PRE_KEY_DOMAIN, spk_public.as_bytes())?;
 
     let kem_public = secrets.signed_kem.public_key().as_bytes();
-    let kem_signature = xeddsa::montgomery::sign(&signing, &kem_public)?.to_vec();
+    let kem_signature = hybrid_sign(identity, pq, KEM_PRE_KEY_DOMAIN, &kem_public)?;
 
     Ok((
         SignedPreKey {
@@ -366,13 +371,13 @@ pub fn signed_published(
 /// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
 pub fn refill_one_time<R: RngCore + CryptoRng>(
     identity: &IdentityKeyPair,
+    pq: &PqIdentityKeyPair,
     secrets: &mut PreKeySecrets,
     rng: &mut R,
 ) -> Result<(
     Vec<(PreKeyId, aegis_types::PublicKeyBytes)>,
     Vec<SignedKemPreKey>,
 )> {
-    let signing = PrivateKeyBytes::new(*identity.private().expose_secret());
     let target = ONE_TIME_PRE_KEY_POOL_SIZE as usize;
 
     // Идентификаторы продолжают нумерацию, а не начинаются заново:
@@ -399,7 +404,7 @@ pub fn refill_one_time<R: RngCore + CryptoRng>(
         next_id = next_id.saturating_add(1);
 
         let public = key.public_key().as_bytes();
-        let signature = xeddsa::montgomery::sign(&signing, &public)?.to_vec();
+        let signature = hybrid_sign(identity, pq, ONE_TIME_KEM_DOMAIN, &public)?;
 
         added_kem.push(SignedKemPreKey {
             id,
@@ -447,6 +452,7 @@ pub fn refill_one_time<R: RngCore + CryptoRng>(
 /// [`AegisError::Crypto`]: aegis_types::AegisError::Crypto
 pub fn mint_one_time<R: RngCore + CryptoRng>(
     identity: &IdentityKeyPair,
+    pq: &PqIdentityKeyPair,
     secrets: &mut PreKeySecrets,
     count: usize,
     rng: &mut R,
@@ -454,8 +460,6 @@ pub fn mint_one_time<R: RngCore + CryptoRng>(
     Vec<(PreKeyId, aegis_types::PublicKeyBytes)>,
     Vec<SignedKemPreKey>,
 )> {
-    let signing = PrivateKeyBytes::new(*identity.private().expose_secret());
-
     // Идентификаторы продолжают нумерацию, а не начинаются заново:
     // повтор идентификатора означал бы, что сервер выдаст один и тот же
     // ключ дважды под разными записями.
@@ -477,7 +481,7 @@ pub fn mint_one_time<R: RngCore + CryptoRng>(
         next_id = next_id.saturating_add(1);
 
         let public = kem.public_key().as_bytes();
-        let signature = xeddsa::montgomery::sign(&signing, &public)?.to_vec();
+        let signature = hybrid_sign(identity, pq, ONE_TIME_KEM_DOMAIN, &public)?;
 
         added_kem.push(SignedKemPreKey {
             id: kem_id,
@@ -764,6 +768,12 @@ fn take<'a>(bytes: &'a [u8], offset: &mut usize, len: usize) -> Result<&'a [u8]>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Пост-квантовая половина identity для тестов: один seed —
+    /// одна пара, поэтому подписи в разных вызовах сходятся.
+    fn test_pq() -> PqIdentityKeyPair {
+        PqIdentityKeyPair::from_seed(&[0x51; 32])
+    }
     use crate::pqxdh;
     use crate::pqxdh::KemPreKeyChoice;
     use aegis_types::DeviceId;
@@ -788,8 +798,14 @@ mod tests {
     #[test]
     fn generated_bundle_verifies() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (bundle, _secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (bundle, _secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         assert!(pqxdh::verify_bundle(&bundle).is_ok());
     }
@@ -800,8 +816,14 @@ mod tests {
         let responder = generate_identity(&mut OsRng).unwrap();
         let initiator = generate_identity(&mut OsRng).unwrap();
 
-        let (bundle, mut secrets) =
-            generate(&responder, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (bundle, mut secrets) = generate(
+            &responder,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         let output = pqxdh::initiate(&initiator, &bundle, &mut OsRng).unwrap();
 
@@ -838,8 +860,14 @@ mod tests {
     #[test]
     fn pools_are_generated_at_full_size() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         assert_eq!(secrets.one_time.len(), ONE_TIME_PRE_KEY_POOL_SIZE as usize);
         assert_eq!(
@@ -856,8 +884,14 @@ mod tests {
     #[test]
     fn prekey_ids_are_unique() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         let mut ids: Vec<u32> = secrets
             .one_time
@@ -877,8 +911,14 @@ mod tests {
     #[test]
     fn one_time_key_is_consumed() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         let id = secrets.one_time.first().map(|(id, _)| *id).unwrap();
 
@@ -893,8 +933,14 @@ mod tests {
     #[test]
     fn refill_restores_pool_without_reusing_ids() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         // Расходуем половину пула.
         let consumed: Vec<PreKeyId> = secrets
@@ -910,7 +956,8 @@ mod tests {
         assert!(secrets.needs_refill() || secrets.remaining_one_time() < 100);
 
         let before: Vec<u32> = secrets.one_time.iter().map(|(id, _)| id.as_u32()).collect();
-        let (added, added_kem) = refill_one_time(&identity, &mut secrets, &mut OsRng).unwrap();
+        let (added, added_kem) =
+            refill_one_time(&identity, &test_pq(), &mut secrets, &mut OsRng).unwrap();
 
         assert_eq!(secrets.one_time.len(), ONE_TIME_PRE_KEY_POOL_SIZE as usize);
         assert_eq!(added.len(), 50);
@@ -930,20 +977,29 @@ mod tests {
     #[test]
     fn refilled_kem_prekeys_are_signed() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         // Расходуем один пост-квантовый ключ.
         let id = secrets.one_time_kem.first().map(|(id, _)| *id).unwrap();
         secrets.take_one_time_kem(id);
 
-        let (_added, added_kem) = refill_one_time(&identity, &mut secrets, &mut OsRng).unwrap();
+        let (_added, added_kem) =
+            refill_one_time(&identity, &test_pq(), &mut secrets, &mut OsRng).unwrap();
 
         assert_eq!(added_kem.len(), 1);
         for prekey in &added_kem {
             assert!(
-                xeddsa::montgomery::verify(
+                crate::pq_identity::hybrid_verify(
                     identity.public().public(),
+                    &test_pq().public(),
+                    crate::pq_identity::ONE_TIME_KEM_DOMAIN,
                     prekey.public.as_bytes(),
                     &prekey.signature,
                 )
@@ -957,8 +1013,14 @@ mod tests {
     #[test]
     fn rotation_is_due_after_the_configured_period() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         assert!(!secrets.needs_rotation(now()));
         assert!(!secrets.needs_rotation(later(i64::from(SIGNED_PRE_KEY_ROTATION_DAYS) - 1)));
@@ -969,26 +1031,37 @@ mod tests {
     #[test]
     fn rotation_produces_fresh_signed_prekeys() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (bundle, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (bundle, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         let old_spk = bundle.signed_pre_key.public;
         let rotate_at = later(i64::from(SIGNED_PRE_KEY_ROTATION_DAYS));
 
-        let (spk, kem) = rotate_signed(&identity, &mut secrets, rotate_at, &mut OsRng).unwrap();
+        let (spk, kem) =
+            rotate_signed(&identity, &test_pq(), &mut secrets, rotate_at, &mut OsRng).unwrap();
 
         assert_ne!(spk.public, old_spk, "подписанный предключ не сменился");
         assert!(!secrets.needs_rotation(rotate_at), "срок сброшен");
 
         // Обе подписи проверяются identity-ключом владельца.
-        assert!(xeddsa::montgomery::verify(
+        assert!(crate::pq_identity::hybrid_verify(
             identity.public().public(),
+            &test_pq().public(),
+            crate::pq_identity::SIGNED_PRE_KEY_DOMAIN,
             spk.public.as_bytes(),
             &spk.signature,
         )
         .is_ok());
-        assert!(xeddsa::montgomery::verify(
+        assert!(crate::pq_identity::hybrid_verify(
             identity.public().public(),
+            &test_pq().public(),
+            crate::pq_identity::KEM_PRE_KEY_DOMAIN,
             kem.public.as_bytes(),
             &kem.signature,
         )
@@ -1002,13 +1075,19 @@ mod tests {
     #[test]
     fn rotation_retires_the_previous_pair() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         let previous = *secrets.signed_pre_key.expose_secret().expose_secret();
         let rotate_at = later(i64::from(SIGNED_PRE_KEY_ROTATION_DAYS));
 
-        rotate_signed(&identity, &mut secrets, rotate_at, &mut OsRng).unwrap();
+        rotate_signed(&identity, &test_pq(), &mut secrets, rotate_at, &mut OsRng).unwrap();
 
         let retired = secrets
             .retired_signed
@@ -1026,10 +1105,16 @@ mod tests {
     #[test]
     fn retired_pairs_expire_with_the_envelope_lifetime() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
-        rotate_signed(&identity, &mut secrets, now(), &mut OsRng).unwrap();
+        rotate_signed(&identity, &test_pq(), &mut secrets, now(), &mut OsRng).unwrap();
 
         prune_retired(&mut secrets, later(RETIRED_SIGNED_KEEP_DAYS));
         assert_eq!(secrets.retired_signed.len(), 1, "удалён раньше срока");
@@ -1042,11 +1127,17 @@ mod tests {
     #[test]
     fn retired_pairs_are_capped() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         for _ in 0..(MAX_RETIRED_SIGNED + 4) {
-            rotate_signed(&identity, &mut secrets, now(), &mut OsRng).unwrap();
+            rotate_signed(&identity, &test_pq(), &mut secrets, now(), &mut OsRng).unwrap();
         }
 
         assert_eq!(secrets.retired_signed.len(), MAX_RETIRED_SIGNED);
@@ -1056,9 +1147,15 @@ mod tests {
     #[test]
     fn retired_pairs_survive_serialization() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
-        rotate_signed(&identity, &mut secrets, now(), &mut OsRng).unwrap();
+        let (_, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
+        rotate_signed(&identity, &test_pq(), &mut secrets, now(), &mut OsRng).unwrap();
 
         let restored = PreKeySecrets::from_bytes(&secrets.to_bytes().unwrap()).unwrap();
 
@@ -1086,7 +1183,14 @@ mod tests {
     #[test]
     fn version_one_secrets_still_parse() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_, secrets) = generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         // Версия 1 — это версия 2 без хвоста выведенных ключей.
         let mut bytes = secrets.to_bytes().unwrap();
@@ -1106,11 +1210,17 @@ mod tests {
     #[test]
     fn rotation_preserves_one_time_pools() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         let before = secrets.remaining_one_time();
-        rotate_signed(&identity, &mut secrets, later(7), &mut OsRng).unwrap();
+        rotate_signed(&identity, &test_pq(), &mut secrets, later(7), &mut OsRng).unwrap();
 
         assert_eq!(secrets.remaining_one_time(), before);
     }
@@ -1119,8 +1229,14 @@ mod tests {
     #[test]
     fn refill_threshold_triggers_before_exhaustion() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, mut secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, mut secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         // Расходуем до порога.
         while secrets.remaining_one_time() > ONE_TIME_PRE_KEY_REFILL_THRESHOLD as usize {
@@ -1142,8 +1258,14 @@ mod tests {
     #[test]
     fn secrets_debug_is_redacted() {
         let identity = generate_identity(&mut OsRng).unwrap();
-        let (_bundle, secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).unwrap();
+        let (_bundle, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .unwrap();
 
         let rendered = format!("{secrets:?}");
 
@@ -1180,8 +1302,14 @@ mod tests {
     #[test]
     fn prekey_secrets_round_trip() {
         let identity = generate_identity(&mut OsRng).expect("identity");
-        let (_, secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (_, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let bytes = secrets.to_bytes().expect("сериализуется");
         let restored = PreKeySecrets::from_bytes(&bytes).expect("разбирается");
@@ -1219,8 +1347,14 @@ mod tests {
     #[test]
     fn restored_secrets_still_complete_pqxdh() {
         let bob_identity = generate_identity(&mut OsRng).expect("identity");
-        let (bundle, secrets) =
-            generate(&bob_identity, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (bundle, secrets) = generate(
+            &bob_identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let restored =
             PreKeySecrets::from_bytes(&secrets.to_bytes().expect("сериализуется")).expect("разбор");
@@ -1266,8 +1400,14 @@ mod tests {
     #[test]
     fn corrupted_secrets_are_rejected() {
         let identity = generate_identity(&mut OsRng).expect("identity");
-        let (_, secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (_, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let bytes = secrets.to_bytes().expect("сериализуется");
 
@@ -1295,8 +1435,14 @@ mod tests {
     #[test]
     fn absurd_pool_count_is_rejected() {
         let identity = generate_identity(&mut OsRng).expect("identity");
-        let (_, secrets) =
-            generate(&identity, DeviceId::generate(), now(), &mut OsRng).expect("предключи");
+        let (_, secrets) = generate(
+            &identity,
+            &test_pq(),
+            DeviceId::generate(),
+            now(),
+            &mut OsRng,
+        )
+        .expect("предключи");
 
         let mut bytes = secrets.to_bytes().expect("сериализуется");
 

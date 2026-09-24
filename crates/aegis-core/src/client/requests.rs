@@ -140,7 +140,8 @@ impl<T: Transport> Client<T> {
             return Ok(());
         }
 
-        let peer_kem = verified_sealed_kem(&peer, &advertised)?;
+        let peer_pq = self.verified_peer_pq(&peer, &advertised, now)?;
+        let peer_kem = verified_sealed_kem(&peer, &advertised, &peer_pq)?;
         let Some(device) = peer.device_ids.first().cloned() else {
             return Ok(());
         };
