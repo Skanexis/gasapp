@@ -442,7 +442,29 @@ post-quantum half is mandatory: a link without it would vouch for the
 classical half only. A client adding a contact by link records `H(PQ)`
 from the link and refuses a server-supplied `PQ` with a different hash.
 
-### 9.4. Usernames
+### 9.4. Account recovery
+
+A username belongs to its account; the private identity key never leaves a
+device. To keep the account after a reinstall, the account holds a separate
+**recovery key** (X25519/XEdDSA + ML-DSA-65). Its public halves are given to
+the server at registration; its secret travels only inside the encrypted
+backup. A new install creates a new identity and sends:
+
+```
+m   = "AEGIS_ACCOUNT_RECOVER_v1"
+      || len32(username) || username
+      || len32(IK') || IK' || len32(DIK') || DIK'
+      || len32(PQ') || PQ' || len32(bind') || bind'
+      || issued_at_ms (i64, big-endian)
+sig = hybrid_sign("AEGIS_ACCOUNT_RECOVER_v1", m)   -- with the recovery key
+```
+
+The server verifies both halves, requires `issued_at` within five minutes
+and newer than the previous recovery (replays fail), deletes the account's
+devices and installs the new identity. Peers see an identity change and
+must compare safety numbers again.
+
+### 9.5. Usernames
 
 A username is canonical: lowercase ASCII letters, digits and `_`, starting
 with a letter, 3 to 32 characters. Clients lowercase ASCII input and strip a
@@ -450,7 +472,7 @@ leading `@`; anything else that does not fit is refused, never cleaned up.
 The server and its database enforce the same rule. Without it, `alice`,
 `Alice` and `аlice` (Cyrillic `а`) were distinct accounts that look alike.
 
-### 9.5. Key confirmation before sending
+### 9.6. Key confirmation before sending
 
 A peer's identity key obtained from the server by username is **not trusted
 for sending**. A client refuses to encrypt to it (`PeerUnconfirmed`) until the
