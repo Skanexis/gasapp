@@ -22,7 +22,8 @@
         <item name="android:minWidth">0dp</item>
         <item name="android:paddingStart">@dimen/space_l</item>
         <item name="android:paddingEnd">@dimen/space_l</item>
-        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_button</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:gravity">center</item>
@@ -63,14 +64,16 @@
     <style name="AegisButton.Danger">
         <item name="android:background">@drawable/bg_btn_danger</item>
         <item name="android:textColor">@color/button_text_on_danger</item>
-        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">700</item>
     </style>
 
     <!-- 🔐 Подтверждение проверки: сверка прошла. -->
     <style name="AegisButton.Ok">
         <item name="android:background">@drawable/bg_btn_ok</item>
         <item name="android:textColor">@color/button_text_on_ok</item>
-        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">700</item>
     </style>
 
     <!-- Крупная кнопка: 56dp, отступы 32, кегль 16, радиус 16. -->
@@ -103,12 +106,51 @@
         <item name="android:background">@drawable/bg_aegis_text_field</item>
         <item name="android:paddingStart">@dimen/space_m</item>
         <item name="android:paddingEnd">@dimen/space_m</item>
-        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">400</item>
         <item name="android:textSize">@dimen/text_body</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textColorHint">@color/text_muted</item>
         <item name="android:gravity">center_vertical</item>
         <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <!--
+      Поле ввода по умолчанию — для каждого EditText приложения через тему.
+
+      Прежде фон поля задавался в коде без отступов, и текст прилипал
+      к рамке: подсказка «username» начиналась прямо с края, а поле
+      сообщения было ниже и крупнее, чем в макете. Отступы, высота,
+      кегль и цвета — метрики .inp из UI kit.
+    -->
+    <style name="Widget.Aegis.EditText" parent="Widget.AppCompat.EditText">
+        <item name="android:background">@drawable/bg_aegis_text_field</item>
+        <item name="android:minHeight">@dimen/input_height</item>
+        <item name="android:paddingStart">@dimen/space_m</item>
+        <item name="android:paddingEnd">@dimen/space_m</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">400</item>
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textColorHint">@color/text_muted</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <!-- Сегмент переключателя (.seg в UI kit): равные доли, выбранный — подложкой. -->
+    <style name="AegisSegment">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">@drawable/bg_segment_item</item>
+        <item name="android:gravity">center</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">600</item>
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:textColor">@color/segment_text</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
     </style>
 
     <!-- ============ Карточки ============ -->
@@ -133,7 +175,8 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:background">@drawable/bg_card_rounded</item>
         <item name="android:orientation">vertical</item>
-        <item name="android:padding">@dimen/space_l</item>
+        <!-- 16dp, как у карточки .card в UI kit: строки внутри дают свои 8dp сверху и снизу. -->
+        <item name="android:padding">@dimen/space_m</item>
     </style>
 
     <!-- Панель на карточном фоне: вложенная группа внутри панели. -->
@@ -151,7 +194,8 @@
     <style name="AegisSectionLabel">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_label</item>
         <item name="android:textColor">@color/text_muted</item>
         <item name="android:textAllCaps">true</item>
@@ -164,7 +208,8 @@
     <style name="AegisCaption">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">400</item>
         <item name="android:textSize">@dimen/text_caption</item>
         <item name="android:textColor">@color/text_muted</item>
         <item name="android:lineSpacingExtra">5sp</item>
@@ -208,7 +253,8 @@
         <item name="android:gravity">center</item>
         <item name="android:paddingStart">10dp</item>
         <item name="android:paddingEnd">10dp</item>
-        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">600</item>
         <item name="android:textSize">11sp</item>
         <item name="android:letterSpacing">0.04</item>
         <item name="android:includeFontPadding">false</item>
@@ -241,11 +287,13 @@
 
     <!-- ============ Шапка экрана ============ -->
 
+    <!-- Шапка одного цвета с экраном, как в UI kit (.appbar): полоса
+         другого цвета делила экран там, где макет его не делит. -->
     <style name="AegisAppBar">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minHeight">@dimen/touch_target</item>
-        <item name="android:background">@color/bg_raised</item>
+        <item name="android:background">@color/bg_base</item>
         <item name="android:gravity">center_vertical</item>
         <item name="android:orientation">horizontal</item>
         <item name="android:paddingStart">@dimen/space_m</item>

@@ -93,7 +93,7 @@
     <string name="clear_verified">Remove the mark</string>
     <string name="safety_number_peer">Comparing with %1$s</string>
 
-    <string name="security_score">🛡 %1$d/%2$d</string>
+    <string name="security_score">%1$d/%2$d</string>
     <string name="chat_verified_state">✓ Verified</string>
     <string name="chat_unverified_state">Not verified — compare the safety number</string>
 

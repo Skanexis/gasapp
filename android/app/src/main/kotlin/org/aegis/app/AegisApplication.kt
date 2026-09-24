@@ -5,9 +5,13 @@ package org.aegis.app
 import android.app.Application
 import org.aegis.app.core.AutoLock
 import org.aegis.app.core.Language
+import org.aegis.app.ui.SafeArea
 
 /**
  * Класс приложения.
+ *
+ * Третье — безопасная область экранов ([SafeArea]): отступы по системным
+ * панелям и клавиатуре нужны каждому экрану, и ставятся они в одном месте.
  *
  * Появился ради автоматического запирания: оно наблюдает за всем
  * процессом, а не за отдельным экраном. Отслеживание в базовой
@@ -30,5 +34,6 @@ class AegisApplication : Application() {
 
         Language.applyStored(this)
         AutoLock.install(this)
+        SafeArea.install(this)
     }
 }

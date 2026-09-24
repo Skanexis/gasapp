@@ -4,20 +4,17 @@
   Список чатов по UI kit: шапка с поиском, список, кнопка нового чата
   и нижняя навигация.
 
-  FrameLayout снаружи нужен только ради FAB: он лежит поверх списка,
-  как в макете, и в линейной раскладке этого не добиться.
+  Кнопка нового чата лежит в области списка, над навигацией, а не поверх
+  всего экрана с отступом «на глаз»: прежде отступ был числом (64dp),
+  навигация — выше, и кнопка наезжала на неё.
 -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_base">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
+    android:background="@color/bg_base"
+    android:orientation="vertical">
 
         <!-- Шапка -->
         <LinearLayout
@@ -26,30 +23,28 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="@dimen/screen_padding"
-            android:paddingTop="16dp"
-            android:paddingEnd="@dimen/screen_padding"
-            android:paddingBottom="16dp">
+            android:paddingTop="@dimen/space_s"
+            android:paddingEnd="@dimen/space_xs"
+            android:paddingBottom="@dimen/space_s">
 
             <TextView
                 style="@style/AegisAppBarTitle"
                 android:layout_weight="1"
                 android:text="@string/nav_chats" />
 
+            <!-- Значок 24dp, область нажатия 48dp (AegisIconButton). -->
             <ImageView
                 android:id="@+id/chat_list_search"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                style="@style/AegisIconButton"
+                android:padding="12dp"
                 android:contentDescription="@string/search"
                 android:src="@drawable/ic_search"
                 app:tint="@color/text_secondary" />
 
             <ImageView
                 android:id="@+id/security_center_badge"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_marginStart="18dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                style="@style/AegisIconButton"
+                android:padding="12dp"
                 android:contentDescription="@string/security_center_description"
                 android:src="@drawable/ic_shield"
                 app:tint="@color/status_ok" />
@@ -75,20 +70,24 @@
             android:visibility="gone"
             tools:visibility="visible" />
 
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+        <!-- Запас снизу — под кнопку нового чата: последняя строка не прячется под ней. -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/chat_list"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:paddingBottom="64dp"
+            android:paddingBottom="88dp"
             tools:listitem="@layout/item_chat" />
 
         <TextView
             android:id="@+id/chat_list_empty"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="match_parent"
             android:gravity="center"
             android:padding="@dimen/screen_padding"
             android:text="@string/chat_list_empty"
@@ -96,22 +95,22 @@
             android:textSize="14sp"
             android:visibility="gone" />
 
+        <!-- Кнопка нового чата: 52dp, 16dp от края и от навигации. -->
+        <ImageView
+            android:id="@+id/new_chat_button"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="@dimen/screen_padding"
+            android:background="@drawable/bg_fab"
+            android:contentDescription="@string/new_chat"
+            android:elevation="6dp"
+            android:padding="14dp"
+            android:src="@drawable/ic_edit"
+            app:tint="@color/accent_on" />
+
+        </FrameLayout>
+
         <include layout="@layout/view_bottom_nav" />
 
-    </LinearLayout>
-
-    <!-- Кнопка нового чата: 52dp, отступ снизу 86dp по макету -->
-    <ImageView
-        android:id="@+id/new_chat_button"
-        android:layout_width="52dp"
-        android:layout_height="52dp"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="@dimen/screen_padding"
-        android:layout_marginBottom="64dp"
-        android:background="@drawable/bg_fab"
-        android:contentDescription="@string/new_chat"
-        android:padding="16dp"
-        android:src="@drawable/ic_edit"
-        app:tint="@color/accent_on" />
-
-</FrameLayout>
+</LinearLayout>

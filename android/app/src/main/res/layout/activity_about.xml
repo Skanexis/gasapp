@@ -50,7 +50,7 @@
 
                 <include
                     android:id="@+id/about_app_version"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
 
                 <View
                     android:layout_width="match_parent"
@@ -60,7 +60,7 @@
 
                 <include
                     android:id="@+id/about_core_version"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
 
                 <View
                     android:layout_width="match_parent"
@@ -70,7 +70,7 @@
 
                 <include
                     android:id="@+id/about_protocol_version"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
             </LinearLayout>
             <TextView
                 style="@style/AegisSectionLabel"
@@ -80,7 +80,7 @@
 
                 <include
                     android:id="@+id/about_license"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
 
                 <View
                     android:layout_width="match_parent"
@@ -90,7 +90,7 @@
 
                 <include
                     android:id="@+id/about_source"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
             </LinearLayout>
             <TextView
                 style="@style/AegisCaption"

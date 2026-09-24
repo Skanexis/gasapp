@@ -100,7 +100,7 @@
 
                 <include
                     android:id="@+id/privacy_network"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
             </LinearLayout>
 
             <!--
@@ -119,7 +119,7 @@
 
                 <include
                     android:id="@+id/privacy_autolock"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
 
                 <include
                     android:id="@+id/privacy_biometric"
@@ -131,11 +131,11 @@
 
                 <include
                     android:id="@+id/privacy_export"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
 
                 <include
                     android:id="@+id/privacy_delete_account"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
             </LinearLayout>
 
             <TextView

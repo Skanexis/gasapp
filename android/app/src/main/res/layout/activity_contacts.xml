@@ -51,8 +51,7 @@
         android:inputType="text"
         android:maxLines="1"
         android:textColor="@color/text_primary"
-        android:textColorHint="@color/text_muted"
-        android:textSize="13sp" />
+        android:textColorHint="@color/text_muted" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/contact_list"

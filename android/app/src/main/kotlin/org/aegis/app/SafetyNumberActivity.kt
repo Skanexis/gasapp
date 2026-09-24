@@ -69,6 +69,7 @@ class SafetyNumberActivity : AppCompatActivity() {
         SecureWindow.blockObscuredTouches(this)
 
         setContentView(R.layout.activity_safety_number)
+        findViewById<android.view.View>(R.id.screen_back).setOnClickListener { finish() }
 
         digits = findViewById(R.id.safety_number_digits)
 

@@ -9,7 +9,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import org.aegis.app.components.AegisButton
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.BottomNav
 
@@ -91,18 +90,20 @@ class CallsActivity : AppCompatActivity() {
      * ничего.
      */
     private fun bindFilters() {
-        val all = findViewById<AegisButton>(R.id.calls_filter_all)
-        val missed = findViewById<AegisButton>(R.id.calls_filter_missed)
+        val all = findViewById<TextView>(R.id.calls_filter_all)
+        val missed = findViewById<TextView>(R.id.calls_filter_missed)
+
+        all.isSelected = true
 
         all.setOnClickListener {
-            all.variant = AegisButton.Variant.Secondary
-            missed.variant = AegisButton.Variant.Ghost
+            all.isSelected = true
+            missed.isSelected = false
             render()
         }
 
         missed.setOnClickListener {
-            all.variant = AegisButton.Variant.Ghost
-            missed.variant = AegisButton.Variant.Secondary
+            all.isSelected = false
+            missed.isSelected = true
             render()
         }
     }

@@ -54,7 +54,7 @@
 
                 <include
                     android:id="@+id/appearance_theme"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
             </LinearLayout>
             <TextView
                 style="@style/AegisCaption"
@@ -68,7 +68,7 @@
 
                 <include
                     android:id="@+id/appearance_language"
-                    layout="@layout/item_settings_row" />
+                    layout="@layout/item_panel_row" />
             </LinearLayout>
             <TextView
                 style="@style/AegisCaption"

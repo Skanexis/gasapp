@@ -23,6 +23,7 @@ import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
+import org.aegis.app.ui.RowDivider
 import uniffi.aegis.FfiException
 import uniffi.aegis.canonicalUsername
 
@@ -68,6 +69,7 @@ class ChatListActivity : AppCompatActivity() {
         adapter = ChatListAdapter(onClick = ::openChat)
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
+        list.addItemDecoration(RowDivider(this))
 
         // Щит в шапке ведёт в Security Center. Счёт (9/10) живёт
         // на самом экране Security Center, а не в шапке: цифра без

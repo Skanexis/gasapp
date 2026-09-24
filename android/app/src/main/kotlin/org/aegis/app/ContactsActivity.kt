@@ -22,6 +22,7 @@ import org.aegis.app.core.TouchTarget
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
+import org.aegis.app.ui.RowDivider
 import uniffi.aegis.FfiContact
 
 /**
@@ -69,6 +70,7 @@ class ContactsActivity : AppCompatActivity() {
         adapter = ChatListAdapter(onClick = ::openChat)
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
+        list.addItemDecoration(RowDivider(this))
 
         findViewById<View>(R.id.add_contact).setOnClickListener {
             startActivity(Intent(this, AddContactActivity::class.java))

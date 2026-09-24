@@ -37,7 +37,8 @@
         android:text="@string/lock_title"
         android:textColor="@color/text_primary"
         android:textSize="17sp"
-        android:fontFamily="@font/inter_semibold" />
+        android:fontFamily="@font/inter"
+        android:textFontWeight="600" />
 
     <TextView
         android:id="@+id/lock_subtitle"

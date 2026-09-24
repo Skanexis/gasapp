@@ -50,6 +50,7 @@ class AddContactActivity : AppCompatActivity() {
         SecureWindow.apply(this)
 
         setContentView(R.layout.activity_add_contact)
+        findViewById<android.view.View>(R.id.screen_back).setOnClickListener { finish() }
 
         input = findViewById(R.id.add_contact_link)
         status = findViewById(R.id.add_contact_status)

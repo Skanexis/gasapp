@@ -21,24 +21,37 @@
         android:background="@color/bg_raised"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/screen_padding"
-        android:paddingVertical="12dp">
+        android:paddingStart="@dimen/space_xs"
+        android:paddingEnd="@dimen/space_xs"
+        android:paddingVertical="@dimen/space_s">
 
-        <TextView
+        <ImageView
             android:id="@+id/chat_back"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_aegis_list_row"
+            style="@style/AegisIconButton"
+            android:padding="12dp"
             android:contentDescription="@string/back"
-            android:padding="8dp"
-            android:text="@string/back_arrow"
-            android:textColor="@color/text_primary"
-            android:textSize="18sp" />
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <!-- Аватар собеседника, 40dp (.av.s в UI kit). -->
+        <TextView
+            android:id="@+id/chat_avatar"
+            android:layout_width="@dimen/avatar_s"
+            android:layout_height="@dimen/avatar_s"
+            android:background="@drawable/bg_avatar"
+            android:fontFamily="@font/inter"
+            android:textFontWeight="600"
+            android:gravity="center"
+            android:importantForAccessibility="no"
+            android:includeFontPadding="false"
+            android:textColor="@color/accent_base"
+            android:textSize="14sp"
+            tools:text="LN" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="12dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
@@ -48,8 +61,11 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
+                android:fontFamily="@font/inter"
+                android:textFontWeight="600"
+                android:includeFontPadding="false"
                 android:textColor="@color/text_primary"
-                android:textSize="17sp"
+                android:textSize="16sp"
                 tools:text="Lena Novak" />
 
             <!--
@@ -64,7 +80,8 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/text_secondary"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/text_muted"
                 android:textSize="12sp"
                 tools:text="Не верифицирован — сверьте safety number" />
         </LinearLayout>
@@ -96,9 +113,12 @@
         android:id="@+id/key_change_banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/bg_card"
+        android:layout_marginStart="@dimen/space_m"
+        android:layout_marginTop="@dimen/space_s"
+        android:layout_marginEnd="@dimen/space_m"
+        android:background="@drawable/bg_notice_warn"
         android:orientation="vertical"
-        android:padding="12dp"
+        android:padding="@dimen/space_m"
         android:visibility="gone"
         tools:visibility="visible">
 
@@ -107,15 +127,19 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/key_changed_title"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
-            android:fontFamily="@font/inter_semibold" />
+            android:textColor="@color/status_warn"
+            android:textSize="15sp"
+            android:fontFamily="@font/inter"
+            android:textFontWeight="600" />
 
         <TextView
             android:id="@+id/key_change_body"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
+            android:lineSpacingExtra="4sp"
+            android:ellipsize="end"
+            android:maxLines="@integer/banner_body_lines"
             tools:text="@string/key_changed_body"
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
@@ -124,8 +148,9 @@
             android:id="@+id/key_change_verify"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="12dp"
             android:text="@string/verify_safety_number"
+            app:buttonSize="small"
             app:buttonVariant="primary" />
     </LinearLayout>
 
@@ -154,7 +179,9 @@
             android:text="@string/e2e_encrypted"
             android:textColor="@color/accent_base"
             android:textSize="11sp"
-            app:drawableStartCompat="@drawable/ic_lock"
+            android:fontFamily="@font/inter"
+            android:textFontWeight="600"
+            app:drawableStartCompat="@drawable/ic_lock_small"
             app:drawableTint="@color/accent_base" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -174,16 +201,19 @@
         android:background="@color/bg_raised"
         android:gravity="bottom"
         android:orientation="horizontal"
-        android:padding="8dp">
+        android:paddingStart="@dimen/space_xs"
+        android:paddingTop="@dimen/space_s"
+        android:paddingEnd="@dimen/space_s"
+        android:paddingBottom="@dimen/space_s">
 
         <ImageView
             android:id="@+id/attach_button"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/attach"
-            android:padding="8dp"
-            android:src="@drawable/ic_paperclip"
+            android:padding="10dp"
+            android:src="@drawable/ic_plus"
             app:tint="@color/text_secondary" />
 
         <org.aegis.app.components.AegisTextField
@@ -191,23 +221,32 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_xs"
+            android:background="@drawable/bg_composer_field"
+            android:minHeight="44dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
             android:hint="@string/message_hint"
             android:inputType="textMultiLine|textCapSentences"
             android:maxLines="4"
             android:saveEnabled="false"
             android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_secondary" />
+            android:textColorHint="@color/text_muted" />
         <!-- 🔐 saveEnabled="false": черновик не попадает в сохранённое
              состояние экрана. Иначе незашифрованный текст лежал бы
              в памяти системного процесса и восстанавливался бы после
              гибели процесса приложения — в том числе без PIN. -->
 
-        <org.aegis.app.components.AegisButton
+        <!-- Круглая отправка 44dp (.send в UI kit). -->
+        <ImageView
             android:id="@+id/send_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:text="@string/send"
-            app:buttonVariant="primary" />
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="@dimen/space_s"
+            android:background="@drawable/bg_send_button"
+            android:contentDescription="@string/send"
+            android:padding="11dp"
+            android:src="@drawable/ic_send"
+            app:tint="@color/send_icon" />
     </LinearLayout>
 </LinearLayout>

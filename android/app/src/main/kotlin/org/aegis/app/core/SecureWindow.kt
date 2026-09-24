@@ -8,6 +8,8 @@ import android.os.Build
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
+import java.io.File
+import org.aegis.app.BuildConfig
 
 /**
  * Защита окна экрана: снимки и накрывающие окна.
@@ -185,7 +187,25 @@ object SecureWindow {
         )
     }
 
+    /**
+     * Снимки экрана для работы над дизайном — **только в отладочной сборке**.
+     *
+     * Включается файлом, который можно создать лишь через
+     * `adb shell run-as <пакет> touch no_backup/design-capture`: `run-as`
+     * работает только для debuggable-сборки. В релизе `BuildConfig.DEBUG`
+     * — константа `false`, и R8 вырезает проверку вместе с чтением файла.
+     */
+    private fun designCaptureAllowed(activity: Activity): Boolean =
+        BuildConfig.DEBUG && File(activity.noBackupFilesDir, DESIGN_CAPTURE_FLAG).exists()
+
+    /** Файл-флаг отладочных снимков экрана (см. [designCaptureAllowed]). */
+    private const val DESIGN_CAPTURE_FLAG = "design-capture"
+
     private fun setSecure(activity: Activity) {
+        if (designCaptureAllowed(activity)) {
+            return
+        }
+
         activity.window.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE,

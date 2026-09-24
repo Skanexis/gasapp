@@ -33,6 +33,9 @@ def releaseSigningCertSha256() {
     return java.security.MessageDigest.getInstance('SHA-256').digest(cert.encoded).encodeHex().toString()
 }
 
+// Релиз разбивается на APK по архитектурам (см. `splits`).
+def releaseAbiSplit = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+
 android {
     // Обязателен начиная с AGP 8: пакет, в котором генерируется класс R.
     // Без него конфигурация проекта падает ещё до сборки.
@@ -120,8 +123,30 @@ android {
         // из NDK для mips не существует, и именно эти три библиотеки
         // задача `stripReleaseDebugSymbols` пропускала с предупреждением,
         // упаковывая их с полной таблицей символов.
-        ndk {
-            abiFilters += ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
+        //
+        // При разбиении релиза по ABI (блок `splits` ниже) фильтр снимается:
+        // AGP не допускает обоих сразу. Мёртвые ABI JNA тогда вырезает
+        // `packaging.jniLibs.excludes`.
+        if (!releaseAbiSplit) {
+            ndk {
+                abiFilters += ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
+            }
+        }
+    }
+
+    // APK по архитектурам — только для релиза.
+    //
+    // Универсальный APK везёт ядро под все четыре ABI (29 МБ), хотя
+    // телефону нужно одно (≈10 МБ для arm64). Рядом собирается и
+    // универсальный — для тех, кто не знает архитектуру своего телефона.
+    // Отладочные сборки остаются одним файлом: их ставят руками
+    // и инструментальными тестами по известному пути.
+    splits {
+        abi {
+            enable releaseAbiSplit
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'
+            universalApk true
         }
     }
 
@@ -296,6 +321,12 @@ android {
     packaging {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+
+        // ABI, выброшенные из NDK в r17: JNA везёт под них библиотеки,
+        // strip для них не существует (см. `abiFilters` выше).
+        jniLibs {
+            excludes += ['lib/mips/**', 'lib/mips64/**', 'lib/armeabi/**']
         }
     }
 

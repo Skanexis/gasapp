@@ -54,12 +54,14 @@ class AboutActivity : AppCompatActivity() {
             root = findViewById(R.id.about_license),
             label = R.string.about_license,
             value = getString(R.string.about_license_value),
+            icon = R.drawable.ic_file,
         )
 
         SettingsRow.bind(
             root = findViewById(R.id.about_source),
             label = R.string.about_source,
             value = getString(R.string.about_source_value),
+            icon = R.drawable.ic_globe,
         )
     }
 }
