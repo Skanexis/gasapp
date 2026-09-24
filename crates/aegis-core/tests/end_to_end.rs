@@ -712,11 +712,31 @@ impl Transport for FakeServer {
 
                 (200, String::new())
             }
-            (Method::Post, path) if path.starts_with("/v1/attachments/") => {
+            (Method::Post, "/v1/attachments/blob") => {
                 let payload = request.binary_body.clone().unwrap_or_default();
+
+                // Как настоящий сервер: без подписи, но с работой над
+                // этим блобом — и без записи, кто его прислал.
+                let nonce = request
+                    .headers
+                    .iter()
+                    .find(|(name, _)| name == aegis_net::client::UPLOAD_POW_HEADER)
+                    .and_then(|(_, value)| value.parse::<u64>().ok());
+                let signed = request
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.starts_with("x-aegis-signature"));
+                let worked = nonce.is_some_and(|nonce| {
+                    leading_zero_bits(&aegis_net::pow::hash(
+                        &aegis_net::pow::upload_challenge(&payload),
+                        nonce,
+                    )) >= aegis_net::pow::upload_difficulty(payload.len())
+                });
 
                 if payload.is_empty() {
                     (400, String::new())
+                } else if !worked || signed {
+                    (401, String::new())
                 } else {
                     let attachment_id = Self::next_uuid(&mut state);
                     state.attachments.insert(attachment_id.clone(), payload);
@@ -757,6 +777,19 @@ impl Transport for FakeServer {
 }
 
 /// Открывает временное хранилище.
+/// Стороны подтверждают ключи друг друга — как после сверки safety
+/// number при встрече. Без этого отправка запрещена (`PeerUnconfirmed`).
+fn confirm_pair(a: &Client<FakeServer>, a_name: &str, b: &Client<FakeServer>, b_name: &str) {
+    for (client, peer) in [(a, b_name), (b, a_name)] {
+        let contact = client
+            .discover_contact(peer, now())
+            .expect("собеседник найден");
+        client
+            .set_contact_verified(&contact.account_id, true, now())
+            .expect("ключ сверен");
+    }
+}
+
 fn open_storage(dir: &tempfile::TempDir, name: &str) -> Storage {
     let path = dir.path().join(name).to_string_lossy().into_owned();
 
@@ -782,6 +815,9 @@ fn two_clients_exchange_a_message() {
     let bob_account = bob
         .register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     assert_ne!(alice_account.account_id, bob_account.account_id);
 
@@ -811,6 +847,9 @@ fn server_never_sees_plaintext() {
 
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     let secret = "ATTACK-AT-DAWN-CANARY";
     alice
@@ -847,6 +886,9 @@ fn conversation_flows_both_ways() {
     let alice_account = alice.register("alice", now(), &mut OsRng).expect("Алиса");
     let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     alice
         .send_message("bob", "первое", now(), &mut OsRng)
         .expect("отправка");
@@ -881,6 +923,9 @@ fn messages_are_persisted() {
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     alice
         .send_message("bob", "сохранённое", now(), &mut OsRng)
         .expect("отправка");
@@ -910,6 +955,9 @@ fn contact_is_added_from_profile_link() {
         .expect("Алиса зарегистрирована");
     bob.register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     let link = bob.own_contact_link().expect("ссылка Боба");
 
@@ -992,6 +1040,9 @@ fn re_adding_the_same_link_is_idempotent() {
     bob.register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     let link = bob.own_contact_link().expect("ссылка Боба");
 
     alice
@@ -1042,6 +1093,9 @@ fn a_new_key_for_a_known_name_is_flagged() {
         .expect("Алиса зарегистрирована");
     bob.register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     let first = alice
         .add_contact_from_link(&bob.own_contact_link().expect("ссылка Боба"), now())
@@ -1294,6 +1348,9 @@ fn first_message_sent_before_rotation_still_decrypts() {
 
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
     let bob_device = bob_account.device_id.to_string();
 
     alice
@@ -1429,6 +1486,9 @@ fn a_first_contact_can_be_answered() {
     let alice_account = alice.register("alice", now(), &mut OsRng).expect("Алиса");
     let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     // Боб Алису не знает: она пишет первой.
     alice
         .send_message("bob", "привет, мы не знакомы", now(), &mut OsRng)
@@ -1502,6 +1562,12 @@ fn a_claimed_username_that_is_not_the_senders_is_ignored() {
         .expect("имя подменено");
     drop(forged);
 
+    // Мэллори подтверждает ключ Боба — писать иначе нельзя.
+    let bob_seen = mallory.discover_contact("bob", now()).expect("Боб найден");
+    mallory
+        .set_contact_verified(&bob_seen.account_id, true, now())
+        .expect("сверено");
+
     mallory
         .send_message("bob", "это я, Алиса", now(), &mut OsRng)
         .expect("отправка");
@@ -1534,6 +1600,9 @@ fn a_session_started_without_one_time_keys_is_recorded() {
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     server.drain_one_time(&bob_account.device_id.to_string());
 
     alice
@@ -1561,6 +1630,9 @@ fn a_normal_session_start_is_not_recorded_as_degraded() {
 
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     alice
         .send_message("bob", "обычное начало", now(), &mut OsRng)
@@ -1594,6 +1666,9 @@ fn alice_and_bob(
         .expect("Боб")
         .device_id
         .to_string();
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     (alice, bob, alice_device, bob_device)
 }
@@ -1729,6 +1804,7 @@ fn a_peer_cannot_delete_a_message_of_another_chat() {
     let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
     let carol = Client::new(server.clone(), open_storage(&dir, "carol.db"));
     carol.register("carol", now(), &mut OsRng).expect("Карол");
+    confirm_pair(&alice, "alice", &carol, "carol");
 
     // У Алисы два чата: с Бобом и с Карол.
     bob.send_message("alice", "привет от Боба", now(), &mut OsRng)
@@ -2118,6 +2194,9 @@ fn search_finds_sent_message() {
         .register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     alice
         .send_message("bob", "встречаемся в среду", now(), &mut OsRng)
         .expect("сообщение отправлено");
@@ -2158,6 +2237,9 @@ fn search_hit_points_at_its_chat() {
     bob.register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     alice
         .send_message("bob", "уникальное слово", now(), &mut OsRng)
         .expect("сообщение отправлено");
@@ -2190,6 +2272,9 @@ fn attachment_round_trips_through_the_server() {
     let bob_account = bob
         .register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     // Файл заведомо крупнее одного чанка: склейка и обратная нарезка
     // на границе чанков — самое вероятное место ошибки.
@@ -2271,6 +2356,9 @@ fn server_never_sees_attachment_contents() {
         .expect("Алиса зарегистрирована");
     bob.register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     let mut payload = CANARY.to_vec();
     payload.extend_from_slice(&[0x00; 1024]);
@@ -2387,6 +2475,9 @@ fn recipient_downloads_attachment_from_received_message() {
         .register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     let original: Vec<u8> = (0..150_000u32).map(|index| (index % 253) as u8).collect();
 
     alice
@@ -2457,6 +2548,9 @@ fn sender_keeps_its_own_attachment() {
     bob.register("bob", now(), &mut OsRng)
         .expect("Боб зарегистрирован");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     let original = vec![0x7Eu8; 8192];
 
     alice
@@ -2526,6 +2620,9 @@ fn handshake(
         .device_id
         .to_string();
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     alice
         .send_message("bob", "первое", now(), &mut OsRng)
         .expect("первое сообщение");
@@ -2564,6 +2661,9 @@ fn conversation_becomes_sealed_after_first_exchange() {
         .expect("Боб")
         .device_id
         .to_string();
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     alice
         .send_message("bob", "первое", now(), &mut OsRng)
@@ -2804,6 +2904,9 @@ fn account_deletion_removes_the_account_and_its_queue() {
     let alice_account = alice.register("alice", now(), &mut OsRng).expect("Алиса");
     bob.register("bob", now(), &mut OsRng).expect("Боб");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     // Недоставленный конверт в очереди Алисы.
     bob.send_message("alice", "ещё не прочитано", now(), &mut OsRng)
         .expect("сообщение отправлено");
@@ -2947,6 +3050,9 @@ fn export_contains_the_conversation() {
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     bob.register("bob", now(), &mut OsRng).expect("Боб");
 
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
+
     alice
         .send_message("bob", "встречаемся в семь", now(), &mut OsRng)
         .expect("сообщение отправлено");
@@ -3057,6 +3163,9 @@ fn export_survives_quotes_in_message_text() {
 
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
 
     let nasty = r#"он сказал "да", а потом \ушёл"#;
 
@@ -3266,7 +3375,11 @@ fn message_length_is_hidden_by_padding() {
 
     alice.register("alice", now(), &mut OsRng).expect("Алиса");
     let bob_account = bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    // Ключи сверены — без этого писать нельзя (PeerUnconfirmed).
+    confirm_pair(&alice, "alice", &bob, "bob");
     let carol_account = carol.register("carol", now(), &mut OsRng).expect("Кэрол");
+    confirm_pair(&alice, "alice", &carol, "carol");
 
     // Оба текста помещаются в наименьшую корзину (512 байт),
     // различаясь при этом в сто раз.
@@ -3476,9 +3589,20 @@ fn accepting_the_new_key_resumes_sending_to_it() {
         .accept_contact_identity(&new_key.account_id, later(2))
         .expect("новый ключ принят");
 
+    // 🔐 Принятие снимает неоднозначность имени, но ключ по-прежнему
+    // назвал только сервер: писать можно после подтверждения.
+    assert!(matches!(
+        alice.send_message("bob", "после принятия", later(3), &mut OsRng),
+        Err(AegisError::PeerUnconfirmed)
+    ));
+
+    alice
+        .set_contact_verified(&new_key.account_id, true, later(3))
+        .expect("новый ключ сверен");
+
     alice
         .send_message("bob", "после принятия", later(3), &mut OsRng)
-        .expect("после принятия отправка разрешена");
+        .expect("после сверки отправка разрешена");
 
     // Принятый ключ получает и читает сообщение.
     mallory
@@ -3565,16 +3689,68 @@ fn switching_back_to_a_replaced_key_is_refused_again() {
     );
 }
 
-/// Незнакомое имя — первый контакт: ключу сервера верят, иного источника нет.
+/// 🔐 Ключ, который назвал только сервер, не годится для отправки.
+///
+/// Прежде первый контакт по имени доверял серверу («доверие при первом
+/// использовании»): сервер, назвавший свой ключ, получал первое же
+/// сообщение. Теперь писать можно только после подтверждения вне
+/// сервера — сверки safety number или ссылки/QR самого собеседника.
 #[test]
-fn an_unknown_name_is_trusted_on_first_use() {
+fn a_key_named_only_by_the_server_cannot_be_written_to() {
     let server = FakeServer::new();
     let dir = tempfile::tempdir().expect("временный каталог");
-    let (alice, _bob, _, _) = alice_and_bob(&server, &dir);
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    let bob_device = bob
+        .register("bob", now(), &mut OsRng)
+        .expect("Боб")
+        .device_id
+        .to_string();
+
+    let result = alice.send_message("bob", "привет", now(), &mut OsRng);
+    assert!(
+        matches!(result, Err(AegisError::PeerUnconfirmed)),
+        "ушло на ключ от сервера: {result:?}"
+    );
+    assert_eq!(server.queued_for(&bob_device), 0);
+
+    // Контакт записан — неподтверждённым: интерфейс показывает
+    // safety number для сверки ещё до первого сообщения.
+    let bob_seen = alice.discover_contact("bob", now()).expect("найден");
+    assert!(!bob_seen.key_confirmed);
+
+    alice
+        .set_contact_verified(&bob_seen.account_id, true, now())
+        .expect("сверено при встрече");
 
     alice
         .send_message("bob", "привет", now(), &mut OsRng)
-        .expect("первый контакт разрешён");
+        .expect("после сверки отправка разрешена");
+}
+
+/// Ключ из ссылки или QR самого собеседника подтверждён сразу.
+#[test]
+fn a_key_from_the_peers_own_link_is_confirmed() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    let contact = alice
+        .add_contact_from_link(&bob.own_contact_link().expect("ссылка"), now())
+        .expect("добавлен");
+
+    assert!(contact.key_confirmed);
+    assert!(!contact.verified, "ссылка — не сверка при встрече");
+
+    alice
+        .send_message("bob", "привет", now(), &mut OsRng)
+        .expect("по ссылке писать можно");
 }
 
 // --- 🔐 Метаданные вложений ------------------------------------------------

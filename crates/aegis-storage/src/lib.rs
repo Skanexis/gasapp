@@ -267,6 +267,8 @@ pub struct ContactRow {
     /// Переписка с ним остаётся, отправка в неё — нет: имя теперь
     /// ведёт к другому ключу, и сообщение ушло бы не в этот чат.
     pub replaced: bool,
+    /// Ключ получен из ссылки или QR-кода самого контакта, а не от сервера.
+    pub confirmed_by_link: bool,
 }
 
 /// Сообщение в том виде, в каком оно лежит в базе.
@@ -364,7 +366,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 8;
+    const SCHEMA_VERSION: i32 = 9;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -502,6 +504,10 @@ impl Storage {
     /// # Arguments
     /// * `connection` — соединение с базой.
     /// * `target_version` — целевая версия схемы.
+    // Длина — прямое следствие числа версий схемы: линейный список
+    // миграций без ветвлений, как и `create_tables`. Дробить его значило бы
+    // разнести историю схемы по нескольким местам.
+    #[allow(clippy::too_many_lines)]
     fn migrate_schema(connection: &Connection, target_version: i32) -> Result<()> {
         let current_version = Self::get_schema_version(connection)?;
 
@@ -673,6 +679,22 @@ impl Storage {
                                 published_at INTEGER
                             )
                             ",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                // 8 → 9: ключ контакта получен из его ссылки или QR-кода.
+                //
+                // 🔐 Писать можно только собеседнику, чей ключ подтверждён
+                // вне сервера: сверкой safety number или ссылкой/QR самого
+                // собеседника. Сверка живёт в `verified_contacts`; здесь —
+                // второй путь. Ноль у существующих строк: откуда пришёл их
+                // ключ, неизвестно, и считать его подтверждённым нельзя.
+                9 => {
+                    transaction
+                        .execute(
+                            "ALTER TABLE known_contacts
+                             ADD COLUMN confirmed_by_link INTEGER NOT NULL DEFAULT 0",
                             [],
                         )
                         .map_err(storage_error)?;
@@ -2512,7 +2534,8 @@ impl Storage {
                     c.chat_id,
                     c.added_at,
                     (v.account_id IS NOT NULL) AS verified,
-                    (c.replaced_at IS NOT NULL) AS replaced
+                    (c.replaced_at IS NOT NULL) AS replaced,
+                    c.confirmed_by_link
                 FROM known_contacts AS c
                 LEFT JOIN verified_contacts AS v
                     ON v.account_id = c.account_id
@@ -2532,6 +2555,7 @@ impl Storage {
                     row.get::<_, Option<i64>>(4)?,
                     row.get::<_, bool>(5)?,
                     row.get::<_, bool>(6)?,
+                    row.get::<_, bool>(7)?,
                 ))
             })
             .map_err(storage_error)?;
@@ -2539,8 +2563,16 @@ impl Storage {
         let mut contacts = Vec::new();
 
         for row in rows {
-            let (raw_account, identity_key, username, raw_chat, added_at, verified, replaced) =
-                row.map_err(storage_error)?;
+            let (
+                raw_account,
+                identity_key,
+                username,
+                raw_chat,
+                added_at,
+                verified,
+                replaced,
+                confirmed_by_link,
+            ) = row.map_err(storage_error)?;
 
             contacts.push(ContactRow {
                 account_id: AccountId::from_uuid(uuid_from_slice(&raw_account)?),
@@ -2553,13 +2585,35 @@ impl Storage {
                 verified,
                 added_at,
                 replaced,
+                confirmed_by_link,
             });
         }
 
         Ok(contacts)
     }
 
-    /// Действующие записи контакта под этим именем: счёт, ключ, сверен ли.
+    /// Отмечает, что ключ контакта получен из его ссылки или QR-кода.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn mark_contact_confirmed_by_link(&self, account: &AccountId) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "UPDATE known_contacts SET confirmed_by_link = 1 WHERE account_id = ?",
+                params![account.as_bytes()],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Действующие записи контакта под этим именем: счёт, ключ, подтверждён ли.
+    ///
+    /// «Подтверждён» — ключ пришёл не от сервера: сверен (safety number)
+    /// либо получен из ссылки или QR-кода самого контакта.
     ///
     /// Заменённые ([`ContactRow::replaced`]) не входят: они больше
     /// не отвечают за имя. Основа проверки ключа при отправке
@@ -2577,7 +2631,8 @@ impl Storage {
         let mut statement = connection
             .prepare(
                 "
-                SELECT c.account_id, c.identity_key, (v.account_id IS NOT NULL)
+                SELECT c.account_id, c.identity_key,
+                       (v.account_id IS NOT NULL OR c.confirmed_by_link = 1)
                 FROM known_contacts AS c
                 LEFT JOIN verified_contacts AS v ON v.account_id = c.account_id
                 WHERE c.username = ? AND c.replaced_at IS NULL
@@ -4399,6 +4454,8 @@ mod tests {
                 "ALTER TABLE messages DROP COLUMN updated_at",
                 // Столбец замены ключа добавляет миграция 6 → 7.
                 "ALTER TABLE known_contacts DROP COLUMN replaced_at",
+                // Признак ключа из ссылки — миграция 8 → 9.
+                "ALTER TABLE known_contacts DROP COLUMN confirmed_by_link",
                 // own_keys откатывать не нужно: миграция 2 → 3
                 // пересоздаёт таблицу целиком и переживает повтор.
                 "UPDATE schema_version SET version = 1 WHERE id = 1",
@@ -4464,6 +4521,8 @@ mod tests {
                 "ALTER TABLE messages DROP COLUMN updated_at",
                 // Столбец замены ключа добавляет миграция 6 → 7.
                 "ALTER TABLE known_contacts DROP COLUMN replaced_at",
+                // Признак ключа из ссылки — миграция 8 → 9.
+                "ALTER TABLE known_contacts DROP COLUMN confirmed_by_link",
                 "UPDATE schema_version SET version = 2 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");

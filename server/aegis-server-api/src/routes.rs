@@ -477,12 +477,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         // умолчание axum в 2 МБ отвергло бы любое вложение крупнее
         // короткого голосового, а поднимать его для всего сервера
         // значило бы разрешить стомегабайтную регистрацию.
+        // 🔐 Загрузка и скачивание — без подписи: сервер не знает ни
+        // загрузчика, ни получателя (см. `upload_attachment`).
         .route(
-            "/v1/attachments/:device_id",
+            "/v1/attachments/blob",
             post(upload_attachment)
                 .layer(axum::extract::DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES)),
         )
-        // 🔐 Скачивание — без подписи (см. `download_attachment`).
         .route(
             "/v1/attachments/blob/:attachment_id",
             get(download_attachment),
@@ -1058,8 +1059,12 @@ pub(crate) fn now_millis() -> i64 {
 ///
 /// # 🔐 Что сервер получает и чего не узнаёт
 ///
-/// Получает: непрозрачные байты и устройство, которое их прислало.
-/// Не узнаёт: кому файл предназначен, как он называется, что в нём.
+/// Получает: непрозрачные байты. Не узнаёт: кто их прислал, кому
+/// файл предназначен, как он называется, что в нём.
+///
+/// Прежде загрузка была подписана устройством, и сервер помнил, кто
+/// и в какой час прислал каждый файл. Теперь право на место — работа
+/// над самим блобом (`pow::upload_challenge`), растущая с размером.
 /// Описание вложения — имя, тип, ключ, превью — уходит получателю
 /// **внутри сообщения**, под сквозным шифрованием.
 ///
@@ -1067,47 +1072,24 @@ pub(crate) fn now_millis() -> i64 {
 /// адресован файл, оператор строил бы граф «кто кому шлёт файлы»,
 /// не расшифровав ни байта.
 ///
-/// # Ограничение частоты
+/// # Ограничение объёма
 ///
-/// Тот же лимитер, что и у сообщений: загрузка вложения — это шаг
-/// отправки сообщения, и отдельный счётчик позволил бы обойти общий
-/// предел, чередуя вызовы.
+/// Квоты на устройство больше нет — считать по загрузчику нечего.
+/// Её заменяют работа, растущая с размером, общий потолок хранилища
+/// (`repo::store_attachment`) и лимит частоты на балансировщике.
 ///
 /// # Errors
 ///
 /// * [`ApiError::PayloadTooLarge`] — блоб больше предела.
-/// * [`ApiError::InsufficientStorage`] — квота устройства исчерпана.
+/// * [`ApiError::Unauthorized`] — нет решения proof-of-work или оно неверно.
+/// * [`ApiError::InsufficientStorage`] — общий потолок хранилища исчерпан.
 /// * [`ApiError::TooManyRequests`] — превышена частота.
 /// * [`ApiError::Internal`] — сбой базы.
 async fn upload_attachment(
     State(state): State<Arc<AppState>>,
-    device: crate::authz::AuthenticatedDevice,
-    Path(device_id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     payload: axum::body::Bytes,
 ) -> Result<Json<Uuid>, ApiError> {
-    // 🔐 Подписавший обязан быть тем, чья квота расходуется.
-    //
-    // Извлекатель берёт устройство из того же пути, поэтому
-    // расхождение здесь невозможно — проверка стоит как защита
-    // от будущей правки, которая возьмёт идентификатор откуда-то ещё.
-    if device.device_id != device_id {
-        return Err(ApiError::Unauthorized);
-    }
-
-    let key = rate_limit::key_from_addr(&state.limiter_salt, &device.device_id.to_string());
-    let now = now_millis();
-
-    {
-        let mut limiter = state
-            .message_limiter
-            .lock()
-            .map_err(|_| ApiError::Internal)?;
-
-        if !limiter.allow(key, now) {
-            return Err(ApiError::TooManyRequests);
-        }
-    }
-
     // Пустое вложение — ошибка вызывающего, а не файл нулевой длины:
     // описание, ссылающееся на пустой блоб, у получателя всё равно
     // не откроется.
@@ -1115,9 +1097,22 @@ async fn upload_attachment(
         return Err(ApiError::BadRequest);
     }
 
+    // 🔐 Работа над этим блобом — вместо подписи устройства.
+    let nonce: u64 = headers
+        .get(UPLOAD_POW_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+        .ok_or(ApiError::Unauthorized)?;
+
+    crate::pow::verify(
+        &crate::pow::upload_challenge(&payload),
+        nonce,
+        crate::pow::upload_difficulty(payload.len()),
+    )
+    .map_err(|_| ApiError::Unauthorized)?;
+
     let attachment_id = repo::store_attachment(
         &state.pool,
-        device.device_id,
         &payload,
         i64::try_from(ATTACHMENT_TTL.as_secs()).unwrap_or(i64::MAX),
     )
@@ -1125,6 +1120,9 @@ async fn upload_attachment(
 
     Ok(Json(attachment_id))
 }
+
+/// Заголовок с решением proof-of-work загрузки.
+const UPLOAD_POW_HEADER: &str = "x-aegis-upload-pow";
 
 /// Отдаёт зашифрованное вложение.
 ///

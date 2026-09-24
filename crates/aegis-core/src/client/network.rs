@@ -106,7 +106,9 @@ impl<T: Transport> Client<T> {
     /// платформа при ошибке обязана закрыть сеть, а не открыть её.
     pub fn proxy_mode(&self) -> Result<ProxyMode> {
         match self.storage.setting_text(PROXY_SETTING)? {
-            None => Ok(ProxyMode::Direct),
+            // 🔐 Без настройки — Tor, а не прямое соединение: сервер
+            // не должен видеть адреса, пока человек сам не решит иначе.
+            None => Ok(ProxyMode::default()),
             Some(value) => ProxyMode::from_setting(&value),
         }
     }
@@ -192,13 +194,13 @@ mod tests {
         (Storage::new(&path, &[0x5Au8; 32]).expect("база"), directory)
     }
 
-    /// Без настройки — прямое соединение.
+    /// 🔐 Без настройки — Tor.
     #[test]
-    fn proxy_defaults_to_direct() {
+    fn proxy_defaults_to_tor() {
         let (storage, _dir) = open_storage();
         let client = Client::new(NoNetwork, storage);
 
-        assert_eq!(client.proxy_mode().expect("режим"), ProxyMode::Direct);
+        assert_eq!(client.proxy_mode().expect("режим"), ProxyMode::Orbot);
     }
 
     /// Режим сохраняется и читается обратно.
@@ -255,8 +257,8 @@ mod tests {
         );
     }
 
-    /// На свежем устройстве пройдена только проверка контактов —
-    /// и то потому, что сверять пока некого.
+    /// На свежем устройстве пройдены проверка контактов (сверять пока
+    /// некого) и скрытого адреса — Tor включён по умолчанию.
     #[test]
     fn fresh_device_report_is_honest() {
         let (storage, _dir) = open_storage();
@@ -268,8 +270,8 @@ mod tests {
         assert!(!report.backup_recent);
         assert_eq!(report.unverified_contacts, 0);
         assert!(!report.sealed_sender_enabled);
-        assert!(!report.address_hidden);
-        assert_eq!(report.passed(), 1);
+        assert!(report.address_hidden, "Tor по умолчанию не засчитан");
+        assert_eq!(report.passed(), 2);
         assert_eq!(report.total(), 5);
     }
 

@@ -187,6 +187,17 @@ fn server() -> Option<(String, u16)> {
 ///
 /// Заметить было нечем: тесты этого файла помечены `#[ignore]`
 /// и ни разу не запускались — сервер для них никто не поднимал.
+/// Отправитель подтверждает ключ собеседника — как после сверки
+/// safety number. Без этого писать нельзя (`PeerUnconfirmed`).
+fn confirm(client: &Client<LocalHttp>, peer: &str) {
+    let contact = client
+        .discover_contact(peer, now())
+        .expect("собеседник найден");
+    client
+        .set_contact_verified(&contact.account_id, true, now())
+        .expect("ключ сверен");
+}
+
 fn now() -> Timestamp {
     Timestamp::from_millis(
         i64::try_from(
@@ -238,6 +249,8 @@ fn real_server_delivers_a_message() {
     let bob_account = bob
         .register(&bob_name, now(), &mut OsRng)
         .expect("регистрация Боба");
+
+    confirm(&alice, &bob_name);
 
     alice
         .send_message(
@@ -295,6 +308,7 @@ fn server_database_holds_only_ciphertext() {
 
     // Опознаваемая строка: если сервер видит текст, она найдётся в дампе.
     let canary = "CANARY-PLAINTEXT-MUST-NOT-APPEAR";
+    confirm(&alice, &bob_name);
     alice
         .send_message(&bob_name, canary, now(), &mut OsRng)
         .expect("отправка");
@@ -338,6 +352,7 @@ fn message_is_received_and_decrypted() {
         .expect("получатель");
 
     let text = "сообщение прошло весь путь";
+    confirm(&sender, &receiver_name);
     sender
         .send_message(&receiver_name, text, now(), &mut OsRng)
         .expect("отправка");
@@ -454,6 +469,8 @@ fn talk_to_an_existing_user() {
         .expect("регистрация");
     let device = account.device_id.to_string();
 
+    // Ручной сценарий: ключ собеседника сверяет человек, запускающий тест.
+    confirm(&carol, &peer);
     carol
         .send_message(&peer, "привет с другой стороны", now(), &mut OsRng)
         .expect("отправка");
@@ -546,6 +563,7 @@ fn edits_and_deletes_with_an_existing_user() {
         .device_id
         .to_string();
 
+    confirm(&dave, &peer);
     let first = dave
         .send_message(&peer, "дейв: первое — будет исправлено", now(), &mut OsRng)
         .expect("первое");

@@ -60,6 +60,13 @@ pub enum FfiError {
     #[error("peer identity changed")]
     IdentityChanged,
 
+    /// 🔐 Ключ собеседника не подтверждён вне сервера.
+    ///
+    /// Своим вариантом, как и [`FfiError::IdentityChanged`]: интерфейс
+    /// ведёт к сверке safety number, а не показывает сбой.
+    #[error("peer not confirmed")]
+    PeerUnconfirmed,
+
     /// Входные данные не прошли валидацию на границе.
     #[error("invalid argument")]
     InvalidArgument,
@@ -76,6 +83,7 @@ impl From<AegisError> for FfiError {
     fn from(error: AegisError) -> Self {
         match error {
             AegisError::IdentityChanged => Self::IdentityChanged,
+            AegisError::PeerUnconfirmed => Self::PeerUnconfirmed,
             other => Self::Core(other),
         }
     }

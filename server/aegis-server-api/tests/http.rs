@@ -909,30 +909,6 @@ async fn register_signing_device(
     )
 }
 
-/// Выполняет подписанный запрос с сырым телом.
-async fn call_signed(
-    state: &Arc<AppState>,
-    private: &DeviceKey,
-    method: &str,
-    uri: &str,
-    body: Vec<u8>,
-) -> (StatusCode, Vec<u8>) {
-    let router = aegis_server_api::router(Arc::clone(state));
-    let request = signed_request(private, method, uri, "application/octet-stream", body);
-
-    let response = router.oneshot(request).await.unwrap();
-    let status = response.status();
-
-    // Предел чтения выше предела вложения: иначе тест на слишком
-    // большой ответ упирался бы в собственное ограничение, а не
-    // в серверное.
-    let bytes = axum::body::to_bytes(response.into_body(), 128 * 1024 * 1024)
-        .await
-        .unwrap();
-
-    (status, bytes.to_vec())
-}
-
 /// Выполняет подписанный запрос с телом JSON.
 ///
 /// Тип тела здесь важен: обработчики с `Json<…>` отвергают
@@ -989,25 +965,23 @@ async fn call_with_body(
 async fn a_signature_does_not_cover_a_different_body() {
     let state = require_state!();
     let (device_id, private) = register_signing_device(&state, &unique_name("swapper"), 0x21).await;
-    let uri = format!("/v1/attachments/{device_id}");
+    // Загрузка вложений больше не подписана — тело проверяется
+    // на другом подписанном маршруте с телом: токене push.
+    let uri = format!("/v1/push/{device_id}");
+    let genuine = br#"{"provider":"fcm","token":"first"}"#.to_vec();
+    let swapped = br#"{"provider":"fcm","token":"other"}"#.to_vec();
 
-    let signed = || {
-        common::signed_request(
-            &private,
-            "POST",
-            &uri,
-            "application/octet-stream",
-            vec![0x01; 64],
-        )
-    };
+    let signed =
+        || common::signed_request(&private, "PUT", &uri, "application/json", genuine.clone());
 
-    assert_eq!(
-        call_with_body(&state, signed(), vec![0x01; 64]).await,
-        StatusCode::OK,
+    assert!(
+        call_with_body(&state, signed(), genuine.clone())
+            .await
+            .is_success(),
         "заготовка теста: подписанное тело не принято"
     );
     assert_eq!(
-        call_with_body(&state, signed(), vec![0x02; 64]).await,
+        call_with_body(&state, signed(), swapped).await,
         StatusCode::UNAUTHORIZED,
         "подпись одного тела принята с другим"
     );
@@ -1038,23 +1012,51 @@ async fn a_request_without_the_body_hash_is_refused() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+/// Анонимная загрузка вложения с решением proof-of-work.
+async fn upload_anonymously(state: &Arc<AppState>, payload: Vec<u8>) -> (StatusCode, Vec<u8>) {
+    let challenge = pow::upload_challenge(&payload);
+    let difficulty = pow::upload_difficulty(payload.len());
+    let nonce = (0u64..1 << 30)
+        .find(|nonce| pow::verify(&challenge, *nonce, difficulty).is_ok())
+        .expect("решение находится");
+
+    upload_with_nonce(state, payload, Some(nonce)).await
+}
+
+async fn upload_with_nonce(
+    state: &Arc<AppState>,
+    payload: Vec<u8>,
+    nonce: Option<u64>,
+) -> (StatusCode, Vec<u8>) {
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/v1/attachments/blob");
+
+    if let Some(nonce) = nonce {
+        request = request.header("x-aegis-upload-pow", nonce.to_string());
+    }
+
+    let response = aegis_server_api::router(Arc::clone(state))
+        .oneshot(request.body(Body::from(payload)).unwrap())
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec();
+
+    (status, bytes)
+}
+
 /// Вложение загружается и скачивается без изменений.
 #[tokio::test]
 async fn attachment_round_trips() {
     let state = require_state!();
-    let (device_id, private) =
-        register_signing_device(&state, &unique_name("uploader"), 0x11).await;
-
     let payload = vec![0xABu8; 4096];
 
-    let (status, body) = call_signed(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/attachments/{device_id}"),
-        payload.clone(),
-    )
-    .await;
+    let (status, body) = upload_anonymously(&state, payload.clone()).await;
 
     assert_eq!(status, StatusCode::OK, "загрузка не прошла");
 
@@ -1099,75 +1101,60 @@ async fn call_unsigned(
     (status, bytes)
 }
 
-/// 🔐 Загрузка — за подписью, скачивание — без неё.
+/// 🔐 Загрузка и скачивание анонимны: сервер не знает ни загрузчика,
+/// ни получателя.
 ///
-/// Загрузку подпись связывает с квотой устройства. Скачивание прежде
-/// тоже требовало подписи — и сервер получал пару «кто загрузил → кто
-/// скачал», то есть кто кому прислал файл. Адрес вложения — 122
-/// случайных бита, содержимое зашифровано: подпись скачивающего
-/// защищала только эту связь.
+/// Прежде загрузка была подписана устройством, а скачивание — другим:
+/// сервер помнил, кто прислал файл, и видел, кто его забрал. Теперь
+/// право на место — работа над самим блобом.
 #[tokio::test]
-async fn attachment_upload_is_signed_and_download_is_anonymous() {
+async fn attachments_are_anonymous_both_ways() {
     let state = require_state!();
-    let (device_id, private) = register_signing_device(&state, &unique_name("anon"), 0x12).await;
+    let payload = vec![0x11u8; 128];
 
-    let (status, body) = call_signed(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/attachments/{device_id}"),
-        vec![0x11u8; 128],
-    )
-    .await;
+    // Без решения — отказ.
+    let (status, _) = upload_with_nonce(&state, payload.clone(), None).await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "загрузка без работы прошла"
+    );
 
+    // Решение для другого блоба не подходит.
+    let other = vec![0x22u8; 128];
+    let challenge = pow::upload_challenge(&other);
+    let foreign = (0u64..1 << 30)
+        .find(|nonce| pow::verify(&challenge, *nonce, pow::upload_difficulty(other.len())).is_ok())
+        .expect("решение");
+    let (status, _) = upload_with_nonce(&state, payload.clone(), Some(foreign)).await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "решение перенеслось на другой блоб"
+    );
+
+    let (status, body) = upload_anonymously(&state, payload.clone()).await;
     assert_eq!(status, StatusCode::OK);
     let attachment_id: Uuid = serde_json::from_slice::<Uuid>(&body).expect("адрес вложения");
 
-    let (status, _) = call_unsigned(
+    let (status, downloaded) = call_unsigned(
         &state,
-        "POST",
-        &format!("/v1/attachments/{device_id}"),
-        vec![0x11u8; 128],
+        "GET",
+        &format!("/v1/attachments/blob/{attachment_id}"),
+        Vec::new(),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "загрузка прошла без подписи"
-    );
-
-    let uri = format!("/v1/attachments/blob/{attachment_id}");
-    assert!(
-        !uri.contains(&device_id.to_string()),
-        "в адресе скачивания устройство"
-    );
-
-    let (status, downloaded) = call_unsigned(&state, "GET", &uri, Vec::new()).await;
     assert_eq!(status, StatusCode::OK, "анонимное скачивание не прошло");
-    assert_eq!(downloaded, vec![0x11u8; 128]);
-}
+    assert_eq!(downloaded, payload);
 
-/// 🔐 Чужой подписью загрузить в чужую квоту нельзя.
-#[tokio::test]
-async fn attachment_upload_checks_signer_matches_path() {
-    let state = require_state!();
-    let (_, private) = register_signing_device(&state, &unique_name("mallory"), 0x13).await;
-    let victim = Uuid::new_v4();
-
-    let (status, _) = call_signed(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/attachments/{victim}"),
-        vec![0x22u8; 128],
-    )
-    .await;
-
-    assert_eq!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "загрузка в чужую квоту прошла"
-    );
+    // Загрузчик в базе не записан.
+    let uploader: Option<Uuid> =
+        sqlx::query_scalar("SELECT uploader_device_id FROM attachments WHERE attachment_id = $1")
+            .bind(attachment_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(uploader, None, "сервер записал загрузчика");
 }
 
 /// Пустое вложение отвергается.
@@ -1177,16 +1164,8 @@ async fn attachment_upload_checks_signer_matches_path() {
 #[tokio::test]
 async fn empty_attachment_is_rejected() {
     let state = require_state!();
-    let (device_id, private) = register_signing_device(&state, &unique_name("empty"), 0x14).await;
 
-    let (status, _) = call_signed(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/attachments/{device_id}"),
-        Vec::new(),
-    )
-    .await;
+    let (status, _) = upload_anonymously(&state, Vec::new()).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
@@ -1258,15 +1237,10 @@ async fn account_deletion_removes_everything() {
 
     assert_eq!(status, StatusCode::OK);
 
-    // Вложение, загруженное этим устройством.
-    let (status, _) = call_signed(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/attachments/{device_id}"),
-        vec![0x55u8; 128],
-    )
-    .await;
+    // Вложение, отправленное этим устройством, — анонимное: с аккаунтом
+    // оно не связано, и удаление аккаунта его не находит. Оно истечёт
+    // само (шифроблоб без ключа).
+    let (status, _) = upload_anonymously(&state, vec![0x55u8; 128]).await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -1285,8 +1259,8 @@ async fn account_deletion_removes_everything() {
     assert_eq!(report["envelopes"].as_u64(), Some(1), "конверт не удалён");
     assert_eq!(
         report["attachments"].as_u64(),
-        Some(1),
-        "вложение не удалено"
+        Some(0),
+        "анонимное вложение оказалось связано с аккаунтом"
     );
 
     // Аккаунта больше нет: discovery его не находит.

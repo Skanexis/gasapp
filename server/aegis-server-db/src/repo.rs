@@ -21,7 +21,7 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use crate::{
-    bucket_to_hour, DEVICE_ATTACHMENT_QUOTA_BYTES, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES,
+    bucket_to_hour, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES, TOTAL_ATTACHMENT_STORAGE_BYTES,
 };
 
 /// Ошибка доступа к хранилищу.
@@ -746,18 +746,18 @@ pub async fn purge_expired(pool: &PgPool) -> Result<u64, RepoError> {
 /// — и оператор строил бы граф «кто кому шлёт файлы», не расшифровав
 /// ни байта.
 ///
+/// Загрузчик тоже не сохраняется: загрузка анонимна (миграция 0009).
+///
 /// Имя файла, его тип и длительность голосового тоже отсутствуют: они
 /// уходят получателю внутри сообщения, под сквозным шифрованием.
 ///
 /// # Errors
 ///
 /// * [`RepoError::AttachmentTooLarge`] — блоб больше предела.
-/// * [`RepoError::QuotaExceeded`] — устройство исчерпало квоту.
-/// * [`RepoError::NotFound`] — устройства-загрузчика нет.
+/// * [`RepoError::QuotaExceeded`] — общий потолок хранилища исчерпан.
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn store_attachment(
     pool: &PgPool,
-    uploader_device_id: Uuid,
     payload: &[u8],
     ttl_seconds: i64,
 ) -> Result<Uuid, RepoError> {
@@ -767,29 +767,18 @@ pub async fn store_attachment(
         return Err(RepoError::AttachmentTooLarge);
     }
 
-    // 🔐 Квота считается до вставки: без неё один аккаунт занял бы диск
-    // целиком, и сервер перестал бы принимать сообщения у всех
-    // остальных.
-    //
-    // Гонка здесь возможна: два параллельных запроса увидят один и тот
-    // же итог и оба пройдут. Плата за это — небольшое превышение
-    // квоты, а не её обход: следующая загрузка уже упрётся. Блокировка
-    // ради точной цифры держала бы транзакцию на всё время вставки
-    // стомегабайтного блоба.
-    let used: i64 = sqlx::query_scalar(
-        "
-        SELECT COALESCE(SUM(octet_length(payload)), 0)
-        FROM attachments
-        WHERE uploader_device_id = $1
-        ",
-    )
-    .bind(uploader_device_id)
-    .fetch_one(pool)
-    .await?;
+    // 🔐 Общий потолок вместо квоты на устройство: загрузка анонимна,
+    // и считать по загрузчику нечего. Без потолка анонимный поток
+    // занял бы диск целиком, и сервер перестал бы принимать сообщения
+    // у всех. Гонка двух загрузок даёт небольшое превышение, а не обход.
+    let used: i64 =
+        sqlx::query_scalar("SELECT COALESCE(SUM(octet_length(payload)), 0) FROM attachments")
+            .fetch_one(pool)
+            .await?;
 
     let after = used.saturating_add(i64::try_from(payload.len()).unwrap_or(i64::MAX));
 
-    if after > DEVICE_ATTACHMENT_QUOTA_BYTES {
+    if after > TOTAL_ATTACHMENT_STORAGE_BYTES {
         return Err(RepoError::QuotaExceeded);
     }
 
@@ -799,14 +788,13 @@ pub async fn store_attachment(
         "
         INSERT INTO attachments (attachment_id, uploader_device_id, payload, uploaded_at, expires_at)
         VALUES (
-            $1, $2, $3,
+            $1, NULL, $2,
             date_trunc('hour', now()),
-            date_trunc('hour', now()) + ($4 * INTERVAL '1 second')
+            date_trunc('hour', now()) + ($3 * INTERVAL '1 second')
         )
         ",
     )
     .bind(attachment_id)
-    .bind(uploader_device_id)
     .bind(payload)
     .bind(ttl_seconds)
     .execute(pool)

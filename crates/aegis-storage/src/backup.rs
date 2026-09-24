@@ -943,6 +943,7 @@ fn read_contacts(connection: &Connection) -> Result<Vec<ContactRow>> {
             verified,
             added_at,
             replaced: false,
+            confirmed_by_link: false,
         });
     }
 

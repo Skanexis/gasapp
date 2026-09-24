@@ -112,6 +112,9 @@ pub trait Transport {
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse>;
 }
 
+/// Заголовок с решением proof-of-work анонимной загрузки.
+pub const UPLOAD_POW_HEADER: &str = "x-aegis-upload-pow";
+
 /// Клиент серверного API.
 pub struct ApiClient<T: Transport> {
     transport: T,
@@ -479,57 +482,31 @@ impl<T: Transport> ApiClient<T> {
         Ok(response)
     }
 
-    /// Отправляет запрос с телом из сырых байтов.
+    /// Загружает зашифрованное вложение — **без подписи**.
     ///
-    /// Отдельно от [`Self::send_signed`], потому что тело здесь
-    /// не JSON: hex удваивал бы объём, а стомегабайтное вложение
-    /// заняло бы двести мегабайт памяти на каждой стороне.
-    fn send_binary(
-        &self,
-        method: Method,
-        path: String,
-        payload: Vec<u8>,
-        signer: &dyn crate::auth::RequestSigner,
-    ) -> Result<HttpResponse> {
-        let headers = crate::auth::signature_headers(signer, method.as_str(), &path, &payload)?;
-
-        let response = self.transport.execute(&HttpRequest {
-            method,
-            path,
-            body: None,
-            binary_body: Some(payload),
-            headers,
-        })?;
-
-        check_status(&response)?;
-
-        Ok(response)
-    }
-
-    /// Загружает зашифрованное вложение.
+    /// Возвращает адрес блоба: он уходит получателю внутри сообщения.
     ///
-    /// Возвращает адрес блоба: он попадает в описание вложения внутри
-    /// сообщения, то есть уходит получателю под сквозным шифрованием.
+    /// # 🔐 Почему анонимно
     ///
-    /// 🔐 Сервер получает только байты. Ни имени файла, ни получателя,
-    /// ни ключа он не видит: описание с ними едет в самом сообщении.
+    /// Прежде загрузка была подписана устройством, и сервер помнил,
+    /// кто и в какой час прислал каждый файл. Теперь право на место
+    /// доказывается proof-of-work над самим блобом
+    /// (`pow::upload_challenge`), и загрузчик серверу неизвестен.
     ///
     /// # Errors
     ///
     /// [`AegisError::Network`] при сбое соединения;
     /// [`AegisError::Malformed`] — сервер вернул не адрес.
-    pub fn upload_attachment(
-        &self,
-        device_id: &str,
-        payload: Vec<u8>,
-        signer: &dyn crate::auth::RequestSigner,
-    ) -> Result<String> {
-        let response = self.send_binary(
-            Method::Post,
-            format!("/v1/attachments/{device_id}"),
-            payload,
-            signer,
-        )?;
+    pub fn upload_attachment(&self, payload: Vec<u8>, pow_nonce: u64) -> Result<String> {
+        let response = self.transport.execute(&HttpRequest {
+            method: Method::Post,
+            path: "/v1/attachments/blob".to_owned(),
+            body: None,
+            binary_body: Some(payload),
+            headers: vec![(UPLOAD_POW_HEADER.to_owned(), pow_nonce.to_string())],
+        })?;
+
+        check_status(&response)?;
 
         parse(&response)
     }
