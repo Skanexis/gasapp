@@ -2,12 +2,15 @@
 
 package org.aegis.app
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -19,7 +22,9 @@ import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiException
+import uniffi.aegis.FfiProxy
 
 /**
  * Онбординг: регистрация первого аккаунта.
@@ -37,6 +42,8 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var progressLabel: TextView
     private lateinit var createButton: AegisButton
+    private lateinit var direct: SwitchCompat
+    private lateinit var openOrbot: AegisButton
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,7 +63,17 @@ class OnboardingActivity : AppCompatActivity() {
         progressLabel = findViewById(R.id.onboarding_progress_label)
         createButton = findViewById(R.id.onboarding_create)
 
+        direct = findViewById(R.id.onboarding_direct)
+        openOrbot = findViewById(R.id.onboarding_open_orbot)
+
         createButton.setOnClickListener { register() }
+        openOrbot.setOnClickListener { launchOrbot() }
+
+        direct.setOnCheckedChangeListener { _, checked ->
+            findViewById<TextView>(R.id.onboarding_network_hint).setText(
+                if (checked) R.string.onboarding_network_direct else R.string.onboarding_network_tor,
+            )
+        }
     }
 
     private fun register() {
@@ -89,6 +106,10 @@ class OnboardingActivity : AppCompatActivity() {
             return
         }
 
+        // 🔐 Выбор сети берётся один раз, до работы: переключатель
+        // на время регистрации заблокирован.
+        val viaTor = !direct.isChecked
+
         setWorking(true)
 
         lifecycleScope.launch {
@@ -104,7 +125,18 @@ class OnboardingActivity : AppCompatActivity() {
                     //
                     // Общий экземпляр: второй открыл бы ту же базу
                     // повторно, и состояния Double Ratchet разошлись бы.
-                    Core.unlock(this@OnboardingActivity, pinValue)
+                    val messenger = Core.unlock(this@OnboardingActivity, pinValue)
+
+                    // 🔐 У новой базы режим по умолчанию — Tor через Orbot:
+                    // его уже применил Core.unlock. Прямое соединение —
+                    // только если человек выбрал его сам, и до первого
+                    // запроса: регистрация — первое, что видит сервер.
+                    if (!viaTor) {
+                        messenger.setProxy(FfiProxy.Direct)
+                        NetworkProxy.apply(FfiProxy.Direct)
+                    }
+
+                    messenger
                         .register(name, System.currentTimeMillis())
                         .also { Core.maintainPrekeysNow() }
                 }.onFailure {
@@ -146,13 +178,21 @@ class OnboardingActivity : AppCompatActivity() {
                     // показывается собственная строка. Различать «имя
                     // занято» и «сервер недоступен» здесь можно только
                     // по типу исключения.
+                    //
+                    // 🔐 Через Tor сбой сети чаще всего значит, что Orbot
+                    // не запущен. Напрямую приложение само не уходит:
+                    // человек либо запускает Orbot, либо явно выбирает
+                    // прямое соединение.
+                    val network = failure is FfiException
+
                     showError(
-                        if (failure is FfiException) {
-                            getString(R.string.onboarding_error_network)
-                        } else {
-                            getString(R.string.ffi_error)
+                        when {
+                            network && viaTor -> getString(R.string.onboarding_error_tor)
+                            network -> getString(R.string.onboarding_error_network)
+                            else -> getString(R.string.ffi_error)
                         },
                     )
+                    openOrbot.visibility = if (network && viaTor) View.VISIBLE else View.GONE
                 }
         }
     }
@@ -162,6 +202,7 @@ class OnboardingActivity : AppCompatActivity() {
         // нажатие запустило бы вторую регистрацию поверх первой.
         createButton.isEnabled = !working
         username.isEnabled = !working
+        direct.isEnabled = !working
         pin.setEnabled(!working)
 
         val visibility = if (working) View.VISIBLE else View.GONE
@@ -170,7 +211,33 @@ class OnboardingActivity : AppCompatActivity() {
 
         if (working) {
             error.visibility = View.INVISIBLE
+            openOrbot.visibility = View.GONE
         }
+    }
+
+    /**
+     * Открывает Orbot, а если его нет — его страницу в магазине.
+     *
+     * Запуск по имени пакета не требует объявлять Orbot в манифесте:
+     * видимость пакетов ограничивает запросы к списку приложений,
+     * а не запуск.
+     */
+    private fun launchOrbot() {
+        val launch = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setPackage(ORBOT_PACKAGE)
+        val store = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$ORBOT_PACKAGE"))
+
+        for (intent in listOf(launch, store)) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: ActivityNotFoundException) {
+                // Следующий вариант.
+            }
+        }
+
+        showError(getString(R.string.onboarding_orbot_missing))
     }
 
     private fun showError(message: String) {
@@ -191,6 +258,9 @@ class OnboardingActivity : AppCompatActivity() {
     companion object {
         /** Идентификатор устройства для последующих запросов. */
         const val EXTRA_DEVICE_ID = "device_id"
+
+        /** Пакет Orbot. */
+        private const val ORBOT_PACKAGE = "org.torproject.android"
 
         /**
          * Минимальная длина имени.

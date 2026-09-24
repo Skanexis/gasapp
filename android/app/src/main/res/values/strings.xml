@@ -48,11 +48,9 @@
     <string name="message_hint">Message</string>
     <string name="send">Send</string>
     <string name="key_changed_title">🔒 Two keys for one name</string>
-    <string name="key_changed_body">The server now gives a different key for “%1$s”. It may be a reinstall — or an impostor. Sending is paused until you choose which key to trust: compare safety numbers in person, or accept this key.</string>
-    <string name="key_change_accept">Accept this key</string>
-    <string name="key_accept_title">Accept without comparing?</string>
-    <string name="key_accept_body">Neither we nor the app can tell a reinstall from an impostor. Only comparing safety numbers in person can. If you accept, new messages go to this key and the other key\'s chat becomes read-only. The decision is recorded in the security log.</string>
-    <string name="key_accept_confirm">Accept</string>
+    <string name="key_changed_body">The server now gives a different key for “%1$s”. It may be a reinstall — or an impostor. Sending is paused until you compare safety numbers in person or over video.</string>
+    <string name="key_unconfirmed_title">🔒 Key not confirmed yet</string>
+    <string name="key_unconfirmed_body">The key of “%1$s” came from the server — and the server could have handed you its own. Compare safety numbers in person or over video, or add them from their own link or QR code. Until then you can read, but not write.</string>
     <string name="key_replaced_title">This key was replaced</string>
     <string name="key_replaced_body">“%1$s” now uses a different key. This conversation stays readable; new messages go to the chat with the current key.</string>
     <string name="verify_safety_number">Compare safety number</string>
@@ -144,8 +142,15 @@
     <string name="onboarding_working">Computing proof of work…</string>
     <string name="onboarding_error_short">Username is too short</string>
     <string name="onboarding_error_taken">That username is taken</string>
+    <string name="onboarding_direct">Connect directly, without Tor</string>
+    <string name="onboarding_network_tor">Connections go through Tor via Orbot, so the server does not see your IP address. Orbot must be installed and running.</string>
+    <string name="onboarding_network_direct">⚠️ The server will see your IP address: roughly where you are, and which of your accounts share a network.</string>
+    <string name="onboarding_error_tor">Could not reach the server through Tor. Start Orbot and try again, or choose a direct connection above.</string>
+    <string name="onboarding_open_orbot">Open Orbot</string>
+    <string name="onboarding_orbot_missing">Orbot is not installed. Install it from Google Play or F-Droid.</string>
     <string name="onboarding_error_network">Server unavailable. Check your connection.</string>
     <string name="new_chat_hint">Enter the other person\'s username</string>
+    <string name="new_chat_not_found">Couldn’t find this person. Check the name and your connection.</string>
     <string name="new_chat_open">Open</string>
     <string name="onboarding_choose_pin">Choose a PIN — it encrypts your messages on this device</string>
     <string name="onboarding_error_pin">The PIN must be exactly 6 digits</string>
@@ -488,7 +493,7 @@
 
     <!-- Network -->
     <string name="network_title">Network</string>
-    <string name="network_intro">The server sees your device\'s IP address: it reveals roughly where you are and can link your accounts to each other. A proxy or Tor hides that address from the server.</string>
+    <string name="network_intro">Without Tor or a proxy, the server sees your device\'s IP address: it reveals roughly where you are and can link your accounts to each other. Tor via Orbot is the default.</string>
     <string name="network_section_mode">Connection method</string>
     <string name="network_mode_direct">Direct</string>
     <string name="network_mode_orbot">Tor via Orbot</string>
@@ -496,6 +501,9 @@
     <string name="network_hint_direct">The server sees your IP address.</string>
     <string name="network_hint_orbot">Requires Orbot to be installed and running. If it is off, the app will not connect — it will not fall back to a direct connection.</string>
     <string name="network_hint_socks">All requests and notifications go through the proxy you specify. If it is unreachable, the app will not connect — it will not fall back to a direct connection.</string>
+    <string name="network_direct_confirm_title">Connect directly?</string>
+    <string name="network_direct_confirm_body">The server will see your IP address: roughly where you are, and which of your accounts share a network. Tor via Orbot hides it.</string>
+    <string name="network_direct_confirm_ok">Connect directly</string>
     <string name="network_host_hint">Proxy address</string>
     <string name="network_port_hint">Port</string>
     <string name="network_save">Save</string>
@@ -541,8 +549,8 @@
       меняется строка.
     -->
     <string name="about_section_limits">What AEGIS does not protect against</string>
-    <string name="about_limit_first_message">A contact found by username gets their key from the server — the server could hand you its own. A link or QR code shown in person, or comparing safety numbers, rules this out. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
-    <string name="about_limit_address">The server sees your IP address and the time of each request. Only a proxy or Tor hides that (Settings → Connection).</string>
+    <string name="about_limit_first_message">The key of a contact found by username comes from the server, and the server could hand you its own. So you cannot write to them until you compare safety numbers in person or over video, or add them from their own link or QR code. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
+    <string name="about_limit_address">By default the app connects through Tor via Orbot, and the server does not see your IP address. If you choose a direct connection (Settings → Connection), the server sees your IP address and the time of each request.</string>
     <string name="about_limit_notifications">There are no push notifications: messages arrive while the app is open.</string>
     <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>
     <string name="about_limit_recovery_key">If you lose the recovery key, the backup cannot be read. Not even by us.</string>

@@ -28,9 +28,15 @@ object SendGuard {
 
         /**
          * Под этим именем два действующих ключа. Отправка остановлена
-         * до выбора: сверки вживую или явного принятия ключа.
+         * до сверки safety number вживую.
          */
         CHOOSE_KEY,
+
+        /**
+         * 🔐 Ключ назвал только сервер — сверки или ссылки собеседника
+         * не было. Писать нельзя: сервер мог подставить свой ключ.
+         */
+        CONFIRM_KEY,
 
         /**
          * Ключ этого чата заменён другим. Переписка остаётся для
@@ -42,14 +48,16 @@ object SendGuard {
     /**
      * @param keyChanged имя контакта известно под другим действующим ключом
      * @param replaced ключ этого контакта заменён
+     * @param keyConfirmed ключ подтверждён вне сервера — сверкой safety
+     *   number или ссылкой/QR самого собеседника
      *
-     * Контакт, которого ещё нет (первый чат по имени), — [Mode.OPEN]:
-     * ключ для него известен только от сервера, и ядро примет его
-     * при первом использовании.
+     * Контакт, которого ещё нет, — неподтверждённый: ключ для него
+     * знает только сервер.
      */
-    fun decide(keyChanged: Boolean, replaced: Boolean): Mode = when {
+    fun decide(keyChanged: Boolean, replaced: Boolean, keyConfirmed: Boolean): Mode = when {
         replaced -> Mode.REPLACED
         keyChanged -> Mode.CHOOSE_KEY
+        !keyConfirmed -> Mode.CONFIRM_KEY
         else -> Mode.OPEN
     }
 }

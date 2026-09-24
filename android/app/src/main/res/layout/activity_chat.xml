@@ -127,15 +127,6 @@
             android:layout_marginTop="8dp"
             android:text="@string/verify_safety_number"
             app:buttonVariant="primary" />
-
-        <!-- Принятие без сверки — второстепенная кнопка: путь по умолчанию — сверка. -->
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/key_change_accept"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/key_change_accept"
-            app:buttonVariant="secondary" />
     </LinearLayout>
 
         <!--

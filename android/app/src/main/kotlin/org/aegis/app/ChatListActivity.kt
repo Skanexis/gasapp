@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -22,6 +23,7 @@ import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
+import uniffi.aegis.FfiException
 
 /**
  * Экран списка чатов — главный экран приложения.
@@ -247,13 +249,38 @@ class ChatListActivity : AppCompatActivity() {
             .showSecure(this)
     }
 
+    /**
+     * Открывает переписку с собеседником, найденным по имени.
+     *
+     * 🔐 Сначала ядро находит собеседника и записывает контактом —
+     * **неподтверждённым**: его ключ назвал сервер. Экран переписки сразу
+     * показывает сверку safety number, а писать можно только после неё
+     * (или по ссылке/QR самого собеседника).
+     */
     private fun openChatWith(username: String) {
-        startActivity(
-            Intent(this, ChatActivity::class.java)
-                .putExtra(ChatActivity.EXTRA_CHAT_NAME, username)
-                .putExtra(ChatActivity.EXTRA_PEER_USERNAME, username)
-                .putExtra(ChatActivity.EXTRA_VERIFIED, false),
-        )
+        lifecycleScope.launch {
+            val found = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().discoverContact(username, System.currentTimeMillis()) }
+            }
+
+            val contact = found.getOrElse { failure ->
+                Toast.makeText(
+                    this@ChatListActivity,
+                    if (failure is FfiException.IdentityChanged) R.string.key_changed_title else R.string.new_chat_not_found,
+                    Toast.LENGTH_LONG,
+                ).show()
+
+                return@launch
+            }
+
+            startActivity(
+                Intent(this@ChatListActivity, ChatActivity::class.java)
+                    .putExtra(ChatActivity.EXTRA_CHAT_ID, contact.chatId.orEmpty())
+                    .putExtra(ChatActivity.EXTRA_CHAT_NAME, username)
+                    .putExtra(ChatActivity.EXTRA_PEER_USERNAME, username)
+                    .putExtra(ChatActivity.EXTRA_VERIFIED, contact.verified),
+            )
+        }
     }
     private fun render(chats: List<ChatSummary>) {
         adapter.submit(chats)

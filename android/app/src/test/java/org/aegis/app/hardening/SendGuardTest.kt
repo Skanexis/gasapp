@@ -19,18 +19,27 @@ class SendGuardTest {
 
     @Test
     fun an_ordinary_contact_is_open() {
-        assertEquals(Mode.OPEN, SendGuard.decide(keyChanged = false, replaced = false))
+        assertEquals(Mode.OPEN, SendGuard.decide(keyChanged = false, replaced = false, keyConfirmed = true))
     }
 
     @Test
     fun two_keys_under_one_name_ask_to_choose() {
-        assertEquals(Mode.CHOOSE_KEY, SendGuard.decide(keyChanged = true, replaced = false))
+        assertEquals(Mode.CHOOSE_KEY, SendGuard.decide(keyChanged = true, replaced = false, keyConfirmed = true))
     }
 
     /** Заменённый ключ — только чтение, даже если имя снова стало неоднозначным. */
     @Test
     fun a_replaced_key_is_read_only() {
-        assertEquals(Mode.REPLACED, SendGuard.decide(keyChanged = false, replaced = true))
-        assertEquals(Mode.REPLACED, SendGuard.decide(keyChanged = true, replaced = true))
+        assertEquals(Mode.REPLACED, SendGuard.decide(keyChanged = false, replaced = true, keyConfirmed = true))
+        assertEquals(Mode.REPLACED, SendGuard.decide(keyChanged = true, replaced = true, keyConfirmed = true))
+    }
+
+    /** 🔐 Ключ, который назвал только сервер, — сначала сверка. */
+    @Test
+    fun an_unconfirmed_key_asks_to_confirm() {
+        assertEquals(Mode.CONFIRM_KEY, SendGuard.decide(keyChanged = false, replaced = false, keyConfirmed = false))
+        // Неоднозначность имени и замена важнее: о них надо сказать первыми.
+        assertEquals(Mode.CHOOSE_KEY, SendGuard.decide(keyChanged = true, replaced = false, keyConfirmed = false))
+        assertEquals(Mode.REPLACED, SendGuard.decide(keyChanged = false, replaced = true, keyConfirmed = false))
     }
 }

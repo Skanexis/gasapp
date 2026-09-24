@@ -955,8 +955,6 @@ fun uniffi_aegis_checksum_func_validate_recovery_key(
 ): Short
 fun uniffi_aegis_checksum_method_httptransport_execute(
 ): Short
-fun uniffi_aegis_checksum_method_messenger_accept_contact_identity(
-): Short
 fun uniffi_aegis_checksum_method_messenger_add_contact_from_link(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_add_vault_file(
@@ -976,6 +974,8 @@ fun uniffi_aegis_checksum_method_messenger_delete_account(
 fun uniffi_aegis_checksum_method_messenger_delete_for_everyone(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_delete_vault_file(
+): Short
+fun uniffi_aegis_checksum_method_messenger_discover_contact(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_edit_message(
 ): Short
@@ -1133,8 +1133,6 @@ fun uniffi_aegis_fn_free_messenger(`ptr`: Pointer,uniffi_out_err: UniffiRustCall
 ): Unit
 fun uniffi_aegis_fn_constructor_messenger_open(`databasePath`: RustBuffer.ByValue,`databaseKey`: RustBuffer.ByValue,`transport`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
-fun uniffi_aegis_fn_method_messenger_accept_contact_identity(`ptr`: Pointer,`accountId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
-): Unit
 fun uniffi_aegis_fn_method_messenger_add_contact_from_link(`ptr`: Pointer,`uri`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_add_vault_file(`ptr`: Pointer,`name`: RustBuffer.ByValue,`contents`: RustBuffer.ByValue,`location`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1154,6 +1152,8 @@ fun uniffi_aegis_fn_method_messenger_delete_account(`ptr`: Pointer,`nowMillis`: 
 fun uniffi_aegis_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_delete_vault_file(`ptr`: Pointer,`fileId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_discover_contact(`ptr`: Pointer,`username`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_edit_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1479,9 +1479,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 53468.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_messenger_accept_contact_identity() != 31244.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if (lib.uniffi_aegis_checksum_method_messenger_add_contact_from_link() != 19449.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1510,6 +1507,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_delete_vault_file() != 24879.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_discover_contact() != 1418.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
@@ -2461,20 +2461,6 @@ public object FfiConverterTypeHttpTransport: FfiConverter<HttpTransport, Pointer
 public interface MessengerInterface {
     
     /**
-     * 🔐 Принимает ключ контакта без сверки: имя остаётся за ним.
-     *
-     * Путь для законной смены ключа у собеседника, когда встретиться
-     * и сверить safety number нельзя. Прочие записи того же имени
-     * становятся заменёнными. Решение пишется в журнал безопасности.
-     *
-     * # Errors
-     *
-     * [`FfiError::InvalidArgument`] — счёт не разбирается;
-     * [`FfiError::Core`] — такого контакта нет либо запись не удалась.
-     */
-    fun `acceptContactIdentity`(`accountId`: kotlin.String, `nowMillis`: kotlin.Long)
-    
-    /**
      * Добавляет контакт по ссылке `aegis://contact/...`.
      *
      * # 🔐 Про доверие к ссылке
@@ -2615,6 +2601,19 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — vault закрыт либо удаление не удалось.
      */
     fun `deleteVaultFile`(`fileId`: kotlin.String, `nowMillis`: kotlin.Long): kotlin.String?
+    
+    /**
+     * Находит собеседника по имени и записывает контактом — без отправки.
+     *
+     * Контакт, найденный так, **не подтверждён**: его ключ назвал сервер.
+     * Интерфейс сразу ведёт к сверке safety number.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — имя не найдено или сеть недоступна;
+     * [`FfiError::IdentityChanged`] — сервер называет для имени другой ключ.
+     */
+    fun `discoverContact`(`username`: kotlin.String, `nowMillis`: kotlin.Long): FfiContact
     
     /**
      * Правит ранее отправленное сообщение.
@@ -3308,30 +3307,6 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
-     * 🔐 Принимает ключ контакта без сверки: имя остаётся за ним.
-     *
-     * Путь для законной смены ключа у собеседника, когда встретиться
-     * и сверить safety number нельзя. Прочие записи того же имени
-     * становятся заменёнными. Решение пишется в журнал безопасности.
-     *
-     * # Errors
-     *
-     * [`FfiError::InvalidArgument`] — счёт не разбирается;
-     * [`FfiError::Core`] — такого контакта нет либо запись не удалась.
-     */
-    @Throws(FfiException::class)override fun `acceptContactIdentity`(`accountId`: kotlin.String, `nowMillis`: kotlin.Long)
-        = 
-    callWithPointer {
-    uniffiRustCallWithError(FfiException) { _status ->
-    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_accept_contact_identity(
-        it, FfiConverterString.lower(`accountId`),FfiConverterLong.lower(`nowMillis`),_status)
-}
-    }
-    
-    
-
-    
-    /**
      * Добавляет контакт по ссылке `aegis://contact/...`.
      *
      * # 🔐 Про доверие к ссылке
@@ -3575,6 +3550,30 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_delete_vault_file(
         it, FfiConverterString.lower(`fileId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Находит собеседника по имени и записывает контактом — без отправки.
+     *
+     * Контакт, найденный так, **не подтверждён**: его ключ назвал сервер.
+     * Интерфейс сразу ведёт к сверке safety number.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — имя не найдено или сеть недоступна;
+     * [`FfiError::IdentityChanged`] — сервер называет для имени другой ключ.
+     */
+    @Throws(FfiException::class)override fun `discoverContact`(`username`: kotlin.String, `nowMillis`: kotlin.Long): FfiContact {
+            return FfiConverterTypeFfiContact.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_discover_contact(
+        it, FfiConverterString.lower(`username`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -5164,7 +5163,12 @@ data class FfiContact (
      * Переписка остаётся для чтения, отправлять в неё нельзя: имя
      * ведёт теперь к другому ключу.
      */
-    var `replaced`: kotlin.Boolean
+    var `replaced`: kotlin.Boolean, 
+    /**
+     * 🔐 Ключ подтверждён вне сервера — сверкой safety number или
+     * ссылкой/QR самого контакта. Без этого писать нельзя.
+     */
+    var `keyConfirmed`: kotlin.Boolean
 ) {
     
     companion object
@@ -5183,6 +5187,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -5193,7 +5198,8 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterOptionalString.allocationSize(value.`chatId`) +
             FfiConverterBoolean.allocationSize(value.`verified`) +
             FfiConverterBoolean.allocationSize(value.`keyChanged`) +
-            FfiConverterBoolean.allocationSize(value.`replaced`)
+            FfiConverterBoolean.allocationSize(value.`replaced`) +
+            FfiConverterBoolean.allocationSize(value.`keyConfirmed`)
     )
 
     override fun write(value: FfiContact, buf: ByteBuffer) {
@@ -5204,6 +5210,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterBoolean.write(value.`verified`, buf)
             FfiConverterBoolean.write(value.`keyChanged`, buf)
             FfiConverterBoolean.write(value.`replaced`, buf)
+            FfiConverterBoolean.write(value.`keyConfirmed`, buf)
     }
 }
 
@@ -6008,6 +6015,14 @@ sealed class FfiException(message: String): kotlin.Exception(message) {
         class IdentityChanged(message: String) : FfiException(message)
         
     /**
+     * 🔐 Ключ собеседника не подтверждён вне сервера.
+     *
+     * Своим вариантом, как и [`FfiError::IdentityChanged`]: интерфейс
+     * ведёт к сверке safety number, а не показывает сбой.
+     */
+        class PeerUnconfirmed(message: String) : FfiException(message)
+        
+    /**
      * Входные данные не прошли валидацию на границе.
      */
         class InvalidArgument(message: String) : FfiException(message)
@@ -6035,8 +6050,9 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             return when(buf.getInt()) {
             1 -> FfiException.Core(FfiConverterString.read(buf))
             2 -> FfiException.IdentityChanged(FfiConverterString.read(buf))
-            3 -> FfiException.InvalidArgument(FfiConverterString.read(buf))
-            4 -> FfiException.Panic(FfiConverterString.read(buf))
+            3 -> FfiException.PeerUnconfirmed(FfiConverterString.read(buf))
+            4 -> FfiException.InvalidArgument(FfiConverterString.read(buf))
+            5 -> FfiException.Panic(FfiConverterString.read(buf))
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
         
@@ -6056,12 +6072,16 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 buf.putInt(2)
                 Unit
             }
-            is FfiException.InvalidArgument -> {
+            is FfiException.PeerUnconfirmed -> {
                 buf.putInt(3)
                 Unit
             }
-            is FfiException.Panic -> {
+            is FfiException.InvalidArgument -> {
                 buf.putInt(4)
+                Unit
+            }
+            is FfiException.Panic -> {
+                buf.putInt(5)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
