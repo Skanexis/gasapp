@@ -49,7 +49,23 @@ FORBIDDEN_ANDROID='javax\.crypto|java\.security\.(KeyPairGenerator|Signature|Mes
 # добавлен в прошлой сессии, и проверка с тех пор падала. Заметить
 # это было нечем — джоб `no-crypto-in-ui` в CI никто не читал,
 # пока скрипт не запустили руками.
-ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/aegis/app/core/BiometricUnlock.kt'
+# `core/KeyAttestation.kt` и `core/AppSignature.kt` (2026-09-24) —
+# проверка **платформы**, а не переписки: аттестация ключа Keystore
+# (MASVS RESILIENCE-1.3) и подпись установленного APK (RESILIENCE-2.1).
+# Ключ аттестации заводится в Keystore (`KeyPairGenerator` — другого
+# входа нет), цепочка сертификатов проверяется `X509Certificate.verify`,
+# а сертификаты и корни сравниваются по SHA-256. Ни один байт переписки
+# и ни один ключ протокола через эти файлы не проходит.
+#
+# `core/OpenedKey.kt` — сравнение ключа базы с тем, которым хранилище
+# открыто, по SHA-256 и за постоянное время (`MessageDigest.isEqual`).
+# Исключение задним числом: файл нарушал правило с появления, и джоб
+# падал так же незаметно, как в истории с `HardwareKey.kt` выше.
+#
+# Тестовые исходники (`src/test`, `src/androidTest`) не сканируются:
+# они не часть интерфейса и не попадают в APK, а заготовки для
+# проверки аттестации без `KeyPairGenerator` и `Signature` не собрать.
+ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/aegis/app/core/BiometricUnlock.kt|android/app/src/main/kotlin/org/aegis/app/core/KeyAttestation.kt|android/app/src/main/kotlin/org/aegis/app/core/AppSignature.kt|android/app/src/main/kotlin/org/aegis/app/core/OpenedKey.kt|/src/test/|/src/androidTest/'
 
 violations=0
 

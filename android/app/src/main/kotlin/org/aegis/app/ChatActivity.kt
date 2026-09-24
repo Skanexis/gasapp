@@ -27,6 +27,7 @@ import org.aegis.app.core.Core
 import org.aegis.app.core.PendingSave
 import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.SendGuard
 import org.aegis.app.core.showSecure
 import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.AttachmentKindMark
@@ -35,10 +36,10 @@ import org.aegis.app.ui.DeliveryMark
 import org.aegis.app.ui.MessageAdapter
 import org.aegis.app.ui.MessageItem
 import uniffi.aegis.FfiAttachmentFile
+import uniffi.aegis.FfiException
 import uniffi.aegis.FfiAttachmentKind
 import uniffi.aegis.FfiDeliveryStatus
 import uniffi.aegis.FfiMessage
-import uniffi.aegis.canSendToContact
 
 /**
  * Экран переписки.
@@ -83,13 +84,18 @@ class ChatActivity : AppCompatActivity() {
     private var peerUsername: String = ""
 
     /**
-     * Сменился ли identity-ключ контакта.
+     * 🔐 Можно ли писать в этот чат — по состоянию контакта из ядра.
      *
-     * Пока задаётся заглушкой: настоящее значение придёт из ядра вместе
-     * с оркестрацией. Логика реакции на смену уже настоящая — она и есть
-     * то, что важно проверить.
+     * Прежде здесь был флаг `identityChanged`, заданный заглушкой
+     * (`false` навсегда), а ядро ключ сервера не сверяло: сервер,
+     * назвавший свой ключ, получал следующее сообщение. Теперь
+     * сверяет ядро (`IdentityChanged`), а экран показывает то же
+     * решение заранее — см. [SendGuard].
      */
-    private var identityChanged: Boolean = false
+    private var sendMode: SendGuard.Mode = SendGuard.Mode.OPEN
+
+    /** Счёт собеседника этого чата; `null`, пока контакт не записан. */
+    private var peerAccountId: String? = null
 
     /**
      * Сокет уведомлений.
@@ -140,6 +146,9 @@ class ChatActivity : AppCompatActivity() {
 
         findViewById<AegisButton>(R.id.key_change_verify).setOnClickListener {
             openSafetyNumber(chatName)
+        }
+        findViewById<AegisButton>(R.id.key_change_accept).setOnClickListener {
+            confirmAcceptKey()
         }
 
         sendButton.setOnClickListener { send() }
@@ -319,6 +328,7 @@ class ChatActivity : AppCompatActivity() {
         super.onStart()
 
         resolvePeerUsername()
+        refreshSendMode()
         reload()
         fetchIncoming()
 
@@ -357,32 +367,111 @@ class ChatActivity : AppCompatActivity() {
         pendingSave.onScreenStopped()
     }
     /**
-     * 🔐 Применяет запрет отправки при смене ключа.
+     * 🔐 Показывает, можно ли писать в чат, и почему нельзя.
      *
-     * Решение принимает **ядро** ([canSendToContact]), а не этот экран:
-     * правило «верифицированному контакту со сменившимся ключом писать
-     * нельзя» относится к безопасности, и дублировать его в UI значило бы
-     * завести вторую реализацию, которая разойдётся с первой.
+     * Отправку запрещает не экран, а ядро: сообщение на ключ, которого
+     * человек не выбирал, оно не зашифрует. Здесь то же решение
+     * показывается заранее — поле ввода закрыто, баннер объясняет
+     * причину и предлагает выход.
      */
     private fun applySendGuard() {
-        // 🔐 При недоступном ядре отправка запрещается, а не разрешается.
-        //
-        // Отказ ядра означает, что проверить смену identity-ключа
-        // нечем. Разрешить отправку «на всякий случай» значило бы
-        // пропустить сообщение верифицированному контакту, чей ключ
-        // мог смениться — то есть, возможно, подменённому собеседнику.
-        // Неотправленное сообщение исправимо, отправленное не тому —
-        // нет.
-        val allowed = runCatching {
-            canSendToContact(
-                identityChanged = identityChanged,
-                wasVerified = wasVerified,
-            )
-        }.getOrDefault(false)
+        val allowed = sendMode == SendGuard.Mode.OPEN
 
         sendButton.isEnabled = allowed
         input.isEnabled = allowed
         keyChangeBanner.visibility = if (allowed) View.GONE else View.VISIBLE
+
+        val name = peerUsername.ifEmpty { intent.getStringExtra(EXTRA_CHAT_NAME).orEmpty() }
+
+        when (sendMode) {
+            SendGuard.Mode.OPEN -> Unit
+
+            SendGuard.Mode.CHOOSE_KEY -> {
+                findViewById<TextView>(R.id.key_change_title).setText(R.string.key_changed_title)
+                findViewById<TextView>(R.id.key_change_body).text =
+                    getString(R.string.key_changed_body, name)
+                findViewById<View>(R.id.key_change_verify).visibility = View.VISIBLE
+                findViewById<View>(R.id.key_change_accept).visibility = View.VISIBLE
+            }
+
+            SendGuard.Mode.REPLACED -> {
+                findViewById<TextView>(R.id.key_change_title).setText(R.string.key_replaced_title)
+                findViewById<TextView>(R.id.key_change_body).text =
+                    getString(R.string.key_replaced_body, name)
+                findViewById<View>(R.id.key_change_verify).visibility = View.GONE
+                findViewById<View>(R.id.key_change_accept).visibility = View.GONE
+            }
+        }
+    }
+
+    /**
+     * Перечитывает состояние контакта из ядра и применяет его.
+     *
+     * Из ядра, а не из extras: отметка сверки и смена ключа меняются,
+     * пока экран открыт или свёрнут, — в том числе самой отправкой,
+     * которую ядро отвергло.
+     */
+    private fun refreshSendMode() {
+        lifecycleScope.launch {
+            val contact = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().contacts().firstOrNull { contact ->
+                        if (chatId.isNotEmpty()) {
+                            contact.chatId == chatId
+                        } else {
+                            contact.username == peerUsername && !contact.replaced
+                        }
+                    }
+                }.getOrNull()
+            }
+
+            peerAccountId = contact?.accountId
+            wasVerified = contact?.verified ?: wasVerified
+            sendMode = SendGuard.decide(
+                keyChanged = contact?.keyChanged == true,
+                replaced = contact?.replaced == true,
+            )
+
+            findViewById<TextView>(R.id.chat_verification_state).text = getString(
+                if (wasVerified) R.string.chat_verified_state else R.string.chat_unverified_state,
+            )
+
+            applySendGuard()
+        }
+    }
+
+    /**
+     * 🔐 Принять ключ этого чата без сверки.
+     *
+     * Путь для законной смены — переустановки у собеседника, — когда
+     * встретиться нельзя. Ядро не отличает её от подмены, поэтому
+     * диалог говорит это до нажатия, а решение пишется в журнал
+     * безопасности. Кнопка по умолчанию — сверка, а не принятие.
+     */
+    private fun confirmAcceptKey() {
+        val account = peerAccountId ?: return
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.key_accept_title)
+            .setMessage(R.string.key_accept_body)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.key_accept_confirm) { _, _ ->
+                lifecycleScope.launch {
+                    val accepted = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Core.messenger().acceptContactIdentity(account, System.currentTimeMillis())
+                        }
+                    }
+
+                    if (accepted.isFailure) {
+                        Toast.makeText(this@ChatActivity, R.string.message_action_failed, Toast.LENGTH_SHORT)
+                            .show()
+                    }
+
+                    refreshSendMode()
+                }
+            }
+            .showSecure(this)
     }
 
     private fun send() {
@@ -413,6 +502,16 @@ class ChatActivity : AppCompatActivity() {
                     Core.messenger()
                         .sendMessage(peerUsername, text, System.currentTimeMillis())
                 }
+            }
+
+            // 🔐 Ядро отвергло ключ, который назвал сервер. Текст
+            // возвращается в поле — он не ушёл никуда, — а экран
+            // перечитывает контакт: ядро уже записало новый ключ,
+            // и баннер покажет выбор.
+            if (sent.exceptionOrNull() is FfiException.IdentityChanged) {
+                input.setText(text)
+                Toast.makeText(this@ChatActivity, R.string.key_changed_title, Toast.LENGTH_LONG).show()
+                refreshSendMode()
             }
 
             // Отказ показывается крестом, а не молчанием: сообщение,

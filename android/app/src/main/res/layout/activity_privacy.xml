@@ -126,6 +126,10 @@
                     layout="@layout/item_settings_toggle" />
 
                 <include
+                    android:id="@+id/privacy_wipe"
+                    layout="@layout/item_settings_toggle" />
+
+                <include
                     android:id="@+id/privacy_export"
                     layout="@layout/item_settings_row" />
 

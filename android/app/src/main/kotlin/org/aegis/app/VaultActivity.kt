@@ -3,13 +3,16 @@
 package org.aegis.app
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +24,7 @@ import org.aegis.app.components.PinPad
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.VaultBlob
+import org.aegis.app.core.showSecure
 import org.aegis.app.ui.FileSize
 import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.FfiVaultFile
@@ -245,6 +249,10 @@ class VaultActivity : AppCompatActivity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
+            // Запись — чтобы после добавления можно было удалить
+            // оригинал (offerToDeleteOriginal). Только этот документ,
+            // только на время процесса: разрешение не сохраняется.
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
 
         pickFile.launch(intent)
@@ -272,7 +280,9 @@ class VaultActivity : AppCompatActivity() {
                         nowMillis = System.currentTimeMillis(),
                     )
 
-                    blob.writeBytes(sealed.ciphertext)
+                    // Атомарно: обрезанный блоб — файл, который уже
+                    // не расшифровать, при живой записи о нём в базе.
+                    org.aegis.app.core.DurableFile.write(blob, sealed.ciphertext)
                 }
             }
 
@@ -285,6 +295,56 @@ class VaultActivity : AppCompatActivity() {
             )
 
             render()
+
+            if (outcome.isSuccess) {
+                offerToDeleteOriginal(uri)
+            }
+        }
+    }
+
+    /**
+     * 🔐 Предлагает удалить исходный файл после добавления в хранилище.
+     *
+     * # Что здесь чинится
+     *
+     * Добавление шифровало **копию**. Исходник оставался в общей
+     * памяти телефона: его видели галерея, любое приложение с доступом
+     * к файлам и облачная копия, — а человек считал, что спрятал файл.
+     * Хранилище, рядом с которым лежит открытый оригинал, не хранит
+     * ничего.
+     *
+     * # Почему вопрос, а не молчаливое удаление
+     *
+     * Удалить чужой файл без спроса — потерять его, если шифрование
+     * копии пойдёт не так в следующий раз. Вопрос задаётся после
+     * успешной записи, и по умолчанию ничего не удаляется.
+     *
+     * ⚠️ Удаление не затирает флеш-память, и облачная копия, если она
+     * уже сделана, остаётся. Диалог об этом говорит.
+     */
+    private fun offerToDeleteOriginal(uri: Uri) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.vault_original_title)
+            .setMessage(R.string.vault_original_body)
+            .setNegativeButton(R.string.vault_original_keep, null)
+            .setPositiveButton(R.string.vault_original_delete) { _, _ -> deleteOriginal(uri) }
+            .showSecure(this)
+    }
+
+    private fun deleteOriginal(uri: Uri) {
+        lifecycleScope.launch {
+            val deleted = withContext(Dispatchers.IO) {
+                runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
+                    .getOrDefault(false)
+            }
+
+            // Поставщик вправе не уметь удалять (облачные папки, чужие
+            // приложения): тогда человек должен знать, что оригинал цел.
+            Toast.makeText(
+                this@VaultActivity,
+                if (deleted) R.string.vault_original_deleted else R.string.vault_original_manual,
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 

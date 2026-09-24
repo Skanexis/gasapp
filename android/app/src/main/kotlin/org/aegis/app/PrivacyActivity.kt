@@ -17,6 +17,7 @@ import org.aegis.app.components.PinPad
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeleteAccount
+import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
 import org.aegis.app.core.showSecure
@@ -59,6 +60,7 @@ class PrivacyActivity : AppCompatActivity() {
         bindScreenshots()
         bindNotificationPreview()
         bindBiometric()
+        bindWipe()
         bindAutoLock()
         bindExport()
         bindDeleteAccount()
@@ -348,6 +350,44 @@ class PrivacyActivity : AppCompatActivity() {
      * экран её не записывал: срок был минутой навсегда, а комментарии
      * в `Settings` обещали, что его можно поменять.
      */
+    /**
+     * 🔐 Opt-in стирание после десяти неверных PIN (раздел 19.3).
+     *
+     * Включение — через подтверждение, выключение — сразу: включённое
+     * по ошибке стирание уничтожает данные, выключенное по ошибке —
+     * нет. Флаг лежит вне базы (см. [PinAttempts.wipeEnabled]).
+     */
+    private fun bindWipe() {
+        lateinit var toggle: org.aegis.app.ui.SettingsToggle
+
+        toggle = SettingsToggle.bind(
+            root = findViewById(R.id.privacy_wipe),
+            label = R.string.privacy_wipe,
+            hint = R.string.privacy_wipe_hint,
+            icon = R.drawable.ic_trash,
+            checked = PinAttempts.wipeEnabled(this),
+        ) { wanted ->
+            if (!wanted) {
+                PinAttempts.setWipeEnabled(this, false)
+
+                return@bind true
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
+                .setTitle(R.string.privacy_wipe_confirm_title)
+                .setMessage(R.string.privacy_wipe_confirm_body)
+                .setNegativeButton(R.string.action_cancel, null)
+                .setPositiveButton(R.string.privacy_wipe_confirm) { _, _ ->
+                    PinAttempts.setWipeEnabled(this, true)
+                    toggle.isChecked = true
+                }
+                .showSecure(this)
+
+            // Переключатель встанет после подтверждения, а не по нажатию.
+            false
+        }
+    }
+
     private fun bindAutoLock() {
         val current = runCatching {
             Core.messenger().settingInt(Settings.AUTO_LOCK_SECONDS, Settings.AUTO_LOCK_DEFAULT)

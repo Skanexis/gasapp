@@ -5,6 +5,7 @@ package org.aegis.app.core
 import android.content.Context
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import java.io.File
@@ -13,6 +14,7 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 import uniffi.aegis.hardwareSecretLen
 
@@ -82,7 +84,9 @@ object HardwareKey {
     fun secret(context: Context): ByteArray {
         val file = File(context.filesDir, SECRET_FILE)
 
-        if (file.exists()) {
+        // Пустой файл — след сбоя питания в прежней версии (см.
+        // DurableFile): секрета в нём нет, и расшифровывать нечего.
+        if (file.exists() && file.length() > 0) {
             return decrypt(file.readBytes())
         }
 
@@ -92,13 +96,66 @@ object HardwareKey {
         // Запись до возврата: секрет, отданный вызывающему и не
         // сохранённый, означал бы базу под ключом, который больше
         // никогда не повторить.
-        file.writeBytes(encrypt(fresh))
+        //
+        // 🔐 Атомарно и с fsync: пустой `aegis.hw` рядом с уже созданной
+        // базой — это база, которую не откроет ничто (см. DurableFile).
+        DurableFile.write(file, encrypt(fresh))
 
         return fresh
     }
 
-    /** Заведён ли уже аппаратный секрет на этом устройстве. */
-    fun exists(context: Context): Boolean = File(context.filesDir, SECRET_FILE).exists()
+    /**
+     * Заведён ли уже аппаратный секрет на этом устройстве.
+     *
+     * Пустой файл секретом не считается — это след сбоя питания
+     * в прежней версии (см. [DurableFile]).
+     */
+    fun exists(context: Context): Boolean =
+        File(context.filesDir, SECRET_FILE).let { it.exists() && it.length() > 0 }
+
+    /**
+     * Где на самом деле лежит ключ-обёртка, по словам системы.
+     *
+     * Раздел 7.3: «Нет StrongBox/TEE → пользователь получает
+     * предупреждение в Security Center». `KeyGenerator` в Keystore
+     * не обещает аппаратного ключа: на устройстве без TEE он молча
+     * создаёт программный, и защита от снятого файла (см. заголовок)
+     * превращается в защиту файлом, лежащим рядом.
+     *
+     * ⚠️ Это ответ операционной системы, и на изменённой прошивке он
+     * может лгать. Ответ самого оборудования — [KeyAttestation].
+     *
+     * `null` — ключа ещё нет (до регистрации) или спросить не удалось.
+     * Ключ здесь **не создаётся**: проверка не должна заводить то,
+     * что проверяет.
+     */
+    fun securityLevel(): KeyAttestation.Level? = runCatching {
+        val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
+        val key = (store.getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
+            ?: return null
+
+        val info = SecretKeyFactory.getInstance(key.algorithm, PROVIDER)
+            .getKeySpec(key, KeyInfo::class.java) as KeyInfo
+
+        levelOf(info)
+    }.getOrNull()
+
+    @Suppress("DEPRECATION")
+    private fun levelOf(info: KeyInfo): KeyAttestation.Level =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            when (info.securityLevel) {
+                KeyProperties.SECURITY_LEVEL_STRONGBOX -> KeyAttestation.Level.STRONGBOX
+                KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT,
+                // «Защищённое, но какое — неизвестно»: аппаратное.
+                KeyProperties.SECURITY_LEVEL_UNKNOWN_SECURE -> KeyAttestation.Level.TRUSTED_ENVIRONMENT
+                else -> KeyAttestation.Level.SOFTWARE
+            }
+        } else if (info.isInsideSecureHardware) {
+            // До Android 12 StrongBox от TEE здесь не отличить.
+            KeyAttestation.Level.TRUSTED_ENVIRONMENT
+        } else {
+            KeyAttestation.Level.SOFTWARE
+        }
 
     /**
      * Шифрует секрет ключом из Keystore.

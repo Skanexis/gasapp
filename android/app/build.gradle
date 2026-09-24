@@ -3,6 +3,36 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+/**
+ * SHA-256 сертификата подписи релиза в шестнадцатеричном виде.
+ *
+ * Порядок: явное `aegisSigningCertSha256` (подпись вне этой машины,
+ * например в HSM) → сертификат ключа `aegisKeyAlias` из `aegisKeystore`
+ * → пусто. Пусто означает «проверка подписи выключена», и центр
+ * безопасности говорит это вслух.
+ */
+def releaseSigningCertSha256() {
+    if (project.hasProperty('aegisSigningCertSha256')) {
+        return project.property('aegisSigningCertSha256').toString()
+                .replace(':', '').trim().toLowerCase()
+    }
+
+    if (!project.hasProperty('aegisKeystore')) {
+        return ''
+    }
+
+    def store = java.security.KeyStore.getInstance(
+            file(project.property('aegisKeystore')),
+            project.property('aegisKeystorePassword').toString().toCharArray())
+    def cert = store.getCertificate(project.property('aegisKeyAlias').toString())
+
+    if (cert == null) {
+        throw new GradleException("в aegisKeystore нет ключа aegisKeyAlias")
+    }
+
+    return java.security.MessageDigest.getInstance('SHA-256').digest(cert.encoded).encodeHex().toString()
+}
+
 android {
     // Обязателен начиная с AGP 8: пакет, в котором генерируется класс R.
     // Без него конфигурация проекта падает ещё до сборки.
@@ -68,6 +98,12 @@ android {
         // устройствах; релиз обязан переопределить его.
         buildConfigField "String", "AEGIS_SERVER_URL",
                 "\"${project.findProperty('aegisServerUrl') ?: 'https://10.0.2.2:8443'}\""
+        // 🔐 Эталон подписи для проверки во время работы (MASVS
+        // RESILIENCE-2.1, `core/AppSignature.kt`). Пусто в отладочной
+        // сборке: подписывать её нашим ключом никто не будет, и сверять
+        // не с чем. Релиз переопределяет поле ниже.
+        buildConfigField "String", "SIGNING_CERT_SHA256", "\"\""
+
         versionCode = 1
         versionName = "1.0"
 
@@ -215,6 +251,11 @@ android {
             if (project.hasProperty('aegisKeystore')) {
                 signingConfig signingConfigs.release
             }
+
+            // 🔐 SHA-256 сертификата, которым подписывается этот релиз.
+            // Берётся из того же хранилища ключей, что и подпись, —
+            // вписать руками значение, расходящееся с ключом, нельзя.
+            buildConfigField "String", "SIGNING_CERT_SHA256", "\"${releaseSigningCertSha256()}\""
         }
         debug {
             minifyEnabled false

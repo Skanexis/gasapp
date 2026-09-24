@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.aegis.app.core.PinAttempts
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -132,6 +133,44 @@ class PinAttemptsTest {
 
         assertEquals(0, PinAttempts.failures(context))
         assertEquals(0L, PinAttempts.remainingMillis(context, NOW))
+    }
+
+    /**
+     * 🔐 Стирание — только по выбору человека (раздел 19.3).
+     *
+     * По умолчанию выключено: случайное стирание ребёнком или
+     * в кармане — частый сценарий, а вернуть данные можно только
+     * ключом восстановления.
+     */
+    @Test
+    fun wipe_is_off_by_default_and_never_fires_when_off() {
+        assertFalse("стирание включено по умолчанию", PinAttempts.wipeEnabled(context))
+
+        for (failures in 0..1_000) {
+            assertFalse("выключенное стирание сработало на $failures", PinAttempts.shouldWipe(failures, enabled = false))
+        }
+    }
+
+    /** Ровно на десятой неверной попытке — не раньше. */
+    @Test
+    fun wipe_fires_at_the_tenth_failure_not_before() {
+        for (failures in 0 until PinAttempts.WIPE_AFTER) {
+            assertFalse("стирание раньше десятой попытки: $failures", PinAttempts.shouldWipe(failures, enabled = true))
+        }
+
+        assertEquals(10, PinAttempts.WIPE_AFTER)
+        assertTrue(PinAttempts.shouldWipe(10, enabled = true))
+        assertTrue("после десятой стирание не срабатывает", PinAttempts.shouldWipe(11, enabled = true))
+    }
+
+    /** Выбор переживает перезапуск и забывается при удалении аккаунта. */
+    @Test
+    fun wipe_choice_survives_restart_and_is_forgotten_with_the_account() {
+        PinAttempts.setWipeEnabled(context, true)
+        assertTrue(PinAttempts.wipeEnabled(context))
+
+        PinAttempts.forget(context)
+        assertFalse("выбор пережил удаление аккаунта", PinAttempts.wipeEnabled(context))
     }
 
     private companion object {

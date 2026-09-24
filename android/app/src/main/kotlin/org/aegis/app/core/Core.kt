@@ -314,12 +314,15 @@ object Core {
     fun salt(context: Context): ByteArray {
         val file = File(context.filesDir, SALT_NAME)
 
-        if (file.exists()) {
+        // Пустой файл — след сбоя питания в прежней версии, писавшей
+        // без fsync (см. DurableFile): соли в нём нет, и считать его
+        // солью значило бы навсегда заблокировать регистрацию.
+        if (file.exists() && file.length() > 0) {
             return file.readBytes()
         }
 
         val fresh = generateStorageSalt()
-        file.writeBytes(fresh)
+        DurableFile.write(file, fresh)
 
         return fresh
     }

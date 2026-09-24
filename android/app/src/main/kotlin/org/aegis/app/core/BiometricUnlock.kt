@@ -231,7 +231,7 @@ object BiometricUnlock {
         iv.copyInto(record, 1)
         sealed.copyInto(record, 1 + iv.size)
 
-        envelope(context).writeBytes(record)
+        DurableFile.write(envelope(context), record)
     }
 
     /**
