@@ -218,9 +218,24 @@
         android:layout_marginStart="24dp"
         android:layout_marginTop="@dimen/space_s"
         android:layout_marginEnd="24dp"
-        android:layout_marginBottom="@dimen/space_m"
         android:text="@string/onboarding_create"
         app:buttonSize="large"
         app:buttonVariant="primary" />
+
+    <!--
+      Возвращение аккаунта из резервной копии: имя и переписка остаются
+      за человеком после переустановки. PIN задаётся здесь же — им
+      шифруется новая база.
+    -->
+    <org.aegis.app.components.AegisButton
+        android:id="@+id/onboarding_recover"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="@dimen/space_xs"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="@dimen/space_m"
+        android:text="@string/onboarding_recover"
+        app:buttonVariant="ghost" />
 
 </LinearLayout>

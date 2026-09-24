@@ -904,6 +904,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1030,6 +1032,8 @@ fun uniffi_aegis_checksum_method_messenger_proxy(
 fun uniffi_aegis_checksum_method_messenger_purge_expired(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_receive_messages(
+): Short
+fun uniffi_aegis_checksum_method_messenger_recover_account(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_register(
 ): Short
@@ -1215,6 +1219,8 @@ fun uniffi_aegis_fn_method_messenger_purge_expired(`ptr`: Pointer,`nowMillis`: L
 ): Int
 fun uniffi_aegis_fn_method_messenger_receive_messages(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Int
+fun uniffi_aegis_fn_method_messenger_recover_account(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`links`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1603,6 +1609,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_receive_messages() != 59151.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_recover_account() != 16594.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_register() != 16364.toShort()) {
@@ -2943,6 +2952,20 @@ public interface MessengerInterface {
     fun `receiveMessages`(`deviceId`: kotlin.String, `nowMillis`: kotlin.Long): kotlin.UInt
     
     /**
+     * 🔐 Возвращает аккаунт на новое устройство **с прежним именем**
+     * (`Client::recover_account`): копия восстанавливается в эту базу,
+     * создаётся новая identity, и ключ восстановления аккаунта из копии
+     * подписывает перепривязку.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — не тот ключ, цепочка разорвана, в копии нет
+     * ключа восстановления аккаунта либо сервер отказал.
+     */
+    fun `recoverAccount`(`recoveryKey`: kotlin.String, `links`: List<kotlin.ByteArray>, `nowMillis`: kotlin.Long): FfiRecoveredAccount
+    
+    /**
      * Регистрирует новый аккаунт.
      *
      * Операция долгая: включает подбор proof-of-work. Вызывать её
@@ -4164,6 +4187,31 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_receive_messages(
         it, FfiConverterString.lower(`deviceId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * 🔐 Возвращает аккаунт на новое устройство **с прежним именем**
+     * (`Client::recover_account`): копия восстанавливается в эту базу,
+     * создаётся новая identity, и ключ восстановления аккаунта из копии
+     * подписывает перепривязку.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — recovery key не разбирается;
+     * [`FfiError::Core`] — не тот ключ, цепочка разорвана, в копии нет
+     * ключа восстановления аккаунта либо сервер отказал.
+     */
+    @Throws(FfiException::class)override fun `recoverAccount`(`recoveryKey`: kotlin.String, `links`: List<kotlin.ByteArray>, `nowMillis`: kotlin.Long): FfiRecoveredAccount {
+            return FfiConverterTypeFfiRecoveredAccount.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_recover_account(
+        it, FfiConverterString.lower(`recoveryKey`),FfiConverterSequenceByteArray.lower(`links`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -5640,6 +5688,47 @@ public object FfiConverterTypeFfiQrMatrix: FfiConverterRustBuffer<FfiQrMatrix> {
     override fun write(value: FfiQrMatrix, buf: ByteBuffer) {
             FfiConverterUInt.write(value.`size`, buf)
             FfiConverterSequenceBoolean.write(value.`modules`, buf)
+    }
+}
+
+
+
+/**
+ * Итог возвращения аккаунта на новое устройство.
+ */
+data class FfiRecoveredAccount (
+    /**
+     * Аккаунт — с прежним именем, на новой identity.
+     */
+    var `account`: FfiAccount, 
+    /**
+     * Итог восстановления переписки.
+     */
+    var `restore`: FfiRestore
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiRecoveredAccount: FfiConverterRustBuffer<FfiRecoveredAccount> {
+    override fun read(buf: ByteBuffer): FfiRecoveredAccount {
+        return FfiRecoveredAccount(
+            FfiConverterTypeFfiAccount.read(buf),
+            FfiConverterTypeFfiRestore.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiRecoveredAccount) = (
+            FfiConverterTypeFfiAccount.allocationSize(value.`account`) +
+            FfiConverterTypeFfiRestore.allocationSize(value.`restore`)
+    )
+
+    override fun write(value: FfiRecoveredAccount, buf: ByteBuffer) {
+            FfiConverterTypeFfiAccount.write(value.`account`, buf)
+            FfiConverterTypeFfiRestore.write(value.`restore`, buf)
     }
 }
 

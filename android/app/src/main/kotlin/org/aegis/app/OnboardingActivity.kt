@@ -68,6 +68,7 @@ class OnboardingActivity : AppCompatActivity() {
         openOrbot = findViewById(R.id.onboarding_open_orbot)
 
         createButton.setOnClickListener { register() }
+        findViewById<AegisButton>(R.id.onboarding_recover).setOnClickListener { startRecovery() }
         openOrbot.setOnClickListener { launchOrbot() }
 
         direct.setOnCheckedChangeListener { _, checked ->
@@ -203,6 +204,59 @@ class OnboardingActivity : AppCompatActivity() {
                     )
                     openOrbot.visibility = if (network && viaTor) View.VISIBLE else View.GONE
                 }
+        }
+    }
+
+    /**
+     * Возвращение аккаунта из копии: база открывается под новым PIN,
+     * дальше — экран копии в режиме возвращения аккаунта.
+     *
+     * 🔐 PIN не передаётся дальше: база открыта здесь, и экран копии
+     * работает с уже открытым хранилищем. Не дошедшее до конца
+     * возвращение стирает базу — см. [RestoreActivity].
+     */
+    private fun startRecovery() {
+        if (!pin.isComplete) {
+            showError(getString(R.string.onboarding_error_pin))
+
+            return
+        }
+
+        val pinValue = pin.take()
+
+        if (!Pin.isAcceptable(pinValue)) {
+            showError(getString(R.string.onboarding_error_pin))
+
+            return
+        }
+
+        val viaTor = !direct.isChecked
+
+        setWorking(true)
+
+        lifecycleScope.launch {
+            val opened = withContext(Dispatchers.IO) {
+                runCatching {
+                    val messenger = Core.unlock(this@OnboardingActivity, pinValue)
+
+                    if (!viaTor) {
+                        messenger.setProxy(FfiProxy.Direct)
+                        NetworkProxy.apply(FfiProxy.Direct)
+                    }
+                }.onFailure { AccountWipe.wipe(this@OnboardingActivity) }
+            }
+
+            setWorking(false)
+
+            opened
+                .onSuccess {
+                    startActivity(
+                        Intent(this@OnboardingActivity, RestoreActivity::class.java)
+                            .putExtra(RestoreActivity.EXTRA_RECOVER_ACCOUNT, true),
+                    )
+                    finish()
+                }
+                .onFailure { showError(getString(R.string.ffi_error)) }
         }
     }
 

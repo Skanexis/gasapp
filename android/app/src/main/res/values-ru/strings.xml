@@ -579,6 +579,7 @@
     </plurals>
     <string name="security_section_log">Журнал безопасности</string>
     <string name="security_log_empty">Пока ничего не происходило</string>
+    <string name="security_event_pq_identity_changed">Пост-квантовый ключ собеседника не тот, что был известен</string>
     <string name="security_event_contact_identity_changed">Знакомое имя пришло с другим ключом</string>
     <string name="security_event_contact_verified">Контакт отмечен сверенным</string>
     <string name="security_event_contact_identity_accepted">Новый ключ контакта принят без сверки</string>
@@ -616,4 +617,8 @@
     <string name="request_decline_body">Переписка удалится с этого устройства. Собеседник не получит уведомления и не узнает, что вы её прочли.</string>
     <string name="request_awaiting">Запрос отправлен. Переписка начнётся, когда собеседник примет его или ответит.</string>
     <string name="request_badge">Запрос</string>
+    <string name="onboarding_recover">Восстановить аккаунт из копии</string>
+    <string name="recover_title">Восстановление аккаунта</string>
+    <string name="recover_intro">Имя и переписка вернутся из копии. Ключ безопасности будет новым, поэтому собеседникам нужно будет заново сверить с вами safety number.</string>
+    <string name="recover_failed">Не удалось вернуть аккаунт. Проверьте ключ копии и соединение. В копиях, сделанных до этой версии, нет ключа восстановления аккаунта.</string>
 </resources>
