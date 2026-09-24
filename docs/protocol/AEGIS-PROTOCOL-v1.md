@@ -382,6 +382,16 @@ digits(fp)      = for each 5-byte group g of fp:
 Sorting makes both parties obtain the same 60 digits although "own" and
 "peer" are swapped between them. Display: 12 groups of 5 digits (ADR-022).
 
+### 9.3. Key confirmation before sending
+
+A peer's identity key obtained from the server by username is **not trusted
+for sending**. A client refuses to encrypt to it (`PeerUnconfirmed`) until the
+key is confirmed out of band, either by comparing the safety number or by
+adding the peer from their own contact link or QR code, which carries the
+identity key itself. A key the server names in place of a known one is
+refused as `IdentityChanged`, and only a safety-number comparison resolves
+that. Receiving is not blocked.
+
 ## 10. Security Considerations
 
 ### 10.1. Forward Secrecy
@@ -443,6 +453,11 @@ The first envelope to a new contact carries no access key; the right to send
 anonymously is proven by proof-of-work over the recipient device and the
 envelope hash (18 bits, `AEGIS_POW_FIRST_v1`) instead of the sender's
 signature.
+
+Attachments are uploaded and downloaded without any signature. The right to
+store a blob is proven by proof-of-work over the blob itself
+(`AEGIS_POW_UPLOAD_v1`, 16 bits plus one bit per doubling of the size in MiB),
+so the server does not learn who uploaded a file or who fetched it.
 
 ### 10.5. Deniability
 Messages do not contain signatures that bind them to a specific sender.
