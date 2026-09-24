@@ -4063,3 +4063,30 @@ fn usernames_are_canonical_and_lookalikes_are_refused() {
         Err(AegisError::InvalidUsername)
     ));
 }
+
+/// 🔐 Ключ доступа sealed sender публикуется обслуживанием ключей,
+/// а не первым отправленным сообщением: у нового пользователя центр
+/// безопасности не показывает «sealed sender: нет».
+#[test]
+fn a_new_account_publishes_its_access_key_without_writing_to_anyone() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("регистрация");
+    assert!(!alice.sealed_sender_enabled().expect("чтение"));
+
+    alice
+        .maintain_prekeys(now(), &mut OsRng)
+        .expect("обслуживание");
+
+    assert!(
+        alice
+            .security_report(now())
+            .expect("отчёт")
+            .sealed_sender_enabled,
+        "ключ доступа не опубликован без отправки"
+    );
+}

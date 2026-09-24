@@ -2077,6 +2077,16 @@ impl<T: Transport> Client<T> {
 
         let added = u32::try_from(added_one_time.len()).unwrap_or(u32::MAX);
 
+        // 🔐 Ключ доступа sealed sender — сразу, а не с первым
+        // отправленным сообщением. Прежде аккаунт, ещё никому
+        // не писавший, ключа не публиковал: запечатанными ему писали
+        // и так (proof-of-work первого контакта), но центр безопасности
+        // честно показывал «sealed sender: нет» — у каждого нового
+        // пользователя.
+        if !self.sealed_sender_enabled()? {
+            self.ensure_access_key(&identity, now, rng)?;
+        }
+
         // 🔐 Смена ключа ML-KEM sealed sender по сроку. Сменённый ключ
         // не опубликован и уходит на сервер тем же запросом ниже.
         self.rotate_sealed_kem_if_due(now, rng)?;
