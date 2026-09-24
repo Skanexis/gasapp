@@ -14,7 +14,8 @@
 //! Что проверяется:
 //!
 //! * `is_sealed` — различение по метке на любом входе;
-//! * `unseal` — разбор внешнего слоя: эфемерный ключ, AEAD, длина
+//! * `unseal` — разбор внешнего слоя: эфемерный ключ, шифротекст
+//!   ML-KEM (декапсуляция идёт до проверки тега), AEAD, длина
 //!   сертификата внутри расшифрованного;
 //! * `SenderCertificate::from_bytes` — разбор сертификата, который
 //!   получатель затем предъявляет в жалобе;
@@ -24,6 +25,7 @@
 //! Что ищется: паника на усечённом, удлинённом или бессмысленном входе
 //! и чтение по длине, не сверенной с остатком буфера.
 
+use aegis_protocol::mlkem::MlKem1024PrivateKey;
 use aegis_protocol::padding;
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::x25519::X25519PrivateKey;
@@ -38,8 +40,12 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
 
+    // Ключ ML-KEM — тоже фиксированный: внешний слой гибридный, и
+    // разбор шифротекста KEM идёт до проверки тега AEAD.
+    let kem = MlKem1024PrivateKey::from_seed([0x24u8; 64]);
+
     let _ = sealed_sender::is_sealed(data);
-    let _ = sealed_sender::unseal(&recipient, data);
+    let _ = sealed_sender::unseal(&recipient, &kem, data);
     let _ = SenderCertificate::from_bytes(data);
     let _ = padding::unpad(data);
 });

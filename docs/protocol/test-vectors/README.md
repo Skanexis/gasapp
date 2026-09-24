@@ -47,7 +47,7 @@ ADR-005 предполагал снять векторы с libsignal в изо�
 
 | Что | AEGIS | libsignal |
 |---|---|---|
-| Метка KDF в PQXDH | `AEGIS_PQXDH_v1_X25519_MLKEM1024` | `WhisperText_X25519_SHA-256_CRYSTALS-KYBER-1024` |
+| Метка KDF в PQXDH | `AEGIS_PQXDH_v2_X25519_MLKEM1024_TRANSCRIPT` (соль — хеш транскрипта; v1 с нулевой солью — до 2026-09-24) | `WhisperText_X25519_SHA-256_CRYSTALS-KYBER-1024` |
 | Метка корневого ключа | `AEGIS_DR_v1_ROOT` | `WhisperRatchet` |
 | Метка ключа сообщения | HMAC с константами `0x01`/`0x02` | `WhisperMessageKeys` через HKDF |
 | Шифрование сообщения | AES-256-GCM (AEAD) | AES-CBC + отдельный HMAC |

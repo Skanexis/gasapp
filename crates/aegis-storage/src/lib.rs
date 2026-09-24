@@ -364,7 +364,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 7;
+    const SCHEMA_VERSION: i32 = 8;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -653,6 +653,26 @@ impl Storage {
                     transaction
                         .execute(
                             "ALTER TABLE known_contacts ADD COLUMN replaced_at INTEGER",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                // 7 → 8: ключ ML-KEM sealed sender.
+                //
+                // 🔐 Внешний слой sealed sender стал гибридным (X25519 +
+                // ML-KEM-1024): имя отправителя больше не держится на одной
+                // классической кривой. Seed ключа — одна строка; публикация
+                // на сервере отмечается отдельно, как у ключа доступа.
+                8 => {
+                    transaction
+                        .execute(
+                            "
+                            CREATE TABLE IF NOT EXISTS own_sealed_kem (
+                                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                                seed         BLOB NOT NULL,
+                                published_at INTEGER
+                            )
+                            ",
                             [],
                         )
                         .map_err(storage_error)?;

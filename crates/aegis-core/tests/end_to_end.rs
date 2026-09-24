@@ -146,6 +146,28 @@ impl FakeServer {
             .insert(name.to_owned(), entry);
     }
 
+    /// 🔐 Сервер подменяет ключ ML-KEM sealed sender устройства.
+    ///
+    /// `None` — не отдаёт вовсе; иначе подставляет свой (с чужой подписью).
+    fn replace_sealed_kem(&self, device_id: &str, replacement: Option<(String, String)>) {
+        let mut state = self.state.borrow_mut();
+        let bundle = state
+            .bundles
+            .get_mut(device_id)
+            .expect("устройство публиковало ключи");
+
+        match replacement {
+            None => {
+                bundle.sealed_kem_public = None;
+                bundle.sealed_kem_signature = None;
+            }
+            Some((public, signature)) => {
+                bundle.sealed_kem_public = Some(public);
+                bundle.sealed_kem_signature = Some(signature);
+            }
+        }
+    }
+
     /// Сколько конвертов ждёт устройство.
     fn queued_for(&self, device_id: &str) -> usize {
         self.state
@@ -355,6 +377,14 @@ impl Transport for FakeServer {
                             serde_json::to_string(&DiscoveryResponse {
                                 account_id: account_id.clone(),
                                 identity_key: identity_key.clone(),
+                                sealed_kem_public: state
+                                    .bundles
+                                    .get(&device_id)
+                                    .and_then(|bundle| bundle.sealed_kem_public.clone()),
+                                sealed_kem_signature: state
+                                    .bundles
+                                    .get(&device_id)
+                                    .and_then(|bundle| bundle.sealed_kem_signature.clone()),
                                 device_ids: vec![device_id],
                             })
                             .unwrap_or_default(),
@@ -401,6 +431,13 @@ impl Transport for FakeServer {
                         existing.kem_signature = parsed.kem_signature;
                         existing.one_time.extend(parsed.one_time);
                         existing.one_time_kem.extend(parsed.one_time_kem);
+
+                        // Ключ sealed sender — как на настоящем сервере:
+                        // публикация без него прежний не стирает.
+                        if parsed.sealed_kem_public.is_some() {
+                            existing.sealed_kem_public = parsed.sealed_kem_public;
+                            existing.sealed_kem_signature = parsed.sealed_kem_signature;
+                        }
                     }
                     None => {
                         state.bundles.insert(device_id, parsed);
@@ -3660,4 +3697,82 @@ fn the_server_sees_only_a_padded_size() {
             .len(),
         1_010_000
     );
+}
+
+// --- 🔐 Пост-квантовый sealed sender ------------------------------------------
+
+/// 🔐 Подменённый сервером ключ ML-KEM получателя не принимается.
+///
+/// Сервер раздаёт ключ sealed sender; подставив свой, он получил бы
+/// пост-квантовую половину внешнего слоя. Подпись identity-ключа
+/// получателя это исключает.
+#[test]
+fn a_substituted_sealed_kem_key_is_refused() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    // Ключ ML-KEM, подписанный не Бобом.
+    let forger = aegis_protocol::x25519::X25519PrivateKey::generate(&mut OsRng);
+    let forged_kem = aegis_protocol::mlkem::MlKem1024PrivateKey::generate(&mut OsRng)
+        .public_key()
+        .as_bytes();
+    let forged_signature =
+        aegis_protocol::sealed_sender::sign_sealed_kem_key(&forger.expose_secret(), &forged_kem)
+            .expect("подпись");
+
+    server.replace_sealed_kem(
+        &bob_device,
+        Some((hex::encode(&forged_kem), hex::encode(forged_signature))),
+    );
+
+    let result = alice.send_message("bob", "секрет", now(), &mut OsRng);
+
+    assert!(result.is_err(), "запечатано на подставленный ключ");
+    assert_eq!(server.queued_for(&bob_device), 0);
+}
+
+/// 🔐 Нет ключа ML-KEM — нет отправки, а не откат на одну кривую.
+///
+/// Откат вернул бы «записать сейчас, раскрыть отправителя потом»,
+/// и навязать его мог бы сервер, просто не отдав ключ.
+#[test]
+fn a_missing_sealed_kem_key_does_not_fall_back_to_classical() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, _bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    server.replace_sealed_kem(&bob_device, None);
+
+    let result = alice.send_message("bob", "секрет", now(), &mut OsRng);
+
+    assert!(
+        matches!(result, Err(AegisError::Uninitialized)),
+        "отправка без ключа ML-KEM: {result:?}"
+    );
+    assert_eq!(server.queued_for(&bob_device), 0);
+}
+
+/// Ключ ML-KEM публикуется при регистрации и подписан владельцем.
+#[test]
+fn the_sealed_kem_key_is_published_at_registration() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (_alice, _bob, _alice_device, _bob_device) = alice_and_bob(&server, &dir);
+
+    let bob = aegis_net::client::ApiClient::new(server.clone());
+    let found = bob.discover("bob").expect("discovery");
+
+    let public = hex::decode(found.sealed_kem_public.expect("ключ опубликован")).expect("hex");
+    let signature =
+        hex::decode(found.sealed_kem_signature.expect("подпись опубликована")).expect("hex");
+    let identity = aegis_types::PublicKeyBytes::new(
+        hex::decode(&found.identity_key)
+            .expect("hex")
+            .try_into()
+            .expect("32 байта"),
+    );
+
+    aegis_protocol::sealed_sender::verify_sealed_kem_key(&identity, &public, &signature)
+        .expect("подпись владельца");
 }

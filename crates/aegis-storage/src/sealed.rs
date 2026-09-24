@@ -63,6 +63,9 @@ pub struct StoredCertificate {
     pub server_key: [u8; SERVER_KEY_LEN],
 }
 
+/// Длина seed ключа ML-KEM-1024 sealed sender.
+pub const SEALED_KEM_SEED_LEN: usize = 64;
+
 impl Storage {
     /// Читает собственный ключ доступа.
     ///
@@ -127,6 +130,81 @@ impl Storage {
         let changed = connection
             .execute(
                 "UPDATE own_access_key SET published_at = ? WHERE id = 1",
+                params![now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
+        if changed == 0 {
+            return Err(AegisError::Uninitialized);
+        }
+
+        Ok(())
+    }
+
+    /// Seed собственного ключа ML-KEM sealed sender и момент публикации.
+    ///
+    /// 🔐 Seed — закрытый ключ: им разворачивается пост-квантовая половина
+    /// внешнего слоя каждого входящего сообщения. Живёт в зашифрованной
+    /// базе, как и identity-ключ.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось либо запись повреждена.
+    pub fn own_sealed_kem(&self) -> Result<Option<([u8; SEALED_KEM_SEED_LEN], Option<Timestamp>)>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let row = connection.query_row(
+            "SELECT seed, published_at FROM own_sealed_kem WHERE id = 1",
+            [],
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<i64>>(1)?)),
+        );
+
+        let (seed, published_at) = match row {
+            Ok(values) => values,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(error) => return Err(storage_error(error)),
+        };
+
+        Ok(Some((
+            to_array(&seed)?,
+            published_at.map(Timestamp::from_millis),
+        )))
+    }
+
+    /// Заводит seed ключа ML-KEM sealed sender, если его ещё нет.
+    ///
+    /// Существующий не перезаписывается: собеседники запечатывают
+    /// на опубликованный ключ, и тихая замена сделала бы их конверты
+    /// нечитаемыми.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn init_own_sealed_kem(&self, seed: &[u8; SEALED_KEM_SEED_LEN]) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO own_sealed_kem (id, seed) VALUES (1, ?)",
+                params![seed.as_slice()],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Отмечает, что ключ ML-KEM sealed sender опубликован на сервере.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Uninitialized`] — ключ ещё не заведён;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn mark_own_sealed_kem_published(&self, now: Timestamp) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let changed = connection
+            .execute(
+                "UPDATE own_sealed_kem SET published_at = ? WHERE id = 1",
                 params![now.as_millis()],
             )
             .map_err(storage_error)?;

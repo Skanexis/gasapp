@@ -320,11 +320,17 @@ impl<T: Transport> Client<T> {
         )?;
         self.storage.set_account_id(&account_id, now)?;
 
+        let mut request = publish_request(&bundle);
+        let (kem_public, kem_signature) = self.sealed_kem_publication(&identity, rng)?;
+        request.sealed_kem_public = Some(kem_public);
+        request.sealed_kem_signature = Some(kem_signature);
+
         self.api.publish_keys(
             &server_device_id.to_string(),
-            &publish_request(&bundle),
+            &request,
             &DeviceSigner::new(&identity, now),
         )?;
+        self.storage.mark_own_sealed_kem_published(now)?;
 
         Ok(Account {
             account_id,
@@ -357,6 +363,10 @@ impl<T: Transport> Client<T> {
         // 🔐 До шифрования: ключ, названный сервером, обязан быть тем,
         // что известен для этого имени (см. `check_advertised_identity`).
         self.check_advertised_identity(peer_username, &peer_identity, now)?;
+
+        // 🔐 Ключ ML-KEM sealed sender получателя — с проверенной подписью
+        // его identity-ключа (см. `verified_sealed_kem`).
+        let peer_kem = verified_sealed_kem(&peer, &peer_identity)?;
 
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
 
@@ -406,6 +416,7 @@ impl<T: Transport> Client<T> {
                 other,
                 &peer_identity,
                 &peer_device,
+                &peer_kem,
                 now,
                 rng,
             )?,
@@ -430,6 +441,7 @@ impl<T: Transport> Client<T> {
             &identity,
             &peer_identity,
             &peer_device,
+            &peer_kem,
             &outgoing.envelope,
             now,
             rng,
@@ -645,6 +657,8 @@ impl<T: Transport> Client<T> {
         // и вложение уходят тем же ключом, что и текст.
         self.check_advertised_identity(peer_username, &peer_identity, now)?;
 
+        let peer_kem = verified_sealed_kem(&peer, &peer_identity)?;
+
         let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
 
         let plaintext = Plaintext::new(content.to_bytes()?);
@@ -671,6 +685,7 @@ impl<T: Transport> Client<T> {
                 other,
                 &peer_identity,
                 &peer_device,
+                &peer_kem,
                 now,
                 rng,
             )?,
@@ -687,6 +702,7 @@ impl<T: Transport> Client<T> {
             &identity,
             &peer_identity,
             &peer_device,
+            &peer_kem,
             &outgoing.envelope,
             now,
             rng,
@@ -1960,8 +1976,16 @@ impl<T: Transport> Client<T> {
 
         let added = u32::try_from(added_one_time.len()).unwrap_or(u32::MAX);
 
+        // 🔐 Ключ ML-KEM sealed sender, ещё не бывший на сервере: у аккаунтов,
+        // заведённых до гибридного sealed sender, его нет, и писать им
+        // запечатанным невозможно, пока он не опубликован.
+        let kem_unpublished = self
+            .storage
+            .own_sealed_kem()?
+            .is_none_or(|(_, published)| published.is_none());
+
         // Делать нечего — и сети это знать незачем.
-        if !rotated && added == 0 {
+        if !rotated && added == 0 && !kem_unpublished {
             return Ok(PreKeyMaintenance {
                 rotated_signed: false,
                 added_one_time: 0,
@@ -2002,7 +2026,14 @@ impl<T: Transport> Client<T> {
                     )
                 })
                 .collect(),
+            sealed_kem_public: None,
+            sealed_kem_signature: None,
         };
+
+        let mut request = request;
+        let (kem_public, kem_signature) = self.sealed_kem_publication(&identity, rng)?;
+        request.sealed_kem_public = Some(kem_public);
+        request.sealed_kem_signature = Some(kem_signature);
 
         // ⚠️ Публикация до сохранения.
         //
@@ -2757,7 +2788,43 @@ fn publish_request(bundle: &PreKeyBundle) -> PublishKeysRequest {
                 )
             })
             .collect(),
+        // Ключ sealed sender дописывает вызывающий: для него нужен
+        // identity-ключ, а не только набор предключей.
+        sealed_kem_public: None,
+        sealed_kem_signature: None,
     }
+}
+
+/// 🔐 Ключ ML-KEM sealed sender получателя из ответа discovery — только
+/// с верной подписью его identity-ключа.
+///
+/// Ключ раздаёт сервер. Без проверки подписи он подставил бы свой,
+/// и пост-квантовая половина внешнего слоя была бы у него.
+///
+/// Ключа нет — отказ, а не запечатывание одной кривой: откат на X25519
+/// вернул бы уязвимость «записать сейчас, раскрыть отправителя потом»,
+/// и навязать его мог бы сервер, просто не отдав ключ.
+///
+/// # Errors
+///
+/// [`AegisError::Uninitialized`] — получатель ещё не опубликовал ключ
+/// (его приложение не обновилось); [`AegisError::Crypto`] — подпись
+/// не сходится или ключ не разбирается.
+fn verified_sealed_kem(
+    peer: &aegis_net::api::DiscoveryResponse,
+    peer_identity: &PublicKeyBytes,
+) -> Result<Vec<u8>> {
+    let (Some(public), Some(signature)) = (&peer.sealed_kem_public, &peer.sealed_kem_signature)
+    else {
+        return Err(AegisError::Uninitialized);
+    };
+
+    let public = unhex(public)?;
+    let signature = unhex(signature)?;
+
+    aegis_protocol::sealed_sender::verify_sealed_kem_key(peer_identity, &public, &signature)?;
+
+    Ok(public)
 }
 
 /// Разбирает bundle, пришедший с сервера.

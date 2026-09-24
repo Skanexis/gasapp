@@ -245,6 +245,54 @@ pub async fn list_devices_by_id(pool: &PgPool, device_id: Uuid) -> Result<Device
     })
 }
 
+/// Сохраняет ключ ML-KEM sealed sender устройства и его подпись.
+///
+/// Подпись не проверяется: её проверяет отправитель своим знанием
+/// identity-ключа получателя. Сервер лишь хранит и раздаёт.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы либо длина не та (ограничение схемы).
+pub async fn set_sealed_kem(
+    pool: &PgPool,
+    device_id: Uuid,
+    public: &[u8],
+    signature: &[u8],
+) -> Result<(), RepoError> {
+    sqlx::query(
+        "UPDATE devices SET sealed_kem_public = $2, sealed_kem_signature = $3 WHERE device_id = $1",
+    )
+    .bind(device_id)
+    .bind(public)
+    .bind(signature)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Ключ ML-KEM sealed sender устройства и подпись, если опубликованы.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn sealed_kem_of(
+    pool: &PgPool,
+    device_id: Uuid,
+) -> Result<Option<(Vec<u8>, Vec<u8>)>, RepoError> {
+    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT sealed_kem_public, sealed_kem_signature FROM devices WHERE device_id = $1",
+    )
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(match row {
+        Some((Some(public), Some(signature))) => Some((public, signature)),
+        _ => None,
+    })
+}
+
 /// Публикует предключи устройства, заменяя прежние подписанные.
 ///
 /// Одноразовые **добавляются** к имеющимся, а не заменяют их: клиент

@@ -155,9 +155,13 @@ fn pqxdh_shared_secret_is_stable() {
 
     let output = pqxdh::initiate(&alice, &bundle, &mut rng).expect("инициация");
 
+    // ⚠️ Сменён намеренно (2026-09-24): PQXDH v2 привязывает ключ
+    // к транскрипту обмена (`pqxdh::transcript_hash`). Сессии v1 и v2
+    // не установятся друг с другом — до выпуска беты это допустимо,
+    // после — только сменой версии протокола.
     assert_eq!(
         head(output.shared_secret.expose_secret()),
-        [0x3c, 0x07, 0x5d, 0x5b, 0xac, 0x79, 0x1a, 0x74],
+        [0xa1, 0x7c, 0xa0, 0x49, 0xa6, 0x62, 0x3e, 0x1c],
         "общий секрет PQXDH изменился: сообщения между версиями \
          не расшифруются"
     );

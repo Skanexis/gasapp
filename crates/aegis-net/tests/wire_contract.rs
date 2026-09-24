@@ -102,6 +102,8 @@ fn publish_keys_matches_server_contract() {
         kem_signature: "dd".to_owned(),
         one_time: vec![(10, "ee".to_owned())],
         one_time_kem: vec![(20, "ff".to_owned(), "99".to_owned())],
+        sealed_kem_public: None,
+        sealed_kem_signature: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();

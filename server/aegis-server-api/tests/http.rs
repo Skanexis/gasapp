@@ -1479,3 +1479,88 @@ async fn account_deletion_closes_the_notification_socket() {
         "канал остался открытым — сокет продолжит слать уведомления"
     );
 }
+
+/// 🔐 Ключ ML-KEM sealed sender публикуется с предключами и отдаётся
+/// в discovery — отправителю для гибридного внешнего слоя.
+#[tokio::test]
+async fn sealed_kem_key_is_published_and_discovered() {
+    let state = require_state!();
+    let username = unique_name("pqkem");
+    let (device_id, private) = register_signing_device(&state, &username, 0x81).await;
+
+    let publish = |sealed_public: Option<String>, sealed_signature: Option<String>| {
+        let state = Arc::clone(&state);
+        async move {
+            call_signed_json(
+                &state,
+                &private,
+                "PUT",
+                &format!("/v1/keys/{device_id}"),
+                Some(serde_json::json!({
+                    "signed_key_id": 1,
+                    "signed_public": hex::encode([0x11u8; 32]),
+                    "signed_signature": hex::encode([0xAAu8; 64]),
+                    "kem_key_id": 2,
+                    "kem_public": hex::encode([0x22u8; 1568]),
+                    "kem_signature": hex::encode([0xBBu8; 64]),
+                    "sealed_kem_public": sealed_public,
+                    "sealed_kem_signature": sealed_signature,
+                })),
+            )
+            .await
+            .0
+        }
+    };
+
+    // Неверная длина и половинчатый запрос — плохой запрос, а не сбой базы.
+    assert_eq!(
+        publish(
+            Some(hex::encode([0x55u8; 100])),
+            Some(hex::encode([0x66u8; 64]))
+        )
+        .await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        publish(Some(hex::encode([0x55u8; 1568])), None).await,
+        StatusCode::BAD_REQUEST
+    );
+
+    assert_eq!(
+        publish(
+            Some(hex::encode([0x55u8; 1568])),
+            Some(hex::encode([0x66u8; 64]))
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+
+    let (status, body) = call(
+        &state,
+        "GET",
+        &format!("/v1/discovery/username/{username}"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["sealed_kem_public"],
+        serde_json::json!(hex::encode([0x55u8; 1568]))
+    );
+    assert_eq!(
+        body["sealed_kem_signature"],
+        serde_json::json!(hex::encode([0x66u8; 64]))
+    );
+
+    // Публикация без ключа прежний не стирает.
+    assert_eq!(publish(None, None).await, StatusCode::NO_CONTENT);
+    let (_, again) = call(
+        &state,
+        "GET",
+        &format!("/v1/discovery/username/{username}"),
+        None,
+    )
+    .await;
+    assert_eq!(again["sealed_kem_public"], body["sealed_kem_public"]);
+}

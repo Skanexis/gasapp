@@ -45,7 +45,12 @@ def sources():
     blob = []
 
     for root, _dirs, files in os.walk(CRATES):
-        if "target" in root.split(os.sep):
+        parts = root.split(os.sep)
+
+        # Тесты не в счёт: `rfc_vectors.rs` держит прежнюю метку PQXDH
+        # как вход HKDF, и сверка находила её там, пропуская
+        # спецификацию, отставшую от кода.
+        if "target" in parts or "tests" in parts:
             continue
 
         for name in files:
