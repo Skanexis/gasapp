@@ -33,6 +33,7 @@
         <TextView
             style="@style/AegisAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
+            android:id="@+id/restore_title"
             android:text="@string/restore_title" />
     </LinearLayout>
 
@@ -52,6 +53,7 @@
                 style="@style/AegisText.Body.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:id="@+id/restore_intro"
                 android:text="@string/restore_intro" />
 
             <TextView

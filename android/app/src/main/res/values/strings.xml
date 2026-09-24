@@ -533,6 +533,7 @@
     </plurals>
     <string name="security_section_log">Security log</string>
     <string name="security_log_empty">Nothing has happened yet</string>
+    <string name="security_event_pq_identity_changed">A contact’s post-quantum key differs from the one you knew</string>
     <string name="security_event_contact_identity_changed">A known username arrived with a different key</string>
     <string name="security_event_contact_verified">Contact marked as verified</string>
     <string name="security_event_contact_identity_accepted">A new contact key was accepted without comparing</string>
@@ -570,4 +571,8 @@
     <string name="request_decline_body">The conversation will be deleted on this device. The other person is not notified and does not learn that you read it.</string>
     <string name="request_awaiting">Request sent. The conversation starts when they accept or reply.</string>
     <string name="request_badge">Request</string>
+    <string name="onboarding_recover">Restore my account from a backup</string>
+    <string name="recover_title">Restore account</string>
+    <string name="recover_intro">Your username and conversations come back from the backup. Your security key will be new, so the people you talk to need to compare safety numbers with you again.</string>
+    <string name="recover_failed">Could not restore the account. Check the backup key and your connection. Backups made before this version do not contain an account recovery key.</string>
 </resources>

@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
+import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import uniffi.aegis.validateRecoveryKey
@@ -50,6 +51,15 @@ class RestoreActivity : AppCompatActivity() {
 
     /** Выбранные файлы цепочки в порядке применения. */
     private val chosen = mutableListOf<Uri>()
+
+    /**
+     * Режим возвращения аккаунта (с экрана регистрации): вместе
+     * с перепиской возвращается аккаунт с прежним именем.
+     */
+    private val recovering by lazy { intent.getBooleanExtra(EXTRA_RECOVER_ACCOUNT, false) }
+
+    /** Аккаунт возвращён: уход с экрана больше не стирает базу. */
+    private var recovered = false
 
     /**
      * Выбор файлов копии.
@@ -88,7 +98,19 @@ class RestoreActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_restore)
 
-        findViewById<ImageView>(R.id.restore_back).setOnClickListener { finish() }
+        findViewById<ImageView>(R.id.restore_back).setOnClickListener { leave() }
+
+        if (recovering) {
+            findViewById<TextView>(R.id.restore_title).setText(R.string.recover_title)
+            findViewById<TextView>(R.id.restore_intro).setText(R.string.recover_intro)
+        }
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() = leave()
+            },
+        )
         findViewById<AegisButton>(R.id.restore_pick).setOnClickListener { pickFiles() }
         findViewById<AegisButton>(R.id.restore_confirm).setOnClickListener { restore() }
 
@@ -154,17 +176,32 @@ class RestoreActivity : AppCompatActivity() {
                             ?: error("файл не читается")
                     }
 
-                    Core.messenger().restoreBackup(
-                        recoveryKey = key,
-                        links = links,
-                        nowMillis = System.currentTimeMillis(),
-                    )
+                    if (recovering) {
+                        // 🔐 Аккаунт — с прежним именем, на новой identity:
+                        // ключ восстановления аккаунта из копии подписывает
+                        // перепривязку (см. `Client::recover_account`).
+                        val back = Core.messenger().recoverAccount(
+                            recoveryKey = key,
+                            links = links,
+                            nowMillis = System.currentTimeMillis(),
+                        )
+                        Core.rememberDevice(back.account.deviceId)
+                        Core.maintainPrekeysNow()
+                        back.restore
+                    } else {
+                        Core.messenger().restoreBackup(
+                            recoveryKey = key,
+                            links = links,
+                            nowMillis = System.currentTimeMillis(),
+                        )
+                    }
                 }
             }
 
             button.isLoading = false
 
             outcome.onSuccess { restored ->
+                recovered = true
                 showStatus(getString(R.string.restore_done, restored.applied.toInt()))
 
                 // 🔐 Объяснение смены ключа безопасности — обязательный
@@ -185,9 +222,25 @@ class RestoreActivity : AppCompatActivity() {
                 // Причина не уточняется: «не тот ключ» и «цепочка
                 // разорвана» различать здесь нечем, а гадать вслух
                 // хуже, чем сказать честно.
-                showStatus(getString(R.string.restore_failed))
+                showStatus(
+                    getString(if (recovering) R.string.recover_failed else R.string.restore_failed),
+                )
             }
         }
+    }
+
+    /**
+     * Уход с экрана. 🔐 Не завершённое возвращение аккаунта стирает
+     * базу: она открыта под новым PIN, но аккаунта в ней нет, и при
+     * следующем запуске она выглядела бы аккаунтом.
+     */
+    private fun leave() {
+        if (recovering && !recovered) {
+            AccountWipe.wipe(this)
+            startActivity(Intent(this, OnboardingActivity::class.java))
+        }
+
+        finish()
     }
 
     private fun showStatus(text: String) {
@@ -195,5 +248,10 @@ class RestoreActivity : AppCompatActivity() {
             this.text = text
             visibility = View.VISIBLE
         }
+    }
+
+    companion object {
+        /** Режим возвращения аккаунта: `true` — с экрана регистрации. */
+        const val EXTRA_RECOVER_ACCOUNT = "recover_account"
     }
 }
