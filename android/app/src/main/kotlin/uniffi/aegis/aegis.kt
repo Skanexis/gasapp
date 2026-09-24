@@ -894,6 +894,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -952,6 +954,8 @@ fun uniffi_aegis_checksum_func_validate_proxy(
 fun uniffi_aegis_checksum_func_validate_recovery_key(
 ): Short
 fun uniffi_aegis_checksum_method_httptransport_execute(
+): Short
+fun uniffi_aegis_checksum_method_messenger_accept_contact_identity(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_add_contact_from_link(
 ): Short
@@ -1129,6 +1133,8 @@ fun uniffi_aegis_fn_free_messenger(`ptr`: Pointer,uniffi_out_err: UniffiRustCall
 ): Unit
 fun uniffi_aegis_fn_constructor_messenger_open(`databasePath`: RustBuffer.ByValue,`databaseKey`: RustBuffer.ByValue,`transport`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
+fun uniffi_aegis_fn_method_messenger_accept_contact_identity(`ptr`: Pointer,`accountId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_add_contact_from_link(`ptr`: Pointer,`uri`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_add_vault_file(`ptr`: Pointer,`name`: RustBuffer.ByValue,`contents`: RustBuffer.ByValue,`location`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1473,6 +1479,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 53468.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_accept_contact_identity() != 31244.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_add_contact_from_link() != 19449.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1563,7 +1572,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_register() != 16364.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_messenger_rekey_storage() != 60038.toShort()) {
+    if (lib.uniffi_aegis_checksum_method_messenger_rekey_storage() != 59389.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_restore_backup() != 31001.toShort()) {
@@ -2452,6 +2461,20 @@ public object FfiConverterTypeHttpTransport: FfiConverter<HttpTransport, Pointer
 public interface MessengerInterface {
     
     /**
+     * 🔐 Принимает ключ контакта без сверки: имя остаётся за ним.
+     *
+     * Путь для законной смены ключа у собеседника, когда встретиться
+     * и сверить safety number нельзя. Прочие записи того же имени
+     * становятся заменёнными. Решение пишется в журнал безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — счёт не разбирается;
+     * [`FfiError::Core`] — такого контакта нет либо запись не удалась.
+     */
+    fun `acceptContactIdentity`(`accountId`: kotlin.String, `nowMillis`: kotlin.Long)
+    
+    /**
      * Добавляет контакт по ссылке `aegis://contact/...`.
      *
      * # 🔐 Про доверие к ссылке
@@ -2874,7 +2897,7 @@ public interface MessengerInterface {
      *
      * Нужен ровно для одного: перевести базу, созданную схемой
      * «ключ из одного PIN», на ключ, связанный с аппаратным
-     * хранилищем ([`derive_storage_key_bound`], находка P-5 раздела
+     * хранилищем ([`crate::derive_storage_key_bound`], находка P-5 раздела
      * 23.6). Выбросить старую базу значило бы стереть переписку при
      * обновлении приложения.
      *
@@ -3282,6 +3305,30 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
             UniffiLib.INSTANCE.uniffi_aegis_fn_clone_messenger(pointer!!, status)
         }
     }
+
+    
+    /**
+     * 🔐 Принимает ключ контакта без сверки: имя остаётся за ним.
+     *
+     * Путь для законной смены ключа у собеседника, когда встретиться
+     * и сверить safety number нельзя. Прочие записи того же имени
+     * становятся заменёнными. Решение пишется в журнал безопасности.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — счёт не разбирается;
+     * [`FfiError::Core`] — такого контакта нет либо запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `acceptContactIdentity`(`accountId`: kotlin.String, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_accept_contact_identity(
+        it, FfiConverterString.lower(`accountId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
 
     
     /**
@@ -4032,7 +4079,7 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      *
      * Нужен ровно для одного: перевести базу, созданную схемой
      * «ключ из одного PIN», на ключ, связанный с аппаратным
-     * хранилищем ([`derive_storage_key_bound`], находка P-5 раздела
+     * хранилищем ([`crate::derive_storage_key_bound`], находка P-5 раздела
      * 23.6). Выбросить старую базу значило бы стереть переписку при
      * обновлении приложения.
      *
@@ -5110,7 +5157,14 @@ data class FfiContact (
      * и прежний контакт остаётся на месте: смена ключа заводит
      * новую запись, а верификация старой на неё не переносится.
      */
-    var `keyChanged`: kotlin.Boolean
+    var `keyChanged`: kotlin.Boolean, 
+    /**
+     * 🔐 Ключ контакта заменён другим под тем же именем.
+     *
+     * Переписка остаётся для чтения, отправлять в неё нельзя: имя
+     * ведёт теперь к другому ключу.
+     */
+    var `replaced`: kotlin.Boolean
 ) {
     
     companion object
@@ -5128,6 +5182,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -5137,7 +5192,8 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterOptionalString.allocationSize(value.`username`) +
             FfiConverterOptionalString.allocationSize(value.`chatId`) +
             FfiConverterBoolean.allocationSize(value.`verified`) +
-            FfiConverterBoolean.allocationSize(value.`keyChanged`)
+            FfiConverterBoolean.allocationSize(value.`keyChanged`) +
+            FfiConverterBoolean.allocationSize(value.`replaced`)
     )
 
     override fun write(value: FfiContact, buf: ByteBuffer) {
@@ -5147,6 +5203,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterOptionalString.write(value.`chatId`, buf)
             FfiConverterBoolean.write(value.`verified`, buf)
             FfiConverterBoolean.write(value.`keyChanged`, buf)
+            FfiConverterBoolean.write(value.`replaced`, buf)
     }
 }
 
@@ -5940,6 +5997,17 @@ sealed class FfiException(message: String): kotlin.Exception(message) {
         class Core(message: String) : FfiException(message)
         
     /**
+     * 🔐 Сервер называет для собеседника не тот ключ, что известен.
+     *
+     * Отдельным вариантом, а не текстом внутри [`FfiError::Core`]:
+     * интерфейс показывает это как предупреждение о возможной
+     * подмене и ведёт к выбору ключа, а не как сбой отправки.
+     * Разбирать для этого строку ошибки значило бы завязать
+     * безопасность на формулировку.
+     */
+        class IdentityChanged(message: String) : FfiException(message)
+        
+    /**
      * Входные данные не прошли валидацию на границе.
      */
         class InvalidArgument(message: String) : FfiException(message)
@@ -5966,8 +6034,9 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
         
             return when(buf.getInt()) {
             1 -> FfiException.Core(FfiConverterString.read(buf))
-            2 -> FfiException.InvalidArgument(FfiConverterString.read(buf))
-            3 -> FfiException.Panic(FfiConverterString.read(buf))
+            2 -> FfiException.IdentityChanged(FfiConverterString.read(buf))
+            3 -> FfiException.InvalidArgument(FfiConverterString.read(buf))
+            4 -> FfiException.Panic(FfiConverterString.read(buf))
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
         
@@ -5983,12 +6052,16 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 buf.putInt(1)
                 Unit
             }
-            is FfiException.InvalidArgument -> {
+            is FfiException.IdentityChanged -> {
                 buf.putInt(2)
                 Unit
             }
-            is FfiException.Panic -> {
+            is FfiException.InvalidArgument -> {
                 buf.putInt(3)
+                Unit
+            }
+            is FfiException.Panic -> {
+                buf.putInt(4)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

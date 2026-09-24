@@ -11,8 +11,15 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.aegis.app.core.AppSignature
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeviceIntegrity
+import org.aegis.app.core.HardwareKey
+import org.aegis.app.core.KeyAttestation
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.SecurityEvents
 import org.aegis.app.core.Settings
@@ -40,9 +47,12 @@ import uniffi.aegis.Messenger
  * Пять считает ядро (`securityReport`) — ключ восстановления, свежесть
  * копии, сверка контактов, sealed sender, скрытый адрес. Три — настройки
  * устройства, которые хранит и применяет само приложение: блокировка
- * снимков, скрытый текст уведомлений, автоблокировка. Две последние —
- * состояние самого устройства: экран блокировки и признаки root
- * ([org.aegis.app.core.DeviceIntegrity]). Если состояние прочитать
+ * снимков, скрытый текст уведомлений, автоблокировка. Остальные —
+ * состояние самого устройства и сборки: экран блокировки, признаки root
+ * ([org.aegis.app.core.DeviceIntegrity]), где лежит ключ хранилища
+ * ([HardwareKey.securityLevel]), что об этом говорит само оборудование
+ * ([KeyAttestation]) и чьим ключом подписан APK ([AppSignature]).
+ * Если состояние прочитать
  * нельзя, проверка считается **не пройденной**: не подтверждённая
  * защита не засчитывается.
  *
@@ -104,10 +114,19 @@ class SecurityCenterActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
 
-        val checks = collectChecks()
+        // Проверки считаются не на главном потоке: аттестация создаёт
+        // ключ в Keystore, а в StrongBox это до секунды. Счёт рисуется
+        // только целиком — частичный показал бы «всё в порядке»
+        // до того, как досчитались непройденные.
+        findViewById<TextView>(R.id.score_subtitle).setText(R.string.security_check_pending)
 
-        renderScore(checks)
-        renderChecks(checks)
+        lifecycleScope.launch {
+            val checks = withContext(Dispatchers.IO) { collectChecks() }
+
+            renderScore(checks)
+            renderChecks(checks)
+        }
+
         renderRows()
         renderLog()
     }
@@ -189,6 +208,7 @@ class SecurityCenterActivity : AppCompatActivity() {
         // на экран.
         val rooted = DeviceIntegrity.looksRooted()
         val hasScreenLock = DeviceIntegrity.hasScreenLock(this)
+        val attestation = KeyAttestation.verdict()
 
         return listOf(
             Check(
@@ -269,6 +289,63 @@ class SecurityCenterActivity : AppCompatActivity() {
                 passed = !rooted,
                 detail = if (rooted) getString(R.string.security_check_root_hint) else null,
             ),
+
+            // 🔐 Раздел 7.3: «Нет StrongBox/TEE → предупреждение
+            // в Security Center». Без аппаратного ключа снятая копия
+            // файлов приложения защищена одним PIN.
+            hardwareKeyCheck(),
+
+            // 🔐 Ответ самого оборудования, а не системы (RESILIENCE-1.3).
+            // Заодно — заперт ли загрузчик.
+            attestationCheck(attestation),
+
+            // 🔐 Подпись APK (RESILIENCE-2.1): пересобранная копия
+            // подписана чужим ключом.
+            signatureCheck(attestation),
+        )
+    }
+
+    private fun hardwareKeyCheck(): Check {
+        val level = HardwareKey.securityLevel()
+
+        return Check(
+            label = R.string.security_check_hardware_key,
+            passed = level == KeyAttestation.Level.STRONGBOX ||
+                level == KeyAttestation.Level.TRUSTED_ENVIRONMENT,
+            detail = when (level) {
+                KeyAttestation.Level.STRONGBOX -> getString(R.string.security_check_hardware_key_strongbox)
+                KeyAttestation.Level.TRUSTED_ENVIRONMENT -> getString(R.string.security_check_hardware_key_tee)
+                KeyAttestation.Level.SOFTWARE -> getString(R.string.security_check_hardware_key_software)
+                // Ключа ещё нет или спросить не удалось: непройдено,
+                // но без выдуманного объяснения.
+                null -> null
+            },
+        )
+    }
+
+    private fun attestationCheck(verdict: KeyAttestation.Verdict): Check = Check(
+        label = R.string.security_check_attestation,
+        passed = verdict.passed,
+        detail = when (verdict.outcome) {
+            KeyAttestation.Outcome.TRUSTED_HARDWARE -> null
+            KeyAttestation.Outcome.BOOT_NOT_VERIFIED -> getString(R.string.security_check_attestation_boot)
+            KeyAttestation.Outcome.SOFTWARE_ONLY -> getString(R.string.security_check_attestation_software)
+            KeyAttestation.Outcome.UNTRUSTED_ROOT -> getString(R.string.security_check_attestation_untrusted)
+            KeyAttestation.Outcome.FAILED -> getString(R.string.security_check_attestation_failed)
+        },
+    )
+
+    private fun signatureCheck(attestation: KeyAttestation.Verdict): Check {
+        val verdict = AppSignature.check(this, attestation.trustedSignatureDigests)
+
+        return Check(
+            label = R.string.security_check_signature,
+            passed = verdict == AppSignature.Verdict.MATCH,
+            detail = when (verdict) {
+                AppSignature.Verdict.MATCH -> null
+                AppSignature.Verdict.MISMATCH -> getString(R.string.security_check_signature_mismatch)
+                AppSignature.Verdict.NOT_CONFIGURED -> getString(R.string.security_check_signature_unchecked)
+            },
         )
     }
 

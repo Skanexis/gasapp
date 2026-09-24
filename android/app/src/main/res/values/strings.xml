@@ -47,8 +47,14 @@
     <string name="back_arrow">←</string>
     <string name="message_hint">Message</string>
     <string name="send">Send</string>
-    <string name="key_changed_title">🔒 The contact\'s key changed</string>
-    <string name="key_changed_body">You compared the safety number with this contact before. Sending is blocked until you compare it again.</string>
+    <string name="key_changed_title">🔒 Two keys for one name</string>
+    <string name="key_changed_body">The server now gives a different key for “%1$s”. It may be a reinstall — or an impostor. Sending is paused until you choose which key to trust: compare safety numbers in person, or accept this key.</string>
+    <string name="key_change_accept">Accept this key</string>
+    <string name="key_accept_title">Accept without comparing?</string>
+    <string name="key_accept_body">Neither we nor the app can tell a reinstall from an impostor. Only comparing safety numbers in person can. If you accept, new messages go to this key and the other key\'s chat becomes read-only. The decision is recorded in the security log.</string>
+    <string name="key_accept_confirm">Accept</string>
+    <string name="key_replaced_title">This key was replaced</string>
+    <string name="key_replaced_body">“%1$s” now uses a different key. This conversation stays readable; new messages go to the chat with the current key.</string>
     <string name="verify_safety_number">Compare safety number</string>
 
     <!-- Lock screen -->
@@ -260,6 +266,11 @@
     <string name="lock_biometric_use_pin">Use PIN</string>
     <string name="privacy_biometric">Unlock with fingerprint</string>
     <string name="privacy_biometric_hint">Skip typing the PIN. The PIN still works and is still what protects your messages — your fingerprint only unlocks a sealed copy of the key.</string>
+    <string name="privacy_wipe">Erase after 10 wrong PINs</string>
+    <string name="privacy_wipe_hint">Off by default. For people who fear the phone being taken and the PIN guessed. Only your recovery key can bring the data back.</string>
+    <string name="privacy_wipe_confirm_title">Erase data after 10 wrong PINs?</string>
+    <string name="privacy_wipe_confirm_body">After ten wrong PINs in a row, all messages, contacts and vault files on this phone are erased — including when a child or a pocket types them. Without a recovery key they cannot be brought back, not even by us.</string>
+    <string name="privacy_wipe_confirm">Turn on</string>
     <string name="privacy_biometric_pin_title">Enter your PIN</string>
     <string name="privacy_biometric_enabled">Fingerprint unlock is on.</string>
     <string name="privacy_biometric_disabled">Fingerprint unlock is off.</string>
@@ -420,6 +431,12 @@
     <string name="vault_add">Add a file</string>
     <string name="vault_added">File added</string>
     <string name="vault_add_failed">Could not add the file</string>
+    <string name="vault_original_title">Delete the original?</string>
+    <string name="vault_original_body">The encrypted copy is in the vault. The original is still in your phone’s shared storage, where the gallery, other apps and cloud backup can see it. Deleting it does not remove a copy that was already backed up to the cloud.</string>
+    <string name="vault_original_delete">Delete original</string>
+    <string name="vault_original_keep">Keep it</string>
+    <string name="vault_original_deleted">Original deleted</string>
+    <string name="vault_original_manual">The original could not be deleted from here — delete it in the app where it is stored</string>
     <string name="vault_opened">File decrypted: %1$s</string>
     <string name="vault_open_failed">Could not open the file</string>
     <string name="vault_empty">The vault is empty</string>
@@ -454,6 +471,19 @@
     <string name="security_check_passed">Yes</string>
     <string name="security_check_failed">No</string>
     <string name="security_check_unverified">Not compared: %1$d</string>
+    <string name="security_check_hardware_key">Storage key held in secure hardware</string>
+    <string name="security_check_hardware_key_strongbox">In StrongBox, a separate security chip</string>
+    <string name="security_check_hardware_key_tee">In the phone’s trusted environment (TEE)</string>
+    <string name="security_check_hardware_key_software">Hardware key protection is not available on this device: the key is stored in software, and a copy of the app’s files is protected only by your PIN</string>
+    <string name="security_check_attestation">Hardware confirms the key protection</string>
+    <string name="security_check_attestation_boot">The bootloader is unlocked or the system did not pass verified boot: the system may have been replaced, and its other answers cannot be trusted</string>
+    <string name="security_check_attestation_software">The key’s protection is software-only</string>
+    <string name="security_check_attestation_untrusted">The confirmation does not come from Google’s root: an emulator, an uncertified phone or a forgery</string>
+    <string name="security_check_attestation_failed">Could not check</string>
+    <string name="security_check_signature">App signed by the AEGIS developers</string>
+    <string name="security_check_signature_mismatch">This copy is signed by someone else. It may have been modified — install AEGIS from an official source</string>
+    <string name="security_check_signature_unchecked">Not checked: this is a development build</string>
+    <string name="security_check_pending">Checking…</string>
 
     <!-- Network -->
     <string name="network_title">Network</string>
@@ -496,6 +526,7 @@
     <string name="security_log_empty">Nothing has happened yet</string>
     <string name="security_event_contact_identity_changed">A known username arrived with a different key</string>
     <string name="security_event_contact_verified">Contact marked as verified</string>
+    <string name="security_event_contact_identity_accepted">A new contact key was accepted without comparing</string>
     <string name="security_event_contact_verification_revoked">Contact verification removed</string>
     <string name="security_event_server_key_changed">The server\'s sealed sender key changed</string>
     <string name="security_event_access_rejected">A recipient rejected your access key</string>

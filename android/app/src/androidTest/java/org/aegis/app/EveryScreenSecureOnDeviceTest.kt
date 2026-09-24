@@ -5,6 +5,7 @@ package org.aegis.app
 import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -73,6 +74,7 @@ class EveryScreenSecureOnDeviceTest {
         assertTrue("заготовка теста: activity не найдены", activities.size > 10)
 
         val capturable = mutableListOf<String>()
+        val readable = mutableListOf<String>()
         val opened = mutableListOf<String>()
 
         for (name in activities) {
@@ -94,6 +96,14 @@ class EveryScreenSecureOnDeviceTest {
                     if (flags and WindowManager.LayoutParams.FLAG_SECURE == 0) {
                         capturable += name.substringAfterLast('.')
                     }
+
+                    // 🔐 Android 14+: содержимое окна — только инструментам
+                    // доступности, не шпионским службам (SecureWindow).
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                        !activity.window.decorView.isAccessibilityDataSensitive
+                    ) {
+                        readable += name.substringAfterLast('.')
+                    }
                 }
             }
         }
@@ -102,6 +112,10 @@ class EveryScreenSecureOnDeviceTest {
         assertTrue(
             "экраны снимаются: $capturable (открыто ${opened.size}: $opened)",
             capturable.isEmpty(),
+        )
+        assertTrue(
+            "экраны открыты службам специальных возможностей, не являющимся инструментами: $readable",
+            readable.isEmpty(),
         )
     }
 

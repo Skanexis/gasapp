@@ -30,8 +30,14 @@
     <string name="back_arrow">←</string>
     <string name="message_hint">Сообщение</string>
     <string name="send">Отправить</string>
-    <string name="key_changed_title">🔒 Ключ контакта сменился</string>
-    <string name="key_changed_body">Вы ранее сверили safety number с этим контактом. Отправка заблокирована, пока вы не сверите его заново.</string>
+    <string name="key_changed_title">🔒 Два ключа под одним именем</string>
+    <string name="key_changed_body">Сервер теперь называет для «%1$s» другой ключ. Это может быть переустановка — или подмена. Отправка остановлена, пока вы не выберете ключ: сверьте safety number при встрече или примите этот ключ.</string>
+    <string name="key_change_accept">Принять этот ключ</string>
+    <string name="key_accept_title">Принять без сверки?</string>
+    <string name="key_accept_body">Ни мы, ни приложение не можем отличить переустановку от подмены — только сверка safety number при встрече. Если принять, новые сообщения пойдут на этот ключ, а чат прежнего ключа останется только для чтения. Решение запишется в журнал безопасности.</string>
+    <string name="key_accept_confirm">Принять</string>
+    <string name="key_replaced_title">Этот ключ заменён</string>
+    <string name="key_replaced_body">У «%1$s» теперь другой ключ. Эта переписка остаётся для чтения, новые сообщения — в чате с действующим ключом.</string>
     <string name="verify_safety_number">Сверить safety number</string>
 
     <!-- Блокировка -->
@@ -250,6 +256,11 @@
     <string name="lock_biometric_use_pin">Ввести PIN</string>
     <string name="privacy_biometric">Вход по отпечатку</string>
     <string name="privacy_biometric_hint">Чтобы не набирать PIN. Сам PIN продолжает работать и по-прежнему защищает переписку — отпечаток лишь открывает запечатанную копию ключа.</string>
+    <string name="privacy_wipe">Стирать после 10 неверных PIN</string>
+    <string name="privacy_wipe_hint">По умолчанию выключено. Для тех, кто боится, что телефон отнимут и подберут PIN. Вернуть данные можно будет только ключом восстановления.</string>
+    <string name="privacy_wipe_confirm_title">Стирать данные после 10 неверных PIN?</string>
+    <string name="privacy_wipe_confirm_body">После десяти неверных PIN подряд вся переписка, контакты и файлы хранилища на этом телефоне будут стёрты — в том числе если их наберёт ребёнок или карман. Без ключа восстановления вернуть их не сможет никто, и мы тоже.</string>
+    <string name="privacy_wipe_confirm">Включить</string>
     <string name="privacy_biometric_pin_title">Введите PIN</string>
     <string name="privacy_biometric_enabled">Вход по отпечатку включён.</string>
     <string name="privacy_biometric_disabled">Вход по отпечатку выключен.</string>
@@ -422,6 +433,12 @@
     <string name="vault_add">Добавить файл</string>
     <string name="vault_added">Файл добавлен</string>
     <string name="vault_add_failed">Не удалось добавить файл</string>
+    <string name="vault_original_title">Удалить оригинал?</string>
+    <string name="vault_original_body">Зашифрованная копия — в хранилище. Оригинал остался в общей памяти телефона: его видят галерея, другие приложения и облачная копия. Удаление не уберёт копию, которая уже ушла в облако.</string>
+    <string name="vault_original_delete">Удалить оригинал</string>
+    <string name="vault_original_keep">Оставить</string>
+    <string name="vault_original_deleted">Оригинал удалён</string>
+    <string name="vault_original_manual">Отсюда оригинал удалить не удалось — удалите его в приложении, где он лежит</string>
     <string name="vault_opened">Файл расшифрован: %1$s</string>
     <string name="vault_open_failed">Открыть файл не удалось</string>
     <string name="vault_empty">В хранилище пока пусто</string>
@@ -478,6 +495,19 @@
     <string name="security_check_passed">Да</string>
     <string name="security_check_failed">Нет</string>
     <string name="security_check_unverified">Не сверено: %1$d</string>
+    <string name="security_check_hardware_key">Ключ хранилища в защищённом оборудовании</string>
+    <string name="security_check_hardware_key_strongbox">В StrongBox — отдельном чипе защиты</string>
+    <string name="security_check_hardware_key_tee">В доверенной среде телефона (TEE)</string>
+    <string name="security_check_hardware_key_software">Аппаратная защита ключей на этом устройстве недоступна: ключ хранится программно, и копию файлов приложения защищает только PIN</string>
+    <string name="security_check_attestation">Оборудование подтверждает защиту ключей</string>
+    <string name="security_check_attestation_boot">Загрузчик разблокирован или система не прошла проверку загрузки: систему могли заменить, и её остальным ответам верить нельзя</string>
+    <string name="security_check_attestation_software">Ключи защищены только программно</string>
+    <string name="security_check_attestation_untrusted">Подтверждение не ведёт к корню Google: эмулятор, несертифицированный телефон или подделка</string>
+    <string name="security_check_attestation_failed">Проверить не удалось</string>
+    <string name="security_check_signature">Приложение подписано разработчиками AEGIS</string>
+    <string name="security_check_signature_mismatch">Эта копия подписана чужим ключом. Её могли изменить — установите AEGIS из официального источника</string>
+    <string name="security_check_signature_unchecked">Не проверяется: это отладочная сборка</string>
+    <string name="security_check_pending">Проверяется…</string>
 
     <plurals name="security_attention">
         <item quantity="one">%1$d пункт требует внимания</item>
@@ -542,6 +572,7 @@
     <string name="security_log_empty">Пока ничего не происходило</string>
     <string name="security_event_contact_identity_changed">Знакомое имя пришло с другим ключом</string>
     <string name="security_event_contact_verified">Контакт отмечен сверенным</string>
+    <string name="security_event_contact_identity_accepted">Новый ключ контакта принят без сверки</string>
     <string name="security_event_contact_verification_revoked">Отметка о сверке снята</string>
     <string name="security_event_server_key_changed">Сменился ключ sealed sender у сервера</string>
     <string name="security_event_access_rejected">Получатель отверг наш ключ доступа</string>

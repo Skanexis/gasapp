@@ -87,9 +87,10 @@
     <!--
       🔐 Предупреждение о смене identity-ключа.
 
-      Показывается поверх переписки, а не в углу: если у верифицированного
-      контакта сменился ключ, отправка блокируется до повторной сверки,
-      и пользователь должен узнать об этом до того, как начнёт печатать.
+      Показывается поверх переписки, а не в углу: когда сервер называет
+      для имени другой ключ, ядро отказывается отправлять, пока человек
+      не выберет ключ, — и узнать об этом нужно до того, как начнёшь
+      печатать. Текст задаёт ChatActivity (SendGuard).
     -->
     <LinearLayout
         android:id="@+id/key_change_banner"
@@ -102,6 +103,7 @@
         tools:visibility="visible">
 
         <TextView
+            android:id="@+id/key_change_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/key_changed_title"
@@ -110,10 +112,11 @@
             android:fontFamily="@font/inter_semibold" />
 
         <TextView
+            android:id="@+id/key_change_body"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/key_changed_body"
+            tools:text="@string/key_changed_body"
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
@@ -124,6 +127,15 @@
             android:layout_marginTop="8dp"
             android:text="@string/verify_safety_number"
             app:buttonVariant="primary" />
+
+        <!-- Принятие без сверки — второстепенная кнопка: путь по умолчанию — сверка. -->
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/key_change_accept"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/key_change_accept"
+            app:buttonVariant="secondary" />
     </LinearLayout>
 
         <!--

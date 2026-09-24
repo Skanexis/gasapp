@@ -165,6 +165,42 @@ object PinAttempts {
     }
 
     /**
+     * 🔐 Стирать ли данные после [WIPE_AFTER] неверных попыток подряд.
+     *
+     * Раздел 19.3: opt-in, по умолчанию **выключено**. Случайное
+     * стирание ребёнком или в кармане — частый сценарий, а вернуть
+     * данные можно только ключом восстановления, которого у большинства
+     * под рукой нет.
+     *
+     * Флаг лежит рядом со счётчиком, а не в базе, по той же причине,
+     * что и счётчик: база открывается ключом из PIN, и до верного PIN
+     * прочитать из неё нечего.
+     *
+     * ⚠️ Это защита от перебора **через экран входа**. Тот, кто снял
+     * копию файлов с устройства, экраном не пользуется и стирания
+     * не вызовет; от него защищает аппаратная половина ключа
+     * ([HardwareKey]).
+     */
+    fun wipeEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_WIPE, false)
+
+    @android.annotation.SuppressLint("ApplySharedPref")
+    fun setWipeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_WIPE, enabled).commit()
+    }
+
+    /**
+     * Пора ли стирать после [failures] неверных попыток подряд.
+     *
+     * Отдельно и открыто для теста: порог — политика, и ошибка в нём
+     * в одну сторону стирает данные раньше обещанного, в другую —
+     * не стирает никогда.
+     */
+    fun shouldWipe(failures: Int, enabled: Boolean): Boolean = enabled && failures >= WIPE_AFTER
+
+    /** Порог стирания — раздел 19.3. */
+    const val WIPE_AFTER = 10
+
+    /**
      * 🔐 Забывает историю попыток — при удалении аккаунта.
      *
      * Счётчик неверных попыток и время последней — это след того,
@@ -200,4 +236,5 @@ object PinAttempts {
     private const val STORE = "aegis_pin_attempts"
     private const val KEY_FAILURES = "failures"
     private const val KEY_LAST_ATTEMPT = "last_attempt"
+    private const val KEY_WIPE = "wipe_after_failures"
 }

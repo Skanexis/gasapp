@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
@@ -356,6 +357,22 @@ class LockActivity : AppCompatActivity() {
                 this@LockActivity,
                 System.currentTimeMillis(),
             )
+
+            // 🔐 Opt-in стирание после десяти неверных PIN (раздел 19.3).
+            // Стирает то же, что удаление аккаунта на устройстве, —
+            // кроме записи на сервере: для запроса к нему нужен ключ,
+            // которого без PIN нет.
+            if (PinAttempts.shouldWipe(failures, PinAttempts.wipeEnabled(this@LockActivity))) {
+                withContext(Dispatchers.IO) { AccountWipe.wipe(this@LockActivity) }
+
+                startActivity(
+                    Intent(this@LockActivity, OnboardingActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                )
+                finish()
+
+                return@launch
+            }
 
             showError(failures)
             applyCooldown()

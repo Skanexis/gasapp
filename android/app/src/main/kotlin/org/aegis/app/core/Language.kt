@@ -6,6 +6,7 @@ import android.app.LocaleManager
 import android.content.Context
 import android.os.Build
 import android.os.LocaleList
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import java.util.Locale
@@ -93,6 +94,8 @@ object Language {
         }
     }
 
+    // Вызывается только в ветках для Android 13+: ниже этого класса нет.
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun localeManager(context: Context): LocaleManager =
         context.getSystemService(LocaleManager::class.java)
 

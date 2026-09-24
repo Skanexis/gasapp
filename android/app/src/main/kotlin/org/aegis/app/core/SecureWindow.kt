@@ -4,6 +4,9 @@ package org.aegis.app.core
 
 import android.app.Activity
 import android.app.Dialog
+import android.os.Build
+import android.view.View
+import android.view.Window
 import android.view.WindowManager
 
 /**
@@ -53,6 +56,24 @@ import android.view.WindowManager
  * ошибочное нажатие необратимо или выдаёт доступ: PIN, хранилище
  * файлов, ключ восстановления, сверка ключей. На экранах переписки
  * её нет.
+ *
+ * # Защита от чтения экрана службами специальных возможностей
+ *
+ * 🔐 Третья мера — [hideFromNonToolAccessibility]. Банковские трояны
+ * для Android читают чужие экраны через службы специальных
+ * возможностей: разрешение выпрашивается под любым предлогом, и
+ * дальше служба видит каждое сообщение и каждую цифру PIN. Снимки
+ * экрана и фильтр касаний от этого не защищают — служба читает
+ * дерево элементов, а не пиксели.
+ *
+ * С Android 14 окно можно пометить как чувствительное: его содержимое
+ * видят только службы, объявившие себя инструментами доступности
+ * (`isAccessibilityTool` — TalkBack, Switch Access, экранные лупы;
+ * Google Play проверяет это объявление). Прочие получают пустое окно.
+ * Людям, которые пользуются чтением с экрана, ничего не меняется —
+ * поэтому, в отличие от фильтра касаний, мера стоит на всех экранах.
+ *
+ * ⚠️ На Android 13 и ниже такой пометки нет, и защиты тоже.
  */
 object SecureWindow {
 
@@ -67,6 +88,8 @@ object SecureWindow {
      * трактуется в пользу защиты.
      */
     fun apply(activity: Activity) {
+        hideFromNonToolAccessibility(activity.window)
+
         val block = runCatching {
             Core.messenger().settingBool(Settings.BLOCK_SCREENSHOTS, true)
         }.getOrDefault(true)
@@ -93,6 +116,19 @@ object SecureWindow {
     fun applyAlways(activity: Activity) {
         setSecure(activity)
         blockObscuredTouches(activity)
+        hideFromNonToolAccessibility(activity.window)
+    }
+
+    /**
+     * 🔐 Содержимое окна — только инструментам доступности (Android 14+).
+     *
+     * Ставится на `decorView`: пометка наследуется потомками, и корня
+     * достаточно. Подробности — в описании объекта.
+     */
+    fun hideFromNonToolAccessibility(window: Window?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            window?.decorView?.setAccessibilityDataSensitive(View.ACCESSIBILITY_DATA_SENSITIVE_YES)
+        }
     }
 
     /**
@@ -124,6 +160,8 @@ object SecureWindow {
      * на первый кадр.
      */
     fun inherit(dialog: Dialog, host: Activity) {
+        hideFromNonToolAccessibility(dialog.window)
+
         val flags = host.window.attributes.flags
 
         if (flags and WindowManager.LayoutParams.FLAG_SECURE != 0) {
@@ -139,6 +177,8 @@ object SecureWindow {
      * диалогов, где вводится ключ восстановления.
      */
     fun always(dialog: Dialog) {
+        hideFromNonToolAccessibility(dialog.window)
+
         dialog.window?.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE,

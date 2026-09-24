@@ -103,6 +103,25 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
         application.registerActivityLifecycleCallbacks(this)
     }
 
+    /**
+     * Забывает отлучку: «приложение на переднем плане, в фон не уходило».
+     *
+     * Только для проверок на устройстве. Сторож живёт весь процесс,
+     * и отлучка, заведённая одним тестом (`AutoLockOnDeviceTest`
+     * ставит порог «запирать сразу» и уходит в фон), запирала экран
+     * следующего теста того же прогона. Для приложения это верное
+     * поведение; для соседнего теста — помеха, которую надо снять явно.
+     *
+     * Вызывать с главного потока.
+     */
+    @androidx.annotation.VisibleForTesting
+    fun forgetAbsenceForTests() {
+        scheduled?.let(handler::removeCallbacks)
+        scheduled = null
+        backgroundedAt = 0L
+        thresholdMillis = Settings.AUTO_LOCK_DEFAULT * 1000L
+    }
+
     override fun onActivityStarted(activity: Activity) {
         visible++
 
