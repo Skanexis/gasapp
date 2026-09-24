@@ -9,6 +9,7 @@
 pub mod attachment;
 pub mod descriptor;
 pub mod preview;
+pub mod scrub;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

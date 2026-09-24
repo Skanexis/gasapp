@@ -205,7 +205,7 @@ impl RatchetState {
         rng: &mut R,
     ) -> Result<Self> {
         let our_ratchet = X25519PrivateKey::generate(rng);
-        let dh = Zeroizing::new(our_ratchet.diffie_hellman(their_ratchet));
+        let dh = Zeroizing::new(our_ratchet.diffie_hellman(their_ratchet)?);
         let (root_key, sending_chain) = kdf_root(shared_secret, &dh)?;
 
         Ok(Self {
@@ -622,7 +622,7 @@ impl RatchetState {
         self.their_ratchet = Some(*their_ratchet);
 
         // Цепочка приёма — на нашем текущем ключе.
-        let dh_receive = Zeroizing::new(self.our_ratchet.diffie_hellman(their_ratchet));
+        let dh_receive = Zeroizing::new(self.our_ratchet.diffie_hellman(their_ratchet)?);
         let (root_key, receiving_chain) = kdf_root(self.root_key.expose_secret(), &dh_receive)?;
         self.root_key = Secret::new(root_key);
         self.receiving_chain = Some(Secret::new(receiving_chain));
@@ -637,7 +637,7 @@ impl RatchetState {
         // этого не страдает: проверяется совпадение расшифровки, а не
         // конкретное значение ключа.
         let new_ratchet = X25519PrivateKey::generate(&mut rand_core::OsRng);
-        let dh_send = Zeroizing::new(new_ratchet.diffie_hellman(their_ratchet));
+        let dh_send = Zeroizing::new(new_ratchet.diffie_hellman(their_ratchet)?);
         let (root_key, sending_chain) = kdf_root(self.root_key.expose_secret(), &dh_send)?;
 
         self.root_key = Secret::new(root_key);

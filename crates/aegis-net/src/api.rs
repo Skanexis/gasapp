@@ -151,6 +151,13 @@ pub struct SealedSendRequest {
     pub sealed: String,
     /// Ключ доступа получателя, hex.
     pub access_key: Option<String>,
+    /// Решение proof-of-work первого контакта — когда ключа доступа
+    /// получателя ещё нет (`pow::first_contact_challenge`).
+    ///
+    /// Не сериализуется, если его нет: сервер прежних версий
+    /// неизвестное поле отверг бы.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pow_nonce: Option<u64>,
 }
 
 /// Ключ доступа, публикуемый получателем.

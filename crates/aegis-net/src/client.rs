@@ -534,26 +534,29 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
-    /// Скачивает зашифрованное вложение.
+    /// Скачивает шифроблоб вложения — **без подписи**.
     ///
-    /// Возвращает шифроблоб как есть: расшифровка — дело вызывающего,
-    /// у которого есть ключ из описания.
+    /// # 🔐 Почему анонимно
+    ///
+    /// Загружает вложение отправитель за своей подписью. Прежде и
+    /// скачивал получатель за своей — по тому же идентификатору, и
+    /// сервер видел пару «кто загрузил → кто скачал», то есть кто кому
+    /// прислал файл. Sealed sender прятал отправителя сообщения,
+    /// а вложение выдавало обоих.
+    ///
+    /// Идентификатор — случайные 128 бит, которые знает только тот,
+    /// кому их передали внутри E2EE-сообщения, а содержимое зашифровано
+    /// ключом из того же сообщения. Подпись скачивающего ничего не
+    /// защищала, кроме этой связи.
     ///
     /// # Errors
     ///
-    /// [`AegisError::Network`] при сбое соединения;
-    /// [`AegisError::SessionNotFound`] — вложения нет либо срок истёк.
-    pub fn download_attachment(
-        &self,
-        device_id: &str,
-        attachment_id: &str,
-        signer: &dyn crate::auth::RequestSigner,
-    ) -> Result<Vec<u8>> {
-        let response = self.send_signed(
+    /// [`AegisError::Network`] — вложения нет или оно истекло.
+    pub fn download_attachment(&self, attachment_id: &str) -> Result<Vec<u8>> {
+        let response = self.send(
             Method::Get,
-            format!("/v1/attachments/{device_id}/{attachment_id}"),
+            format!("/v1/attachments/blob/{attachment_id}"),
             None,
-            signer,
         )?;
 
         Ok(response.binary_body)

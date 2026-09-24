@@ -88,11 +88,31 @@ impl X25519PrivateKey {
     /// Computes the Diffie-Hellman shared secret between this private key
     /// and the given public key.
     ///
-    /// Returns the shared secret as 32 bytes.
-    #[must_use]
-    pub fn diffie_hellman(&self, peer_public: &X25519PublicKey) -> [u8; 32] {
+    /// # 🔐 Невкладной результат — ошибка
+    ///
+    /// Точка малого порядка (из одних нулей и ещё семь известных
+    /// кодировок) даёт общий секрет, который не зависит от нашего
+    /// приватного ключа, — нулевой. Прежде он принимался молча:
+    /// противник, подставивший такой ключ (в заголовке сообщения,
+    /// в эфемерном ключе sealed sender, в ответе сервера), получал
+    /// секрет, который знает кто угодно. Защита держалась бы только
+    /// на остальных слагаемых KDF — там, где они есть.
+    ///
+    /// Отказ здесь, а не проверка «похожих на нули» ключей при разборе:
+    /// `was_contributory` ловит все точки малого порядка, включая
+    /// неканонические кодировки, и не требует помнить их список.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — ключ собеседника малого порядка.
+    pub fn diffie_hellman(&self, peer_public: &X25519PublicKey) -> Result<[u8; 32]> {
         let shared_secret = self.static_secret.diffie_hellman(&peer_public.0);
-        *shared_secret.as_bytes()
+
+        if !shared_secret.was_contributory() {
+            return Err(AegisError::Crypto);
+        }
+
+        Ok(*shared_secret.as_bytes())
     }
 }
 
@@ -177,8 +197,8 @@ mod tests {
         let alice_public = alice.public_key();
         let bob_public = bob.public_key();
 
-        let alice_shared = alice.diffie_hellman(&bob_public);
-        let bob_shared = bob.diffie_hellman(&alice_public);
+        let alice_shared = alice.diffie_hellman(&bob_public).expect("обмен");
+        let bob_shared = bob.diffie_hellman(&alice_public).expect("обмен");
 
         assert_eq!(alice_shared, bob_shared);
     }
@@ -225,8 +245,8 @@ mod tests {
             X25519PrivateKey::from_bytes(PrivateKeyBytes::new(hex32(RFC7748_BOB_PRIVATE))).unwrap();
         let expected = hex32(RFC7748_SHARED);
 
-        let a_to_b = alice.diffie_hellman(&bob.public_key());
-        let b_to_a = bob.diffie_hellman(&alice.public_key());
+        let a_to_b = alice.diffie_hellman(&bob.public_key()).expect("обмен");
+        let b_to_a = bob.diffie_hellman(&alice.public_key()).expect("обмен");
 
         assert_eq!(a_to_b, expected, "K(a,B) разошёлся с RFC 7748 6.1");
         assert_eq!(b_to_a, expected, "K(b,A) разошёлся с RFC 7748 6.1");
@@ -261,5 +281,34 @@ mod tests {
             key.public_key().as_bytes(),
             clamped_key.public_key().as_bytes()
         );
+    }
+
+    /// 🔐 Ключ малого порядка отвергается, а не даёт нулевой секрет.
+    ///
+    /// Точки из списка известных точек малого порядка Curve25519
+    /// (cr.yp.to/ecdh.html#validate): ноль, единица и точка порядка 8.
+    /// С любой из них общий секрет не зависит от нашего ключа.
+    #[test]
+    fn low_order_points_are_rejected() {
+        let ours = X25519PrivateKey::generate(&mut rand_core::OsRng);
+
+        let mut order_eight = [0u8; 32];
+        order_eight.copy_from_slice(
+            &hex::decode("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800")
+                .expect("hex"),
+        );
+
+        let mut one = [0u8; 32];
+        one[0] = 1;
+
+        for point in [[0u8; 32], one, order_eight] {
+            let peer = X25519PublicKey::from_bytes(PublicKeyBytes::new(point)).expect("разбор");
+
+            assert!(
+                ours.diffie_hellman(&peer).is_err(),
+                "точка малого порядка {} принята",
+                hex::encode(point)
+            );
+        }
     }
 }

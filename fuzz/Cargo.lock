@@ -31,10 +31,23 @@ name = "aegis-fuzz"
 version = "0.0.0"
 dependencies = [
  "aegis-backup",
+ "aegis-media",
  "aegis-protocol",
  "aegis-types",
  "libfuzzer-sys",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "aegis-media"
+version = "0.1.0"
+dependencies = [
+ "aegis-types",
+ "aes-gcm",
+ "chacha20poly1305",
+ "rand_core 0.6.4",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]

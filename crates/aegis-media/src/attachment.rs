@@ -176,6 +176,49 @@ pub fn chunk_count(size: usize) -> Result<u32> {
     u32::try_from(count).map_err(|_| AegisError::Malformed)
 }
 
+/// 🔐 Длина, до которой дополняется файл перед шифрованием (Padmé).
+///
+/// Сервер видит длину шифроблоба, а точная длина файла узнаваема:
+/// одна и та же пересланная фотография весит одинаково у всех, кому
+/// её переслали, и по размеру блоба видно, что десять человек
+/// получили один файл. Длина округляется вверх до сетки, шаг которой
+/// растёт с размером (Nikitin et al., «Reducing Metadata Leakage from
+/// Encrypted Files and Communication with PURBs», 2019): накладные
+/// расходы не больше 12 %, а о файле остаётся известен лишь порядок
+/// величины — O(log log n) бит вместо O(log n).
+///
+/// Дополнение — нули перед шифрованием: под AEAD они неотличимы
+/// от данных, а настоящая длина едет внутри описания вложения,
+/// зашифрованного вместе с сообщением.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — длина не представима.
+pub fn padded_len(size: usize) -> Result<usize> {
+    if size < 2 {
+        return Ok(size);
+    }
+
+    let size64 = u64::try_from(size).map_err(|_| AegisError::Malformed)?;
+
+    // E = ⌊log2 L⌋, S = ⌊log2 E⌋ + 1, обнуляется E − S младших бит.
+    let exponent = 63u32
+        .checked_sub(size64.leading_zeros())
+        .ok_or(AegisError::Malformed)?;
+    let bits_of_exponent = 32u32
+        .checked_sub(exponent.leading_zeros())
+        .ok_or(AegisError::Malformed)?;
+    let low_bits = exponent.saturating_sub(bits_of_exponent);
+    let mask = 1u64
+        .checked_shl(low_bits)
+        .and_then(|bit| bit.checked_sub(1))
+        .ok_or(AegisError::Malformed)?;
+
+    let padded = size64.checked_add(mask).ok_or(AegisError::Malformed)? & !mask;
+
+    usize::try_from(padded).map_err(|_| AegisError::Malformed)
+}
+
 /// Выводит nonce для чанка.
 ///
 /// Счётчик в старших байтах, остальное — нули. Случайная часть здесь
@@ -194,6 +237,28 @@ fn nonce_for(index: u32) -> [u8; NONCE_LEN] {
 
 #[cfg(test)]
 mod tests {
+
+    /// Padmé: не меньше исходного, не больше +12 %, на сетке.
+    #[test]
+    fn padding_is_bounded_and_coarse() {
+        for size in [2usize, 3, 100, 1_000, 4_096, 65_537, 1_000_000, 104_857_600] {
+            let padded = padded_len(size).expect("длина");
+
+            assert!(padded >= size);
+            assert!(
+                (padded - size) * 100 <= size * 12,
+                "{size} → {padded}: больше 12 %"
+            );
+        }
+
+        // Близкие размеры неразличимы после дополнения.
+        assert_eq!(
+            padded_len(1_000_001).expect("длина"),
+            padded_len(1_010_000).expect("длина")
+        );
+        // 100 МиБ лежит на сетке: предел сервера не превышается.
+        assert_eq!(padded_len(104_857_600).expect("длина"), 104_857_600);
+    }
     use super::*;
     use rand_core::OsRng;
 
