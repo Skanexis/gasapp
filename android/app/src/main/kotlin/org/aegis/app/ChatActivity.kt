@@ -148,9 +148,6 @@ class ChatActivity : AppCompatActivity() {
         findViewById<AegisButton>(R.id.key_change_verify).setOnClickListener {
             openSafetyNumber(chatName)
         }
-        findViewById<AegisButton>(R.id.key_change_accept).setOnClickListener {
-            confirmAcceptKey()
-        }
 
         sendButton.setOnClickListener { send() }
         findViewById<ImageView>(R.id.attach_button).setOnClickListener { chooseAttachment() }
@@ -393,6 +390,12 @@ class ChatActivity : AppCompatActivity() {
 
         sendButton.isEnabled = allowed
         input.isEnabled = allowed
+        // Вложение — тоже отправка: ядро отвергло бы его так же, но уже
+        // после выбора файла и очистки метаданных.
+        findViewById<ImageView>(R.id.attach_button).apply {
+            isEnabled = allowed
+            alpha = if (allowed) 1f else DISABLED_ALPHA
+        }
         keyChangeBanner.visibility = if (allowed) View.GONE else View.VISIBLE
 
         val name = peerUsername.ifEmpty { intent.getStringExtra(EXTRA_CHAT_NAME).orEmpty() }
@@ -405,7 +408,15 @@ class ChatActivity : AppCompatActivity() {
                 findViewById<TextView>(R.id.key_change_body).text =
                     getString(R.string.key_changed_body, name)
                 findViewById<View>(R.id.key_change_verify).visibility = View.VISIBLE
-                findViewById<View>(R.id.key_change_accept).visibility = View.VISIBLE
+            }
+
+            // 🔐 Ключ назвал только сервер. Писать можно после сверки
+            // safety number или по ссылке/QR самого собеседника.
+            SendGuard.Mode.CONFIRM_KEY -> {
+                findViewById<TextView>(R.id.key_change_title).setText(R.string.key_unconfirmed_title)
+                findViewById<TextView>(R.id.key_change_body).text =
+                    getString(R.string.key_unconfirmed_body, name)
+                findViewById<View>(R.id.key_change_verify).visibility = View.VISIBLE
             }
 
             SendGuard.Mode.REPLACED -> {
@@ -413,7 +424,6 @@ class ChatActivity : AppCompatActivity() {
                 findViewById<TextView>(R.id.key_change_body).text =
                     getString(R.string.key_replaced_body, name)
                 findViewById<View>(R.id.key_change_verify).visibility = View.GONE
-                findViewById<View>(R.id.key_change_accept).visibility = View.GONE
             }
         }
     }
@@ -441,9 +451,12 @@ class ChatActivity : AppCompatActivity() {
 
             peerAccountId = contact?.accountId
             wasVerified = contact?.verified ?: wasVerified
+            // Контакта нет или прочитать его не удалось — ключ не
+            // подтверждён: отправку это не откроет, её решает ядро.
             sendMode = SendGuard.decide(
                 keyChanged = contact?.keyChanged == true,
                 replaced = contact?.replaced == true,
+                keyConfirmed = contact?.keyConfirmed == true,
             )
 
             findViewById<TextView>(R.id.chat_verification_state).text = getString(
@@ -452,40 +465,6 @@ class ChatActivity : AppCompatActivity() {
 
             applySendGuard()
         }
-    }
-
-    /**
-     * 🔐 Принять ключ этого чата без сверки.
-     *
-     * Путь для законной смены — переустановки у собеседника, — когда
-     * встретиться нельзя. Ядро не отличает её от подмены, поэтому
-     * диалог говорит это до нажатия, а решение пишется в журнал
-     * безопасности. Кнопка по умолчанию — сверка, а не принятие.
-     */
-    private fun confirmAcceptKey() {
-        val account = peerAccountId ?: return
-
-        AlertDialog.Builder(this)
-            .setTitle(R.string.key_accept_title)
-            .setMessage(R.string.key_accept_body)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.key_accept_confirm) { _, _ ->
-                lifecycleScope.launch {
-                    val accepted = withContext(Dispatchers.IO) {
-                        runCatching {
-                            Core.messenger().acceptContactIdentity(account, System.currentTimeMillis())
-                        }
-                    }
-
-                    if (accepted.isFailure) {
-                        Toast.makeText(this@ChatActivity, R.string.message_action_failed, Toast.LENGTH_SHORT)
-                            .show()
-                    }
-
-                    refreshSendMode()
-                }
-            }
-            .showSecure(this)
     }
 
     private fun send() {
@@ -518,14 +497,24 @@ class ChatActivity : AppCompatActivity() {
                 }
             }
 
-            // 🔐 Ядро отвергло ключ, который назвал сервер. Текст
-            // возвращается в поле — он не ушёл никуда, — а экран
-            // перечитывает контакт: ядро уже записало новый ключ,
-            // и баннер покажет выбор.
-            if (sent.exceptionOrNull() is FfiException.IdentityChanged) {
-                input.setText(text)
-                Toast.makeText(this@ChatActivity, R.string.key_changed_title, Toast.LENGTH_LONG).show()
-                refreshSendMode()
+            // 🔐 Ядро отвергло ключ: сервер назвал другой или ключ ещё
+            // не подтверждён. Текст возвращается в поле — он не ушёл
+            // никуда, — а экран перечитывает контакт и показывает,
+            // что сделать.
+            when (sent.exceptionOrNull()) {
+                is FfiException.IdentityChanged -> {
+                    input.setText(text)
+                    Toast.makeText(this@ChatActivity, R.string.key_changed_title, Toast.LENGTH_LONG).show()
+                    refreshSendMode()
+                }
+
+                is FfiException.PeerUnconfirmed -> {
+                    input.setText(text)
+                    Toast.makeText(this@ChatActivity, R.string.key_unconfirmed_title, Toast.LENGTH_LONG).show()
+                    refreshSendMode()
+                }
+
+                else -> Unit
             }
 
             // Отказ показывается крестом, а не молчанием: сообщение,
@@ -1031,6 +1020,9 @@ class ChatActivity : AppCompatActivity() {
 
 
     companion object {
+        /** Прозрачность недоступной кнопки вложения. */
+        private const val DISABLED_ALPHA = 0.3f
+
         /** Идентификатор чата. */
         const val EXTRA_CHAT_ID = "chat_id"
 

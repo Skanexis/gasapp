@@ -31,11 +31,9 @@
     <string name="message_hint">Сообщение</string>
     <string name="send">Отправить</string>
     <string name="key_changed_title">🔒 Два ключа под одним именем</string>
-    <string name="key_changed_body">Сервер теперь называет для «%1$s» другой ключ. Это может быть переустановка — или подмена. Отправка остановлена, пока вы не выберете ключ: сверьте safety number при встрече или примите этот ключ.</string>
-    <string name="key_change_accept">Принять этот ключ</string>
-    <string name="key_accept_title">Принять без сверки?</string>
-    <string name="key_accept_body">Ни мы, ни приложение не можем отличить переустановку от подмены — только сверка safety number при встрече. Если принять, новые сообщения пойдут на этот ключ, а чат прежнего ключа останется только для чтения. Решение запишется в журнал безопасности.</string>
-    <string name="key_accept_confirm">Принять</string>
+    <string name="key_changed_body">Сервер теперь называет для «%1$s» другой ключ. Это может быть переустановка — или подмена. Отправка остановлена, пока вы не сверите safety number при встрече или по видео.</string>
+    <string name="key_unconfirmed_title">🔒 Ключ ещё не подтверждён</string>
+    <string name="key_unconfirmed_body">Ключ «%1$s» пришёл от сервера — а сервер мог подсунуть свой. Сверьте safety number при встрече или по видео либо добавьте собеседника по его ссылке или QR-коду. До тех пор читать можно, писать — нет.</string>
     <string name="key_replaced_title">Этот ключ заменён</string>
     <string name="key_replaced_body">У «%1$s» теперь другой ключ. Эта переписка остаётся для чтения, новые сообщения — в чате с действующим ключом.</string>
     <string name="verify_safety_number">Сверить safety number</string>
@@ -129,8 +127,15 @@
     <string name="onboarding_working">Подбирается доказательство работы…</string>
     <string name="onboarding_error_short">Имя слишком короткое</string>
     <string name="onboarding_error_taken">Это имя уже занято</string>
+    <string name="onboarding_direct">Подключаться напрямую, без Tor</string>
+    <string name="onboarding_network_tor">Соединения идут через Tor с Orbot, и сервер не видит ваш IP-адрес. Orbot должен быть установлен и запущен.</string>
+    <string name="onboarding_network_direct">⚠️ Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети.</string>
+    <string name="onboarding_error_tor">Не удалось связаться с сервером через Tor. Запустите Orbot и повторите или выберите прямое соединение выше.</string>
+    <string name="onboarding_open_orbot">Открыть Orbot</string>
+    <string name="onboarding_orbot_missing">Orbot не установлен. Установите его из Google Play или F-Droid.</string>
     <string name="onboarding_error_network">Сервер недоступен. Проверьте соединение.</string>
     <string name="new_chat_hint">Введите имя пользователя собеседника</string>
+    <string name="new_chat_not_found">Собеседник не найден. Проверьте имя и соединение.</string>
     <string name="new_chat_open">Открыть</string>
     <string name="onboarding_choose_pin">Придумайте PIN — им шифруется переписка на устройстве</string>
     <string name="onboarding_error_pin">PIN — ровно 6 цифр</string>
@@ -527,7 +532,7 @@
       скрыт его адрес.
     -->
     <string name="network_title">Сеть</string>
-    <string name="network_intro">Сервер видит IP-адрес устройства: по нему можно узнать примерное местоположение и связать ваши аккаунты между собой. Прокси или Tor скрывают адрес от сервера.</string>
+    <string name="network_intro">Без Tor или прокси сервер видит IP-адрес устройства: по нему можно узнать примерное местоположение и связать ваши аккаунты между собой. По умолчанию выбран Tor через Orbot.</string>
     <string name="network_section_mode">Способ подключения</string>
     <string name="network_mode_direct">Напрямую</string>
     <string name="network_mode_orbot">Tor через Orbot</string>
@@ -535,6 +540,9 @@
     <string name="network_hint_direct">Сервер видит ваш IP-адрес.</string>
     <string name="network_hint_orbot">Нужен установленный и запущенный Orbot. Если он выключен, приложение не подключится — напрямую оно не пойдёт.</string>
     <string name="network_hint_socks">Все запросы и уведомления идут через указанный прокси. Если он недоступен, приложение не подключится — напрямую оно не пойдёт.</string>
+    <string name="network_direct_confirm_title">Подключаться напрямую?</string>
+    <string name="network_direct_confirm_body">Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети. Tor через Orbot его скрывает.</string>
+    <string name="network_direct_confirm_ok">Подключаться напрямую</string>
     <string name="network_host_hint">Адрес прокси</string>
     <string name="network_port_hint">Порт</string>
     <string name="network_save">Сохранить</string>
@@ -587,8 +595,8 @@
       меняется строка.
     -->
     <string name="about_section_limits">Чего это не защищает</string>
-    <string name="about_limit_first_message">Собеседник, найденный по имени, получает ключ от сервера — и сервер мог бы подсунуть свой. Это исключают ссылка или QR-код, показанные при встрече, либо сверка safety number. Каждое сообщение, и первое тоже, запечатано: сервер не видит, кто кому пишет.</string>
-    <string name="about_limit_address">Сервер видит ваш IP-адрес и время запроса. Скрывает их только прокси или Tor — «Настройки» → «Соединение».</string>
+    <string name="about_limit_first_message">Ключ собеседника, найденного по имени, приходит от сервера, а сервер мог бы подсунуть свой. Поэтому писать ему нельзя, пока вы не сверите safety number при встрече или по видео либо не добавите его по его ссылке или QR-коду. Каждое сообщение, и первое тоже, запечатано: сервер не видит, кто кому пишет.</string>
+    <string name="about_limit_address">По умолчанию приложение подключается через Tor с Orbot, и сервер не видит ваш IP-адрес. Если выбрать прямое соединение («Настройки» → «Соединение»), сервер увидит IP-адрес и время каждого запроса.</string>
     <string name="about_limit_notifications">Уведомлений нет: сообщения приходят, пока приложение открыто.</string>
     <string name="about_limit_backup">Исчезающих сообщений в резервной копии нет. Удалённое сообщение остаётся в копиях, сделанных до удаления.</string>
     <string name="about_limit_recovery_key">Потеряете ключ восстановления — копию не прочитает никто. Мы тоже.</string>

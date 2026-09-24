@@ -46,8 +46,15 @@ object NetworkProxy {
         object Blocked : State()
     }
 
+    /**
+     * 🔐 До чтения настройки сеть закрыта.
+     *
+     * Настройка живёт в зашифрованной базе, и до её открытия режима
+     * не знает никто. Прежде здесь стояло «напрямую»: запрос, ушедший
+     * до [apply], выдал бы серверу адрес, хотя по умолчанию выбран Tor.
+     */
     @Volatile
-    private var state: State = State.Direct
+    private var state: State = State.Blocked
 
     /** Умеет ли платформа передавать прокси имя хоста (Android 7.0+). */
     val proxySupported: Boolean

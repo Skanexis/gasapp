@@ -2,6 +2,7 @@
 
 package org.aegis.app
 
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
@@ -13,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.showSecure
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiProxy
 import uniffi.aegis.validateProxy
@@ -121,6 +123,22 @@ class NetworkActivity : AppCompatActivity() {
             return
         }
 
+        // 🔐 Прямое соединение отдаёт серверу адрес — только явным
+        // согласием, после которого человек знает, чем платит.
+        if (mode is FfiProxy.Direct) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.network_direct_confirm_title)
+                .setMessage(R.string.network_direct_confirm_body)
+                .setPositiveButton(R.string.network_direct_confirm_ok) { _, _ -> store(mode) }
+                .setNegativeButton(R.string.action_cancel, null)
+                .showSecure(this)
+            return
+        }
+
+        store(mode)
+    }
+
+    private fun store(mode: FfiProxy) {
         if (runCatching { Core.messenger().setProxy(mode) }.isFailure) {
             showStatus(getString(R.string.network_save_failed))
             return
