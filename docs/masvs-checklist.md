@@ -44,6 +44,7 @@
 | CRYPTO-1 | Современная проверенная криптография | ✅ | Тестовые векторы: `crates/aegis-protocol/tests/rfc_vectors.rs`, `tests/protocol_vectors.rs`; список примитивов — раздел 6.1 |
 | CRYPTO-1.1 | 🔐 Отправитель защищён пост-квантово | ✅ | Внешний слой sealed sender — гибрид X25519 + ML-KEM-1024 (2026-09-24, формат `0xA2`). **Было: только X25519** — содержимое защищал пост-квантовый храповик, а имя отправителя одна кривая, и записанные сегодня конверты раскрыли бы социальный граф квантовому противнику завтра. Ключ ML-KEM получателя подписан его identity-ключом с доменом; нет ключа — отказ, а не откат. `sealed_sender::tests::one_half_of_the_hybrid_is_not_enough`, `::the_classical_only_format_is_rejected`, `::sealed_kem_signature_is_domain_separated`; сквозные `a_substituted_sealed_kem_key_is_refused`, `a_missing_sealed_kem_key_does_not_fall_back_to_classical`; клиент против настоящего сервера — 4/4 |
 | CRYPTO-1.2 | Обмен привязан к транскрипту; невкладной DH отвергается | ✅ | PQXDH v2: соль HKDF — хеш `IK_A ‖ IK_B ‖ EK_A ‖ SPK_B ‖ CT_kem` (`pqxdh::tests::every_transcript_field_is_bound`). Было: нулевая соль и никакого AD, вопреки X3DH/PQXDH (неэксплуатируемо — идентичности входят через DH1/DH2 — но стороны не подтверждали один обмен). X25519 принимал точки малого порядка и давал нулевой секрет — теперь ошибка (`x25519::tests::low_order_points_are_rejected`), во всех 13 местах |
+| CRYPTO-1.5 | 🔐 Подлинность ключей — пост-квантово (ML-DSA-65) | ✅ | 2026-09-24. **Было:** подписи предключей и ключа sealed sender — одна XEdDSA; квантовый противник в момент атаки подделал бы их и подставил свои ключи. Теперь у identity вторая половина — ML-DSA-65 (FIPS 204, крейт `ml-dsa`) со своим seed; подписи гибридные (XEdDSA ‖ ML-DSA-65, проверяются обе), с доменом на каждый вид ключа; половины связаны гибридной привязкой; хеш пост-квантовой половины входит в safety number (отпечаток версии 1) и в ссылку/QR и запоминается при первой встрече — подмена даёт `IdentityChanged`. Протокол — `pq_identity`, спецификация §4.4, 9.1–9.3, метки сверяются `check-protocol-spec`. Тесты: 7 модульных (обе половины, домены, привязка), `a_foreign_pq_identity_is_rejected`, `classical_only_signatures_are_rejected`, `a_substituted_pq_identity_is_refused`, `a_changed_pq_identity_after_first_contact_is_refused`, `the_safety_number_is_hybrid_and_symmetric`, `hybrid_fingerprint_covers_the_pq_half`; клиент против живого сервера. ⚠️ Подпись устройства перед сервером (аутентификация запросов) и сертификат sealed sender остаются классическими: их подделка не раскрывает переписки |
 | CRYPTO-1.3 | 🔐 Ключ ML-KEM sealed sender сменяется | ✅ | 2026-09-24. **Было:** ключ, скрывающий отправителя, не менялся никогда — изъятое устройство открыло бы внешний слой каждого записанного конверта за всё время. Теперь `maintain_prekeys` сменяет его раз в 7 дней после публикации, прежние хранятся 30 суток (срок конверта в очереди, не больше 8) и стираются; конверт на прежний ключ открывается перебором от новых к старым. Схема хранилища 10. `the_sealed_kem_key_rotates_and_the_previous_one_still_opens`, `a_retired_sealed_kem_key_is_erased_after_a_month` (мутация «не стирать по сроку» его роняет), `rotating_the_sealed_kem_retires_the_previous_key`, `retired_sealed_kems_are_pruned_by_age_and_count` |
 | CRYPTO-1.4 | Версия протокола на проводе, без отката | ✅ | 2026-09-24: `ProtocolVersion::CURRENT = 2` — первый байт каждого конверта (`ENVELOPE_VERSION` выводится из неё). **Было:** номер жил только на экране «О защите», а конверт нёс свою единицу; клиент прежней сборки разобрал бы начальный конверт PQXDH v2 и молча не расшифровал. Теперь версии 0 и 1 отвергаются явно. `version::tests::version_one_is_no_longer_accepted`, `exactly_one_byte_value_is_accepted`, через FFI — `protocol_downgrade_is_rejected_across_ffi` |
 | CRYPTO-2.1 | Генерация: только OS CSPRNG | ✅ | Только `OsRng` (`rand_core` с `getrandom`): `grep -rn "thread_rng|rand::random|from_entropy" crates/*/src/` — ноль вхождений |
@@ -153,14 +154,14 @@
 | Раздел | ✅ | 🟡 | ❌ | ⛔ |
 |---|---|---|---|---|
 | STORAGE | 7 | 0 | 1 | 0 |
-| CRYPTO | 10 | 1 | 0 | 0 |
+| CRYPTO | 11 | 1 | 0 | 0 |
 | AUTH | 9 | 0 | 0 | 0 |
 | NETWORK | 7 | 1 | 1 | 0 |
 | PLATFORM | 6 | 0 | 2 | 1 |
 | CODE | 10 | 1 | 0 | 0 |
 | RESILIENCE | 6 | 1 | 0 | 1 |
 | PRIVACY | 9 | 3 | 0 | 0 |
-| **Итого** | **64** | **7** | **4** | **2** |
+| **Итого** | **65** | **7** | **4** | **2** |
 
 ⚠️ Чек-лист **не пройден**. Все четыре ❌ — вне Android: три — клиент
 iOS (STORAGE-2.7, PLATFORM-1.4, PLATFORM-3.3), один — боевые пины

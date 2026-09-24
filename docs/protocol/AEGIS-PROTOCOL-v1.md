@@ -65,6 +65,9 @@ AEGIS v1.0 uses the following cryptographic primitives:
 - **X25519**: Elliptic curve Diffie-Hellman over Curve25519
 - **ML-KEM-1024**: Module-Lattice-Based Key-Encapsulation Mechanism (NIST FIPS 203)
 - **ML-KEM-768**: Module-Lattice-Based Key-Encapsulation Mechanism (NIST FIPS 203) - used in SPQR
+- **ML-DSA-65**: Module-Lattice-Based Digital Signature Algorithm (NIST FIPS 204) — the
+  post-quantum half of the identity (§4.4); deterministic signing with a
+  domain context string
 - **HKDF-SHA-256**: HMAC-based Extract-and-Expand Key Derivation Function (RFC 5869)
 - **HMAC-SHA-256**: Hash-based Message Authentication Code (RFC 2104)
 - **SHA-512**: Secure Hash Algorithm 512-bit (FIPS 180-4)
@@ -159,8 +162,9 @@ Each party publishes a PreKeyBundle containing:
 | Signed PQ pre-key (PQSPK) | ML-KEM-1024 | every 7 days | yes |
 | One-time PQ pre-key (PQOPK) | ML-KEM-1024, pool of 100 | on use | yes |
 
-Signatures use XEdDSA and MUST be verified **with the bundle owner's
-identity key** before any cryptographic operation on the bundle. A failed
+Signatures are **hybrid** (§4.4) — XEdDSA ‖ ML-DSA-65 — and MUST be verified
+**with both halves of the bundle owner's identity** before any cryptographic
+operation on the bundle. A failed
 verification aborts session establishment; there is no degraded mode.
 
 OPK carries no signature because substituting it gains an attacker nothing:
@@ -173,6 +177,43 @@ A bundle missing either one-time key is usable but **degraded**: forward
 secrecy of the first message is weakened. Implementations MUST surface this
 rather than fail, and SHOULD record it, since systematic pool exhaustion may
 indicate an attacker draining a peer's pre-keys.
+
+### 4.4. Hybrid Identity (ML-DSA-65)
+
+Every account has a second, post-quantum half of its identity: an ML-DSA-65
+key pair (FIPS 204) derived from its **own** 32-byte seed. The seed is never
+derived from the X25519 identity key: a quantum adversary recovers that key
+from its public half and would then recover the seed too.
+
+```
+PQ     = ML-DSA-65 public key                         -- 1952 bytes
+bind   = hybrid_sign("AEGIS_PQID_BIND_v1",
+                     "AEGIS_PQID_BIND_v1" || IK || PQ)
+hybrid_sign(ctx, m) = XEdDSA_IK(m) || ML-DSA-65_PQ(m, ctx)   -- 64 + 3309 bytes
+H(PQ)  = SHA-256("AEGIS_PQID_HASH_v1" || PQ)
+```
+
+A hybrid signature verifies only if **both** halves verify. ML-DSA signs with
+a domain context, so one signed item cannot stand in for another:
+
+| Item | Context |
+|---|---|
+| SPK | `"AEGIS_PQSIG_SPK_v1"` |
+| PQSPK | `"AEGIS_PQSIG_KEM_v1"` |
+| PQOPK | `"AEGIS_PQSIG_OTKEM_v1"` |
+| Sealed-sender ML-KEM key | `"AEGIS_PQSIG_SEALED_KEM_v1"` |
+
+The server stores and serves `PQ` and `bind` next to `IK`; it verifies
+nothing. Clients MUST:
+
+1. verify `bind` against `IK` and `PQ` before trusting any signature made
+   with `PQ` — otherwise a server could pair a real `IK` with its own `PQ`;
+2. remember `H(PQ)` at first contact (or take it from the peer's contact
+   link) and refuse a different one as an identity change;
+3. require that the bundle's `PQ` has the remembered hash.
+
+`H(PQ)` enters the safety number (§9.2) and the contact link (§9.3), so an
+in-person comparison covers both halves.
 
 ## 5. Double Ratchet
 
@@ -370,6 +411,18 @@ rounds, each mixing `IK`, over the version-prefixed input.
   and a server-assigned account id is not known the same way to both
   (a contact added by name vs. learned from an incoming message).
 
+**Hybrid fingerprint (format version 1).** The safety number is computed
+over both halves of the identity (§4.4):
+
+```
+K   = IK || H(PQ)                                   -- 64 bytes
+h_0 = SHA-512(0x00 || 0x01 || K || identifier)
+h_i = SHA-512(h_{i-1} || K)        for i = 1 .. 5200
+```
+
+The version bytes differ from the classical fingerprint, so a hybrid number
+cannot be mistaken for a classical one of the same key.
+
 ### 9.2. Safety number
 
 ```
@@ -382,7 +435,14 @@ digits(fp)      = for each 5-byte group g of fp:
 Sorting makes both parties obtain the same 60 digits although "own" and
 "peer" are swapped between them. Display: 12 groups of 5 digits (ADR-022).
 
-### 9.3. Usernames
+### 9.3. Contact links
+
+`aegis://contact/<base32(IK)>.<base32(H(PQ))>[?name=...]`. The hash of the
+post-quantum half is mandatory: a link without it would vouch for the
+classical half only. A client adding a contact by link records `H(PQ)`
+from the link and refuses a server-supplied `PQ` with a different hash.
+
+### 9.4. Usernames
 
 A username is canonical: lowercase ASCII letters, digits and `_`, starting
 with a letter, 3 to 32 characters. Clients lowercase ASCII input and strip a
@@ -390,7 +450,7 @@ leading `@`; anything else that does not fit is refused, never cleaned up.
 The server and its database enforce the same rule. Without it, `alice`,
 `Alice` and `аlice` (Cyrillic `а`) were distinct accounts that look alike.
 
-### 9.4. Key confirmation before sending
+### 9.5. Key confirmation before sending
 
 A peer's identity key obtained from the server by username is **not trusted
 for sending**. A client refuses to encrypt to it (`PeerUnconfirmed`) until the
