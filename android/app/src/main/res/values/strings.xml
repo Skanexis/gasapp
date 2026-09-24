@@ -555,10 +555,19 @@
     <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>
     <string name="about_limit_recovery_key">If you lose the recovery key, the backup cannot be read. Not even by us.</string>
     <string name="about_limit_peer">The other person has already seen your message: they can photograph or remember it. “Delete for everyone” is a request, not a guarantee.</string>
+    <string name="about_limit_inactive">Your username belongs to your account for as long as the account exists: reinstalling the app does not free it. To keep it on a new phone, restore your backup. An account nobody has opened for 12 months is deleted, and its username becomes free.</string>
     <string name="about_limit_calls">There are no calls in this version.</string>
 
     <!-- File sizes, 1024-based. -->
     <string name="size_bytes">%1$d B</string>
     <string name="size_kb">%1$d KB</string>
     <string name="size_mb">%1$.1f MB</string>
+    <string name="request_title">%1$s wants to start a conversation</string>
+    <string name="request_body">You have not talked before. Until you accept, they get no read receipts and do not see you typing. Declining deletes the conversation, and they are not told.</string>
+    <string name="request_accept">Accept</string>
+    <string name="request_decline">Decline</string>
+    <string name="request_decline_title">Decline the request?</string>
+    <string name="request_decline_body">The conversation will be deleted on this device. The other person is not notified and does not learn that you read it.</string>
+    <string name="request_awaiting">Request sent. The conversation starts when they accept or reply.</string>
+    <string name="request_badge">Request</string>
 </resources>

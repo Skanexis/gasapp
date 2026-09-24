@@ -34,6 +34,8 @@ data class ChatSummary(
     val unread: Int = 0,
     /** В сети ли собеседник. */
     val online: Boolean = false,
+    /** 🔐 Непринятый входящий запрос на переписку. */
+    val request: Boolean = false,
 )
 
 /**
@@ -118,7 +120,15 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
             avatar.text = initialsOf(chat.name)
             name.text = chat.name
             preview.text = chat.preview
-            time.text = chat.time
+            // Запрос виден в списке сразу: иначе незнакомец выглядел бы
+            // обычной перепиской, а согласия у него ещё нет.
+            time.text = if (chat.request) itemView.context.getString(R.string.request_badge) else chat.time
+            time.setTextColor(
+                androidx.core.content.ContextCompat.getColor(
+                    itemView.context,
+                    if (chat.request) R.color.accent_base else R.color.text_disabled,
+                ),
+            )
 
             // 🔐 Значок верификации — только у сверенных контактов.
             // Галочка у несверенного означала бы, что проверка

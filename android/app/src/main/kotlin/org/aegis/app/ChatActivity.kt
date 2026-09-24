@@ -38,6 +38,7 @@ import org.aegis.app.ui.MessageAdapter
 import org.aegis.app.ui.MessageItem
 import org.aegis.app.ui.initialsOf
 import uniffi.aegis.FfiAttachmentFile
+import uniffi.aegis.FfiChatRequest
 import uniffi.aegis.FfiException
 import uniffi.aegis.FfiAttachmentKind
 import uniffi.aegis.FfiDeliveryStatus
@@ -54,6 +55,9 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var adapter: MessageAdapter
     private lateinit var input: AegisTextField
     private lateinit var sendButton: View
+
+    /** Мы начали переписку, собеседник ещё не ответил. */
+    private var awaitingPeer = false
     private lateinit var keyChangeBanner: LinearLayout
 
     /** Сверял ли пользователь safety number этого контакта. */
@@ -147,6 +151,8 @@ class ChatActivity : AppCompatActivity() {
             setOnClickListener { openSafetyNumber(chatName) }
         }
 
+        findViewById<AegisButton>(R.id.request_accept).setOnClickListener { acceptRequest() }
+        findViewById<AegisButton>(R.id.request_decline).setOnClickListener { confirmDeclineRequest() }
         findViewById<AegisButton>(R.id.key_change_verify).setOnClickListener {
             openSafetyNumber(chatName)
         }
@@ -399,6 +405,10 @@ class ChatActivity : AppCompatActivity() {
             alpha = if (allowed) 1f else DISABLED_ALPHA
         }
         keyChangeBanner.visibility = if (allowed) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.request_actions).visibility =
+            if (sendMode == SendGuard.Mode.REQUEST) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.request_awaiting).visibility =
+            if (awaitingPeer) View.VISIBLE else View.GONE
 
         val name = peerUsername.ifEmpty { intent.getStringExtra(EXTRA_CHAT_NAME).orEmpty() }
 
@@ -419,6 +429,14 @@ class ChatActivity : AppCompatActivity() {
                 findViewById<TextView>(R.id.key_change_body).text =
                     getString(R.string.key_unconfirmed_body, name)
                 findViewById<View>(R.id.key_change_verify).visibility = View.VISIBLE
+            }
+
+            // 🔐 Запрос от незнакомца: «Принять» или «Отклонить».
+            SendGuard.Mode.REQUEST -> {
+                findViewById<TextView>(R.id.key_change_title).text =
+                    getString(R.string.request_title, name)
+                findViewById<TextView>(R.id.key_change_body).setText(R.string.request_body)
+                findViewById<View>(R.id.key_change_verify).visibility = View.GONE
             }
 
             SendGuard.Mode.REPLACED -> {
@@ -450,6 +468,12 @@ class ChatActivity : AppCompatActivity() {
                     }
                 }.getOrNull()
             }
+            val request = withContext(Dispatchers.IO) {
+                chatId.takeIf { it.isNotEmpty() }
+                    ?.let { runCatching { Core.messenger().chatRequest(it) }.getOrNull() }
+                    ?: FfiChatRequest.SETTLED
+            }
+            awaitingPeer = request == FfiChatRequest.OUTGOING
 
             peerAccountId = contact?.accountId
             wasVerified = contact?.verified ?: wasVerified
@@ -459,6 +483,7 @@ class ChatActivity : AppCompatActivity() {
                 keyChanged = contact?.keyChanged == true,
                 replaced = contact?.replaced == true,
                 keyConfirmed = contact?.keyConfirmed == true,
+                request = request == FfiChatRequest.INCOMING,
             )
 
             findViewById<TextView>(R.id.chat_verification_state).text = getString(
@@ -467,6 +492,37 @@ class ChatActivity : AppCompatActivity() {
 
             applySendGuard()
         }
+    }
+
+    /** Принимает запрос: переписка открывается, собеседник узнаёт о согласии. */
+    private fun acceptRequest() {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().acceptChat(chatId, System.currentTimeMillis()) }
+            }
+            refreshSendMode()
+        }
+    }
+
+    /**
+     * 🔐 Отклоняет запрос после подтверждения: переписка удаляется,
+     * а незнакомец не узнаёт даже того, что сообщение прочли.
+     */
+    private fun confirmDeclineRequest() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.request_decline_title)
+            .setMessage(R.string.request_decline_body)
+            .setPositiveButton(R.string.request_decline) { _, _ ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        runCatching { Core.messenger().declineChat(chatId, System.currentTimeMillis()) }
+                    }
+                    adapter.clear()
+                    finish()
+                }
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .showSecure(this)
     }
 
     private fun send() {

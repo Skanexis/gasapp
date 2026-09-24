@@ -33,6 +33,13 @@ object SendGuard {
         CHOOSE_KEY,
 
         /**
+         * 🔐 Запрос на переписку от незнакомца. Читать можно; ответить —
+         * после «Принять». До этого ему не уходят ни квитанции,
+         * ни «печатает…».
+         */
+        REQUEST,
+
+        /**
          * 🔐 Ключ назвал только сервер — сверки или ссылки собеседника
          * не было. Писать нельзя: сервер мог подставить свой ключ.
          */
@@ -50,13 +57,22 @@ object SendGuard {
      * @param replaced ключ этого контакта заменён
      * @param keyConfirmed ключ подтверждён вне сервера — сверкой safety
      *   number или ссылкой/QR самого собеседника
+     * @param request переписка — непринятый входящий запрос
      *
      * Контакт, которого ещё нет, — неподтверждённый: ключ для него
      * знает только сервер.
      */
-    fun decide(keyChanged: Boolean, replaced: Boolean, keyConfirmed: Boolean): Mode = when {
+    fun decide(
+        keyChanged: Boolean,
+        replaced: Boolean,
+        keyConfirmed: Boolean,
+        request: Boolean = false,
+    ): Mode = when {
         replaced -> Mode.REPLACED
         keyChanged -> Mode.CHOOSE_KEY
+        // Сначала согласие, потом сверка: сверять ключ с тем, с кем
+        // человек не собирается разговаривать, незачем.
+        request -> Mode.REQUEST
         !keyConfirmed -> Mode.CONFIRM_KEY
         else -> Mode.OPEN
     }

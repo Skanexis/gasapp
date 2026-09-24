@@ -24,6 +24,7 @@ import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
 import org.aegis.app.ui.RowDivider
+import uniffi.aegis.FfiChatRequest
 import uniffi.aegis.FfiException
 import uniffi.aegis.canonicalUsername
 
@@ -165,13 +166,18 @@ class ChatListActivity : AppCompatActivity() {
                         // именно оно, а загружать переписку целиком ради
                         // одной строки значило бы расшифровывать всё
                         // при каждом открытии списка.
-                        Triple(chatId, messenger.messages(chatId, PREVIEW_LIMIT).lastOrNull(), contacts[chatId])
+                        ChatRow(
+                            chatId,
+                            messenger.messages(chatId, PREVIEW_LIMIT).lastOrNull(),
+                            contacts[chatId],
+                            runCatching { messenger.chatRequest(chatId) }.getOrNull() == FfiChatRequest.INCOMING,
+                        )
                     }
                 }.getOrDefault(emptyList())
             }
 
             render(
-                chats.map { (chatId, last, contact) ->
+                chats.map { (chatId, last, contact, request) ->
                     val username = contact?.username.orEmpty()
 
                     ChatSummary(
@@ -186,11 +192,20 @@ class ChatListActivity : AppCompatActivity() {
                         // Прежде здесь стояло `false` для всех чатов.
                         verified = contact?.verified == true,
                         peerUsername = username,
+                        request = request,
                     )
                 },
             )
         }
     }
+
+    /** Строка списка до разметки: чат, последнее сообщение, собеседник, запрос. */
+    private data class ChatRow(
+        val chatId: String,
+        val last: uniffi.aegis.FfiMessage?,
+        val contact: uniffi.aegis.FfiContact?,
+        val request: Boolean,
+    )
 
     private fun formatTime(millis: Long): String =
         java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
