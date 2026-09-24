@@ -24,6 +24,7 @@ import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
 import uniffi.aegis.FfiException
+import uniffi.aegis.canonicalUsername
 
 /**
  * Экран списка чатов — главный экран приложения.
@@ -240,7 +241,14 @@ class ChatListActivity : AppCompatActivity() {
             .setMessage(R.string.new_chat_hint)
             .setView(input)
             .setPositiveButton(R.string.new_chat_open) { _, _ ->
-                val username = input.text?.toString()?.trim().orEmpty()
+                // Каноничная форма: «@Bob» находит «bob», двойник
+                // с кириллицей не находит никого.
+                val username = runCatching { canonicalUsername(input.text?.toString().orEmpty()) }
+                    .getOrElse {
+                        Toast.makeText(this, R.string.onboarding_error_username, Toast.LENGTH_LONG).show()
+
+                        return@setPositiveButton
+                    }
                 if (username.isNotEmpty()) {
                     openChatWith(username)
                 }

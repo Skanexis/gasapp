@@ -896,6 +896,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -912,6 +914,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_aegis_checksum_func_can_send_to_contact(
+): Short
+fun uniffi_aegis_checksum_func_canonical_username(
 ): Short
 fun uniffi_aegis_checksum_func_check_protocol_version(
 ): Short
@@ -1247,6 +1251,8 @@ fun uniffi_aegis_fn_method_messenger_vault_files(`ptr`: Pointer,`limit`: Int,`no
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_can_send_to_contact(`identityChanged`: Byte,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_aegis_fn_func_canonical_username(`raw`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_check_protocol_version(`raw`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_check_recovery_key_group(`text`: RustBuffer.ByValue,`index`: Int,`entered`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1414,6 +1420,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_can_send_to_contact() != 43356.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_canonical_username() != 43993.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_check_protocol_version() != 59473.toShort()) {
@@ -6763,6 +6772,28 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_can_send_to_contact(
         FfiConverterBoolean.lower(`identityChanged`),FfiConverterBoolean.lower(`wasVerified`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Приводит введённое имя пользователя к каноничной форме.
+         *
+         * 🔐 Одно правило на ядро, сервер и интерфейс: строчные латинские
+         * буквы, цифры и `_`, с буквы, 3–32 символа. Интерфейс не держит своей
+         * копии правила — копии расходятся, и тогда экран принимает имя,
+         * которое ядро отвергнет.
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`] — имя не приводится к каноничной форме.
+         */
+    @Throws(FfiException::class) fun `canonicalUsername`(`raw`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_canonical_username(
+        FfiConverterString.lower(`raw`),_status)
 }
     )
     }

@@ -136,11 +136,11 @@
     <!-- Onboarding -->
     <string name="onboarding_tagline">An end-to-end encrypted messenger built to resist quantum computers</string>
     <string name="onboarding_audit_warning">Not independently audited. Do not rely on it where life or liberty is at stake.</string>
-    <string name="onboarding_choose_username">Choose a username — this is how others will find you</string>
+    <string name="onboarding_choose_username">Choose a username — this is how others will find you. Latin letters, digits and _</string>
     <string name="onboarding_username_hint">username</string>
     <string name="onboarding_create">Create account</string>
     <string name="onboarding_working">Computing proof of work…</string>
-    <string name="onboarding_error_short">Username is too short</string>
+    <string name="onboarding_error_username">3–32 characters: lowercase Latin letters, digits and _, starting with a letter</string>
     <string name="onboarding_error_taken">That username is taken</string>
     <string name="onboarding_direct">Connect directly, without Tor</string>
     <string name="onboarding_network_tor">Connections go through Tor via Orbot, so the server does not see your IP address. Orbot must be installed and running.</string>
