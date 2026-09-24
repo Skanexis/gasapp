@@ -78,6 +78,13 @@ jobs:
           docker run --rm -v "$PWD":/work -w /work aegis-android \
             tools/build-rust-android.sh
 
+      # 🔐 CODE-2.5: полный RELRO, неисполняемый стек, канарейки
+      # и FORTIFY в Си-части. llvm-readelf — из NDK того же контейнера.
+      - name: check native hardening
+        run: |
+          docker run --rm -v "$PWD":/work -w /work aegis-android \
+            bash tools/check-so-hardening.sh
+
       # 🔐 Ключ подписи приходит из секретов и живёт только на время job.
       # В репозитории его нет — это проверяет gitleaks на каждом PR.
       #
