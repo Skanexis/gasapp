@@ -368,7 +368,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 12;
+    const SCHEMA_VERSION: i32 = 13;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -754,6 +754,22 @@ impl Storage {
                     transaction
                         .execute(
                             "ALTER TABLE known_contacts ADD COLUMN pq_identity_hash BLOB",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                // 12 → 13: секрет ключа восстановления аккаунта
+                // (`aegis_protocol::account_recovery`): им новая установка
+                // возвращает себе имя. Уходит в резервную копию.
+                13 => {
+                    transaction
+                        .execute(
+                            "
+                            CREATE TABLE IF NOT EXISTS own_account_recovery (
+                                id     INTEGER PRIMARY KEY CHECK (id = 1),
+                                secret BLOB NOT NULL
+                            )
+                            ",
                             [],
                         )
                         .map_err(storage_error)?;

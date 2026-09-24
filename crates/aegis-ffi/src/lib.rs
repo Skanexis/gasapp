@@ -790,7 +790,8 @@ mod contact_link_tests {
 
     #[test]
     fn link_round_trips_across_the_boundary() {
-        let uri = contact_link_uri(identity(), vec![0x5A; 32], Some("Иван".to_owned())).expect("ссылка");
+        let uri =
+            contact_link_uri(identity(), vec![0x5A; 32], Some("Иван".to_owned())).expect("ссылка");
         let parsed = parse_contact_link(uri).expect("разбор");
 
         assert_eq!(parsed.identity, identity());
@@ -836,7 +837,8 @@ mod contact_link_tests {
 
     #[test]
     fn qr_is_built_for_profile() {
-        let uri = contact_link_uri(identity(), vec![0x5A; 32], Some("Иван".to_owned())).expect("ссылка");
+        let uri =
+            contact_link_uri(identity(), vec![0x5A; 32], Some("Иван".to_owned())).expect("ссылка");
         let matrix = contact_link_qr(uri).expect("код");
 
         assert!(matrix.size >= 21);

@@ -20,6 +20,9 @@ pub const PQ_SEED_LEN: usize = 32;
 /// Длина хеша пост-квантовой половины.
 pub const PQ_HASH_LEN: usize = 32;
 
+/// Длина секрета ключа восстановления аккаунта.
+pub const ACCOUNT_RECOVERY_LEN: usize = 64;
+
 impl Storage {
     /// Seed собственной пост-квантовой половины и момент публикации.
     ///
@@ -90,6 +93,54 @@ impl Storage {
         if changed == 0 {
             return Err(AegisError::Uninitialized);
         }
+
+        Ok(())
+    }
+
+    /// Секрет ключа восстановления аккаунта; `None` — не заведён
+    /// (аккаунт зарегистрирован до появления ключа).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось либо запись повреждена.
+    pub fn own_account_recovery(&self) -> Result<Option<[u8; ACCOUNT_RECOVERY_LEN]>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let row = connection.query_row(
+            "SELECT secret FROM own_account_recovery WHERE id = 1",
+            [],
+            |row| row.get::<_, Vec<u8>>(0),
+        );
+
+        match row {
+            Ok(secret) => Ok(Some(
+                secret
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| AegisError::Storage)?,
+            )),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(storage_error(error)),
+        }
+    }
+
+    /// Записывает секрет ключа восстановления аккаунта, заменяя прежний.
+    ///
+    /// Замена — не ошибка: восстановление из копии приносит секрет,
+    /// которым аккаунт и вернули.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn set_own_account_recovery(&self, secret: &[u8; ACCOUNT_RECOVERY_LEN]) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        connection
+            .execute(
+                "INSERT OR REPLACE INTO own_account_recovery (id, secret) VALUES (1, ?)",
+                params![secret.as_slice()],
+            )
+            .map_err(storage_error)?;
 
         Ok(())
     }
@@ -174,6 +225,19 @@ mod tests {
         assert_eq!(
             storage.own_pq_identity().expect("чтение").expect("есть").1,
             Some(Timestamp::from_millis(5))
+        );
+    }
+
+    #[test]
+    fn account_recovery_is_stored_and_replaced() {
+        let (storage, _dir) = open_temp();
+
+        assert!(storage.own_account_recovery().expect("чтение").is_none());
+        storage.set_own_account_recovery(&[1; 64]).expect("запись");
+        storage.set_own_account_recovery(&[2; 64]).expect("замена");
+        assert_eq!(
+            storage.own_account_recovery().expect("чтение"),
+            Some([2; 64])
         );
     }
 

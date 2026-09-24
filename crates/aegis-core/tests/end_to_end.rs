@@ -65,6 +65,9 @@ struct ServerState {
     /// Пост-квантовая половина identity и привязка — по классическому
     /// ключу (hex).
     pq: HashMap<String, (String, String)>,
+    /// Ключ восстановления аккаунта (hex, классический и ML-DSA) —
+    /// по идентификатору аккаунта.
+    recovery: HashMap<String, (String, String)>,
     /// Устройство аккаунта.
     devices: HashMap<String, String>,
     /// Опубликованные предключи по устройству.
@@ -375,10 +378,107 @@ impl Transport for FakeServer {
                         parsed.identity_binding.clone(),
                     ),
                 );
+                if let (Some(public), Some(pq_public)) =
+                    (parsed.recovery_key.clone(), parsed.recovery_pq_key.clone())
+                {
+                    state
+                        .recovery
+                        .insert(account_id.clone(), (public, pq_public));
+                }
                 state.devices.insert(account_id.clone(), device_id.clone());
                 state
                     .device_identity
                     .insert(device_id.clone(), parsed.device_identity_key);
+
+                (
+                    200,
+                    serde_json::to_string(&RegisterResponse {
+                        account_id,
+                        device_id,
+                    })
+                    .unwrap_or_default(),
+                )
+            }
+            // Перепривязка аккаунта к новой identity — как на настоящем
+            // сервере: подпись ключа восстановления, затем прежние
+            // устройства удаляются и заводится новое.
+            (Method::Post, "/v1/accounts/recover") => {
+                let parsed: aegis_net::api::RecoverAccountRequest =
+                    serde_json::from_str(request.body.as_deref().unwrap_or_default())
+                        .map_err(|_| aegis_types::AegisError::Malformed)?;
+                let decode =
+                    |text: &str| hex::decode(text).map_err(|_| aegis_types::AegisError::Malformed);
+
+                let Some((account_id, _)) = state.accounts.get(&parsed.username).cloned() else {
+                    return Ok(HttpResponse {
+                        status: 401,
+                        body: String::new(),
+                        binary_body: Vec::new(),
+                    });
+                };
+                let Some((public, pq_public)) = state.recovery.get(&account_id).cloned() else {
+                    return Ok(HttpResponse {
+                        status: 401,
+                        body: String::new(),
+                        binary_body: Vec::new(),
+                    });
+                };
+
+                let identity = decode(&parsed.identity_key)?;
+                let device_identity = decode(&parsed.device_identity_key)?;
+                let pq = decode(&parsed.pq_identity_key)?;
+                let binding = decode(&parsed.identity_binding)?;
+                let signed = aegis_protocol::account_recovery::RecoverRequest {
+                    username: &parsed.username,
+                    identity_key: &identity,
+                    device_identity_key: &device_identity,
+                    pq_identity_key: &pq,
+                    identity_binding: &binding,
+                    issued_at_millis: parsed.issued_at,
+                };
+                let public = aegis_types::PublicKeyBytes::new(
+                    decode(&public)?
+                        .try_into()
+                        .map_err(|_| aegis_types::AegisError::Malformed)?,
+                );
+
+                if aegis_protocol::account_recovery::verify(
+                    &public,
+                    &decode(&pq_public)?,
+                    &signed,
+                    &decode(&parsed.signature)?,
+                )
+                .is_err()
+                {
+                    return Ok(HttpResponse {
+                        status: 401,
+                        body: String::new(),
+                        binary_body: Vec::new(),
+                    });
+                }
+
+                if let Some(old) = state.devices.get(&account_id).cloned() {
+                    state.bundles.remove(&old);
+                    state.device_identity.remove(&old);
+                    state.queues.remove(&old);
+                }
+
+                let device_id = Self::next_uuid(&mut state);
+                state.accounts.insert(
+                    parsed.username.clone(),
+                    (account_id.clone(), parsed.identity_key.clone()),
+                );
+                state.devices.insert(account_id.clone(), device_id.clone());
+                state
+                    .device_identity
+                    .insert(device_id.clone(), parsed.device_identity_key.clone());
+                state.pq.insert(
+                    parsed.identity_key.clone(),
+                    (
+                        parsed.pq_identity_key.clone(),
+                        parsed.identity_binding.clone(),
+                    ),
+                );
 
                 (
                     200,
@@ -4384,4 +4484,88 @@ fn the_sealed_kem_key_keeps_rotating() {
 
     assert_ne!(first, second, "первая смена не случилась");
     assert_ne!(second, third, "вторая смена не случилась");
+}
+
+/// 🔐 Переустановка: копия возвращает аккаунт **с прежним именем**
+/// на новую identity. Приватный identity-ключ не копировался —
+/// собеседник видит смену ключа, а имя занять нельзя.
+#[test]
+fn a_reinstalled_device_gets_its_account_and_name_back() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+    let (alice_account, old_identity) = server.account_entry("alice");
+
+    alice
+        .send_message("bob", "до переустановки", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    let backup_key = aegis_backup::RecoveryKey::generate(&mut OsRng);
+    let backup = alice
+        .create_backup(&backup_key, None, now(), &mut OsRng)
+        .expect("копия");
+
+    // «Переустановка»: новая база, ни ключей, ни устройства.
+    let reinstalled = Client::new(server.clone(), open_storage(&dir, "alice-reinstalled.db"));
+    let (account, outcome) = reinstalled
+        .recover_account(&backup_key, &[backup.archive], later(10), &mut OsRng)
+        .expect("аккаунт возвращён");
+
+    assert_eq!(account.username, "alice");
+    assert_eq!(
+        account.account_id.to_string(),
+        alice_account,
+        "аккаунт другой"
+    );
+    assert!(outcome.identity_changed);
+
+    let (_, new_identity) = server.account_entry("alice");
+    assert_ne!(
+        new_identity, old_identity,
+        "приватный identity-ключ скопирован"
+    );
+
+    // Переписка вернулась.
+    let chat = reinstalled.chats().expect("чаты")[0];
+    assert!(reinstalled
+        .messages(&chat, 10)
+        .expect("сообщения")
+        .iter()
+        .any(|message| message.text == "до переустановки"));
+
+    // 🔐 Собеседник видит смену ключа и без новой сверки не пишет.
+    assert!(matches!(
+        bob.send_message("alice", "это ты?", later(11), &mut OsRng),
+        Err(AegisError::IdentityChanged)
+    ));
+}
+
+/// 🔐 Копия без ключа восстановления аккаунта имени не возвращает —
+/// в том числе копия **чужого** аккаунта: ключ из неё подпишет только
+/// своё имя.
+#[test]
+fn another_accounts_backup_cannot_take_a_name() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (_alice, bob, _alice_device, _bob_device) = alice_and_bob(&server, &dir);
+    let (_, alice_identity) = server.account_entry("alice");
+
+    // Копия Боба возвращает Боба, а не Алису.
+    let backup_key = aegis_backup::RecoveryKey::generate(&mut OsRng);
+    let backup = bob
+        .create_backup(&backup_key, None, now(), &mut OsRng)
+        .expect("копия");
+
+    let stranger = Client::new(server.clone(), open_storage(&dir, "stranger.db"));
+    let (account, _) = stranger
+        .recover_account(&backup_key, &[backup.archive], later(10), &mut OsRng)
+        .expect("возвращение Боба");
+
+    assert_eq!(account.username, "bob");
+    assert_eq!(
+        server.account_entry("alice").1,
+        alice_identity,
+        "имя Алисы тронуто"
+    );
 }

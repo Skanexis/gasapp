@@ -36,10 +36,40 @@ pub struct RegisterRequest {
     pub pq_identity_key: String,
     /// Привязка половин identity друг к другу — гибридная подпись, hex.
     pub identity_binding: String,
+    /// 🔐 Ключ восстановления аккаунта — классическая половина, hex
+    /// (`aegis_protocol::account_recovery`). Им новая установка
+    /// возвращает себе имя.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_key: Option<String>,
+    /// Ключ восстановления аккаунта — ML-DSA-65, hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_pq_key: Option<String>,
     /// Челлендж proof-of-work, hex.
     pub pow_challenge: String,
     /// Решение proof-of-work.
     pub pow_nonce: u64,
+}
+
+/// Запрос перепривязки аккаунта к новой identity — имя остаётся.
+///
+/// 🔐 Подписан ключом восстановления аккаунта гибридно
+/// (`aegis_protocol::account_recovery::RecoverRequest`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoverAccountRequest {
+    /// Имя аккаунта.
+    pub username: String,
+    /// Новый identity-ключ, hex.
+    pub identity_key: String,
+    /// Identity-ключ нового устройства, hex.
+    pub device_identity_key: String,
+    /// Пост-квантовая половина новой identity, hex.
+    pub pq_identity_key: String,
+    /// Её привязка, hex.
+    pub identity_binding: String,
+    /// Момент подписи, мс.
+    pub issued_at: i64,
+    /// Гибридная подпись ключа восстановления, hex.
+    pub signature: String,
 }
 
 /// Ответ на регистрацию.

@@ -88,6 +88,10 @@ pub struct RestoreOutcome {
     /// Когда сделана последняя копия цепочки.
     pub created_at: Timestamp,
 
+    /// Имя аккаунта из копии — для возвращения аккаунта
+    /// (`Client::recover_account`).
+    pub username: Option<String>,
+
     /// Сменился ли identity-ключ устройства.
     ///
     /// Всегда `true`: восстановление не переносит приватный
@@ -312,6 +316,7 @@ impl<'a> BackupService<'a> {
             applied,
             links: restored.applied,
             created_at: Timestamp::from_millis(restored.meta.created_at_millis),
+            username: restored.bundle.username.clone(),
             // Всегда: приватный identity-ключ в копию не входит.
             identity_changed: true,
         })
@@ -428,6 +433,17 @@ fn export_to_bundle(export: &BackupExport, now: Timestamp) -> BackupBundle {
             })
             .collect(),
         tombstones: export.tombstones.iter().map(|id| *id.as_bytes()).collect(),
+        account_recovery: export
+            .account_recovery
+            .map(aegis_backup::bundle::AccountRecoverySecret),
+        contact_pq_hashes: export
+            .contact_pq_hashes
+            .iter()
+            .map(|(account, hash)| aegis_backup::bundle::ContactPqRecord {
+                account_id: *account.as_bytes(),
+                pq_identity_hash: *hash,
+            })
+            .collect(),
     }
 }
 
@@ -453,6 +469,12 @@ fn bundle_to_export(bundle: &BackupBundle, now: Timestamp) -> BackupExport {
             .tombstones
             .iter()
             .map(|raw| MessageId::from_uuid(uuid::Uuid::from_bytes(*raw)))
+            .collect(),
+        account_recovery: bundle.account_recovery.as_ref().map(|secret| secret.0),
+        contact_pq_hashes: bundle
+            .contact_pq_hashes
+            .iter()
+            .map(|record| (uuid_to_account(record.account_id), record.pq_identity_hash))
             .collect(),
         watermark: now,
     }

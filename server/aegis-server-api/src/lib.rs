@@ -45,6 +45,7 @@ pub mod hub;
 pub mod pow;
 pub mod push;
 pub mod rate_limit;
+pub mod recovery;
 pub mod retention;
 pub mod routes;
 pub mod tls;

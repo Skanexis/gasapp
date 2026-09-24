@@ -48,6 +48,9 @@ pub enum RepoError {
     /// Устройство исчерпало квоту на вложения.
     #[error("quota exceeded")]
     QuotaExceeded,
+    /// Состояние уже новее запроса (повтор перепривязки).
+    #[error("conflict")]
+    Conflict,
     /// Сбой базы данных.
     ///
     /// Текст ошибки Postgres наружу не отдаётся: он может содержать
@@ -1213,4 +1216,136 @@ pub async fn account_of_device(pool: &PgPool, device_id: Uuid) -> Result<Uuid, R
         .await?;
 
     Ok(account)
+}
+
+/// Записывает открытые половины ключа восстановления аккаунта.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы (в том числе неверная длина).
+pub async fn set_recovery_key(
+    pool: &PgPool,
+    account_id: Uuid,
+    public: &[u8],
+    pq_public: &[u8],
+) -> Result<(), RepoError> {
+    sqlx::query(
+        "UPDATE accounts SET recovery_key = $2, recovery_pq_key = $3 WHERE account_id = $1",
+    )
+    .bind(account_id)
+    .bind(public)
+    .bind(pq_public)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Открытые половины ключа восстановления аккаунта, если заведены.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn recovery_key_of(
+    pool: &PgPool,
+    account_id: Uuid,
+) -> Result<Option<([u8; 32], Vec<u8>)>, RepoError> {
+    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> =
+        sqlx::query_as("SELECT recovery_key, recovery_pq_key FROM accounts WHERE account_id = $1")
+            .bind(account_id)
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(match row {
+        Some((Some(public), Some(pq_public))) => public
+            .as_slice()
+            .try_into()
+            .ok()
+            .map(|public: [u8; 32]| (public, pq_public)),
+        _ => None,
+    })
+}
+
+/// Новая identity аккаунта при перепривязке.
+#[derive(Debug, Clone, Copy)]
+pub struct Rebind<'a> {
+    /// Новый identity-ключ.
+    pub identity_key: &'a [u8],
+    /// Identity-ключ нового устройства.
+    pub device_identity_key: &'a [u8],
+    /// Пост-квантовая половина identity.
+    pub pq_identity_key: &'a [u8],
+    /// Её привязка.
+    pub identity_binding: &'a [u8],
+    /// Момент подписи запроса, мс.
+    pub issued_at_millis: i64,
+}
+
+/// Перепривязывает аккаунт к новой identity: прежние устройства
+/// удаляются (каскадом — их предключи, очереди, токены, ключи
+/// доступа), identity заменяется, заводится новое устройство. Имя
+/// остаётся.
+///
+/// Одной транзакцией: наполовину перепривязанный аккаунт не принимал
+/// бы ни старое устройство, ни новое.
+///
+/// # Errors
+///
+/// * [`RepoError::Conflict`] — запрос не новее прошлой перепривязки
+///   (повтор перехваченного запроса);
+/// * [`RepoError::NotFound`] — аккаунта нет;
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn rebind_account(
+    pool: &PgPool,
+    account_id: Uuid,
+    rebind: Rebind<'_>,
+) -> Result<Uuid, RepoError> {
+    let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
+
+    let recovered_at: Option<i64> =
+        sqlx::query_scalar("SELECT recovered_at FROM accounts WHERE account_id = $1 FOR UPDATE")
+            .bind(account_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+
+    if recovered_at.is_some_and(|previous| previous >= rebind.issued_at_millis) {
+        return Err(RepoError::Conflict);
+    }
+
+    sqlx::query("DELETE FROM devices WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
+
+    sqlx::query(
+        "
+        UPDATE accounts SET
+            identity_key     = $2,
+            pq_identity_key  = $3,
+            identity_binding = $4,
+            recovered_at     = $5,
+            active_month     = date_trunc('month', now())::date
+        WHERE account_id = $1
+        ",
+    )
+    .bind(account_id)
+    .bind(rebind.identity_key)
+    .bind(rebind.pq_identity_key)
+    .bind(rebind.identity_binding)
+    .bind(rebind.issued_at_millis)
+    .execute(&mut *transaction)
+    .await?;
+
+    let device_id = Uuid::new_v4();
+
+    sqlx::query("INSERT INTO devices (device_id, account_id, identity_key) VALUES ($1, $2, $3)")
+        .bind(device_id)
+        .bind(account_id)
+        .bind(rebind.device_identity_key)
+        .execute(&mut *transaction)
+        .await?;
+
+    transaction.commit().await?;
+
+    Ok(device_id)
 }

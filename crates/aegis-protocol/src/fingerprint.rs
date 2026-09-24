@@ -140,8 +140,9 @@ impl Fingerprint {
         identifier: &[u8],
     ) -> Self {
         let mut key = [0u8; 64];
-        key[..32].copy_from_slice(identity.as_bytes());
-        key[32..].copy_from_slice(pq_identity_hash);
+        let (classical, post_quantum) = key.split_at_mut(32);
+        classical.copy_from_slice(identity.as_bytes());
+        post_quantum.copy_from_slice(pq_identity_hash);
 
         let mut hash = Sha512::new();
         hash.update([0x00, 0x01]);

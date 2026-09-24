@@ -44,7 +44,37 @@
 use aegis_types::{AegisError, Result};
 
 /// Версия формата бандла.
-const BUNDLE_VERSION: u8 = 1;
+///
+/// 2 — добавлен секрет ключа восстановления аккаунта (в конце).
+/// Бандлы версии 1 читаются: секрета в них просто нет.
+const BUNDLE_VERSION: u8 = 2;
+
+/// Прежняя версия: без секрета восстановления аккаунта.
+const BUNDLE_VERSION_1: u8 = 1;
+
+/// Длина секрета ключа восстановления аккаунта.
+pub const ACCOUNT_RECOVERY_LEN: usize = 64;
+
+/// 🔐 Секрет ключа восстановления аккаунта
+/// (`aegis_protocol::account_recovery`).
+///
+/// Им новая установка, восстановив копию, возвращает себе аккаунт
+/// с прежним именем. Не identity-ключ: тот между устройствами
+/// не копируется. `Debug` не печатает содержимое.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AccountRecoverySecret(pub [u8; ACCOUNT_RECOVERY_LEN]);
+
+impl core::fmt::Debug for AccountRecoverySecret {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("AccountRecoverySecret(<скрыто>)")
+    }
+}
+
+impl Drop for AccountRecoverySecret {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.0);
+    }
+}
 
 /// Метка присутствия необязательного поля.
 const PRESENT: u8 = 1;
@@ -182,6 +212,19 @@ impl core::fmt::Debug for AttachmentRecord {
     }
 }
 
+/// Хеш пост-квантовой половины identity контакта.
+///
+/// 🔐 В копии, чтобы восстановление не заучивало его заново с сервера:
+/// у сверенного контакта сервер иначе смог бы подменить пост-квантовую
+/// половину (сверка покрывала её по хешу, а хеш был бы забыт).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactPqRecord {
+    /// Контакт.
+    pub account_id: [u8; ID_LEN],
+    /// Хеш его пост-квантовой половины.
+    pub pq_identity_hash: [u8; 32],
+}
+
 /// Настройка в копии.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingRecord {
@@ -226,6 +269,13 @@ pub struct BackupBundle {
     /// удаления цепочке инкрементов, которая по построению только
     /// дописывается.
     pub tombstones: Vec<[u8; ID_LEN]>,
+
+    /// Секрет ключа восстановления аккаунта — в полном снимке
+    /// и в инкрементах, собранных после его появления.
+    pub account_recovery: Option<AccountRecoverySecret>,
+
+    /// Хеши пост-квантовых половин контактов (версия 2).
+    pub contact_pq_hashes: Vec<ContactPqRecord>,
 }
 
 impl BackupBundle {
@@ -337,6 +387,20 @@ impl BackupBundle {
             out.extend_from_slice(tombstone);
         }
 
+        match &self.account_recovery {
+            None => out.push(ABSENT),
+            Some(secret) => {
+                out.push(PRESENT);
+                out.extend_from_slice(&secret.0);
+            }
+        }
+
+        write_count(&mut out, self.contact_pq_hashes.len())?;
+        for record in &self.contact_pq_hashes {
+            out.extend_from_slice(&record.account_id);
+            out.extend_from_slice(&record.pq_identity_hash);
+        }
+
         Ok(out)
     }
 
@@ -346,10 +410,16 @@ impl BackupBundle {
     ///
     /// [`AegisError::Malformed`] — незнакомая версия, обрыв буфера,
     /// лишний хвост либо превышение пределов.
+    // Длина — прямое следствие числа полей: линейный разбор в порядке
+    // записи. Дробление по разделам разнесло бы порядок полей, который
+    // и есть формат.
+    #[allow(clippy::too_many_lines)]
     pub fn from_bytes(raw: &[u8]) -> Result<Self> {
         let mut cursor = Cursor { raw, offset: 0 };
 
-        if cursor.take_u8()? != BUNDLE_VERSION {
+        let version = cursor.take_u8()?;
+
+        if version != BUNDLE_VERSION && version != BUNDLE_VERSION_1 {
             return Err(AegisError::Malformed);
         }
 
@@ -443,6 +513,8 @@ impl BackupBundle {
             tombstones.push(cursor.take_id()?);
         }
 
+        let (account_recovery, contact_pq_hashes) = take_version_two_tail(&mut cursor, version)?;
+
         // 🔐 Хвост — ошибка, а не мусор: он означает, что копию собрала
         // версия, понимающая формат иначе, и молча проигнорировать
         // непонятое значило бы восстановить не всё, отчитавшись
@@ -461,6 +533,8 @@ impl BackupBundle {
             attachments,
             settings,
             tombstones,
+            account_recovery,
+            contact_pq_hashes,
         };
 
         bundle.validate()?;
@@ -559,7 +633,53 @@ impl BackupBundle {
         self.tombstones.extend(increment.tombstones);
         self.tombstones.sort_unstable();
         self.tombstones.dedup();
+
+        if increment.account_recovery.is_some() {
+            self.account_recovery = increment.account_recovery;
+        }
+        merge_by(
+            &mut self.contact_pq_hashes,
+            increment.contact_pq_hashes,
+            |record| record.account_id,
+        );
     }
+}
+
+/// Хвост формата версии 2: секрет восстановления аккаунта и хеши
+/// пост-квантовых половин контактов. У версии 1 его нет.
+fn take_version_two_tail(
+    cursor: &mut Cursor<'_>,
+    version: u8,
+) -> Result<(Option<AccountRecoverySecret>, Vec<ContactPqRecord>)> {
+    if version < BUNDLE_VERSION {
+        return Ok((None, Vec::new()));
+    }
+
+    let account_recovery = if cursor.take_bool()? {
+        let mut secret = [0u8; ACCOUNT_RECOVERY_LEN];
+        for byte in &mut secret {
+            *byte = cursor.take_u8()?;
+        }
+        Some(AccountRecoverySecret(secret))
+    } else {
+        None
+    };
+
+    let count = cursor.take_count()?;
+    let mut contact_pq_hashes = Vec::with_capacity(count.min(1024));
+    for _ in 0..count {
+        let account_id = cursor.take_id()?;
+        let mut pq_identity_hash = [0u8; 32];
+        for byte in &mut pq_identity_hash {
+            *byte = cursor.take_u8()?;
+        }
+        contact_pq_hashes.push(ContactPqRecord {
+            account_id,
+            pq_identity_hash,
+        });
+    }
+
+    Ok((account_recovery, contact_pq_hashes))
 }
 
 /// Заменяет записи с совпадающим ключом и добавляет новые.
@@ -874,6 +994,11 @@ mod tests {
                 value: 1,
             }],
             tombstones: vec![[9; ID_LEN]],
+            account_recovery: Some(AccountRecoverySecret([7; ACCOUNT_RECOVERY_LEN])),
+            contact_pq_hashes: vec![ContactPqRecord {
+                account_id: [3; ID_LEN],
+                pq_identity_hash: [6; 32],
+            }],
         }
     }
 
@@ -917,7 +1042,44 @@ mod tests {
             attachments: _,
             settings: _,
             tombstones: _,
+            // Секрет ключа восстановления аккаунта — не ratchet state
+            // и не identity-ключ: им подписывается только запрос
+            // «перепривяжи имя к новой identity» (13.1 соблюдён).
+            account_recovery: _,
+            // Хеши пост-квантовых половин контактов — открытые данные.
+            contact_pq_hashes: _,
         } = BackupBundle::default();
+    }
+
+    /// Бандл версии 1 (без секрета восстановления) по-прежнему читается.
+    #[test]
+    fn version_one_bundles_still_parse() {
+        let mut expected = populated();
+        expected.account_recovery = None;
+        expected.contact_pq_hashes.clear();
+
+        let mut encoded = expected.to_bytes().expect("сериализация");
+        encoded[0] = BUNDLE_VERSION_1;
+        // Версия 1 кончалась надгробиями: метки секрета и счётчика
+        // хешей (1 + 4 байта) в ней нет.
+        encoded.truncate(encoded.len() - 5);
+
+        assert_eq!(
+            BackupBundle::from_bytes(&encoded).expect("разбор"),
+            expected
+        );
+    }
+
+    /// Секрет восстановления переживает круг «записать — прочесть»,
+    /// а `Debug` его не печатает.
+    #[test]
+    fn account_recovery_round_trips_and_is_hidden() {
+        let bundle = populated();
+        let decoded =
+            BackupBundle::from_bytes(&bundle.to_bytes().expect("сериализация")).expect("разбор");
+
+        assert_eq!(decoded.account_recovery, bundle.account_recovery);
+        assert!(!format!("{bundle:?}").contains("7, 7, 7"));
     }
 
     /// Незнакомая версия отвергается.

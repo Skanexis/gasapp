@@ -1554,3 +1554,230 @@ async fn sealed_kem_key_is_published_and_discovered() {
     .await;
     assert_eq!(again["sealed_kem_public"], body["sealed_kem_public"]);
 }
+
+// --- Возвращение аккаунта на новое устройство (миграция 0013) ---
+
+/// Ключ восстановления аккаунта: XEdDSA-половина и ML-DSA-65.
+struct RecoveryKeys {
+    classical: DeviceKey,
+    pq: ml_dsa::SigningKey<ml_dsa::MlDsa65>,
+}
+
+fn recovery_keys(seed: u8) -> RecoveryKeys {
+    RecoveryKeys {
+        classical: [seed; 32],
+        pq: ml_dsa::SigningKey::<ml_dsa::MlDsa65>::from_seed(&[seed; 32].into()),
+    }
+}
+
+impl RecoveryKeys {
+    fn pq_public(&self) -> Vec<u8> {
+        self.pq.expanded_key().verifying_key().encode().to_vec()
+    }
+
+    /// Гибридная подпись, как у клиента: XEdDSA ‖ ML-DSA-65 с доменом.
+    fn sign(&self, message: &[u8]) -> Vec<u8> {
+        let mut out = common::client_sign(&self.classical, message).to_vec();
+        out.extend_from_slice(
+            &self
+                .pq
+                .expanded_key()
+                .sign_deterministic(message, aegis_server_api::recovery::RECOVER_DOMAIN)
+                .expect("подпись")
+                .encode(),
+        );
+        out
+    }
+}
+
+/// Регистрирует аккаунт с ключом восстановления; возвращает счёт и устройство.
+async fn register_with_recovery(
+    state: &Arc<AppState>,
+    username: &str,
+    keys: &RecoveryKeys,
+) -> (String, String) {
+    let private: DeviceKey = [0x31; 32];
+    let challenge =
+        pow::registration_challenge(username, &public_key(&private), &public_key(&private));
+    let nonce = solve(&challenge);
+
+    let (status, body) = call(
+        state,
+        "POST",
+        "/v1/accounts/register",
+        Some(serde_json::json!({
+            "username": username,
+            "identity_key": hex::encode(public_key(&private)),
+            "device_identity_key": hex::encode(public_key(&private)),
+            "pq_identity_key": hex::encode([0x51u8; 1952]),
+            "identity_binding": hex::encode([0x52u8; 3373]),
+            "recovery_key": hex::encode(public_key(&keys.classical)),
+            "recovery_pq_key": hex::encode(keys.pq_public()),
+            "pow_challenge": hex::encode(challenge),
+            "pow_nonce": nonce,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "регистрация: {body:?}");
+
+    (
+        body["account_id"].as_str().unwrap().to_owned(),
+        body["device_id"].as_str().unwrap().to_owned(),
+    )
+}
+
+/// Запрос перепривязки на новый identity-ключ `seed`, подписанный `keys`.
+fn recover_body(
+    username: &str,
+    seed: u8,
+    keys: &RecoveryKeys,
+    issued_at: i64,
+) -> serde_json::Value {
+    let identity = public_key(&[seed; 32]);
+    let pq = [0x61u8; 1952];
+    let binding = [0x62u8; 3373];
+    let message = aegis_server_api::recovery::message(
+        username, &identity, &identity, &pq, &binding, issued_at,
+    );
+
+    serde_json::json!({
+        "username": username,
+        "identity_key": hex::encode(identity),
+        "device_identity_key": hex::encode(identity),
+        "pq_identity_key": hex::encode(pq),
+        "identity_binding": hex::encode(binding),
+        "issued_at": issued_at,
+        "signature": hex::encode(keys.sign(&message)),
+    })
+}
+
+/// 🔐 Верная подпись ключа восстановления перепривязывает аккаунт:
+/// тот же счёт и то же имя, новая identity, прежнее устройство удалено,
+/// а имя по-прежнему не занять.
+#[tokio::test]
+async fn recovery_rebinds_the_account_and_keeps_the_name() {
+    let state = require_state!();
+    let username = unique_name("phoenix");
+    let keys = recovery_keys(0x41);
+    let (account_id, old_device) = register_with_recovery(&state, &username, &keys).await;
+
+    let (status, body) = call(
+        &state,
+        "POST",
+        "/v1/accounts/recover",
+        Some(recover_body(&username, 0x42, &keys, common::now_millis())),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "перепривязка: {body:?}");
+    assert_eq!(
+        body["account_id"].as_str(),
+        Some(account_id.as_str()),
+        "счёт другой"
+    );
+    assert_ne!(body["device_id"].as_str(), Some(old_device.as_str()));
+
+    let (_, found) = call(
+        &state,
+        "GET",
+        &format!("/v1/discovery/username/{username}"),
+        None,
+    )
+    .await;
+    assert_eq!(found["identity_key"], hex::encode(public_key(&[0x42; 32])));
+    assert_eq!(found["device_ids"].as_array().map(Vec::len), Some(1));
+    assert_ne!(
+        found["device_ids"][0].as_str(),
+        Some(old_device.as_str()),
+        "прежнее устройство живо"
+    );
+
+    // Имя за аккаунтом: чужая регистрация его не получит.
+    let private: DeviceKey = [0x77; 32];
+    let challenge =
+        pow::registration_challenge(&username, &public_key(&private), &public_key(&private));
+    let nonce = solve(&challenge);
+    let (status, _) = call(
+        &state,
+        "POST",
+        "/v1/accounts/register",
+        Some(serde_json::json!({
+            "username": username,
+            "identity_key": hex::encode(public_key(&private)),
+            "device_identity_key": hex::encode(public_key(&private)),
+            "pq_identity_key": hex::encode([0x51u8; 1952]),
+            "identity_binding": hex::encode([0x52u8; 3373]),
+            "pow_challenge": hex::encode(challenge),
+            "pow_nonce": nonce,
+        })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "имя освободилось после перепривязки"
+    );
+}
+
+/// 🔐 Чужой ключ, повтор и просроченный запрос — отказ.
+#[tokio::test]
+async fn recovery_refuses_foreign_keys_replays_and_stale_requests() {
+    let state = require_state!();
+    let username = unique_name("guarded");
+    let keys = recovery_keys(0x43);
+    register_with_recovery(&state, &username, &keys).await;
+
+    let recover = |body: serde_json::Value| {
+        let state = Arc::clone(&state);
+        async move {
+            call(&state, "POST", "/v1/accounts/recover", Some(body))
+                .await
+                .0
+        }
+    };
+
+    // Чужой ключ восстановления.
+    let stranger = recovery_keys(0x44);
+    assert_eq!(
+        recover(recover_body(
+            &username,
+            0x45,
+            &stranger,
+            common::now_millis()
+        ))
+        .await,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Просроченный: час назад.
+    assert_eq!(
+        recover(recover_body(
+            &username,
+            0x45,
+            &keys,
+            common::now_millis() - 3_600_000
+        ))
+        .await,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Верный — проходит один раз; тот же запрос второй раз — нет.
+    let body = recover_body(&username, 0x46, &keys, common::now_millis());
+    assert_eq!(recover(body.clone()).await, StatusCode::OK);
+    assert_eq!(
+        recover(body).await,
+        StatusCode::UNAUTHORIZED,
+        "повтор перепривязки принят"
+    );
+
+    // Неизвестное имя — тот же отказ.
+    assert_eq!(
+        recover(recover_body(
+            &unique_name("nobody"),
+            0x47,
+            &keys,
+            common::now_millis()
+        ))
+        .await,
+        StatusCode::UNAUTHORIZED
+    );
+}

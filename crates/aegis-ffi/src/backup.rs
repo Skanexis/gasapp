@@ -84,6 +84,15 @@ pub struct FfiRestore {
     pub identity_changed: bool,
 }
 
+/// Итог возвращения аккаунта на новое устройство.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiRecoveredAccount {
+    /// Аккаунт — с прежним именем, на новой identity.
+    pub account: crate::messenger::FfiAccount,
+    /// Итог восстановления переписки.
+    pub restore: FfiRestore,
+}
+
 /// Состояние резервного копирования для Recovery Center.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiBackupStatus {
@@ -248,6 +257,49 @@ impl Messenger {
             links: u32::try_from(outcome.links).unwrap_or(u32::MAX),
             created_at_millis: outcome.created_at.as_millis(),
             identity_changed: outcome.identity_changed,
+        })
+    }
+
+    /// 🔐 Возвращает аккаунт на новое устройство **с прежним именем**
+    /// (`Client::recover_account`): копия восстанавливается в эту базу,
+    /// создаётся новая identity, и ключ восстановления аккаунта из копии
+    /// подписывает перепривязку.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — recovery key не разбирается;
+    /// [`FfiError::Core`] — не тот ключ, цепочка разорвана, в копии нет
+    /// ключа восстановления аккаунта либо сервер отказал.
+    pub fn recover_account(
+        &self,
+        recovery_key: String,
+        links: Vec<Vec<u8>>,
+        now_millis: i64,
+    ) -> Result<FfiRecoveredAccount, FfiError> {
+        let key = RecoveryKey::parse(&recovery_key).map_err(|_| FfiError::InvalidArgument)?;
+        let client = self.client()?;
+
+        let (account, outcome) = guard(|| {
+            client.recover_account(
+                &key,
+                &links,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })?;
+
+        Ok(FfiRecoveredAccount {
+            account: crate::messenger::FfiAccount {
+                account_id: account.account_id.to_string(),
+                device_id: account.device_id.to_string(),
+                username: account.username,
+            },
+            restore: FfiRestore {
+                applied: u32::try_from(outcome.applied).unwrap_or(u32::MAX),
+                links: u32::try_from(outcome.links).unwrap_or(u32::MAX),
+                created_at_millis: outcome.created_at.as_millis(),
+                identity_changed: outcome.identity_changed,
+            },
         })
     }
 
