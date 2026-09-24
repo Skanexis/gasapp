@@ -38,7 +38,7 @@ use std::collections::HashMap;
 use aegis_core::client::{Client, Contact};
 use aegis_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
-    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest, SendRequest,
+    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest,
 };
 use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
@@ -492,31 +492,13 @@ impl Transport for FakeServer {
                     None => (404, String::new()),
                 }
             }
-            // Обычная отправка теперь за подписью отправителя, и путь
-            // называет его устройство.
-            (Method::Post, path)
-                if path.starts_with("/v1/messages/") && path.matches('/').count() == 3 =>
-            {
-                let parsed: SendRequest =
-                    serde_json::from_str(request.body.as_deref().unwrap_or_default())
-                        .map_err(|_| aegis_types::AegisError::Malformed)?;
-
+            // 🔐 Незапечатанной отправки у сервера нет: заглушка, как
+            // и сервер, её не принимает, но считает попытки — тесты
+            // проверяют, что клиент их не делает вовсе.
+            (Method::Post, path) if path.starts_with("/v1/messages") => {
                 state.plain_accepted += 1;
 
-                let envelope_id = Self::next_uuid(&mut state);
-                state
-                    .queues
-                    .entry(parsed.destination_device_id)
-                    .or_default()
-                    .push(EnvelopeResponse {
-                        envelope_id: envelope_id.clone(),
-                        ciphertext: parsed.ciphertext,
-                        queued_at_bucketed: 0,
-                    });
-
-                // Клиент ждёт JSON-строку: send_envelope разбирает ответ
-                // как идентификатор конверта.
-                (200, serde_json::to_string(&envelope_id).unwrap_or_default())
+                (405, String::new())
             }
             (Method::Put, path) if path.starts_with("/v1/sealed/access/") => {
                 let device_id = path.trim_start_matches("/v1/sealed/access/").to_owned();
@@ -3951,4 +3933,133 @@ fn the_sealed_kem_key_is_published_at_registration() {
 
     aegis_protocol::sealed_sender::verify_sealed_kem_key(&identity, &public, &signature)
         .expect("подпись владельца");
+}
+
+/// Ключ ML-KEM sealed sender, опубликованный на сервере, в hex.
+fn published_sealed_kem(server: &FakeServer, username: &str) -> String {
+    aegis_net::client::ApiClient::new(server.clone())
+        .discover(username)
+        .expect("discovery")
+        .sealed_kem_public
+        .expect("ключ опубликован")
+}
+
+/// 🔐 Ключ ML-KEM sealed sender сменяется, и конверт, запечатанный
+/// на прежний, всё равно открывается.
+///
+/// Прежде ключ не менялся никогда: изъятие устройства раскрывало
+/// отправителя каждого записанного конверта за всё время.
+#[test]
+fn the_sealed_kem_key_rotates_and_the_previous_one_still_opens() {
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let before = published_sealed_kem(&server, "bob");
+
+    alice
+        .send_message("bob", "до смены ключа", now(), &mut OsRng)
+        .expect("отправка");
+
+    let later = Timestamp::from_millis(now().as_millis() + 8 * DAY);
+    bob.maintain_prekeys(later, &mut OsRng)
+        .expect("обслуживание");
+
+    let after = published_sealed_kem(&server, "bob");
+    assert_ne!(before, after, "ключ ML-KEM не сменился за восемь дней");
+
+    assert_eq!(
+        bob.receive_messages(&bob_device, later).expect("приём"),
+        1,
+        "конверт, запечатанный на прежний ключ, потерян"
+    );
+
+    // Следующее сообщение запечатано уже на новый ключ.
+    alice
+        .send_message("bob", "после смены", later, &mut OsRng)
+        .expect("отправка");
+    assert_eq!(
+        bob.receive_messages(&bob_device, later).expect("приём"),
+        1,
+        "конверт на новый ключ не открылся"
+    );
+}
+
+/// 🔐 Выведенный ключ ML-KEM стирается через месяц: запечатанное
+/// на него больше не открывается даже на самом устройстве.
+///
+/// Месяц — срок жизни конверта в очереди. Дольше ключ хранить незачем,
+/// а каждый лишний день — прошлое, которое откроет изъятое устройство.
+#[test]
+fn a_retired_sealed_kem_key_is_erased_after_a_month() {
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    // Сессия установлена: дальше проверяется только внешний слой.
+    alice
+        .send_message("bob", "привет", now(), &mut OsRng)
+        .expect("отправка");
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+
+    alice
+        .send_message("bob", "на старый ключ", now(), &mut OsRng)
+        .expect("отправка");
+
+    let rotated = Timestamp::from_millis(now().as_millis() + 8 * DAY);
+    bob.maintain_prekeys(rotated, &mut OsRng).expect("смена");
+
+    let month_later = Timestamp::from_millis(rotated.as_millis() + 31 * DAY);
+    bob.maintain_prekeys(month_later, &mut OsRng)
+        .expect("чистка");
+
+    assert_eq!(
+        bob.receive_messages(&bob_device, month_later).unwrap_or(0),
+        0,
+        "конверт открылся ключом, который должен быть стёрт"
+    );
+}
+
+/// 🔐 Имя приводится к каноничной форме, двойник отвергается до сети.
+///
+/// «@Bob» находит «bob»; «bоb» с кириллической «о» не находит никого
+/// и на сервер не уходит: запрос выдал бы, кого искали.
+#[test]
+fn usernames_are_canonical_and_lookalikes_are_refused() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    alice
+        .register("  Alice ", now(), &mut OsRng)
+        .expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+    assert_eq!(alice.own_username().expect("имя").as_deref(), Some("alice"));
+
+    let found = alice.discover_contact("@Bob", now()).expect("поиск");
+    assert_eq!(found.username.as_deref(), Some("bob"));
+
+    for lookalike in ["b\u{43e}b", "bob\u{200b}", "bo b"] {
+        assert!(
+            matches!(
+                alice.discover_contact(lookalike, now()),
+                Err(AegisError::InvalidUsername)
+            ),
+            "двойник {lookalike:?} не отвергнут"
+        );
+    }
+
+    assert!(matches!(
+        Client::new(server.clone(), open_storage(&dir, "mallory.db")).register(
+            "\u{430}lice",
+            now(),
+            &mut OsRng
+        ),
+        Err(AegisError::InvalidUsername)
+    ));
 }

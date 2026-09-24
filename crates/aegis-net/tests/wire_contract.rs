@@ -22,7 +22,7 @@
 use aegis_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
     RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
-    SealedReportResponse, SealedSendRequest, SendRequest,
+    SealedReportResponse, SealedSendRequest,
 };
 
 /// Возвращает отсортированный список полей JSON-объекта.
@@ -179,22 +179,6 @@ fn bundle_response_handles_exhausted_pool() {
 
     assert!(bundle.one_time.is_none());
     assert!(bundle.degraded, "исчерпание пула обязано быть отмечено");
-}
-
-/// Отправка конверта: имена полей.
-#[test]
-fn send_request_matches_server_contract() {
-    let request = SendRequest {
-        destination_device_id: "dev".to_owned(),
-        ciphertext: "aabb".to_owned(),
-    };
-
-    let json = serde_json::to_string(&request).unwrap();
-
-    assert_eq!(
-        field_names(&json),
-        vec!["ciphertext", "destination_device_id"]
-    );
 }
 
 /// Конверт разбирается вместе с округлённой меткой времени.

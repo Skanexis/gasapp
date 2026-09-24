@@ -64,6 +64,7 @@ use aegis_net::pow;
 use aegis_protocol::content::{Content, ACCESS_KEY_LEN};
 use aegis_protocol::keys::{IdentityKeyPair, SessionState};
 use aegis_protocol::mlkem::MlKem1024PrivateKey;
+use aegis_protocol::prekeys::{MAX_RETIRED_SIGNED, RETIRED_SIGNED_KEEP_DAYS};
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::x25519::X25519PrivateKey;
 use aegis_storage::sealed::StoredCertificate;
@@ -77,6 +78,9 @@ use super::{
     derive_chat_id, hex, parse_bundle, parse_public_key, peer_account, unhex, Client, DeviceSigner,
 };
 use crate::session;
+
+/// Сутки в миллисекундах.
+const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
 /// За сколько до истечения сертификат обновляется заранее.
 ///
@@ -118,6 +122,49 @@ impl<T: Transport> Client<T> {
         let (stored, _) = self.storage.own_sealed_kem()?.ok_or(AegisError::Storage)?;
 
         Ok(MlKem1024PrivateKey::from_seed(stored))
+    }
+
+    /// Сменяет ключ ML-KEM sealed sender, если он опубликован давно,
+    /// и стирает выведенные ключи сверх срока.
+    ///
+    /// # 🔐 Зачем
+    ///
+    /// Ключ, не меняющийся никогда, раскрыл бы при изъятии устройства
+    /// отправителя каждого конверта, записанного с сервера или с провода
+    /// за всё время. Смена раз в [`aegis_protocol::SIGNED_PRE_KEY_ROTATION_DAYS`]
+    /// дней и стирание прежних через [`RETIRED_SIGNED_KEEP_DAYS`] суток —
+    /// столько живёт конверт в очереди — ограничивают это окно месяцем.
+    ///
+    /// Срок считается от публикации, а не от создания: неопубликованный
+    /// ключ ещё никому не выдан, и менять его незачем. Возвращает `true`,
+    /// если ключ сменён — его надо опубликовать.
+    pub(super) fn rotate_sealed_kem_if_due<R: RngCore + CryptoRng>(
+        &self,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<bool> {
+        let keep = RETIRED_SIGNED_KEEP_DAYS.saturating_mul(DAY_MILLIS);
+        self.storage.prune_retired_sealed_kems(
+            Timestamp::from_millis(now.as_millis().saturating_sub(keep)),
+            MAX_RETIRED_SIGNED,
+        )?;
+
+        let Some((_, Some(published))) = self.storage.own_sealed_kem()? else {
+            return Ok(false);
+        };
+
+        let period =
+            i64::from(aegis_protocol::SIGNED_PRE_KEY_ROTATION_DAYS).saturating_mul(DAY_MILLIS);
+
+        if now.as_millis().saturating_sub(published.as_millis()) < period {
+            return Ok(false);
+        }
+
+        let mut seed = zeroize::Zeroizing::new([0u8; aegis_storage::sealed::SEALED_KEM_SEED_LEN]);
+        rng.fill_bytes(seed.as_mut());
+        self.storage.rotate_own_sealed_kem(&seed, now)?;
+
+        Ok(true)
     }
 
     /// Открытая часть ключа ML-KEM sealed sender и её подпись, hex.
@@ -465,8 +512,22 @@ impl<T: Transport> Client<T> {
         let private = X25519PrivateKey::from_bytes(PrivateKeyBytes::new(
             *identity.private().expose_secret(),
         ))?;
-        let kem = self.own_sealed_kem_key()?;
-        let contents = sealed_sender::unseal(&private, &kem, raw)?;
+        // 🔐 Действующий ключ, затем выведенные — от новых к старым:
+        // конверт, запечатанный до смены, ещё может лежать в очереди.
+        // Неверный ключ ML-KEM не ломает ничего: неявный отказ даёт
+        // случайный секрет, и AES-GCM отвергает тег.
+        let current = self.own_sealed_kem_key()?;
+        let contents = match sealed_sender::unseal(&private, &current, raw) {
+            Ok(contents) => contents,
+            Err(first) => self
+                .storage
+                .retired_sealed_kems()?
+                .into_iter()
+                .find_map(|seed| {
+                    sealed_sender::unseal(&private, &MlKem1024PrivateKey::from_seed(seed), raw).ok()
+                })
+                .ok_or(first)?,
+        };
         let moment = validity_moment(queued_at_seconds, now);
 
         let (_, server_key) = self.ensure_certificate(identity, now, false)?;

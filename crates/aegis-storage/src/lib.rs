@@ -366,7 +366,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 9;
+    const SCHEMA_VERSION: i32 = 10;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -695,6 +695,26 @@ impl Storage {
                         .execute(
                             "ALTER TABLE known_contacts
                              ADD COLUMN confirmed_by_link INTEGER NOT NULL DEFAULT 0",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                // 9 → 10: выведенные ключи ML-KEM sealed sender.
+                //
+                // 🔐 Ключ, не меняющийся никогда, раскрыл бы при изъятии
+                // устройства отправителя каждого записанного конверта
+                // за всё время. Теперь он сменяется, а прежний хранится,
+                // пока может прийти конверт, запечатанный на него.
+                10 => {
+                    transaction
+                        .execute(
+                            "
+                            CREATE TABLE IF NOT EXISTS retired_sealed_kem (
+                                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                                seed       BLOB NOT NULL,
+                                retired_at INTEGER NOT NULL
+                            )
+                            ",
                             [],
                         )
                         .map_err(storage_error)?;

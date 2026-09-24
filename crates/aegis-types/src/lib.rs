@@ -12,10 +12,12 @@
 
 mod ids;
 mod secret;
+mod username;
 mod wire;
 
 pub use ids::{AccountId, ChatId, DeviceId, MessageId, Timestamp};
 pub use secret::{Secret, SecretBytes, SecretKey32};
+pub use username::{canonical_username, is_canonical_username, MAX_USERNAME_LEN, MIN_USERNAME_LEN};
 pub use wire::{Ciphertext, Plaintext, PrivateKeyBytes, PublicKeyBytes};
 
 /// Ошибки уровня всего приложения.
@@ -113,6 +115,14 @@ pub enum AegisError {
     /// ушло бы ему.
     #[error("peer not confirmed")]
     PeerUnconfirmed,
+
+    /// 🔐 Имя пользователя не в каноничной форме.
+    ///
+    /// Строчные латинские буквы, цифры и `_`, с буквы, 3–32 символа
+    /// (см. [`canonical_username`]). Иначе двойники вроде «аlice»
+    /// с кириллической «а» были бы разными аккаунтами.
+    #[error("invalid username")]
+    InvalidUsername,
 }
 
 /// Результат операции AEGIS.
@@ -144,6 +154,7 @@ mod tests {
             AegisError::Malformed,
             AegisError::IdentityChanged,
             AegisError::PeerUnconfirmed,
+            AegisError::InvalidUsername,
         ];
 
         // Проверка полноты: если в перечислении появится новый вариант,
@@ -162,7 +173,8 @@ mod tests {
                 | AegisError::Network
                 | AegisError::Malformed
                 | AegisError::IdentityChanged
-                | AegisError::PeerUnconfirmed => {}
+                | AegisError::PeerUnconfirmed
+                | AegisError::InvalidUsername => {}
             }
         }
 

@@ -54,8 +54,8 @@ mod network;
 mod sealed;
 
 use aegis_types::{
-    AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext, PublicKeyBytes, Result,
-    Timestamp,
+    canonical_username, AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext,
+    PublicKeyBytes, Result, Timestamp,
 };
 pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 use rand_core::{CryptoRng, RngCore};
@@ -287,6 +287,9 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<Account> {
+        // 🔐 Только каноничное имя: двойник «аlice» с кириллической «а»
+        // сервером отвергается, но и уходить туда ему незачем.
+        let username = &canonical_username(username)?;
         let identity = prekeys::generate_identity(rng)?;
         let device_id = DeviceId::generate();
         let (bundle, secrets) = prekeys::generate(&identity, device_id, now, rng)?;
@@ -361,6 +364,8 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<MessageId> {
+        let peer_username = &canonical_username(peer_username)?;
+
         // Секреты предключей при отправке не нужны: они участвуют
         // только в приёме, когда нам присылают конверт инициации.
         let (identity, _) = self.load_identity()?;
@@ -656,6 +661,7 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<ChatId> {
+        let peer_username = &canonical_username(peer_username)?;
         let (identity, _) = self.load_identity()?;
 
         let peer = self.api.discover(peer_username)?;
@@ -1096,6 +1102,7 @@ impl<T: Transport> Client<T> {
             None => (peer_account(&link.identity), None),
 
             Some(name) => {
+                let name = &canonical_username(name)?;
                 let peer = self.api.discover(name)?;
                 let advertised = parse_public_key(&peer.identity_key)?;
 
@@ -1190,6 +1197,7 @@ impl<T: Transport> Client<T> {
     /// [`AegisError::Network`] — имя не найдено или сеть недоступна;
     /// [`AegisError::IdentityChanged`] — сервер называет другой ключ.
     pub fn discover_contact(&self, name: &str, now: Timestamp) -> Result<Contact> {
+        let name = &canonical_username(name)?;
         let peer = self.api.discover(name)?;
         let advertised = parse_public_key(&peer.identity_key)?;
 
@@ -1837,6 +1845,12 @@ impl<T: Transport> Client<T> {
         chat_id: &ChatId,
         now: Timestamp,
     ) -> Result<()> {
+        // Имя прислал собеседник — неканоничное не ищется вовсе.
+        let Ok(name) = canonical_username(name) else {
+            return Ok(());
+        };
+        let name = name.as_str();
+
         let Ok(found) = self.api.discover(name) else {
             return Ok(());
         };
@@ -2062,6 +2076,10 @@ impl<T: Transport> Client<T> {
         };
 
         let added = u32::try_from(added_one_time.len()).unwrap_or(u32::MAX);
+
+        // 🔐 Смена ключа ML-KEM sealed sender по сроку. Сменённый ключ
+        // не опубликован и уходит на сервер тем же запросом ниже.
+        self.rotate_sealed_kem_if_due(now, rng)?;
 
         // 🔐 Ключ ML-KEM sealed sender, ещё не бывший на сервере: у аккаунтов,
         // заведённых до гибридного sealed sender, его нет, и писать им

@@ -47,19 +47,10 @@ pub struct AppState {
     pub pool: PgPool,
     /// Ограничитель discovery — против перебора username.
     pub discovery_limiter: Mutex<RateLimiter>,
-    /// Ограничитель обычной отправки — по получателю.
-    pub message_limiter: Mutex<RateLimiter>,
-    /// Ограничитель обычной отправки — по отправителю.
+    /// Ограничитель запечатанной отправки — по получателю.
     ///
-    /// 🔐 Обычная отправка подписана, поэтому её можно считать по тому,
-    /// кто шлёт: один аккаунт не забьёт чужую очередь, а новый аккаунт
-    /// стоит proof-of-work.
-    pub sender_limiter: Mutex<RateLimiter>,
-    /// Ограничитель запечатанной отправки — по получателю, отдельный.
-    ///
-    /// 🔐 Отдельный от обычного: иначе мусор по одному маршруту
-    /// выжигал бы бюджет получателя и на другом, и законный собеседник
-    /// с ключом доступа получал бы 429.
+    /// Считаются только принятые конверты: мусор без ключа доступа
+    /// и без работы идёт в [`AppState::sealed_rejected_limiter`].
     pub sealed_limiter: Mutex<RateLimiter>,
     /// Ограничитель отвергнутых запечатанных попыток — по получателю.
     ///
@@ -160,14 +151,6 @@ impl AppState {
             ))),
             bundle_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 rate_limit::BUNDLE_PER_MINUTE,
-                nodes,
-            ))),
-            message_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
-                rate_limit::MESSAGES_PER_MINUTE,
-                nodes,
-            ))),
-            sender_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
-                rate_limit::MESSAGES_PER_MINUTE,
                 nodes,
             ))),
             sealed_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
@@ -372,15 +355,6 @@ pub struct BundleResponse {
     pub degraded: bool,
 }
 
-/// Отправка конверта.
-#[derive(Debug, Deserialize)]
-pub struct SendRequest {
-    /// Устройство-получатель.
-    pub destination_device_id: Uuid,
-    /// Шифротекст конверта, hex. Сервер его не разбирает.
-    pub ciphertext: String,
-}
-
 /// Конверт, отдаваемый получателю.
 #[derive(Debug, Serialize)]
 pub struct EnvelopeResponse {
@@ -423,14 +397,16 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/keys/:device_id", put(publish_keys))
         .route("/v1/keys/:device_id/bundle", get(take_bundle))
         .route("/v1/keys/:device_id/count", get(count_keys))
-        // 🔐 Обычная отправка — за подписью отправителя, из пути.
-        // Прежде маршрут был `/v1/messages` без подписи: любой клал
-        // конверты в любую очередь анонимно, в обход ключа доступа
-        // sealed sender.
-        .route(
-            "/v1/messages/:device_id",
-            get(fetch_messages).post(send_message),
-        )
+        // Очередь устройства: только чтение, за подписью владельца.
+        //
+        // 🔐 Отправки здесь нет. Прежде `POST` принимал конверт за
+        // подписью отправителя — для первого сообщения, пока ключа
+        // доступа ещё нет. Первый контакт давно запечатан (proof-of-work),
+        // клиент маршрутом не пользовался, а сервер, который его держит,
+        // мог бы принять подписанный конверт от изменённого клиента —
+        // и узнать, кто кому пишет. Единственный путь отправки —
+        // `/v1/sealed/messages`.
+        .route("/v1/messages/:device_id", get(fetch_messages))
         // Sealed sender (раздел 15.2).
         //
         // 🔐 Отправка идёт по отдельному маршруту без аутентификации
@@ -525,7 +501,9 @@ async fn register(
     pow::verify(&challenge, request.pow_nonce, state.pow_difficulty)
         .map_err(|_| ApiError::Unauthorized)?;
 
-    if request.username.is_empty() || request.username.len() > 64 {
+    // 🔐 Только каноничное имя: иначе «alice» и «аlice» с кириллической
+    // «а» были бы разными аккаунтами с одинаковым видом.
+    if !aegis_server_db::is_canonical_username(&request.username) {
         return Err(ApiError::BadRequest);
     }
 
@@ -607,6 +585,12 @@ async fn discovery(
     // конфигурации ключ приходит из прокси-слоя», и это было
     // неправдой: ни механизма приёма такого ключа, ни настройки
     // в руководстве не существовало.
+    // Неканоничного имени нет и быть не может — тот же ответ, что
+    // у отсутствующего, и до ограничителя: бюджет им не тратится.
+    if !aegis_server_db::is_canonical_username(&username) {
+        return Err(ApiError::NotFound);
+    }
+
     let key = rate_limit::key_from_addr(&state.limiter_salt, &username);
     let now = now_millis();
 
@@ -809,103 +793,6 @@ async fn count_keys(
     let count = repo::count_one_time_prekeys(&state.pool, device_id).await?;
 
     Ok(Json(count))
-}
-
-/// Постановка конверта в очередь доставки.
-/// Обычная (незапечатанная) отправка.
-///
-/// # 🔐 Почему за подписью
-///
-/// Анонимно писать можно только тому, кто раздал ключ доступа, — это
-/// и есть смысл sealed sender (`0004_sealed_sender.sql`). Маршрут без
-/// подписи этот запрет обходил: любой клал конверты в любую очередь,
-/// не называясь. Аудитор принял анонимный конверт без ключа.
-///
-/// Подпись не выдаёт серверу ничего нового. Сюда клиент уходит, только
-/// пока ключа доступа собеседника у него нет, то есть с первым
-/// сообщением, — а начальный конверт и так несёт identity-ключ
-/// отправителя открыто.
-async fn send_message(
-    State(state): State<Arc<AppState>>,
-    sender: crate::authz::AuthenticatedDevice,
-    Json(request): Json<SendRequest>,
-) -> Result<Json<Uuid>, ApiError> {
-    let now = now_millis();
-
-    // По отправителю: один аккаунт не забивает чужую очередь.
-    let sender_key = rate_limit::key_from_addr(&state.limiter_salt, &sender.device_id.to_string());
-
-    {
-        let mut limiter = state
-            .sender_limiter
-            .lock()
-            .map_err(|_| ApiError::Internal)?;
-
-        if !limiter.allow(sender_key, now) {
-            return Err(ApiError::TooManyRequests);
-        }
-    }
-
-    // По получателю: и многими аккаунтами очередь не переполнить.
-    let key = rate_limit::key_from_addr(
-        &state.limiter_salt,
-        &request.destination_device_id.to_string(),
-    );
-
-    {
-        let mut limiter = state
-            .message_limiter
-            .lock()
-            .map_err(|_| ApiError::Internal)?;
-
-        if !limiter.allow(key, now) {
-            return Err(ApiError::TooManyRequests);
-        }
-    }
-
-    let ciphertext = decode_hex(&request.ciphertext)?;
-
-    let envelope_id = repo::enqueue_envelope(
-        &state.pool,
-        request.destination_device_id,
-        &ciphertext,
-        i64::try_from(ENVELOPE_TTL.as_secs()).unwrap_or(i64::MAX),
-    )
-    .await?;
-
-    // Уведомление после успешной постановки в очередь, а не до:
-    // при обратном порядке клиент пришёл бы за конвертом, которого
-    // ещё нет, и решил, что уведомление ложное.
-    //
-    // Рассылка идёт всем узлам кластера: получатель почти всегда
-    // подключён к другому узлу, чем отправитель. Локальный хаб
-    // получит своё уведомление тем же путём — через LISTEN, — поэтому
-    // отдельного вызова notify здесь нет: он привёл бы к двойному
-    // уведомлению на своём узле.
-    //
-    // Ошибка рассылки не отменяет отправку: конверт уже в очереди,
-    // и получатель заберёт его при следующем запросе. Молчаливо
-    // терять сообщение из-за сбоя уведомления было бы хуже.
-    if let Err(error) = crate::hub::broadcast(&state.pool, request.destination_device_id).await {
-        tracing::warn!(%error, "не удалось разослать уведомление");
-    }
-
-    // Пробуждение устройства, если оно не подключено сокетом.
-    //
-    // 🔐 Уходит только флаг «есть новое»: ни текста, ни отправителя,
-    // ни чата. Всё, что попало бы в нагрузку, увидели бы Apple
-    // и Google — а мессенджер, отдающий посреднику имя собеседника,
-    // перестаёт быть тем, за что его выбрали (ADR-014).
-    //
-    // Ошибки подавляются внутри: провал push означает задержку,
-    // а не потерю — конверт уже в очереди.
-    crate::push::wake_device(
-        &state.pool,
-        state.push.as_ref(),
-        request.destination_device_id,
-    )
-    .await;
-    Ok(Json(envelope_id))
 }
 
 /// Регистрация токена push-уведомлений.

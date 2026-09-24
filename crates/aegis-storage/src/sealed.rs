@@ -193,6 +193,105 @@ impl Storage {
         Ok(())
     }
 
+    /// Сменяет ключ ML-KEM sealed sender: прежний уходит в выведенные.
+    ///
+    /// Новый ключ ещё не опубликован (`published_at` сбрасывается), и
+    /// до публикации собеседники запечатывают на прежний — он остаётся
+    /// среди выведенных и конверты открывает.
+    ///
+    /// Одна транзакция: прерванная смена не должна ни потерять прежний
+    /// ключ, ни оставить два действующих.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Uninitialized`] — ключа ещё нет;
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn rotate_own_sealed_kem(
+        &self,
+        seed: &[u8; SEALED_KEM_SEED_LEN],
+        now: Timestamp,
+    ) -> Result<()> {
+        let mut connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+        let transaction = connection.transaction().map_err(storage_error)?;
+
+        let retired = transaction
+            .execute(
+                "INSERT INTO retired_sealed_kem (seed, retired_at)
+                 SELECT seed, ? FROM own_sealed_kem WHERE id = 1",
+                params![now.as_millis()],
+            )
+            .map_err(storage_error)?;
+
+        if retired == 0 {
+            return Err(AegisError::Uninitialized);
+        }
+
+        transaction
+            .execute(
+                "UPDATE own_sealed_kem SET seed = ?, published_at = NULL WHERE id = 1",
+                params![seed.as_slice()],
+            )
+            .map_err(storage_error)?;
+
+        transaction.commit().map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    /// Выведенные ключи ML-KEM sealed sender, от новых к старым.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — чтение не удалось либо запись повреждена.
+    pub fn retired_sealed_kems(&self) -> Result<Vec<[u8; SEALED_KEM_SEED_LEN]>> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+
+        let mut statement = connection
+            .prepare("SELECT seed FROM retired_sealed_kem ORDER BY retired_at DESC, id DESC")
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(storage_error)?;
+
+        let mut seeds = Vec::new();
+
+        for row in rows {
+            seeds.push(to_array(&row.map_err(storage_error)?)?);
+        }
+
+        Ok(seeds)
+    }
+
+    /// Стирает выведенные ключи ML-KEM, выведенные раньше `retired_before`,
+    /// и все сверх `keep` самых новых.
+    ///
+    /// 🔐 Каждый лишний ключ — это прошлое: отняв устройство, им можно
+    /// открыть внешний слой записанных конвертов и узнать отправителя.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — запись не удалась.
+    pub fn prune_retired_sealed_kems(&self, retired_before: Timestamp, keep: usize) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| AegisError::Storage)?;
+        let keep = i64::try_from(keep).unwrap_or(i64::MAX);
+
+        connection
+            .execute(
+                "DELETE FROM retired_sealed_kem
+                 WHERE retired_at < ?
+                    OR id NOT IN (
+                        SELECT id FROM retired_sealed_kem
+                        ORDER BY retired_at DESC, id DESC
+                        LIMIT ?
+                    )",
+                params![retired_before.as_millis(), keep],
+            )
+            .map_err(storage_error)?;
+
+        Ok(())
+    }
+
     /// Отмечает, что ключ ML-KEM sealed sender опубликован на сервере.
     ///
     /// # Errors
@@ -645,6 +744,79 @@ mod tests {
                 .expect("чтение")
                 .as_deref(),
             Some("socks5:proxy.example.org:1080")
+        );
+    }
+
+    /// 🔐 Смена ключа ML-KEM: прежний уходит в выведенные, новый
+    /// не опубликован.
+    #[test]
+    fn rotating_the_sealed_kem_retires_the_previous_key() {
+        let (storage, _dir) = open_temp();
+
+        assert!(
+            matches!(
+                storage.rotate_own_sealed_kem(&[2u8; 64], now()),
+                Err(AegisError::Uninitialized)
+            ),
+            "сменён ключ, которого не было"
+        );
+
+        storage.init_own_sealed_kem(&[1u8; 64]).expect("запись");
+        storage
+            .mark_own_sealed_kem_published(now())
+            .expect("публикация");
+        storage
+            .rotate_own_sealed_kem(&[2u8; 64], now())
+            .expect("смена");
+
+        let (seed, published) = storage
+            .own_sealed_kem()
+            .expect("чтение")
+            .expect("ключ есть");
+        assert_eq!(seed, [2u8; 64]);
+        assert!(published.is_none(), "новый ключ считается опубликованным");
+        assert_eq!(
+            storage.retired_sealed_kems().expect("чтение"),
+            vec![[1u8; 64]],
+            "прежний ключ потерян"
+        );
+    }
+
+    /// 🔐 Выведенные ключи стираются по сроку и сверх предела, новые —
+    /// первыми в списке.
+    #[test]
+    fn retired_sealed_kems_are_pruned_by_age_and_count() {
+        let (storage, _dir) = open_temp();
+        storage.init_own_sealed_kem(&[0u8; 64]).expect("запись");
+
+        for day in 1..=4u8 {
+            let at = Timestamp::from_millis(now().as_millis() + i64::from(day) * 86_400_000);
+            storage
+                .rotate_own_sealed_kem(&[day; 64], at)
+                .expect("смена");
+        }
+
+        // Выведены ключи 0, 1, 2, 3 — в дни 1, 2, 3, 4.
+        assert_eq!(
+            storage.retired_sealed_kems().expect("чтение"),
+            vec![[3u8; 64], [2u8; 64], [1u8; 64], [0u8; 64]]
+        );
+
+        // Старше третьего дня — прочь.
+        let cutoff = Timestamp::from_millis(now().as_millis() + 3 * 86_400_000);
+        storage
+            .prune_retired_sealed_kems(cutoff, 8)
+            .expect("чистка");
+        assert_eq!(
+            storage.retired_sealed_kems().expect("чтение"),
+            vec![[3u8; 64], [2u8; 64]]
+        );
+
+        // Сверх предела — тоже.
+        storage.prune_retired_sealed_kems(now(), 1).expect("чистка");
+        assert_eq!(
+            storage.retired_sealed_kems().expect("чтение"),
+            vec![[3u8; 64]]
         );
     }
 }

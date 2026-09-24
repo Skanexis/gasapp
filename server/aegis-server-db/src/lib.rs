@@ -195,3 +195,54 @@ mod tests {
         assert_eq!(MAX_ENVELOPE_BYTES, 262_144);
     }
 }
+
+/// Каноничное ли имя пользователя.
+///
+/// 🔐 Строчные латинские буквы, цифры и подчёркивание, первая — буква,
+/// от 3 до 32 символов. Прежде `UNIQUE` сравнивал имена побайтно:
+/// «alice», «Alice» и «аlice» с кириллической «а» были разными
+/// аккаунтами и выглядели одинаково — самозванец регистрировал двойника.
+/// То же правило — в схеме (`0010_canonical_usernames.sql`) и в клиенте
+/// (`aegis-types::canonical_username`).
+#[must_use]
+pub fn is_canonical_username(username: &str) -> bool {
+    let bytes = username.as_bytes();
+
+    (3..=32).contains(&bytes.len())
+        && bytes.first().is_some_and(u8::is_ascii_lowercase)
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
+}
+
+#[cfg(test)]
+mod username_tests {
+    use super::is_canonical_username;
+
+    #[test]
+    fn canonical_names_are_accepted() {
+        for name in ["bob", "alice_1", "a23", "abcdefghijklmnopqrstuvwxyz012345"] {
+            assert!(is_canonical_username(name), "{name} отвергнуто");
+        }
+    }
+
+    /// 🔐 Двойники и мусор — отказ.
+    #[test]
+    fn lookalikes_and_junk_are_refused() {
+        for name in [
+            "Alice",
+            "\u{430}lice",
+            "alice\u{200b}",
+            "al ice",
+            "al-ice",
+            "@alice",
+            "1alice",
+            "_alice",
+            "ab",
+            "abcdefghijklmnopqrstuvwxyz0123456",
+            "",
+        ] {
+            assert!(!is_canonical_username(name), "{name:?} принято");
+        }
+    }
+}

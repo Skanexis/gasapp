@@ -123,7 +123,8 @@ async fn register(state: &Arc<AppState>, username: &str) -> (Uuid, Uuid) {
 }
 
 fn unique_name(prefix: &str) -> String {
-    format!("{prefix}-{}", Uuid::new_v4())
+    // Каноничное имя: строчные буквы, цифры и `_`, не длиннее 32.
+    format!("{prefix}_{}", &Uuid::new_v4().simple().to_string()[..16])
 }
 
 /// 🧪 Задача M3: регистрация → публикация ключей → получение bundle.
@@ -356,26 +357,36 @@ async fn discovery_is_rate_limited() {
     assert!(limited, "лимит discovery не сработал");
 }
 
+/// Кладёт конверт в очередь устройства единственным путём отправки —
+/// запечатанным, с решением первого контакта.
+async fn enqueue_sealed(
+    state: &Arc<AppState>,
+    destination: Uuid,
+    sealed: &[u8],
+) -> (StatusCode, serde_json::Value) {
+    let nonce = solve_first_contact(destination, sealed);
+
+    call(
+        state,
+        "POST",
+        "/v1/sealed/messages",
+        Some(serde_json::json!({
+            "destination_device_id": destination,
+            "sealed": hex::encode(sealed),
+            "access_key": null,
+            "pow_nonce": nonce,
+        })),
+    )
+    .await
+}
+
 /// Отправка и приём конверта по HTTP.
 #[tokio::test]
 async fn envelope_delivery_round_trip() {
     let state = require_state!();
     let (device_id, private) = register_signing_device(&state, &unique_name("dave"), 0x23).await;
 
-    // Обычная отправка — за подписью отправителя: анонимно писать можно
-    // только тому, кто раздал ключ доступа (sealed sender). Здесь
-    // устройство пишет само себе — важен путь, а не собеседник.
-    let (status, envelope_id) = call_signed_json(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/messages/{device_id}"),
-        Some(serde_json::json!({
-            "destination_device_id": device_id,
-            "ciphertext": hex::encode(b"opaque"),
-        })),
-    )
-    .await;
+    let (status, envelope_id) = enqueue_sealed(&state, device_id, b"opaque").await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -422,15 +433,35 @@ async fn envelope_delivery_round_trip() {
     assert_eq!(empty.as_array().map(Vec::len), Some(0), "конверт не удалён");
 }
 
-/// 🔐 Анонимный конверт без ключа доступа не принимается.
+/// 🔐 Незапечатанной отправки нет — ни без подписи, ни с ней.
 ///
-/// Прежде `POST /v1/messages` был без подписи: любой клал конверты
-/// в любую очередь, не называясь, в обход ключа доступа sealed sender.
-/// Аудитор так и сделал.
+/// Сначала `POST /v1/messages` был без подписи: любой клал конверты
+/// в любую очередь, в обход ключа доступа sealed sender. Потом —
+/// за подписью отправителя, для первого сообщения; сервер, державший
+/// такой маршрут, узнал бы, кто кому пишет, от любого изменённого
+/// клиента. Теперь единственный путь — запечатанный.
 #[tokio::test]
-async fn an_unsigned_plain_envelope_is_refused() {
+async fn there_is_no_plain_send_route() {
     let state = require_state!();
-    let (device_id, _) = register_signing_device(&state, &unique_name("quiet"), 0x61).await;
+    let (device_id, private) = register_signing_device(&state, &unique_name("quiet"), 0x61).await;
+
+    let (status, _) = call_signed_json(
+        &state,
+        &private,
+        "POST",
+        &format!("/v1/messages/{device_id}"),
+        Some(serde_json::json!({
+            "destination_device_id": device_id,
+            "ciphertext": hex::encode(b"signed"),
+        })),
+    )
+    .await;
+
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "подписанный незапечатанный конверт принят"
+    );
 
     for uri in [
         "/v1/messages".to_owned(),
@@ -449,74 +480,6 @@ async fn an_unsigned_plain_envelope_is_refused() {
 
         assert_ne!(status, StatusCode::OK, "анонимный конверт принят по {uri}");
     }
-}
-
-/// 🔐 Подписанный мусор не выжигает бюджет запечатанной отправки.
-///
-/// Прежде обычная и запечатанная отправка делили один бюджет
-/// получателя: мусор по одной выжигал его, и собеседник с верным
-/// ключом доступа получал 429.
-#[tokio::test]
-async fn plain_junk_does_not_starve_sealed_delivery() {
-    let state = require_state!();
-    let (victim, victim_key) = register_signing_device(&state, &unique_name("victim"), 0x62).await;
-    let access_key = [0x7Eu8; 32];
-
-    let (status, _) = call_signed_json(
-        &state,
-        &victim_key,
-        "PUT",
-        &format!("/v1/sealed/access/{victim}"),
-        Some(serde_json::json!({
-            "access_key_hash": hex::encode(<sha2::Sha256 as sha2::Digest>::digest(access_key)),
-            "allow_from_anyone": false,
-        })),
-    )
-    .await;
-    assert_eq!(
-        status,
-        StatusCode::NO_CONTENT,
-        "ключ доступа не опубликован"
-    );
-
-    // Несколько аккаунтов злоумышленника, каждый в пределах своего лимита,
-    // вместе исчерпывают бюджет обычной отправки получателя.
-    for seed in 0..3u8 {
-        let (attacker, attacker_key) =
-            register_signing_device(&state, &unique_name("junk"), 0x70 + seed).await;
-
-        for _ in 0..aegis_server_api::rate_limit::MESSAGES_PER_MINUTE {
-            call_signed_json(
-                &state,
-                &attacker_key,
-                "POST",
-                &format!("/v1/messages/{attacker}"),
-                Some(serde_json::json!({
-                    "destination_device_id": victim,
-                    "ciphertext": hex::encode(b"junk"),
-                })),
-            )
-            .await;
-        }
-    }
-
-    let (status, _) = call(
-        &state,
-        "POST",
-        "/v1/sealed/messages",
-        Some(serde_json::json!({
-            "destination_device_id": victim,
-            "sealed": hex::encode(b"hello from a friend"),
-            "access_key": hex::encode(access_key),
-        })),
-    )
-    .await;
-
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "собеседник с ключом доступа не смог отправить: {status}"
-    );
 }
 
 /// 🔐 Запечатанный мусор без ключа не тратит бюджет собеседников.
@@ -644,16 +607,17 @@ async fn first_contact_is_sealed_with_proof_of_work() {
 #[tokio::test]
 async fn malformed_hex_is_rejected() {
     let state = require_state!();
-    let (device_id, private) = register_signing_device(&state, &unique_name("erin"), 0x24).await;
+    let (device_id, _) = register_signing_device(&state, &unique_name("erin"), 0x24).await;
 
-    let (status, _) = call_signed_json(
+    let (status, _) = call(
         &state,
-        &private,
         "POST",
-        &format!("/v1/messages/{device_id}"),
+        "/v1/sealed/messages",
         Some(serde_json::json!({
             "destination_device_id": device_id,
-            "ciphertext": "не hex",
+            "sealed": "не hex",
+            "access_key": null,
+            "pow_nonce": 0,
         })),
     )
     .await;
@@ -907,6 +871,56 @@ async fn register_signing_device(
         body["device_id"].as_str().unwrap().parse().unwrap(),
         private,
     )
+}
+
+/// 🔐 Двойник имени не регистрируется, а поиск по нему не находит
+/// никого.
+///
+/// Прежде `UNIQUE` сравнивал побайтно: «alice», «Alice» и «аlice»
+/// с кириллической «а» были тремя аккаунтами с одинаковым видом.
+#[tokio::test]
+async fn lookalike_usernames_are_refused() {
+    let state = require_state!();
+    let genuine = unique_name("alice");
+    register_signing_device(&state, &genuine, 0x44).await;
+
+    for lookalike in [genuine.to_uppercase(), genuine.replacen('a', "\u{430}", 1)] {
+        let private: DeviceKey = [0x45; 32];
+        let challenge = pow::registration_challenge(&lookalike, &[1u8; 32], &public_key(&private));
+        let nonce = solve(&challenge);
+
+        let (status, _) = call(
+            &state,
+            "POST",
+            "/v1/accounts/register",
+            Some(serde_json::json!({
+                "username": lookalike,
+                "identity_key": hex::encode([1u8; 32]),
+                "device_identity_key": hex::encode(public_key(&private)),
+                "pow_challenge": hex::encode(challenge),
+                "pow_nonce": nonce,
+            })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "двойник {lookalike:?} зарегистрирован"
+        );
+    }
+
+    let (status, _) = call(
+        &state,
+        "GET",
+        &format!("/v1/discovery/username/{}", genuine.to_uppercase()),
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "поиск по неканоничному имени что-то нашёл"
+    );
 }
 
 /// Выполняет подписанный запрос с телом JSON.
@@ -1223,17 +1237,7 @@ async fn account_deletion_removes_everything() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     // Недоставленный конверт в очереди.
-    let (status, _) = call_signed_json(
-        &state,
-        &private,
-        "POST",
-        &format!("/v1/messages/{device_id}"),
-        Some(serde_json::json!({
-            "destination_device_id": device_id,
-            "ciphertext": hex::encode(b"opaque"),
-        })),
-    )
-    .await;
+    let (status, _) = enqueue_sealed(&state, device_id, b"opaque").await;
 
     assert_eq!(status, StatusCode::OK);
 

@@ -84,6 +84,8 @@ impl From<AegisError> for FfiError {
         match error {
             AegisError::IdentityChanged => Self::IdentityChanged,
             AegisError::PeerUnconfirmed => Self::PeerUnconfirmed,
+            // Интерфейс показывает правило имени, а не сбой ядра.
+            AegisError::InvalidUsername => Self::InvalidArgument,
             other => Self::Core(other),
         }
     }
@@ -139,6 +141,21 @@ pub fn core_version() -> String {
 #[must_use]
 pub fn protocol_version() -> u8 {
     ProtocolVersion::CURRENT.as_u8()
+}
+
+/// Приводит введённое имя пользователя к каноничной форме.
+///
+/// 🔐 Одно правило на ядро, сервер и интерфейс: строчные латинские
+/// буквы, цифры и `_`, с буквы, 3–32 символа. Интерфейс не держит своей
+/// копии правила — копии расходятся, и тогда экран принимает имя,
+/// которое ядро отвергнет.
+///
+/// # Errors
+///
+/// [`FfiError::InvalidArgument`] — имя не приводится к каноничной форме.
+#[uniffi::export]
+pub fn canonical_username(raw: String) -> Result<String, FfiError> {
+    aegis_types::canonical_username(&raw).map_err(FfiError::from)
 }
 
 /// Проверяет номер версии протокола из входящего сообщения.
@@ -493,8 +510,12 @@ mod tests {
     #[test]
     fn protocol_downgrade_is_rejected_across_ffi() {
         assert!(check_protocol_version(0).is_err());
-        assert!(check_protocol_version(2).is_err());
-        assert_eq!(check_protocol_version(1).unwrap(), 1);
+        assert!(check_protocol_version(3).is_err());
+        assert_eq!(check_protocol_version(2).unwrap(), 2);
+        assert!(
+            check_protocol_version(1).is_err(),
+            "прежняя версия принята через FFI"
+        );
     }
 
     #[test]

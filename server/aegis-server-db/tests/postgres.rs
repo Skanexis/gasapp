@@ -70,7 +70,8 @@ macro_rules! require_pool {
 }
 
 fn unique_name(prefix: &str) -> String {
-    format!("{prefix}-{}", Uuid::new_v4())
+    // Каноничное имя: строчные буквы, цифры и `_`, не длиннее 32.
+    format!("{prefix}_{}", &Uuid::new_v4().simple().to_string()[..16])
 }
 
 #[tokio::test]
@@ -106,6 +107,28 @@ async fn duplicate_username_is_rejected() {
     let second = repo::register_account(&pool, &username, &[3u8; 32], &[4u8; 32]).await;
 
     assert!(matches!(second, Err(RepoError::UsernameTaken)));
+}
+
+/// 🔐 Двойник имени не проходит и мимо приложения: база сама
+/// отвергает неканоничное имя (миграция 0010).
+#[tokio::test]
+async fn the_database_refuses_lookalike_usernames() {
+    let pool = require_pool!();
+    let genuine = unique_name("alice");
+    let lookalikes = [
+        genuine.to_uppercase(),
+        genuine.replacen('a', "\u{430}", 1),
+        format!("{genuine}\u{200b}"),
+    ];
+
+    for lookalike in lookalikes {
+        assert!(
+            repo::register_account(&pool, &lookalike, &[1u8; 32], &[2u8; 32])
+                .await
+                .is_err(),
+            "база приняла двойника {lookalike:?}"
+        );
+    }
 }
 
 /// 🔐 Неудачная регистрация не оставляет частичных данных.
