@@ -45,6 +45,10 @@ fuzz_target!(|data: &[u8]| {
     let bundle = PreKeyBundle {
         device_id: DeviceId::generate(),
         identity_key: IdentityKey::new(identity),
+        // Пост-квантовая половина и привязка — из тех же байт: разбор
+        // и проверка обязаны отвергать мусор любой длины, не падая.
+        pq_identity: kem_public.clone(),
+        identity_binding: spk_signature.clone(),
         signed_pre_key: SignedPreKey {
             id: PreKeyId::new(1),
             public: signed_pre_key,
