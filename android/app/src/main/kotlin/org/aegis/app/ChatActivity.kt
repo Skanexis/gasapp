@@ -27,6 +27,7 @@ import org.aegis.app.core.Core
 import org.aegis.app.core.PendingSave
 import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.AttachmentPrep
 import org.aegis.app.core.SendGuard
 import org.aegis.app.core.showSecure
 import org.aegis.app.net.NotificationSocket
@@ -234,13 +235,26 @@ class ChatActivity : AppCompatActivity() {
             return
         }
 
-        Toast.makeText(this, R.string.attach_sending, Toast.LENGTH_SHORT).show()
+        // 🔐 Из фото, видео и звука метаданные удаляет ядро. Из документов
+        // (PDF, Word) — нет: там они часть формата. Человек должен знать
+        // это до того, как файл уйдёт.
+        val mime = contentResolver.getType(uri)
+
+        Toast.makeText(
+            this,
+            if (AttachmentPrep.isMediaMime(mime)) R.string.attach_sending else R.string.attach_document_metadata,
+            Toast.LENGTH_LONG,
+        ).show()
 
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
-                    val bytes = readAttachment(uri)
+                    val raw = readAttachment(uri)
                         ?: return@runCatching AttachOutcome.Unreadable
+
+                    // HEIC/AVIF — в JPEG: их метаданные ядро вырезать не может
+                    // и отвергает такие файлы (см. AttachmentPrep).
+                    val bytes = AttachmentPrep.prepare(raw)
 
                     if (bytes.size > MAX_ATTACHMENT_BYTES) {
                         return@runCatching AttachOutcome.TooLarge

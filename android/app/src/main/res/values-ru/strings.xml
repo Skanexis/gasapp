@@ -167,6 +167,7 @@
     <string name="attach_file">Документ</string>
     <string name="attach_cancel">Отмена</string>
     <string name="attach_sending">Отправка вложения…</string>
+    <string name="attach_document_metadata">Отправляется. Фото, видео и звук уходят без геометки, модели камеры и имени файла — а документ сохраняет свои метаданные: автора и программу, в которой он сделан.</string>
     <string name="attach_failed">Не удалось отправить вложение</string>
     <string name="attach_too_large">Файл больше 100 МБ</string>
     <string name="attach_unreadable">Не удалось прочитать файл</string>
@@ -476,7 +477,7 @@
     <string name="security_check_recovery">Ключ восстановления создан</string>
     <string name="security_check_backup">Резервная копия свежее недели</string>
     <string name="security_check_contacts">Все контакты сверены</string>
-    <string name="security_check_sealed">Sealed sender включён — кроме первого сообщения новому собеседнику</string>
+    <string name="security_check_sealed">Sealed sender включён для каждого сообщения</string>
     <string name="security_check_address">IP-адрес скрыт прокси или Tor</string>
     <string name="security_check_screenshots">Снимки экрана заблокированы</string>
     <string name="security_check_autolock">Автоблокировка не дольше 5 минут</string>
@@ -586,7 +587,7 @@
       меняется строка.
     -->
     <string name="about_section_limits">Чего это не защищает</string>
-    <string name="about_limit_first_message">Первое сообщение новому собеседнику не запечатано: сервер видит, кто кому написал. Дальше переписка запечатана.</string>
+    <string name="about_limit_first_message">Собеседник, найденный по имени, получает ключ от сервера — и сервер мог бы подсунуть свой. Это исключают ссылка или QR-код, показанные при встрече, либо сверка safety number. Каждое сообщение, и первое тоже, запечатано: сервер не видит, кто кому пишет.</string>
     <string name="about_limit_address">Сервер видит ваш IP-адрес и время запроса. Скрывает их только прокси или Tor — «Настройки» → «Соединение».</string>
     <string name="about_limit_notifications">Уведомлений нет: сообщения приходят, пока приложение открыто.</string>
     <string name="about_limit_backup">Исчезающих сообщений в резервной копии нет. Удалённое сообщение остаётся в копиях, сделанных до удаления.</string>

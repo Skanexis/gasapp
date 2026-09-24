@@ -180,6 +180,7 @@
     <string name="attach_file">Document</string>
     <string name="attach_cancel">Cancel</string>
     <string name="attach_sending">Sending attachment…</string>
+    <string name="attach_document_metadata">Sending. Photos, videos and audio are sent without location, camera model or file name — but a document keeps its own metadata, such as the author and the program it was made in.</string>
     <string name="attach_failed">Could not send the attachment</string>
     <string name="attach_too_large">The file is larger than 100 MB</string>
     <string name="attach_unreadable">Could not read the file</string>
@@ -460,7 +461,7 @@
     <string name="security_check_recovery">Recovery key created</string>
     <string name="security_check_backup">Backup within the last week</string>
     <string name="security_check_contacts">All contacts compared</string>
-    <string name="security_check_sealed">Sealed sender on — except the first message to a new contact</string>
+    <string name="security_check_sealed">Sealed sender on for every message</string>
     <string name="security_check_address">IP address hidden by a proxy or Tor</string>
     <string name="security_check_screenshots">Screenshots blocked</string>
     <string name="security_check_autolock">Auto-lock at 5 minutes or less</string>
@@ -540,7 +541,7 @@
       меняется строка.
     -->
     <string name="about_section_limits">What AEGIS does not protect against</string>
-    <string name="about_limit_first_message">The first message to a new contact is not sealed: the server sees who wrote to whom. The rest of the conversation is sealed.</string>
+    <string name="about_limit_first_message">A contact found by username gets their key from the server — the server could hand you its own. A link or QR code shown in person, or comparing safety numbers, rules this out. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
     <string name="about_limit_address">The server sees your IP address and the time of each request. Only a proxy or Tor hides that (Settings → Connection).</string>
     <string name="about_limit_notifications">There are no push notifications: messages arrive while the app is open.</string>
     <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>
