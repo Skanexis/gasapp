@@ -130,6 +130,34 @@ impl Messenger {
         guard(|| client.set_proxy_mode(&mode))
     }
 
+    /// Мосты Tor; пусто — прямое подключение к сети Tor.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось либо запись повреждена.
+    pub fn tor_bridges(&self) -> Result<Vec<String>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.tor_bridges())
+    }
+
+    /// Сохраняет мосты Tor (строка на мост) и возвращает их
+    /// в нормальном виде. Пустой текст — без мостов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — строка негодна (список
+    /// отвергается целиком); [`FfiError::Core`] — запись не удалась.
+    pub fn set_tor_bridges(&self, text: String) -> Result<Vec<String>, FfiError> {
+        if aegis_net::proxy::parse_bridges(&text).is_err() {
+            return Err(FfiError::InvalidArgument);
+        }
+
+        let client = self.client()?;
+
+        guard(|| client.set_tor_bridges(&text))
+    }
+
     /// Включён ли sealed sender.
     ///
     /// # Errors

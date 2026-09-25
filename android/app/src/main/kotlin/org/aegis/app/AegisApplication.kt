@@ -5,6 +5,7 @@ package org.aegis.app
 import android.app.Application
 import org.aegis.app.core.AutoLock
 import org.aegis.app.core.Language
+import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.ui.SafeArea
 
 /**
@@ -22,6 +23,10 @@ import org.aegis.app.ui.SafeArea
  * включая экран блокировки. Выбор хранится вне базы (см. [Language]),
  * так что данных для этого не требуется.
  *
+ * Четвёртое — прогрев встроенного Tor ([EmbeddedTor.prewarmIfChosen]):
+ * пока человек вводит PIN, Tor уже подключается. Данных для этого
+ * не нужно — только признак «в прошлый раз выбран Tor без мостов».
+ *
  * Больше здесь ничего не делается намеренно. 🔐 Работа в `onCreate`
  * приложения выполняется до ввода PIN, то есть на закрытом хранилище:
  * всё, что потребовало бы данных, пришлось бы либо откладывать, либо
@@ -35,5 +40,8 @@ class AegisApplication : Application() {
         Language.applyStored(this)
         AutoLock.install(this)
         SafeArea.install(this)
+
+        // В фоне: запуск Tor читает каталог состояния с диска.
+        Thread({ EmbeddedTor.prewarmIfChosen(this) }, "aegis-tor-prewarm").start()
     }
 }

@@ -5,6 +5,7 @@ package org.aegis.app.core
 import android.content.Context
 import java.io.File
 import org.aegis.app.BuildConfig
+import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import org.aegis.app.net.PlatformTransport
 import uniffi.aegis.deriveStorageKey
@@ -85,7 +86,15 @@ object Core {
         // раньше её прочитать нечем; а после — уже поздно: запрос, ушедший
         // напрямую при включённом Tor, выдал бы адрес. Нечитаемая настройка
         // закрывает сеть, а не открывает её.
-        NetworkProxy.apply(context, runCatching { opened.proxy() }.getOrNull())
+        // Мосты с экрана регистрации — в базу до применения режима:
+        // см. EmbeddedTor.pendingBridges.
+        EmbeddedTor.takePendingBridges()?.let { text -> runCatching { opened.setTorBridges(text) } }
+
+        NetworkProxy.apply(
+            context,
+            runCatching { opened.proxy() }.getOrNull(),
+            runCatching { opened.torBridges() }.getOrNull(),
+        )
 
         // 🔐 Чистка истёкших сообщений сразу после открытия базы.
         //

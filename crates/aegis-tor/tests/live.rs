@@ -89,6 +89,8 @@ fn a_request_goes_through_real_tor_and_nothing_else_does() {
         destinations: Allowlist::new([(HOST, PORT)]),
         bridges: bridges.clone(),
         transports,
+        // Свой мост в Docker — на частном адресе.
+        allow_private_bridges: std::env::var("AEGIS_TOR_ALLOW_PRIVATE").is_ok_and(|v| v == "1"),
     })
     .expect("запуск");
 

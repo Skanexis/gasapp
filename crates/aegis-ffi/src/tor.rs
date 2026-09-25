@@ -34,6 +34,9 @@ pub struct FfiTorSettings {
     pub server_host: String,
     /// Порт сервера AEGIS.
     pub server_port: u16,
+    /// Мосты Tor (как их возвращает `Messenger::tor_bridges`); пусто —
+    /// прямое подключение к сети Tor.
+    pub bridges: Vec<String>,
 }
 
 /// Состояние встроенного Tor.
@@ -49,6 +52,8 @@ pub struct FfiTorStatus {
     pub stalled: bool,
     /// Порт моста на 127.0.0.1; 0 — не запущен.
     pub port: u16,
+    /// Подключается через мосты.
+    pub bridges: bool,
 }
 
 impl FfiTorStatus {
@@ -58,6 +63,7 @@ impl FfiTorStatus {
         percent: 0,
         stalled: false,
         port: 0,
+        bridges: false,
     };
 
     fn of(tor: &EmbeddedTor) -> Self {
@@ -72,13 +78,16 @@ impl FfiTorStatus {
             percent,
             stalled,
             port: tor.port(),
+            bridges: !tor.bridges().is_empty(),
         }
     }
 }
 
 /// Запускает встроенный Tor и возвращает порт моста на 127.0.0.1.
 ///
-/// Повторный вызов возвращает порт уже запущенного: мост один на процесс.
+/// Повторный вызов с теми же мостами возвращает порт уже запущенного:
+/// мост один на процесс. С другими мостами прежний Tor останавливается
+/// и запускается заново — порт может смениться.
 ///
 /// # Errors
 ///
@@ -92,22 +101,36 @@ pub fn start_embedded_tor(settings: FfiTorSettings) -> Result<u16, FfiError> {
         return Err(FfiError::InvalidArgument);
     }
 
+    // 🔐 Та же проверка, что при сохранении: отпечаток обязателен,
+    // транспорт — только поддерживаемый.
+    let bridges = settings
+        .bridges
+        .iter()
+        .map(|line| aegis_net::proxy::normalize_bridge_line(line))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| FfiError::InvalidArgument)?;
+
     catch_unwind(AssertUnwindSafe(|| {
         let mut slot = TOR.lock().map_err(|_| FfiError::Panic)?;
 
         if let Some(tor) = slot.as_ref() {
-            return Ok(tor.port());
+            if tor.bridges() == bridges.as_slice() {
+                return Ok(tor.port());
+            }
         }
+
+        // Другие мосты — прежний Tor останавливается до запуска нового:
+        // каталог состояния один, и Arti держит на нём блокировку.
+        *slot = None;
 
         let tor = EmbeddedTor::start(TorSettings {
             state_dir: PathBuf::from(settings.state_dir),
             cache_dir: PathBuf::from(settings.cache_dir),
             trusted_prefix: settings.trusted_prefix.map(PathBuf::from),
             destinations: Allowlist::new([(settings.server_host, settings.server_port)]),
-            // Мосты — со следующим шагом (подключаемые транспорты на
-            // Android); см. раздел 23.18 плана.
-            bridges: Vec::new(),
+            bridges,
             transports: Vec::new(),
+            allow_private_bridges: false,
         })
         .map_err(|error| match error {
             TorError::NoDestinations => FfiError::InvalidArgument,
@@ -121,6 +144,26 @@ pub fn start_embedded_tor(settings: FfiTorSettings) -> Result<u16, FfiError> {
         Ok(port)
     }))
     .unwrap_or(Err(FfiError::Panic))
+}
+
+/// Останавливает встроенный Tor (например, при выборе прямого
+/// соединения или SOCKS5): незачем держать цепочки, которыми никто
+/// не пользуется.
+#[uniffi::export]
+pub fn stop_embedded_tor() {
+    let _ = catch_unwind(|| {
+        if let Ok(mut slot) = TOR.lock() {
+            *slot = None;
+        }
+    });
+}
+
+/// Допустимы ли строки мостов (строка на мост) — для подсветки ошибки
+/// до сохранения.
+#[uniffi::export]
+#[must_use]
+pub fn validate_tor_bridges(text: String) -> bool {
+    aegis_net::proxy::parse_bridges(&text).is_ok()
 }
 
 /// Состояние встроенного Tor — для индикатора подключения.
@@ -144,6 +187,7 @@ mod tests {
             trusted_prefix: None,
             server_host: host.to_owned(),
             server_port: port,
+            bridges: Vec::new(),
         }
     }
 

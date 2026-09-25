@@ -35,6 +35,7 @@
 
 mod bridge;
 pub mod socks;
+pub mod webtunnel;
 
 use std::future::Future;
 use std::io;
@@ -59,6 +60,9 @@ use socks::Target;
 
 /// Первая пауза между попытками бутстрапа; дальше удваивается.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
+
+/// Сколько ждать остановки задач при остановке Tor.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Предел паузы между попытками бутстрапа.
 const RETRY_MAX: Duration = Duration::from_mins(1);
@@ -89,6 +93,9 @@ pub struct TorSettings {
     pub bridges: Vec<String>,
     /// Подключаемые транспорты (PT), через которые идут мосты.
     pub transports: Vec<Transport>,
+    /// ⚠️ Мосты `WebTunnel` на частных адресах — только для проверки со
+    /// своим мостом в локальной сети. Платформа это поле не выставляет.
+    pub allow_private_bridges: bool,
 }
 
 /// Подключаемый транспорт: как добраться до моста.
@@ -148,8 +155,21 @@ pub enum TorError {
 pub struct EmbeddedTor {
     port: u16,
     status: watch::Receiver<TorStatus>,
-    // Последним: рантайм останавливается после всего остального.
-    _runtime: Runtime,
+    /// Мосты, с которыми запущен.
+    bridges: Vec<String>,
+    /// `Option` — чтобы [`Drop`] мог остановить рантайм с таймаутом.
+    runtime: Option<Runtime>,
+}
+
+impl Drop for EmbeddedTor {
+    /// Останавливает рантайм: задачи Arti и мосты закрываются, блокировка
+    /// каталога состояния снимается — следующий запуск (например, уже
+    /// с мостами) её получит.
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_timeout(SHUTDOWN_TIMEOUT);
+        }
+    }
 }
 
 impl std::fmt::Debug for EmbeddedTor {
@@ -176,7 +196,7 @@ impl EmbeddedTor {
             return Err(TorError::NoDestinations);
         }
 
-        let config = client_config(&settings)?;
+        let mut settings = settings;
 
         // Arti требует, чтобы приложение выбрало провайдера TLS.
         // Повторная установка (второй запуск в процессе) — не ошибка.
@@ -189,18 +209,48 @@ impl EmbeddedTor {
             .build()
             .map_err(|_| TorError::Runtime)?;
 
-        let (client, listener) = runtime.block_on(async {
-            let client = TorClient::builder()
-                .config(config)
-                .bootstrap_behavior(BootstrapBehavior::OnDemand)
-                .create_unbootstrapped()
-                .map_err(|_| TorError::Config)?;
+        // Мосты WebTunnel обслуживает свой клиент в этом же процессе
+        // (`webtunnel`): Arti видит его как запущенный PT.
+        let tunnel_targets = webtunnel::Targets::from_bridge_lines(&settings.bridges)
+            .allow_private(settings.allow_private_bridges);
+
+        let (listener, tunnel) = runtime.block_on(async {
             let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
                 .await
                 .map_err(|_| TorError::Runtime)?;
+            let tunnel = if tunnel_targets.is_empty() {
+                None
+            } else {
+                Some(
+                    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                        .await
+                        .map_err(|_| TorError::Runtime)?,
+                )
+            };
 
-            Ok::<_, TorError>((client, listener))
+            Ok::<_, TorError>((listener, tunnel))
         })?;
+
+        if let Some(tunnel) = &tunnel {
+            settings.transports.push(Transport::Local {
+                protocols: vec![webtunnel::TRANSPORT.to_owned()],
+                proxy: tunnel.local_addr().map_err(|_| TorError::Runtime)?,
+            });
+        }
+
+        let config = client_config(&settings)?;
+
+        let client = runtime.block_on(async {
+            TorClient::builder()
+                .config(config)
+                .bootstrap_behavior(BootstrapBehavior::OnDemand)
+                .create_unbootstrapped()
+                .map_err(|_| TorError::Config)
+        })?;
+
+        if let Some(tunnel) = tunnel {
+            runtime.spawn(webtunnel::serve(tunnel, Arc::new(tunnel_targets)));
+        }
 
         let port = listener.local_addr().map_err(|_| TorError::Runtime)?.port();
         let (status_tx, status) = watch::channel(TorStatus::Starting {
@@ -219,7 +269,8 @@ impl EmbeddedTor {
         Ok(Self {
             port,
             status,
-            _runtime: runtime,
+            bridges: settings.bridges,
+            runtime: Some(runtime),
         })
     }
 
@@ -227,6 +278,12 @@ impl EmbeddedTor {
     #[must_use]
     pub const fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Мосты, с которыми запущен (пусто — без мостов).
+    #[must_use]
+    pub fn bridges(&self) -> &[String] {
+        &self.bridges
     }
 
     /// Текущее состояние.
@@ -240,6 +297,15 @@ impl EmbeddedTor {
 fn client_config(settings: &TorSettings) -> Result<TorClientConfig, TorError> {
     let mut builder =
         TorClientConfigBuilder::from_directories(&settings.state_dir, &settings.cache_dir);
+
+    // Цепочки к порту сервера строятся заранее, ещё до первого запроса:
+    // иначе первый запрос ждёт постройки цепочки (секунды через Tor).
+    let predicted = builder.preemptive_circuits().initial_predicted_ports();
+    for port in settings.destinations.ports() {
+        if !predicted.contains(&port) {
+            predicted.push(port);
+        }
+    }
 
     if let Some(prefix) = &settings.trusted_prefix {
         builder
@@ -393,6 +459,7 @@ mod tests {
             destinations: Allowlist::new(Vec::<(String, u16)>::new()),
             bridges: Vec::new(),
             transports: Vec::new(),
+            allow_private_bridges: false,
         });
 
         assert!(matches!(result, Err(TorError::NoDestinations)));
