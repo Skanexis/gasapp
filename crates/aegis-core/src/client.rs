@@ -900,8 +900,18 @@ impl<T: Transport> Client<T> {
 
         let mut accepted = 0usize;
 
+        // 🔐 Конверты, которые прочитать нельзя, подтверждаются (то есть
+        // удаляются с сервера), а не оставляются в очереди. Сервер отдаёт
+        // очередь с самых старых, по сотне: неподтверждённый мусор
+        // возвращался бы каждым приёмом, и сотня таких конвертов —
+        // повторы старых, чужие, испорченные — заслоняла бы настоящие
+        // сообщения до истечения срока хранения, тридцать дней. Собрать
+        // запечатанный конверт на открытый ключ получателя может любой.
+        let mut dropped: Vec<String> = Vec::new();
+
         for envelope in envelopes {
             let Ok(wire) = unhex(&envelope.ciphertext) else {
+                dropped.push(envelope.envelope_id.clone());
                 continue;
             };
 
@@ -911,6 +921,7 @@ impl<T: Transport> Client<T> {
             let Some((raw, certificate)) =
                 self.unwrap_wire(&identity, wire, envelope.queued_at_bucketed, now)
             else {
+                dropped.push(envelope.envelope_id.clone());
                 continue;
             };
 
@@ -919,6 +930,7 @@ impl<T: Transport> Client<T> {
             // метаданных, за которую платится перебором сессий.
             let Some((incoming, known_chat)) = self.try_decrypt(&identity, &secrets, &raw, now)
             else {
+                dropped.push(envelope.envelope_id.clone());
                 continue;
             };
 
@@ -955,6 +967,7 @@ impl<T: Transport> Client<T> {
                 known_chat.as_ref(),
                 now,
             )? {
+                dropped.push(envelope.envelope_id.clone());
                 continue;
             }
 
@@ -966,7 +979,10 @@ impl<T: Transport> Client<T> {
             let chat_id = match (known_chat, incoming.sender_identity) {
                 (Some(chat_id), _) => chat_id,
                 (None, Some(peer)) => derive_chat_id(identity.public().public(), &peer),
-                (None, None) => continue,
+                (None, None) => {
+                    dropped.push(envelope.envelope_id.clone());
+                    continue;
+                }
             };
 
             // Собеседник этого конверта: из конверта инициации либо
@@ -1020,6 +1036,9 @@ impl<T: Transport> Client<T> {
             // пустым: пользователь должен видеть, что что-то пришло
             // и не прочиталось, а не считать, что ему прислали пустоту.
             let Ok(content) = Content::from_bytes(incoming.plaintext.expose()) else {
+                // Сессия уже продвинута и сохранена: повторно этот конверт
+                // не расшифруется никогда, и держать его в очереди незачем.
+                dropped.push(envelope.envelope_id.clone());
                 continue;
             };
 
@@ -1192,6 +1211,21 @@ impl<T: Transport> Client<T> {
         }
 
         self.persist_secrets(&secrets, now)?;
+
+        if !dropped.is_empty() {
+            for envelope_id in &dropped {
+                self.api
+                    .acknowledge(device_id, envelope_id, &DeviceSigner::new(&identity, now))?;
+            }
+
+            // Одно событие на приём, а не на конверт: сотня мусорных
+            // конвертов не должна вытеснить из журнала остальные события.
+            self.storage.log_security_event(
+                "undecryptable_envelopes_dropped",
+                Some(&dropped.len().to_string()),
+                now,
+            )?;
+        }
 
         Ok(accepted)
     }

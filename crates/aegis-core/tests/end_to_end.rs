@@ -785,7 +785,12 @@ impl Transport for FakeServer {
             }
             (Method::Get, path) if path.starts_with("/v1/messages/") => {
                 let device_id = path.trim_start_matches("/v1/messages/");
-                let queue = state.queues.get(device_id).cloned().unwrap_or_default();
+                // Как настоящий сервер: самые старые, не больше сотни.
+                let queue: Vec<EnvelopeResponse> = state
+                    .queues
+                    .get(device_id)
+                    .map(|queue| queue.iter().take(100).cloned().collect())
+                    .unwrap_or_default();
 
                 (200, serde_json::to_string(&queue).unwrap_or_default())
             }
@@ -1056,6 +1061,36 @@ impl FakeServer {
     /// 🔐 «Сервер переписывает историю»: забывает показанную цепочку.
     fn forget_kt_history(&self) {
         self.state.borrow_mut().kt_epochs.clear();
+    }
+}
+
+impl FakeServer {
+    /// Очередь устройства в её нынешнем виде.
+    fn queue_of(&self, device: &str) -> Vec<EnvelopeResponse> {
+        self.state
+            .borrow()
+            .queues
+            .get(device)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// 🔐 Кладёт в очередь устройства конверты от имени «сервера» —
+    /// повторы старых или мусор.
+    fn inject(&self, device: &str, ciphertexts: &[String]) {
+        let mut state = self.state.borrow_mut();
+        for ciphertext in ciphertexts {
+            let envelope_id = Self::next_uuid(&mut state);
+            state
+                .queues
+                .entry(device.to_owned())
+                .or_default()
+                .push(EnvelopeResponse {
+                    envelope_id,
+                    ciphertext: ciphertext.clone(),
+                    queued_at_bucketed: 0,
+                });
+        }
     }
 }
 
@@ -4934,4 +4969,44 @@ fn a_long_log_is_synced_in_pages() {
     server.publish_kt_epochs(now_epoch() - kt::HISTORY_EPOCHS + 1, now_epoch());
 
     assert_eq!(bob.kt_sync(now()).expect("синхронизация"), now_epoch());
+}
+
+/// 🔐 Сотня нерасшифровываемых конвертов (повторы уже принятого
+/// и мусор) не заслоняет настоящие сообщения: сервер отдаёт очередь
+/// с самых старых, и неподтверждённый мусор иначе возвращался бы
+/// каждым приёмом до истечения срока — тридцать дней без сообщений.
+#[test]
+fn undecryptable_envelopes_do_not_block_the_queue() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "первое", now(), &mut OsRng)
+        .expect("первое");
+    let old = server.queue_of(&bob_device);
+    bob.receive_messages(&bob_device, now())
+        .expect("приём первого");
+
+    // Повторы уже принятого конверта и просто мусор — две сотни.
+    let mut junk: Vec<String> = std::iter::repeat_n(old[0].ciphertext.clone(), 100).collect();
+    junk.extend((0..100u8).map(|i| hex::encode([i; 64])));
+    server.inject(&bob_device, &junk);
+
+    alice
+        .send_message("bob", "после мусора", later(1), &mut OsRng)
+        .expect("второе");
+
+    for _ in 0..4 {
+        bob.receive_messages(&bob_device, later(2)).expect("приём");
+    }
+
+    assert!(
+        texts_of(&bob).iter().any(|text| text == "после мусора"),
+        "мусор заслонил настоящее сообщение"
+    );
+    assert!(
+        server.queue_of(&bob_device).is_empty(),
+        "мусор остался в очереди"
+    );
 }
