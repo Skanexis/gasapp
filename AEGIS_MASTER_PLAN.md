@@ -7733,7 +7733,7 @@ AegisEngine  libsignal (только в CI-контейнере, не распр
 | `revoked_device_no_messages` | ⛔ | то же |
 | `backup_needs_recovery_key` | ✅ | `backup_does_not_open_without_the_recovery_key` и соседние в `aegis-backup` |
 | `max_skip_no_oom` | ✅ | `double_ratchet::tests::huge_counter_is_rejected_without_allocating` (номер u32::MAX) |
-| `biometry_change_invalidates_key` | 🟡 | `setInvalidatedByBiometricEnrollment(true)` в `BiometricUnlock`; смена отпечатка на устройстве не проверялась |
+| `biometry_change_invalidates_key` | ✅ (вручную) | `setInvalidatedByBiometricEnrollment(true)` в `BiometricUnlock`. Проверено на эмуляторе Android 16 (2026-09-25) дважды: вход по отпечатку включён и работает → в систему добавлен новый отпечаток → при запуске ключ недействителен, окно отпечатка не появляется, конверт стёрт, вход только по PIN; экран входа прячет клавишу отпечатка и объясняет причину. ⚠️ Автотеста нет: смену отпечатков не воспроизвести ни в Robolectric, ни инструментальным тестом без ручной регистрации |
 | `no_analytics_sdk` | ✅ | `tools/check-no-telemetry.sh` в CI |
 
 ### 24.5. Интеграционные и E2E

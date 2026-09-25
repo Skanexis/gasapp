@@ -283,6 +283,7 @@
     <string name="lock_forgot_title">Forgot your PIN?</string>
     <string name="lock_forgot_body">The PIN cannot be reset: without it, the messages on this device cannot be decrypted — not by us either. You can erase this device’s data and get your account back with your recovery key: your username and the conversations from your last backup return, newer messages are lost. Without a recovery key the account cannot be returned.</string>
     <string name="lock_forgot_erase">Erase and restore</string>
+    <string name="lock_biometric_invalidated">Fingerprints on this device have changed, so fingerprint unlock was turned off. Enter your PIN; you can turn it back on in Privacy.</string>
     <string name="privacy_biometric">Unlock with fingerprint</string>
     <string name="privacy_biometric_hint">Skip typing the PIN. The PIN still works and is still what protects your messages — your fingerprint only unlocks a sealed copy of the key.</string>
     <string name="privacy_wipe">Erase after 10 wrong PINs</string>
