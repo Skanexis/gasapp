@@ -634,4 +634,5 @@
     <string name="security_event_kt_log_forked">Журнал ключей сервера не совпал с тем, что он показывал раньше</string>
     <string name="security_event_kt_peer_log_differs">Собеседник видит другой журнал ключей сервера, чем вы. Сервер, возможно, показывает одному из вас подделку — сверьте safety number лично</string>
     <string name="security_event_undecryptable_envelopes_dropped">Входящие, которые нельзя прочитать, удалены (повторы старых или мусор)</string>
+    <string name="security_event_kt_self_check_blocked">Журнал ключей сервера доступен, но проверить в нём своё имя не удаётся. Пока не получится, просите собеседников сверять safety number лично</string>
 </resources>

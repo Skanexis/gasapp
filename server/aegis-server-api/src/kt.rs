@@ -250,7 +250,8 @@ pub struct ProofsResponse {
 ///
 /// * [`ApiError::BadRequest`] — индекс не 32 байта в hex или эпох
 ///   больше [`MAX_EPOCHS_PER_REQUEST`];
-/// * [`ApiError::TooManyRequests`] — частые запросы по одному индексу;
+/// * [`ApiError::TooManyRequests`] — исчерпан предел построений деревьев
+///   на узле;
 /// * [`ApiError`] — сбой базы.
 pub async fn proofs(
     State(state): State<Arc<AppState>>,
@@ -265,19 +266,11 @@ pub async fn proofs(
         return Err(ApiError::BadRequest);
     }
 
-    // Ограничитель — по индексу, как у discovery по имени: адреса
-    // сервер не знает (запрос идёт через Tor) и знать не должен.
-    {
-        let key =
-            crate::rate_limit::key_from_addr(&state.limiter_salt, &format!("kt:{}", request.index));
-        let mut limiter = state
-            .discovery_limiter
-            .lock()
-            .map_err(|_| ApiError::Internal)?;
-        if !limiter.allow(key, now_millis()) {
-            return Err(ApiError::TooManyRequests);
-        }
-    }
+    // 🔐 Ограничителя по индексу нет — намеренно. Он позволял
+    // постороннему выбрать бюджет чужого имени и сорвать владельцу
+    // проверку своей записи (как раз то, что прячет подмену). Нагрузку
+    // держит глобальный предел построений деревьев, а следить за сменой
+    // ключа через журнал не быстрее, чем через discovery: эпоха — час.
 
     let mut epochs = request.epochs.clone();
     epochs.sort_unstable();

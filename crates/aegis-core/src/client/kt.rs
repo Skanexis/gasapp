@@ -55,6 +55,13 @@ const MAX_HEAD_PAGES: usize = 4;
 /// Как часто отправлять собеседнику свою вершину журнала: раз в сутки.
 const GOSSIP_INTERVAL_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
+/// На сколько эпох может отстать проверка своего имени при доступном
+/// журнале, прежде чем это станет событием безопасности.
+const SELF_CHECK_STALL_EPOCHS: u64 = 6;
+
+/// Настройка «когда последний раз сообщили о заблокированной проверке».
+const SELF_CHECK_ALERT_SETTING: &str = "kt_self_check_alert_at";
+
 /// Приставка настройки «когда собеседнику ушла вершина».
 const GOSSIP_SETTING_PREFIX: &str = "kt_gossip:";
 
@@ -351,10 +358,14 @@ impl<T: Transport> Client<T> {
         let mut checked_through = checked;
 
         'chunks: for chunk in epochs.chunks(MAX_PER_REQUEST) {
-            let response = self.api.kt_proofs(&KtProofsRequest {
+            // Отказ сервера — не ошибка проверки, а отставание: оно
+            // считается ниже (см. `SELF_CHECK_STALL_EPOCHS`).
+            let Ok(response) = self.api.kt_proofs(&KtProofsRequest {
                 index: hex(&index),
                 epochs: chunk.to_vec(),
-            })?;
+            }) else {
+                break 'chunks;
+            };
 
             for epoch in chunk {
                 let Some(view) = response.proofs.iter().find(|view| view.epoch == *epoch) else {
@@ -396,6 +407,28 @@ impl<T: Transport> Client<T> {
         }
 
         self.storage.set_kt_self(checked_through, version)?;
+
+        // 🔐 Журнал доступен, а свою запись проверить не дают: сервер,
+        // знающий индекс имени, мог бы отказывать в доказательствах только
+        // владельцу (по форме запроса его видно) и отдавать их
+        // собеседникам — и подмена прошла бы незамеченной. Долгое
+        // отставание — событие безопасности, не чаще раза в сутки.
+        if latest.saturating_sub(checked_through) > SELF_CHECK_STALL_EPOCHS {
+            let last = self.storage.setting_int(SELF_CHECK_ALERT_SETTING, 0)?;
+
+            if now.as_millis().saturating_sub(last) >= GOSSIP_INTERVAL_MILLIS {
+                self.storage.log_security_event(
+                    "kt_self_check_blocked",
+                    Some(&format!(
+                        "behind {} epochs",
+                        latest.saturating_sub(checked_through)
+                    )),
+                    now,
+                )?;
+                self.storage
+                    .set_setting_int(SELF_CHECK_ALERT_SETTING, now.as_millis())?;
+            }
+        }
 
         Ok(KtSelfCheck {
             checked_through,
