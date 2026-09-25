@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Проверка серверных зависимостей по базе RustSec (CI: security.yml).
+#
+# До 2026-09-25 сервер не проверялся вовсе — проверка шла только по
+# клиентскому графу, и уязвимый rustls (RUSTSEC-2026-0285) жил в сервере
+# незамеченным. Лицензии сервера (AGPL) проверяются отдельно от клиента:
+# ограничения App Store к серверу неприменимы.
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+ignore = [
+    # rustls-pemfile: не поддерживается, уязвимости нет. Тянет его
+    # axum-server 0.7 (from_pem_file); сервер PEM разбирает сам через
+    # rustls-pki-types (`tls.rs`) и эту функцию не вызывает.
+    { id = "RUSTSEC-2025-0134", reason = "через axum-server; наш код разбирает PEM через pki-types" },
+]

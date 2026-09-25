@@ -54,7 +54,16 @@ jobs:
         run: cargo deny --manifest-path crates/Cargo.toml check
 
       - name: cargo-audit
-        run: cargo audit --file crates/Cargo.lock
+        # Исключения — те же, что в deny.toml, с причинами там.
+        run: cargo audit --file crates/Cargo.lock --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0436
+
+      # 🔐 Сервер тоже: до 2026-09-25 его зависимости не проверялись,
+      # и уязвимый rustls (RUSTSEC-2026-0285) прошёл незамеченным.
+      - name: cargo-deny advisories (server workspace)
+        run: cargo deny --manifest-path server/Cargo.toml --config server/deny.toml check advisories
+
+      - name: cargo-audit (server)
+        run: cargo audit --file server/Cargo.lock --ignore RUSTSEC-2025-0134
 
   # --------------------------------------------------------------------------
   #  Правило 1: UI не занимается криптографией

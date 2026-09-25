@@ -444,7 +444,13 @@ impl<T: Transport> Client<T> {
         let mut mine = self.storage.kt_head_exact(epoch)?;
 
         // Эпохи ещё нет — догнать цепочку (если она новее нашей).
+        //
+        // 🔐 Только для эпох не из будущего: вершину выбирает собеседник,
+        // и эпоха «через год» в каждом сообщении заставляла бы клиент
+        // ходить в сеть по чужой команде.
+        let now_epoch = kt::epoch_at(now.as_millis());
         if mine.is_none()
+            && epoch <= now_epoch.saturating_add(1)
             && self
                 .storage
                 .kt_latest_head()?
