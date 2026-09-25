@@ -111,6 +111,9 @@ struct ServerState {
     /// 🔐 Discovery отвечает 429 — как при чужом переборе по имени.
     discovery_refused: bool,
 
+    /// 🔐 «Сервер» не выдаёт доказательств журнала для этого индекса.
+    kt_refused_index: Option<[u8; 32]>,
+
     /// Журнал ключей (§9.7): эпохи — номер, корень, вершина, дерево
     /// и листы (identity, хеш PQ-половины, версия) по индексу.
     kt_epochs: Vec<KtEpochState>,
@@ -947,9 +950,11 @@ impl Transport for FakeServer {
                     .and_then(|bytes| bytes.try_into().ok())
                     .ok_or(AegisError::Malformed)?;
 
+                let refused = state.kt_refused_index == Some(index);
                 let proofs = parsed
                     .epochs
                     .iter()
+                    .filter(|_| !refused)
                     .filter_map(|wanted| {
                         state.kt_epochs.iter().find(|epoch| epoch.epoch == *wanted)
                     })
@@ -5047,4 +5052,28 @@ fn a_refused_discovery_does_not_cut_off_known_contacts() {
         alice.send_message("bob", "слишком поздно", later(25 * 3600), &mut OsRng),
         Err(AegisError::Network)
     ));
+}
+
+/// 🔐 Сервер, отказывающий владельцу имени в доказательствах его записи
+/// (и только ему), не прячет этим подмену: долгая невозможность
+/// проверить себя — событие безопасности.
+#[test]
+fn a_blocked_self_check_raises_an_event() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    alice
+        .register("alice", later(-12 * 3600), &mut OsRng)
+        .expect("Алиса");
+
+    server.publish_kt_epochs(now_epoch() - 12, now_epoch());
+    server.state.borrow_mut().kt_refused_index = Some(kt::index("alice"));
+
+    alice.kt_check_self(now()).expect("журнал доступен");
+
+    assert!(alice
+        .security_events(10)
+        .expect("журнал")
+        .iter()
+        .any(|(kind, _, _)| kind == "kt_self_check_blocked"));
 }

@@ -36,6 +36,7 @@ object SecurityEvents {
         "kt_foreign_key_for_own_name" to R.string.security_event_kt_foreign_key_for_own_name,
         "kt_log_forked" to R.string.security_event_kt_log_forked,
         "kt_peer_log_differs" to R.string.security_event_kt_peer_log_differs,
+        "kt_self_check_blocked" to R.string.security_event_kt_self_check_blocked,
         "undecryptable_envelopes_dropped" to R.string.security_event_undecryptable_envelopes_dropped,
         "contact_verified" to R.string.security_event_contact_verified,
         "contact_identity_accepted" to R.string.security_event_contact_identity_accepted,

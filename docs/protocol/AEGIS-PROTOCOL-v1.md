@@ -519,7 +519,11 @@ checking and must show everyone the same tree.
 * **Self.** A client checks its own index at every epoch since its last
   check (at most 168 epochs back), starting at registration or recovery.
   A leaf with another key, or a lower version, is a security event
-  (`kt_foreign_key_for_own_name`).
+  (`kt_foreign_key_for_own_name`). If the chain syncs but proofs for the
+  own index are withheld for more than 6 epochs, that too is a security
+  event (`kt_self_check_blocked`): a server could otherwise serve peers
+  and refuse only the owner, whose requests it can tell apart. Proof
+  requests carry no per-index rate limit for the same reason.
 
 * **Gossip.** At most once a day per peer, a client sends its latest
   `(epoch, head)` inside an ordinary end-to-end message (content kind 9,

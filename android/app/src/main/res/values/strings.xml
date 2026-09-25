@@ -588,4 +588,5 @@
     <string name="security_event_kt_log_forked">The server’s key log did not match what it showed before</string>
     <string name="security_event_kt_peer_log_differs">A contact sees a different server key log than you do. The server may be showing one of you a fake one — compare safety numbers in person</string>
     <string name="security_event_undecryptable_envelopes_dropped">Unreadable incoming messages were discarded (repeats of old ones or junk)</string>
+    <string name="security_event_kt_self_check_blocked">The server key log is available, but checking your own name in it keeps failing. Until it succeeds, ask contacts to compare safety numbers in person</string>
 </resources>
