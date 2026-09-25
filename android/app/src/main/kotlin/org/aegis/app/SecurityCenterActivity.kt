@@ -8,13 +8,13 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisToast
 import org.aegis.app.core.AppSignature
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeviceIntegrity
@@ -195,7 +195,7 @@ class SecurityCenterActivity : AppCompatActivity() {
         // Блокировка контактов появится вместе с Report/Block (ADR-025).
         // Пустой список — честный ответ, а не заглушка.
         findViewById<View>(R.id.security_blocked).setOnClickListener {
-            Toast.makeText(this, R.string.security_blocked_empty, Toast.LENGTH_SHORT).show()
+            AegisToast.show(this, R.string.security_blocked_empty, AegisToast.Tone.Info)
         }
     }
 

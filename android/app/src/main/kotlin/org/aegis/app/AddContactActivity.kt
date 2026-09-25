@@ -4,8 +4,10 @@ package org.aegis.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -53,6 +55,8 @@ class AddContactActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.screen_back).setOnClickListener { finish() }
 
         input = findViewById(R.id.add_contact_link)
+        // Правка ссылки снимает прошлый итог: он относился к другой ссылке.
+        input.doAfterTextChanged { input.hasError = false }
         status = findViewById(R.id.add_contact_status)
 
         findViewById<AegisButton>(R.id.add_contact_confirm).setOnClickListener { addContact() }
@@ -83,6 +87,26 @@ class AddContactActivity : AppCompatActivity() {
 
         input.setText("")
         status.text = ""
+        status.visibility = View.GONE
+    }
+
+    /**
+     * Итог добавления цветом и значком (состояние — не только цветом,
+     * раздел 20.5): галочка у успеха, круг-предупреждение у отказа.
+     */
+    private fun showStatus(text: CharSequence, ok: Boolean) {
+        val color = getColor(if (ok) R.color.status_ok else R.color.status_error)
+
+        status.text = text
+        status.setTextColor(color)
+        status.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            if (ok) R.drawable.ic_check_small else R.drawable.ic_alert_small,
+            0,
+            0,
+            0,
+        )
+        status.compoundDrawablesRelative[0]?.setTint(color)
+        status.visibility = View.VISIBLE
     }
 
     /**
@@ -120,7 +144,10 @@ class AddContactActivity : AppCompatActivity() {
                 // отдельными типами ошибок, поэтому текст объединяет
                 // оба случая. Разделять их значило бы подсказывать
                 // тому, кто подбирает ссылку, что именно не сошлось.
-                .onFailure { status.setText(R.string.add_contact_invalid) }
+                .onFailure {
+                    input.hasError = true
+                    showStatus(getString(R.string.add_contact_invalid), ok = false)
+                }
         }
     }
 
@@ -135,7 +162,7 @@ class AddContactActivity : AppCompatActivity() {
         // ⚠️ Прежний контакт остаётся на месте и своей отметки
         // о сверке не теряет; новый начинается несверенным.
         if (contact.keyChanged) {
-            status.text = getString(R.string.add_contact_key_changed, contact.username.orEmpty())
+            showStatus(getString(R.string.add_contact_key_changed, contact.username.orEmpty()), ok = false)
             input.setText("")
 
             startActivity(
@@ -147,10 +174,13 @@ class AddContactActivity : AppCompatActivity() {
             return
         }
 
-        status.text = when (val name = contact.username) {
-            null -> getString(R.string.add_contact_added_unnamed)
-            else -> getString(R.string.add_contact_added, name)
-        }
+        showStatus(
+            when (val name = contact.username) {
+                null -> getString(R.string.add_contact_added_unnamed)
+                else -> getString(R.string.add_contact_added, name)
+            },
+            ok = true,
+        )
 
         input.setText("")
     }

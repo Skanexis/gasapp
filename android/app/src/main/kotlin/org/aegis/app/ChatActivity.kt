@@ -10,7 +10,6 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -19,6 +18,7 @@ import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisToast
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
@@ -234,7 +234,7 @@ class ChatActivity : AppCompatActivity() {
         val device = Core.deviceId
 
         if (device == null) {
-            Toast.makeText(this, R.string.attach_failed, Toast.LENGTH_SHORT).show()
+            AegisToast.show(this, R.string.attach_failed, AegisToast.Tone.Error)
 
             return
         }
@@ -244,11 +244,11 @@ class ChatActivity : AppCompatActivity() {
         // это до того, как файл уйдёт.
         val mime = contentResolver.getType(uri)
 
-        Toast.makeText(
+        AegisToast.show(
             this,
             if (AttachmentPrep.isMediaMime(mime)) R.string.attach_sending else R.string.attach_document_metadata,
-            Toast.LENGTH_LONG,
-        ).show()
+            if (AttachmentPrep.isMediaMime(mime)) AegisToast.Tone.Info else AegisToast.Tone.Warning,
+        )
 
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) {
@@ -286,19 +286,13 @@ class ChatActivity : AppCompatActivity() {
             when (outcome) {
                 AttachOutcome.Sent -> reload()
                 AttachOutcome.TooLarge ->
-                    Toast.makeText(this@ChatActivity, R.string.attach_too_large, Toast.LENGTH_LONG)
-                        .show()
+                    AegisToast.show(this@ChatActivity, R.string.attach_too_large, AegisToast.Tone.Error)
 
                 AttachOutcome.Unreadable ->
-                    Toast.makeText(
-                        this@ChatActivity,
-                        R.string.attach_unreadable,
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    AegisToast.show(this@ChatActivity, R.string.attach_unreadable, AegisToast.Tone.Error)
 
                 AttachOutcome.Failed ->
-                    Toast.makeText(this@ChatActivity, R.string.attach_failed, Toast.LENGTH_LONG)
-                        .show()
+                    AegisToast.show(this@ChatActivity, R.string.attach_failed, AegisToast.Tone.Error)
             }
         }
     }
@@ -570,13 +564,17 @@ class ChatActivity : AppCompatActivity() {
             when (sent.exceptionOrNull()) {
                 is FfiException.IdentityChanged -> {
                     input.setText(text)
-                    Toast.makeText(this@ChatActivity, R.string.key_changed_title, Toast.LENGTH_LONG).show()
+                    AegisToast.show(this@ChatActivity, R.string.key_changed_title, AegisToast.Tone.Warning)
                     refreshSendMode()
                 }
 
                 is FfiException.PeerUnconfirmed -> {
                     input.setText(text)
-                    Toast.makeText(this@ChatActivity, R.string.key_unconfirmed_title, Toast.LENGTH_LONG).show()
+                    AegisToast.show(
+                        this@ChatActivity,
+                        R.string.key_unconfirmed_title,
+                        AegisToast.Tone.Warning,
+                    )
                     refreshSendMode()
                 }
 
@@ -867,7 +865,7 @@ class ChatActivity : AppCompatActivity() {
             text = message.text,
         )
 
-        Toast.makeText(this, R.string.message_copied, Toast.LENGTH_SHORT).show()
+        AegisToast.show(this, R.string.message_copied, AegisToast.Tone.Success)
     }
 
     /**
@@ -942,11 +940,7 @@ class ChatActivity : AppCompatActivity() {
             val done = withContext(Dispatchers.IO) { runCatching { action() }.isSuccess }
 
             if (!done) {
-                Toast.makeText(
-                    this@ChatActivity,
-                    R.string.message_action_failed,
-                    Toast.LENGTH_SHORT,
-                ).show()
+                AegisToast.show(this@ChatActivity, R.string.message_action_failed, AegisToast.Tone.Error)
             }
 
             reload()
@@ -966,7 +960,7 @@ class ChatActivity : AppCompatActivity() {
      */
     private fun openAttachment(attachment: AttachmentPreview) {
         if (Core.deviceId == null) {
-            Toast.makeText(this, R.string.attachment_download_failed, Toast.LENGTH_SHORT).show()
+            AegisToast.show(this, R.string.attachment_download_failed, AegisToast.Tone.Error)
 
             return
         }
@@ -1000,7 +994,7 @@ class ChatActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
 
-        Toast.makeText(this, R.string.attachment_downloading, Toast.LENGTH_SHORT).show()
+        AegisToast.show(this, R.string.attachment_downloading, AegisToast.Tone.Info)
 
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.IO) {
@@ -1032,11 +1026,7 @@ class ChatActivity : AppCompatActivity() {
                 // Остаётся недоступная сеть либо подменённый
                 // на сервере файл: тег чанка не сошёлся. Второе
                 // важнее, поэтому текст говорит о файле, а не о сети.
-                Toast.makeText(
-                    this@ChatActivity,
-                    R.string.attachment_tampered,
-                    Toast.LENGTH_LONG,
-                ).show()
+                AegisToast.show(this@ChatActivity, R.string.attachment_tampered, AegisToast.Tone.Error)
 
                 return@launch
             }
@@ -1047,11 +1037,11 @@ class ChatActivity : AppCompatActivity() {
                 }.getOrDefault(false)
             }
 
-            Toast.makeText(
+            AegisToast.show(
                 this@ChatActivity,
                 if (saved) R.string.attachment_saved else R.string.attachment_download_failed,
-                Toast.LENGTH_SHORT,
-            ).show()
+                if (saved) AegisToast.Tone.Success else AegisToast.Tone.Error,
+            )
         }
     }
 

@@ -4,12 +4,12 @@ package org.aegis.app
 
 import android.os.Bundle
 import android.widget.ImageView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisToast
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.FileSize
@@ -91,11 +91,11 @@ class StorageActivity : AppCompatActivity() {
                 }.getOrDefault(0u)
             }
 
-            Toast.makeText(
+            AegisToast.show(
                 this@StorageActivity,
                 getString(R.string.storage_purged, removed.toInt()),
-                Toast.LENGTH_SHORT,
-            ).show()
+                AegisToast.Tone.Success,
+            )
 
             render()
         }
@@ -114,11 +114,7 @@ class StorageActivity : AppCompatActivity() {
                 runCatching { cacheDir.deleteRecursively() }
             }
 
-            Toast.makeText(
-                this@StorageActivity,
-                R.string.storage_cleared,
-                Toast.LENGTH_SHORT,
-            ).show()
+            AegisToast.show(this@StorageActivity, R.string.storage_cleared, AegisToast.Tone.Success)
 
             render()
         }

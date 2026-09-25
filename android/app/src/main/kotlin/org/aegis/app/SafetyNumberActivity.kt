@@ -10,11 +10,11 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisToast
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.QrDrawable
 import android.view.View
-import android.widget.Toast
 import org.aegis.app.core.Core
 import uniffi.aegis.FfiException
 import uniffi.aegis.safetyNumberQr
@@ -118,11 +118,7 @@ class SafetyNumberActivity : AppCompatActivity() {
             if (saved) {
                 finish()
             } else {
-                Toast.makeText(
-                    this@SafetyNumberActivity,
-                    R.string.ffi_error,
-                    Toast.LENGTH_SHORT,
-                ).show()
+                AegisToast.show(this@SafetyNumberActivity, R.string.ffi_error, AegisToast.Tone.Error)
             }
         }
     }
@@ -152,6 +148,7 @@ class SafetyNumberActivity : AppCompatActivity() {
             result
                 .onSuccess { number ->
                     digits.text = number
+                    renderMarkButtons()
 
                     // QR строится из тех же цифр, что показаны рядом:
                     // разойтись они не могут, потому что источник один.
@@ -168,6 +165,24 @@ class SafetyNumberActivity : AppCompatActivity() {
                     }
                 }
         }
+    }
+
+    /**
+     * Показывает одну кнопку из двух — ту, что меняет текущее состояние.
+     *
+     * Прежде обе стояли всегда: «Снять отметку» у контакта, который
+     * не был отмечен, и «Отметить» у уже отмеченного. По экрану нельзя
+     * было понять, сверен ли собеседник.
+     */
+    private suspend fun renderMarkButtons() {
+        val verified = withContext(Dispatchers.IO) {
+            runCatching {
+                Core.messenger().contacts().firstOrNull { it.accountId == accountId }?.verified
+            }.getOrNull()
+        } ?: return
+
+        findViewById<AegisButton>(R.id.mark_verified).visibility = if (verified) View.GONE else View.VISIBLE
+        findViewById<AegisButton>(R.id.clear_verified).visibility = if (verified) View.VISIBLE else View.GONE
     }
 
     /**

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Тост по UI kit (Notifications & Toasts): карточка r12 с рамкой,
+  цветная полоса слева, значок тона, текст. Показывает AegisToast.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:accessibilityLiveRegion="polite"
+    android:background="@drawable/bg_toast"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/touch_target"
+    android:orientation="horizontal">
+
+    <View
+        android:id="@+id/toast_spine"
+        android:layout_width="3dp"
+        android:layout_height="match_parent"
+        tools:background="@color/status_ok" />
+
+    <ImageView
+        android:id="@+id/toast_icon"
+        android:layout_width="@dimen/icon_s"
+        android:layout_height="@dimen/icon_s"
+        android:layout_marginStart="13dp"
+        android:importantForAccessibility="no"
+        tools:src="@drawable/ic_check" />
+
+    <TextView
+        android:id="@+id/toast_text"
+        style="@style/AegisText.Caption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_m"
+        android:layout_marginEnd="@dimen/space_m"
+        android:maxWidth="@dimen/toast_text_max"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:textColor="@color/text_primary"
+        android:textSize="14sp"
+        tools:text="Link copied" />
+</LinearLayout>

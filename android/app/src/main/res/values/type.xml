@@ -124,6 +124,14 @@
     -->
     <style name="AegisText.Mono">
         <item name="android:fontFamily">monospace</item>
+        <!--
+          🔐 И атрибут AppCompat тоже. Тема задаёт `fontFamily` = Inter,
+          а AppCompatTextView берёт шрифт из него раньше, чем из
+          `android:fontFamily`: без этой строки ключи, safety number
+          и ключ восстановления набирались Inter — пропорциональным,
+          и сверка по позициям символов не работала.
+        -->
+        <item name="fontFamily">monospace</item>
         <item name="android:textSize">@dimen/text_body</item>
         <item name="android:lineSpacingExtra">7sp</item>
     </style>

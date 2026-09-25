@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisToast
 import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.PinPad
@@ -318,7 +319,7 @@ class PrivacyActivity : AppCompatActivity() {
     }
 
     private fun toast(@androidx.annotation.StringRes message: Int) {
-        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+        AegisToast.show(this, message, AegisToast.Tone.Warning)
     }
 
     /**
@@ -464,11 +465,11 @@ class PrivacyActivity : AppCompatActivity() {
                 }
             }
 
-            android.widget.Toast.makeText(
+            AegisToast.show(
                 this@PrivacyActivity,
                 if (written.isSuccess) R.string.privacy_export_done else R.string.privacy_export_failed,
-                android.widget.Toast.LENGTH_LONG,
-            ).show()
+                if (written.isSuccess) AegisToast.Tone.Success else AegisToast.Tone.Error,
+            )
         }
     }
 
@@ -559,6 +560,9 @@ class PrivacyActivity : AppCompatActivity() {
                         // Сервер очищен, устройство — не до конца.
                         // Умолчать значило бы оставить человека
                         // с файлами, о которых он не знает.
+                        //
+                        // Системный тост, а не AegisToast: следом открывается
+                        // другой экран, и тост внутри этого окна исчез бы с ним.
                         android.widget.Toast.makeText(
                             this@PrivacyActivity,
                             R.string.privacy_delete_account_partial,
@@ -577,11 +581,11 @@ class PrivacyActivity : AppCompatActivity() {
                     finish()
                 }
                 .onFailure {
-                    android.widget.Toast.makeText(
+                    AegisToast.show(
                         this@PrivacyActivity,
                         R.string.privacy_delete_account_failed,
-                        android.widget.Toast.LENGTH_LONG,
-                    ).show()
+                        AegisToast.Tone.Error,
+                    )
                 }
         }
     }
