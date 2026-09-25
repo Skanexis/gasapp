@@ -58,8 +58,12 @@ class AppearanceActivity : AppCompatActivity() {
     private fun chooseLanguage() {
         val sheet = AegisSheet.on(this, R.string.appearance_language)
 
+        // Выбранный язык отмечен галочкой: иначе по панели не понять,
+        // какой сейчас стоит.
+        val current = Language.current(this)
+
         for (tag in Language.CHOICES) {
-            sheet.action(Language.displayName(tag)) {
+            sheet.action(Language.displayName(tag), icon = if (tag == current) R.drawable.ic_check else null) {
                 if (tag != Language.current(this)) {
                     Language.set(this, tag)
                 }
