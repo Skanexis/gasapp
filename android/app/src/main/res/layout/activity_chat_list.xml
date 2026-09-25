@@ -84,15 +84,11 @@
             android:paddingBottom="88dp"
             tools:listitem="@layout/item_chat" />
 
-        <TextView
+        <include
             android:id="@+id/chat_list_empty"
+            layout="@layout/view_empty_state"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:gravity="center"
-            android:padding="@dimen/screen_padding"
-            android:text="@string/chat_list_empty"
-            android:textColor="@color/text_muted"
-            android:textSize="14sp"
             android:visibility="gone" />
 
         <!-- Кнопка нового чата: 52dp, 16dp от края и от навигации. -->

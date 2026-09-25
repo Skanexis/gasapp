@@ -2,15 +2,15 @@
 
 package org.aegis.app
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
-import android.widget.EditText
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -19,13 +19,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.components.PinPad
 import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
 import org.aegis.app.core.SecureWindow
-import org.aegis.app.core.showSecure
 import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiException
@@ -44,6 +44,8 @@ import uniffi.aegis.validateTorBridges
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var username: AegisTextField
+    private lateinit var usernameHelper: TextView
+    private lateinit var scroll: ScrollView
     private lateinit var pin: PinPad
     private lateinit var error: TextView
     private lateinit var progress: ProgressBar
@@ -66,6 +68,11 @@ class OnboardingActivity : AppCompatActivity() {
         setContentView(R.layout.activity_onboarding)
 
         username = findViewById(R.id.onboarding_username)
+        usernameHelper = findViewById(R.id.onboarding_username_helper)
+        scroll = findViewById(R.id.onboarding_scroll)
+
+        // Исправление имени снимает ошибку: подсказка возвращается.
+        username.doAfterTextChanged { clearUsernameError() }
         // 🔐 PIN — своей клавиатурой, не системной (см. [PinPad]).
         pin = PinPad(findViewById(android.R.id.content))
         error = findViewById(R.id.onboarding_error)
@@ -108,7 +115,7 @@ class OnboardingActivity : AppCompatActivity() {
         val name = try {
             canonicalUsername(raw)
         } catch (_: FfiException) {
-            showError(getString(R.string.onboarding_error_username))
+            showUsernameError()
 
             return
         } catch (_: LinkageError) {
@@ -354,7 +361,7 @@ class OnboardingActivity : AppCompatActivity() {
      * сразу перезапускают Tor и сохраняются в базу при её создании.
      */
     private fun promptBridges() {
-        val field = EditText(this).apply {
+        val field = AegisTextField(this).apply {
             setText(bridgesText.orEmpty())
             hint = getString(R.string.network_bridges_hint)
             minLines = 3
@@ -368,30 +375,34 @@ class OnboardingActivity : AppCompatActivity() {
             imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         }
 
-        AlertDialog.Builder(this)
-            .setTitle(R.string.onboarding_bridges_title)
-            .setMessage(R.string.network_bridges_help)
-            .setView(field)
-            .setPositiveButton(R.string.network_save) { _, _ ->
+        AegisDialog(this)
+            .title(R.string.onboarding_bridges_title)
+            .message(R.string.network_bridges_help)
+            .content(field)
+            .secondary()
+            .primary(R.string.network_save, closeOnClick = false) { dialog ->
                 val text = field.text.toString()
 
+                // Ошибка — в самом диалоге: набранные мосты остаются
+                // на месте, и опечатку можно поправить.
                 if (!validateTorBridges(text)) {
-                    showError(getString(R.string.network_bridges_invalid))
-                    return@setPositiveButton
+                    field.hasError = true
+                    dialog.showError(R.string.network_bridges_invalid)
+                    return@primary
                 }
 
+                dialog.dismiss()
                 bridgesText = text.takeIf { it.isNotBlank() }
-                error.visibility = View.INVISIBLE
+                error.visibility = View.GONE
                 prewarmTor()
             }
-            .setNegativeButton(R.string.action_cancel, null)
-            .showSecure(this)
+            .show()
     }
 
     private fun setWorking(working: Boolean) {
         // Кнопка блокируется на время подбора proof-of-work: повторное
         // нажатие запустило бы вторую регистрацию поверх первой.
-        createButton.isEnabled = !working
+        createButton.isLoading = working
         username.isEnabled = !working
         direct.isEnabled = !working
         pin.setEnabled(!working)
@@ -401,13 +412,52 @@ class OnboardingActivity : AppCompatActivity() {
         progressLabel.visibility = visibility
 
         if (working) {
-            error.visibility = View.INVISIBLE
+            error.visibility = View.GONE
+            // Ход подключения Tor и подбора proof-of-work — под формой:
+            // без прокрутки человек видел бы только погасшую кнопку.
+            revealBelow(progressLabel)
         }
     }
 
+    /**
+     * Показывает ошибку и прокручивает к ней.
+     *
+     * Ошибка стоит под формой, а форма длиннее экрана: прежде она
+     * появлялась за нижним краем, и человек видел только сброшенный
+     * PIN — без объяснения, что пошло не так.
+     */
     private fun showError(message: String) {
         error.text = message
         error.visibility = View.VISIBLE
+        revealBelow(error)
+    }
+
+    /** Ошибка имени — на месте подсказки под полем (UI kit, Inputs). */
+    private fun showUsernameError() {
+        username.hasError = true
+        usernameHelper.setText(R.string.onboarding_error_username)
+        usernameHelper.setTextColor(getColor(R.color.status_error))
+        usernameHelper.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_alert_small, 0, 0, 0)
+        usernameHelper.compoundDrawablesRelative[0]?.setTint(getColor(R.color.status_error))
+        scroll.post { scroll.smoothScrollTo(0, (username.top - usernameHelper.height).coerceAtLeast(0)) }
+        username.requestFocus()
+    }
+
+    private fun clearUsernameError() {
+        if (!username.hasError) return
+
+        username.hasError = false
+        usernameHelper.setText(R.string.onboarding_username_helper)
+        usernameHelper.setTextColor(getColor(R.color.text_muted))
+        usernameHelper.setCompoundDrawablesRelative(null, null, null, null)
+    }
+
+    /** Прокручивает форму так, чтобы [view] был виден целиком. */
+    private fun revealBelow(view: View) {
+        scroll.post {
+            val bottom = view.bottom + resources.getDimensionPixelSize(R.dimen.space_m)
+            scroll.smoothScrollTo(0, (bottom - scroll.height).coerceAtLeast(scroll.scrollY))
+        }
     }
 
     /**

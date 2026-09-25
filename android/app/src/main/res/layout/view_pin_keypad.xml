@@ -26,13 +26,22 @@
     <TextView android:id="@+id/key_8" style="@style/AegisKeypadKey" android:text="8" />
     <TextView android:id="@+id/key_9" style="@style/AegisKeypadKey" android:text="9" />
 
-    <!-- Пустая клетка слева от нуля: в макете здесь биометрия.
-         Вход по отпечатку экран входа предлагает сам, системным окном
-         при открытии, — клавиша для него не нужна -->
-
-    <Space
+    <!--
+      Клетка слева от нуля — вход по отпечатку, как в UI kit. Экран входа
+      предлагает его сам, системным окном при открытии; клавиша нужна,
+      чтобы вернуться к нему, если окно закрыли. Видна только на экране
+      входа и только когда биометрия включена — иначе клетка пустая.
+    -->
+    <ImageView
+        android:id="@+id/key_biometric"
         android:layout_width="72dp"
-        android:layout_height="56dp" />
+        android:layout_height="56dp"
+        android:background="@drawable/bg_keypad_key"
+        android:contentDescription="@string/lock_use_fingerprint"
+        android:padding="16dp"
+        android:src="@drawable/ic_fingerprint"
+        android:visibility="invisible"
+        app:tint="@color/text_muted" />
 
     <TextView android:id="@+id/key_0" style="@style/AegisKeypadKey" android:text="0" />
 

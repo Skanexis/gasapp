@@ -9,11 +9,12 @@
   исключающие состояния идут раньше общих. disabled первым —
   недоступная кнопка не должна выглядеть нажатой.
 -->
+<!-- Загрузка — первой: кнопка выглядит обычной и показывает спиннер (UI kit, .b-pri .spin), а не погасшей. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <item app:state_loading="true" android:drawable="@drawable/btn_dgr_normal" />
     <item android:state_enabled="false" android:drawable="@drawable/btn_disabled" />
-    <item app:state_loading="true" android:drawable="@drawable/btn_disabled" />
     <item android:state_pressed="true" android:drawable="@drawable/btn_dgr_hovered" />
     <item android:state_focused="true" android:drawable="@drawable/btn_dgr_hovered" />
     <item android:state_hovered="true" android:drawable="@drawable/btn_dgr_hovered" />

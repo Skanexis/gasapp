@@ -2,7 +2,6 @@
 
 package org.aegis.app
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
@@ -19,9 +18,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
-import org.aegis.app.core.showSecure
 import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiProxy
@@ -175,12 +174,12 @@ class NetworkActivity : AppCompatActivity() {
         // 🔐 Прямое соединение отдаёт серверу адрес — только явным
         // согласием, после которого человек знает, чем платит.
         if (mode is FfiProxy.Direct) {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.network_direct_confirm_title)
-                .setMessage(R.string.network_direct_confirm_body)
-                .setPositiveButton(R.string.network_direct_confirm_ok) { _, _ -> store(mode) }
-                .setNegativeButton(R.string.action_cancel, null)
-                .showSecure(this)
+            AegisDialog(this)
+                .title(R.string.network_direct_confirm_title)
+                .message(R.string.network_direct_confirm_body)
+                .secondary()
+                .primary(R.string.network_direct_confirm_ok) { store(mode) }
+                .show()
             return
         }
 

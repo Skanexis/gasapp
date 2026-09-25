@@ -65,6 +65,8 @@ class SearchActivity : AppCompatActivity() {
         SecureWindow.apply(this)
 
         setContentView(R.layout.activity_search)
+        findViewById<android.view.View>(R.id.search_back).setOnClickListener { finish() }
+
 
         results = findViewById(R.id.search_results)
         empty = findViewById(R.id.search_empty)

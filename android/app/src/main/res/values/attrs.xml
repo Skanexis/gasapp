@@ -31,4 +31,12 @@
             <enum name="small" value="2" />
         </attr>
     </declare-styleable>
+
+    <!--
+      Значок в поле ввода (UI kit, Inputs: иконки 20dp приглушённым
+      цветом) — например, лупа в поле поиска.
+    -->
+    <declare-styleable name="AegisTextField">
+        <attr name="fieldIcon" format="reference" />
+    </declare-styleable>
 </resources>

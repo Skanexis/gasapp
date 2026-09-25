@@ -2,7 +2,6 @@
 
 package org.aegis.app
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -21,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
@@ -29,7 +29,6 @@ import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.AttachmentPrep
 import org.aegis.app.core.SendGuard
-import org.aegis.app.core.showSecure
 import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.AttachmentKindMark
 import org.aegis.app.ui.AttachmentPreview
@@ -398,6 +397,9 @@ class ChatActivity : AppCompatActivity() {
 
         sendButton.isEnabled = allowed
         input.isEnabled = allowed
+        // Закрытое поле говорит, почему закрыто: одинаковое с открытым
+        // поле «Сообщение», которое не принимает ввод, выглядит поломкой.
+        input.setHint(if (allowed) R.string.message_hint else R.string.message_hint_closed)
         // Вложение — тоже отправка: ядро отвергло бы его так же, но уже
         // после выбора файла и очистки метаданных.
         findViewById<ImageView>(R.id.attach_button).apply {
@@ -515,10 +517,11 @@ class ChatActivity : AppCompatActivity() {
      * а незнакомец не узнаёт даже того, что сообщение прочли.
      */
     private fun confirmDeclineRequest() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.request_decline_title)
-            .setMessage(R.string.request_decline_body)
-            .setPositiveButton(R.string.request_decline) { _, _ ->
+        AegisDialog(this)
+            .title(R.string.request_decline_title)
+            .message(R.string.request_decline_body)
+            .secondary()
+            .primary(R.string.request_decline, AegisDialog.Tone.Danger) {
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
                         runCatching { Core.messenger().declineChat(chatId, System.currentTimeMillis()) }
@@ -527,8 +530,7 @@ class ChatActivity : AppCompatActivity() {
                     finish()
                 }
             }
-            .setNegativeButton(R.string.action_cancel, null)
-            .showSecure(this)
+            .show()
     }
 
     private fun send() {
@@ -881,14 +883,15 @@ class ChatActivity : AppCompatActivity() {
             setHint(R.string.message_edit_hint)
         }
 
-        AlertDialog.Builder(this)
-            .setTitle(R.string.message_edit_title)
-            .setView(field)
-            .setPositiveButton(R.string.action_save) { _, _ ->
+        AegisDialog(this)
+            .title(R.string.message_edit_title)
+            .content(field)
+            .secondary()
+            .primary(R.string.action_save) {
                 val text = field.text?.toString().orEmpty().trim()
 
                 if (text.isEmpty() || text == message.text) {
-                    return@setPositiveButton
+                    return@primary
                 }
 
                 runAction {
@@ -900,8 +903,7 @@ class ChatActivity : AppCompatActivity() {
                     )
                 }
             }
-            .setNegativeButton(R.string.action_cancel, null)
-            .showSecure(this)
+            .show()
     }
 
     /**
@@ -912,10 +914,11 @@ class ChatActivity : AppCompatActivity() {
      * что гарантии нет, до нажатия, а не после.
      */
     private fun confirmDelete(message: MessageItem) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.message_delete_title)
-            .setMessage(R.string.message_delete_body)
-            .setPositiveButton(R.string.action_delete) { _, _ ->
+        AegisDialog(this)
+            .title(R.string.message_delete_title)
+            .message(R.string.message_delete_body)
+            .secondary()
+            .primary(R.string.action_delete, AegisDialog.Tone.Danger) {
                 runAction {
                     Core.messenger().deleteForEveryone(
                         peerUsername,
@@ -924,8 +927,7 @@ class ChatActivity : AppCompatActivity() {
                     )
                 }
             }
-            .setNegativeButton(R.string.action_cancel, null)
-            .showSecure(this)
+            .show()
     }
 
     /**

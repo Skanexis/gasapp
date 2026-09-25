@@ -50,6 +50,8 @@ class ContactProfileActivity : AppCompatActivity() {
         SecureWindow.apply(this)
 
         setContentView(R.layout.activity_contact_profile)
+        findViewById<android.view.View>(R.id.contact_profile_back).setOnClickListener { finish() }
+
 
         nameView = findViewById(R.id.contact_profile_name)
         verifiedView = findViewById(R.id.contact_profile_verified)

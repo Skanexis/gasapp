@@ -15,9 +15,9 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.core.Pin
-import org.aegis.app.core.showSecure
 import org.hamcrest.Description
 import org.hamcrest.Matcher
 import org.hamcrest.Matchers.allOf
@@ -85,9 +85,9 @@ class OnDeviceSmokeTest {
     fun a_dialog_of_a_secure_screen_is_not_capturable() {
         ActivityScenario.launch(OnboardingActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
-                androidx.appcompat.app.AlertDialog.Builder(activity, R.style.AegisDialog)
-                    .setMessage("Текст диалога")
-                    .showSecure(activity)
+                AegisDialog(activity)
+                    .message("Текст диалога")
+                    .show()
             }
 
             onView(withText("Текст диалога"))

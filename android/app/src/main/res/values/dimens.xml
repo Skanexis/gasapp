@@ -34,6 +34,13 @@
     <dimen name="button_medium">48dp</dimen>
     <dimen name="button_large">56dp</dimen>
     <dimen name="input_height">48dp</dimen>
+    <!-- Диалог: не шире 340dp (UI kit, Dialogs). -->
+    <dimen name="dialog_max_width">340dp</dimen>
+    <!-- Отступ от значка поля до текста (UI kit, .inp: gap 12). -->
+    <dimen name="field_icon_gap">12dp</dimen>
+    <!-- Спиннер загрузки в кнопке (UI kit, .spin: 18px, линия 2px). -->
+    <dimen name="button_spinner">18dp</dimen>
+    <dimen name="button_spinner_stroke">2dp</dimen>
     <dimen name="list_row_min">64dp</dimen>
     <dimen name="list_row_max">72dp</dimen>
 

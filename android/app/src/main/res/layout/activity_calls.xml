@@ -75,15 +75,12 @@
         tools:listitem="@layout/item_call"
         tools:visibility="visible" />
 
-    <TextView
+    <include
         android:id="@+id/calls_empty"
-        style="@style/AegisCaption"
+        layout="@layout/view_empty_state"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:padding="@dimen/space_xl"
-        android:text="@string/calls_empty" />
+        android:layout_weight="1" />
 
     <!--
       🔐 Подпись о шифровании стоит над навигацией, а не в шапке:

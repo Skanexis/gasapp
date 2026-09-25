@@ -5,7 +5,11 @@ package org.aegis.app.components
 import android.content.Context
 import android.util.AttributeSet
 import android.view.inputmethod.EditorInfo
+import android.graphics.drawable.Drawable
 import androidx.appcompat.widget.AppCompatEditText
+import androidx.core.content.ContextCompat
+import androidx.core.content.res.use
+import androidx.core.graphics.drawable.DrawableCompat
 import org.aegis.app.R
 
 /**
@@ -61,6 +65,25 @@ class AegisTextField @JvmOverloads constructor(
         // разметки, поэтому `imeOptions` здесь содержит заданное в XML
         // значение, и `or` его дополняет.
         imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+
+        context.obtainStyledAttributes(attrs, R.styleable.AegisTextField).use { typed ->
+            typed.getDrawable(R.styleable.AegisTextField_fieldIcon)?.let(::setFieldIcon)
+        }
+    }
+
+    /**
+     * Значок слева в поле: 20dp, приглушённый цвет, отступ 12 до текста
+     * (UI kit, Inputs).
+     */
+    fun setFieldIcon(icon: Drawable) {
+        val size = resources.getDimensionPixelSize(R.dimen.icon_s)
+        val tinted = DrawableCompat.wrap(icon.mutate()).apply {
+            setBounds(0, 0, size, size)
+            DrawableCompat.setTint(this, ContextCompat.getColor(context, R.color.text_muted))
+        }
+
+        setCompoundDrawablesRelative(tinted, null, null, null)
+        compoundDrawablePadding = resources.getDimensionPixelSize(R.dimen.field_icon_gap)
     }
 
     override fun onCreateDrawableState(extraSpace: Int): IntArray {
