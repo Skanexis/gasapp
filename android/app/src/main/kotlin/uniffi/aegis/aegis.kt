@@ -906,6 +906,10 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -941,6 +945,8 @@ fun uniffi_aegis_checksum_func_derive_storage_key(
 ): Short
 fun uniffi_aegis_checksum_func_derive_storage_key_bound(
 ): Short
+fun uniffi_aegis_checksum_func_embedded_tor_status(
+): Short
 fun uniffi_aegis_checksum_func_format_safety_number(
 ): Short
 fun uniffi_aegis_checksum_func_generate_identity_public_key(
@@ -960,6 +966,8 @@ fun uniffi_aegis_checksum_func_parse_contact_link(
 fun uniffi_aegis_checksum_func_protocol_version(
 ): Short
 fun uniffi_aegis_checksum_func_safety_number_qr(
+): Short
+fun uniffi_aegis_checksum_func_start_embedded_tor(
 ): Short
 fun uniffi_aegis_checksum_func_validate_proxy(
 ): Short
@@ -1293,6 +1301,8 @@ fun uniffi_aegis_fn_func_derive_storage_key(`pin`: RustBuffer.ByValue,`salt`: Ru
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_derive_storage_key_bound(`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`hardwareSecret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_embedded_tor_status(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_format_safety_number(`local`: RustBuffer.ByValue,`remote`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRustCallStatus, 
@@ -1313,6 +1323,8 @@ fun uniffi_aegis_fn_func_protocol_version(uniffi_out_err: UniffiRustCallStatus,
 ): Byte
 fun uniffi_aegis_fn_func_safety_number_qr(`digits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_start_embedded_tor(`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Short
 fun uniffi_aegis_fn_func_validate_proxy(`proxy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_validate_recovery_key(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1473,6 +1485,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_derive_storage_key_bound() != 39178.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_embedded_tor_status() != 64994.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_format_safety_number() != 12850.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1501,6 +1516,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_safety_number_qr() != 62446.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_start_embedded_tor() != 48476.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_validate_proxy() != 16742.toShort()) {
@@ -6045,6 +6063,131 @@ public object FfiConverterTypeFfiSecurityReport: FfiConverterRustBuffer<FfiSecur
 
 
 /**
+ * Что нужно встроенному Tor от платформы.
+ */
+data class FfiTorSettings (
+    /**
+     * Каталог состояния (охранные узлы): должен переживать перезапуск.
+     */
+    var `stateDir`: kotlin.String, 
+    /**
+     * Каталог кеша (консенсус Tor).
+     */
+    var `cacheDir`: kotlin.String, 
+    /**
+     * Каталог приложения: предки его на Android принадлежат системе,
+     * и проверка прав Arti их пропускает. Сам каталог проверяется.
+     */
+    var `trustedPrefix`: kotlin.String?, 
+    /**
+     * 🔐 Хост сервера AEGIS — единственное назначение моста.
+     */
+    var `serverHost`: kotlin.String, 
+    /**
+     * Порт сервера AEGIS.
+     */
+    var `serverPort`: kotlin.UShort
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiTorSettings: FfiConverterRustBuffer<FfiTorSettings> {
+    override fun read(buf: ByteBuffer): FfiTorSettings {
+        return FfiTorSettings(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUShort.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiTorSettings) = (
+            FfiConverterString.allocationSize(value.`stateDir`) +
+            FfiConverterString.allocationSize(value.`cacheDir`) +
+            FfiConverterOptionalString.allocationSize(value.`trustedPrefix`) +
+            FfiConverterString.allocationSize(value.`serverHost`) +
+            FfiConverterUShort.allocationSize(value.`serverPort`)
+    )
+
+    override fun write(value: FfiTorSettings, buf: ByteBuffer) {
+            FfiConverterString.write(value.`stateDir`, buf)
+            FfiConverterString.write(value.`cacheDir`, buf)
+            FfiConverterOptionalString.write(value.`trustedPrefix`, buf)
+            FfiConverterString.write(value.`serverHost`, buf)
+            FfiConverterUShort.write(value.`serverPort`, buf)
+    }
+}
+
+
+
+/**
+ * Состояние встроенного Tor.
+ */
+data class FfiTorStatus (
+    /**
+     * Запущен ли вообще.
+     */
+    var `running`: kotlin.Boolean, 
+    /**
+     * Готов пропускать соединения.
+     */
+    var `ready`: kotlin.Boolean, 
+    /**
+     * Готовность подключения, 0–100.
+     */
+    var `percent`: kotlin.UByte, 
+    /**
+     * Подключение застряло: нет сети, сбиты часы или Tor заблокирован.
+     */
+    var `stalled`: kotlin.Boolean, 
+    /**
+     * Порт моста на 127.0.0.1; 0 — не запущен.
+     */
+    var `port`: kotlin.UShort
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus> {
+    override fun read(buf: ByteBuffer): FfiTorStatus {
+        return FfiTorStatus(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUShort.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiTorStatus) = (
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterBoolean.allocationSize(value.`ready`) +
+            FfiConverterUByte.allocationSize(value.`percent`) +
+            FfiConverterBoolean.allocationSize(value.`stalled`) +
+            FfiConverterUShort.allocationSize(value.`port`)
+    )
+
+    override fun write(value: FfiTorStatus, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterBoolean.write(value.`ready`, buf)
+            FfiConverterUByte.write(value.`percent`, buf)
+            FfiConverterBoolean.write(value.`stalled`, buf)
+            FfiConverterUShort.write(value.`port`, buf)
+    }
+}
+
+
+
+/**
  * Файл в vault.
  */
 data class FfiVaultFile (
@@ -6378,9 +6521,9 @@ sealed class FfiProxy {
     }
     
     /**
-     * Через Tor с помощью Orbot на этом устройстве.
+     * Через Tor, встроенный в приложение.
      */
-    object Orbot : FfiProxy()
+    object Tor : FfiProxy()
     
     
 
@@ -6399,7 +6542,7 @@ public object FfiConverterTypeFfiProxy : FfiConverterRustBuffer<FfiProxy>{
                 FfiConverterString.read(buf),
                 FfiConverterUShort.read(buf),
                 )
-            3 -> FfiProxy.Orbot
+            3 -> FfiProxy.Tor
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -6419,7 +6562,7 @@ public object FfiConverterTypeFfiProxy : FfiConverterRustBuffer<FfiProxy>{
                 + FfiConverterUShort.allocationSize(value.`port`)
             )
         }
-        is FfiProxy.Orbot -> {
+        is FfiProxy.Tor -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
                 4UL
@@ -6439,7 +6582,7 @@ public object FfiConverterTypeFfiProxy : FfiConverterRustBuffer<FfiProxy>{
                 FfiConverterUShort.write(value.`port`, buf)
                 Unit
             }
-            is FfiProxy.Orbot -> {
+            is FfiProxy.Tor -> {
                 buf.putInt(3)
                 Unit
             }
@@ -7248,6 +7391,18 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     
 
         /**
+         * Состояние встроенного Tor — для индикатора подключения.
+         */ fun `embeddedTorStatus`(): FfiTorStatus {
+            return FfiConverterTypeFfiTorStatus.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_embedded_tor_status(
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Форматирует safety number по двум отпечаткам identity-ключей.
          *
          * Возвращает строку в раскладке ADR-022: 4 строки по 3 группы из 5 цифр.
@@ -7449,6 +7604,28 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_safety_number_qr(
         FfiConverterString.lower(`digits`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Запускает встроенный Tor и возвращает порт моста на 127.0.0.1.
+         *
+         * Повторный вызов возвращает порт уже запущенного: мост один на процесс.
+         *
+         * # Errors
+         *
+         * * [`FfiError::InvalidArgument`] — пустой хост или нулевой порт;
+         * * [`FfiError::Core`] — каталоги непригодны
+         * ([`AegisError::Storage`]) либо не поднялся рантайм
+         * ([`AegisError::Network`]).
+         */
+    @Throws(FfiException::class) fun `startEmbeddedTor`(`settings`: FfiTorSettings): kotlin.UShort {
+            return FfiConverterUShort.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_start_embedded_tor(
+        FfiConverterTypeFfiTorSettings.lower(`settings`),_status)
 }
     )
     }

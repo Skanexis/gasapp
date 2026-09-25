@@ -11,16 +11,22 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.showSecure
+import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiProxy
 import uniffi.aegis.validateProxy
 
 /**
- * Сеть: напрямую, через Tor с Orbot или через SOCKS5-прокси (ADR-024).
+ * Сеть: через встроенный Tor, напрямую или через SOCKS5-прокси (ADR-024).
  *
  * # Что здесь обещается
  *
@@ -59,11 +65,39 @@ class NetworkActivity : AppCompatActivity() {
         // для выбора — иначе человек включил бы Tor и остался без сети,
         // не понимая почему.
         if (!NetworkProxy.proxySupported) {
-            findViewById<RadioButton>(R.id.network_orbot).isEnabled = false
+            findViewById<RadioButton>(R.id.network_tor).isEnabled = false
             findViewById<RadioButton>(R.id.network_socks).isEnabled = false
         }
 
         load()
+
+        // Ход подключения встроенного Tor — пока экран на виду.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    renderTorStatus()
+                    delay(TOR_STATUS_POLL_MS)
+                }
+            }
+        }
+    }
+
+    /** Строка состояния встроенного Tor под выбором режима. */
+    private fun renderTorStatus() {
+        val view = findViewById<TextView>(R.id.network_tor_status)
+        val status = EmbeddedTor.status()
+
+        if (group.checkedRadioButtonId != R.id.network_tor || !status.running) {
+            view.visibility = View.GONE
+            return
+        }
+
+        view.text = when {
+            status.ready -> getString(R.string.tor_status_ready)
+            status.stalled -> getString(R.string.tor_status_stalled, status.percent.toInt())
+            else -> getString(R.string.tor_status_connecting, status.percent.toInt())
+        }
+        view.visibility = View.VISIBLE
     }
 
     private fun load() {
@@ -71,7 +105,7 @@ class NetworkActivity : AppCompatActivity() {
             .onSuccess { mode ->
                 when (mode) {
                     is FfiProxy.Direct -> group.check(R.id.network_direct)
-                    is FfiProxy.Orbot -> group.check(R.id.network_orbot)
+                    is FfiProxy.Tor -> group.check(R.id.network_tor)
                     is FfiProxy.Socks5 -> {
                         group.check(R.id.network_socks)
                         hostField.setText(mode.host)
@@ -95,7 +129,7 @@ class NetworkActivity : AppCompatActivity() {
 
         val hint = when {
             !NetworkProxy.proxySupported -> R.string.network_requires_android7
-            checkedId == R.id.network_orbot -> R.string.network_hint_orbot
+            checkedId == R.id.network_tor -> R.string.network_hint_tor
             checkedId == R.id.network_socks -> R.string.network_hint_socks
             else -> R.string.network_hint_direct
         }
@@ -106,7 +140,7 @@ class NetworkActivity : AppCompatActivity() {
     /** Режим, выбранный на экране; `null` — выбор неполный или порт неверен. */
     private fun selectedMode(): FfiProxy? = when (group.checkedRadioButtonId) {
         R.id.network_direct -> FfiProxy.Direct
-        R.id.network_orbot -> FfiProxy.Orbot
+        R.id.network_tor -> FfiProxy.Tor
         R.id.network_socks -> portField.text.toString().toIntOrNull()
             ?.takeIf { it in 1..MAX_PORT }
             ?.let { port -> FfiProxy.Socks5(hostField.text.toString().trim(), port.toUShort()) }
@@ -147,7 +181,8 @@ class NetworkActivity : AppCompatActivity() {
         // Применяется сразу: следующее соединение уже пойдёт выбранным
         // способом. Открытый сокет уведомлений переподключится через него
         // при ближайшем разрыве.
-        NetworkProxy.apply(mode)
+        NetworkProxy.apply(this, mode)
+        renderTorStatus()
 
         showStatus(getString(R.string.network_saved))
     }
@@ -164,6 +199,9 @@ class NetworkActivity : AppCompatActivity() {
         /** Наибольший номер порта. */
         private const val MAX_PORT = 65_535
 
+        /** Как часто обновлять строку состояния Tor. */
+        private const val TOR_STATUS_POLL_MS = 1_000L
+
         /**
          * Подпись режима для строки настроек.
          *
@@ -173,7 +211,7 @@ class NetworkActivity : AppCompatActivity() {
         fun labelFor(mode: FfiProxy?): Int = when (mode) {
             null -> R.string.network_unavailable_short
             is FfiProxy.Direct -> R.string.network_mode_direct
-            is FfiProxy.Orbot -> R.string.network_mode_orbot
+            is FfiProxy.Tor -> R.string.network_mode_tor
             is FfiProxy.Socks5 -> R.string.network_mode_socks
         }
     }

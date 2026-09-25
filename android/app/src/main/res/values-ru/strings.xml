@@ -128,11 +128,9 @@
     <string name="onboarding_error_username">3–32 символа: строчные латинские буквы, цифры и _, начиная с буквы</string>
     <string name="onboarding_error_taken">Это имя уже занято</string>
     <string name="onboarding_direct">Подключаться напрямую, без Tor</string>
-    <string name="onboarding_network_tor">Соединения идут через Tor с Orbot, и сервер не видит ваш IP-адрес. Orbot должен быть установлен и запущен.</string>
+    <string name="onboarding_network_tor">Соединения идут через Tor, встроенный в приложение, и сервер не видит ваш IP-адрес. Ничего дополнительно ставить не нужно.</string>
     <string name="onboarding_network_direct">⚠️ Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети.</string>
-    <string name="onboarding_error_tor">Не удалось связаться с сервером через Tor. Запустите Orbot и повторите или выберите прямое соединение выше.</string>
-    <string name="onboarding_open_orbot">Открыть Orbot</string>
-    <string name="onboarding_orbot_missing">Orbot не установлен. Установите его из Google Play или F-Droid.</string>
+    <string name="onboarding_error_tor">Не удалось подключиться через Tor. Проверьте интернет и повторите или выберите прямое соединение выше.</string>
     <string name="onboarding_error_network">Сервер недоступен. Проверьте соединение.</string>
     <string name="new_chat_hint">Введите имя пользователя собеседника</string>
     <string name="new_chat_not_found">Собеседник не найден. Проверьте имя и соединение.</string>
@@ -532,16 +530,14 @@
       скрыт его адрес.
     -->
     <string name="network_title">Сеть</string>
-    <string name="network_intro">Без Tor или прокси сервер видит IP-адрес устройства: по нему можно узнать примерное местоположение и связать ваши аккаунты между собой. По умолчанию выбран Tor через Orbot.</string>
+    <string name="network_intro">Без Tor или прокси сервер видит IP-адрес устройства: по нему можно узнать примерное местоположение и связать ваши аккаунты между собой. По умолчанию — Tor, встроенный в приложение.</string>
     <string name="network_section_mode">Способ подключения</string>
     <string name="network_mode_direct">Напрямую</string>
-    <string name="network_mode_orbot">Tor через Orbot</string>
     <string name="network_mode_socks">SOCKS5-прокси</string>
     <string name="network_hint_direct">Сервер видит ваш IP-адрес.</string>
-    <string name="network_hint_orbot">Нужен установленный и запущенный Orbot. Если он выключен, приложение не подключится — напрямую оно не пойдёт.</string>
     <string name="network_hint_socks">Все запросы и уведомления идут через указанный прокси. Если он недоступен, приложение не подключится — напрямую оно не пойдёт.</string>
     <string name="network_direct_confirm_title">Подключаться напрямую?</string>
-    <string name="network_direct_confirm_body">Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети. Tor через Orbot его скрывает.</string>
+    <string name="network_direct_confirm_body">Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети. Tor его скрывает.</string>
     <string name="network_direct_confirm_ok">Подключаться напрямую</string>
     <string name="network_host_hint">Адрес прокси</string>
     <string name="network_port_hint">Порт</string>
@@ -597,7 +593,7 @@
     -->
     <string name="about_section_limits">Чего это не защищает</string>
     <string name="about_limit_first_message">Ключ собеседника, найденного по имени, приходит от сервера, а сервер мог бы подсунуть свой. Поэтому писать ему нельзя, пока вы не сверите safety number при встрече или по видео либо не добавите его по его ссылке или QR-коду. Каждое сообщение, и первое тоже, запечатано: сервер не видит, кто кому пишет.</string>
-    <string name="about_limit_address">По умолчанию приложение подключается через Tor с Orbot, и сервер не видит ваш IP-адрес. Если выбрать прямое соединение («Настройки» → «Соединение»), сервер увидит IP-адрес и время каждого запроса.</string>
+    <string name="about_limit_address">По умолчанию приложение подключается через Tor, встроенный в приложение, и сервер не видит ваш IP-адрес. Если выбрать прямое соединение («Настройки» → «Соединение»), сервер увидит IP-адрес и время каждого запроса.</string>
     <string name="about_limit_notifications">Уведомлений нет: сообщения приходят, пока приложение открыто.</string>
     <string name="about_limit_backup">Исчезающих сообщений в резервной копии нет. Удалённое сообщение остаётся в копиях, сделанных до удаления.</string>
     <string name="about_limit_recovery_key">Потеряете ключ восстановления — копию не прочитает никто. Мы тоже.</string>
@@ -621,4 +617,9 @@
     <string name="recover_title">Восстановление аккаунта</string>
     <string name="recover_intro">Имя и переписка вернутся из копии. Ключ безопасности будет новым, поэтому собеседникам нужно будет заново сверить с вами safety number.</string>
     <string name="recover_failed">Не удалось вернуть аккаунт. Проверьте ключ копии и соединение. В копиях, сделанных до этой версии, нет ключа восстановления аккаунта.</string>
+    <string name="network_mode_tor">Tor (встроенный)</string>
+    <string name="network_hint_tor">Tor работает внутри приложения — ставить ничего не нужно. Пока он не подключился, не подключается и приложение: напрямую оно не пойдёт.</string>
+    <string name="tor_status_connecting">Подключение к Tor… %1$d%%</string>
+    <string name="tor_status_stalled">Подключение к Tor затянулось (%1$d%%). Проверьте интернет.</string>
+    <string name="tor_status_ready">Tor подключён</string>
 </resources>

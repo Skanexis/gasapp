@@ -64,6 +64,16 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
+                    <!-- Встроенный Tor — первым: он по умолчанию. -->
+                    <RadioButton
+                        android:id="@+id/network_tor"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent_base"
+                        android:minHeight="48dp"
+                        android:text="@string/network_mode_tor"
+                        android:textColor="@color/text_primary" />
+
                     <RadioButton
                         android:id="@+id/network_direct"
                         android:layout_width="match_parent"
@@ -71,15 +81,6 @@
                         android:buttonTint="@color/accent_base"
                         android:minHeight="48dp"
                         android:text="@string/network_mode_direct"
-                        android:textColor="@color/text_primary" />
-
-                    <RadioButton
-                        android:id="@+id/network_orbot"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent_base"
-                        android:minHeight="48dp"
-                        android:text="@string/network_mode_orbot"
                         android:textColor="@color/text_primary" />
 
                     <RadioButton
@@ -92,7 +93,7 @@
                         android:textColor="@color/text_primary" />
                 </RadioGroup>
 
-                <!-- Адрес прокси нужен только для SOCKS5: Orbot всегда локальный. -->
+                <!-- Адрес прокси нужен только для SOCKS5: встроенный Tor — внутри приложения. -->
                 <LinearLayout
                     android:id="@+id/network_socks_fields"
                     android:layout_width="match_parent"
@@ -135,7 +136,18 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_s"
-                tools:text="@string/network_hint_orbot" />
+                tools:text="@string/network_hint_tor" />
+
+            <!-- Ход подключения встроенного Tor; виден, только когда он выбран. -->
+            <TextView
+                android:id="@+id/network_tor_status"
+                style="@style/AegisText.Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:visibility="gone"
+                tools:text="@string/tor_status_ready"
+                tools:visibility="visible" />
 
             <TextView
                 android:id="@+id/network_status"

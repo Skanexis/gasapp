@@ -2,9 +2,7 @@
 
 package org.aegis.app
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.ProgressBar
@@ -22,6 +20,7 @@ import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiException
 import uniffi.aegis.FfiProxy
@@ -44,7 +43,6 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var progressLabel: TextView
     private lateinit var createButton: AegisButton
     private lateinit var direct: SwitchCompat
-    private lateinit var openOrbot: AegisButton
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,11 +63,9 @@ class OnboardingActivity : AppCompatActivity() {
         createButton = findViewById(R.id.onboarding_create)
 
         direct = findViewById(R.id.onboarding_direct)
-        openOrbot = findViewById(R.id.onboarding_open_orbot)
 
         createButton.setOnClickListener { register() }
         findViewById<AegisButton>(R.id.onboarding_recover).setOnClickListener { startRecovery() }
-        openOrbot.setOnClickListener { launchOrbot() }
 
         direct.setOnCheckedChangeListener { _, checked ->
             findViewById<TextView>(R.id.onboarding_network_hint).setText(
@@ -137,13 +133,15 @@ class OnboardingActivity : AppCompatActivity() {
                     // повторно, и состояния Double Ratchet разошлись бы.
                     val messenger = Core.unlock(this@OnboardingActivity, pinValue)
 
-                    // 🔐 У новой базы режим по умолчанию — Tor через Orbot:
+                    // 🔐 У новой базы режим по умолчанию — встроенный Tor:
                     // его уже применил Core.unlock. Прямое соединение —
                     // только если человек выбрал его сам, и до первого
                     // запроса: регистрация — первое, что видит сервер.
                     if (!viaTor) {
                         messenger.setProxy(FfiProxy.Direct)
-                        NetworkProxy.apply(FfiProxy.Direct)
+                        NetworkProxy.apply(this@OnboardingActivity, FfiProxy.Direct)
+                    } else {
+                        awaitTor()
                     }
 
                     messenger
@@ -189,11 +187,11 @@ class OnboardingActivity : AppCompatActivity() {
                     // занято» и «сервер недоступен» здесь можно только
                     // по типу исключения.
                     //
-                    // 🔐 Через Tor сбой сети чаще всего значит, что Orbot
-                    // не запущен. Напрямую приложение само не уходит:
-                    // человек либо запускает Orbot, либо явно выбирает
-                    // прямое соединение.
-                    val network = failure is FfiException
+                    // 🔐 Через Tor сбой сети — чаще всего не готовая сеть
+                    // Tor. Напрямую приложение само не уходит: человек
+                    // либо повторяет, либо явно выбирает прямое
+                    // соединение.
+                    val network = failure is FfiException || failure is TorNotReady
 
                     showError(
                         when {
@@ -202,7 +200,6 @@ class OnboardingActivity : AppCompatActivity() {
                             else -> getString(R.string.ffi_error)
                         },
                     )
-                    openOrbot.visibility = if (network && viaTor) View.VISIBLE else View.GONE
                 }
         }
     }
@@ -241,7 +238,9 @@ class OnboardingActivity : AppCompatActivity() {
 
                     if (!viaTor) {
                         messenger.setProxy(FfiProxy.Direct)
-                        NetworkProxy.apply(FfiProxy.Direct)
+                        NetworkProxy.apply(this@OnboardingActivity, FfiProxy.Direct)
+                    } else {
+                        awaitTor()
                     }
                 }.onFailure { AccountWipe.wipe(this@OnboardingActivity) }
             }
@@ -256,9 +255,39 @@ class OnboardingActivity : AppCompatActivity() {
                     )
                     finish()
                 }
-                .onFailure { showError(getString(R.string.ffi_error)) }
+                .onFailure { failure ->
+                    showError(
+                        getString(if (failure is TorNotReady) R.string.onboarding_error_tor else R.string.ffi_error),
+                    )
+                }
         }
     }
+
+    /**
+     * Ждёт подключения встроенного Tor, показывая ход в подписи.
+     *
+     * Первый запуск качает каталог сети Tor — от нескольких секунд до
+     * минуты. Без ожидания регистрация упёрлась бы в таймаут соединения.
+     *
+     * @throws TorNotReady Tor не подключился за отведённое время.
+     */
+    private suspend fun awaitTor() {
+        val ready = EmbeddedTor.awaitReady(TOR_WAIT_MS) { status ->
+            withContext(Dispatchers.Main) {
+                progressLabel.text = getString(
+                    if (status.stalled) R.string.tor_status_stalled else R.string.tor_status_connecting,
+                    status.percent.toInt(),
+                )
+            }
+        }
+
+        withContext(Dispatchers.Main) { progressLabel.setText(R.string.onboarding_working) }
+
+        if (!ready) throw TorNotReady()
+    }
+
+    /** Встроенный Tor не подключился вовремя. */
+    private class TorNotReady : Exception()
 
     private fun setWorking(working: Boolean) {
         // Кнопка блокируется на время подбора proof-of-work: повторное
@@ -274,33 +303,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         if (working) {
             error.visibility = View.INVISIBLE
-            openOrbot.visibility = View.GONE
         }
-    }
-
-    /**
-     * Открывает Orbot, а если его нет — его страницу в магазине.
-     *
-     * Запуск по имени пакета не требует объявлять Orbot в манифесте:
-     * видимость пакетов ограничивает запросы к списку приложений,
-     * а не запуск.
-     */
-    private fun launchOrbot() {
-        val launch = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setPackage(ORBOT_PACKAGE)
-        val store = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$ORBOT_PACKAGE"))
-
-        for (intent in listOf(launch, store)) {
-            try {
-                startActivity(intent)
-                return
-            } catch (_: ActivityNotFoundException) {
-                // Следующий вариант.
-            }
-        }
-
-        showError(getString(R.string.onboarding_orbot_missing))
     }
 
     private fun showError(message: String) {
@@ -322,8 +325,8 @@ class OnboardingActivity : AppCompatActivity() {
         /** Идентификатор устройства для последующих запросов. */
         const val EXTRA_DEVICE_ID = "device_id"
 
-        /** Пакет Orbot. */
-        private const val ORBOT_PACKAGE = "org.torproject.android"
+        /** Сколько ждать подключения Tor перед регистрацией. */
+        private const val TOR_WAIT_MS = 120_000L
 
         /**
          * Минимальная длина PIN.
