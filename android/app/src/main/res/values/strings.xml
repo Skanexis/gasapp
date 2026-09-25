@@ -587,4 +587,5 @@
     <string name="security_event_kt_foreign_key_for_own_name">The server showed a different key under your name. Your contacts may have been sent to someone else — warn them in person</string>
     <string name="security_event_kt_log_forked">The server’s key log did not match what it showed before</string>
     <string name="security_event_kt_peer_log_differs">A contact sees a different server key log than you do. The server may be showing one of you a fake one — compare safety numbers in person</string>
+    <string name="security_event_undecryptable_envelopes_dropped">Unreadable incoming messages were discarded (repeats of old ones or junk)</string>
 </resources>
