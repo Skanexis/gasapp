@@ -1954,10 +1954,16 @@ impl Storage {
             .map_err(storage_error)
     }
 
-    /// Загружает сообщения чата, новые в конце.
+    /// Загружает **последние** `limit` сообщений чата, новые в конце.
     ///
     /// `limit` ограничивает выборку: история чата не помещается в память
-    /// целиком, а UI показывает окно.
+    /// целиком, а UI показывает окно — последнее.
+    ///
+    /// ⚠️ Прежде выбирались **первые** `limit` сообщений: сортировка по
+    /// возрастанию с `LIMIT`. Экран переписки читает 200 — и в чате
+    /// длиннее двухсот сообщений новые не показывались вовсе, а превью
+    /// в списке чатов (`limit` = 1) показывало самое старое сообщение.
+    /// Найдено на эмуляторе по превью.
     ///
     /// # Errors
     ///
@@ -1970,10 +1976,15 @@ impl Storage {
                 "
             SELECT message_id, chat_id, sender_id, timestamp, content,
                    status, message_type, expires_at
-            FROM messages
-            WHERE chat_id = ?
-            ORDER BY timestamp ASC, rowid ASC
-            LIMIT ?
+            FROM (
+                SELECT message_id, chat_id, sender_id, timestamp, content,
+                       status, message_type, expires_at, rowid AS row_order
+                FROM messages
+                WHERE chat_id = ?
+                ORDER BY timestamp DESC, rowid DESC
+                LIMIT ?
+            )
+            ORDER BY timestamp ASC, row_order ASC
             ",
             )
             .map_err(storage_error)?;
@@ -3540,6 +3551,44 @@ mod tests {
         }
 
         assert_eq!(storage.load_messages(&chat, 2).unwrap().len(), 2);
+    }
+
+    /// Лимит оставляет **последние** сообщения, по-прежнему по порядку.
+    ///
+    /// Прежде оставлялись первые: в чате длиннее окна экрана новые
+    /// сообщения не показывались, а превью списка чатов было самым
+    /// старым сообщением.
+    #[test]
+    fn the_limit_keeps_the_newest_messages_in_order() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let chat = ChatId::generate();
+        let base = now().as_millis();
+
+        for index in 0..5_i64 {
+            storage
+                .save_message(&StoredMessage {
+                    id: MessageId::generate(),
+                    chat_id: chat,
+                    sender_id: AccountId::generate(),
+                    timestamp: Timestamp::from_millis(base + index),
+                    content: Ciphertext::new(vec![u8::try_from(index).unwrap()]),
+                    status: MessageStatus::Pending,
+                    message_type: 0,
+                    expires_at: None,
+                })
+                .unwrap();
+        }
+
+        let last_two: Vec<u8> = storage
+            .load_messages(&chat, 2)
+            .unwrap()
+            .iter()
+            .map(|message| message.content.as_bytes()[0])
+            .collect();
+        assert_eq!(last_two, [3, 4], "лимит отрезал новые сообщения");
+
+        let newest = storage.load_messages(&chat, 1).unwrap();
+        assert_eq!(newest[0].content.as_bytes()[0], 4, "превью — не последнее сообщение");
     }
 
     /// Сообщения других чатов не попадают в выборку.

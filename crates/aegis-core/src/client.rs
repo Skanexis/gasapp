@@ -1334,11 +1334,17 @@ impl<T: Transport> Client<T> {
     ///
     /// [`AegisError::Malformed`] — ссылка не разбирается, либо имя
     /// в ней принадлежит другому ключу, либо контакт уже известен
-    /// с другим ключом;
+    /// с другим ключом, либо ссылка — своя собственная;
     /// [`AegisError::Network`] — проверка имени не удалась;
     /// [`AegisError::Storage`] — запись не удалась.
     pub fn add_contact_from_link(&self, uri: &str, now: Timestamp) -> Result<Contact> {
         let link = ContactLink::parse(uri)?;
+
+        // Своя же ссылка — не собеседник: «контакт» с собственным
+        // ключом завёл бы чат с самим собой и safety number с собой.
+        if self.is_own_identity(&link.identity)? {
+            return Err(AegisError::Malformed);
+        }
 
         let (account_id, username) = match &link.display_name {
             // Без имени спрашивать сервер не о чем: идентификатор
@@ -1473,12 +1479,28 @@ impl<T: Transport> Client<T> {
     ///
     /// # Errors
     ///
+    /// [`AegisError::InvalidUsername`] — имя не по правилам либо своё;
+    /// [`AegisError::Malformed`] — сервер назвал наш собственный ключ;
     /// [`AegisError::Network`] — имя не найдено или сеть недоступна;
     /// [`AegisError::IdentityChanged`] — сервер называет другой ключ.
     pub fn discover_contact(&self, name: &str, now: Timestamp) -> Result<Contact> {
         let name = &canonical_username(name)?;
+
+        // Своё имя — не собеседник. Прежде поиск по нему заводил
+        // контакт с собственным ключом: чат с самим собой, закрытый
+        // для записи, и safety number с собой. Найдено на эмуляторе.
+        if self.own_username()?.as_deref() == Some(name.as_str()) {
+            return Err(AegisError::InvalidUsername);
+        }
+
         let peer = self.api.discover(name)?;
         let advertised = parse_public_key(&peer.identity_key)?;
+
+        // То же по ключу: сервер вправе назвать под чужим именем наш
+        // собственный ключ, и контакт с ним был бы тем же чатом с собой.
+        if self.is_own_identity(&advertised)? {
+            return Err(AegisError::Malformed);
+        }
 
         let confirmed = self.bind_advertised_identity(name, &advertised, now)?;
 
@@ -2773,6 +2795,13 @@ impl<T: Transport> Client<T> {
     }
 
     /// Загружает identity-пару и секреты предключей.
+    /// Ключ — наш собственный identity-ключ.
+    fn is_own_identity(&self, key: &PublicKeyBytes) -> Result<bool> {
+        let (identity, _) = self.load_identity()?;
+
+        Ok(identity.public().public().as_bytes() == key.as_bytes())
+    }
+
     fn load_identity(&self) -> Result<(IdentityKeyPair, PreKeySecrets)> {
         let keys = self
             .storage

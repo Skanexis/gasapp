@@ -147,6 +147,7 @@ class ChatActivity : AppCompatActivity() {
             text = getString(
                 if (wasVerified) R.string.chat_verified_state else R.string.chat_unverified_state,
             )
+            setTextColor(getColor(if (wasVerified) R.color.status_ok else R.color.text_muted))
             setOnClickListener { openSafetyNumber(chatName) }
         }
 
@@ -484,13 +485,17 @@ class ChatActivity : AppCompatActivity() {
 
             // Три уровня: сверен лично, подтверждён журналом ключей
             // (писать можно, но личная сверка сильнее), не подтверждён.
-            findViewById<TextView>(R.id.chat_verification_state).text = getString(
-                when {
-                    wasVerified -> R.string.chat_verified_state
-                    contact?.ktConfirmed == true -> R.string.chat_kt_state
-                    else -> R.string.chat_unverified_state
-                },
-            )
+            findViewById<TextView>(R.id.chat_verification_state).apply {
+                val (label, color) = when {
+                    wasVerified -> R.string.chat_verified_state to R.color.status_ok
+                    contact?.ktConfirmed == true -> R.string.chat_kt_state to R.color.accent_base
+                    else -> R.string.chat_unverified_state to R.color.text_muted
+                }
+                // Цветом — вместе с текстом (раздел 20.5): зелёный только
+                // у личной сверки, как пилюля «verified» в UI kit.
+                text = getString(label)
+                setTextColor(getColor(color))
+            }
 
             applySendGuard()
         }

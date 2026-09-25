@@ -138,6 +138,7 @@
     <string name="new_chat_not_found">Собеседник не найден. Проверьте имя и соединение.</string>
     <string name="new_chat_open">Открыть</string>
     <string name="new_chat_field_hint">@username</string>
+    <string name="new_chat_own_name">Это ваше собственное имя</string>
     <string name="onboarding_choose_pin">Им шифруется переписка на этом устройстве. Сбросить его нельзя.</string>
     <string name="onboarding_pin_label">PIN · 6 цифр</string>
     <string name="onboarding_error_pin">PIN — ровно 6 цифр</string>
@@ -160,6 +161,7 @@
     <string name="add_contact_added_unnamed">Контакт добавлен</string>
     <string name="add_contact_key_changed">«%1$s» уже был у вас с другим ключом. Это может быть переустановка — или подмена. Сверьте safety number при встрече, прежде чем писать.</string>
     <string name="add_contact_invalid">Ссылка не подходит: она не является ссылкой AEGIS либо имя в ней принадлежит другому ключу</string>
+    <string name="add_contact_own_link">Это ваша собственная ссылка — отправьте её тому, с кем хотите переписываться</string>
     <string name="add_contact_review">Проверьте, кого добавляете. Ссылка не подтверждает имя — его называет тот, кто её сделал.</string>
 
     <!-- Поиск по переписке. -->
@@ -432,7 +434,7 @@
     <string name="identity_changed_restored_count">Восстановлено записей: %1$d.</string>
     <string name="identity_changed_explain">Собеседники увидят предупреждение о смене ключа безопасности. При восстановлении это нормально: устройство получает новый ключ, и старый не переносится.</string>
     <string name="identity_changed_why">Ключи не переносятся намеренно. Перенос старого состояния шифрования означал бы, что два разных сообщения могут быть зашифрованы одним ключом, — а это раскрывает их содержимое. Смена ключа безопасности — цена того, что такого не случится.</string>
-    <string name="identity_changed_not_restored">Не восстановлены: активные защищённые сессии — они установятся заново при первом сообщении.</string>
+    <string name="identity_changed_not_restored">Не восстановлены: активные защищённые сессии — они установятся заново при первом сообщении — и резервные копии: создайте новый ключ восстановления в «Настройки → Резервная копия», иначе новых копий не будет.</string>
     <string name="identity_changed_verify">Сверить ключи с контактами</string>
     <string name="identity_changed_later">Позже</string>
 
