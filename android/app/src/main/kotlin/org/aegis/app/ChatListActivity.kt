@@ -118,15 +118,29 @@ class ChatListActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 var waited = false
+                val since = System.currentTimeMillis()
 
                 while (true) {
                     val status = EmbeddedTor.status()
                     val connecting = NetworkProxy.viaEmbeddedTor && status.running && !status.ready
 
                     if (connecting) {
-                        banner.text = getString(
-                            if (status.stalled) R.string.tor_status_stalled else R.string.tor_status_connecting,
-                            status.percent.toInt(),
+                        // Долго не подключается — возможно, Tor здесь
+                        // заблокирован: плашка ведёт к мостам.
+                        val blocked = EmbeddedTor.looksBlocked(status, since)
+
+                        banner.text = if (blocked) {
+                            getString(R.string.tor_blocked_hint)
+                        } else {
+                            getString(R.string.tor_status_connecting, status.percent.toInt())
+                        }
+                        banner.isClickable = blocked
+                        banner.setOnClickListener(
+                            if (blocked) {
+                                View.OnClickListener { startActivity(Intent(this@ChatListActivity, NetworkActivity::class.java)) }
+                            } else {
+                                null
+                            },
                         )
                         banner.visibility = View.VISIBLE
                         waited = true

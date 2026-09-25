@@ -32,6 +32,13 @@ use crate::backup::BackupService;
 /// Ключ настройки прокси в хранилище.
 pub const PROXY_SETTING: &str = "network_proxy";
 
+/// Ключ списка мостов Tor в хранилище (строки через `\n`).
+///
+/// 🔐 В зашифрованной базе, а не в настройках платформы: список мостов
+/// выдаёт, что человек обходит блокировку, а сами мосты, попав
+/// к цензору, блокируются.
+pub const TOR_BRIDGES_SETTING: &str = "tor_bridges";
+
 /// Какой возраст резервной копии ещё считается свежим: неделя.
 ///
 /// Неделя, а не сутки: копия делается в фоне и не должна краснеть
@@ -129,6 +136,36 @@ impl<T: Transport> Client<T> {
             .set_setting_text(PROXY_SETTING, &mode.to_setting())
     }
 
+    /// Мосты Tor; пусто — прямое подключение к сети Tor.
+    ///
+    /// # Errors
+    ///
+    /// [`aegis_types::AegisError::Storage`] — чтение не удалось;
+    /// [`aegis_types::AegisError::Malformed`] — запись повреждена.
+    pub fn tor_bridges(&self) -> Result<Vec<String>> {
+        match self.storage.setting_text(TOR_BRIDGES_SETTING)? {
+            None => Ok(Vec::new()),
+            Some(text) => aegis_net::proxy::parse_bridges(&text),
+        }
+    }
+
+    /// Сохраняет мосты Tor из текста (строка на мост) и возвращает их
+    /// в нормальном виде.
+    ///
+    /// # Errors
+    ///
+    /// [`aegis_types::AegisError::Malformed`] — хотя бы одна строка
+    /// негодна (список отвергается целиком);
+    /// [`aegis_types::AegisError::Storage`] — запись не удалась.
+    pub fn set_tor_bridges(&self, text: &str) -> Result<Vec<String>> {
+        let bridges = aegis_net::proxy::parse_bridges(text)?;
+
+        self.storage
+            .set_setting_text(TOR_BRIDGES_SETTING, &bridges.join("\n"))?;
+
+        Ok(bridges)
+    }
+
     /// Считает проверки центра безопасности.
     ///
     /// # Errors
@@ -201,6 +238,29 @@ mod tests {
         let client = Client::new(NoNetwork, storage);
 
         assert_eq!(client.proxy_mode().expect("режим"), ProxyMode::Tor);
+    }
+
+    /// Мосты хранятся нормализованными; негодный список не заменяет
+    /// сохранённый.
+    #[test]
+    fn tor_bridges_round_trip_and_reject_bad_lists() {
+        let (storage, _dir) = open_storage();
+        let client = Client::new(NoNetwork, storage);
+        let bridge = "webtunnel [2001:db8::1]:443 0123456789ABCDEF0123456789ABCDEF01234567 url=https://b.example.org/p";
+
+        assert!(client.tor_bridges().expect("пусто").is_empty());
+
+        let saved = client
+            .set_tor_bridges(&format!("Bridge {bridge}\n\n"))
+            .expect("запись");
+        assert_eq!(saved, vec![bridge.to_owned()]);
+        assert_eq!(client.tor_bridges().expect("чтение"), saved);
+
+        assert!(client.set_tor_bridges("obfs4 192.0.2.1:1 x").is_err());
+        assert_eq!(client.tor_bridges().expect("прежние"), saved);
+
+        client.set_tor_bridges("").expect("очистка");
+        assert!(client.tor_bridges().expect("пусто").is_empty());
     }
 
     /// Режим сохраняется и читается обратно.

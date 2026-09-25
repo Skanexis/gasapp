@@ -237,9 +237,168 @@ fn validate_host(host: &str) -> Result<()> {
     Ok(())
 }
 
+/// Предел числа мостов.
+pub const MAX_BRIDGES: usize = 16;
+
+/// Предел длины строки моста.
+const MAX_BRIDGE_LINE: usize = 1024;
+
+/// Транспорт `WebTunnel`.
+const WEBTUNNEL: &str = "webtunnel";
+
+/// Проверяет и нормализует строку моста Tor.
+///
+/// Принимаются мосты, которые встроенный Tor умеет использовать:
+/// `WebTunnel` (свой клиент в `aegis-tor`) и обычные мосты без транспорта.
+/// Приставка `Bridge` снимается. Результат — строка в виде, который
+/// разбирает Arti.
+///
+/// 🔐 Отпечаток моста (40 шестнадцатеричных знаков) обязателен: он
+/// закрепляет identity моста, и без него подставной мост на том же
+/// адресе прошёл бы незамеченным. Адрес `url=` — только `https`: снаружи
+/// соединение с мостом должно выглядеть как обычный HTTPS.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — формат нарушен, транспорт не
+/// поддерживается (obfs4, Snowflake и прочим нужен сторонний клиент)
+/// или нет отпечатка.
+pub fn normalize_bridge_line(line: &str) -> Result<String> {
+    let line = line.trim();
+    let line = line.strip_prefix("Bridge ").unwrap_or(line).trim();
+
+    if line.is_empty()
+        || line.len() > MAX_BRIDGE_LINE
+        || !line.is_ascii()
+        || line.chars().any(char::is_control)
+    {
+        return Err(AegisError::Malformed);
+    }
+
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let (webtunnel, rest) = match words.split_first() {
+        Some((first, rest)) if *first == WEBTUNNEL => (true, rest),
+        Some(_) => (false, words.as_slice()),
+        None => return Err(AegisError::Malformed),
+    };
+
+    let (address, rest) = rest.split_first().ok_or(AegisError::Malformed)?;
+    address
+        .parse::<std::net::SocketAddr>()
+        .map_err(|_| AegisError::Malformed)?;
+
+    let (fingerprint, args) = rest.split_first().ok_or(AegisError::Malformed)?;
+    if fingerprint.len() != 40 || !fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(AegisError::Malformed);
+    }
+
+    let mut url = None;
+    for arg in args {
+        let (key, value) = arg.split_once('=').ok_or(AegisError::Malformed)?;
+        if key.is_empty() || value.is_empty() {
+            return Err(AegisError::Malformed);
+        }
+        if key == "url" {
+            url = Some(value);
+        }
+    }
+
+    if webtunnel {
+        let host = url
+            .and_then(|url| url.strip_prefix("https://"))
+            .and_then(|rest| rest.split('/').next())
+            .ok_or(AegisError::Malformed)?;
+        if host.is_empty() || host.contains('@') {
+            return Err(AegisError::Malformed);
+        }
+    } else if !args.is_empty() {
+        // У обычного моста аргументов нет.
+        return Err(AegisError::Malformed);
+    }
+
+    Ok(words.join(" "))
+}
+
+/// Разбирает список мостов: по строке на мост, пустые строки
+/// пропускаются, повторы убираются.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — хотя бы одна строка негодна или мостов
+/// больше [`MAX_BRIDGES`]. 🔐 Весь список отвергается целиком: молча
+/// выброшенный мост — это мост, на который человек рассчитывает.
+pub fn parse_bridges(text: &str) -> Result<Vec<String>> {
+    let mut bridges: Vec<String> = Vec::new();
+
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let bridge = normalize_bridge_line(line)?;
+        if !bridges.contains(&bridge) {
+            bridges.push(bridge);
+        }
+    }
+
+    if bridges.len() > MAX_BRIDGES {
+        return Err(AegisError::Malformed);
+    }
+
+    Ok(bridges)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const FPR: &str = "0123456789ABCDEF0123456789ABCDEF01234567";
+
+    #[test]
+    fn webtunnel_and_plain_bridges_are_accepted() {
+        let webtunnel = format!(
+            "Bridge webtunnel [2001:db8::1]:443 {FPR} url=https://b.example.org/p ver=0.0.1"
+        );
+        assert_eq!(
+            normalize_bridge_line(&webtunnel).expect("webtunnel"),
+            format!("webtunnel [2001:db8::1]:443 {FPR} url=https://b.example.org/p ver=0.0.1")
+        );
+        assert_eq!(
+            normalize_bridge_line(&format!("  192.0.2.7:9001   {FPR} ")).expect("обычный"),
+            format!("192.0.2.7:9001 {FPR}")
+        );
+    }
+
+    /// 🔐 Без отпечатка мост не принимается; чужие транспорты — тоже.
+    #[test]
+    fn unsafe_or_unsupported_bridges_are_rejected() {
+        for line in [
+            "webtunnel [2001:db8::1]:443 url=https://b.example.org/p".to_owned(),
+            format!("webtunnel [2001:db8::1]:443 {FPR} url=http://b.example.org/p"),
+            format!("webtunnel [2001:db8::1]:443 {FPR}"),
+            format!("webtunnel [2001:db8::1]:443 {FPR} url=https://u@b.example.org/p"),
+            format!("obfs4 192.0.2.1:443 {FPR} cert=abc iat-mode=0"),
+            format!("snowflake 192.0.2.3:80 {FPR} url=https://x/"),
+            format!("192.0.2.7:9001 {FPR} extra=1"),
+            format!("webtunnel host.example:443 {FPR} url=https://b/p"),
+            format!("webtunnel [2001:db8::1]:443 {FPR} url=https://b/p\u{7}"),
+            "192.0.2.7:9001 NOTHEX0123456789ABCDEF0123456789ABCDEF01".to_owned(),
+            String::new(),
+        ] {
+            assert!(normalize_bridge_line(&line).is_err(), "принят {line:?}");
+        }
+    }
+
+    #[test]
+    fn a_bridge_list_is_all_or_nothing() {
+        let good = format!("192.0.2.7:9001 {FPR}");
+        let list = format!("\n{good}\n\nBridge {good}\n");
+        assert_eq!(parse_bridges(&list).expect("список"), vec![good.clone()]);
+
+        assert!(parse_bridges(&format!("{good}\nobfs4 192.0.2.1:1 {FPR} cert=x")).is_err());
+
+        let many = (0..=MAX_BRIDGES)
+            .map(|i| format!("192.0.2.{i}:9001 {FPR}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(parse_bridges(&many).is_err());
+    }
 
     fn socks(host: &str, port: u16) -> ProxyMode {
         ProxyMode::Socks5 {

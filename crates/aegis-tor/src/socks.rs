@@ -110,6 +110,15 @@ impl Allowlist {
         self.entries.is_empty()
     }
 
+    /// Порты назначений — для заранее построенных цепочек.
+    #[must_use]
+    pub fn ports(&self) -> Vec<u16> {
+        let mut ports: Vec<u16> = self.entries.iter().map(|(_, port)| *port).collect();
+        ports.sort_unstable();
+        ports.dedup();
+        ports
+    }
+
     /// Разрешено ли назначение.
     pub(crate) fn permits(&self, target: &Target) -> bool {
         let host = normalize(&target.host);

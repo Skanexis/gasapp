@@ -14,8 +14,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
@@ -24,6 +26,7 @@ import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiProxy
 import uniffi.aegis.validateProxy
+import uniffi.aegis.validateTorBridges
 
 /**
  * Сеть: через встроенный Tor, напрямую или через SOCKS5-прокси (ADR-024).
@@ -47,6 +50,7 @@ class NetworkActivity : AppCompatActivity() {
     private val group by lazy { findViewById<RadioGroup>(R.id.network_mode) }
     private val hostField by lazy { findViewById<EditText>(R.id.network_host) }
     private val portField by lazy { findViewById<EditText>(R.id.network_port) }
+    private val bridgesField by lazy { findViewById<EditText>(R.id.network_bridges) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,6 +105,9 @@ class NetworkActivity : AppCompatActivity() {
     }
 
     private fun load() {
+        runCatching { Core.messenger().torBridges() }
+            .onSuccess { bridges -> bridgesField.setText(bridges.joinToString("\n")) }
+
         runCatching { Core.messenger().proxy() }
             .onSuccess { mode ->
                 when (mode) {
@@ -126,6 +133,8 @@ class NetworkActivity : AppCompatActivity() {
     private fun renderMode(checkedId: Int) {
         findViewById<View>(R.id.network_socks_fields).visibility =
             if (checkedId == R.id.network_socks) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.network_bridges_fields).visibility =
+            if (checkedId == R.id.network_tor) View.VISIBLE else View.GONE
 
         val hint = when {
             !NetworkProxy.proxySupported -> R.string.network_requires_android7
@@ -157,6 +166,12 @@ class NetworkActivity : AppCompatActivity() {
             return
         }
 
+        // Мосты проверяются так же, как в ядре, — до сохранения.
+        if (mode is FfiProxy.Tor && !validateTorBridges(bridgesField.text.toString())) {
+            showStatus(getString(R.string.network_bridges_invalid))
+            return
+        }
+
         // 🔐 Прямое соединение отдаёт серверу адрес — только явным
         // согласием, после которого человек знает, чем платит.
         if (mode is FfiProxy.Direct) {
@@ -173,18 +188,36 @@ class NetworkActivity : AppCompatActivity() {
     }
 
     private fun store(mode: FfiProxy) {
-        if (runCatching { Core.messenger().setProxy(mode) }.isFailure) {
-            showStatus(getString(R.string.network_save_failed))
-            return
+        val bridgesText = bridgesField.text.toString()
+
+        // В фоне: смена мостов перезапускает Tor, а это до пары секунд.
+        lifecycleScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    val messenger = Core.messenger()
+                    val bridges = if (mode is FfiProxy.Tor) {
+                        messenger.setTorBridges(bridgesText)
+                    } else {
+                        messenger.torBridges()
+                    }
+                    messenger.setProxy(mode)
+
+                    // Применяется сразу: следующее соединение уже пойдёт
+                    // выбранным способом. Открытый сокет уведомлений
+                    // переподключится через него при ближайшем разрыве.
+                    NetworkProxy.apply(this@NetworkActivity, mode, bridges)
+                    bridges
+                }
+            }
+
+            saved
+                .onSuccess { bridges ->
+                    bridgesField.setText(bridges.joinToString("\n"))
+                    renderTorStatus()
+                    showStatus(getString(R.string.network_saved))
+                }
+                .onFailure { showStatus(getString(R.string.network_save_failed)) }
         }
-
-        // Применяется сразу: следующее соединение уже пойдёт выбранным
-        // способом. Открытый сокет уведомлений переподключится через него
-        // при ближайшем разрыве.
-        NetworkProxy.apply(this, mode)
-        renderTorStatus()
-
-        showStatus(getString(R.string.network_saved))
     }
 
     private fun showStatus(text: String) {

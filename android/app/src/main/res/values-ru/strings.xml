@@ -622,4 +622,11 @@
     <string name="tor_status_connecting">Подключение к Tor… %1$d%%</string>
     <string name="tor_status_stalled">Подключение к Tor затянулось (%1$d%%). Проверьте интернет.</string>
     <string name="tor_status_ready">Tor подключён</string>
+    <string name="network_section_bridges">Мосты</string>
+    <string name="network_bridges_hint">webtunnel [2001:db8::1]:443 ОТПЕЧАТОК url=https://…</string>
+    <string name="network_bridges_help">Если Tor не подключается, возможно, он заблокирован у вас. Добавьте мосты WebTunnel, по одному на строку: их выдают на bridges.torproject.org (выберите WebTunnel) и Telegram-бот @GetBridgesBot. Пусто — подключение к Tor напрямую.</string>
+    <string name="network_bridges_invalid">Строка моста негодна. Поддерживаются мосты WebTunnel и обычные, и у каждого должен быть отпечаток.</string>
+    <string name="tor_blocked_hint">Tor не подключается — возможно, он здесь заблокирован. Нажмите, чтобы добавить мост.</string>
+    <string name="onboarding_add_bridge">Tor заблокирован? Добавить мост</string>
+    <string name="onboarding_bridges_title">Мосты Tor</string>
 </resources>

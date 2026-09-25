@@ -30,6 +30,12 @@ tor-rtcompat = { version = "=0.46.0", default-features = false, features = ["tok
 # проверяет сам протокол Tor (сертификаты CERTS, ntor), а содержимое
 # шифруется слоями Tor и ещё раз TLS платформы до сервера AEGIS.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# WebTunnel: свой клиент (см. `webtunnel.rs`). TLS до моста — rustls,
+# корни — webpki-roots (данные Mozilla, CDLA-Permissive-2.0).
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "1"
+sha2.workspace = true
+base64 = "0.22"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 thiserror.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }

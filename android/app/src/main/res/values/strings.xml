@@ -576,4 +576,11 @@
     <string name="tor_status_connecting">Connecting to Tor… %1$d%%</string>
     <string name="tor_status_stalled">Connecting to Tor is taking long (%1$d%%). Check your internet connection.</string>
     <string name="tor_status_ready">Connected to Tor</string>
+    <string name="network_section_bridges">Bridges</string>
+    <string name="network_bridges_hint">webtunnel [2001:db8::1]:443 FINGERPRINT url=https://…</string>
+    <string name="network_bridges_help">If Tor does not connect, it may be blocked where you are. Add WebTunnel bridges, one per line: get them at bridges.torproject.org (choose WebTunnel) or from the Telegram bot @GetBridgesBot. Leave empty to connect to Tor directly.</string>
+    <string name="network_bridges_invalid">A bridge line is not valid. Only WebTunnel and plain bridges are supported, and each needs its fingerprint.</string>
+    <string name="tor_blocked_hint">Tor is not connecting — it may be blocked here. Tap to add a bridge.</string>
+    <string name="onboarding_add_bridge">Tor blocked? Add a bridge</string>
+    <string name="onboarding_bridges_title">Tor bridges</string>
 </resources>

@@ -177,6 +177,16 @@
             tools:text="Имя уже занято"
             tools:visibility="visible" />
 
+        <!-- Появляется, когда Tor не подключается: возможно, он заблокирован. -->
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/onboarding_add_bridge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/onboarding_add_bridge"
+            android:visibility="gone"
+            app:buttonVariant="secondary" />
+
         <ProgressBar
             android:id="@+id/onboarding_progress"
             android:layout_width="wrap_content"

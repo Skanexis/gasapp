@@ -72,6 +72,10 @@ exceptions = [
     # в общественное достояние, без условий, которые могли бы
     # конфликтовать с нашими лицензиями.
     { allow = ["Unlicense"], crate = "async_executors" },
+    # Корневые сертификаты Mozilla для TLS до мостов WebTunnel
+    # (`aegis-tor/src/webtunnel.rs`). CDLA-Permissive-2.0 — разрешительная
+    # лицензия на данные, без copyleft.
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots" },
 ]
 
 # ----------------------------------------------------------------------------

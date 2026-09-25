@@ -2,15 +2,20 @@
 
 package org.aegis.app
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
@@ -20,11 +25,13 @@ import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.showSecure
 import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import uniffi.aegis.FfiException
 import uniffi.aegis.FfiProxy
 import uniffi.aegis.canonicalUsername
+import uniffi.aegis.validateTorBridges
 
 /**
  * Онбординг: регистрация первого аккаунта.
@@ -43,6 +50,10 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var progressLabel: TextView
     private lateinit var createButton: AegisButton
     private lateinit var direct: SwitchCompat
+    private lateinit var addBridge: AegisButton
+
+    /** Мосты, введённые на этом экране; сохраняются в базу при её создании. */
+    private var bridgesText: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +74,8 @@ class OnboardingActivity : AppCompatActivity() {
         createButton = findViewById(R.id.onboarding_create)
 
         direct = findViewById(R.id.onboarding_direct)
+        addBridge = findViewById(R.id.onboarding_add_bridge)
+        addBridge.setOnClickListener { promptBridges() }
 
         createButton.setOnClickListener { register() }
         findViewById<AegisButton>(R.id.onboarding_recover).setOnClickListener { startRecovery() }
@@ -71,7 +84,20 @@ class OnboardingActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.onboarding_network_hint).setText(
                 if (checked) R.string.onboarding_network_direct else R.string.onboarding_network_tor,
             )
+            // Прямое соединение — Tor не нужен; снова Tor — прогрев.
+            if (checked) {
+                lifecycleScope.launch(Dispatchers.IO) { EmbeddedTor.stop() }
+                addBridge.visibility = View.GONE
+            } else {
+                prewarmTor()
+            }
         }
+
+        // 🔐 Прогрев: Tor подключается, пока человек вводит имя и PIN.
+        // Умолчание регистрации — Tor, так что это та же сеть, в которую
+        // приложение пошло бы через минуту.
+        prewarmTor()
+        watchTorForBlocking()
     }
 
     private fun register() {
@@ -131,6 +157,10 @@ class OnboardingActivity : AppCompatActivity() {
                     //
                     // Общий экземпляр: второй открыл бы ту же базу
                     // повторно, и состояния Double Ratchet разошлись бы.
+                    // Мосты с этого экрана — в новую базу до применения
+                    // режима сети (см. EmbeddedTor.pendingBridges).
+                    if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
+
                     val messenger = Core.unlock(this@OnboardingActivity, pinValue)
 
                     // 🔐 У новой базы режим по умолчанию — встроенный Tor:
@@ -234,6 +264,8 @@ class OnboardingActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val opened = withContext(Dispatchers.IO) {
                 runCatching {
+                    if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
+
                     val messenger = Core.unlock(this@OnboardingActivity, pinValue)
 
                     if (!viaTor) {
@@ -272,8 +304,10 @@ class OnboardingActivity : AppCompatActivity() {
      * @throws TorNotReady Tor не подключился за отведённое время.
      */
     private suspend fun awaitTor() {
+        val since = System.currentTimeMillis()
         val ready = EmbeddedTor.awaitReady(TOR_WAIT_MS) { status ->
             withContext(Dispatchers.Main) {
+                if (EmbeddedTor.looksBlocked(status, since)) addBridge.visibility = View.VISIBLE
                 progressLabel.text = getString(
                     if (status.stalled) R.string.tor_status_stalled else R.string.tor_status_connecting,
                     status.percent.toInt(),
@@ -288,6 +322,71 @@ class OnboardingActivity : AppCompatActivity() {
 
     /** Встроенный Tor не подключился вовремя. */
     private class TorNotReady : Exception()
+
+    /** Запускает Tor заранее — с мостами, если их уже ввели. */
+    private fun prewarmTor() {
+        val lines = bridgesLines()
+
+        lifecycleScope.launch(Dispatchers.IO) { EmbeddedTor.ensureStarted(this@OnboardingActivity, lines) }
+    }
+
+    private fun bridgesLines(): List<String> =
+        bridgesText?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+
+    /** Показывает «Добавить мост», когда Tor похоже заблокирован. */
+    private fun watchTorForBlocking() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                val since = System.currentTimeMillis()
+
+                while (true) {
+                    if (!direct.isChecked && EmbeddedTor.looksBlocked(EmbeddedTor.status(), since)) {
+                        addBridge.visibility = View.VISIBLE
+                    }
+                    delay(TOR_WATCH_MS)
+                }
+            }
+        }
+    }
+
+    /**
+     * Диалог ввода мостов. Проверка — та же, что в ядре; годные мосты
+     * сразу перезапускают Tor и сохраняются в базу при её создании.
+     */
+    private fun promptBridges() {
+        val field = EditText(this).apply {
+            setText(bridgesText.orEmpty())
+            hint = getString(R.string.network_bridges_hint)
+            minLines = 3
+            gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            typeface = android.graphics.Typeface.MONOSPACE
+            textSize = 12f
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
+                android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.onboarding_bridges_title)
+            .setMessage(R.string.network_bridges_help)
+            .setView(field)
+            .setPositiveButton(R.string.network_save) { _, _ ->
+                val text = field.text.toString()
+
+                if (!validateTorBridges(text)) {
+                    showError(getString(R.string.network_bridges_invalid))
+                    return@setPositiveButton
+                }
+
+                bridgesText = text.takeIf { it.isNotBlank() }
+                error.visibility = View.INVISIBLE
+                prewarmTor()
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .showSecure(this)
+    }
 
     private fun setWorking(working: Boolean) {
         // Кнопка блокируется на время подбора proof-of-work: повторное
@@ -327,6 +426,9 @@ class OnboardingActivity : AppCompatActivity() {
 
         /** Сколько ждать подключения Tor перед регистрацией. */
         private const val TOR_WAIT_MS = 120_000L
+
+        /** Как часто проверять, не заблокирован ли Tor. */
+        private const val TOR_WATCH_MS = 2_000L
 
         /**
          * Минимальная длина PIN.

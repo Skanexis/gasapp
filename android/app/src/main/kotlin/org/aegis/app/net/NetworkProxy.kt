@@ -75,20 +75,34 @@ object NetworkProxy {
      * `null` — режим прочитать не удалось. 🔐 Тогда сеть закрывается:
      * повреждённая запись «Tor» не должна превращаться в «напрямую».
      *
-     * Для Tor встроенный Tor запускается здесь же (если ещё не
-     * запущен): режим без запущенного моста — закрытая сеть.
+     * Для Tor встроенный Tor запускается здесь же с мостами [bridges]
+     * (или перезапускается, если мосты другие): режим без запущенного
+     * моста — закрытая сеть. `null` в [bridges] — список мостов
+     * прочитать не удалось; 🔐 тогда сеть тоже закрывается: без мостов
+     * там, где они нужны, прямая попытка выдала бы Tor провайдеру.
+     *
+     * Другие режимы останавливают встроенный Tor: незачем держать
+     * цепочки, которыми никто не пользуется.
      */
-    fun apply(context: Context, mode: FfiProxy?) {
+    fun apply(context: Context, mode: FfiProxy?, bridges: List<String>? = emptyList()) {
         tor = mode is FfiProxy.Tor
         state = when (mode) {
             null -> State.Blocked
             is FfiProxy.Direct -> State.Direct
-            is FfiProxy.Tor -> EmbeddedTor.ensureStarted(context)
-                .takeIf { it != 0 }
+            is FfiProxy.Tor -> bridges
+                ?.let { EmbeddedTor.ensureStarted(context, it) }
+                ?.takeIf { it != 0 }
                 ?.let { port -> through(LOCALHOST, port) }
                 ?: State.Blocked
             is FfiProxy.Socks5 -> through(mode.host, mode.port.toInt())
         }
+
+        if (mode != null && mode !is FfiProxy.Tor) {
+            EmbeddedTor.stop()
+        }
+
+        // Заранее — только Tor без мостов (см. EmbeddedTor, «Прогрев»).
+        EmbeddedTor.rememberPrewarm(context, mode is FfiProxy.Tor && bridges != null && bridges.isEmpty())
     }
 
     /** Идёт ли сеть через встроенный Tor — для индикатора подключения. */

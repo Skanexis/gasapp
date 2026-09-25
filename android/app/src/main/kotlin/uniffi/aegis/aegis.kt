@@ -910,6 +910,14 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -969,9 +977,13 @@ fun uniffi_aegis_checksum_func_safety_number_qr(
 ): Short
 fun uniffi_aegis_checksum_func_start_embedded_tor(
 ): Short
+fun uniffi_aegis_checksum_func_stop_embedded_tor(
+): Short
 fun uniffi_aegis_checksum_func_validate_proxy(
 ): Short
 fun uniffi_aegis_checksum_func_validate_recovery_key(
+): Short
+fun uniffi_aegis_checksum_func_validate_tor_bridges(
 ): Short
 fun uniffi_aegis_checksum_method_httptransport_execute(
 ): Short
@@ -1083,11 +1095,15 @@ fun uniffi_aegis_checksum_method_messenger_set_setting_bool(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_set_setting_int(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_set_tor_bridges(
+): Short
 fun uniffi_aegis_checksum_method_messenger_setting_bool(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_setting_int(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_socket_auth_headers(
+): Short
+fun uniffi_aegis_checksum_method_messenger_tor_bridges(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_unlock_vault(
 ): Short
@@ -1269,11 +1285,15 @@ fun uniffi_aegis_fn_method_messenger_set_setting_bool(`ptr`: Pointer,`key`: Rust
 ): Unit
 fun uniffi_aegis_fn_method_messenger_set_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`value`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_aegis_fn_method_messenger_set_tor_bridges(`ptr`: Pointer,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_setting_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_method_messenger_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
 fun uniffi_aegis_fn_method_messenger_socket_auth_headers(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_tor_bridges(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_unlock_vault(`ptr`: Pointer,`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1325,9 +1345,13 @@ fun uniffi_aegis_fn_func_safety_number_qr(`digits`: RustBuffer.ByValue,uniffi_ou
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_start_embedded_tor(`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Short
+fun uniffi_aegis_fn_func_stop_embedded_tor(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_func_validate_proxy(`proxy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_func_validate_recovery_key(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_aegis_fn_func_validate_tor_bridges(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun ffi_aegis_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1518,13 +1542,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_safety_number_qr() != 62446.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_func_start_embedded_tor() != 48476.toShort()) {
+    if (lib.uniffi_aegis_checksum_func_start_embedded_tor() != 37484.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_stop_embedded_tor() != 10880.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_validate_proxy() != 16742.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_validate_recovery_key() != 56902.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_validate_tor_bridges() != 8097.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 53468.toShort()) {
@@ -1692,6 +1722,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_set_setting_int() != 1175.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_set_tor_bridges() != 43911.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_setting_bool() != 48572.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1699,6 +1732,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_socket_auth_headers() != 18159.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_tor_bridges() != 35051.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_unlock_vault() != 52238.toShort()) {
@@ -3240,6 +3276,17 @@ public interface MessengerInterface {
     fun `setSettingInt`(`key`: kotlin.String, `value`: kotlin.Long)
     
     /**
+     * Сохраняет мосты Tor (строка на мост) и возвращает их
+     * в нормальном виде. Пустой текст — без мостов.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — строка негодна (список
+     * отвергается целиком); [`FfiError::Core`] — запись не удалась.
+     */
+    fun `setTorBridges`(`text`: kotlin.String): List<kotlin.String>
+    
+    /**
      * Читает булеву настройку приложения.
      *
      * 🔐 Умолчание указывает приложение: оно разное у разных
@@ -3280,6 +3327,15 @@ public interface MessengerInterface {
      * не построилась.
      */
     fun `socketAuthHeaders`(`deviceId`: kotlin.String, `nowMillis`: kotlin.Long): List<FfiHeader>
+    
+    /**
+     * Мосты Tor; пусто — прямое подключение к сети Tor.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось либо запись повреждена.
+     */
+    fun `torBridges`(): List<kotlin.String>
     
     /**
      * Открывает File Vault после повторной аутентификации.
@@ -4702,6 +4758,28 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Сохраняет мосты Tor (строка на мост) и возвращает их
+     * в нормальном виде. Пустой текст — без мостов.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — строка негодна (список
+     * отвергается целиком); [`FfiError::Core`] — запись не удалась.
+     */
+    @Throws(FfiException::class)override fun `setTorBridges`(`text`: kotlin.String): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_set_tor_bridges(
+        it, FfiConverterString.lower(`text`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Читает булеву настройку приложения.
      *
      * 🔐 Умолчание указывает приложение: оно разное у разных
@@ -4769,6 +4847,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_socket_auth_headers(
         it, FfiConverterString.lower(`deviceId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Мосты Tor; пусто — прямое подключение к сети Tor.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение не удалось либо запись повреждена.
+     */
+    @Throws(FfiException::class)override fun `torBridges`(): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_tor_bridges(
+        it, _status)
 }
     }
     )
@@ -6075,8 +6173,9 @@ data class FfiTorSettings (
      */
     var `cacheDir`: kotlin.String, 
     /**
-     * Каталог приложения: предки его на Android принадлежат системе,
-     * и проверка прав Arti их пропускает. Сам каталог проверяется.
+     * Каталог, который вместе с предками проверка прав Arti пропускает:
+     * системные каталоги приложения на Android открыты группе
+     * приложения. Всё внутри него проверяется.
      */
     var `trustedPrefix`: kotlin.String?, 
     /**
@@ -6086,7 +6185,12 @@ data class FfiTorSettings (
     /**
      * Порт сервера AEGIS.
      */
-    var `serverPort`: kotlin.UShort
+    var `serverPort`: kotlin.UShort, 
+    /**
+     * Мосты Tor (как их возвращает `Messenger::tor_bridges`); пусто —
+     * прямое подключение к сети Tor.
+     */
+    var `bridges`: List<kotlin.String>
 ) {
     
     companion object
@@ -6103,6 +6207,7 @@ public object FfiConverterTypeFfiTorSettings: FfiConverterRustBuffer<FfiTorSetti
             FfiConverterOptionalString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterUShort.read(buf),
+            FfiConverterSequenceString.read(buf),
         )
     }
 
@@ -6111,7 +6216,8 @@ public object FfiConverterTypeFfiTorSettings: FfiConverterRustBuffer<FfiTorSetti
             FfiConverterString.allocationSize(value.`cacheDir`) +
             FfiConverterOptionalString.allocationSize(value.`trustedPrefix`) +
             FfiConverterString.allocationSize(value.`serverHost`) +
-            FfiConverterUShort.allocationSize(value.`serverPort`)
+            FfiConverterUShort.allocationSize(value.`serverPort`) +
+            FfiConverterSequenceString.allocationSize(value.`bridges`)
     )
 
     override fun write(value: FfiTorSettings, buf: ByteBuffer) {
@@ -6120,6 +6226,7 @@ public object FfiConverterTypeFfiTorSettings: FfiConverterRustBuffer<FfiTorSetti
             FfiConverterOptionalString.write(value.`trustedPrefix`, buf)
             FfiConverterString.write(value.`serverHost`, buf)
             FfiConverterUShort.write(value.`serverPort`, buf)
+            FfiConverterSequenceString.write(value.`bridges`, buf)
     }
 }
 
@@ -6148,7 +6255,11 @@ data class FfiTorStatus (
     /**
      * Порт моста на 127.0.0.1; 0 — не запущен.
      */
-    var `port`: kotlin.UShort
+    var `port`: kotlin.UShort, 
+    /**
+     * Подключается через мосты.
+     */
+    var `bridges`: kotlin.Boolean
 ) {
     
     companion object
@@ -6165,6 +6276,7 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterUByte.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterUShort.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -6173,7 +6285,8 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterBoolean.allocationSize(value.`ready`) +
             FfiConverterUByte.allocationSize(value.`percent`) +
             FfiConverterBoolean.allocationSize(value.`stalled`) +
-            FfiConverterUShort.allocationSize(value.`port`)
+            FfiConverterUShort.allocationSize(value.`port`) +
+            FfiConverterBoolean.allocationSize(value.`bridges`)
     )
 
     override fun write(value: FfiTorStatus, buf: ByteBuffer) {
@@ -6182,6 +6295,7 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterUByte.write(value.`percent`, buf)
             FfiConverterBoolean.write(value.`stalled`, buf)
             FfiConverterUShort.write(value.`port`, buf)
+            FfiConverterBoolean.write(value.`bridges`, buf)
     }
 }
 
@@ -7612,7 +7726,9 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
         /**
          * Запускает встроенный Tor и возвращает порт моста на 127.0.0.1.
          *
-         * Повторный вызов возвращает порт уже запущенного: мост один на процесс.
+         * Повторный вызов с теми же мостами возвращает порт уже запущенного:
+         * мост один на процесс. С другими мостами прежний Tor останавливается
+         * и запускается заново — порт может смениться.
          *
          * # Errors
          *
@@ -7629,6 +7745,19 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
 }
     )
     }
+    
+
+        /**
+         * Останавливает встроенный Tor (например, при выборе прямого
+         * соединения или SOCKS5): незачем держать цепочки, которыми никто
+         * не пользуется.
+         */ fun `stopEmbeddedTor`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_stop_embedded_tor(
+        _status)
+}
+    
     
 
         /**
@@ -7657,6 +7786,19 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_validate_recovery_key(
+        FfiConverterString.lower(`text`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Допустимы ли строки мостов (строка на мост) — для подсветки ошибки
+         * до сохранения.
+         */ fun `validateTorBridges`(`text`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_validate_tor_bridges(
         FfiConverterString.lower(`text`),_status)
 }
     )
