@@ -954,10 +954,14 @@ async fn publish_keys(
 /// сторона ничего не замечает — у неё просто «кто-то написал».
 ///
 /// Ключ ограничителя — устройство-получатель, а не адрес: адрес сервер
-/// не хранит. Отсюда и ограничение меры: тот же ограничитель мешает
-/// и честным собеседникам жертвы, если запас выбирают слишком быстро.
-/// Размен сознательный — исчерпанный запас хуже отложенной отправки,
-/// потому что он не отображается никак.
+/// не хранит.
+///
+/// 🔐 Ограничитель бережёт **пул**, а не закрывает дверь: сверх бюджета
+/// выдаётся bundle без одноразовых предключей (`degraded = true`), а не
+/// 429. Прежде был отказ — и посторонний, бесплатно выбирая десять
+/// запросов в минуту, не давал никому новому начать переписку с жертвой.
+/// Сессия на подписанных предключах остаётся стойкой; одноразовый ключ
+/// добавляет только прямую секретность первого сообщения.
 async fn take_bundle(
     State(state): State<Arc<AppState>>,
     Path(device_id): Path<Uuid>,
@@ -965,18 +969,20 @@ async fn take_bundle(
     let key = rate_limit::key_from_addr(&state.limiter_salt, &device_id.to_string());
     let now = now_millis();
 
-    {
+    let within_budget = {
         let mut limiter = state
             .bundle_limiter
             .lock()
             .map_err(|_| ApiError::Internal)?;
 
-        if !limiter.allow(key, now) {
-            return Err(ApiError::TooManyRequests);
-        }
-    }
+        limiter.allow(key, now)
+    };
 
-    let bundle = repo::take_prekey_bundle(&state.pool, device_id).await?;
+    let bundle = if within_budget {
+        repo::take_prekey_bundle(&state.pool, device_id).await?
+    } else {
+        repo::signed_prekey_bundle(&state.pool, device_id).await?
+    };
     let degraded = bundle.one_time.is_none() || bundle.one_time_kem.is_none();
 
     let account = repo::account_of_device(&state.pool, bundle.device_id).await?;

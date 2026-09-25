@@ -611,6 +611,52 @@ async fn first_contacts_do_not_starve_friends() {
     );
 }
 
+/// 🔐 Бесплатный перебор bundle не закрывает дверь новым собеседникам:
+/// сверх бюджета выдаётся bundle без одноразовых ключей, а не 429,
+/// и пул одноразовых ключей сверх бюджета не расходуется.
+#[tokio::test]
+async fn draining_the_bundle_budget_does_not_lock_out_new_contacts() {
+    let state = require_state!();
+    let (device_id, private) = register_signing_device(&state, &unique_name("sought"), 0x65).await;
+
+    let one_time: Vec<_> = (0..40)
+        .map(|i| serde_json::json!([100 + i, hex::encode([0x33u8; 32])]))
+        .collect();
+    let (status, _) = call_signed_json(
+        &state,
+        &private,
+        "PUT",
+        &format!("/v1/keys/{device_id}"),
+        Some(serde_json::json!({
+            "signed_key_id": 1,
+            "signed_public": hex::encode([0x11u8; 32]),
+            "signed_signature": hex::encode([0xAAu8; 64]),
+            "kem_key_id": 2,
+            "kem_public": hex::encode([0x22u8; 1568]),
+            "kem_signature": hex::encode([0xBBu8; 64]),
+            "one_time": one_time,
+            "one_time_kem": [],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let mut issued = 0;
+    for _ in 0..(aegis_server_api::rate_limit::BUNDLE_PER_MINUTE * 3) {
+        let (status, bundle) =
+            call(&state, "GET", &format!("/v1/keys/{device_id}/bundle"), None).await;
+        assert_eq!(status, StatusCode::OK, "новому собеседнику отказано");
+        if !bundle["one_time"].is_null() {
+            issued += 1;
+        }
+    }
+
+    assert!(
+        issued <= aegis_server_api::rate_limit::BUNDLE_PER_MINUTE,
+        "сверх бюджета выдано одноразовых ключей: {issued}"
+    );
+}
+
 /// Подбирает решение первого контакта для конверта этому получателю.
 fn solve_first_contact(destination: Uuid, sealed: &[u8]) -> u64 {
     let challenge = pow::first_contact_challenge(&destination.to_string(), sealed);
