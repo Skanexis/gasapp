@@ -87,7 +87,14 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
                 connection.errorStream
             }
 
-            val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+            // 🔐 С пределом: ответ длиной в гигабайт (сервер злонамерен
+            // или взломан — модель угроз проекта это допускает) иначе
+            // уронил бы приложение нехваткой памяти.
+            val limit = if (binaryDownload(method, path)) MAX_BINARY_RESPONSE else MAX_TEXT_RESPONSE
+            if (connection.contentLengthLong > limit) {
+                throw IOException("response too large")
+            }
+            val bytes = stream?.use { readLimited(it, limit) } ?: ByteArray(0)
 
             // Ответ отдаётся и текстом, и байтами: какой из них нужен,
             // знает ядро — оно и решает по запросу. Разбирать здесь
@@ -113,6 +120,24 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
         } finally {
             connection.disconnect()
         }
+    }
+
+    /** Читает поток целиком, но не больше [limit] байт. */
+    @Throws(IOException::class)
+    private fun readLimited(stream: java.io.InputStream, limit: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(READ_BUFFER)
+        var total = 0
+
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > limit) throw IOException("response too large")
+            out.write(buffer, 0, read)
+        }
+
+        return out.toByteArray()
     }
 
     /**
@@ -158,6 +183,17 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
     }
 
     private companion object {
+        /**
+         * Предел текстового ответа: очередь — до 100 конвертов по 256 КБ
+         * в hex, около 51 МБ, с запасом.
+         */
+        const val MAX_TEXT_RESPONSE = 64 * 1024 * 1024
+
+        /** Предел скачанного вложения: сервер хранит до 101 МБ. */
+        const val MAX_BINARY_RESPONSE = 128 * 1024 * 1024
+
+        const val READ_BUFFER = 64 * 1024
+
         /**
          * Ожидание установления соединения.
          *

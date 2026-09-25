@@ -175,6 +175,12 @@ impl<T: Transport> Client<T> {
         for _ in 0..MAX_HEAD_PAGES {
             let response = self.api.kt_heads(previous.map(|(epoch, _)| epoch))?;
             let page = response.epochs.len();
+
+            // 🔐 Страница длиннее серверной — не наш сервер или не честный:
+            // миллион «эпох» иначе лёг бы в базу.
+            if page > MAX_PER_REQUEST {
+                return Err(AegisError::Malformed);
+            }
             let mut verified = Vec::with_capacity(page);
 
             for view in &response.epochs {
