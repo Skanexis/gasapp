@@ -523,6 +523,22 @@ impl<'a> Vault<'a> {
         let file_key = aegis_keystore::unwrap_key(&vault_key, &row.wrapped_key)?;
         let file_key = AttachmentKey::from_bytes(*file_key.expose_secret());
 
+        // 🔐 Длина шифроблоба однозначно следует из размера файла: чанки
+        // по 64 КБ и тег на каждый. Без этой сверки блоб, обрезанный по
+        // границе чанка (оборванная запись, подмена на диске), честно
+        // расшифровывался бы — и отдавался как целый файл, только короче.
+        let size = usize::try_from(row.size).map_err(|_| AegisError::Malformed)?;
+        let chunks =
+            usize::try_from(attachment::chunk_count(size)?).map_err(|_| AegisError::Malformed)?;
+        let expected = chunks
+            .checked_mul(attachment::TAG_LEN)
+            .and_then(|tags| size.checked_add(tags))
+            .ok_or(AegisError::Malformed)?;
+
+        if ciphertext.len() != expected {
+            return Err(AegisError::Crypto);
+        }
+
         let mut plaintext = Vec::new();
         for (index, chunk) in ciphertext
             .chunks(attachment::ENCRYPTED_CHUNK_SIZE)
@@ -772,6 +788,45 @@ mod file_tests {
             .expect("чтение");
 
         assert_eq!(plaintext, FILE_CANARY);
+    }
+
+    /// 🔐 Блоб, обрезанный по границе чанка или дополненный, не
+    /// выдаётся за целый файл.
+    #[test]
+    fn a_truncated_blob_is_not_a_shorter_file() {
+        let (storage, _dir) = open_storage();
+        let mut keeper = VaultGuard::new(now());
+        let mut vault = Vault::new(&storage, &mut keeper);
+        vault.unlock(PIN, &SALT, now()).expect("открытие");
+
+        // Три чанка: обрезка по границе второго оставляет валидные чанки.
+        let content = vec![0x42u8; attachment::CHUNK_SIZE * 2 + 10];
+        let sealed = vault
+            .add_file("большой.bin", &content, "vault/3.enc", now(), &mut OsRng)
+            .expect("добавление");
+
+        let cut = sealed
+            .ciphertext
+            .get(..attachment::ENCRYPTED_CHUNK_SIZE * 2)
+            .expect("два чанка");
+        assert!(
+            vault.open_file(&sealed.file_id, cut, now()).is_err(),
+            "обрезанный принят"
+        );
+
+        let mut longer = sealed.ciphertext.clone();
+        longer.push(0);
+        assert!(
+            vault.open_file(&sealed.file_id, &longer, now()).is_err(),
+            "удлинённый принят"
+        );
+
+        assert_eq!(
+            vault
+                .open_file(&sealed.file_id, &sealed.ciphertext, now())
+                .expect("целый"),
+            content
+        );
     }
 
     /// 🔐 Шифроблоб не содержит открытого содержимого.
