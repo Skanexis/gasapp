@@ -1324,7 +1324,11 @@ pub async fn rebind_account(
             pq_identity_key  = $3,
             identity_binding = $4,
             recovered_at     = $5,
-            active_month     = date_trunc('month', now())::date
+            active_month     = date_trunc('month', now())::date,
+            -- Новая identity — новая версия листа в журнале ключей
+            -- (миграция 0014): владелец имени отличает свою смену
+            -- ключа от подмены.
+            key_version      = key_version + 1
         WHERE account_id = $1
         ",
     )
@@ -1348,4 +1352,347 @@ pub async fn rebind_account(
     transaction.commit().await?;
 
     Ok(device_id)
+}
+
+// ---------------------------------------------------------------------------
+// Прозрачность ключей (миграция 0014, `crate::kt`)
+// ---------------------------------------------------------------------------
+
+/// Строка `kt_leaves`: индекс, ключ, хеш половины, версия.
+type KtLeafRow = (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>, i64);
+
+/// Ключ advisory-блокировки построения эпохи: эпоху строит один узел.
+const KT_LOCK: i64 = 0x4145_4749_535f_4b54; // "AEGIS_KT"
+
+/// Лист журнала в эпохе.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KtLeaf {
+    /// Индекс (хеш имени).
+    pub idx: [u8; 32],
+    /// Identity-ключ.
+    pub identity_key: [u8; 32],
+    /// Хеш пост-квантовой половины.
+    pub pq_hash: [u8; 32],
+    /// Версия ключа имени.
+    pub version: u64,
+}
+
+impl KtLeaf {
+    /// Пара «индекс, значение листа» для дерева.
+    #[must_use]
+    pub fn entry(&self) -> ([u8; 32], [u8; 32]) {
+        (
+            self.idx,
+            crate::kt::leaf_value(&self.idx, &self.identity_key, &self.pq_hash, self.version),
+        )
+    }
+}
+
+/// Эпоха журнала.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KtEpoch {
+    /// Номер.
+    pub epoch: i64,
+    /// Корень дерева.
+    pub root: [u8; 32],
+    /// Вершина хеш-цепочки.
+    pub head: [u8; 32],
+}
+
+fn to32(bytes: &[u8]) -> Option<[u8; 32]> {
+    bytes.try_into().ok()
+}
+
+/// Строит эпоху `epoch`, если её ещё нет, и возвращает её.
+///
+/// Одна транзакция под advisory-блокировкой: узлов API несколько,
+/// и эпоху строит тот, кто первым взял блокировку; остальные находят
+/// её готовой. Эпоха не строится задним числом — только после последней.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+// Одна транзакция от начала до конца: разбивка на функции потребовала
+// бы передавать транзакцию и промежуточные карты, не упростив чтение.
+#[allow(clippy::too_many_lines)]
+pub async fn kt_build_epoch(pool: &PgPool, epoch: i64) -> Result<Option<KtEpoch>, RepoError> {
+    let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
+
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(KT_LOCK)
+        .execute(&mut *transaction)
+        .await?;
+
+    let latest: Option<(i64, Vec<u8>)> =
+        sqlx::query_as("SELECT epoch, head FROM kt_epochs ORDER BY epoch DESC LIMIT 1")
+            .fetch_optional(&mut *transaction)
+            .await?;
+
+    if latest.as_ref().is_some_and(|(last, _)| *last >= epoch) {
+        return Ok(None);
+    }
+
+    let previous = latest
+        .and_then(|(_, head)| to32(&head))
+        .unwrap_or(crate::kt::ZERO);
+
+    // Желаемое состояние — из аккаунтов. Аккаунты без пост-квантовой
+    // половины (созданные до неё) в журнал не попадают: их ключ
+    // по-прежнему подтверждается только лично.
+    let accounts: Vec<(String, Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
+        "SELECT username, identity_key, pq_identity_key, key_version
+         FROM accounts WHERE pq_identity_key IS NOT NULL",
+    )
+    .fetch_all(&mut *transaction)
+    .await?;
+
+    let mut desired: std::collections::BTreeMap<[u8; 32], KtLeaf> =
+        std::collections::BTreeMap::new();
+    for (username, identity_key, pq_key, version) in accounts {
+        let (Some(identity_key), Ok(version)) = (to32(&identity_key), u64::try_from(version))
+        else {
+            continue;
+        };
+        let idx = crate::kt::index(&username);
+        desired.insert(
+            idx,
+            KtLeaf {
+                idx,
+                identity_key,
+                pq_hash: crate::kt::pq_identity_hash(&pq_key),
+                version,
+            },
+        );
+    }
+
+    // Текущее состояние журнала — последняя строка по каждому индексу.
+    let current: Vec<KtLeafRow> = sqlx::query_as(
+        "SELECT DISTINCT ON (idx) idx, identity_key, pq_hash, version
+         FROM kt_leaves ORDER BY idx, epoch_from DESC",
+    )
+    .fetch_all(&mut *transaction)
+    .await?;
+
+    let mut present: std::collections::BTreeMap<[u8; 32], Option<KtLeaf>> =
+        std::collections::BTreeMap::new();
+    for (idx, identity_key, pq_hash, version) in current {
+        let Some(idx) = to32(&idx) else { continue };
+        let leaf = match (
+            identity_key.as_deref().and_then(to32),
+            pq_hash.as_deref().and_then(to32),
+        ) {
+            (Some(identity_key), Some(pq_hash)) => {
+                u64::try_from(version).ok().map(|version| KtLeaf {
+                    idx,
+                    identity_key,
+                    pq_hash,
+                    version,
+                })
+            }
+            _ => None,
+        };
+        present.insert(idx, leaf);
+    }
+
+    // Изменившиеся и новые листы.
+    for (idx, leaf) in &desired {
+        if present.get(idx).and_then(Option::as_ref) != Some(leaf) {
+            sqlx::query(
+                "INSERT INTO kt_leaves (idx, epoch_from, identity_key, pq_hash, version)
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(idx.as_slice())
+            .bind(epoch)
+            .bind(leaf.identity_key.as_slice())
+            .bind(leaf.pq_hash.as_slice())
+            .bind(i64::try_from(leaf.version).unwrap_or(i64::MAX))
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+
+    // Исчезнувшие имена — надгробие.
+    for (idx, leaf) in &present {
+        if let (Some(leaf), false) = (leaf, desired.contains_key(idx)) {
+            sqlx::query(
+                "INSERT INTO kt_leaves (idx, epoch_from, identity_key, pq_hash, version)
+                 VALUES ($1, $2, NULL, NULL, $3)",
+            )
+            .bind(idx.as_slice())
+            .bind(epoch)
+            .bind(i64::try_from(leaf.version).unwrap_or(i64::MAX))
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+
+    let tree = crate::kt::Tree::new(desired.values().map(KtLeaf::entry).collect());
+    let root = tree.root();
+    let head = crate::kt::head(u64::try_from(epoch).unwrap_or(0), &root, &previous);
+
+    sqlx::query("INSERT INTO kt_epochs (epoch, root, head) VALUES ($1, $2, $3)")
+        .bind(epoch)
+        .bind(root.as_slice())
+        .bind(head.as_slice())
+        .execute(&mut *transaction)
+        .await?;
+
+    // 🔐 Срок хранения: строка удаляется, когда её сменила строка
+    // старше окна истории, — то есть в окне она уже нигде не
+    // действовала. Надгробия и эпохи старше окна — тоже.
+    let cutoff = epoch.saturating_sub(crate::kt::HISTORY_EPOCHS);
+
+    sqlx::query(
+        "DELETE FROM kt_leaves a WHERE EXISTS (
+             SELECT 1 FROM kt_leaves b
+             WHERE b.idx = a.idx AND b.epoch_from > a.epoch_from AND b.epoch_from <= $1)",
+    )
+    .bind(cutoff)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query("DELETE FROM kt_leaves WHERE identity_key IS NULL AND epoch_from <= $1")
+        .bind(cutoff)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query("DELETE FROM kt_epochs WHERE epoch < $1")
+        .bind(cutoff)
+        .execute(&mut *transaction)
+        .await?;
+
+    transaction.commit().await?;
+
+    Ok(Some(KtEpoch { epoch, root, head }))
+}
+
+/// Эпохи начиная с `from` (включительно), не больше `limit`.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn kt_epochs_from(
+    pool: &PgPool,
+    from: i64,
+    limit: i64,
+) -> Result<Vec<KtEpoch>, RepoError> {
+    let rows: Vec<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT epoch, root, head FROM kt_epochs WHERE epoch >= $1 ORDER BY epoch LIMIT $2",
+    )
+    .bind(from)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|(epoch, root, head)| {
+            Some(KtEpoch {
+                epoch,
+                root: to32(&root)?,
+                head: to32(&head)?,
+            })
+        })
+        .collect())
+}
+
+/// Последняя эпоха.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn kt_latest_epoch(pool: &PgPool) -> Result<Option<KtEpoch>, RepoError> {
+    kt_epochs_before(pool, i64::MAX).await
+}
+
+/// Последняя эпоха не позже `epoch`.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn kt_epochs_before(pool: &PgPool, epoch: i64) -> Result<Option<KtEpoch>, RepoError> {
+    let row: Option<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT epoch, root, head FROM kt_epochs WHERE epoch <= $1 ORDER BY epoch DESC LIMIT 1",
+    )
+    .bind(epoch)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.and_then(|(epoch, root, head)| {
+        Some(KtEpoch {
+            epoch,
+            root: to32(&root)?,
+            head: to32(&head)?,
+        })
+    }))
+}
+
+/// С какой эпохи действует состояние журнала на эпоху `epoch`:
+/// последняя эпоха изменения не позже неё. Эпохи с одинаковым
+/// значением — одно и то же дерево (ключ кеша).
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn kt_state_epoch(pool: &PgPool, epoch: i64) -> Result<Option<i64>, RepoError> {
+    Ok(
+        sqlx::query_scalar("SELECT max(epoch_from) FROM kt_leaves WHERE epoch_from <= $1")
+            .bind(epoch)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+/// Листы журнала, действующие в эпоху `epoch`.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn kt_leaves_at(pool: &PgPool, epoch: i64) -> Result<Vec<KtLeaf>, RepoError> {
+    let rows: Vec<KtLeafRow> = sqlx::query_as(
+        "SELECT DISTINCT ON (idx) idx, identity_key, pq_hash, version
+         FROM kt_leaves WHERE epoch_from <= $1 ORDER BY idx, epoch_from DESC",
+    )
+    .bind(epoch)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|(idx, identity_key, pq_hash, version)| {
+            Some(KtLeaf {
+                idx: to32(&idx)?,
+                identity_key: to32(identity_key.as_deref()?)?,
+                pq_hash: to32(pq_hash.as_deref()?)?,
+                version: u64::try_from(version).ok()?,
+            })
+        })
+        .collect())
+}
+
+/// Лист индекса, действующий в эпоху `epoch`.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn kt_leaf_at(
+    pool: &PgPool,
+    idx: &[u8; 32],
+    epoch: i64,
+) -> Result<Option<KtLeaf>, RepoError> {
+    let row: Option<KtLeafRow> = sqlx::query_as(
+        "SELECT idx, identity_key, pq_hash, version FROM kt_leaves
+         WHERE idx = $1 AND epoch_from <= $2 ORDER BY epoch_from DESC LIMIT 1",
+    )
+    .bind(idx.as_slice())
+    .bind(epoch)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.and_then(|(idx, identity_key, pq_hash, version)| {
+        Some(KtLeaf {
+            idx: to32(&idx)?,
+            identity_key: to32(identity_key.as_deref()?)?,
+            pq_hash: to32(pq_hash.as_deref()?)?,
+            version: u64::try_from(version).ok()?,
+        })
+    }))
 }

@@ -431,6 +431,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/v1/auth/verify", post(verify_auth))
         .route("/v1/discovery/username/:username", get(discovery))
+        // 🔐 Журнал ключей (§9.7): без аутентификации — сервер не должен
+        // знать, кто проверяет, иначе показал бы проверяющему своё дерево.
+        .route("/v1/kt/heads", get(crate::kt::heads_all))
+        .route("/v1/kt/heads/:from", get(crate::kt::heads_from))
+        .route("/v1/kt/proofs", post(crate::kt::proofs))
         .route("/v1/keys/:device_id", put(publish_keys))
         .route("/v1/keys/:device_id/bundle", get(take_bundle))
         .route("/v1/keys/:device_id/count", get(count_keys))

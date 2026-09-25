@@ -38,7 +38,8 @@ const BOOTSTRAP_LOCK: i64 = 0x0AE6_1500;
 ///
 /// Хранится в базе. Пока он совпадает, схема не пересоздаётся —
 /// значит второй набор тестов не снесёт таблицы из-под первого.
-const SCHEMA_FINGERPRINT: &str = "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013";
+const SCHEMA_FINGERPRINT: &str =
+    "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013+0014";
 
 /// Адрес тестовой базы, если он задан.
 ///
@@ -97,7 +98,7 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
         // на пустую базу. Здесь схема готовится к прогону, поэтому
         // прежняя сносится целиком.
         sqlx::raw_sql(
-            "DROP TABLE IF EXISTS aegis_test_schema, sealed_sender_reports,
+            "DROP TABLE IF EXISTS aegis_test_schema, kt_leaves, kt_epochs, sealed_sender_reports,
                  sealed_sender_access, attachments, push_tokens, envelopes,
                  one_time_prekeys, signed_prekeys, devices, accounts CASCADE",
         )
@@ -122,6 +123,7 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
             include_str!("../migrations/0011_inactive_accounts.sql"),
             include_str!("../migrations/0012_pq_identity.sql"),
             include_str!("../migrations/0013_account_recovery.sql"),
+            include_str!("../migrations/0014_key_transparency.sql"),
         ] {
             sqlx::raw_sql(migration)
                 .execute(&mut *conn)

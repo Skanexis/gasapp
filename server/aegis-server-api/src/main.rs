@@ -177,6 +177,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `purge_expired` не вызывал никто, и истёкшее лежало в базе
     // навсегда (см. `retention`).
     tokio::spawn(aegis_server_api::retention::run(pool.clone()));
+    // Эпохи журнала ключей (§9.7): строит один узел, остальные находят
+    // эпоху готовой.
+    tokio::spawn(aegis_server_api::kt::run(pool.clone()));
 
     tokio::spawn(aegis_server_api::hub::listen(
         pool,
