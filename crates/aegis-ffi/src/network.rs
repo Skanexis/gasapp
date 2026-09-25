@@ -27,8 +27,8 @@ pub enum FfiProxy {
         /// Порт прокси.
         port: u16,
     },
-    /// Через Tor с помощью Orbot на этом устройстве.
-    Orbot,
+    /// Через Tor, встроенный в приложение.
+    Tor,
 }
 
 impl From<ProxyMode> for FfiProxy {
@@ -36,7 +36,7 @@ impl From<ProxyMode> for FfiProxy {
         match mode {
             ProxyMode::Direct => Self::Direct,
             ProxyMode::Socks5 { host, port } => Self::Socks5 { host, port },
-            ProxyMode::Orbot => Self::Orbot,
+            ProxyMode::Tor => Self::Tor,
         }
     }
 }
@@ -46,7 +46,7 @@ impl From<FfiProxy> for ProxyMode {
         match proxy {
             FfiProxy::Direct => Self::Direct,
             FfiProxy::Socks5 { host, port } => Self::Socks5 { host, port },
-            FfiProxy::Orbot => Self::Orbot,
+            FfiProxy::Tor => Self::Tor,
         }
     }
 }
@@ -164,7 +164,7 @@ mod tests {
     fn proxy_crosses_the_boundary_unchanged() {
         for mode in [
             ProxyMode::Direct,
-            ProxyMode::Orbot,
+            ProxyMode::Tor,
             ProxyMode::Socks5 {
                 host: "proxy.example.org".to_owned(),
                 port: 1080,
@@ -177,7 +177,7 @@ mod tests {
     /// Проверка режима повторяет проверку ядра.
     #[test]
     fn validation_matches_the_core() {
-        assert!(validate_proxy(FfiProxy::Orbot));
+        assert!(validate_proxy(FfiProxy::Tor));
         assert!(validate_proxy(FfiProxy::Socks5 {
             host: "10.0.0.1".to_owned(),
             port: 9050,

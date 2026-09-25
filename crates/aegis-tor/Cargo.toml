@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "aegis-tor"
+description = "Встроенный Tor (Arti): локальный SOCKS5-мост только к серверу AEGIS"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Arti — реализация Tor на Rust от Tor Project (MIT OR Apache-2.0).
+#
+# 🔐 default-features = false: без native-tls (OpenSSL) и без
+# onion-сервисов, которые нам не нужны. rustls — TLS до входного узла;
+# tokio — рантайм; compression — сжатие каталогов (иначе бутстрап
+# качает в разы больше).
+arti-client = { version = "=0.46.0", default-features = false, features = ["tokio", "rustls", "compression", "pt-client"] }
+# Тот же tor-rtcompat, что внутри arti-client: тип рантайма клиента.
+tor-rtcompat = { version = "=0.46.0", default-features = false, features = ["tokio", "rustls"] }
+# Криптопровайдер TLS до узлов Tor. Arti оставляет выбор приложению.
+#
+# ring, а не aws-lc-rs: собирается NDK-компилятором без cmake и NASM.
+# Этот TLS — только транспорт до входного узла: подлинность узлов Tor
+# проверяет сам протокол Tor (сертификаты CERTS, ntor), а содержимое
+# шифруется слоями Tor и ещё раз TLS платформы до сервера AEGIS.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+thiserror.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }

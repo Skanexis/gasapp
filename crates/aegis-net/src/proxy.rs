@@ -56,12 +56,6 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use aegis_types::{AegisError, Result};
 
-/// Адрес Orbot: локальный SOCKS-порт на самом устройстве.
-pub const ORBOT_HOST: &str = "127.0.0.1";
-
-/// SOCKS-порт Orbot по умолчанию.
-pub const ORBOT_SOCKS_PORT: u16 = 9050;
-
 /// Предел длины имени хоста (RFC 1035).
 pub const MAX_HOST_LEN: usize = 253;
 
@@ -71,8 +65,12 @@ const MAX_LABEL_LEN: usize = 63;
 /// Запись настройки: напрямую.
 const SETTING_DIRECT: &str = "direct";
 
-/// Запись настройки: Tor через Orbot.
-const SETTING_ORBOT: &str = "orbot";
+/// Запись настройки: встроенный Tor.
+const SETTING_TOR: &str = "tor";
+
+/// Прежняя запись «Tor через Orbot» (до 2026-09-25). Читается как
+/// встроенный Tor: человек выбирал Tor, и Tor он получает — без Orbot.
+const SETTING_LEGACY_ORBOT: &str = "orbot";
 
 /// Приставка записи настройки SOCKS5.
 const SETTING_SOCKS5_PREFIX: &str = "socks5:";
@@ -83,7 +81,7 @@ pub enum ProxyMode {
     /// Напрямую: сервер видит IP-адрес.
     ///
     /// ⚠️ Прежде это было умолчанием — ради того, чтобы работало из
-    /// коробки. С 2026-09-24 умолчание — Tor ([`ProxyMode::Orbot`]):
+    /// коробки. С 2026-09-24 умолчание — Tor ([`ProxyMode::Tor`]):
     /// владелец продукта требует, чтобы сервер не знал адресов, а
     /// напрямую можно подключиться только явным выбором с
     /// предупреждением.
@@ -97,10 +95,14 @@ pub enum ProxyMode {
         port: u16,
     },
 
-    /// Через Tor с помощью Orbot на этом же устройстве.
+    /// Через Tor, встроенный в приложение (`aegis-tor`, Arti).
     /// 🔐 Умолчание: адрес устройства сервер не видит.
+    ///
+    /// Порт моста случайный и известен только во время работы, поэтому
+    /// [`ProxyMode::endpoint`] для этого режима пуст: адрес берёт
+    /// платформа у запущенного моста.
     #[default]
-    Orbot,
+    Tor,
 }
 
 impl ProxyMode {
@@ -113,7 +115,7 @@ impl ProxyMode {
     /// и пустые метки отвергаются.
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::Direct | Self::Orbot => Ok(()),
+            Self::Direct | Self::Tor => Ok(()),
             Self::Socks5 { host, port } => {
                 if *port == 0 {
                     return Err(AegisError::Malformed);
@@ -124,13 +126,15 @@ impl ProxyMode {
         }
     }
 
-    /// Адрес, к которому подключается транспорт, если прокси включён.
+    /// Адрес внешнего прокси, если режим его задаёт.
+    ///
+    /// `None` — напрямую либо встроенный Tor (его порт знает только
+    /// запущенный мост).
     #[must_use]
     pub fn endpoint(&self) -> Option<(&str, u16)> {
         match self {
-            Self::Direct => None,
+            Self::Direct | Self::Tor => None,
             Self::Socks5 { host, port } => Some((host.as_str(), *port)),
-            Self::Orbot => Some((ORBOT_HOST, ORBOT_SOCKS_PORT)),
         }
     }
 
@@ -145,7 +149,7 @@ impl ProxyMode {
     pub fn to_setting(&self) -> String {
         match self {
             Self::Direct => SETTING_DIRECT.to_owned(),
-            Self::Orbot => SETTING_ORBOT.to_owned(),
+            Self::Tor => SETTING_TOR.to_owned(),
             Self::Socks5 { host, port } => format!("{SETTING_SOCKS5_PREFIX}{host}:{port}"),
         }
     }
@@ -161,7 +165,7 @@ impl ProxyMode {
     pub fn from_setting(value: &str) -> Result<Self> {
         match value {
             SETTING_DIRECT => Ok(Self::Direct),
-            SETTING_ORBOT => Ok(Self::Orbot),
+            SETTING_TOR | SETTING_LEGACY_ORBOT => Ok(Self::Tor),
             other => {
                 let address = other
                     .strip_prefix(SETTING_SOCKS5_PREFIX)
@@ -247,17 +251,28 @@ mod tests {
     /// 🔐 Умолчание — Tor: сервер не видит адреса устройства.
     #[test]
     fn default_is_tor() {
-        assert_eq!(ProxyMode::default(), ProxyMode::Orbot);
+        assert_eq!(ProxyMode::default(), ProxyMode::Tor);
         assert!(ProxyMode::default().hides_address());
         assert!(!ProxyMode::Direct.hides_address());
         assert_eq!(ProxyMode::Direct.endpoint(), None);
     }
 
-    /// Orbot — это Tor на локальном порту самого устройства.
+    /// Встроенный Tor скрывает адрес, а порт моста — дело платформы.
     #[test]
-    fn orbot_points_at_local_tor() {
-        assert_eq!(ProxyMode::Orbot.endpoint(), Some(("127.0.0.1", 9050)));
-        assert!(ProxyMode::Orbot.hides_address());
+    fn embedded_tor_hides_the_address() {
+        assert_eq!(ProxyMode::Tor.endpoint(), None);
+        assert!(ProxyMode::Tor.hides_address());
+    }
+
+    /// Прежняя запись «Tor через Orbot» читается как встроенный Tor:
+    /// обновление не превращает выбор Tor в прямое соединение.
+    #[test]
+    fn the_old_orbot_setting_means_embedded_tor() {
+        assert_eq!(
+            ProxyMode::from_setting("orbot").expect("запись"),
+            ProxyMode::Tor
+        );
+        assert_eq!(ProxyMode::Tor.to_setting(), "tor");
     }
 
     /// Запись настройки переживает хранение для каждого режима.
@@ -265,7 +280,7 @@ mod tests {
     fn settings_round_trip() {
         for mode in [
             ProxyMode::Direct,
-            ProxyMode::Orbot,
+            ProxyMode::Tor,
             socks("proxy.example.org", 1080),
             socks("10.0.0.1", 9050),
             socks("::1", 1080),
@@ -334,7 +349,7 @@ mod tests {
     fn corrupted_setting_does_not_fall_back_to_direct() {
         for value in [
             "",
-            "tor",
+            "TOR",
             "DIRECT",
             "socks5:",
             "socks5:host",

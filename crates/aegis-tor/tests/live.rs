@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Живая проверка встроенного Tor: настоящая сеть Tor, настоящий выход.
+//!
+//! Выключена по умолчанию — нужна сеть и минута на бутстрап:
+//!
+//! ```text
+//! cargo test -p aegis-tor --test live -- --ignored --nocapture
+//! ```
+
+// Сбой вспомогательной функции — провал теста, а не отказ у пользователя.
+#![allow(clippy::expect_used)]
+
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, TcpStream};
+use std::time::{Duration, Instant};
+
+use aegis_tor::{Allowlist, EmbeddedTor, TorSettings, TorStatus, Transport};
+
+/// Разрешённое назначение: простой HTTP-сайт, чтобы не тащить TLS в тест.
+const HOST: &str = "example.com";
+const PORT: u16 = 80;
+
+fn socks_connect(port: u16, host: &str) -> (TcpStream, u8) {
+    let mut socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("мост");
+    socket
+        .set_read_timeout(Some(Duration::from_mins(3)))
+        .expect("таймаут");
+
+    let mut request = vec![
+        5,
+        1,
+        0,
+        5,
+        1,
+        0,
+        3,
+        u8::try_from(host.len()).expect("длина"),
+    ];
+    request.extend_from_slice(host.as_bytes());
+    request.extend_from_slice(&PORT.to_be_bytes());
+    socket.write_all(&request).expect("запрос");
+
+    let mut answer = [0u8; 12];
+    socket.read_exact(&mut answer).expect("ответ");
+
+    (socket, answer[3])
+}
+
+#[test]
+#[ignore = "нужна сеть Tor"]
+fn a_request_goes_through_real_tor_and_nothing_else_does() {
+    // Журнал Arti — по RUST_LOG (например, RUST_LOG=info).
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .try_init();
+
+    let dir = tempfile::tempdir().expect("каталог");
+
+    // Мосты — там, где Tor блокируют: AEGIS_TOR_BRIDGES — файл со
+    // строками мостов, AEGIS_TOR_LYREBIRD — путь к lyrebird.
+    let bridges: Vec<String> = std::env::var("AEGIS_TOR_BRIDGES")
+        .map(|path| {
+            std::fs::read_to_string(path)
+                .expect("файл мостов")
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let transports = std::env::var("AEGIS_TOR_LYREBIRD")
+        .map(|path| {
+            vec![Transport::Managed {
+                protocols: ["obfs4", "snowflake", "webtunnel", "meek_lite"]
+                    .map(str::to_owned)
+                    .to_vec(),
+                path: path.into(),
+                arguments: Vec::new(),
+            }]
+        })
+        .unwrap_or_default();
+    eprintln!("мостов: {}", bridges.len());
+    let tor = EmbeddedTor::start(TorSettings {
+        state_dir: dir.path().join("state"),
+        cache_dir: dir.path().join("cache"),
+        trusted_prefix: None,
+        destinations: Allowlist::new([(HOST, PORT)]),
+        bridges: bridges.clone(),
+        transports,
+    })
+    .expect("запуск");
+
+    // 🔐 Чужое назначение — отказ ещё до Tor.
+    let (_, code) = socks_connect(tor.port(), "torproject.org");
+    assert_eq!(code, 2, "мост пропустил чужое назначение");
+
+    // Бутстрап: ход виден в выводе.
+    let started = Instant::now();
+    let mut last = None;
+    while tor.status() != TorStatus::Ready && started.elapsed() < Duration::from_mins(3) {
+        if last != Some(tor.status()) {
+            last = Some(tor.status());
+            eprintln!(
+                "{:>5.1} с  {:?}",
+                started.elapsed().as_secs_f32(),
+                tor.status()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    eprintln!("бутстрап: {:?} за {:?}", tor.status(), started.elapsed());
+
+    // Разрешённое назначение проходит.
+    let started = Instant::now();
+    let (mut socket, code) = socks_connect(tor.port(), HOST);
+    assert_eq!(code, 0, "соединение через Tor не удалось");
+    eprintln!("соединение через Tor: {:?}", started.elapsed());
+
+    socket
+        .write_all(b"GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
+        .expect("запрос");
+    let mut response = Vec::new();
+    let _ = socket.read_to_end(&mut response);
+    assert!(response.starts_with(b"HTTP/1."), "ответ не HTTP");
+
+    assert_eq!(tor.status(), TorStatus::Ready);
+}

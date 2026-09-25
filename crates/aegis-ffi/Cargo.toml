@@ -49,6 +49,8 @@ aegis-protocol.workspace = true
 aegis-types.workspace = true
 aegis-net.workspace = true
 aegis-storage.workspace = true
+# Встроенный Tor (Arti) вместо Orbot — раздел 23.18 плана.
+aegis-tor.workspace = true
 uuid.workspace = true
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
 thiserror.workspace = true
