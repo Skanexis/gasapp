@@ -21,6 +21,7 @@ import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
 import org.aegis.app.core.PinAttempts
+import org.aegis.app.core.PinBuffer
 import org.aegis.app.core.SecureWindow
 
 /**
@@ -44,11 +45,11 @@ class LockActivity : AppCompatActivity() {
     /**
      * Введённые цифры.
      *
-     * `StringBuilder`, а не `String`: неизменяемые строки Java остаются
-     * в куче до сборки мусора, и затереть их нельзя. Здесь буфер
-     * очищается явно после использования.
+     * [PinBuffer], а не `String` или `StringBuilder`: строку затереть
+     * нельзя, а `StringBuilder.setLength(0)` оставляет символы в своём
+     * массиве — дамп памяти запертого приложения показывал PIN.
      */
-    private val entered = StringBuilder()
+    private val entered = PinBuffer()
 
     /** Обратный отсчёт задержки; `null` — ввод разрешён. */
     private var cooldown: CountDownTimer? = null
@@ -308,12 +309,11 @@ class LockActivity : AppCompatActivity() {
     }
 
     private fun append(digit: Char) {
-        if (entered.length >= Pin.LENGTH) {
+        if (!entered.append(digit)) {
             return
         }
 
         error.visibility = View.INVISIBLE
-        entered.append(digit)
         renderDots()
 
         // Проверка запускается сама при наборе полной длины: отдельная
@@ -324,8 +324,8 @@ class LockActivity : AppCompatActivity() {
     }
 
     private fun removeLast() {
-        if (entered.isNotEmpty()) {
-            entered.setLength(entered.length - 1)
+        if (entered.length > 0) {
+            entered.removeLast()
             renderDots()
         }
     }
@@ -375,7 +375,9 @@ class LockActivity : AppCompatActivity() {
      * недопустим очевидным образом.
      */
     private fun unlock() {
-        val pin = entered.toString()
+        // 🔐 Байтами: `take` затирает буфер, копию обнуляем после вывода
+        // ключа (см. PinBuffer).
+        val pin = entered.take()
 
         clearEntry()
         setKeypadEnabled(false)
@@ -391,7 +393,11 @@ class LockActivity : AppCompatActivity() {
                     // не покидающего устройство. Здесь его не строят:
                     // две точки сборки ключа разошлись бы, и вторая
                     // открывала бы базу слабее первой.
-                    Core.unlock(this@LockActivity, pin)
+                    try {
+                        Core.unlock(this@LockActivity, pin)
+                    } finally {
+                        pin.fill(0)
+                    }
                 }
             }
 
@@ -532,7 +538,7 @@ class LockActivity : AppCompatActivity() {
 
     /** 🔐 Затирает буфер введённых цифр. */
     private fun clearEntry() {
-        entered.setLength(0)
+        entered.clear()
         renderDots()
     }
 

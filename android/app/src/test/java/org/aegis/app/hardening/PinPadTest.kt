@@ -58,7 +58,7 @@ class PinPadTest {
         root.press(4, 8, 2, 9, 1, 5, 7, 7)
 
         assertEquals("набрано больше, чем длина PIN", Pin.LENGTH, pad.length)
-        assertEquals("482915", pad.take())
+        assertEquals("482915", String(pad.take(), Charsets.US_ASCII))
     }
 
     @Test

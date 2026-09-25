@@ -140,6 +140,7 @@ class OnboardingActivity : AppCompatActivity() {
         // экран входа не воспроизведёт никогда, — база не
         // открывалась больше ни разу (см. [Pin]).
         if (!Pin.isAcceptable(pinValue)) {
+            pinValue.fill(0)
             showError(getString(R.string.onboarding_error_pin))
 
             return
@@ -168,7 +169,12 @@ class OnboardingActivity : AppCompatActivity() {
                     // режима сети (см. EmbeddedTor.pendingBridges).
                     if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
 
-                    val messenger = Core.unlock(this@OnboardingActivity, pinValue)
+                    // 🔐 PIN байтами обнуляется сразу после вывода ключа.
+                    val messenger = try {
+                        Core.unlock(this@OnboardingActivity, pinValue)
+                    } finally {
+                        pinValue.fill(0)
+                    }
 
                     // 🔐 У новой базы режим по умолчанию — встроенный Tor:
                     // его уже применил Core.unlock. Прямое соединение —
@@ -259,6 +265,7 @@ class OnboardingActivity : AppCompatActivity() {
         val pinValue = pin.take()
 
         if (!Pin.isAcceptable(pinValue)) {
+            pinValue.fill(0)
             showError(getString(R.string.onboarding_error_pin))
 
             return
@@ -273,7 +280,12 @@ class OnboardingActivity : AppCompatActivity() {
                 runCatching {
                     if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
 
-                    val messenger = Core.unlock(this@OnboardingActivity, pinValue)
+                    // 🔐 PIN байтами обнуляется сразу после вывода ключа.
+                    val messenger = try {
+                        Core.unlock(this@OnboardingActivity, pinValue)
+                    } finally {
+                        pinValue.fill(0)
+                    }
 
                     if (!viaTor) {
                         messenger.setProxy(FfiProxy.Direct)

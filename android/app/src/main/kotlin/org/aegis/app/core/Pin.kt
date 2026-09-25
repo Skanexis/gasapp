@@ -52,6 +52,6 @@ object Pin {
      * цифрами и арабо-индийские, и деванагари. Клавиатура входа
      * выдаёт только ASCII, а вставить в поле можно что угодно.
      */
-    fun isAcceptable(pin: String): Boolean =
-        pin.length == LENGTH && pin.all { it in '0'..'9' }
+    fun isAcceptable(pin: ByteArray): Boolean =
+        pin.size == LENGTH && pin.all { it in '0'.code.toByte()..'9'.code.toByte() }
 }

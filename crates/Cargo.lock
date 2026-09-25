@@ -74,6 +74,7 @@ dependencies = [
  "thiserror 2.0.20",
  "uniffi",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

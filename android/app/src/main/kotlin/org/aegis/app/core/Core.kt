@@ -206,7 +206,7 @@ object Core {
      * превратила бы её в нечитаемую ничем.
      */
     @Synchronized
-    fun unlock(context: Context, pin: String): Messenger {
+    fun unlock(context: Context, pin: ByteArray): Messenger {
         // 🔐 Открытый мессенджер не возвращается как есть: вход — это
         // проверка PIN, и проверяет её только открытие базы этим PIN.
         // Прежде здесь стояло `messenger?.let { return it }`, и любой
@@ -250,7 +250,7 @@ object Core {
      * Ошибка не мешает войти: vault, у которого значения нет,
      * сверяет PIN с ключом своих файлов.
      */
-    private fun establishVaultVerifier(messenger: Messenger, pin: String, salt: ByteArray) {
+    private fun establishVaultVerifier(messenger: Messenger, pin: ByteArray, salt: ByteArray) {
         runCatching { messenger.establishVaultVerifier(pin, salt) }
     }
 
@@ -271,7 +271,7 @@ object Core {
      * ключом напрямую не нужно — для этого есть [unlock] и [open],
      * и только они знают про переход со старых баз.
      */
-    fun deriveKey(context: Context, pin: String): ByteArray =
+    fun deriveKey(context: Context, pin: ByteArray): ByteArray =
         deriveStorageKeyBound(pin, salt(context), HardwareKey.secret(context))
 
     /**

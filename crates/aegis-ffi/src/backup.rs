@@ -407,13 +407,20 @@ impl Messenger {
     /// длины либо сбой вывода ключей.
     pub fn unlock_vault(
         &self,
-        pin: String,
+        pin: Vec<u8>,
         salt: Vec<u8>,
         now_millis: i64,
     ) -> Result<(), FfiError> {
+        let pin = crate::pin_bytes(pin);
         let client = self.client()?;
 
-        guard(|| client.unlock_vault(&pin, &salt, Timestamp::from_millis(now_millis)))
+        guard(|| {
+            client.unlock_vault(
+                crate::pin_text(&pin)?,
+                &salt,
+                Timestamp::from_millis(now_millis),
+            )
+        })
     }
 
     /// Заводит проверочное значение vault по заведомо верному PIN.
@@ -427,10 +434,13 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — сбой вывода ключа или записи.
-    pub fn establish_vault_verifier(&self, pin: String, salt: Vec<u8>) -> Result<(), FfiError> {
+    pub fn establish_vault_verifier(&self, pin: Vec<u8>, salt: Vec<u8>) -> Result<(), FfiError> {
+        let pin = crate::pin_bytes(pin);
         let client = self.client()?;
 
-        guard(|| client.establish_vault_verifier(&pin, &salt, &mut rand_core::OsRng))
+        guard(|| {
+            client.establish_vault_verifier(crate::pin_text(&pin)?, &salt, &mut rand_core::OsRng)
+        })
     }
 
     /// Закрывает vault и обнуляет его ключ.

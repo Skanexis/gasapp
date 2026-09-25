@@ -5,7 +5,7 @@ package org.aegis.app.components
 import android.view.View
 import android.view.ViewGroup
 import org.aegis.app.R
-import org.aegis.app.core.Pin
+import org.aegis.app.core.PinBuffer
 
 /**
  * 🔐 Набор PIN своей клавиатурой — без системной.
@@ -30,7 +30,7 @@ class PinPad(
     root: View,
     private val onComplete: ((PinPad) -> Unit)? = null,
 ) {
-    private val entered = StringBuilder()
+    private val entered = PinBuffer()
     private val dots: ViewGroup = root.findViewById(R.id.pin_dots)
     private val keys: List<View>
 
@@ -53,7 +53,7 @@ class PinPad(
 
     /** Набраны ли все цифры. */
     val isComplete: Boolean
-        get() = entered.length == Pin.LENGTH
+        get() = entered.isComplete
 
     /** Сколько цифр набрано. */
     val length: Int
@@ -66,16 +66,16 @@ class PinPad(
      * его забрали, — ни на экране, к которому вернутся через переключатель
      * задач, ни в памяти дольше нужного.
      */
-    fun take(): String {
-        val pin = entered.toString()
-        clear()
+    fun take(): ByteArray {
+        val pin = entered.take()
+        render()
 
         return pin
     }
 
     /** 🔐 Затирает набранное. */
     fun clear() {
-        entered.setLength(0)
+        entered.clear()
         render()
     }
 
@@ -88,11 +88,10 @@ class PinPad(
     }
 
     private fun append(digit: Char) {
-        if (entered.length >= Pin.LENGTH) {
+        if (!entered.append(digit)) {
             return
         }
 
-        entered.append(digit)
         render()
 
         if (isComplete) {
@@ -101,8 +100,8 @@ class PinPad(
     }
 
     private fun removeLast() {
-        if (entered.isNotEmpty()) {
-            entered.setLength(entered.length - 1)
+        if (entered.length > 0) {
+            entered.removeLast()
             render()
         }
     }

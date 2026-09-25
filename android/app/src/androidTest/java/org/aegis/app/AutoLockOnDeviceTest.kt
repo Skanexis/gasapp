@@ -54,7 +54,7 @@ class AutoLockOnDeviceTest {
             File(context.filesDir, "aegis.db").exists(),
         )
 
-        Core.unlock(context, TEST_PIN).apply {
+        Core.unlock(context, TEST_PIN.toByteArray()).apply {
             // Ноль — «запирать сразу после ухода»: самый строгий режим,
             // и тест не ждёт минуту умолчания.
             setSettingInt(Settings.AUTO_LOCK_SECONDS, 0)
@@ -126,12 +126,12 @@ class AutoLockOnDeviceTest {
         }
 
         // 4. Неверный PIN.
-        val wrong = runCatching { Core.unlock(context, "000000") }
+        val wrong = runCatching { Core.unlock(context, "000000".toByteArray()) }
         assertTrue("неверный PIN открыл базу", wrong.isFailure)
         assertFalse(Core.isUnlocked)
 
         // 5. Верный PIN — и данные те же.
-        val messenger = Core.unlock(context, TEST_PIN)
+        val messenger = Core.unlock(context, TEST_PIN.toByteArray())
         assertTrue(
             "после повторного входа данных нет — запирание стёрло базу",
             messenger.settingBool(MARKER_KEY, false),
