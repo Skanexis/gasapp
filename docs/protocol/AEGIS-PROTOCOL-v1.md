@@ -482,6 +482,47 @@ identity key itself. A key the server names in place of a known one is
 refused as `IdentityChanged`, and only a safety-number comparison resolves
 that. Receiving is not blocked.
 
+Since §9.7 a key is also confirmed by the key log when it has stood there
+unchanged for a day.
+
+### 9.7. Key transparency
+
+The server keeps a public log of `username → identity`. Every epoch
+(`EPOCH = 1 h`, epoch number `e = floor(unix_ms / EPOCH)`) it builds a
+compact sparse Merkle tree of depth 256:
+
+```
+index(u)    = SHA256("AEGIS_KT_INDEX_v1" || u32be(len(u)) || u)
+value       = SHA256("AEGIS_KT_LEAF_v1" || index || IK || H(PQ) || u64be(version))
+leaf node   = SHA256(0x00 || index || value)
+inner node  = SHA256(0x01 || left || right)
+empty       = 32 zero bytes
+head(e)     = SHA256("AEGIS_KT_HEAD_v1" || u64be(e) || root(e) || head(previous))
+```
+
+A subtree holding one leaf is that leaf node; bits of `index` choose the
+path, most significant bit first. `version` grows with every rebind of the
+account to a new identity (§9.4).
+
+Clients fetch heads and proofs **anonymously** (no device signature, a
+separate Tor circuit per connection), so the server cannot tell who is
+checking and must show everyone the same tree.
+
+* **Chain.** A client stores verified heads and accepts a new head only if
+  `head(e) = H(e, root(e), head(previous))` continues its stored chain.
+  A mismatch is a security event (`kt_log_forked`). The chain must not lag
+  the clock by more than two epochs.
+* **Peer.** A key named by discovery is trusted for sending without an
+  out-of-band check only if the same leaf (key, `H(PQ)`, version) proves
+  present at the latest epoch **and** at an epoch at least 24 epochs older.
+  A fresher key needs the safety-number comparison.
+* **Self.** A client checks its own index at every epoch since its last
+  check (at most 168 epochs back), starting at registration or recovery.
+  A leaf with another key, or a lower version, is a security event
+  (`kt_foreign_key_for_own_name`).
+
+The server keeps leaf history and epochs for 192 epochs.
+
 ## 10. Security Considerations
 
 ### 10.1. Forward Secrecy

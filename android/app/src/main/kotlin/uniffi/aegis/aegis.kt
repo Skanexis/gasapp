@@ -657,7 +657,7 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
 internal interface UniffiCallbackInterfaceHttpTransportMethod0 : com.sun.jna.Callback {
-    fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+    fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`anonymous`: Byte,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
 }
 @Structure.FieldOrder("execute", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceHttpTransport(
@@ -1169,7 +1169,7 @@ fun uniffi_aegis_fn_free_httptransport(`ptr`: Pointer,uniffi_out_err: UniffiRust
 ): Unit
 fun uniffi_aegis_fn_init_callback_vtable_httptransport(`vtable`: UniffiVTableCallbackInterfaceHttpTransport,
 ): Unit
-fun uniffi_aegis_fn_method_httptransport_execute(`ptr`: Pointer,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_aegis_fn_method_httptransport_execute(`ptr`: Pointer,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`anonymous`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_clone_messenger(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
@@ -1557,7 +1557,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_validate_tor_bridges() != 8097.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 53468.toShort()) {
+    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 50023.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_accept_chat() != 62841.toShort()) {
@@ -2255,7 +2255,7 @@ public interface HttpTransport {
      *
      * [`FfiError::Core`] при сбое соединения.
      */
-    fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>): FfiHttpResponse
+    fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>, `anonymous`: kotlin.Boolean): FfiHttpResponse
     
     companion object
 }
@@ -2360,12 +2360,12 @@ open class HttpTransportImpl: Disposable, AutoCloseable, HttpTransport
      *
      * [`FfiError::Core`] при сбое соединения.
      */
-    @Throws(FfiException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>): FfiHttpResponse {
+    @Throws(FfiException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>, `anonymous`: kotlin.Boolean): FfiHttpResponse {
             return FfiConverterTypeFfiHttpResponse.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_httptransport_execute(
-        it, FfiConverterString.lower(`method`),FfiConverterString.lower(`path`),FfiConverterOptionalString.lower(`body`),FfiConverterOptionalByteArray.lower(`binaryBody`),FfiConverterSequenceTypeFfiHeader.lower(`headers`),_status)
+        it, FfiConverterString.lower(`method`),FfiConverterString.lower(`path`),FfiConverterOptionalString.lower(`body`),FfiConverterOptionalByteArray.lower(`binaryBody`),FfiConverterSequenceTypeFfiHeader.lower(`headers`),FfiConverterBoolean.lower(`anonymous`),_status)
 }
     }
     )
@@ -2384,7 +2384,7 @@ open class HttpTransportImpl: Disposable, AutoCloseable, HttpTransport
 // Put the implementation in an object so we don't pollute the top-level namespace
 internal object uniffiCallbackInterfaceHttpTransport {
     internal object `execute`: UniffiCallbackInterfaceHttpTransportMethod0 {
-        override fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+        override fun callback(`uniffiHandle`: Long,`method`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`binaryBody`: RustBuffer.ByValue,`headers`: RustBuffer.ByValue,`anonymous`: Byte,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
             val uniffiObj = FfiConverterTypeHttpTransport.handleMap.get(uniffiHandle)
             val makeCall = { ->
                 uniffiObj.`execute`(
@@ -2393,6 +2393,7 @@ internal object uniffiCallbackInterfaceHttpTransport {
                     FfiConverterOptionalString.lift(`body`),
                     FfiConverterOptionalByteArray.lift(`binaryBody`),
                     FfiConverterSequenceTypeFfiHeader.lift(`headers`),
+                    FfiConverterBoolean.lift(`anonymous`),
                 )
             }
             val writeReturn = { value: FfiHttpResponse -> uniffiOutReturn.setValue(FfiConverterTypeFfiHttpResponse.lower(value)) }
@@ -5453,7 +5454,11 @@ data class FfiContact (
      * 🔐 Ключ подтверждён вне сервера — сверкой safety number или
      * ссылкой/QR самого контакта. Без этого писать нельзя.
      */
-    var `keyConfirmed`: kotlin.Boolean
+    var `keyConfirmed`: kotlin.Boolean, 
+    /**
+     * Подтверждён только журналом ключей — без личной сверки.
+     */
+    var `ktConfirmed`: kotlin.Boolean
 ) {
     
     companion object
@@ -5473,6 +5478,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -5484,7 +5490,8 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterBoolean.allocationSize(value.`verified`) +
             FfiConverterBoolean.allocationSize(value.`keyChanged`) +
             FfiConverterBoolean.allocationSize(value.`replaced`) +
-            FfiConverterBoolean.allocationSize(value.`keyConfirmed`)
+            FfiConverterBoolean.allocationSize(value.`keyConfirmed`) +
+            FfiConverterBoolean.allocationSize(value.`ktConfirmed`)
     )
 
     override fun write(value: FfiContact, buf: ByteBuffer) {
@@ -5496,6 +5503,7 @@ public object FfiConverterTypeFfiContact: FfiConverterRustBuffer<FfiContact> {
             FfiConverterBoolean.write(value.`keyChanged`, buf)
             FfiConverterBoolean.write(value.`replaced`, buf)
             FfiConverterBoolean.write(value.`keyConfirmed`, buf)
+            FfiConverterBoolean.write(value.`ktConfirmed`, buf)
     }
 }
 
@@ -6257,6 +6265,11 @@ data class FfiTorStatus (
      */
     var `port`: kotlin.UShort, 
     /**
+     * Порт для анонимных запросов: каждое соединение — своя цепочка
+     * Tor; 0 — не запущен.
+     */
+    var `isolatedPort`: kotlin.UShort, 
+    /**
      * Подключается через мосты.
      */
     var `bridges`: kotlin.Boolean
@@ -6276,6 +6289,7 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterUByte.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterUShort.read(buf),
+            FfiConverterUShort.read(buf),
             FfiConverterBoolean.read(buf),
         )
     }
@@ -6286,6 +6300,7 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterUByte.allocationSize(value.`percent`) +
             FfiConverterBoolean.allocationSize(value.`stalled`) +
             FfiConverterUShort.allocationSize(value.`port`) +
+            FfiConverterUShort.allocationSize(value.`isolatedPort`) +
             FfiConverterBoolean.allocationSize(value.`bridges`)
     )
 
@@ -6295,6 +6310,7 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterUByte.write(value.`percent`, buf)
             FfiConverterBoolean.write(value.`stalled`, buf)
             FfiConverterUShort.write(value.`port`, buf)
+            FfiConverterUShort.write(value.`isolatedPort`, buf)
             FfiConverterBoolean.write(value.`bridges`, buf)
     }
 }

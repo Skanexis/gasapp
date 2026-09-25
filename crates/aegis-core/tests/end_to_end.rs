@@ -41,6 +41,7 @@ use aegis_net::api::{
     RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest,
 };
 use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
+use aegis_protocol::key_transparency as kt;
 use aegis_protocol::sealed_sender::{self, SenderCertificate};
 use aegis_protocol::xeddsa;
 use aegis_storage::{MessageStatus, Storage};
@@ -106,6 +107,19 @@ struct ServerState {
     /// После скольких успешных подтверждений доставки сервер начинает
     /// отвечать 500 — сбой посреди пачки.
     acks_before_failure: Option<usize>,
+
+    /// Журнал ключей (§9.7): эпохи — номер, корень, вершина, дерево
+    /// и листы (identity, хеш PQ-половины, версия) по индексу.
+    kt_epochs: Vec<KtEpochState>,
+}
+
+/// Эпоха журнала ключей поддельного сервера.
+struct KtEpochState {
+    epoch: u64,
+    root: [u8; 32],
+    head: [u8; 32],
+    tree: kt::Tree,
+    leaves: HashMap<[u8; 32], ([u8; 32], [u8; 32], u64)>,
 }
 
 /// Старшие нулевые биты — проверка решения proof-of-work.
@@ -886,6 +900,86 @@ impl Transport for FakeServer {
                     None => (404, String::new()),
                 }
             }
+            // Журнал ключей — как у настоящего сервера (`aegis-server-api::kt`).
+            (Method::Get, path) if path.starts_with("/v1/kt/heads") => {
+                let from = path
+                    .strip_prefix("/v1/kt/heads/")
+                    .and_then(|text| text.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let epochs: Vec<aegis_net::api::KtEpochView> = state
+                    .kt_epochs
+                    .iter()
+                    .filter(|epoch| epoch.epoch >= from)
+                    .map(|epoch| aegis_net::api::KtEpochView {
+                        epoch: epoch.epoch,
+                        root: hex::encode(epoch.root),
+                        head: hex::encode(epoch.head),
+                    })
+                    .collect();
+
+                (
+                    200,
+                    serde_json::to_string(&aegis_net::api::KtHeadsResponse { epochs })
+                        .unwrap_or_default(),
+                )
+            }
+            (Method::Post, "/v1/kt/proofs") => {
+                let parsed: aegis_net::api::KtProofsRequest =
+                    serde_json::from_str(request.body.as_deref().unwrap_or_default())
+                        .map_err(|_| AegisError::Malformed)?;
+                let index: [u8; 32] = hex::decode(&parsed.index)
+                    .ok()
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .ok_or(AegisError::Malformed)?;
+
+                let proofs = parsed
+                    .epochs
+                    .iter()
+                    .filter_map(|wanted| {
+                        state.kt_epochs.iter().find(|epoch| epoch.epoch == *wanted)
+                    })
+                    .map(|epoch| {
+                        let proof = epoch.tree.prove(&index);
+                        let (leaf, other) = match proof.terminal {
+                            kt::Terminal::Empty => (None, None),
+                            kt::Terminal::Leaf { index: found, .. } if found == index => {
+                                let (identity, pq_hash, version) = epoch.leaves[&index];
+                                (
+                                    Some(aegis_net::api::KtLeafView {
+                                        identity_key: hex::encode(identity),
+                                        pq_hash: hex::encode(pq_hash),
+                                        version,
+                                    }),
+                                    None,
+                                )
+                            }
+                            kt::Terminal::Leaf {
+                                index: found,
+                                value,
+                            } => (
+                                None,
+                                Some(aegis_net::api::KtOtherLeafView {
+                                    index: hex::encode(found),
+                                    value: hex::encode(value),
+                                }),
+                            ),
+                        };
+
+                        aegis_net::api::KtProofView {
+                            epoch: epoch.epoch,
+                            leaf,
+                            other,
+                            siblings: proof.siblings.iter().map(hex::encode).collect(),
+                        }
+                    })
+                    .collect();
+
+                (
+                    200,
+                    serde_json::to_string(&aegis_net::api::KtProofsResponse { proofs })
+                        .unwrap_or_default(),
+                )
+            }
             _ => (404, String::new()),
         };
 
@@ -902,6 +996,86 @@ impl Transport for FakeServer {
 /// Открывает временное хранилище.
 /// Стороны подтверждают ключи друг друга — как после сверки safety
 /// number при встрече. Без этого отправка запрещена (`PeerUnconfirmed`).
+impl FakeServer {
+    /// Строит эпоху журнала ключей из текущих аккаунтов.
+    ///
+    /// `forged` — 🔐 поддельные листы: имя и ключ, которые «сервер»
+    /// показывает вместо настоящих.
+    fn publish_kt_epoch(&self, epoch: u64, forged: &[(&str, [u8; 32])]) {
+        let mut state = self.state.borrow_mut();
+        let mut leaves = HashMap::new();
+
+        for (name, (_, identity_hex)) in &state.accounts {
+            let Some((pq_hex, _)) = state.pq.get(identity_hex) else {
+                continue;
+            };
+            let mut identity: [u8; 32] = hex::decode(identity_hex)
+                .expect("hex")
+                .try_into()
+                .expect("32 байта");
+            let mut pq_hash =
+                aegis_protocol::pq_identity::pq_identity_hash(&hex::decode(pq_hex).expect("hex"));
+
+            if let Some((_, key)) = forged.iter().find(|(forged, _)| forged == name) {
+                identity = *key;
+                pq_hash = [0xEE; 32];
+            }
+
+            leaves.insert(kt::index(name), (identity, pq_hash, 1u64));
+        }
+
+        let tree = kt::Tree::new(
+            leaves
+                .iter()
+                .map(|(index, (identity, pq_hash, version))| {
+                    (*index, kt::leaf_value(index, identity, pq_hash, *version))
+                })
+                .collect(),
+        );
+        let root = tree.root();
+        let previous = state.kt_epochs.last().map_or(kt::ZERO, |last| last.head);
+
+        state.kt_epochs.push(KtEpochState {
+            epoch,
+            root,
+            head: kt::head(epoch, &root, &previous),
+            tree,
+            leaves,
+        });
+    }
+
+    /// Эпохи с `from` по `to` включительно.
+    fn publish_kt_epochs(&self, from: u64, to: u64) {
+        for epoch in from..=to {
+            self.publish_kt_epoch(epoch, &[]);
+        }
+    }
+
+    /// 🔐 «Сервер переписывает историю»: забывает показанную цепочку.
+    fn forget_kt_history(&self) {
+        self.state.borrow_mut().kt_epochs.clear();
+    }
+}
+
+/// Эпоха журнала в момент [`now`].
+fn now_epoch() -> u64 {
+    kt::epoch_at(now().as_millis())
+}
+
+/// Регистрирует двоих **без** личной сверки ключей.
+fn unconfirmed_pair(
+    server: &FakeServer,
+    dir: &tempfile::TempDir,
+) -> (Client<FakeServer>, Client<FakeServer>) {
+    let alice = Client::new(server.clone(), open_storage(dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(dir, "bob.db"));
+
+    alice.register("alice", now(), &mut OsRng).expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    (alice, bob)
+}
+
 fn confirm_pair(a: &Client<FakeServer>, a_name: &str, b: &Client<FakeServer>, b_name: &str) {
     for (client, peer) in [(a, b_name), (b, a_name)] {
         let contact = client
@@ -4568,4 +4742,127 @@ fn another_accounts_backup_cannot_take_a_name() {
         alice_identity,
         "имя Алисы тронуто"
     );
+}
+
+/// 🔐 Журнал ключей (§9.7): ключ, простоявший в журнале сутки, годится
+/// для отправки без личной сверки — и контакт помечен именно так.
+/// Запросы к журналу уходят без подписи устройства.
+#[test]
+fn a_key_a_day_old_in_the_log_needs_no_manual_check() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (_alice, bob) = unconfirmed_pair(&server, &dir);
+
+    server.publish_kt_epochs(now_epoch() - kt::TRUST_DELAY_EPOCHS - 2, now_epoch());
+
+    let contact = bob.discover_contact("alice", now()).expect("Алиса найдена");
+    assert!(contact.key_confirmed, "журнал не подтвердил ключ");
+    assert!(
+        contact.kt_confirmed,
+        "подтверждение журналом не отмечено отдельно"
+    );
+
+    bob.send_message("alice", "привет по журналу", now(), &mut OsRng)
+        .expect("отправка без личной сверки");
+
+    let state = server.state.borrow();
+    let kt_requests: Vec<_> = state
+        .requests
+        .iter()
+        .filter(|(path, _)| path.starts_with("/v1/kt/"))
+        .collect();
+    assert!(!kt_requests.is_empty(), "журнал не спрашивали");
+    assert!(
+        kt_requests.iter().all(|(_, headers)| headers.is_empty()),
+        "запрос к журналу подписан — сервер знает, кто проверяет"
+    );
+}
+
+/// 🔐 Ключ младше суток в журнале — только личная сверка: свежую
+/// подмену владелец имени должен успеть увидеть раньше.
+#[test]
+fn a_fresh_key_in_the_log_still_needs_a_manual_check() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (_alice, bob) = unconfirmed_pair(&server, &dir);
+
+    server.publish_kt_epochs(now_epoch() - 3, now_epoch());
+
+    let contact = bob.discover_contact("alice", now()).expect("Алиса найдена");
+    assert!(!contact.key_confirmed);
+
+    assert!(matches!(
+        bob.send_message("alice", "рано", now(), &mut OsRng),
+        Err(AegisError::PeerUnconfirmed)
+    ));
+}
+
+/// 🔐 Подменённый в журнале ключ не подтверждается, а владелец имени
+/// находит подмену у себя и получает событие безопасности.
+#[test]
+fn a_forged_key_under_my_name_is_found_by_me() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+
+    // Алиса зарегистрирована заранее: её проверка начинается раньше
+    // поддельных эпох.
+    alice
+        .register("alice", later(-6 * 3600), &mut OsRng)
+        .expect("Алиса");
+    bob.register("bob", now(), &mut OsRng).expect("Боб");
+
+    let start = now_epoch() - kt::TRUST_DELAY_EPOCHS - 2;
+    for epoch in start..=now_epoch() {
+        let forged: &[(&str, [u8; 32])] = if epoch >= now_epoch() - 3 {
+            &[("alice", [0x66; 32])]
+        } else {
+            &[]
+        };
+        server.publish_kt_epoch(epoch, forged);
+    }
+
+    // Бобу подделку не подтвердить: сутки назад в журнале был другой лист.
+    let contact = bob.discover_contact("alice", now()).expect("Алиса найдена");
+    assert!(!contact.key_confirmed, "подделка подтвердилась");
+
+    let check = alice.kt_check_self(now()).expect("проверка своего имени");
+    assert_eq!(check.foreign_epochs.len(), 4, "подмена не найдена");
+    assert!(alice
+        .security_events(10)
+        .expect("журнал")
+        .iter()
+        .any(|(kind, _, _)| kind == "kt_foreign_key_for_own_name"));
+
+    // Проверенное не проверяется заново.
+    let again = alice.kt_check_self(now()).expect("повтор");
+    assert!(again.foreign_epochs.is_empty());
+}
+
+/// 🔐 Сервер переписал цепочку, которую уже показывал: клиент замечает
+/// это и не принимает новую как продолжение.
+#[test]
+fn a_rewritten_log_is_detected() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (_alice, bob) = unconfirmed_pair(&server, &dir);
+
+    server.publish_kt_epochs(now_epoch() - 2, now_epoch());
+    bob.kt_sync(now()).expect("первая синхронизация");
+
+    server.forget_kt_history();
+    for epoch in now_epoch() - 2..=now_epoch() + 1 {
+        server.publish_kt_epoch(epoch, &[("alice", [0x77; 32])]);
+    }
+
+    assert!(
+        bob.kt_sync(later(3600)).is_err(),
+        "переписанная цепочка принята"
+    );
+    assert!(bob
+        .security_events(10)
+        .expect("журнал")
+        .iter()
+        .any(|(kind, _, _)| kind == "kt_log_forked"));
 }

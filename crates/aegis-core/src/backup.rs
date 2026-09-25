@@ -534,6 +534,7 @@ fn record_to_contact(record: &ContactRecord) -> ContactRow {
         // Источник ключа в копию не попадает: после восстановления
         // контакт, не сверенный вживую, подтверждается заново.
         confirmed_by_link: false,
+        confirmed_by_kt: false,
     }
 }
 

@@ -122,6 +122,12 @@ object EmbeddedTor {
     /** Порт запущенного моста; 0 — не запущен. */
     fun port(): Int = port
 
+    /**
+     * Порт для анонимных запросов: каждое соединение — своя цепочка
+     * Tor. 0 — не запущен.
+     */
+    fun isolatedPort(): Int = status().isolatedPort.toInt()
+
     /** Состояние подключения — для индикатора. */
     fun status(): FfiTorStatus = runCatching { embeddedTorStatus() }.getOrElse { STOPPED }
 
@@ -181,6 +187,7 @@ object EmbeddedTor {
         percent = 0u,
         stalled = false,
         port = 0u,
+        isolatedPort = 0u,
         bridges = false,
     )
 

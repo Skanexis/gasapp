@@ -46,7 +46,7 @@ use std::time::Duration;
 
 use arti_client::config::pt::TransportConfigBuilder;
 use arti_client::config::{BoolOrAuto, BridgeConfigBuilder, CfgPath, TorClientConfigBuilder};
-use arti_client::{BootstrapBehavior, DataStream, TorClient};
+use arti_client::{BootstrapBehavior, DataStream, IsolationToken, StreamPrefs, TorClient};
 use arti_client::{HasKind as _, TorClientConfig};
 use futures::StreamExt as _;
 use tokio::net::TcpListener;
@@ -154,6 +154,8 @@ pub enum TorError {
 /// и мост закрывается.
 pub struct EmbeddedTor {
     port: u16,
+    /// Порт для анонимных запросов: каждое соединение — своя цепочка.
+    isolated_port: u16,
     status: watch::Receiver<TorStatus>,
     /// Мосты, с которыми запущен.
     bridges: Vec<String>,
@@ -214,8 +216,11 @@ impl EmbeddedTor {
         let tunnel_targets = webtunnel::Targets::from_bridge_lines(&settings.bridges)
             .allow_private(settings.allow_private_bridges);
 
-        let (listener, tunnel) = runtime.block_on(async {
+        let (listener, isolated_listener, tunnel) = runtime.block_on(async {
             let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .map_err(|_| TorError::Runtime)?;
+            let isolated_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
                 .await
                 .map_err(|_| TorError::Runtime)?;
             let tunnel = if tunnel_targets.is_empty() {
@@ -228,7 +233,7 @@ impl EmbeddedTor {
                 )
             };
 
-            Ok::<_, TorError>((listener, tunnel))
+            Ok::<_, TorError>((listener, isolated_listener, tunnel))
         })?;
 
         if let Some(tunnel) = &tunnel {
@@ -253,6 +258,10 @@ impl EmbeddedTor {
         }
 
         let port = listener.local_addr().map_err(|_| TorError::Runtime)?.port();
+        let isolated_port = isolated_listener
+            .local_addr()
+            .map_err(|_| TorError::Runtime)?
+            .port();
         let (status_tx, status) = watch::channel(TorStatus::Starting {
             percent: 0,
             stalled: false,
@@ -260,14 +269,27 @@ impl EmbeddedTor {
 
         runtime.spawn(watch_bootstrap(Arc::clone(&client), status_tx));
         runtime.spawn(keep_bootstrapping(Arc::clone(&client)));
+        let destinations = Arc::new(settings.destinations);
         runtime.spawn(bridge::serve(
             listener,
-            Arc::new(Arti(client)),
-            Arc::new(settings.destinations),
+            Arc::new(Arti {
+                client: Arc::clone(&client),
+                isolated: false,
+            }),
+            Arc::clone(&destinations),
+        ));
+        runtime.spawn(bridge::serve(
+            isolated_listener,
+            Arc::new(Arti {
+                client,
+                isolated: true,
+            }),
+            destinations,
         ));
 
         Ok(Self {
             port,
+            isolated_port,
             status,
             bridges: settings.bridges,
             runtime: Some(runtime),
@@ -278,6 +300,13 @@ impl EmbeddedTor {
     #[must_use]
     pub const fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Порт моста для анонимных запросов: каждое соединение идёт своей
+    /// цепочкой Tor (см. `Arti::isolated`).
+    #[must_use]
+    pub const fn isolated_port(&self) -> u16 {
+        self.isolated_port
     }
 
     /// Мосты, с которыми запущен (пусто — без мостов).
@@ -412,23 +441,39 @@ async fn keep_bootstrapping<R: tor_rtcompat::Runtime>(client: Arc<TorClient<R>>)
 }
 
 /// Соединитель через Arti.
-struct Arti<R: tor_rtcompat::Runtime>(Arc<TorClient<R>>);
+///
+/// `isolated` — каждое соединение в своей изоляции Arti, то есть на
+/// своей цепочке. Для анонимных запросов (sealed sender, вложения,
+/// поиск, журнал ключей): иначе они шли бы той же цепочкой, что
+/// запросы за подписью устройства, и сервер связал бы их по выходному
+/// узлу и времени.
+struct Arti<R: tor_rtcompat::Runtime> {
+    client: Arc<TorClient<R>>,
+    isolated: bool,
+}
 
 impl<R: tor_rtcompat::Runtime> Connector for Arti<R> {
     type Stream = DataStream;
 
     fn connect(&self, target: &Target) -> impl Future<Output = io::Result<DataStream>> + Send {
-        let client = Arc::clone(&self.0);
+        let client = Arc::clone(&self.client);
         let target = (target.host.clone(), target.port);
+        let mut prefs = StreamPrefs::new();
+        if self.isolated {
+            prefs.set_isolation(IsolationToken::new());
+        }
 
         async move {
-            client.connect(target).await.map_err(|error| {
-                tracing::debug!(kind = ?error.kind(), "tor connect failed");
-                io::Error::new(
-                    io::ErrorKind::ConnectionRefused,
-                    "tor: destination unreachable",
-                )
-            })
+            client
+                .connect_with_prefs(target, &prefs)
+                .await
+                .map_err(|error| {
+                    tracing::debug!(kind = ?error.kind(), "tor connect failed");
+                    io::Error::new(
+                        io::ErrorKind::ConnectionRefused,
+                        "tor: destination unreachable",
+                    )
+                })
         }
     }
 }

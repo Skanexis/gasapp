@@ -1021,6 +1021,9 @@ fn read_contacts(connection: &Connection) -> Result<Vec<ContactRow>> {
             added_at,
             replaced: false,
             confirmed_by_link: false,
+            // Подтверждение журналом не переносится: его проще и
+            // надёжнее получить заново, чем доверять копии.
+            confirmed_by_kt: false,
         });
     }
 

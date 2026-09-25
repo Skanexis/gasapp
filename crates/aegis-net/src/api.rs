@@ -282,3 +282,72 @@ pub struct AccountDeletedResponse {
     /// Сколько загруженных вложений удалено.
     pub attachments: u64,
 }
+
+/// Эпоха журнала ключей (§9.7).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KtEpochView {
+    /// Номер эпохи.
+    pub epoch: u64,
+    /// Корень дерева, hex.
+    pub root: String,
+    /// Вершина хеш-цепочки, hex.
+    pub head: String,
+}
+
+/// Ответ со списком эпох.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KtHeadsResponse {
+    /// Эпохи по возрастанию.
+    pub epochs: Vec<KtEpochView>,
+}
+
+/// Запрос доказательств журнала.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KtProofsRequest {
+    /// Индекс имени, hex.
+    pub index: String,
+    /// Эпохи.
+    pub epochs: Vec<u64>,
+}
+
+/// Лист журнала.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KtLeafView {
+    /// Identity-ключ, hex.
+    pub identity_key: String,
+    /// Хеш пост-квантовой половины, hex.
+    pub pq_hash: String,
+    /// Версия ключа имени.
+    pub version: u64,
+}
+
+/// Чужой лист на конце пути — доказательство отсутствия.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KtOtherLeafView {
+    /// Индекс, hex.
+    pub index: String,
+    /// Значение, hex.
+    pub value: String,
+}
+
+/// Доказательство для одной эпохи.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KtProofView {
+    /// Эпоха.
+    pub epoch: u64,
+    /// Лист индекса, если он есть.
+    #[serde(default)]
+    pub leaf: Option<KtLeafView>,
+    /// Чужой лист на конце пути.
+    #[serde(default)]
+    pub other: Option<KtOtherLeafView>,
+    /// Соседи от корня вниз, hex.
+    pub siblings: Vec<String>,
+}
+
+/// Ответ с доказательствами.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KtProofsResponse {
+    /// Доказательства для существующих эпох.
+    pub proofs: Vec<KtProofView>,
+}
