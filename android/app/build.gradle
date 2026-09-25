@@ -40,7 +40,7 @@ android {
     // Обязателен начиная с AGP 8: пакет, в котором генерируется класс R.
     // Без него конфигурация проекта падает ещё до сборки.
     namespace = "org.aegis.app"
-    compileSdk = 35
+    compileSdk = 36
 
     // 🔐 Версия NDK закреплена — раздел 19.2, пункт «.so не содержит
     // debug-символов в release», и ADR-020 (воспроизводимость).
@@ -84,14 +84,22 @@ android {
         // заявленная аппаратная защита просто отсутствовала.
         minSdk = 28
 
-        // 🔐 targetSdk = 35.
+        // 🔐 targetSdk = 36 (Android 16).
         //
         // targetSdk — это не «где запускается», а «какие ограничения
         // платформы приложение на себя принимает». На 34 система применяла
         // бы к нему послабления совместимости: часть ограничений на фоновый
         // запуск и на доступ к буферу обмена из фона действует только
         // начиная с 35.
-        targetSdk = 35
+        //
+        // 36 — требование Google Play к новым приложениям с 2026-08-31.
+        // Что меняется: от края до края без возможности отказа (уже так,
+        // `ui/SafeArea`), предиктивный «назад» (обработчики — через
+        // OnBackPressedDispatcher), на больших экранах система игнорирует
+        // запреты поворота и размера (раскладки уже адаптивные).
+        // minSdk при этом прежний: магазины требуют SDK сборки, а не
+        // минимальную версию системы.
+        targetSdk = 36
 
         // Адрес сервера как поле сборки.
         //
@@ -431,7 +439,8 @@ dependencies {
     // 4.14.1, а не 4.13: в 4.13 максимальный поддерживаемый SDK — 34,
     // и после подъёма targetSdk до 35 (раздел 19.2) каждый тест падал
     // ещё до запуска с «Package targetSdkVersion=35 > maxSdkVersion=34».
-    testImplementation 'org.robolectric:robolectric:4.14.1'
+    // 4.16 — та же история с targetSdk 36 (Android 16): у 4.14 предел 35.
+    testImplementation 'org.robolectric:robolectric:4.16'
     testImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
