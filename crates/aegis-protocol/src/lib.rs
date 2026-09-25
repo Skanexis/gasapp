@@ -35,6 +35,7 @@ pub mod double_ratchet;
 pub mod engine;
 pub mod envelope;
 pub mod group;
+pub mod key_transparency;
 pub mod keys;
 pub mod mlkem;
 pub mod padding;

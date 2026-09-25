@@ -721,11 +721,17 @@ async fn identifying_times_and_device_names_are_not_stored() {
     }
 }
 
+/// Тесты чистки неактивных аккаунтов идут по очереди: чистка общая
+/// на всю базу, и параллельная удалила бы аккаунт соседнего теста
+/// в тот миг, когда он ещё помечен давним.
+static PURGE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// 🔐 Аккаунт, не появлявшийся год, удаляется вместе с именем,
 /// а активный остаётся (миграция 0011).
 #[tokio::test]
 async fn an_account_inactive_for_a_year_is_removed_and_frees_its_name() {
     let pool = require_pool!();
+    let _purge = PURGE.lock().await;
     let idle = unique_name("idle");
     let active = unique_name("active");
 
@@ -770,6 +776,7 @@ async fn an_account_inactive_for_a_year_is_removed_and_frees_its_name() {
 #[tokio::test]
 async fn an_account_inactive_for_eleven_months_stays() {
     let pool = require_pool!();
+    let _purge = PURGE.lock().await;
     let name = unique_name("recent");
 
     repo::register_account(&pool, &name, &[1u8; 32], &[2u8; 32])

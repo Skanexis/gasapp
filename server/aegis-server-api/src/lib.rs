@@ -42,6 +42,7 @@ pub mod certificate;
 pub mod config;
 pub mod health;
 pub mod hub;
+pub mod kt;
 pub mod pow;
 pub mod push;
 pub mod rate_limit;
