@@ -16,17 +16,18 @@
 //! Здесь список версий задан явно, и ниже — тест на настоящем
 //! рукопожатии: клиент с TLS 1.2 получает отказ.
 
-use std::io::BufReader;
 use std::sync::Arc;
 
+use rustls::pki_types::pem::PemObject as _;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig;
 
 /// Ошибка чтения сертификата или ключа.
 #[derive(Debug, thiserror::Error)]
 pub enum TlsError {
-    /// Файл не читается или не разбирается как PEM.
+    /// Файл не разбирается как PEM.
     #[error("сертификат или ключ не разбираются: {0}")]
-    Pem(#[from] std::io::Error),
+    Pem(#[from] rustls::pki_types::pem::Error),
 
     /// В файле ключа нет приватного ключа.
     #[error("в файле ключа нет приватного ключа")]
@@ -43,11 +44,16 @@ pub enum TlsError {
 ///
 /// [`TlsError`] — PEM не разбирается, ключа нет, ключ не подходит.
 pub fn config_from_pem(certificate: &[u8], key: &[u8]) -> Result<Arc<ServerConfig>, TlsError> {
+    // PEM разбирает rustls-pki-types: rustls-pemfile больше не
+    // поддерживается (RUSTSEC-2025-0134).
     let certificates =
-        rustls_pemfile::certs(&mut BufReader::new(certificate)).collect::<Result<Vec<_>, _>>()?;
+        CertificateDer::pem_slice_iter(certificate).collect::<Result<Vec<_>, _>>()?;
 
-    let private_key =
-        rustls_pemfile::private_key(&mut BufReader::new(key))?.ok_or(TlsError::NoKey)?;
+    let private_key = match PrivateKeyDer::from_pem_slice(key) {
+        Ok(key) => key,
+        Err(rustls::pki_types::pem::Error::NoItemsFound) => return Err(TlsError::NoKey),
+        Err(error) => return Err(TlsError::Pem(error)),
+    };
 
     // 🔐 Единственная разрешённая версия. TLS 1.2 отвергается
     // рукопожатием, а не удачей набора возможностей.

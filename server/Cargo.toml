@@ -40,8 +40,10 @@ tower = { version = "0.5", default-features = false }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 # Версии — ровно те, что тянет axum-server: типы конфигурации общие,
 # и расхождение версий их бы развело.
-rustls = { version = "=0.23.43", default-features = false, features = ["aws_lc_rs", "std", "logging"] }
-rustls-pemfile = "=2.2.0"
+#
+# 🔐 0.23.45 — не ниже: RUSTSEC-2026-0285 (сообщения рукопожатия TLS 1.3
+# принимались через границы уровней шифрования) исправлен в 0.23.45.
+rustls = { version = "=0.23.45", default-features = false, features = ["aws_lc_rs", "std", "logging"] }
 # Только для проверки рукопожатия в тестах: клиент TLS и самоподписанный
 # сертификат. В сервере их нет.
 tokio-rustls = { version = "=0.26.4", default-features = false, features = ["aws-lc-rs"] }

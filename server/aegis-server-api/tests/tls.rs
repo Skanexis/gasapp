@@ -38,7 +38,11 @@ fn client(
 ) -> TlsConnector {
     let mut roots = rustls::RootCertStore::empty();
 
-    for entry in rustls_pemfile::certs(&mut std::io::BufReader::new(certificate)) {
+    for entry in
+        <rustls::pki_types::CertificateDer<'_> as rustls::pki_types::pem::PemObject>::pem_slice_iter(
+            certificate,
+        )
+    {
         roots
             .add(entry.expect("сертификат разбирается"))
             .expect("корень добавляется");
