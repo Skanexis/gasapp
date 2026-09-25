@@ -397,6 +397,30 @@ pub async fn publish_prekeys(
 /// * [`RepoError::NotFound`] — устройства нет либо предключи не опубликованы.
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn take_prekey_bundle(pool: &PgPool, device_id: Uuid) -> Result<PreKeyBundle, RepoError> {
+    prekey_bundle(pool, device_id, true).await
+}
+
+/// Bundle **без** одноразовых предключей — пул не расходуется.
+///
+/// Выдаётся сверх бюджета расхода (см. маршрут `take_bundle`): сессия
+/// заводится на подписанных предключах, как при исчерпанном пуле.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — устройства нет либо предключи не опубликованы.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn signed_prekey_bundle(
+    pool: &PgPool,
+    device_id: Uuid,
+) -> Result<PreKeyBundle, RepoError> {
+    prekey_bundle(pool, device_id, false).await
+}
+
+async fn prekey_bundle(
+    pool: &PgPool,
+    device_id: Uuid,
+    consume_one_time: bool,
+) -> Result<PreKeyBundle, RepoError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
 
     let signed: (Vec<u8>, i32, Vec<u8>, Vec<u8>, i32, Vec<u8>, Vec<u8>) = sqlx::query_as(
@@ -415,6 +439,23 @@ pub async fn take_prekey_bundle(pool: &PgPool, device_id: Uuid) -> Result<PreKey
     // `FOR UPDATE SKIP LOCKED`: два одновременных запроса не получат один
     // и тот же одноразовый ключ. Без этого «одноразовый» перестаёт быть
     // одноразовым при параллельной выдаче.
+    if !consume_one_time {
+        transaction.commit().await?;
+
+        return Ok(PreKeyBundle {
+            device_id,
+            identity_key: signed.0,
+            signed_key_id: signed.1,
+            signed_public: signed.2,
+            signed_signature: signed.3,
+            kem_key_id: signed.4,
+            kem_public: signed.5,
+            kem_signature: signed.6,
+            one_time: None,
+            one_time_kem: None,
+        });
+    }
+
     let one_time: Option<(i32, Vec<u8>)> = sqlx::query_as(
         "
         DELETE FROM one_time_prekeys
