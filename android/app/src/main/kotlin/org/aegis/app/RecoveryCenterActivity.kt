@@ -156,8 +156,16 @@ class RecoveryCenterActivity : AppCompatActivity() {
         // Копию можно сделать, только когда есть чем её зашифровать:
         // либо ключ создан прямо сейчас, либо цепочка уже начата и
         // ключ надо ввести.
-        findViewById<AegisButton>(R.id.recovery_backup_now).isEnabled =
-            pendingKey != null || configured
+        val hasKey = pendingKey != null || configured
+        findViewById<AegisButton>(R.id.recovery_backup_now).apply {
+            isEnabled = hasKey
+            // Главное действие — одно на экран (UI kit): пока ключа нет —
+            // создать его, когда есть — сделать копию. Прежде «Создать
+            // ключ» оставалась главной и при созданном ключе, хотя
+            // смена ключа — отдельная кнопка «Создать новый ключ».
+            variant = if (hasKey) AegisButton.Variant.Primary else AegisButton.Variant.Secondary
+        }
+        findViewById<AegisButton>(R.id.recovery_create).visibility = if (hasKey) View.GONE else View.VISIBLE
         findViewById<AegisButton>(R.id.recovery_new_key).isEnabled = configured
     }
 

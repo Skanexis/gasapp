@@ -1324,6 +1324,35 @@ fn contact_is_added_from_profile_link() {
     assert_eq!(contacts[0].identity, contact.identity);
 }
 
+/// Своё имя и своя ссылка — не собеседник.
+///
+/// Прежде поиск по собственному имени заводил контакт с собственным
+/// ключом: чат с самим собой, закрытый для записи, и safety number
+/// с собой. Найдено на эмуляторе.
+#[test]
+fn own_name_and_own_link_are_not_a_contact() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    alice
+        .register("alice", now(), &mut OsRng)
+        .expect("Алиса зарегистрирована");
+
+    assert!(matches!(
+        alice.discover_contact("@Alice", now()),
+        Err(AegisError::InvalidUsername)
+    ));
+
+    let link = alice.own_contact_link().expect("своя ссылка");
+    assert!(matches!(
+        alice.add_contact_from_link(&link, now()),
+        Err(AegisError::Malformed)
+    ));
+
+    assert!(alice.contacts().expect("контакты").is_empty(), "завёлся контакт с собой");
+}
+
 /// 🔐 Ссылка с чужим именем не приклеивает имя к ключу.
 ///
 /// Сделать ссылку с именем «bob» и собственным ключом может кто

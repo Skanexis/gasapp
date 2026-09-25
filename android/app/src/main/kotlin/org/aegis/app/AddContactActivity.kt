@@ -131,6 +131,16 @@ class AddContactActivity : AppCompatActivity() {
             return
         }
 
+        // Своя ссылка — не собеседник (ядро отвергнет её и само,
+        // но общим «ссылка неверна» — а человеку нужно понятное).
+        val own = runCatching { Core.messenger().ownContactLink() }.getOrNull()
+        if (uri == own) {
+            input.hasError = true
+            showStatus(getString(R.string.add_contact_own_link), ok = false)
+
+            return
+        }
+
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {

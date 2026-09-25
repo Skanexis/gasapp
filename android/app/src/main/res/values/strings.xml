@@ -154,6 +154,7 @@
     <string name="new_chat_not_found">Couldn’t find this person. Check the name and your connection.</string>
     <string name="new_chat_open">Open</string>
     <string name="new_chat_field_hint">@username</string>
+    <string name="new_chat_own_name">This is your own username</string>
     <string name="onboarding_choose_pin">It encrypts your messages on this device. There is no way to reset it.</string>
     <string name="onboarding_pin_label">PIN · 6 digits</string>
     <string name="onboarding_error_pin">The PIN must be exactly 6 digits</string>
@@ -175,6 +176,7 @@
     <string name="add_contact_added_unnamed">Contact added</string>
     <string name="add_contact_key_changed">“%1$s” was already in your contacts with a different key. It may be a reinstall — or an impostor. Compare safety numbers in person before messaging them.</string>
     <string name="add_contact_invalid">This link is not valid: either it is not an AEGIS link, or the name in it belongs to a different key</string>
+    <string name="add_contact_own_link">This is your own link — send it to the person you want to talk to</string>
     <string name="add_contact_review">Check who you are adding. The link does not prove the name — whoever made the link chose it.</string>
 
     <string name="search_title">Search</string>
@@ -431,7 +433,7 @@
     <string name="identity_changed_restored_count">Records restored: %1$d.</string>
     <string name="identity_changed_explain">Your contacts will see a warning that your security key changed. After a restore this is normal: the device gets a new key, and the old one is not carried over.</string>
     <string name="identity_changed_why">Keys are not carried over on purpose. Moving the old encryption state across would mean two different messages could be encrypted with the same key — and that reveals what they say. A changed security key is the price of that never happening.</string>
-    <string name="identity_changed_not_restored">Not restored: active secure sessions. They will be set up again with the first message.</string>
+    <string name="identity_changed_not_restored">Not restored: active secure sessions — they will be set up again with the first message — and backups: create a new recovery key in Settings → Backup, otherwise no new backups will be made.</string>
     <string name="identity_changed_verify">Compare keys with your contacts</string>
     <string name="identity_changed_later">Later</string>
 

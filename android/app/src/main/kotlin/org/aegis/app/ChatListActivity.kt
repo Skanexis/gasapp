@@ -344,6 +344,15 @@ class ChatListActivity : AppCompatActivity() {
                     return@primary
                 }
 
+                // Своё имя — не собеседник (ядро отвергнет его и само).
+                val own = runCatching { Core.messenger().ownUsername() }.getOrNull()
+                if (username == own) {
+                    input.hasError = true
+                    dialog.showError(R.string.new_chat_own_name)
+
+                    return@primary
+                }
+
                 openChatWith(username, dialog)
             }
             .show()
