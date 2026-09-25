@@ -85,7 +85,7 @@
     <string name="safety_number_peer">Сверка с %1$s</string>
     <string name="security_score">%1$d/%2$d</string>
     <string name="chat_verified_state">✓ Верифицирован</string>
-    <string name="chat_unverified_state">Не верифицирован — сверьте safety number</string>
+    <string name="chat_unverified_state">Ключ не сверен — сверить</string>
     <!-- Нижняя навигация -->
     <string name="nav_chats">Чаты</string>
     <string name="nav_calls">Звонки</string>
