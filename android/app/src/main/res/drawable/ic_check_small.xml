@@ -8,12 +8,6 @@
     android:viewportHeight="24"
     android:tint="?attr/colorControlNormal">
     <path
-        android:pathData="i-ck"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <path
         android:pathData="M20 6L9 17l-5-5"
         android:strokeColor="#FFFFFFFF"
         android:strokeWidth="2"
