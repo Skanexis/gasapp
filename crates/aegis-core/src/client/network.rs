@@ -200,7 +200,7 @@ mod tests {
         let (storage, _dir) = open_storage();
         let client = Client::new(NoNetwork, storage);
 
-        assert_eq!(client.proxy_mode().expect("режим"), ProxyMode::Orbot);
+        assert_eq!(client.proxy_mode().expect("режим"), ProxyMode::Tor);
     }
 
     /// Режим сохраняется и читается обратно.
@@ -209,8 +209,8 @@ mod tests {
         let (storage, _dir) = open_storage();
         let client = Client::new(NoNetwork, storage);
 
-        client.set_proxy_mode(&ProxyMode::Orbot).expect("запись");
-        assert_eq!(client.proxy_mode().expect("режим"), ProxyMode::Orbot);
+        client.set_proxy_mode(&ProxyMode::Tor).expect("запись");
+        assert_eq!(client.proxy_mode().expect("режим"), ProxyMode::Tor);
 
         let socks = ProxyMode::Socks5 {
             host: "proxy.example.org".to_owned(),
@@ -226,7 +226,7 @@ mod tests {
         let (storage, _dir) = open_storage();
         let client = Client::new(NoNetwork, storage);
 
-        client.set_proxy_mode(&ProxyMode::Orbot).expect("запись");
+        client.set_proxy_mode(&ProxyMode::Tor).expect("запись");
 
         let invalid = ProxyMode::Socks5 {
             host: "user@proxy.example.org".to_owned(),
@@ -236,7 +236,7 @@ mod tests {
         assert!(client.set_proxy_mode(&invalid).is_err());
         assert_eq!(
             client.proxy_mode().expect("режим"),
-            ProxyMode::Orbot,
+            ProxyMode::Tor,
             "недопустимый режим затёр прежний"
         );
     }
@@ -329,7 +329,7 @@ mod tests {
         let (storage, _dir) = open_storage();
         let client = Client::new(NoNetwork, storage);
 
-        client.set_proxy_mode(&ProxyMode::Orbot).expect("запись");
+        client.set_proxy_mode(&ProxyMode::Tor).expect("запись");
 
         let report = client.security_report(now()).expect("отчёт");
 

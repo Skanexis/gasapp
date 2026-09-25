@@ -11,6 +11,7 @@ members = [
     "aegis-backup",
     "aegis-core",
     "aegis-ffi",
+    "aegis-tor",
 ]
 
 [workspace.dependencies]
@@ -22,7 +23,7 @@ sha2 = { version = "=0.10.8" }
 argon2 = { version = "=0.6.0-rc.8" }
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
 thiserror = { version = "=2.0" }
-async-trait = { version = "=0.1.0" }
+async-trait = { version = "0.1" }
 tracing = { version = "=0.1.44" }
 aes-gcm = { version = "=0.10.3" }
 chacha20poly1305 = { version = "=0.10.0" }
@@ -41,6 +42,7 @@ aegis-media = { path = "aegis-media" }
 aegis-backup = { path = "aegis-backup" }
 aegis-core = { path = "aegis-core" }
 aegis-ffi = { path = "aegis-ffi" }
+aegis-tor = { path = "aegis-tor" }
 
 [workspace.package]
 version = "0.1.0"
