@@ -34,8 +34,18 @@ use crate::routes::{now_millis, ApiError, AppState};
 /// Как часто проверять, не началась ли новая эпоха.
 pub const TICK: Duration = Duration::from_mins(1);
 
-/// Предел эпох в одном ответе.
-pub const MAX_EPOCHS_PER_REQUEST: usize = 200;
+/// Предел эпох в одном ответе: окно самопроверки клиента (неделя)
+/// с запасом.
+pub const MAX_EPOCHS_PER_REQUEST: usize = 7 * 24 + 8;
+
+/// 🔐 Предел построений деревьев на узел в минуту.
+///
+/// Построение — O(числа аккаунтов); кеш держит последние состояния.
+/// Ограничитель по индексу от этого не защищает: индекс выбирает
+/// запрашивающий, и случайные индексы с сотней старых эпох заставили
+/// бы узел строить деревья без конца. Исчерпанный предел значит
+/// «журнал временно недоступен» — клиент тогда просит личную сверку.
+const MAX_TREE_BUILDS_PER_MINUTE: u32 = 60;
 
 /// Сколько деревьев держать в памяти.
 const TREE_CACHE: usize = 16;
@@ -65,11 +75,35 @@ fn cache() -> &'static Mutex<HashMap<i64, Arc<Tree>>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Разрешено ли ещё одно построение дерева в текущей минуте.
+fn allow_build(now_millis: i64) -> bool {
+    static BUILDS: Mutex<(i64, u32)> = Mutex::new((0, 0));
+
+    let Ok(mut builds) = BUILDS.lock() else {
+        return false;
+    };
+    let minute = now_millis.div_euclid(60_000);
+
+    if builds.0 != minute {
+        *builds = (minute, 0);
+    }
+    if builds.1 >= MAX_TREE_BUILDS_PER_MINUTE {
+        return false;
+    }
+    builds.1 = builds.1.saturating_add(1);
+
+    true
+}
+
 async fn tree_for(pool: &PgPool, epoch: i64) -> Result<Arc<Tree>, ApiError> {
     let state = repo::kt_state_epoch(pool, epoch).await?.unwrap_or(-1);
 
     if let Some(tree) = cache().lock().map_err(|_| ApiError::Internal)?.get(&state) {
         return Ok(Arc::clone(tree));
+    }
+
+    if !allow_build(now_millis()) {
+        return Err(ApiError::TooManyRequests);
     }
 
     let leaves = repo::kt_leaves_at(pool, epoch).await?;

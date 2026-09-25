@@ -910,6 +910,8 @@ impl Transport for FakeServer {
                     .kt_epochs
                     .iter()
                     .filter(|epoch| epoch.epoch >= from)
+                    // Страница — как у настоящего сервера.
+                    .take(7 * 24 + 8)
                     .map(|epoch| aegis_net::api::KtEpochView {
                         epoch: epoch.epoch,
                         root: hex::encode(epoch.root),
@@ -4918,4 +4920,18 @@ fn agreeing_log_views_raise_nothing() {
         .any(|(kind, _, _)| kind.starts_with("kt_")));
     // Вершина — служебное сообщение: в счёт новых не идёт.
     assert_eq!(received, 1);
+}
+
+/// Журнал длиннее одной страницы (новая установка, неделя истории)
+/// синхронизируется до последней эпохи, а не останавливается на первой
+/// странице.
+#[test]
+fn a_long_log_is_synced_in_pages() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (_alice, bob) = unconfirmed_pair(&server, &dir);
+
+    server.publish_kt_epochs(now_epoch() - kt::HISTORY_EPOCHS + 1, now_epoch());
+
+    assert_eq!(bob.kt_sync(now()).expect("синхронизация"), now_epoch());
 }
