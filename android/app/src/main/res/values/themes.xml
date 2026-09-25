@@ -20,6 +20,16 @@
         <item name="colorPrimaryVariant">@color/accent_pressed</item>
         <item name="colorOnPrimary">@color/accent_on</item>
 
+        <!--
+          Курсор, ручки выделения и выделение текста — акцентом кита.
+          Без этого они брали бирюзовый цвет платформы: единственный
+          цвет на экране не из палитры.
+        -->
+        <item name="colorAccent">@color/accent_base</item>
+        <item name="colorControlActivated">@color/accent_base</item>
+        <item name="android:colorControlActivated">@color/accent_base</item>
+        <item name="android:textColorHighlight">@color/accent_line</item>
+
         <item name="android:colorBackground">@color/bg_base</item>
         <item name="colorSurface">@color/bg_card</item>
         <item name="colorOnSurface">@color/text_primary</item>

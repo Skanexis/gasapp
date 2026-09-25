@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Диалог по UI kit (слайд 20): карточка r16, отступы 24, заголовок H4,
+  текст вторичного цвета, действия справа. Основное действие — кнопкой
+  с заливкой, отказ — текстом. Собирается AegisDialog.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_dialog_panel"
+    android:orientation="vertical"
+    android:padding="@dimen/space_l">
+
+    <TextView
+        android:id="@+id/dialog_title"
+        style="@style/AegisText.H4"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:accessibilityHeading="true"
+        tools:text="Delete for everyone?" />
+
+    <TextView
+        android:id="@+id/dialog_message"
+        style="@style/AegisText.Body.Secondary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_s"
+        android:textSize="14sp"
+        android:lineSpacingExtra="6sp"
+        android:visibility="gone"
+        tools:text="This message will be removed from all devices in the chat."
+        tools:visibility="visible" />
+
+    <FrameLayout
+        android:id="@+id/dialog_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_m"
+        android:visibility="gone" />
+
+    <!-- Ошибка заменяет подсказку, а не добавляется к ней (UI kit, Inputs). -->
+    <TextView
+        android:id="@+id/dialog_error"
+        style="@style/AegisText.Caption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_s"
+        android:accessibilityLiveRegion="polite"
+        android:drawablePadding="6dp"
+        android:gravity="center_vertical"
+        android:textColor="@color/status_error"
+        android:visibility="gone"
+        app:drawableStartCompat="@drawable/ic_alert_small"
+        app:drawableTint="@color/status_error"
+        tools:text="No one with this username"
+        tools:visibility="visible" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_l"
+        android:gravity="end|center_vertical"
+        android:orientation="horizontal">
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/dialog_secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:buttonSize="small"
+            app:buttonVariant="ghost"
+            tools:text="Cancel"
+            tools:visibility="visible" />
+
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/dialog_primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_s"
+            android:visibility="gone"
+            app:buttonSize="small"
+            app:buttonVariant="primary"
+            tools:text="Delete"
+            tools:visibility="visible" />
+    </LinearLayout>
+</LinearLayout>

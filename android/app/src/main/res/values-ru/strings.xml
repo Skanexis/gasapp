@@ -20,8 +20,9 @@
 
     <!-- Список чатов -->
     <string name="chat_verified_mark">✓</string>
-    <string name="chat_list_empty">Пока нет переписок.
-Найдите собеседника по имени, чтобы начать.</string>
+    <string name="chat_list_empty">Найдите собеседника по имени пользователя. Каждое сообщение зашифровано сквозным шифрованием.</string>
+    <string name="chat_list_empty_title">Переписок пока нет</string>
+    <string name="chat_list_empty_action">Начать переписку</string>
     <string name="connection_offline">Нет соединения — сообщения уйдут позже</string>
     <string name="security_center_description">Центр безопасности</string>
 
@@ -29,11 +30,12 @@
     <string name="back">Назад</string>
     <string name="back_arrow">←</string>
     <string name="message_hint">Сообщение</string>
+    <string name="message_hint_closed">Писать пока нельзя — см. выше</string>
     <string name="send">Отправить</string>
     <string name="key_changed_title">🔒 Два ключа под одним именем</string>
     <string name="key_changed_body">Сервер теперь называет для «%1$s» другой ключ. Это может быть переустановка — или подмена. Отправка остановлена, пока вы не сверите safety number при встрече или по видео.</string>
     <string name="key_unconfirmed_title">🔒 Ключ ещё не подтверждён</string>
-    <string name="key_unconfirmed_body">Ключ «%1$s» пришёл от сервера — а сервер мог подсунуть свой. Сверьте safety number при встрече или по видео либо добавьте собеседника по его ссылке или QR-коду. До тех пор читать можно, писать — нет.</string>
+    <string name="key_unconfirmed_body">Ключ «%1$s» пришёл от сервера — а сервер мог подсунуть свой. Когда тот же ключ простоит в открытом журнале ключей сутки, приложение подтвердит его само. Или сверьте safety number при встрече или по видео либо добавьте собеседника по его ссылке или QR-коду. До тех пор читать можно, писать — нет.</string>
     <string name="key_replaced_title">Этот ключ заменён</string>
     <string name="key_replaced_body">У «%1$s» теперь другой ключ. Эта переписка остаётся для чтения, новые сообщения — в чате с действующим ключом.</string>
     <string name="verify_safety_number">Сверить safety number</string>
@@ -115,14 +117,14 @@
     <!-- Контакты -->
     <string name="add_contact">Добавить контакт</string>
     <string name="search_contacts">Поиск контактов</string>
-    <string name="contacts_empty">Контактов пока нет. Добавьте собеседника по имени пользователя.</string>
     <string name="contact_verified">@%1$s · верифицирован</string>
     <string name="contact_username">@%1$s</string>
     <!-- Онбординг -->
     <string name="onboarding_tagline">Мессенджер со сквозным шифрованием, устойчивым к квантовому компьютеру</string>
     <string name="onboarding_audit_warning">Не прошёл независимый аудит. Не используйте для защиты жизни и свободы.</string>
-    <string name="onboarding_choose_username">Выберите имя пользователя — по нему вас найдут собеседники. Латинские буквы, цифры и _</string>
-    <string name="onboarding_username_hint">имя_пользователя</string>
+    <string name="onboarding_username_hint">например, anna_k</string>
+    <string name="onboarding_username_label">Имя пользователя</string>
+    <string name="onboarding_username_helper">Латинские буквы, цифры и _. По нему вас найдут собеседники.</string>
     <string name="onboarding_create">Создать аккаунт</string>
     <string name="onboarding_working">Подбирается доказательство работы…</string>
     <string name="onboarding_error_username">3–32 символа: строчные латинские буквы, цифры и _, начиная с буквы</string>
@@ -135,7 +137,9 @@
     <string name="new_chat_hint">Введите имя пользователя собеседника</string>
     <string name="new_chat_not_found">Собеседник не найден. Проверьте имя и соединение.</string>
     <string name="new_chat_open">Открыть</string>
-    <string name="onboarding_choose_pin">Придумайте PIN — им шифруется переписка на устройстве</string>
+    <string name="new_chat_field_hint">@username</string>
+    <string name="onboarding_choose_pin">Им шифруется переписка на этом устройстве. Сбросить его нельзя.</string>
+    <string name="onboarding_pin_label">PIN · 6 цифр</string>
     <string name="onboarding_error_pin">PIN — ровно 6 цифр</string>
 
     <!-- Экран профиля: QR и ссылка для обмена контактами. -->
@@ -162,7 +166,8 @@
     <string name="search_hint">Найти в переписке</string>
     <string name="search_empty">Ничего не найдено</string>
     <string name="contact_no_username">Без имени</string>
-    <string name="contacts_empty_real">Контактов пока нет. Добавьте по QR или ссылке.</string>
+    <string name="contacts_empty_real">Добавьте собеседника по имени, QR-коду или ссылке.</string>
+    <string name="contacts_empty_title">Контактов пока нет</string>
 
     <!-- Вложения. -->
     <string name="attach">Прикрепить</string>
@@ -199,6 +204,7 @@
     <string name="calls_filter_all">Все</string>
     <string name="calls_filter_missed">Пропущенные</string>
     <string name="calls_empty">Звонков в этой версии нет</string>
+    <string name="calls_empty_title">Звонков пока нет</string>
     <string name="calls_encrypted_note">Когда звонки появятся, они будут защищены сквозным шифрованием, как переписка</string>
     <string name="call_back">Позвонить</string>
     <string name="call_incoming">Входящий · %1$s</string>
@@ -258,6 +264,11 @@
             <string name="lock_biometric_title">Разблокировать AEGIS</string>
     <string name="lock_biometric_subtitle">Отпечаток вместо ввода PIN</string>
     <string name="lock_biometric_use_pin">Ввести PIN</string>
+    <string name="lock_use_fingerprint">Войти по отпечатку</string>
+    <string name="lock_forgot">Забыли PIN?</string>
+    <string name="lock_forgot_title">Забыли PIN?</string>
+    <string name="lock_forgot_body">PIN не сбросить: без него переписку на этом устройстве не расшифровать — и нам тоже. Можно стереть данные с устройства и вернуть аккаунт ключом восстановления: вернутся имя и переписка из последней копии, более новые сообщения пропадут. Без ключа восстановления аккаунт не вернуть.</string>
+    <string name="lock_forgot_erase">Стереть и восстановить</string>
     <string name="privacy_biometric">Вход по отпечатку</string>
     <string name="privacy_biometric_hint">Чтобы не набирать PIN. Сам PIN продолжает работать и по-прежнему защищает переписку — отпечаток лишь открывает запечатанную копию ключа.</string>
     <string name="privacy_wipe">Стирать после 10 неверных PIN</string>
@@ -539,8 +550,10 @@
     <string name="network_direct_confirm_title">Подключаться напрямую?</string>
     <string name="network_direct_confirm_body">Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети. Tor его скрывает.</string>
     <string name="network_direct_confirm_ok">Подключаться напрямую</string>
-    <string name="network_host_hint">Адрес прокси</string>
-    <string name="network_port_hint">Порт</string>
+    <string name="network_host_hint">например, 127.0.0.1</string>
+    <string name="network_port_hint">например, 9050</string>
+    <string name="network_port_label">Порт</string>
+    <string name="network_host_label">Адрес прокси</string>
     <string name="network_save">Сохранить</string>
     <string name="network_saved">Сохранено. Новые соединения идут выбранным способом.</string>
     <string name="network_invalid">Адрес или порт указаны неверно. Укажите имя хоста или IP-адрес без схемы и пути; логин и пароль не поддерживаются.</string>
@@ -592,7 +605,7 @@
       меняется строка.
     -->
     <string name="about_section_limits">Чего это не защищает</string>
-    <string name="about_limit_first_message">Ключ собеседника, найденного по имени, приходит от сервера, а сервер мог бы подсунуть свой. Поэтому писать ему нельзя, пока вы не сверите safety number при встрече или по видео либо не добавите его по его ссылке или QR-коду. Каждое сообщение, и первое тоже, запечатано: сервер не видит, кто кому пишет.</string>
+    <string name="about_limit_first_message">Ключ собеседника, найденного по имени, приходит от сервера, а сервер мог бы подсунуть свой. Поэтому приложение сверяет его с открытым журналом ключей: писать можно, когда тот же ключ простоял в журнале не меньше суток, а владелец имени сам проверяет свою запись каждый час. Сервер, подменивший ключ, вынужден показать подмену всем — и её заметят. Кто не открывал приложение больше суток, заметит её, только когда вернётся. Для полной уверенности сверьте safety number при встрече или добавьте собеседника по его ссылке или QR-коду. Каждое сообщение, и первое тоже, запечатано: сервер не видит, кто кому пишет.</string>
     <string name="about_limit_address">По умолчанию приложение подключается через Tor, встроенный в приложение, и сервер не видит ваш IP-адрес. Если выбрать прямое соединение («Настройки» → «Соединение»), сервер увидит IP-адрес и время каждого запроса.</string>
     <string name="about_limit_notifications">Уведомлений нет: сообщения приходят, пока приложение открыто.</string>
     <string name="about_limit_backup">Исчезающих сообщений в резервной копии нет. Удалённое сообщение остаётся в копиях, сделанных до удаления.</string>

@@ -7,8 +7,8 @@ import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -18,16 +18,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisDialog
+import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.TouchTarget
-import org.aegis.app.core.showSecure
 import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
 import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
+import org.aegis.app.ui.EmptyState
 import org.aegis.app.ui.RowDivider
 import uniffi.aegis.FfiChatRequest
 import uniffi.aegis.FfiException
@@ -50,7 +52,7 @@ class ChatListActivity : AppCompatActivity() {
 
     private lateinit var adapter: ChatListAdapter
     private lateinit var list: RecyclerView
-    private lateinit var empty: TextView
+    private lateinit var empty: View
 
     /**
      * Сокет уведомлений, пока открыт список.
@@ -71,6 +73,13 @@ class ChatListActivity : AppCompatActivity() {
 
         list = findViewById(R.id.chat_list)
         empty = findViewById(R.id.chat_list_empty)
+        EmptyState.bind(
+            empty,
+            icon = R.drawable.ic_chat,
+            title = R.string.chat_list_empty_title,
+            body = R.string.chat_list_empty,
+            action = R.string.chat_list_empty_action,
+        ) { promptNewChat() }
 
         adapter = ChatListAdapter(onClick = ::openChat)
         list.layoutManager = LinearLayoutManager(this)
@@ -303,61 +312,80 @@ class ChatListActivity : AppCompatActivity() {
      * (ADR-007). Имя пользователь выбирает сам и может сменить.
      */
     private fun promptNewChat() {
-        val input = android.widget.EditText(this).apply {
-            hint = getString(R.string.onboarding_username_hint)
+        // 🔐 Имена собеседников не попадают в словарь клавиатуры:
+        // AegisTextField ставит запрет обучения сам.
+        val input = AegisTextField(this).apply {
+            setHint(R.string.new_chat_field_hint)
             setSingleLine()
-            setTextColor(getColor(R.color.text_primary))
-            setHintTextColor(getColor(R.color.text_tertiary))
-            setPadding(48, 32, 48, 32)
-
-            // 🔐 Имена собеседников не попадают в словарь клавиатуры.
-            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
+                android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            // Вариант «видимый пароль» ставит моноширинный шрифт —
+            // возвращается шрифт макета.
+            typeface = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.inter)
         }
 
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-            .setTitle(R.string.new_chat)
-            .setMessage(R.string.new_chat_hint)
-            .setView(input)
-            .setPositiveButton(R.string.new_chat_open) { _, _ ->
+        val shown = AegisDialog(this)
+            .title(R.string.new_chat)
+            .message(R.string.new_chat_hint)
+            .content(input)
+            .secondary()
+            .primary(R.string.new_chat_open, closeOnClick = false) { dialog ->
                 // Каноничная форма: «@Bob» находит «bob», двойник
                 // с кириллицей не находит никого.
                 val username = runCatching { canonicalUsername(input.text?.toString().orEmpty()) }
-                    .getOrElse {
-                        Toast.makeText(this, R.string.onboarding_error_username, Toast.LENGTH_LONG).show()
+                    .getOrNull()
+                    ?.takeIf { it.isNotEmpty() }
 
-                        return@setPositiveButton
-                    }
-                if (username.isNotEmpty()) {
-                    openChatWith(username)
+                if (username == null) {
+                    input.hasError = true
+                    dialog.showError(R.string.onboarding_error_username)
+
+                    return@primary
                 }
+
+                openChatWith(username, dialog)
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showSecure(this)
+            .show()
+
+        input.doAfterTextChanged {
+            input.hasError = false
+            shown.clearError()
+        }
+        input.requestFocus()
     }
 
     /**
      * Открывает переписку с собеседником, найденным по имени.
      *
      * 🔐 Сначала ядро находит собеседника и записывает контактом —
-     * **неподтверждённым**: его ключ назвал сервер. Экран переписки сразу
-     * показывает сверку safety number, а писать можно только после неё
-     * (или по ссылке/QR самого собеседника).
+     * **неподтверждённым**, пока его ключ не подтвердит журнал ключей
+     * (сутки в открытом журнале) или сверка safety number: ключ назвал
+     * сервер. Писать до подтверждения нельзя (или по ссылке/QR самого
+     * собеседника).
+     *
+     * Ошибка показывается в диалоге, а не всплывающим сообщением:
+     * набранное имя остаётся на месте, и его можно поправить.
      */
-    private fun openChatWith(username: String) {
+    private fun openChatWith(username: String, dialog: AegisDialog.Shown) {
+        dialog.setBusy(true)
+
         lifecycleScope.launch {
             val found = withContext(Dispatchers.IO) {
                 runCatching { Core.messenger().discoverContact(username, System.currentTimeMillis()) }
             }
 
+            dialog.setBusy(false)
+
             val contact = found.getOrElse { failure ->
-                Toast.makeText(
-                    this@ChatListActivity,
+                dialog.showError(
                     if (failure is FfiException.IdentityChanged) R.string.key_changed_title else R.string.new_chat_not_found,
-                    Toast.LENGTH_LONG,
-                ).show()
+                )
 
                 return@launch
             }
+
+            dialog.dismiss()
 
             startActivity(
                 Intent(this@ChatListActivity, ChatActivity::class.java)
@@ -368,6 +396,7 @@ class ChatListActivity : AppCompatActivity() {
             )
         }
     }
+
     private fun render(chats: List<ChatSummary>) {
         adapter.submit(chats)
 

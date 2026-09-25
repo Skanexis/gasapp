@@ -23,6 +23,7 @@
     android:orientation="vertical">
 
 <ScrollView
+    android:id="@+id/onboarding_scroll"
     android:layout_width="match_parent"
     android:layout_height="0dp"
     android:layout_weight="1"
@@ -78,19 +79,21 @@
             android:textColor="@color/status_error"
             android:textSize="14sp" />
 
+        <!--
+          Поле по UI kit (Inputs): подпись прописными над полем, пример
+          внутри поля, подсказка под полем. Ошибка встаёт на место
+          подсказки, а не добавляется к ней.
+        -->
         <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="@string/onboarding_choose_username"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            style="@style/AegisSectionLabel"
+            android:layout_marginTop="@dimen/space_l"
+            android:labelFor="@id/onboarding_username"
+            android:text="@string/onboarding_username_label" />
 
         <org.aegis.app.components.AegisTextField
             android:id="@+id/onboarding_username"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
             android:hint="@string/onboarding_username_hint"
             android:importantForAutofill="no"
             android:digits="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
@@ -101,14 +104,23 @@
             android:textColorHint="@color/text_muted"
             android:textSize="15sp" />
 
+        <TextView
+            android:id="@+id/onboarding_username_helper"
+            style="@style/AegisCaption"
+            android:layout_marginTop="@dimen/space_s"
+            android:accessibilityLiveRegion="polite"
+            android:drawablePadding="6dp"
+            android:text="@string/onboarding_username_helper" />
+
 
         <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/onboarding_choose_pin"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            style="@style/AegisSectionLabel"
+            android:layout_marginTop="@dimen/space_l"
+            android:text="@string/onboarding_pin_label" />
+
+        <TextView
+            style="@style/AegisCaption"
+            android:text="@string/onboarding_choose_pin" />
 
         <!--
           🔐 PIN шифрует хранилище: он растягивается Argon2id и даёт
@@ -168,12 +180,14 @@
 
         <TextView
             android:id="@+id/onboarding_error"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            style="@style/AegisCaption"
             android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="assertive"
+            android:drawablePadding="6dp"
             android:textColor="@color/status_error"
-            android:textSize="12sp"
-            android:visibility="invisible"
+            android:visibility="gone"
+            app:drawableStartCompat="@drawable/ic_alert_small"
+            app:drawableTint="@color/status_error"
             tools:text="Имя уже занято"
             tools:visibility="visible" />
 

@@ -3,7 +3,6 @@
 package org.aegis.app
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -19,12 +18,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.PinPad
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.VaultBlob
-import org.aegis.app.core.showSecure
 import org.aegis.app.ui.FileSize
 import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.FfiVaultFile
@@ -323,12 +322,12 @@ class VaultActivity : AppCompatActivity() {
      * уже сделана, остаётся. Диалог об этом говорит.
      */
     private fun offerToDeleteOriginal(uri: Uri) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.vault_original_title)
-            .setMessage(R.string.vault_original_body)
-            .setNegativeButton(R.string.vault_original_keep, null)
-            .setPositiveButton(R.string.vault_original_delete) { _, _ -> deleteOriginal(uri) }
-            .showSecure(this)
+        AegisDialog(this)
+            .title(R.string.vault_original_title)
+            .message(R.string.vault_original_body)
+            .secondary(R.string.vault_original_keep)
+            .primary(R.string.vault_original_delete, AegisDialog.Tone.Danger) { deleteOriginal(uri) }
+            .show()
     }
 
     private fun deleteOriginal(uri: Uri) {

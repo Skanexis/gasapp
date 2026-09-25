@@ -103,7 +103,7 @@
 
 | # | Требование | Статус | Чем проверено |
 |---|---|---|---|
-| CODE-1 | Актуальная версия платформы | 🟡 | Android ✅: `minSdk = 28`, `targetSdk = 35`. **iOS 🟡**: `ios/Package.swift` объявляет `.iOS(.v17)` — расхождение в четыре версии системы устранено. 🟡, а не ✅: сборка iOS на Windows не проверяется ничем, и объявленная версия — пока только объявление |
+| CODE-1 | Актуальная версия платформы | 🟡 | Android ✅: `minSdk = 28`, `targetSdk = compileSdk = 36` (Android 16, требование Google Play с 2026-08-31); эмулятор API 36 гоняется в CI (`android-device.yml`). **iOS 🟡**: `ios/Package.swift` объявляет `.iOS(.v17)` — расхождение в четыре версии системы устранено. 🟡, а не ✅: сборка iOS на Windows не проверяется ничем, и объявленная версия — пока только объявление |
 | CODE-2.1 | Rust memory safety | ✅ | Весь протокол и хранилище на Rust |
 | CODE-2.2 | `#![forbid(unsafe_code)]` | ✅ | `[workspace.lints.rust] unsafe_code = "forbid"`; исключение только для `aegis-ffi`, что проверяет job `unsafe-boundary` в `security.yml` |
 | CODE-2.3 | R8/ProGuard в release | ✅ | `minifyEnabled true` + `android/app/proguard-rules.pro`; обфускация видна в `build/outputs/mapping/gmsRelease/mapping.txt` |

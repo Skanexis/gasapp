@@ -22,14 +22,33 @@
         android:orientation="vertical"
         android:padding="@dimen/screen_padding">
 
-        <TextView
+        <!--
+          Шапка как на остальных экранах (AegisAppBar): «назад» и
+          заголовок. Отрицательный отступ сверху компенсирует отступ
+          экрана, чтобы заголовок стоял на той же высоте.
+        -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/contact_profile_title"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:fontFamily="@font/inter"
-            android:textFontWeight="700" />
+            android:layout_marginTop="-8dp"
+            android:gravity="center_vertical"
+            android:minHeight="@dimen/touch_target"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/contact_profile_back"
+                style="@style/AegisIconButton"
+                android:layout_marginStart="-12dp"
+                android:contentDescription="@string/back"
+                android:src="@drawable/ic_back"
+                app:tint="@color/text_primary" />
+
+            <TextView
+                style="@style/AegisAppBarTitle"
+                android:layout_marginStart="@dimen/space_s"
+                android:accessibilityHeading="true"
+                android:text="@string/contact_profile_title" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/contact_profile_name"

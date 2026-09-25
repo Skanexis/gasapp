@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -22,6 +21,7 @@ import org.aegis.app.core.TouchTarget
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
+import org.aegis.app.ui.EmptyState
 import org.aegis.app.ui.RowDivider
 import uniffi.aegis.FfiContact
 
@@ -45,7 +45,7 @@ class ContactsActivity : AppCompatActivity() {
 
     private lateinit var adapter: ChatListAdapter
     private lateinit var list: RecyclerView
-    private lateinit var empty: TextView
+    private lateinit var empty: View
 
     /** Последний прочитанный из ядра список — источник для фильтра. */
     private var loaded: List<FfiContact> = emptyList()
@@ -65,7 +65,13 @@ class ContactsActivity : AppCompatActivity() {
 
         list = findViewById(R.id.contact_list)
         empty = findViewById(R.id.contact_list_empty)
-        empty.setText(R.string.contacts_empty_real)
+        EmptyState.bind(
+            empty,
+            icon = R.drawable.ic_users,
+            title = R.string.contacts_empty_title,
+            body = R.string.contacts_empty_real,
+            action = R.string.add_contact,
+        ) { findViewById<View>(R.id.add_contact).performClick() }
 
         adapter = ChatListAdapter(onClick = ::openChat)
         list.layoutManager = LinearLayoutManager(this)

@@ -49,6 +49,8 @@ class ProfileActivity : AppCompatActivity() {
         SecureWindow.apply(this)
 
         setContentView(R.layout.activity_profile)
+        findViewById<android.view.View>(R.id.profile_back).setOnClickListener { finish() }
+
 
         linkView = findViewById(R.id.profile_link)
         qrView = findViewById(R.id.profile_qr)

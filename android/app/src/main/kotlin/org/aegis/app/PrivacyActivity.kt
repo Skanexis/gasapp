@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.PinPad
 import org.aegis.app.core.BiometricUnlock
@@ -20,7 +21,6 @@ import org.aegis.app.core.DeleteAccount
 import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
-import org.aegis.app.core.showSecure
 import org.aegis.app.ui.SettingsRow
 import org.aegis.app.ui.SettingsToggle
 
@@ -216,7 +216,7 @@ class PrivacyActivity : AppCompatActivity() {
      */
     private fun askPinThenEnableBiometric() {
         val view = layoutInflater.inflate(R.layout.dialog_pin, null)
-        var dialog: androidx.appcompat.app.AlertDialog? = null
+        var dialog: AegisDialog.Shown? = null
 
         PinPad(view) { pad ->
             val pin = pad.take()
@@ -224,15 +224,12 @@ class PrivacyActivity : AppCompatActivity() {
             enableBiometric(pin)
         }
 
-        dialog = androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-            .setTitle(R.string.privacy_biometric_pin_title)
-            .setView(view)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-            .also {
-                SecureWindow.always(it)
-                it.show()
-            }
+        dialog = AegisDialog(this)
+            .title(R.string.privacy_biometric_pin_title)
+            .content(view)
+            .secondary()
+            .alwaysSecure()
+            .show()
     }
 
     /**
@@ -373,15 +370,15 @@ class PrivacyActivity : AppCompatActivity() {
                 return@bind true
             }
 
-            androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-                .setTitle(R.string.privacy_wipe_confirm_title)
-                .setMessage(R.string.privacy_wipe_confirm_body)
-                .setNegativeButton(R.string.action_cancel, null)
-                .setPositiveButton(R.string.privacy_wipe_confirm) { _, _ ->
+            AegisDialog(this)
+                .title(R.string.privacy_wipe_confirm_title)
+                .message(R.string.privacy_wipe_confirm_body)
+                .secondary()
+                .primary(R.string.privacy_wipe_confirm, AegisDialog.Tone.Danger) {
                     PinAttempts.setWipeEnabled(this, true)
                     toggle.isChecked = true
                 }
-                .showSecure(this)
+                .show()
 
             // Переключатель встанет после подтверждения, а не по нажатию.
             false
@@ -433,14 +430,12 @@ class PrivacyActivity : AppCompatActivity() {
 
     /** Предупреждение до выбора места. */
     private fun confirmExport() {
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-            .setTitle(R.string.privacy_export_title)
-            .setMessage(R.string.privacy_export_warning)
-            .setPositiveButton(R.string.privacy_export_continue) { _, _ ->
-                createExportFile.launch(exportFileName())
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showSecure(this)
+        AegisDialog(this)
+            .title(R.string.privacy_export_title)
+            .message(R.string.privacy_export_warning)
+            .secondary()
+            .primary(R.string.privacy_export_continue) { createExportFile.launch(exportFileName()) }
+            .show()
     }
 
     /**
@@ -521,26 +516,24 @@ class PrivacyActivity : AppCompatActivity() {
 
     /** Первое подтверждение: что именно произойдёт. */
     private fun confirmDeleteAccount() {
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-            .setTitle(R.string.privacy_delete_account_title)
-            .setMessage(R.string.privacy_delete_account_warning)
-            .setPositiveButton(R.string.privacy_delete_account_continue) { _, _ ->
+        AegisDialog(this)
+            .title(R.string.privacy_delete_account_title)
+            .message(R.string.privacy_delete_account_warning)
+            .secondary()
+            .primary(R.string.privacy_delete_account_continue, AegisDialog.Tone.Danger) {
                 confirmDeleteAccountFinally()
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showSecure(this)
+            .show()
     }
 
     /** Второе подтверждение: последняя возможность отказаться. */
     private fun confirmDeleteAccountFinally() {
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-            .setTitle(R.string.privacy_delete_account_final_title)
-            .setMessage(R.string.privacy_delete_account_final)
-            .setPositiveButton(R.string.privacy_delete_account_confirm) { _, _ ->
-                runDeleteAccount()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showSecure(this)
+        AegisDialog(this)
+            .title(R.string.privacy_delete_account_final_title)
+            .message(R.string.privacy_delete_account_final)
+            .secondary()
+            .primary(R.string.privacy_delete_account_confirm, AegisDialog.Tone.Danger) { runDeleteAccount() }
+            .show()
     }
 
     /**

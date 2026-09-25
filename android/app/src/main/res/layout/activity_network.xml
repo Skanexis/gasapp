@@ -102,11 +102,16 @@
                     android:visibility="gone"
                     tools:visibility="visible">
 
-                    <EditText
+                    <TextView
+                        style="@style/AegisSectionLabel"
+                        android:layout_marginTop="@dimen/space_m"
+                        android:labelFor="@id/network_host"
+                        android:text="@string/network_host_label" />
+
+                    <org.aegis.app.components.AegisTextField
                         android:id="@+id/network_host"
                         style="@style/AegisInput"
                         android:layout_width="match_parent"
-                        android:layout_marginTop="@dimen/space_s"
                         android:autofillHints=""
                         android:hint="@string/network_host_hint"
                         android:importantForAutofill="no"
@@ -114,11 +119,16 @@
                         android:inputType="textUri|textNoSuggestions"
                         android:textColor="@color/text_primary" />
 
-                    <EditText
+                    <TextView
+                        style="@style/AegisSectionLabel"
+                        android:layout_marginTop="@dimen/space_m"
+                        android:labelFor="@id/network_port"
+                        android:text="@string/network_port_label" />
+
+                    <org.aegis.app.components.AegisTextField
                         android:id="@+id/network_port"
                         style="@style/AegisInput"
                         android:layout_width="match_parent"
-                        android:layout_marginTop="@dimen/space_s"
                         android:autofillHints=""
                         android:hint="@string/network_port_hint"
                         android:importantForAutofill="no"
@@ -155,7 +165,7 @@
                     android:layout_marginTop="@dimen/space_l"
                     android:text="@string/network_section_bridges" />
 
-                <EditText
+                <org.aegis.app.components.AegisTextField
                     android:id="@+id/network_bridges"
                     style="@style/AegisInput"
                     android:layout_width="match_parent"

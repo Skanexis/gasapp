@@ -148,6 +148,10 @@ class SecurityCenterActivity : AppCompatActivity() {
         if (events.isEmpty()) {
             val row = layoutInflater.inflate(R.layout.item_settings_row, list, false)
             SettingsRow.bind(root = row, label = R.string.security_log_empty, icon = R.drawable.ic_shield)
+            // Пустой журнал — пояснение, а не пункт списка: приглушённо.
+            row.findViewById<TextView>(R.id.row_label).setTextColor(
+                ContextCompat.getColor(this, R.color.text_muted),
+            )
             list.addView(row)
 
             return
@@ -441,13 +445,17 @@ class SecurityCenterActivity : AppCompatActivity() {
                 root = row,
                 label = check.label,
                 value = if (longDetail != null) verdict else check.detail ?: verdict,
-                icon = if (check.passed) R.drawable.ic_shield else R.drawable.ic_alert,
+                icon = if (check.passed) R.drawable.ic_shield_check else R.drawable.ic_alert,
                 // Переход предлагается только к непройденной проверке:
                 // исправлять пройденную незачем.
                 onClick = check.fix?.takeUnless { check.passed },
             )
 
             row.findViewById<TextView>(R.id.row_value).setTextColor(statusColor(check.passed))
+            // Состояние не только цветом (раздел 20.5): значок тоже разный —
+            // щит с галочкой у пройденной проверки, треугольник у непройденной.
+            row.findViewById<ImageView>(R.id.row_icon).imageTintList =
+                android.content.res.ColorStateList.valueOf(statusColor(check.passed))
             row.findViewById<TextView>(R.id.row_detail).apply {
                 visibility = if (longDetail != null) View.VISIBLE else View.GONE
                 text = longDetail
@@ -480,7 +488,7 @@ class SecurityCenterActivity : AppCompatActivity() {
 
         // Блокировки ещё нет, значит и заблокированных нет. Число здесь
         // было бы выдумкой.
-        bindRow(R.id.security_blocked, R.drawable.ic_alert, R.string.security_blocked, null)
+        bindRow(R.id.security_blocked, R.drawable.ic_block, R.string.security_blocked, null)
     }
 
     /**

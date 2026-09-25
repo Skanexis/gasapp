@@ -40,17 +40,20 @@
     <string name="send_allowed">✓ Sending allowed</string>
     <string name="button_loading">Loading…</string>
     <string name="chat_verified_mark">✓</string>
-    <string name="chat_list_empty">No conversations yet.\nFind someone by username to start one.</string>
+    <string name="chat_list_empty">Find someone by username. Every message is end-to-end encrypted.</string>
+    <string name="chat_list_empty_title">No conversations yet</string>
+    <string name="chat_list_empty_action">Start a chat</string>
     <string name="connection_offline">No connection — messages will be sent later</string>
     <string name="security_center_description">Security center</string>
     <string name="back">Back</string>
     <string name="back_arrow">←</string>
     <string name="message_hint">Message</string>
+    <string name="message_hint_closed">Writing is closed — see above</string>
     <string name="send">Send</string>
     <string name="key_changed_title">🔒 Two keys for one name</string>
     <string name="key_changed_body">The server now gives a different key for “%1$s”. It may be a reinstall — or an impostor. Sending is paused until you compare safety numbers in person or over video.</string>
     <string name="key_unconfirmed_title">🔒 Key not confirmed yet</string>
-    <string name="key_unconfirmed_body">The key of “%1$s” came from the server — and the server could have handed you its own. Compare safety numbers in person or over video, or add them from their own link or QR code. Until then you can read, but not write.</string>
+    <string name="key_unconfirmed_body">The key of “%1$s” came from the server — and the server could have handed you its own. Once the same key has stood in the public key log for a day, the app confirms it by itself. Or compare safety numbers in person or over video, or add them from their own link or QR code. Until then you can read, but not write.</string>
     <string name="key_replaced_title">This key was replaced</string>
     <string name="key_replaced_body">“%1$s” now uses a different key. This conversation stays readable; new messages go to the chat with the current key.</string>
     <string name="verify_safety_number">Compare safety number</string>
@@ -129,15 +132,15 @@
 
     <string name="add_contact">Add contact</string>
     <string name="search_contacts">Search contacts</string>
-    <string name="contacts_empty">No contacts yet. Add someone by username.</string>
     <string name="contact_verified">@%1$s · verified</string>
     <string name="contact_username">@%1$s</string>
 
     <!-- Onboarding -->
     <string name="onboarding_tagline">An end-to-end encrypted messenger built to resist quantum computers</string>
     <string name="onboarding_audit_warning">Not independently audited. Do not rely on it where life or liberty is at stake.</string>
-    <string name="onboarding_choose_username">Choose a username — this is how others will find you. Latin letters, digits and _</string>
-    <string name="onboarding_username_hint">username</string>
+    <string name="onboarding_username_hint">e.g. anna_k</string>
+    <string name="onboarding_username_label">Username</string>
+    <string name="onboarding_username_helper">Latin letters, digits and _. This is how others will find you.</string>
     <string name="onboarding_create">Create account</string>
     <string name="onboarding_working">Computing proof of work…</string>
     <string name="onboarding_error_username">3–32 characters: lowercase Latin letters, digits and _, starting with a letter</string>
@@ -150,7 +153,9 @@
     <string name="new_chat_hint">Enter the other person\'s username</string>
     <string name="new_chat_not_found">Couldn’t find this person. Check the name and your connection.</string>
     <string name="new_chat_open">Open</string>
-    <string name="onboarding_choose_pin">Choose a PIN — it encrypts your messages on this device</string>
+    <string name="new_chat_field_hint">@username</string>
+    <string name="onboarding_choose_pin">It encrypts your messages on this device. There is no way to reset it.</string>
+    <string name="onboarding_pin_label">PIN · 6 digits</string>
     <string name="onboarding_error_pin">The PIN must be exactly 6 digits</string>
 
     <!-- Profile -->
@@ -175,7 +180,8 @@
     <string name="search_hint">Search your messages</string>
     <string name="search_empty">Nothing found</string>
     <string name="contact_no_username">No name</string>
-    <string name="contacts_empty_real">No contacts yet. Add one by QR code or link.</string>
+    <string name="contacts_empty_real">Add someone by username, QR code or link.</string>
+    <string name="contacts_empty_title">No contacts yet</string>
 
     <!-- Attachments -->
     <string name="attach">Attach</string>
@@ -210,6 +216,7 @@
     <string name="calls_filter_all">All</string>
     <string name="calls_filter_missed">Missed</string>
     <string name="calls_empty">Calls are not available in this version</string>
+    <string name="calls_empty_title">No calls yet</string>
     <string name="calls_encrypted_note">When calls arrive, they will be end-to-end encrypted, like your messages</string>
     <string name="call_back">Call</string>
     <string name="call_incoming">Incoming · %1$s</string>
@@ -268,6 +275,11 @@
     <string name="lock_biometric_title">Unlock AEGIS</string>
     <string name="lock_biometric_subtitle">Use your fingerprint instead of typing the PIN</string>
     <string name="lock_biometric_use_pin">Use PIN</string>
+    <string name="lock_use_fingerprint">Unlock with fingerprint</string>
+    <string name="lock_forgot">Forgot PIN?</string>
+    <string name="lock_forgot_title">Forgot your PIN?</string>
+    <string name="lock_forgot_body">The PIN cannot be reset: without it, the messages on this device cannot be decrypted — not by us either. You can erase this device’s data and get your account back with your recovery key: your username and the conversations from your last backup return, newer messages are lost. Without a recovery key the account cannot be returned.</string>
+    <string name="lock_forgot_erase">Erase and restore</string>
     <string name="privacy_biometric">Unlock with fingerprint</string>
     <string name="privacy_biometric_hint">Skip typing the PIN. The PIN still works and is still what protects your messages — your fingerprint only unlocks a sealed copy of the key.</string>
     <string name="privacy_wipe">Erase after 10 wrong PINs</string>
@@ -500,8 +512,10 @@
     <string name="network_direct_confirm_title">Connect directly?</string>
     <string name="network_direct_confirm_body">The server will see your IP address: roughly where you are, and which of your accounts share a network. Tor hides it.</string>
     <string name="network_direct_confirm_ok">Connect directly</string>
-    <string name="network_host_hint">Proxy address</string>
-    <string name="network_port_hint">Port</string>
+    <string name="network_host_hint">e.g. 127.0.0.1</string>
+    <string name="network_port_hint">e.g. 9050</string>
+    <string name="network_port_label">Port</string>
+    <string name="network_host_label">Proxy address</string>
     <string name="network_save">Save</string>
     <string name="network_saved">Saved. New connections use the method you chose.</string>
     <string name="network_invalid">The address or port is not valid. Enter a hostname or IP address without a scheme or path; usernames and passwords are not supported.</string>
@@ -546,7 +560,7 @@
       меняется строка.
     -->
     <string name="about_section_limits">What AEGIS does not protect against</string>
-    <string name="about_limit_first_message">The key of a contact found by username comes from the server, and the server could hand you its own. So you cannot write to them until you compare safety numbers in person or over video, or add them from their own link or QR code. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
+    <string name="about_limit_first_message">The key of a contact found by username comes from the server, and the server could hand you its own. So the app checks it against the public key log: you can write once the same key has stood in the log for at least a day, and the owner of the name checks their own entry every hour. A server that swaps a key has to show the swap to everyone — and it gets noticed. Someone who has not opened the app for over a day will only notice when they come back. For full certainty, compare safety numbers in person or add a contact from their own link or QR code. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
     <string name="about_limit_address">By default the app connects through Tor, built into the app, and the server does not see your IP address. If you choose a direct connection (Settings → Connection), the server sees your IP address and the time of each request.</string>
     <string name="about_limit_notifications">There are no push notifications: messages arrive while the app is open.</string>
     <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>

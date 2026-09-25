@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.BottomNav
+import org.aegis.app.ui.EmptyState
 
 /**
  * Журнал звонков.
@@ -38,7 +39,7 @@ import org.aegis.app.ui.BottomNav
 class CallsActivity : AppCompatActivity() {
 
     private lateinit var list: RecyclerView
-    private lateinit var empty: TextView
+    private lateinit var empty: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +53,12 @@ class CallsActivity : AppCompatActivity() {
 
         list = findViewById(R.id.calls_list)
         empty = findViewById(R.id.calls_empty)
+        EmptyState.bind(
+            empty,
+            icon = R.drawable.ic_phone,
+            title = R.string.calls_empty_title,
+            body = R.string.calls_empty,
+        )
 
         list.layoutManager = LinearLayoutManager(this)
 

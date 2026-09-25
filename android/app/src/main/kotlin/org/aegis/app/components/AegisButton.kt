@@ -6,6 +6,8 @@ import android.content.Context
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatButton
 import androidx.core.content.res.use
+import com.google.android.material.progressindicator.CircularProgressIndicatorSpec
+import com.google.android.material.progressindicator.IndeterminateDrawable
 import org.aegis.app.R
 
 /**
@@ -43,12 +45,16 @@ class AegisButton @JvmOverloads constructor(
             if (value) {
                 textBeforeLoading = text
                 setText(R.string.button_loading)
+                showSpinner()
             } else {
                 text = textBeforeLoading
+                hideSpinner()
             }
 
-            // Во время загрузки нажатие не должно проходить повторно.
-            isEnabled = !value
+            // Во время загрузки нажатие не проходит повторно (см.
+            // [performClick]), но кнопка не гаснет: в UI kit идущее
+            // действие — та же кнопка со спиннером, а не недоступная.
+            isClickable = !value
             refreshDrawableState()
         }
 
@@ -76,45 +82,89 @@ class AegisButton @JvmOverloads constructor(
             applyVariant()
         }
 
+    /**
+     * Размер кнопки из UI kit: 40, 48 или 56dp.
+     *
+     * Задаётся атрибутом `buttonSize` в разметке или из кода (кнопки
+     * диалога — [Size.Small]).
+     */
+    var size: Size = Size.Medium
+        set(value) {
+            field = value
+            applySize()
+        }
+
     init {
+        var variantAttr = Variant.Primary
+        var sizeAttr = Size.Medium
+
         context.theme.obtainStyledAttributes(attrs, R.styleable.AegisButton, defStyleAttr, 0)
             .use { typed ->
-                variant = Variant.entries.getOrElse(
+                variantAttr = Variant.entries.getOrElse(
                     typed.getInt(R.styleable.AegisButton_buttonVariant, 0),
                 ) { Variant.Primary }
 
-                applySize(typed.getInt(R.styleable.AegisButton_buttonSize, 0))
+                sizeAttr = Size.entries.getOrElse(
+                    typed.getInt(R.styleable.AegisButton_buttonSize, 0),
+                ) { Size.Medium }
             }
 
-        applyVariant()
-
-        // Метрики из UI kit (.btn): 48dp, отступы 24, шрифт 600/15.
+        // Метрики из UI kit (.btn), общие для всех вариантов и размеров.
         // Заданы здесь, а не только в стиле: кнопка, поставленная
         // в раскладку без стиля, всё равно обязана выглядеть кнопкой
         // AEGIS, а не системной.
-        val padding = resources.getDimensionPixelSize(R.dimen.space_l)
-        setPaddingRelative(padding, 0, padding, 0)
-
-        minHeight = resources.getDimensionPixelSize(R.dimen.button_medium)
-        minimumHeight = minHeight
+        //
+        // ⚠️ Порядок важен: сначала общее, потом вариант и размер.
+        // Прежде общие метрики ставились последними и затирали
+        // выбранное — `buttonSize="small"` и жирный шрифт опасной
+        // кнопки не действовали нигде.
         minWidth = 0
         minimumWidth = 0
 
         isAllCaps = false
+        letterSpacing = 0f
         gravity = android.view.Gravity.CENTER
         stateListAnimator = null
 
-        typeface = androidx.core.content.res.ResourcesCompat.getFont(
-            context,
-            R.font.inter_semibold,
-        )
-        setTextSize(
-            android.util.TypedValue.COMPLEX_UNIT_PX,
-            resources.getDimension(R.dimen.text_button),
-        )
-
         isFocusable = true
         isClickable = true
+
+        variant = variantAttr
+        applyVariant()
+
+        size = sizeAttr
+    }
+
+    private var spinner: IndeterminateDrawable<CircularProgressIndicatorSpec>? = null
+
+    /**
+     * Спиннер загрузки перед подписью (UI kit, .spin: 18dp, цвет подписи).
+     *
+     * Одна подпись «Загрузка…» не отличает идущую операцию от зависшей
+     * кнопки; вращение отличает.
+     */
+    private fun showSpinner() {
+        val size = resources.getDimensionPixelSize(R.dimen.button_spinner)
+        val spec = CircularProgressIndicatorSpec(context, null).apply {
+            indicatorSize = size
+            trackThickness = resources.getDimensionPixelSize(R.dimen.button_spinner_stroke)
+            indicatorInset = 0
+            indicatorColors = intArrayOf(currentTextColor)
+        }
+
+        spinner = IndeterminateDrawable.createCircularDrawable(context, spec).apply {
+            setBounds(0, 0, size, size)
+        }
+
+        setCompoundDrawablesRelative(spinner, null, null, null)
+        compoundDrawablePadding = resources.getDimensionPixelSize(R.dimen.space_s)
+        spinner?.setVisible(true, true)
+    }
+
+    private fun hideSpinner() {
+        spinner?.setVisible(false, false)
+        spinner = null
+        setCompoundDrawablesRelative(null, null, null, null)
     }
 
     /** Применяет фон и цвет подписи выбранного варианта. */
@@ -145,20 +195,18 @@ class AegisButton @JvmOverloads constructor(
 
         // Опасное и подтверждающее действия набраны жирнее: на шаг,
         // который нельзя отменить, смотрят дольше.
-        if (variant == Variant.Danger || variant == Variant.Ok) {
-            typeface = androidx.core.content.res.ResourcesCompat.getFont(
-                context,
-                R.font.inter_bold,
-            )
-        }
+        typeface = androidx.core.content.res.ResourcesCompat.getFont(
+            context,
+            if (variant == Variant.Danger || variant == Variant.Ok) R.font.inter_bold else R.font.inter_semibold,
+        )
     }
 
-    /** Применяет размер: medium по умолчанию, large и small — из макета. */
-    private fun applySize(size: Int) {
+    /** Применяет размер: высоту, боковые отступы и кегль. */
+    private fun applySize() {
         val (heightRes, paddingRes, textSp) = when (size) {
-            1 -> Triple(R.dimen.button_large, R.dimen.space_xl, 16f)
-            2 -> Triple(R.dimen.button_small, R.dimen.space_m, 14f)
-            else -> Triple(R.dimen.button_medium, R.dimen.space_l, 15f)
+            Size.Large -> Triple(R.dimen.button_large, R.dimen.space_xl, 16f)
+            Size.Small -> Triple(R.dimen.button_small, R.dimen.space_m, 14f)
+            Size.Medium -> Triple(R.dimen.button_medium, R.dimen.space_l, 15f)
         }
 
         minHeight = resources.getDimensionPixelSize(heightRes)
@@ -169,6 +217,9 @@ class AegisButton @JvmOverloads constructor(
 
         textSize = textSp
     }
+
+    /** Размеры кнопки; порядок совпадает с enum `buttonSize` в attrs.xml. */
+    enum class Size { Medium, Large, Small }
 
     /** Варианты кнопки из UI kit. */
     enum class Variant {
@@ -190,6 +241,9 @@ class AegisButton @JvmOverloads constructor(
         /** 🔐 Подтверждение проверки: сверка прошла. */
         Ok,
     }
+
+    /** Во время загрузки нажатие — и касанием, и из TalkBack — не проходит. */
+    override fun performClick(): Boolean = if (isLoading) false else super.performClick()
 
     override fun onCreateDrawableState(extraSpace: Int): IntArray {
         val state = super.onCreateDrawableState(extraSpace + EXTRA_STATES)

@@ -86,7 +86,7 @@
 
             <LinearLayout style="@style/AegisPanel">
 
-                <EditText
+                <org.aegis.app.components.AegisTextField
                     android:id="@+id/restore_key"
                     style="@style/AegisInput"
                     android:layout_width="match_parent"

@@ -10,8 +10,8 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import org.aegis.app.R
 import org.aegis.app.RecoveryCenterActivity
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
-import org.aegis.app.core.showSecure
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -52,9 +52,10 @@ class DialogScreenshotTest {
     fun a_dialog_of_a_secure_screen_is_secure() {
         val host = hostActivity(secureHost = true)
 
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(host, R.style.AegisDialog)
-            .setMessage("имя файла хранилища")
-            .showSecure(host)
+        val dialog = AegisDialog(host)
+            .message("имя файла хранилища")
+            .show()
+            .dialog
 
         assertTrue("диалог защищённого экрана снимается", secure(dialog.window!!.attributes.flags))
     }
@@ -64,9 +65,10 @@ class DialogScreenshotTest {
     fun a_dialog_follows_the_screen_when_screenshots_are_allowed() {
         val host = hostActivity(secureHost = false)
 
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(host, R.style.AegisDialog)
-            .setMessage("что угодно")
-            .showSecure(host)
+        val dialog = AegisDialog(host)
+            .message("что угодно")
+            .show()
+            .dialog
 
         assertFalse(secure(dialog.window!!.attributes.flags))
     }
@@ -105,6 +107,28 @@ class DialogScreenshotTest {
             "ключ восстановления: клавиатура учится=$learns, окно снимается=$capturable",
             !learns && !capturable,
         )
+    }
+
+    /**
+     * 🔐 В коде приложения нет системных диалогов в обход [AegisDialog].
+     *
+     * `AlertDialog` запрет снимков от экрана не наследует: его надо
+     * ставить руками при каждом показе, и новый диалог, где об этом
+     * забыли, снимался бы на защищённом экране. AegisDialog ставит флаг
+     * сам — поэтому все диалоги идут через него.
+     */
+    @Test
+    fun app_code_shows_no_bare_alert_dialogs() {
+        val sources = java.io.File("src/main/kotlin")
+        assertTrue("исходники не найдены: ${sources.absolutePath}", sources.isDirectory)
+
+        val offenders = sources.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .filter { "AlertDialog.Builder(" in it.readText() }
+            .map { it.name }
+            .toList()
+
+        assertTrue("системный AlertDialog вместо AegisDialog: $offenders", offenders.isEmpty())
     }
 
     private fun findEditText(view: View): EditText? {

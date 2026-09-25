@@ -212,22 +212,3 @@ object SecureWindow {
         )
     }
 }
-
-/**
- * Показывает диалог, унаследовавший запрет снимков от экрана.
- *
- * 🔐 Флаг ставится **до** показа (см. [SecureWindow.inherit]).
- */
-fun androidx.appcompat.app.AlertDialog.Builder.showSecure(
-    host: Activity,
-): androidx.appcompat.app.AlertDialog = create().also {
-    SecureWindow.inherit(it, host)
-    it.show()
-}
-
-/** То же для платформенного `AlertDialog`. */
-fun android.app.AlertDialog.Builder.showSecure(host: Activity): android.app.AlertDialog =
-    create().also {
-        SecureWindow.inherit(it, host)
-        it.show()
-    }

@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -16,9 +15,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisDialog
+import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
-import org.aegis.app.core.showSecure
 import uniffi.aegis.validateRecoveryKey
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -184,7 +184,7 @@ class RecoveryCenterActivity : AppCompatActivity() {
      * приложение само что создало и ещё не дало забыть.
      */
     private fun askForKey(onEntered: (String) -> Unit) {
-        val input = EditText(this).apply {
+        val input = AegisTextField(this).apply {
             setHint(R.string.restore_key_hint)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or
@@ -201,28 +201,28 @@ class RecoveryCenterActivity : AppCompatActivity() {
             isSaveEnabled = false
         }
 
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-            .setTitle(R.string.recovery_key_needed)
-            .setView(input)
-            .setPositiveButton(R.string.recovery_backup_now) { _, _ ->
+        AegisDialog(this)
+            .title(R.string.recovery_key_needed)
+            .content(input)
+            .secondary()
+            .primary(R.string.recovery_backup_now, closeOnClick = false) { dialog ->
                 val entered = input.text.toString()
 
                 // Контрольная сумма проверяется до дорогого Argon2id:
-                // опечатку видно мгновенно.
+                // опечатку видно мгновенно — в самом диалоге, не теряя
+                // набранного.
                 if (validateRecoveryKey(entered)) {
+                    dialog.dismiss()
                     onEntered(entered)
                 } else {
-                    showStatus(getString(R.string.restore_key_invalid))
+                    input.hasError = true
+                    dialog.showError(R.string.restore_key_invalid)
                 }
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-            .also {
-                // 🔐 Всегда, а не по настройке: здесь вводится ключ,
-                // открывающий всю копию переписки.
-                SecureWindow.always(it)
-                it.show()
-            }
+            // 🔐 Всегда, а не по настройке: здесь вводится ключ,
+            // открывающий всю копию переписки.
+            .alwaysSecure()
+            .show()
     }
 
     private fun runBackup(key: String) {
@@ -312,10 +312,11 @@ class RecoveryCenterActivity : AppCompatActivity() {
      * хранилище. Сказать это надо до, а не после.
      */
     private fun newKey() {
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.AegisDialog)
-            .setTitle(R.string.recovery_new_key)
-            .setMessage(R.string.recovery_new_key_warning)
-            .setPositiveButton(R.string.recovery_new_key_confirm) { _, _ ->
+        AegisDialog(this)
+            .title(R.string.recovery_new_key)
+            .message(R.string.recovery_new_key_warning)
+            .secondary()
+            .primary(R.string.recovery_new_key_confirm) {
                 runCatching { Core.messenger().forgetBackupChain() }
                     .onSuccess {
                         pendingKey = null
@@ -325,8 +326,7 @@ class RecoveryCenterActivity : AppCompatActivity() {
 
                 render()
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showSecure(this)
+            .show()
     }
 
     private fun showStatus(text: String) {

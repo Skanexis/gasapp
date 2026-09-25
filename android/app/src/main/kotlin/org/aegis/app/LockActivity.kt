@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
@@ -88,6 +89,47 @@ class LockActivity : AppCompatActivity() {
 
         bindKeypad()
         renderDots()
+
+        findViewById<View>(R.id.key_biometric).setOnClickListener { offerBiometricUnlock() }
+        findViewById<View>(R.id.lock_forgot).setOnClickListener { confirmForgotPin() }
+    }
+
+    /**
+     * Забытый PIN: объяснение и стирание с возвратом аккаунта.
+     *
+     * 🔐 Сбросить PIN нельзя: он — половина ключа базы, и обходного
+     * пути, который работал бы для владельца, но не для укравшего
+     * телефон, нет. Стирание не даёт укравшему ничего: удалить
+     * приложение он может и так, а данные без PIN не расшифровать.
+     * Аккаунт возвращается только ключом восстановления.
+     */
+    private fun confirmForgotPin() {
+        AegisDialog(this)
+            .title(R.string.lock_forgot_title)
+            .message(R.string.lock_forgot_body)
+            .secondary()
+            .primary(R.string.lock_forgot_erase, AegisDialog.Tone.Danger) {
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { AccountWipe.wipe(this@LockActivity) }
+
+                    startActivity(
+                        Intent(this@LockActivity, OnboardingActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                    )
+                    finish()
+                }
+            }
+            .show()
+    }
+
+    /** Клавиша отпечатка — только когда вход по отпечатку возможен. */
+    private fun renderBiometricKey() {
+        val available = !Core.isUnlocked &&
+            cooldown == null &&
+            BiometricUnlock.isEnabled(this) &&
+            BiometricUnlock.availability(this) == BiometricUnlock.Availability.Ready
+
+        findViewById<View>(R.id.key_biometric).visibility = if (available) View.VISIBLE else View.INVISIBLE
     }
 
     /**
@@ -100,6 +142,7 @@ class LockActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         applyCooldown()
+        renderBiometricKey()
         offerBiometricUnlock()
     }
 
@@ -467,6 +510,10 @@ class LockActivity : AppCompatActivity() {
                 key.alpha = if (enabled) 1f else DISABLED_ALPHA
             }
         }
+
+        // 🔐 Во время задержки отпечаток тоже недоступен — см.
+        // offerBiometricUnlock.
+        renderBiometricKey()
     }
 
     /** 🔐 Затирает буфер введённых цифр. */

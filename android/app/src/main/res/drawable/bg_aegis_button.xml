@@ -6,11 +6,12 @@
   общих. disabled стоит первым — недоступная кнопка не должна выглядеть
   нажатой или ошибочной.
 -->
+<!-- Загрузка — первой: кнопка выглядит обычной и показывает спиннер (UI kit, .b-pri .spin), а не погасшей. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <item app:state_loading="true" android:drawable="@drawable/bg_button_normal" />
     <item android:state_enabled="false" android:drawable="@drawable/bg_button_disabled" />
-    <item app:state_loading="true" android:drawable="@drawable/bg_button_disabled" />
     <item app:state_error="true" android:drawable="@drawable/bg_button_error" />
     <item android:state_pressed="true" android:drawable="@drawable/bg_button_pressed" />
     <item android:state_focused="true" android:drawable="@drawable/bg_button_focused" />

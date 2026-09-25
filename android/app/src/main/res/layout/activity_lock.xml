@@ -74,4 +74,17 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="18dp" />
 
+    <!--
+      «Забыли PIN?» — честный ответ вместо тупика: PIN не сбросить,
+      но аккаунт возвращается ключом восстановления.
+    -->
+    <org.aegis.app.components.AegisButton
+        android:id="@+id/lock_forgot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_m"
+        android:text="@string/lock_forgot"
+        app:buttonSize="small"
+        app:buttonVariant="ghost" />
+
 </LinearLayout>

@@ -37,20 +37,28 @@ class AegisComponentsTest {
     // --- AegisButton ---
 
     /**
-     * Состояние загрузки блокирует кнопку и меняет подпись.
+     * Состояние загрузки не пропускает нажатие и меняет подпись.
      *
      * Блокировка — не косметика: без неё повторное нажатие отправит
-     * операцию второй раз, пока первая ещё идёт.
+     * операцию второй раз, пока первая ещё идёт. Кнопка при этом
+     * не гаснет (UI kit: идущее действие — кнопка со спиннером).
      */
     @Test
-    fun `loading state disables button and swaps label`() {
+    fun `loading state blocks clicks and swaps label`() {
         val button = AegisButton(themedActivity())
         button.text = "Отправить"
+        var clicks = 0
+        button.setOnClickListener { clicks++ }
 
         button.isLoading = true
 
         assertTrue(button.isLoading)
-        assertFalse("во время загрузки кнопка должна быть недоступна", button.isEnabled)
+        assertFalse("нажатие во время загрузки прошло", button.performClick())
+        assertEquals("обработчик вызван во время загрузки", 0, clicks)
+        assertTrue(
+            "загрузка не подмешана в drawableState — кнопка выглядела бы погасшей",
+            button.drawableState.contains(R.attr.state_loading),
+        )
         assertEquals(
             ApplicationProvider.getApplicationContext<android.content.Context>()
                 .getString(R.string.button_loading),
@@ -63,12 +71,31 @@ class AegisComponentsTest {
     fun `leaving loading restores label and enabled state`() {
         val button = AegisButton(themedActivity())
         button.text = "Отправить"
+        button.setOnClickListener {}
 
         button.isLoading = true
         button.isLoading = false
 
         assertEquals("Отправить", button.text.toString())
         assertTrue(button.isEnabled)
+        assertTrue("после загрузки нажатие не проходит", button.performClick())
+    }
+
+    /**
+     * Размер из разметки действует.
+     *
+     * Прежде общие метрики ставились после размера и затирали его:
+     * `buttonSize="small"` давал ту же кнопку 48dp, что и без него.
+     */
+    @Test
+    fun `size attribute changes the height`() {
+        val activity = themedActivity()
+        val small = AegisButton(activity).apply { size = AegisButton.Size.Small }
+        val large = AegisButton(activity).apply { size = AegisButton.Size.Large }
+        val density = activity.resources.displayMetrics.density
+
+        assertEquals(40, (small.minHeight / density).toInt())
+        assertEquals(56, (large.minHeight / density).toInt())
     }
 
     /** Прикладные состояния попадают в набор состояний drawable. */
