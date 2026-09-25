@@ -64,7 +64,7 @@ class HardwareKeyOnDeviceTest {
             File(context.filesDir, "aegis.db").exists(),
         )
 
-        Core.unlock(context, TEST_PIN)
+        Core.unlock(context, TEST_PIN.toByteArray())
     }
 
     @After

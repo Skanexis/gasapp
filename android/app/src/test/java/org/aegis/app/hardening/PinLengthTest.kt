@@ -85,12 +85,12 @@ class PinLengthTest {
      */
     @Test
     fun a_pin_the_lock_screen_cannot_enter_is_refused() {
-        assertTrue("шесть цифр должны приниматься", Pin.isAcceptable("123456"))
+        assertTrue("шесть цифр должны приниматься", Pin.isAcceptable("123456".toByteArray()))
 
-        assertFalse("семизначный PIN приняли — им не войти", Pin.isAcceptable("1234567"))
-        assertFalse("двенадцатизначный PIN приняли", Pin.isAcceptable("123456789012"))
-        assertFalse("слишком короткий PIN приняли", Pin.isAcceptable("12345"))
-        assertFalse("пустой PIN приняли", Pin.isAcceptable(""))
+        assertFalse("семизначный PIN приняли — им не войти", Pin.isAcceptable("1234567".toByteArray()))
+        assertFalse("двенадцатизначный PIN приняли", Pin.isAcceptable("123456789012".toByteArray()))
+        assertFalse("слишком короткий PIN приняли", Pin.isAcceptable("12345".toByteArray()))
+        assertFalse("пустой PIN приняли", Pin.isAcceptable("".toByteArray()))
     }
 
     /**
@@ -107,7 +107,7 @@ class PinLengthTest {
         assertTrue("заготовка теста не из тех цифр", arabicIndic.all { it.isDigit() })
         assertEquals("заготовка теста не той длины", Pin.LENGTH, arabicIndic.length)
 
-        assertFalse("PIN из ненабираемых цифр приняли", Pin.isAcceptable(arabicIndic))
+        assertFalse("PIN из ненабираемых цифр приняли", Pin.isAcceptable(arabicIndic.toByteArray()))
     }
 
     /**

@@ -567,8 +567,9 @@ mod tests {
 /// [`FfiError::InvalidArgument`] — PIN короче шести символов либо
 /// соль не 16 байт.
 #[uniffi::export]
-pub fn derive_storage_key(pin: String, salt: Vec<u8>) -> Result<Vec<u8>, FfiError> {
-    let key = guard(|| aegis_keystore::pin::derive_key(&pin, &salt))?;
+pub fn derive_storage_key(pin: Vec<u8>, salt: Vec<u8>) -> Result<Vec<u8>, FfiError> {
+    let pin = pin_bytes(pin);
+    let key = guard(|| aegis_keystore::pin::derive_key(pin_text(&pin)?, &salt))?;
 
     Ok(key.expose_secret().to_vec())
 }
@@ -596,13 +597,34 @@ pub fn derive_storage_key(pin: String, salt: Vec<u8>) -> Result<Vec<u8>, FfiErro
 /// не 16 байт либо секрет не 32 байта.
 #[uniffi::export]
 pub fn derive_storage_key_bound(
-    pin: String,
+    pin: Vec<u8>,
     salt: Vec<u8>,
     hardware_secret: Vec<u8>,
 ) -> Result<Vec<u8>, FfiError> {
-    let key = guard(|| aegis_keystore::pin::derive_key_bound(&pin, &salt, &hardware_secret))?;
+    let pin = pin_bytes(pin);
+    let key =
+        guard(|| aegis_keystore::pin::derive_key_bound(pin_text(&pin)?, &salt, &hardware_secret))?;
 
     Ok(key.expose_secret().to_vec())
+}
+
+/// 🔐 PIN приходит байтами и затирается при выходе из вызова.
+///
+/// Прежде PIN шёл через FFI строкой: `String` в Kotlin неизменяема,
+/// затереть её нельзя, и дамп памяти запертого приложения на эмуляторе
+/// показывал PIN в куче Java (2026-09-25). Байтовый массив платформа
+/// обнуляет сама после вызова, здесь — `Zeroizing`.
+pub(crate) fn pin_bytes(pin: Vec<u8>) -> zeroize::Zeroizing<Vec<u8>> {
+    zeroize::Zeroizing::new(pin)
+}
+
+/// PIN как текст — заимствованием, без копии.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — байты не UTF-8 (у PIN из цифр так не бывает).
+pub(crate) fn pin_text(pin: &[u8]) -> aegis_types::Result<&str> {
+    core::str::from_utf8(pin).map_err(|_| AegisError::Malformed)
 }
 
 /// Длина аппаратного секрета в байтах.

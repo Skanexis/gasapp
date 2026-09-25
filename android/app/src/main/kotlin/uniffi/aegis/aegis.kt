@@ -1503,10 +1503,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_core_version() != 35856.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_func_derive_storage_key() != 56879.toShort()) {
+    if (lib.uniffi_aegis_checksum_func_derive_storage_key() != 1640.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_func_derive_storage_key_bound() != 39178.toShort()) {
+    if (lib.uniffi_aegis_checksum_func_derive_storage_key_bound() != 33869.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_embedded_tor_status() != 64994.toShort()) {
@@ -1605,7 +1605,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_messenger_establish_vault_verifier() != 60466.toShort()) {
+    if (lib.uniffi_aegis_checksum_method_messenger_establish_vault_verifier() != 4841.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_export_data() != 23159.toShort()) {
@@ -1737,7 +1737,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_tor_bridges() != 35051.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_messenger_unlock_vault() != 52238.toShort()) {
+    if (lib.uniffi_aegis_checksum_method_messenger_unlock_vault() != 64899.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_vault_file_count() != 39132.toShort()) {
@@ -2770,7 +2770,7 @@ public interface MessengerInterface {
      *
      * [`FfiError::Core`] — сбой вывода ключа или записи.
      */
-    fun `establishVaultVerifier`(`pin`: kotlin.String, `salt`: kotlin.ByteArray)
+    fun `establishVaultVerifier`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray)
     
     /**
      * 🔐 Собирает выгрузку данных пользователя (MASVS PRIVACY-3.1).
@@ -3352,7 +3352,7 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — PIN короче допустимого, соль не той
      * длины либо сбой вывода ключей.
      */
-    fun `unlockVault`(`pin`: kotlin.String, `salt`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
+    fun `unlockVault`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
     
     /**
      * Сколько файлов в vault.
@@ -3838,12 +3838,12 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      *
      * [`FfiError::Core`] — сбой вывода ключа или записи.
      */
-    @Throws(FfiException::class)override fun `establishVaultVerifier`(`pin`: kotlin.String, `salt`: kotlin.ByteArray)
+    @Throws(FfiException::class)override fun `establishVaultVerifier`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_establish_vault_verifier(
-        it, FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),_status)
+        it, FfiConverterByteArray.lower(`pin`),FfiConverterByteArray.lower(`salt`),_status)
 }
     }
     
@@ -4889,12 +4889,12 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      * [`FfiError::Core`] — PIN короче допустимого, соль не той
      * длины либо сбой вывода ключей.
      */
-    @Throws(FfiException::class)override fun `unlockVault`(`pin`: kotlin.String, `salt`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
+    @Throws(FfiException::class)override fun `unlockVault`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_unlock_vault(
-        it, FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),FfiConverterLong.lower(`nowMillis`),_status)
+        it, FfiConverterByteArray.lower(`pin`),FfiConverterByteArray.lower(`salt`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     
@@ -7492,11 +7492,11 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
          * [`FfiError::InvalidArgument`] — PIN короче шести символов либо
          * соль не 16 байт.
          */
-    @Throws(FfiException::class) fun `deriveStorageKey`(`pin`: kotlin.String, `salt`: kotlin.ByteArray): kotlin.ByteArray {
+    @Throws(FfiException::class) fun `deriveStorageKey`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray): kotlin.ByteArray {
             return FfiConverterByteArray.lift(
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_derive_storage_key(
-        FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),_status)
+        FfiConverterByteArray.lower(`pin`),FfiConverterByteArray.lower(`salt`),_status)
 }
     )
     }
@@ -7525,11 +7525,11 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
          * [`FfiError::InvalidArgument`] — PIN короче шести символов, соль
          * не 16 байт либо секрет не 32 байта.
          */
-    @Throws(FfiException::class) fun `deriveStorageKeyBound`(`pin`: kotlin.String, `salt`: kotlin.ByteArray, `hardwareSecret`: kotlin.ByteArray): kotlin.ByteArray {
+    @Throws(FfiException::class) fun `deriveStorageKeyBound`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray, `hardwareSecret`: kotlin.ByteArray): kotlin.ByteArray {
             return FfiConverterByteArray.lift(
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_derive_storage_key_bound(
-        FfiConverterString.lower(`pin`),FfiConverterByteArray.lower(`salt`),FfiConverterByteArray.lower(`hardwareSecret`),_status)
+        FfiConverterByteArray.lower(`pin`),FfiConverterByteArray.lower(`salt`),FfiConverterByteArray.lower(`hardwareSecret`),_status)
 }
     )
     }

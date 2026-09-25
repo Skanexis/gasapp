@@ -240,10 +240,11 @@ class PrivacyActivity : AppCompatActivity() {
      * остаётся в куче до сборки мусора, и дамп памяти, снятый
      * в этот момент, отдал бы его целиком.
      */
-    private fun enableBiometric(pin: String) {
+    private fun enableBiometric(pin: ByteArray) {
         val cipher = runCatching { BiometricUnlock.cipherForEnabling() }.getOrNull()
 
         if (cipher == null) {
+            pin.fill(0)
             toast(R.string.privacy_biometric_failed)
 
             return
@@ -257,6 +258,11 @@ class PrivacyActivity : AppCompatActivity() {
                     result: androidx.biometric.BiometricPrompt.AuthenticationResult,
                 ) {
                     sealStorageKey(pin, result)
+                }
+
+                // 🔐 Отказ и отмена — тоже конец жизни PIN.
+                override fun onAuthenticationError(code: Int, message: CharSequence) {
+                    pin.fill(0)
                 }
             },
         )
@@ -275,7 +281,7 @@ class PrivacyActivity : AppCompatActivity() {
     }
 
     private fun sealStorageKey(
-        pin: String,
+        pin: ByteArray,
         result: androidx.biometric.BiometricPrompt.AuthenticationResult,
     ) {
         lifecycleScope.launch {
@@ -301,6 +307,8 @@ class PrivacyActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            pin.fill(0)
 
             when (sealed.getOrNull()) {
                 true -> toast(R.string.privacy_biometric_enabled, AegisToast.Tone.Success)

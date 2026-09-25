@@ -213,11 +213,15 @@ class VaultActivity : AppCompatActivity() {
             // проблема производительности.
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
-                    Core.messenger().unlockVault(
-                        pin = pin,
-                        salt = Core.salt(this@VaultActivity),
-                        nowMillis = System.currentTimeMillis(),
-                    )
+                    try {
+                        Core.messenger().unlockVault(
+                            pin = pin,
+                            salt = Core.salt(this@VaultActivity),
+                            nowMillis = System.currentTimeMillis(),
+                        )
+                    } finally {
+                        pin.fill(0)
+                    }
                 }
             }
 
