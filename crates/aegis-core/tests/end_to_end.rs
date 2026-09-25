@@ -108,6 +108,9 @@ struct ServerState {
     /// отвечать 500 — сбой посреди пачки.
     acks_before_failure: Option<usize>,
 
+    /// 🔐 Discovery отвечает 429 — как при чужом переборе по имени.
+    discovery_refused: bool,
+
     /// Журнал ключей (§9.7): эпохи — номер, корень, вершина, дерево
     /// и листы (identity, хеш PQ-половины, версия) по индексу.
     kt_epochs: Vec<KtEpochState>,
@@ -502,6 +505,11 @@ impl Transport for FakeServer {
                     })
                     .unwrap_or_default(),
                 )
+            }
+            (Method::Get, path)
+                if path.starts_with("/v1/discovery/username/") && state.discovery_refused =>
+            {
+                (429, String::new())
             }
             (Method::Get, path) if path.starts_with("/v1/discovery/username/") => {
                 let username = path.trim_start_matches("/v1/discovery/username/");
@@ -5009,4 +5017,34 @@ fn undecryptable_envelopes_do_not_block_the_queue() {
         server.queue_of(&bob_device).is_empty(),
         "мусор остался в очереди"
     );
+}
+
+/// 🔐 Отказ discovery (чужой перебор по имени собеседника выбрал бюджет)
+/// не отрезает от собеседника: отправка берёт последний известный ответ,
+/// а без него — честная ошибка сети.
+#[test]
+fn a_refused_discovery_does_not_cut_off_known_contacts() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "до перебора", now(), &mut OsRng)
+        .expect("первое");
+
+    server.state.borrow_mut().discovery_refused = true;
+
+    alice
+        .send_message("bob", "во время перебора", later(60), &mut OsRng)
+        .expect("отправка по последнему ответу");
+    bob.receive_messages(&bob_device, later(61)).expect("приём");
+    assert!(texts_of(&bob)
+        .iter()
+        .any(|text| text == "во время перебора"));
+
+    // Через сутки последний ответ уже не годится.
+    assert!(matches!(
+        alice.send_message("bob", "слишком поздно", later(25 * 3600), &mut OsRng),
+        Err(AegisError::Network)
+    ));
 }

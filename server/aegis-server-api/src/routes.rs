@@ -20,6 +20,7 @@
 //! записи аккаунта. Обратный порядок означал бы, что дешёвый для
 //! атакующего запрос заставляет сервер выполнять дорогую работу.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use aegis_server_db::{
@@ -47,6 +48,9 @@ pub struct AppState {
     pub pool: PgPool,
     /// Ограничитель discovery — против перебора username.
     pub discovery_limiter: Mutex<RateLimiter>,
+    /// Последние ответы discovery по имени — их получает запрашивающий
+    /// сверх бюджета имени (см. `discovery`).
+    pub discovery_cache: Mutex<HashMap<String, (i64, DiscoveryResponse)>>,
     /// Ограничитель запечатанной отправки — по получателю.
     ///
     /// Считаются только принятые конверты: мусор без ключа доступа
@@ -152,6 +156,7 @@ impl AppState {
                 rate_limit::DISCOVERY_PER_MINUTE,
                 nodes,
             ))),
+            discovery_cache: Mutex::new(HashMap::new()),
             bundle_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 rate_limit::BUNDLE_PER_MINUTE,
                 nodes,
@@ -281,8 +286,14 @@ pub struct RegisterResponse {
     pub device_id: Uuid,
 }
 
+/// Сколько живёт снимок ответа discovery, отдаваемый сверх бюджета имени.
+const DISCOVERY_SNAPSHOT_MILLIS: i64 = 5 * 60 * 1000;
+
+/// Предел числа снимков discovery в памяти узла.
+const DISCOVERY_CACHE_ENTRIES: usize = 1024;
+
 /// Ответ discovery.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DiscoveryResponse {
     /// Идентификатор аккаунта.
     pub account_id: Uuid,
@@ -667,15 +678,35 @@ async fn discovery(
     let key = rate_limit::key_from_addr(&state.limiter_salt, &username);
     let now = now_millis();
 
-    {
+    let within_budget = {
         let mut limiter = state
             .discovery_limiter
             .lock()
             .map_err(|_| ApiError::Internal)?;
 
-        if !limiter.allow(key, now) {
-            return Err(ApiError::TooManyRequests);
-        }
+        limiter.allow(key, now)
+    };
+
+    // 🔐 Сверх бюджета имени — недавний снимок, а не отказ.
+    //
+    // Отправка идёт через discovery на каждое сообщение, и прежде
+    // посторонний, бесплатно выбирая двадцать запросов в минуту по имени,
+    // не давал **никому** писать этому человеку (429 на каждую отправку).
+    // Снимок сохраняет то, ради чего ограничитель стоит: за человеком
+    // нельзя следить частыми запросами — сверх бюджета ответ не меняется
+    // пять минут.
+    if !within_budget {
+        let cache = state
+            .discovery_cache
+            .lock()
+            .map_err(|_| ApiError::Internal)?;
+
+        return match cache.get(&username) {
+            Some((at, cached)) if now.saturating_sub(*at) <= DISCOVERY_SNAPSHOT_MILLIS => {
+                Ok(Json(cached.clone()))
+            }
+            _ => Err(ApiError::TooManyRequests),
+        };
     }
 
     let account = repo::find_by_username(&state.pool, &username).await?;
@@ -690,7 +721,7 @@ async fn discovery(
     };
     let pq = repo::pq_identity_of(&state.pool, account.account_id).await?;
 
-    Ok(Json(DiscoveryResponse {
+    let response = DiscoveryResponse {
         account_id: account.account_id,
         identity_key: hex::encode(account.identity_key),
         device_ids: devices.into_iter().map(|device| device.device_id).collect(),
@@ -700,7 +731,28 @@ async fn discovery(
             .map(|(_, signature)| hex::encode(signature)),
         pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
         identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
-    }))
+    };
+
+    {
+        let mut cache = state
+            .discovery_cache
+            .lock()
+            .map_err(|_| ApiError::Internal)?;
+        if cache.len() >= DISCOVERY_CACHE_ENTRIES {
+            // Вытесняется самый старый снимок: предел держит память,
+            // а не полноту.
+            if let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, (at, _))| *at)
+                .map(|(name, _)| name.clone())
+            {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(username, (now, response.clone()));
+    }
+
+    Ok(Json(response))
 }
 
 /// Запрос перепривязки аккаунта к новой identity.

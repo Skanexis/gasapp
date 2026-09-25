@@ -27,6 +27,7 @@
 //! обращений к `aegis-protocol`. Это граница, за которой начинается
 //! проверяемый фаззингом код.
 
+use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
@@ -35,7 +36,8 @@ use aegis_media::attachment::{self, AttachmentKey};
 use aegis_media::descriptor::{AttachmentDescriptor, AttachmentKind};
 use aegis_media::scrub;
 use aegis_net::api::{
-    BundleResponse, PublishKeysRequest, RecoverAccountRequest, RegisterRequest, RegisterResponse,
+    BundleResponse, DiscoveryResponse, PublishKeysRequest, RecoverAccountRequest, RegisterRequest,
+    RegisterResponse,
 };
 use aegis_net::client::{ApiClient, Transport};
 use aegis_net::pow;
@@ -260,7 +262,21 @@ pub struct Client<T: Transport> {
     /// пока vault открыт (раздел 11.4). `Mutex` здесь по той же
     /// причине, что и у клиента: операции меняют состояние.
     vault: Mutex<VaultGuard>,
+
+    /// Последний ответ discovery по имени — только в памяти.
+    ///
+    /// 🔐 Отправка спрашивает discovery на каждое сообщение. Если
+    /// discovery отказывает (429 — чужой перебор по имени собеседника —
+    /// или сбой), отправка берёт последний известный ответ, не старше
+    /// [`DISCOVERY_FALLBACK_MILLIS`]: ключи в нём проверяются так же,
+    /// как в свежем, и подписаны владельцем. Иначе посторонний отрезал
+    /// бы человека от собеседников, выбирая бюджет его имени.
+    discovered: Mutex<HashMap<String, (DiscoveryResponse, Timestamp)>>,
 }
+
+/// Сколько годен последний ответ discovery для отправки при отказе
+/// discovery: сутки.
+const DISCOVERY_FALLBACK_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
 impl<T: Transport> Client<T> {
     /// Создаёт клиент поверх транспорта и открытого хранилища.
@@ -271,6 +287,32 @@ impl<T: Transport> Client<T> {
             // Vault всегда начинается закрытым: открыть его может
             // только повторная аутентификация.
             vault: Mutex::new(VaultGuard::new(Timestamp::from_millis(0))),
+            discovered: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Discovery для отправки: свежий ответ, а при отказе сети
+    /// или сервера — последний известный (см. `Client::discovered`).
+    fn discover_for_send(&self, name: &str, now: Timestamp) -> Result<DiscoveryResponse> {
+        match self.api.discover(name) {
+            Ok(found) => {
+                if let Ok(mut cache) = self.discovered.lock() {
+                    cache.insert(name.to_owned(), (found.clone(), now));
+                }
+
+                Ok(found)
+            }
+            Err(AegisError::Network) => self
+                .discovered
+                .lock()
+                .ok()
+                .and_then(|cache| cache.get(name).cloned())
+                .filter(|(_, at)| {
+                    now.as_millis().saturating_sub(at.as_millis()) <= DISCOVERY_FALLBACK_MILLIS
+                })
+                .map(|(found, _)| found)
+                .ok_or(AegisError::Network),
+            Err(error) => Err(error),
         }
     }
 
@@ -493,7 +535,7 @@ impl<T: Transport> Client<T> {
         // только в приёме, когда нам присылают конверт инициации.
         let (identity, _) = self.load_identity()?;
 
-        let peer = self.api.discover(peer_username)?;
+        let peer = self.discover_for_send(peer_username, now)?;
         let peer_identity = parse_public_key(&peer.identity_key)?;
 
         // 🔐 До шифрования: ключ, названный сервером, обязан быть тем,
@@ -804,7 +846,7 @@ impl<T: Transport> Client<T> {
         let peer_username = &canonical_username(peer_username)?;
         let (identity, _) = self.load_identity()?;
 
-        let peer = self.api.discover(peer_username)?;
+        let peer = self.discover_for_send(peer_username, now)?;
         let peer_identity = parse_public_key(&peer.identity_key)?;
 
         // 🔐 Та же проверка, что в `send_message`: реакция, правка
