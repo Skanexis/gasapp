@@ -173,6 +173,7 @@
                     android:layout_marginTop="@dimen/space_s"
                     android:autofillHints=""
                     android:fontFamily="monospace"
+                    app:fontFamily="monospace"
                     android:gravity="top|start"
                     android:hint="@string/network_bridges_hint"
                     android:importantForAutofill="no"

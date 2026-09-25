@@ -154,6 +154,7 @@
     <!-- Добавление контакта по ссылке. -->
     <string name="add_contact_title">Добавить контакт</string>
     <string name="add_contact_hint">Вставьте ссылку вида aegis://contact/…</string>
+    <string name="add_contact_label">Ссылка на контакт</string>
     <string name="add_contact_confirm">Добавить</string>
     <string name="add_contact_added">Контакт добавлен: %1$s</string>
     <string name="add_contact_added_unnamed">Контакт добавлен</string>

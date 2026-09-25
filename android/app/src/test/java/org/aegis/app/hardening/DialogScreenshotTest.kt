@@ -131,6 +131,29 @@ class DialogScreenshotTest {
         assertTrue("системный AlertDialog вместо AegisDialog: $offenders", offenders.isEmpty())
     }
 
+    /**
+     * 🔐 Системных тостов в коде приложения нет — кроме одного, оговорённого.
+     *
+     * Системный тост живёт в окне системы, и `FLAG_SECURE` на него
+     * не распространяется: его текст попадал бы в снимки и запись
+     * экрана. `AegisToast` — вид внутри окна приложения.
+     *
+     * Исключение одно: сообщение о неполном стирании аккаунта, за
+     * которым сразу открывается другой экран (см. PrivacyActivity).
+     */
+    @Test
+    fun app_code_shows_no_system_toasts() {
+        val sources = java.io.File("src/main/kotlin")
+        assertTrue("исходники не найдены: ${sources.absolutePath}", sources.isDirectory)
+
+        val uses = sources.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .flatMap { file -> List(file.readText().split("Toast.makeText").size - 1) { file.name } }
+            .toList()
+
+        assertTrue("системный Toast вместо AegisToast: $uses", uses == listOf("PrivacyActivity.kt"))
+    }
+
     private fun findEditText(view: View): EditText? {
         if (view is EditText) return view
         if (view is ViewGroup) {

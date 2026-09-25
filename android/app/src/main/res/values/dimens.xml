@@ -41,6 +41,9 @@
     <!-- Спиннер загрузки в кнопке (UI kit, .spin: 18px, линия 2px). -->
     <dimen name="button_spinner">18dp</dimen>
     <dimen name="button_spinner_stroke">2dp</dimen>
+    <!-- Тост: над нижней панелью экрана; текст не шире 300 (карточка ≤ 360, UI kit). -->
+    <dimen name="toast_bottom">88dp</dimen>
+    <dimen name="toast_text_max">300dp</dimen>
     <dimen name="list_row_min">64dp</dimen>
     <dimen name="list_row_max">72dp</dimen>
 

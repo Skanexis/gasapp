@@ -40,22 +40,24 @@
                 app:tint="@color/text_primary" />
 
             <TextView
+                style="@style/AegisAppBarTitle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
+                android:layout_marginStart="@dimen/space_s"
                 android:layout_weight="1"
-                android:text="@string/add_contact_title"
-                android:textColor="@color/text_primary"
-                android:textSize="20sp"
-                android:fontFamily="@font/inter"
-                android:textFontWeight="700" />
+                android:accessibilityHeading="true"
+                android:text="@string/add_contact_title" />
         </LinearLayout>
+
+        <TextView
+            style="@style/AegisSectionLabel"
+            android:layout_marginTop="@dimen/space_l"
+            android:labelFor="@id/add_contact_link"
+            android:text="@string/add_contact_label" />
 
         <org.aegis.app.components.AegisTextField
             android:id="@+id/add_contact_link"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
             android:hint="@string/add_contact_hint"
             android:inputType="textUri"
             android:textColor="@color/text_primary" />
@@ -72,13 +74,15 @@
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
+        <!-- Итог: зелёный с галочкой — добавлен, красный — нет (UI kit, Inputs). -->
         <TextView
             android:id="@+id/add_contact_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            style="@style/AegisCaption"
             android:layout_marginTop="16dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp"
+            android:accessibilityLiveRegion="polite"
+            android:drawablePadding="6dp"
+            android:gravity="center_vertical"
+            android:visibility="gone"
             tools:text="Контакт добавлен: bob" />
 
         <org.aegis.app.components.AegisButton

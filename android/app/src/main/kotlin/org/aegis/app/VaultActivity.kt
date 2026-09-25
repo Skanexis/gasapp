@@ -11,12 +11,12 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisToast
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
@@ -339,11 +339,11 @@ class VaultActivity : AppCompatActivity() {
 
             // Поставщик вправе не уметь удалять (облачные папки, чужие
             // приложения): тогда человек должен знать, что оригинал цел.
-            Toast.makeText(
+            AegisToast.show(
                 this@VaultActivity,
                 if (deleted) R.string.vault_original_deleted else R.string.vault_original_manual,
-                Toast.LENGTH_LONG,
-            ).show()
+                if (deleted) AegisToast.Tone.Success else AegisToast.Tone.Warning,
+            )
         }
     }
 

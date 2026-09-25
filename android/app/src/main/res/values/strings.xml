@@ -169,6 +169,7 @@
 
     <string name="add_contact_title">Add contact</string>
     <string name="add_contact_hint">Paste a link like aegis://contact/…</string>
+    <string name="add_contact_label">Contact link</string>
     <string name="add_contact_confirm">Add</string>
     <string name="add_contact_added">Contact added: %1$s</string>
     <string name="add_contact_added_unnamed">Contact added</string>

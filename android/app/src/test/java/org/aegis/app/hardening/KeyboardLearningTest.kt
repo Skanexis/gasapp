@@ -59,28 +59,25 @@ import org.xmlpull.v1.XmlPullParser
 class KeyboardLearningTest {
 
     /**
-     * Каждый плоский `<EditText>` в разметке объявляет флаг.
+     * В разметке нет плоских `<EditText>` — только поля дизайн-системы.
      *
-     * Поля дизайн-системы сюда не попадают: они получают флаг
-     * в конструкторе, что закреплено отдельным тестом ниже.
+     * Прежде проверялось, что плоское поле объявляет флаг атрибутом.
+     * Теперь все поля — `AegisTextField`, который ставит флаг сам (тест
+     * ниже), и правило строже: плоское поле не появится вовсе. Иначе
+     * новое поле без атрибута учило бы клавиатуру молча.
      */
     @Test
-    fun every_plain_edit_text_declares_no_personalized_learning() {
+    fun every_field_is_a_design_system_field() {
         val resources = Robolectric.buildActivity(Activity::class.java).get().resources
         val offenders = mutableListOf<String>()
-        var checked = 0
+        var fields = 0
 
         layoutIds().forEach { (name, id) ->
             resources.getLayout(id).use { parser ->
                 forEachTag(parser) { tag ->
-                    if (!tag.endsWith("EditText")) return@forEachTag
-
-                    checked++
-
-                    val options = parser.getAttributeIntValue(ANDROID_NS, "imeOptions", 0)
-
-                    if (options and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING == 0) {
-                        offenders += "$name:${parser.lineNumber} <$tag>"
+                    when {
+                        tag.endsWith("AegisTextField") -> fields++
+                        tag.endsWith("EditText") -> offenders += "$name:${parser.lineNumber} <$tag>"
                     }
                 }
             }
@@ -89,10 +86,10 @@ class KeyboardLearningTest {
         // Ноль найденных полей означал бы, что тест перестал что-либо
         // проверять — например, после переименования тега. Такой
         // «зелёный» хуже красного.
-        assertTrue("плоских EditText в разметке не найдено", checked > 0)
+        assertTrue("полей AegisTextField в разметке не найдено", fields > 0)
 
         assertTrue(
-            "поля обучают клавиатуру: ${offenders.joinToString()}",
+            "плоские EditText — клавиатура может учиться: ${offenders.joinToString()}",
             offenders.isEmpty(),
         )
     }
