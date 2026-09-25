@@ -5,6 +5,8 @@ package org.aegis.app.net
 import android.content.Context
 import android.net.Uri
 import java.io.File
+import java.net.Authenticator
+import java.net.PasswordAuthentication
 import kotlinx.coroutines.delay
 import org.aegis.app.BuildConfig
 import uniffi.aegis.FfiTorSettings
@@ -109,7 +111,42 @@ object EmbeddedTor {
             ).toInt()
         }.getOrDefault(0)
 
+        if (port != 0) installAuthenticator()
+
         return port
+    }
+
+    /**
+     * Ставит [BridgeAuthenticator] источником паролей процесса.
+     *
+     * Платформенный SOCKS (libcore, OpenJDK) спрашивает пароль SOCKS5
+     * у [Authenticator]. Повторная установка того же объекта безвредна.
+     */
+    fun installAuthenticator() {
+        Authenticator.setDefault(BridgeAuthenticator)
+    }
+
+    /**
+     * 🔐 Отдаёт пароль моста — только для SOCKS на 127.0.0.1 и только
+     * на портах запущенного моста. Любой другой запрос пароля (другой
+     * хост, другой порт, HTTP) — `null`: пароль моста никуда больше
+     * не уходит.
+     */
+    private object BridgeAuthenticator : Authenticator() {
+        override fun getPasswordAuthentication(): PasswordAuthentication? {
+            if (requestingProtocol?.startsWith("SOCKS", ignoreCase = true) != true) return null
+            if (requestingHost != BRIDGE_HOST) return null
+
+            val status = status()
+            val ours = status.running &&
+                (requestingPort == status.port.toInt() || requestingPort == status.isolatedPort.toInt())
+
+            return if (ours) {
+                PasswordAuthentication(status.socksUsername, status.socksPassword.toCharArray())
+            } else {
+                null
+            }
+        }
     }
 
     /** Останавливает Tor: выбран другой способ выхода в сеть. */
@@ -189,9 +226,14 @@ object EmbeddedTor {
         port = 0u,
         isolatedPort = 0u,
         bridges = false,
+        socksUsername = "",
+        socksPassword = "",
     )
 
     private const val DEFAULT_HTTPS_PORT = 443
+
+    /** Адрес моста: петля устройства (как в [NetworkProxy]). */
+    private const val BRIDGE_HOST = "127.0.0.1"
 
     private const val POLL_MS = 500L
 

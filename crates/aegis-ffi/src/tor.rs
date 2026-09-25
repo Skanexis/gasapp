@@ -57,6 +57,11 @@ pub struct FfiTorStatus {
     pub isolated_port: u16,
     /// Подключается через мосты.
     pub bridges: bool,
+    /// 🔐 Логин SOCKS5 моста — случайный на запуск; без него мост
+    /// не пускает (порт на 127.0.0.1 виден всем приложениям).
+    pub socks_username: String,
+    /// Пароль SOCKS5 моста.
+    pub socks_password: String,
 }
 
 impl FfiTorStatus {
@@ -68,6 +73,8 @@ impl FfiTorStatus {
         port: 0,
         isolated_port: 0,
         bridges: false,
+        socks_username: String::new(),
+        socks_password: String::new(),
     };
 
     fn of(tor: &EmbeddedTor) -> Self {
@@ -84,6 +91,8 @@ impl FfiTorStatus {
             port: tor.port(),
             isolated_port: tor.isolated_port(),
             bridges: !tor.bridges().is_empty(),
+            socks_username: tor.socks_credentials().0.to_owned(),
+            socks_password: tor.socks_credentials().1.to_owned(),
         }
     }
 }

@@ -21,30 +21,33 @@ use aegis_tor::{Allowlist, EmbeddedTor, TorSettings, TorStatus, Transport};
 const HOST: &str = "example.com";
 const PORT: u16 = 80;
 
-fn socks_connect(port: u16, host: &str) -> (TcpStream, u8) {
-    let mut socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("мост");
+fn socks_connect(tor: &EmbeddedTor, host: &str) -> (TcpStream, u8) {
+    let mut socket = TcpStream::connect((Ipv4Addr::LOCALHOST, tor.port())).expect("мост");
     socket
         .set_read_timeout(Some(Duration::from_mins(3)))
         .expect("таймаут");
 
-    let mut request = vec![
-        5,
-        1,
-        0,
-        5,
-        1,
-        0,
-        3,
-        u8::try_from(host.len()).expect("длина"),
-    ];
+    // Приветствие с паролем моста (RFC 1929): без него мост не пускает.
+    let (user, pass) = tor.socks_credentials();
+    let mut hello = vec![5, 1, 2, 1, u8::try_from(user.len()).expect("длина")];
+    hello.extend_from_slice(user.as_bytes());
+    hello.push(u8::try_from(pass.len()).expect("длина"));
+    hello.extend_from_slice(pass.as_bytes());
+    socket.write_all(&hello).expect("приветствие");
+
+    let mut granted = [0u8; 4];
+    socket.read_exact(&mut granted).expect("ответ на пароль");
+    assert_eq!(granted, [5, 2, 1, 0], "пароль моста не принят");
+
+    let mut request = vec![5, 1, 0, 3, u8::try_from(host.len()).expect("длина")];
     request.extend_from_slice(host.as_bytes());
     request.extend_from_slice(&PORT.to_be_bytes());
     socket.write_all(&request).expect("запрос");
 
-    let mut answer = [0u8; 12];
+    let mut answer = [0u8; 10];
     socket.read_exact(&mut answer).expect("ответ");
 
-    (socket, answer[3])
+    (socket, answer[1])
 }
 
 #[test]
@@ -95,7 +98,7 @@ fn a_request_goes_through_real_tor_and_nothing_else_does() {
     .expect("запуск");
 
     // 🔐 Чужое назначение — отказ ещё до Tor.
-    let (_, code) = socks_connect(tor.port(), "torproject.org");
+    let (_, code) = socks_connect(&tor, "torproject.org");
     assert_eq!(code, 2, "мост пропустил чужое назначение");
 
     // Бутстрап: ход виден в выводе.
@@ -116,7 +119,7 @@ fn a_request_goes_through_real_tor_and_nothing_else_does() {
 
     // Разрешённое назначение проходит.
     let started = Instant::now();
-    let (mut socket, code) = socks_connect(tor.port(), HOST);
+    let (mut socket, code) = socks_connect(&tor, HOST);
     assert_eq!(code, 0, "соединение через Tor не удалось");
     eprintln!("соединение через Tor: {:?}", started.elapsed());
 
