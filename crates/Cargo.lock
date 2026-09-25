@@ -179,6 +179,7 @@ dependencies = [
  "arti-client",
  "base64 0.22.1",
  "futures",
+ "rand_core 0.6.4",
  "rustls",
  "sha2",
  "tempfile",

@@ -15,11 +15,16 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
-use crate::socks::{self, Allowlist, Reply, Target};
+use crate::socks::{self, Allowlist, Credentials, Reply, Target};
 
 /// Сколько ждать рукопожатия SOCKS. Локальный клиент отвечает мгновенно;
-/// молчащий дольше держит слот зря.
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+/// молчащий дольше держит место зря.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Предел одновременных рукопожатий. Отдельный от слотов соединений:
+/// 🔐 чужое приложение без пароля дальше рукопожатия не проходит,
+/// и слоты, нужные мессенджеру, ему не достаются.
+const MAX_HANDSHAKES: usize = 64;
 
 /// Сколько ждать соединения через Tor. С запасом на первый бутстрап:
 /// соединение, пришедшее до готовности, ждёт его, а не падает.
@@ -44,8 +49,10 @@ pub(crate) async fn serve<C: Connector>(
     listener: TcpListener,
     connector: Arc<C>,
     allow: Arc<Allowlist>,
+    credentials: Option<Arc<Credentials>>,
 ) {
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+    let handshakes = Arc::new(Semaphore::new(MAX_HANDSHAKES));
 
     loop {
         let Ok((socket, _)) = listener.accept().await else {
@@ -55,26 +62,54 @@ pub(crate) async fn serve<C: Connector>(
             continue;
         };
 
-        // Нет слота — соединение закрывается сразу.
-        let Ok(slot) = Arc::clone(&slots).try_acquire_owned() else {
+        // Нет места для рукопожатия — соединение закрывается сразу.
+        let Ok(pending) = Arc::clone(&handshakes).try_acquire_owned() else {
             continue;
         };
 
         let connector = Arc::clone(&connector);
         let allow = Arc::clone(&allow);
+        let credentials = credentials.clone();
+        let slots = Arc::clone(&slots);
 
         tokio::spawn(async move {
-            handle(socket, connector.as_ref(), &allow).await;
-            drop(slot);
+            handle(
+                socket,
+                connector.as_ref(),
+                &allow,
+                credentials.as_deref(),
+                pending,
+                &slots,
+            )
+            .await;
         });
     }
 }
 
 /// Обслуживает одно соединение.
-async fn handle<C: Connector>(mut socket: TcpStream, connector: &C, allow: &Allowlist) {
+async fn handle<C: Connector>(
+    mut socket: TcpStream,
+    connector: &C,
+    allow: &Allowlist,
+    credentials: Option<&Credentials>,
+    pending: tokio::sync::OwnedSemaphorePermit,
+    slots: &Arc<Semaphore>,
+) {
     let _ = socket.set_nodelay(true);
 
-    let Ok(Ok(target)) = timeout(HANDSHAKE_TIMEOUT, socks::handshake(&mut socket)).await else {
+    let Ok(Ok(target)) = timeout(
+        HANDSHAKE_TIMEOUT,
+        socks::handshake(&mut socket, credentials),
+    )
+    .await
+    else {
+        return;
+    };
+    drop(pending);
+
+    // Слот соединения — только после рукопожатия (и пароля).
+    let Ok(_slot) = Arc::clone(slots).try_acquire_owned() else {
+        let _ = socks::reply(&mut socket, Reply::HostUnreachable).await;
         return;
     };
 
@@ -141,7 +176,12 @@ mod tests {
             .await
             .expect("мост");
         let port = listener.local_addr().expect("адрес").port();
-        tokio::spawn(serve(listener, Arc::new(Local(upstream)), Arc::new(allow)));
+        tokio::spawn(serve(
+            listener,
+            Arc::new(Local(upstream)),
+            Arc::new(allow),
+            None,
+        ));
         port
     }
 

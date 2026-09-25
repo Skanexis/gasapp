@@ -6272,7 +6272,16 @@ data class FfiTorStatus (
     /**
      * Подключается через мосты.
      */
-    var `bridges`: kotlin.Boolean
+    var `bridges`: kotlin.Boolean, 
+    /**
+     * 🔐 Логин SOCKS5 моста — случайный на запуск; без него мост
+     * не пускает (порт на 127.0.0.1 виден всем приложениям).
+     */
+    var `socksUsername`: kotlin.String, 
+    /**
+     * Пароль SOCKS5 моста.
+     */
+    var `socksPassword`: kotlin.String
 ) {
     
     companion object
@@ -6291,6 +6300,8 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterUShort.read(buf),
             FfiConverterUShort.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -6301,7 +6312,9 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterBoolean.allocationSize(value.`stalled`) +
             FfiConverterUShort.allocationSize(value.`port`) +
             FfiConverterUShort.allocationSize(value.`isolatedPort`) +
-            FfiConverterBoolean.allocationSize(value.`bridges`)
+            FfiConverterBoolean.allocationSize(value.`bridges`) +
+            FfiConverterString.allocationSize(value.`socksUsername`) +
+            FfiConverterString.allocationSize(value.`socksPassword`)
     )
 
     override fun write(value: FfiTorStatus, buf: ByteBuffer) {
@@ -6312,6 +6325,8 @@ public object FfiConverterTypeFfiTorStatus: FfiConverterRustBuffer<FfiTorStatus>
             FfiConverterUShort.write(value.`port`, buf)
             FfiConverterUShort.write(value.`isolatedPort`, buf)
             FfiConverterBoolean.write(value.`bridges`, buf)
+            FfiConverterString.write(value.`socksUsername`, buf)
+            FfiConverterString.write(value.`socksPassword`, buf)
     }
 }
 

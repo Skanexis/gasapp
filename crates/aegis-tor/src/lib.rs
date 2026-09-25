@@ -159,6 +159,8 @@ pub struct EmbeddedTor {
     status: watch::Receiver<TorStatus>,
     /// Мосты, с которыми запущен.
     bridges: Vec<String>,
+    /// Логин и пароль SOCKS5 моста.
+    socks_credentials: (String, String),
     /// `Option` — чтобы [`Drop`] мог остановить рантайм с таймаутом.
     runtime: Option<Runtime>,
 }
@@ -269,6 +271,11 @@ impl EmbeddedTor {
 
         runtime.spawn(watch_bootstrap(Arc::clone(&client), status_tx));
         runtime.spawn(keep_bootstrapping(Arc::clone(&client)));
+        // 🔐 Пароль моста — случайный на каждый запуск: знает его только
+        // этот процесс (см. `socks::Credentials`).
+        let (username, password) = (random_token(), random_token());
+        let credentials = Arc::new(socks::Credentials::new(&username, &password));
+
         let destinations = Arc::new(settings.destinations);
         runtime.spawn(bridge::serve(
             listener,
@@ -277,6 +284,7 @@ impl EmbeddedTor {
                 isolated: false,
             }),
             Arc::clone(&destinations),
+            Some(Arc::clone(&credentials)),
         ));
         runtime.spawn(bridge::serve(
             isolated_listener,
@@ -285,6 +293,7 @@ impl EmbeddedTor {
                 isolated: true,
             }),
             destinations,
+            Some(credentials),
         ));
 
         Ok(Self {
@@ -292,6 +301,7 @@ impl EmbeddedTor {
             isolated_port,
             status,
             bridges: settings.bridges,
+            socks_credentials: (username, password),
             runtime: Some(runtime),
         })
     }
@@ -309,6 +319,14 @@ impl EmbeddedTor {
         self.isolated_port
     }
 
+    /// Логин и пароль SOCKS5 моста — их обязан предъявить каждый,
+    /// кто подключается к [`EmbeddedTor::port`] и
+    /// [`EmbeddedTor::isolated_port`].
+    #[must_use]
+    pub fn socks_credentials(&self) -> (&str, &str) {
+        (&self.socks_credentials.0, &self.socks_credentials.1)
+    }
+
     /// Мосты, с которыми запущен (пусто — без мостов).
     #[must_use]
     pub fn bridges(&self) -> &[String] {
@@ -320,6 +338,22 @@ impl EmbeddedTor {
     pub fn status(&self) -> TorStatus {
         *self.status.borrow()
     }
+}
+
+/// Случайная строка для логина и пароля моста: 16 байт в hex.
+fn random_token() -> String {
+    use rand_core::RngCore as _;
+
+    let mut bytes = [0u8; 16];
+    rand_core::OsRng.fill_bytes(&mut bytes);
+
+    bytes
+        .iter()
+        .fold(String::with_capacity(32), |mut text, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(text, "{byte:02x}");
+            text
+        })
 }
 
 /// Собирает настройки Arti.

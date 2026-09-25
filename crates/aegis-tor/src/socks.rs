@@ -24,8 +24,56 @@ const VERSION: u8 = 5;
 /// Способ «без аутентификации».
 const METHOD_NONE: u8 = 0x00;
 
+/// Способ «логин и пароль» (RFC 1929).
+const METHOD_USERNAME: u8 = 0x02;
+
 /// «Ни один предложенный способ не подходит».
 const METHOD_UNACCEPTABLE: u8 = 0xFF;
+
+/// Версия подпротокола «логин и пароль».
+const AUTH_VERSION: u8 = 0x01;
+
+/// Учётные данные моста: случайные на каждый запуск.
+///
+/// 🔐 Мост слушает на 127.0.0.1, а этот адрес доступен любому приложению
+/// устройства. Без пароля чужое приложение могло бы ходить через наш Tor
+/// (пусть и только к серверу AEGIS) и занимать слоты моста, отрезая
+/// мессенджер от сети. Пароль знает только наш процесс.
+#[derive(Clone)]
+pub struct Credentials {
+    username: Vec<u8>,
+    password: Vec<u8>,
+}
+
+impl std::fmt::Debug for Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Credentials(..)")
+    }
+}
+
+impl Credentials {
+    /// Учётные данные из логина и пароля (ASCII, не длиннее 255).
+    #[must_use]
+    pub fn new(username: &str, password: &str) -> Self {
+        Self {
+            username: username.as_bytes().to_vec(),
+            password: password.as_bytes().to_vec(),
+        }
+    }
+
+    /// Совпадают ли предъявленные — сравнение без раннего выхода.
+    fn matches(&self, username: &[u8], password: &[u8]) -> bool {
+        let same = |a: &[u8], b: &[u8]| {
+            a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+        };
+
+        // Оба сравнения — всегда, чтобы время не выдавало, какое не сошлось.
+        let user = same(&self.username, username);
+        let pass = same(&self.password, password);
+
+        user & pass
+    }
+}
 
 /// Команда CONNECT.
 const COMMAND_CONNECT: u8 = 0x01;
@@ -147,7 +195,10 @@ fn normalize(host: &str) -> String {
 ///
 /// [`HandshakeError`] — сбой ввода-вывода, нарушение протокола либо
 /// отказ (ответ с кодом отказа уже отправлен).
-pub(crate) async fn handshake<S>(stream: &mut S) -> Result<Target, HandshakeError>
+pub(crate) async fn handshake<S>(
+    stream: &mut S,
+    credentials: Option<&Credentials>,
+) -> Result<Target, HandshakeError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -163,13 +214,47 @@ where
     let mut methods = vec![0u8; usize::from(count)];
     stream.read_exact(&mut methods).await?;
 
-    if !methods.contains(&METHOD_NONE) {
-        stream.write_all(&[VERSION, METHOD_UNACCEPTABLE]).await?;
+    // 🔐 Пароль задан — только «логин и пароль»: без него мост
+    // никого никуда не пускает.
+    if let Some(credentials) = credentials {
+        if !methods.contains(&METHOD_USERNAME) {
+            stream.write_all(&[VERSION, METHOD_UNACCEPTABLE]).await?;
 
-        return Err(HandshakeError::Refused);
+            return Err(HandshakeError::Refused);
+        }
+
+        stream.write_all(&[VERSION, METHOD_USERNAME]).await?;
+
+        let mut header = [0u8; 2];
+        stream.read_exact(&mut header).await?;
+        let [auth_version, user_len] = header;
+        if auth_version != AUTH_VERSION {
+            return Err(HandshakeError::Protocol);
+        }
+        let mut username = vec![0u8; usize::from(user_len)];
+        stream.read_exact(&mut username).await?;
+        let mut pass_len = [0u8; 1];
+        stream.read_exact(&mut pass_len).await?;
+        let [pass_len] = pass_len;
+        let mut password = vec![0u8; usize::from(pass_len)];
+        stream.read_exact(&mut password).await?;
+
+        if !credentials.matches(&username, &password) {
+            stream.write_all(&[AUTH_VERSION, 0x01]).await?;
+
+            return Err(HandshakeError::Refused);
+        }
+
+        stream.write_all(&[AUTH_VERSION, 0x00]).await?;
+    } else {
+        if !methods.contains(&METHOD_NONE) {
+            stream.write_all(&[VERSION, METHOD_UNACCEPTABLE]).await?;
+
+            return Err(HandshakeError::Refused);
+        }
+
+        stream.write_all(&[VERSION, METHOD_NONE]).await?;
     }
-
-    stream.write_all(&[VERSION, METHOD_NONE]).await?;
 
     // Запрос: VER, CMD, RSV, ATYP, DST.ADDR, DST.PORT.
     let mut header = [0u8; 4];
@@ -261,7 +346,7 @@ mod tests {
         // а не вечное ожидание.
         client.shutdown().await.expect("закрытие записи");
 
-        let result = handshake(&mut server).await;
+        let result = handshake(&mut server, None).await;
         drop(server);
 
         let mut answer = Vec::new();
@@ -370,6 +455,55 @@ mod tests {
             let (result, _) = run(&connect_domain(name, 443)).await;
             assert!(matches!(result, Err(HandshakeError::Refused)), "{name:?}");
         }
+    }
+
+    /// Рукопожатие с паролем: удалось ли и что ответил мост.
+    async fn attempt(credentials: &Credentials, client_bytes: Vec<u8>) -> (bool, Vec<u8>) {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        client.write_all(&client_bytes).await.expect("запись");
+        client.shutdown().await.expect("закрытие");
+        let ok = handshake(&mut server, Some(credentials)).await.is_ok();
+        drop(server);
+        let mut answer = Vec::new();
+        client.read_to_end(&mut answer).await.expect("чтение");
+        (ok, answer)
+    }
+
+    /// 🔐 С паролем мост пускает только знающего его: без пароля,
+    /// с чужим паролем и с паролем другой длины — отказ.
+    #[tokio::test]
+    async fn a_password_protected_bridge_admits_only_its_owner() {
+        let credentials = Credentials::new("owner", "s3cret");
+
+        let with = |user: &str, pass: &str| {
+            let mut bytes = vec![5, 2, 0, 2, 1];
+            bytes.push(u8::try_from(user.len()).expect("длина"));
+            bytes.extend_from_slice(user.as_bytes());
+            bytes.push(u8::try_from(pass.len()).expect("длина"));
+            bytes.extend_from_slice(pass.as_bytes());
+            bytes.extend_from_slice(&[5, 1, 0, 3, 1, b'h', 0, 80]);
+            bytes
+        };
+
+        let (ok, answer) = attempt(&credentials, with("owner", "s3cret")).await;
+        assert!(ok, "владелец не прошёл");
+        assert_eq!(answer, [5, 2, 1, 0]);
+
+        for (user, pass) in [
+            ("owner", "wrong!"),
+            ("other", "s3cret"),
+            ("owner", "s3cre"),
+            ("", ""),
+        ] {
+            let (ok, answer) = attempt(&credentials, with(user, pass)).await;
+            assert!(!ok, "пропущен {user}/{pass}");
+            assert_eq!(answer, [5, 2, 1, 1]);
+        }
+
+        // Без предложения пароля — отказ выбором способа.
+        let (ok, answer) = attempt(&credentials, vec![5, 1, 0]).await;
+        assert!(!ok);
+        assert_eq!(answer, [5, 0xFF]);
     }
 
     /// 🔐 Мост пускает только туда, куда разрешено, — вплоть до порта.
