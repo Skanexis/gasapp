@@ -7622,13 +7622,23 @@ snapshot- и интеграционные тесты не исполнялись
 ### 24.3. Криптографические тесты 🔐
 
 **Тестовые векторы (обязательно, до любого другого теста):**
-- [ ] Официальные векторы Double Ratchet
-- [ ] Официальные векторы PQXDH
-- [ ] NIST-векторы для ML-KEM (FIPS 203)
-- [ ] RFC-векторы для HKDF (RFC 5869), HMAC, SHA-2
-- [ ] Векторы X25519 (RFC 7748)
-- [ ] Векторы Argon2id (RFC 9106)
-- [ ] Векторы AES-GCM (NIST SP 800-38D)
+- [ ] Официальные векторы Double Ratchet — ⚠️ Signal их не публикует;
+      вместо них — собственные эталоны протокола (`fingerprints_are_stable_across_builds`,
+      совместимость с сервером в `sealed_sender`) и дифф-тесты (раздел ниже, пока не сделаны)
+- [ ] Официальные векторы PQXDH — ⚠️ то же: спецификация PQXDH векторов не содержит
+- [x] ML-KEM (FIPS 203): развёртывание ключа из seed для ML-KEM-768 и -1024
+      совпадает с примерами IETF LAMPS «ML-KEM in X.509» —
+      `ml_kem_keys_from_seed_match_the_lamps_examples` (2026-09-25). ⚠️ Векторы
+      инкапсуляции/декапсуляции ACVP не подключены
+- [x] HKDF (RFC 5869) — `hkdf_sha256_matches_rfc5869`; HMAC-SHA256 (RFC 4231,
+      случаи 1, 2, 3, 6, 7) — `hmac_sha256_matches_rfc4231`; SHA-512 —
+      `sha512_matches_known_vector`
+- [x] X25519 (RFC 7748) — `rfc7748_public_keys_match`, `rfc7748_shared_secret_matches_and_is_symmetric`;
+      Ed25519 (RFC 8032) — `rfc8032_*` в `xeddsa.rs`
+- [x] Argon2id (RFC 9106 §5.3, с секретом и связанными данными) —
+      `aegis-keystore/tests/argon2_vectors.rs`
+- [x] AES-256-GCM (спецификация GCM, тест-кейсы 13, 14, 16; NIST SP 800-38D) —
+      `aes256_gcm_matches_the_gcm_specification`, с отказом на изменённом теге
 
 **Property-based тесты (proptest):**
 ```rust
