@@ -546,6 +546,71 @@ async fn sealed_junk_without_a_key_does_not_starve_friends() {
     );
 }
 
+/// 🔐 Первые контакты по proof-of-work (работа — доли секунды) не
+/// выбирают бюджет собеседников с ключом доступа.
+#[tokio::test]
+async fn first_contacts_do_not_starve_friends() {
+    let state = require_state!();
+    let (victim, victim_key) = register_signing_device(&state, &unique_name("popular"), 0x64).await;
+    let access_key = [0x7Eu8; 32];
+
+    call_signed_json(
+        &state,
+        &victim_key,
+        "PUT",
+        &format!("/v1/sealed/access/{victim}"),
+        Some(serde_json::json!({
+            "access_key_hash": hex::encode(<sha2::Sha256 as sha2::Digest>::digest(access_key)),
+            "allow_from_anyone": false,
+        })),
+    )
+    .await;
+
+    // Весь общий бюджет получателя: до разделения бюджетов этого
+    // хватало, чтобы собеседник с ключом получил 429. Решения — заранее:
+    // иначе бюджет пополнялся бы, пока подбирается следующее.
+    let envelopes: Vec<(Vec<u8>, u64)> = (0..aegis_server_api::rate_limit::MESSAGES_PER_MINUTE)
+        .map(|i| {
+            let sealed = format!("stranger-{i}").into_bytes();
+            let nonce = solve_first_contact(victim, &sealed);
+            (sealed, nonce)
+        })
+        .collect();
+
+    for (sealed, nonce) in &envelopes {
+        call(
+            &state,
+            "POST",
+            "/v1/sealed/messages",
+            Some(serde_json::json!({
+                "destination_device_id": victim,
+                "sealed": hex::encode(sealed),
+                "access_key": null,
+                "pow_nonce": nonce,
+            })),
+        )
+        .await;
+    }
+
+    let (status, _) = call(
+        &state,
+        "POST",
+        "/v1/sealed/messages",
+        Some(serde_json::json!({
+            "destination_device_id": victim,
+            "sealed": hex::encode(b"hello friend"),
+            "access_key": hex::encode(access_key),
+        })),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "незнакомцы выжгли бюджет собеседников: {status}"
+    );
+}
+
 /// Подбирает решение первого контакта для конверта этому получателю.
 fn solve_first_contact(destination: Uuid, sealed: &[u8]) -> u64 {
     let challenge = pow::first_contact_challenge(&destination.to_string(), sealed);

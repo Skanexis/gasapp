@@ -52,6 +52,9 @@ pub struct AppState {
     /// Считаются только принятые конверты: мусор без ключа доступа
     /// и без работы идёт в [`AppState::sealed_rejected_limiter`].
     pub sealed_limiter: Mutex<RateLimiter>,
+    /// Ограничитель первых контактов (по proof-of-work) — по получателю;
+    /// свой, чтобы незнакомцы не тратили бюджет собеседников.
+    pub sealed_first_contact_limiter: Mutex<RateLimiter>,
     /// Ограничитель отвергнутых запечатанных попыток — по получателю.
     ///
     /// Попытки без верного ключа доступа считаются здесь, а не в бюджете
@@ -159,6 +162,10 @@ impl AppState {
             ))),
             sealed_rejected_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 rate_limit::MESSAGES_PER_MINUTE,
+                nodes,
+            ))),
+            sealed_first_contact_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::FIRST_CONTACTS_PER_MINUTE,
                 nodes,
             ))),
             limiter_salt,
@@ -1447,8 +1454,8 @@ async fn send_sealed_message(
     // отправителя. Устройство проверяется на существование: очередь
     // несуществующего дала бы сбой базы, отличимый от отказа, — оракул
     // «кто зарегистрирован».
-    let allowed = by_key
-        || match request.pow_nonce {
+    let by_work = !by_key
+        && match request.pow_nonce {
             None => false,
             Some(nonce) => {
                 let challenge = crate::pow::first_contact_challenge(
@@ -1468,8 +1475,15 @@ async fn send_sealed_message(
     // Прежде бюджет тратился первым, и мусор без ключа выжигал его:
     // собеседник с верным ключом доступа получал 429. Отказы теперь
     // считаются отдельно — ограничены, но чужого не тратят.
-    let limiter = if allowed {
+    let allowed = by_key || by_work;
+
+    // 🔐 Три бюджета: собеседники с ключом, незнакомцы с работой и отказы.
+    // Работа первого контакта дешёвая, и общий бюджет с собеседниками
+    // позволял постороннему выбрать его и отрезать получателя от своих.
+    let limiter = if by_key {
         &state.sealed_limiter
+    } else if by_work {
+        &state.sealed_first_contact_limiter
     } else {
         &state.sealed_rejected_limiter
     };
