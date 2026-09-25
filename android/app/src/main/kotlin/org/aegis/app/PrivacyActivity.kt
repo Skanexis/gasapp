@@ -177,7 +177,7 @@ class PrivacyActivity : AppCompatActivity() {
         ) { wanted ->
             if (!wanted) {
                 BiometricUnlock.disable(this)
-                toast(R.string.privacy_biometric_disabled)
+                toast(R.string.privacy_biometric_disabled, AegisToast.Tone.Info)
 
                 return@bind true
             }
@@ -303,7 +303,7 @@ class PrivacyActivity : AppCompatActivity() {
             }
 
             when (sealed.getOrNull()) {
-                true -> toast(R.string.privacy_biometric_enabled)
+                true -> toast(R.string.privacy_biometric_enabled, AegisToast.Tone.Success)
                 false -> {
                     BiometricUnlock.disable(applicationContext)
                     toast(R.string.privacy_biometric_wrong_pin)
@@ -318,8 +318,11 @@ class PrivacyActivity : AppCompatActivity() {
         }
     }
 
-    private fun toast(@androidx.annotation.StringRes message: Int) {
-        AegisToast.show(this, message, AegisToast.Tone.Warning)
+    private fun toast(
+        @androidx.annotation.StringRes message: Int,
+        tone: AegisToast.Tone = AegisToast.Tone.Warning,
+    ) {
+        AegisToast.show(this, message, tone)
     }
 
     /**

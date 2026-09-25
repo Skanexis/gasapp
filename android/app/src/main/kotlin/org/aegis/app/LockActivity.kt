@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisDialog
+import org.aegis.app.components.AegisToast
 import org.aegis.app.core.AccountWipe
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
@@ -179,7 +180,20 @@ class LockActivity : AppCompatActivity() {
             return
         }
 
-        val cipher = BiometricUnlock.cipherForUnlocking(this) ?: return
+        val cipher = BiometricUnlock.cipherForUnlocking(this)
+
+        if (cipher == null) {
+            // 🔐 Набор отпечатков на устройстве изменился: система
+            // уничтожила ключ, и BiometricUnlock стёр конверт. Прежде
+            // клавиша отпечатка оставалась на экране и ничего не делала —
+            // человек не знал, почему вход по отпечатку перестал работать.
+            if (!BiometricUnlock.isEnabled(this)) {
+                renderBiometricKey()
+                AegisToast.show(this, R.string.lock_biometric_invalidated, AegisToast.Tone.Warning)
+            }
+
+            return
+        }
 
         val prompt = androidx.biometric.BiometricPrompt(
             this,
