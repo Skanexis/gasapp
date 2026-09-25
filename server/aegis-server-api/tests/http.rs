@@ -335,34 +335,63 @@ async fn unknown_username_returns_not_found() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// 🔐 Перебор имён упирается в лимит частоты.
+/// 🔐 Сверх бюджета имени discovery отдаёт недавний снимок, а не отказ.
 ///
-/// Без него список всех зарегистрированных имён составляется за сутки.
+/// Два обязательства сразу. Доступность: отправка идёт через discovery
+/// на каждое сообщение, и прежде посторонний, выбрав двадцать запросов
+/// в минуту по имени, не давал никому писать этому человеку (429).
+/// Слежка: сверх бюджета ответ не меняется — частые запросы не выдают,
+/// когда человек сменил ключ или устройство.
 #[tokio::test]
-async fn discovery_is_rate_limited() {
+async fn discovery_over_budget_serves_a_snapshot_not_a_refusal() {
     let state = require_state!();
     let username = unique_name("carol");
     register(&state, &username).await;
 
-    let mut limited = false;
-    // Лимит 20/мин; запас на случай, если часть запросов уйдёт в другую
-    // минуту, невелик — окно скользящее.
+    let first = call(
+        &state,
+        "GET",
+        &format!("/v1/discovery/username/{username}"),
+        None,
+    )
+    .await;
+    assert_eq!(first.0, StatusCode::OK);
+
+    // Бюджет — 20/мин; выбирается с запасом.
     for _ in 0..25 {
-        let (status, _) = call(
+        call(
             &state,
             "GET",
             &format!("/v1/discovery/username/{username}"),
             None,
         )
         .await;
-
-        if status == StatusCode::TOO_MANY_REQUESTS {
-            limited = true;
-            break;
-        }
     }
 
-    assert!(limited, "лимит discovery не сработал");
+    // Человек сменил ключ — сверх бюджета этого не видно.
+    sqlx::query("UPDATE accounts SET identity_key = $1 WHERE username = $2")
+        .bind(vec![0x5Du8; 32])
+        .bind(&username)
+        .execute(&state.pool)
+        .await
+        .expect("смена ключа");
+
+    let (status, body) = call(
+        &state,
+        "GET",
+        &format!("/v1/discovery/username/{username}"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "сверх бюджета отказ — отправка этому человеку встала бы"
+    );
+    assert_eq!(
+        body["identity_key"], first.1["identity_key"],
+        "сверх бюджета виден свежий ключ"
+    );
 }
 
 /// Кладёт конверт в очередь устройства единственным путём отправки —
