@@ -632,4 +632,5 @@
     <string name="chat_kt_state">Ключ проверен журналом ключей — для полной уверенности сверьте лично</string>
     <string name="security_event_kt_foreign_key_for_own_name">Сервер показывал под вашим именем чужой ключ. Собеседники могли писать не вам — предупредите их лично</string>
     <string name="security_event_kt_log_forked">Журнал ключей сервера не совпал с тем, что он показывал раньше</string>
+    <string name="security_event_kt_peer_log_differs">Собеседник видит другой журнал ключей сервера, чем вы. Сервер, возможно, показывает одному из вас подделку — сверьте safety number лично</string>
 </resources>

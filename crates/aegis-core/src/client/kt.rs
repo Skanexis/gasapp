@@ -31,9 +31,11 @@
 
 use aegis_net::api::{KtProofView, KtProofsRequest};
 use aegis_net::client::Transport;
+use aegis_protocol::content::Content;
 use aegis_protocol::key_transparency::{self as kt, Proof, Terminal};
 use aegis_protocol::pq_identity;
 use aegis_types::{AegisError, PublicKeyBytes, Result, Timestamp};
+use rand_core::{CryptoRng, RngCore};
 
 use super::{hex, unhex, Client};
 
@@ -45,6 +47,12 @@ const MAX_PER_REQUEST: usize = 200;
 
 /// Предел страниц вершин за одну синхронизацию.
 const MAX_HEAD_PAGES: usize = 4;
+
+/// Как часто отправлять собеседнику свою вершину журнала: раз в сутки.
+const GOSSIP_INTERVAL_MILLIS: i64 = 24 * 60 * 60 * 1000;
+
+/// Приставка настройки «когда собеседнику ушла вершина».
+const GOSSIP_SETTING_PREFIX: &str = "kt_gossip:";
 
 /// Что журнал говорит о ключе собеседника.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,6 +391,76 @@ impl<T: Transport> Client<T> {
             checked_through,
             foreign_epochs: foreign,
         })
+    }
+
+    /// Отправляет собеседнику свою вершину журнала — не чаще раза
+    /// в [`GOSSIP_INTERVAL_MILLIS`] на собеседника.
+    ///
+    /// # Errors
+    ///
+    /// Ошибки отправки и журнала; вызывающий их не показывает.
+    pub(super) fn kt_gossip_head<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let key = format!("{GOSSIP_SETTING_PREFIX}{peer_username}");
+        let last = self.storage.setting_int(&key, 0)?;
+
+        if now.as_millis().saturating_sub(last) < GOSSIP_INTERVAL_MILLIS {
+            return Ok(());
+        }
+
+        let Some((epoch, _, head)) = self.storage.kt_latest_head()? else {
+            return Ok(());
+        };
+
+        self.send_content(peer_username, &Content::KtHead { epoch, head }, now, rng)?;
+        self.storage.set_setting_int(&key, now.as_millis())
+    }
+
+    /// Сверяет вершину, присланную собеседником, со своей цепочкой.
+    ///
+    /// 🔐 Расхождение — событие `kt_peer_log_differs`: сервер показывает
+    /// одному из двоих свою ветку журнала (или собеседник прислал
+    /// неверную вершину — различить нельзя, поэтому это событие, а не
+    /// приговор).
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Storage`] — сбой базы. Недоступный журнал не ошибка:
+    /// сверка просто откладывается до следующей вершины.
+    pub(super) fn kt_compare_peer_head(
+        &self,
+        epoch: u64,
+        head: &[u8; 32],
+        now: Timestamp,
+    ) -> Result<()> {
+        let mut mine = self.storage.kt_head_exact(epoch)?;
+
+        // Эпохи ещё нет — догнать цепочку (если она новее нашей).
+        if mine.is_none()
+            && self
+                .storage
+                .kt_latest_head()?
+                .is_none_or(|(latest, _, _)| latest < epoch)
+        {
+            let _ = self.kt_sync(now);
+            mine = self.storage.kt_head_exact(epoch)?;
+        }
+
+        if let Some((_, _, own)) = mine {
+            if &own != head {
+                self.storage.log_security_event(
+                    "kt_peer_log_differs",
+                    Some(&format!("epoch {epoch}")),
+                    now,
+                )?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Начинает проверку своего имени с текущей эпохи — после
