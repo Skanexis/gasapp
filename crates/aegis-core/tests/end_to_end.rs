@@ -4866,3 +4866,56 @@ fn a_rewritten_log_is_detected() {
         .iter()
         .any(|(kind, _, _)| kind == "kt_log_forked"));
 }
+
+/// 🔐 Сервер показал Бобу свою ветку журнала, а Алисе — настоящую.
+/// Вершина, которую Боб присылает в переписке, расходится с цепочкой
+/// Алисы — и Алиса получает событие безопасности.
+#[test]
+fn a_split_log_view_is_caught_by_the_other_side() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, _bob_device) = alice_and_bob(&server, &dir);
+
+    for epoch in now_epoch() - 2..=now_epoch() {
+        server.publish_kt_epoch(epoch, &[("alice", [0x99; 32])]);
+    }
+    bob.kt_sync(now()).expect("Боб видит поддельную ветку");
+
+    server.forget_kt_history();
+    server.publish_kt_epochs(now_epoch() - 2, now_epoch());
+    alice.kt_sync(now()).expect("Алиса видит настоящую");
+
+    bob.send_message("alice", "привет", now(), &mut OsRng)
+        .expect("отправка");
+    alice.receive_messages(&alice_device, now()).expect("приём");
+
+    assert!(alice
+        .security_events(10)
+        .expect("журнал")
+        .iter()
+        .any(|(kind, _, _)| kind == "kt_peer_log_differs"));
+}
+
+/// Одинаковые цепочки — никаких событий: обмен вершинами не шумит.
+#[test]
+fn agreeing_log_views_raise_nothing() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob, alice_device, _bob_device) = alice_and_bob(&server, &dir);
+
+    server.publish_kt_epochs(now_epoch() - 2, now_epoch());
+    bob.kt_sync(now()).expect("Боб");
+    alice.kt_sync(now()).expect("Алиса");
+
+    bob.send_message("alice", "привет", now(), &mut OsRng)
+        .expect("отправка");
+    let received = alice.receive_messages(&alice_device, now()).expect("приём");
+
+    assert!(!alice
+        .security_events(10)
+        .expect("журнал")
+        .iter()
+        .any(|(kind, _, _)| kind.starts_with("kt_")));
+    // Вершина — служебное сообщение: в счёт новых не идёт.
+    assert_eq!(received, 1);
+}

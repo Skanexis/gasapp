@@ -521,6 +521,13 @@ checking and must show everyone the same tree.
   A leaf with another key, or a lower version, is a security event
   (`kt_foreign_key_for_own_name`).
 
+* **Gossip.** At most once a day per peer, a client sends its latest
+  `(epoch, head)` inside an ordinary end-to-end message (content kind 9,
+  `KtHead`). The receiver compares it with its own head of that epoch
+  (syncing first if the epoch is newer); a mismatch is a security event
+  (`kt_peer_log_differs`) — the server shows one of the two a different
+  branch.
+
 The server keeps leaf history and epochs for 192 epochs.
 
 ## 10. Security Considerations

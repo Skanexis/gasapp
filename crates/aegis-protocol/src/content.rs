@@ -70,6 +70,12 @@ const KIND_READ_RECEIPT: u8 = 7;
 /// Тип: ключ доступа sealed sender.
 const KIND_ACCESS_KEY: u8 = 8;
 
+/// Тип: вершина журнала ключей, которую видит отправитель (§9.7).
+const KIND_KT_HEAD: u8 = 9;
+
+/// Длина вершины журнала ключей.
+pub const KT_HEAD_LEN: usize = 32;
+
 /// Длина ключа доступа sealed sender.
 pub const ACCESS_KEY_LEN: usize = 32;
 
@@ -234,6 +240,20 @@ pub enum Content {
         /// Алисе в другой чат.
         sender_username: Option<String>,
     },
+
+    /// Вершина журнала ключей, которую видит отправитель (§9.7).
+    ///
+    /// 🔐 Сверка цепочек между собеседниками. Сервер, показавший кому-то
+    /// свою ветку журнала (например, новой установке — её первую
+    /// вершину клиент принимает на веру), разойдётся с любым честным
+    /// собеседником этого человека: вершина одной и той же эпохи у них
+    /// будет разной. Вершина публична — секрета здесь нет.
+    KtHead {
+        /// Номер эпохи.
+        epoch: u64,
+        /// Вершина цепочки в этой эпохе.
+        head: [u8; KT_HEAD_LEN],
+    },
 }
 
 impl Content {
@@ -343,6 +363,11 @@ impl Content {
                     write_text(&mut out, name)?;
                 }
             }
+            Self::KtHead { epoch, head } => {
+                out.push(KIND_KT_HEAD);
+                out.extend_from_slice(&epoch.to_be_bytes());
+                out.extend_from_slice(head);
+            }
         }
 
         Ok(out)
@@ -442,6 +467,18 @@ impl Content {
                         _ => return Err(AegisError::Malformed),
                     }
                 },
+            },
+            KIND_KT_HEAD => Self::KtHead {
+                epoch: u64::from_be_bytes(
+                    reader
+                        .take_slice(8)?
+                        .try_into()
+                        .map_err(|_| AegisError::Malformed)?,
+                ),
+                head: reader
+                    .take_slice(KT_HEAD_LEN)?
+                    .try_into()
+                    .map_err(|_| AegisError::Malformed)?,
             },
             _ => return Err(AegisError::Malformed),
         };
@@ -591,6 +628,26 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Вершина журнала переживает кодирование; обрезанная — отвергается.
+    #[test]
+    fn a_key_log_head_round_trips() {
+        let content = Content::KtHead {
+            epoch: 488_888,
+            head: [0x5C; KT_HEAD_LEN],
+        };
+        let bytes = content.to_bytes().expect("кодирование");
+
+        assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+
+        let unpadded = content.to_unpadded_bytes().expect("без дополнения");
+        for cut in 1..unpadded.len() {
+            assert!(
+                Content::from_unpadded_bytes(unpadded.get(..cut).expect("срез")).is_err(),
+                "обрезка {cut}"
+            );
+        }
+    }
 
     /// Имя отправителя переживает кодирование, а его отсутствие —
     /// формат прежних версий — читается как «имени нет».

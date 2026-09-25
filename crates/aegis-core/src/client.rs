@@ -598,6 +598,10 @@ impl<T: Transport> Client<T> {
             .set_message_status(&message_id, MessageStatus::Sent, now)?;
         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
 
+        // Сверка журнала ключей с собеседником (§9.7) — не чаще раза
+        // в сутки. Сбой не мешает сообщению: оно уже ушло.
+        let _ = self.kt_gossip_head(peer_username, now, rng);
+
         Ok(message_id)
     }
 
@@ -1022,7 +1026,7 @@ impl<T: Transport> Client<T> {
             // Служебное содержимое не считается принятым сообщением:
             // число уходит в интерфейс, и «1 новое сообщение» без
             // сообщения выглядело бы как потерянное.
-            let counts = !matches!(content, Content::AccessKey { .. });
+            let counts = !matches!(content, Content::AccessKey { .. } | Content::KtHead { .. });
 
             match content {
                 Content::Text { body, id, .. } => {
@@ -1131,6 +1135,12 @@ impl<T: Transport> Client<T> {
                             self.accept_claimed_username(&peer, &name, &chat_id, now)?;
                         }
                     }
+                }
+
+                Content::KtHead { epoch, head } => {
+                    // 🔐 Своя вершина той же эпохи обязана совпасть:
+                    // иначе сервер показывает одному из двоих свою ветку.
+                    self.kt_compare_peer_head(epoch, &head, now)?;
                 }
 
                 Content::Reaction { .. } | Content::Typing { .. } => {
