@@ -30,8 +30,15 @@ permissions:
 
 jobs:
   connected:
-    name: instrumentation tests on an emulator
+    name: instrumentation tests on an emulator (API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
+    # Две крайние версии: minSdk (28) — самая старая, на которой
+    # приложение ставится, и targetSdk (36, Android 16) — ограничения,
+    # которые мы на себя приняли. Промежуточные ломаются реже крайних.
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [28, 36]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +75,7 @@ jobs:
       - name: instrumentation tests (foss flavor)
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api-level }}
           arch: x86_64
           target: google_apis
           disable-animations: true

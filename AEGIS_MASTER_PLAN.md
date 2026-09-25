@@ -3706,6 +3706,7 @@ Keychain-элемент с `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` в
 | Параметр | Значение |
 |---|---|
 | Минимальная версия | iOS 17.0 |
+| SDK сборки | iOS 26 (Xcode 26) — требование App Store с апреля 2026; минимальную версию системы оно не ограничивает (решение владельца 2026-09-25) |
 | Язык | Swift 6 (strict concurrency) |
 | UI | SwiftUI + UIKit там, где SwiftUI не хватает |
 | Архитектура | MVVM + однонаправленный поток данных от `AegisEvent` |
@@ -3733,7 +3734,7 @@ Keychain-элемент с `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` в
 | Параметр | Значение |
 |---|---|
 | minSdk | 28 (Android 9) |
-| targetSdk | 35+ |
+| targetSdk / compileSdk | 36 (Android 16) — требование Google Play с 2026-08-31; minSdk прежний (решение владельца 2026-09-25) |
 | Язык | Kotlin 2.x |
 | UI | Jetpack Compose + Material3 (тема переопределена под AEGIS-токены) |
 | Архитектура | MVVM + `StateFlow`, события из `AegisEvent` через `Flow` |
