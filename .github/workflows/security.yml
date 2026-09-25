@@ -179,6 +179,10 @@ jobs:
 
       - run: bash tools/check-foss-apk.sh
 
+      # Сторонние библиотеки (JNA) — тоже к страницам 16 КБ: libaegis.so
+      # здесь нет, её выравнивание проверяет релизный workflow.
+      - run: python3 tools/check-16kb-pages.py android/app/build/outputs/apk/foss/release/*.apk
+
   # --------------------------------------------------------------------------
   #  Тесты и lint приложения
   #

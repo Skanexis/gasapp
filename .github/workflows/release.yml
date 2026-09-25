@@ -113,6 +113,12 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/aegis-release.jks"
 
+      # 🔴 Google Play не принимает приложения под Android 15+, чьи
+      # 64-битные библиотеки не готовы к страницам 16 КБ: на таких
+      # устройствах ядро просто не загрузится.
+      - name: check 16 KB page readiness
+        run: python3 tools/check-16kb-pages.py $(find android/app/build/outputs/apk -name '*-release*.apk')
+
       - name: check the signature
         run: |
           set -euo pipefail
