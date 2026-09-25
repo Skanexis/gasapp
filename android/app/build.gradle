@@ -418,7 +418,13 @@ dependencies {
     // обращается к нативной библиотеке через com.sun.jna. Классификатор
     // `@aar` важен: обычный jar не содержит нативных частей JNA под Android,
     // и приложение падало бы при первом вызове ядра.
-    implementation 'net.java.dev.jna:jna:5.14.0@aar'
+    //
+    // 🔴 Не ниже 5.17: в 5.14 libjnidispatch.so под x86_64 собрана
+    // с выравниванием 4 КБ, а Google Play с ноября 2025 не принимает
+    // приложения под Android 15+ с 64-битными библиотеками, не
+    // готовыми к страницам 16 КБ. Проверяется в CI по собранному APK
+    // (tools/check-so-hardening.sh, выравнивание LOAD).
+    implementation 'net.java.dev.jna:jna:5.19.1@aar'
 
     // Зависимости flavor'ов.
     //
