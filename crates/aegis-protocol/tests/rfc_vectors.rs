@@ -268,3 +268,160 @@ fn fingerprints_are_stable_across_builds() {
         );
     }
 }
+
+// --- HMAC-SHA256, RFC 4231 -------------------------------------------------
+
+/// HMAC-SHA256 совпадает с RFC 4231 (случаи 1, 2, 3, 6, 7).
+///
+/// HMAC — основа KDF цепочек Double Ratchet. Случаи 6 и 7 — ключ
+/// длиннее блока: такой ключ HMAC сначала хеширует, и ошибка именно
+/// в этой ветке не видна на обычных ключах.
+#[test]
+fn hmac_sha256_matches_rfc4231() {
+    let long_key = vec![0xaa_u8; 131];
+    let cases: &[(Vec<u8>, Vec<u8>, &str)] = &[
+        (
+            vec![0x0b; 20],
+            b"Hi There".to_vec(),
+            "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+        ),
+        (
+            b"Jefe".to_vec(),
+            b"what do ya want for nothing?".to_vec(),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+        ),
+        (
+            vec![0xaa; 20],
+            vec![0xdd; 50],
+            "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe",
+        ),
+        (
+            long_key.clone(),
+            b"Test Using Larger Than Block-Size Key - Hash Key First".to_vec(),
+            "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54",
+        ),
+        (
+            long_key,
+            b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.".to_vec(),
+            "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2",
+        ),
+    ];
+
+    for (index, (key, data, expected)) in cases.iter().enumerate() {
+        let mac = aegis_protocol::aead::hmac_sha256(key, data).expect("HMAC");
+        assert_eq!(
+            mac.as_slice(),
+            hex(expected).as_slice(),
+            "RFC 4231, случай {index}"
+        );
+    }
+}
+
+// --- AES-256-GCM, спецификация GCM (McGrew, Viega), NIST SP 800-38D ---------
+
+/// AES-256-GCM совпадает с тест-кейсами 13, 14 и 16 спецификации GCM.
+///
+/// Проверяются и шифртекст, и тег; 16-й — с AAD и открытым текстом
+/// не кратным блоку. Обратный путь — расшифровка того же вектора
+/// и отказ при изменённом теге.
+#[test]
+fn aes256_gcm_matches_the_gcm_specification() {
+    use aegis_protocol::aead::{open_with_key, seal_with_key};
+
+    struct Case {
+        key: &'static str,
+        iv: &'static str,
+        plaintext: &'static str,
+        aad: &'static str,
+        ciphertext: &'static str,
+        tag: &'static str,
+    }
+
+    let cases = [
+        // Тест-кейс 13: нулевой ключ, пустой текст.
+        Case {
+            key: "0000000000000000000000000000000000000000000000000000000000000000",
+            iv: "000000000000000000000000",
+            plaintext: "",
+            aad: "",
+            ciphertext: "",
+            tag: "530f8afbc74536b9a963b4f1c4cb738b",
+        },
+        // Тест-кейс 14: нулевой ключ, один нулевой блок.
+        Case {
+            key: "0000000000000000000000000000000000000000000000000000000000000000",
+            iv: "000000000000000000000000",
+            plaintext: "00000000000000000000000000000000",
+            aad: "",
+            ciphertext: "cea7403d4d606b6e074ec5d3baf39d18",
+            tag: "d0d1c8a799996bf0265b98b5d48ab919",
+        },
+        // Тест-кейс 16: AAD и 60 байт текста.
+        Case {
+            key: "feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308",
+            iv: "cafebabefacedbaddecaf888",
+            plaintext: "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39",
+            aad: "feedfacedeadbeeffeedfacedeadbeefabaddad2",
+            ciphertext: "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662",
+            tag: "76fc6ece0f4e1768cddf8853bb2d551b",
+        },
+    ];
+
+    for (index, case) in cases.iter().enumerate() {
+        let key: [u8; 32] = hex(case.key).try_into().expect("ключ 32 байта");
+        let iv: [u8; 12] = hex(case.iv).try_into().expect("nonce 12 байт");
+        let mut expected = hex(case.ciphertext);
+        expected.extend(hex(case.tag));
+
+        let sealed =
+            seal_with_key(&key, &iv, &hex(case.plaintext), &hex(case.aad)).expect("шифрование");
+        assert_eq!(sealed, expected, "GCM, вектор {index}: шифртекст или тег");
+
+        let opened = open_with_key(&key, &iv, &sealed, &hex(case.aad)).expect("расшифровка");
+        assert_eq!(opened.as_slice(), hex(case.plaintext).as_slice());
+
+        let mut forged = sealed.clone();
+        let last = forged.len() - 1;
+        forged[last] ^= 1;
+        assert!(
+            open_with_key(&key, &iv, &forged, &hex(case.aad)).is_err(),
+            "GCM, вектор {index}: изменённый тег принят"
+        );
+    }
+}
+
+// --- ML-KEM (FIPS 203): seed → открытый ключ --------------------------------
+
+/// ML-KEM-768 и ML-KEM-1024 из seed 00..3f дают эталонный открытый ключ.
+///
+/// Эталон — примеры черновика IETF LAMPS «ML-KEM in X.509»
+/// (`ML-KEM-*-seed.priv` → `ML-KEM-*.pub`); сверяется SHA-256 сырого
+/// ключа из `SubjectPublicKeyInfo`. Хранилище держит только seed
+/// (`from_seed`), поэтому детерминированное развёртывание — ровно то,
+/// что должно совпадать с чужой реализацией.
+#[test]
+fn ml_kem_keys_from_seed_match_the_lamps_examples() {
+    use aegis_protocol::{MlKem1024PrivateKey, MlKem768PrivateKey};
+    use sha2::Digest as _;
+
+    let mut seed = [0u8; 64];
+    for (index, byte) in seed.iter_mut().enumerate() {
+        *byte = u8::try_from(index).expect("индекс < 64");
+    }
+
+    let public768 = MlKem768PrivateKey::from_seed(seed).public_key().as_bytes();
+    assert_eq!(public768.len(), 1184);
+    assert_eq!(
+        Sha256::digest(&public768).as_slice(),
+        hex("0b7934c83125c788995e2ba6bd761e33046b3e40571be53e023309a29f398cc9").as_slice(),
+        "ML-KEM-768: открытый ключ из seed не совпал с эталоном"
+    );
+
+    let public1024 = MlKem1024PrivateKey::from_seed(seed).public_key().as_bytes();
+    assert_eq!(public1024.len(), 1568);
+    assert_eq!(
+        Sha256::digest(&public1024).as_slice(),
+        hex("c7b8fa0aa471d5ae18922d6ccad5b31e1d84f92ae723abfd13747018740a8530").as_slice(),
+        "ML-KEM-1024: открытый ключ из seed не совпал с эталоном"
+    );
+}
