@@ -40,12 +40,13 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
         body: String?,
         binaryBody: ByteArray?,
         headers: List<FfiHeader>,
+        anonymous: Boolean,
     ): FfiHttpResponse {
         // Открытие соединения тоже внутри обработки ошибок: закрытая сеть
         // (повреждённая настройка прокси) — это сбой сети для ядра,
         // а не исключение, пересекающее границу FFI.
         val connection = try {
-            openConnection(method, path)
+            openConnection(method, path, anonymous)
         } catch (error: IOException) {
             throw FfiException.Core("network unavailable: ${error.javaClass.simpleName}")
         }
@@ -127,13 +128,20 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
         method.equals("GET", ignoreCase = true) && path.startsWith("/v1/attachments/")
 
     @Throws(IOException::class)
-    private fun openConnection(method: String, path: String): HttpURLConnection {
+    private fun openConnection(method: String, path: String, anonymous: Boolean): HttpURLConnection {
         val url = URL("$baseUrl$path")
 
         // 🔐 Прокси передаётся явно: `openConnection()` без аргумента
         // спросил бы системный ProxySelector и при недоступном прокси
         // мог бы уйти напрямую. Явный прокси так не делает.
-        val connection = url.openConnection(NetworkProxy.current()) as HttpURLConnection
+        val connection = url.openConnection(NetworkProxy.current(anonymous)) as HttpURLConnection
+
+        // 🔐 Анонимный запрос не переиспользует соединение: соединение —
+        // это цепочка Tor, и соседние анонимные запросы на одной цепочке
+        // сервер связал бы между собой.
+        if (anonymous) {
+            connection.setRequestProperty("Connection", "close")
+        }
 
         connection.requestMethod = method
         connection.connectTimeout = CONNECT_TIMEOUT_MS

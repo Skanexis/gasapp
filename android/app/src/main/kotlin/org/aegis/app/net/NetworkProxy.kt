@@ -43,7 +43,12 @@ object NetworkProxy {
 
     private sealed class State {
         object Direct : State()
-        data class Through(val proxy: Proxy) : State()
+        /**
+         * Через прокси. [anonymous] — для анонимных запросов: у встроенного
+         * Tor это отдельный порт, где каждое соединение идёт своей
+         * цепочкой; у внешнего SOCKS5 — тот же прокси.
+         */
+        data class Through(val proxy: Proxy, val anonymous: Proxy) : State()
         object Blocked : State()
     }
 
@@ -92,9 +97,12 @@ object NetworkProxy {
             is FfiProxy.Tor -> bridges
                 ?.let { EmbeddedTor.ensureStarted(context, it) }
                 ?.takeIf { it != 0 }
-                ?.let { port -> through(LOCALHOST, port) }
+                // 🔐 Без изолированного порта — закрыто: анонимный запрос
+                // по общей цепочке связал бы себя с подписанными.
+                ?.let { port -> EmbeddedTor.isolatedPort().takeIf { it != 0 }?.let { port to it } }
+                ?.let { (port, isolated) -> through(LOCALHOST, port, isolated) }
                 ?: State.Blocked
-            is FfiProxy.Socks5 -> through(mode.host, mode.port.toInt())
+            is FfiProxy.Socks5 -> through(mode.host, mode.port.toInt(), mode.port.toInt())
         }
 
         if (mode != null && mode !is FfiProxy.Tor) {
@@ -112,13 +120,16 @@ object NetworkProxy {
     /**
      * Прокси для очередного соединения.
      *
+     * @param anonymous запрос без подписи устройства (sealed sender,
+     *   вложения, поиск, журнал ключей). 🔐 Через встроенный Tor он идёт
+     *   своей цепочкой — см. `HttpRequest::anonymous` в ядре.
      * @throws IOException сеть закрыта: настройка повреждена либо прокси
      *   не поддерживается платформой.
      */
     @Throws(IOException::class)
-    fun current(): Proxy = when (val snapshot = state) {
+    fun current(anonymous: Boolean = false): Proxy = when (val snapshot = state) {
         is State.Direct -> Proxy.NO_PROXY
-        is State.Through -> snapshot.proxy
+        is State.Through -> if (anonymous) snapshot.anonymous else snapshot.proxy
         is State.Blocked -> throw IOException("network closed: proxy unavailable")
     }
 
@@ -139,9 +150,12 @@ object NetworkProxy {
         }
     }
 
-    private fun through(host: String, port: Int): State =
+    private fun through(host: String, port: Int, anonymousPort: Int): State =
         if (proxySupported) {
-            State.Through(Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved(host, port)))
+            State.Through(
+                Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved(host, port)),
+                Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved(host, anonymousPort)),
+            )
         } else {
             State.Blocked
         }

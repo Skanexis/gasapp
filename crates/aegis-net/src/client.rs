@@ -25,8 +25,9 @@ use aegis_types::{AegisError, Result};
 
 use crate::api::{
     AccountDeletedResponse, BundleResponse, CertificateResponse, DiscoveryResponse,
-    EnvelopeResponse, PublishKeysRequest, RecoverAccountRequest, RegisterRequest, RegisterResponse,
-    SealedAccessRequest, SealedReportRequest, SealedReportResponse, SealedSendRequest,
+    EnvelopeResponse, KtHeadsResponse, KtProofsRequest, KtProofsResponse, PublishKeysRequest,
+    RecoverAccountRequest, RegisterRequest, RegisterResponse, SealedAccessRequest,
+    SealedReportRequest, SealedReportResponse, SealedSendRequest,
 };
 
 /// Метод HTTP.
@@ -79,6 +80,14 @@ pub struct HttpRequest {
     /// два, и порядок их отправки значения не имеет — карта здесь
     /// была бы структурой ради структуры.
     pub headers: Vec<(String, String)>,
+    /// Анонимный запрос — без подписи устройства.
+    ///
+    /// 🔐 Транспорт обязан отправить его **отдельной цепочкой Tor**
+    /// (свой порт встроенного Tor, без переиспользования соединения):
+    /// иначе он шёл бы той же цепочкой, что запросы за подписью, и
+    /// сервер связал бы, например, запечатанное сообщение с отправителем
+    /// по выходному узлу и времени — и sealed sender потерял бы смысл.
+    pub anonymous: bool,
 }
 
 /// Ответ сервера.
@@ -434,7 +443,8 @@ impl<T: Transport> ApiClient<T> {
 
     /// Выполняет запрос и переводит код ответа в ошибку домена.
     fn send(&self, method: Method, path: String, body: Option<String>) -> Result<HttpResponse> {
-        self.execute(method, path, body, Vec::new())
+        // Без подписи — значит, анонимно (см. `HttpRequest::anonymous`).
+        self.execute(method, path, body, Vec::new(), true)
     }
 
     /// Выполняет запрос за подписью устройства.
@@ -456,7 +466,7 @@ impl<T: Transport> ApiClient<T> {
             body.as_deref().unwrap_or("").as_bytes(),
         )?;
 
-        self.execute(method, path, body, headers)
+        self.execute(method, path, body, headers, false)
     }
 
     /// Выполняет запрос с готовыми заголовками.
@@ -466,6 +476,7 @@ impl<T: Transport> ApiClient<T> {
         path: String,
         body: Option<String>,
         headers: Vec<(String, String)>,
+        anonymous: bool,
     ) -> Result<HttpResponse> {
         let response = self.transport.execute(&HttpRequest {
             method,
@@ -473,6 +484,7 @@ impl<T: Transport> ApiClient<T> {
             body,
             binary_body: None,
             headers,
+            anonymous,
         })?;
 
         check_status(&response)?;
@@ -502,6 +514,7 @@ impl<T: Transport> ApiClient<T> {
             body: None,
             binary_body: Some(payload),
             headers: vec![(UPLOAD_POW_HEADER.to_owned(), pow_nonce.to_string())],
+            anonymous: true,
         })?;
 
         check_status(&response)?;
@@ -535,6 +548,37 @@ impl<T: Transport> ApiClient<T> {
         )?;
 
         Ok(response.binary_body)
+    }
+
+    /// Вершины журнала ключей начиная с эпохи `from` (без неё — окно
+    /// истории). Анонимно: сервер не должен знать, кто сверяет журнал.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] — сбой соединения или отказ сервера.
+    pub fn kt_heads(&self, from: Option<u64>) -> Result<KtHeadsResponse> {
+        let path = match from {
+            Some(from) => format!("/v1/kt/heads/{from}"),
+            None => "/v1/kt/heads".to_owned(),
+        };
+        let response = self.send(Method::Get, path, None)?;
+
+        parse(&response)
+    }
+
+    /// Доказательства журнала ключей для индекса в эпохах. Анонимно.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Network`] — сбой соединения или отказ сервера.
+    pub fn kt_proofs(&self, request: &KtProofsRequest) -> Result<KtProofsResponse> {
+        let response = self.send(
+            Method::Post,
+            "/v1/kt/proofs".to_owned(),
+            Some(to_json(request)?),
+        )?;
+
+        parse(&response)
     }
 }
 

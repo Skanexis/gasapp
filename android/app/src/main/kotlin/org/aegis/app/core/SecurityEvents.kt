@@ -33,6 +33,8 @@ object SecurityEvents {
     val labels: Map<String, Int> = mapOf(
         "contact_identity_changed" to R.string.security_event_contact_identity_changed,
         "pq_identity_changed" to R.string.security_event_pq_identity_changed,
+        "kt_foreign_key_for_own_name" to R.string.security_event_kt_foreign_key_for_own_name,
+        "kt_log_forked" to R.string.security_event_kt_log_forked,
         "contact_verified" to R.string.security_event_contact_verified,
         "contact_identity_accepted" to R.string.security_event_contact_identity_accepted,
         "contact_verification_revoked" to R.string.security_event_contact_verification_revoked,

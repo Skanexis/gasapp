@@ -52,6 +52,7 @@ use aegis_storage::{MessageStatus, Storage, StoredMessage, VaultFileRow};
 use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
 use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 
+mod kt;
 mod network;
 mod pq;
 mod requests;
@@ -64,6 +65,7 @@ use aegis_types::{
     canonical_username, AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext,
     PublicKeyBytes, Result, Timestamp,
 };
+pub use kt::{KtSelfCheck, KtVerdict};
 pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 use rand_core::{CryptoRng, RngCore};
 
@@ -142,10 +144,13 @@ pub struct Contact {
     /// Переписка остаётся для чтения; отправлять в неё нельзя: имя
     /// ведёт теперь к другому ключу.
     pub replaced: bool,
-    /// 🔐 Ключ подтверждён вне сервера: сверкой safety number или
-    /// ссылкой/QR самого контакта. Без этого отправка запрещена
-    /// ([`AegisError::PeerUnconfirmed`]).
+    /// 🔐 Ключ подтверждён: сверкой safety number, ссылкой/QR самого
+    /// контакта или журналом ключей (см. [`Contact::kt_confirmed`]).
+    /// Без этого отправка запрещена ([`AegisError::PeerUnconfirmed`]).
     pub key_confirmed: bool,
+    /// Ключ подтверждён только журналом ключей (§9.7) — без личной
+    /// сверки. Интерфейс показывает это отдельно: личная сверка сильнее.
+    pub kt_confirmed: bool,
 }
 
 /// Найденное сообщение вместе с чатом, которому оно принадлежит.
@@ -457,6 +462,10 @@ impl<T: Transport> Client<T> {
         )?;
         self.storage.mark_own_sealed_kem_published(now)?;
 
+        // Журнал ключей: своё имя проверяется с этой эпохи — раньше
+        // под ним стоял прежний ключ (или ничего), и чужим он не был.
+        self.kt_start_self_check(now)?;
+
         Ok(Account {
             account_id,
             device_id: server_device_id,
@@ -489,7 +498,12 @@ impl<T: Transport> Client<T> {
 
         // 🔐 До шифрования: ключ, названный сервером, обязан быть тем,
         // что известен для этого имени (см. `check_advertised_identity`).
-        self.check_advertised_identity(peer_username, &peer_identity, now)?;
+        self.check_advertised_identity(
+            peer_username,
+            &peer_identity,
+            peer.pq_identity_key.as_deref(),
+            now,
+        )?;
 
         // 🔐 Пост-квантовая половина identity получателя — привязанная
         // и сверенная с запомненной (см. `client::pq`).
@@ -791,7 +805,12 @@ impl<T: Transport> Client<T> {
 
         // 🔐 Та же проверка, что в `send_message`: реакция, правка
         // и вложение уходят тем же ключом, что и текст.
-        self.check_advertised_identity(peer_username, &peer_identity, now)?;
+        self.check_advertised_identity(
+            peer_username,
+            &peer_identity,
+            peer.pq_identity_key.as_deref(),
+            now,
+        )?;
 
         let peer_pq = self.verified_peer_pq(&peer, &peer_identity, now)?;
         let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
@@ -1355,6 +1374,7 @@ impl<T: Transport> Client<T> {
             key_changed,
             replaced: false,
             key_confirmed: true,
+            kt_confirmed: false,
         })
     }
 
@@ -1374,13 +1394,23 @@ impl<T: Transport> Client<T> {
         let peer = self.api.discover(name)?;
         let advertised = parse_public_key(&peer.identity_key)?;
 
-        self.bind_advertised_identity(name, &advertised, now)?;
+        let confirmed = self.bind_advertised_identity(name, &advertised, now)?;
 
         // Пост-квантовая половина — запоминается сразу: safety number
         // считается по обеим, а сверять человек будет до первой отправки.
         self.verified_peer_pq(&peer, &advertised, now)?;
 
         let account = peer_account(&advertised);
+
+        // Журнал ключей — сразу, чтобы интерфейс мог дать писать без
+        // личной сверки, если ключ стоит в журнале дольше суток (§9.7).
+        if !confirmed {
+            if let Some(pq) = peer.pq_identity_key.as_deref() {
+                if self.kt_verify_contact(name, &advertised, pq, now)? == KtVerdict::Verified {
+                    self.storage.mark_contact_confirmed_by_kt(&account)?;
+                }
+            }
+        }
 
         self.contacts()?
             .into_iter()
@@ -1926,6 +1956,7 @@ impl<T: Transport> Client<T> {
         &self,
         name: &str,
         advertised: &PublicKeyBytes,
+        pq_identity_key: Option<&str>,
         now: Timestamp,
     ) -> Result<()> {
         let confirmed = self.bind_advertised_identity(name, advertised, now)?;
@@ -1935,10 +1966,23 @@ impl<T: Transport> Client<T> {
         // Годится ключ, подтверждённый вне сервера, — сверкой safety
         // number или ссылкой/QR самого собеседника.
         if confirmed {
-            Ok(())
-        } else {
-            Err(AegisError::PeerUnconfirmed)
+            return Ok(());
         }
+
+        // …или журналом ключей (§9.7): тот же ключ под этим именем
+        // стоит в журнале сейчас и стоял сутки назад, а владелец имени
+        // проверяет свою запись сам. Сервер не может показать его
+        // одному человеку, не показав всем, включая владельца.
+        if let Some(pq) = pq_identity_key {
+            if self.kt_verify_contact(name, advertised, pq, now)? == KtVerdict::Verified {
+                self.storage
+                    .mark_contact_confirmed_by_kt(&peer_account(advertised))?;
+
+                return Ok(());
+            }
+        }
+
+        Err(AegisError::PeerUnconfirmed)
     }
 
     /// Сверяет ключ, названный сервером, с известными для имени.
@@ -2116,7 +2160,8 @@ impl<T: Transport> Client<T> {
                     verified: row.verified,
                     key_changed,
                     replaced: row.replaced,
-                    key_confirmed: row.verified || row.confirmed_by_link,
+                    key_confirmed: row.verified || row.confirmed_by_link || row.confirmed_by_kt,
+                    kt_confirmed: row.confirmed_by_kt && !row.verified && !row.confirmed_by_link,
                 })
             })
             .collect()

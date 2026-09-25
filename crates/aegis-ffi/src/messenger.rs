@@ -49,6 +49,7 @@ pub trait HttpTransport: Send + Sync {
         body: Option<String>,
         binary_body: Option<Vec<u8>>,
         headers: Vec<FfiHeader>,
+        anonymous: bool,
     ) -> Result<FfiHttpResponse, FfiError>;
 }
 
@@ -135,6 +136,7 @@ impl Transport for ForeignTransport {
                         value: value.clone(),
                     })
                     .collect(),
+                request.anonymous,
             )
             // Ошибка платформы означает недоступность сети. Различать
             // её причины здесь нельзя: текст исключения Kotlin в лог
@@ -214,6 +216,8 @@ pub struct FfiContact {
     /// 🔐 Ключ подтверждён вне сервера — сверкой safety number или
     /// ссылкой/QR самого контакта. Без этого писать нельзя.
     pub key_confirmed: bool,
+    /// Подтверждён только журналом ключей — без личной сверки.
+    pub kt_confirmed: bool,
 }
 
 /// Найденное сообщение вместе с его чатом.
@@ -763,6 +767,12 @@ impl Messenger {
             )
         })?;
 
+        // 🔐 Журнал ключей: своё имя проверяется тем же проходом
+        // обслуживания. Сбой проверки не мешает обслуживанию: журнал
+        // может быть недоступен, а найденная подмена уже записана
+        // событием безопасности внутри проверки.
+        let _ = guard(|| client.kt_check_self(aegis_types::Timestamp::from_millis(now_millis)));
+
         Ok(FfiPreKeyMaintenance {
             rotated_signed: report.rotated_signed,
             added_one_time: report.added_one_time,
@@ -1116,6 +1126,7 @@ fn contact_to_ffi(contact: &aegis_core::client::Contact) -> FfiContact {
         key_changed: contact.key_changed,
         replaced: contact.replaced,
         key_confirmed: contact.key_confirmed,
+        kt_confirmed: contact.kt_confirmed,
     }
 }
 

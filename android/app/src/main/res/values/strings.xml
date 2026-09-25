@@ -583,4 +583,7 @@
     <string name="tor_blocked_hint">Tor is not connecting — it may be blocked here. Tap to add a bridge.</string>
     <string name="onboarding_add_bridge">Tor blocked? Add a bridge</string>
     <string name="onboarding_bridges_title">Tor bridges</string>
+    <string name="chat_kt_state">Key checked by the key log — compare in person for full certainty</string>
+    <string name="security_event_kt_foreign_key_for_own_name">The server showed a different key under your name. Your contacts may have been sent to someone else — warn them in person</string>
+    <string name="security_event_kt_log_forked">The server’s key log did not match what it showed before</string>
 </resources>

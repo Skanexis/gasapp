@@ -25,6 +25,7 @@
 //! опознаваемых строк, ни заголовка `SQLite format 3`.
 
 pub mod backup;
+pub mod kt;
 pub mod pq;
 pub mod requests;
 pub mod sealed;
@@ -250,6 +251,9 @@ pub struct ChatSummaryRow {
 /// что определяет, с кем идёт переписка, — это
 /// [`identity_key`](ContactRow::identity_key): имя контакт называет
 /// сам, и «Банк» в имени не делает его банком.
+// Булевы поля — независимые признаки контакта (сверен, заменён,
+// подтверждён ссылкой, журналом), а не флаги одного состояния.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct ContactRow {
     /// Идентификатор аккаунта.
@@ -271,6 +275,10 @@ pub struct ContactRow {
     pub replaced: bool,
     /// Ключ получен из ссылки или QR-кода самого контакта, а не от сервера.
     pub confirmed_by_link: bool,
+    /// Ключ подтверждён журналом ключей (§9.7): простоял в журнале
+    /// сутки без изменений. Слабее личной сверки, сильнее доверия
+    /// при первом использовании.
+    pub confirmed_by_kt: bool,
 }
 
 /// Сообщение в том виде, в каком оно лежит в базе.
@@ -368,7 +376,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 13;
+    const SCHEMA_VERSION: i32 = 14;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -773,6 +781,26 @@ impl Storage {
                             [],
                         )
                         .map_err(storage_error)?;
+                }
+                // 13 → 14: журнал ключей (спецификация §9.7) — проверенная
+                // цепочка вершин, самопроверка имени и отметка контакта,
+                // подтверждённого журналом.
+                14 => {
+                    for statement in [
+                        "CREATE TABLE IF NOT EXISTS kt_heads (
+                             epoch INTEGER PRIMARY KEY,
+                             root  BLOB NOT NULL,
+                             head  BLOB NOT NULL
+                         )",
+                        "CREATE TABLE IF NOT EXISTS kt_self (
+                             id            INTEGER PRIMARY KEY CHECK (id = 1),
+                             checked_epoch INTEGER NOT NULL,
+                             version       INTEGER NOT NULL
+                         )",
+                        "ALTER TABLE known_contacts ADD COLUMN confirmed_by_kt INTEGER NOT NULL DEFAULT 0",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
+                    }
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
@@ -2610,7 +2638,8 @@ impl Storage {
                     c.added_at,
                     (v.account_id IS NOT NULL) AS verified,
                     (c.replaced_at IS NOT NULL) AS replaced,
-                    c.confirmed_by_link
+                    c.confirmed_by_link,
+                    c.confirmed_by_kt
                 FROM known_contacts AS c
                 LEFT JOIN verified_contacts AS v
                     ON v.account_id = c.account_id
@@ -2631,6 +2660,7 @@ impl Storage {
                     row.get::<_, bool>(5)?,
                     row.get::<_, bool>(6)?,
                     row.get::<_, bool>(7)?,
+                    row.get::<_, bool>(8)?,
                 ))
             })
             .map_err(storage_error)?;
@@ -2647,6 +2677,7 @@ impl Storage {
                 verified,
                 replaced,
                 confirmed_by_link,
+                confirmed_by_kt,
             ) = row.map_err(storage_error)?;
 
             contacts.push(ContactRow {
@@ -2661,6 +2692,7 @@ impl Storage {
                 added_at,
                 replaced,
                 confirmed_by_link,
+                confirmed_by_kt,
             });
         }
 
@@ -2707,7 +2739,8 @@ impl Storage {
             .prepare(
                 "
                 SELECT c.account_id, c.identity_key,
-                       (v.account_id IS NOT NULL OR c.confirmed_by_link = 1)
+                       (v.account_id IS NOT NULL OR c.confirmed_by_link = 1
+                        OR c.confirmed_by_kt = 1)
                 FROM known_contacts AS c
                 LEFT JOIN verified_contacts AS v ON v.account_id = c.account_id
                 WHERE c.username = ? AND c.replaced_at IS NULL
@@ -4535,6 +4568,8 @@ mod tests {
                 "ALTER TABLE chat_states DROP COLUMN request_state",
                 // Хеш пост-квантовой половины — миграция 11 → 12.
                 "ALTER TABLE known_contacts DROP COLUMN pq_identity_hash",
+                // Подтверждение журналом ключей — миграция 13 → 14.
+                "ALTER TABLE known_contacts DROP COLUMN confirmed_by_kt",
                 // own_keys откатывать не нужно: миграция 2 → 3
                 // пересоздаёт таблицу целиком и переживает повтор.
                 "UPDATE schema_version SET version = 1 WHERE id = 1",
@@ -4606,6 +4641,8 @@ mod tests {
                 "ALTER TABLE chat_states DROP COLUMN request_state",
                 // Хеш пост-квантовой половины — миграция 11 → 12.
                 "ALTER TABLE known_contacts DROP COLUMN pq_identity_hash",
+                // Подтверждение журналом ключей — миграция 13 → 14.
+                "ALTER TABLE known_contacts DROP COLUMN confirmed_by_kt",
                 "UPDATE schema_version SET version = 2 WHERE id = 1",
             ] {
                 connection.execute(statement, []).expect("откат схемы");

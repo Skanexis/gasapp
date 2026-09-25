@@ -52,6 +52,9 @@ pub struct FfiTorStatus {
     pub stalled: bool,
     /// Порт моста на 127.0.0.1; 0 — не запущен.
     pub port: u16,
+    /// Порт для анонимных запросов: каждое соединение — своя цепочка
+    /// Tor; 0 — не запущен.
+    pub isolated_port: u16,
     /// Подключается через мосты.
     pub bridges: bool,
 }
@@ -63,6 +66,7 @@ impl FfiTorStatus {
         percent: 0,
         stalled: false,
         port: 0,
+        isolated_port: 0,
         bridges: false,
     };
 
@@ -78,6 +82,7 @@ impl FfiTorStatus {
             percent,
             stalled,
             port: tor.port(),
+            isolated_port: tor.isolated_port(),
             bridges: !tor.bridges().is_empty(),
         }
     }

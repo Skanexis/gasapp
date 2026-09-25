@@ -486,8 +486,14 @@ class ChatActivity : AppCompatActivity() {
                 request = request == FfiChatRequest.INCOMING,
             )
 
+            // Три уровня: сверен лично, подтверждён журналом ключей
+            // (писать можно, но личная сверка сильнее), не подтверждён.
             findViewById<TextView>(R.id.chat_verification_state).text = getString(
-                if (wasVerified) R.string.chat_verified_state else R.string.chat_unverified_state,
+                when {
+                    wasVerified -> R.string.chat_verified_state
+                    contact?.ktConfirmed == true -> R.string.chat_kt_state
+                    else -> R.string.chat_unverified_state
+                },
             )
 
             applySendGuard()
