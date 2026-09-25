@@ -7,6 +7,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
+import java.lang.ref.WeakReference
 import android.os.Looper
 import android.os.SystemClock
 import org.aegis.app.LockActivity
@@ -165,6 +166,16 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
 
             Core.close()
             SecureClipboard.clear(application)
+
+            // 🔐 Экраны с данными закрываются тут же, в фоне.
+            //
+            // Прежде они жили до возвращения человека: хранилище
+            // закрыто, но расшифрованные превью переписки, имена
+            // собеседников и тексты сообщений оставались в памяти
+            // процесса — в адаптерах экранов из стека. Дамп памяти
+            // запертого приложения (эмулятор, 2026-09-25) их показывал.
+            // Возвращение всё равно начинается с экрана блокировки.
+            finishDataScreens()
         }
 
         scheduled = task
@@ -252,6 +263,10 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
             return
         }
 
+        if (activity.javaClass !in OPEN_WHILE_LOCKED) {
+            dataScreens += WeakReference(activity)
+        }
+
         if (activity.javaClass in OPEN_WHILE_LOCKED || Core.isUnlocked) {
             return
         }
@@ -275,5 +290,23 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
 
     override fun onActivitySaveInstanceState(activity: Activity, out: Bundle) = Unit
 
-    override fun onActivityDestroyed(activity: Activity) = Unit
+    override fun onActivityDestroyed(activity: Activity) {
+        dataScreens.removeAll { it.get().let { screen -> screen == null || screen === activity } }
+    }
+
+    /**
+     * Экраны приложения, работающие с открытым хранилищем.
+     *
+     * Слабые ссылки: список не должен держать экран в памяти дольше,
+     * чем его держит система, — ровно этого он и призван избежать.
+     */
+    private val dataScreens = mutableListOf<WeakReference<Activity>>()
+
+    /** Закрывает экраны с данными — при запирании в фоне. */
+    private fun finishDataScreens() {
+        dataScreens.mapNotNull { it.get() }
+            .filterNot { it.isFinishing }
+            .forEach { it.finish() }
+        dataScreens.clear()
+    }
 }

@@ -7725,7 +7725,7 @@ AegisEngine  libsignal (только в CI-контейнере, не распр
 |---|---|---|
 | `db_dump_has_no_plaintext` | ✅ | `aegis-storage::tests::database_file_contains_no_plaintext` |
 | `server_db_has_no_plaintext` | ✅ | `crates/aegis-core/tests/live_server.rs` (CI, джоб `client-against-server`) |
-| `secrets_zeroized` | 🟡 | тип-уровень: `ZeroizeOnDrop` + `private_key_is_zeroize_on_drop`; дамп памяти процесса не снимался |
+| `secrets_zeroized` | 🟡 | тип-уровень: `ZeroizeOnDrop` + `private_key_is_zeroize_on_drop`. Дамп кучи Java снят на эмуляторе (2026-09-25, `am dumpheap -g` после автоблокировки в фоне): PIN не найден; но превью переписки и имя собеседника **оставались достижимыми** — экраны из стека держали данные до возвращения человека. Исправлено: запирание в фоне закрывает экраны с данными (`AutoLock.finishDataScreens`, тест `locking_in_the_background_finishes_data_screens`); повторный дамп — ни PIN, ни текстов, ни имён. 🟡, а не ✅: нативная память (Rust, SQLCipher) дампом кучи Java не покрывается |
 | `no_secrets_in_logs` | ✅ | `tools/check-no-secrets-in-logs.sh` в CI |
 | `mitm_proxy_rejected` | ✅ | `MitmProxyRejectedTest`, 5 тестов |
 | `identity_change_blocks_send` | ✅ | `identity_change_blocks_send_to_a_verified_contact` и ещё 9 (раздел 23.11); с 2026-09-24 и ключ, не подтверждённый вне сервера, — `a_key_named_only_by_the_server_cannot_be_written_to` (раздел 23.13) |
