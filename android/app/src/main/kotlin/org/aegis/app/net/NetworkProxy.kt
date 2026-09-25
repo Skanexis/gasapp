@@ -2,6 +2,7 @@
 
 package org.aegis.app.net
 
+import android.content.Context
 import android.os.Build
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -56,6 +57,10 @@ object NetworkProxy {
     @Volatile
     private var state: State = State.Blocked
 
+    /** Выбран ли встроенный Tor. */
+    @Volatile
+    private var tor: Boolean = false
+
     /** Умеет ли платформа передавать прокси имя хоста (Android 7.0+). */
     val proxySupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
@@ -69,15 +74,26 @@ object NetworkProxy {
      *
      * `null` — режим прочитать не удалось. 🔐 Тогда сеть закрывается:
      * повреждённая запись «Tor» не должна превращаться в «напрямую».
+     *
+     * Для Tor встроенный Tor запускается здесь же (если ещё не
+     * запущен): режим без запущенного моста — закрытая сеть.
      */
-    fun apply(mode: FfiProxy?) {
+    fun apply(context: Context, mode: FfiProxy?) {
+        tor = mode is FfiProxy.Tor
         state = when (mode) {
             null -> State.Blocked
             is FfiProxy.Direct -> State.Direct
-            is FfiProxy.Orbot -> through(ORBOT_HOST, ORBOT_PORT)
+            is FfiProxy.Tor -> EmbeddedTor.ensureStarted(context)
+                .takeIf { it != 0 }
+                ?.let { port -> through(LOCALHOST, port) }
+                ?: State.Blocked
             is FfiProxy.Socks5 -> through(mode.host, mode.port.toInt())
         }
     }
+
+    /** Идёт ли сеть через встроенный Tor — для индикатора подключения. */
+    val viaEmbeddedTor: Boolean
+        get() = tor
 
     /**
      * Прокси для очередного соединения.
@@ -116,9 +132,6 @@ object NetworkProxy {
             State.Blocked
         }
 
-    /** Адрес Orbot: совпадает с `aegis-net::proxy::ORBOT_HOST`. */
-    private const val ORBOT_HOST = "127.0.0.1"
-
-    /** SOCKS-порт Orbot: совпадает с `aegis-net::proxy::ORBOT_SOCKS_PORT`. */
-    private const val ORBOT_PORT = 9050
+    /** Адрес моста встроенного Tor: только петля устройства. */
+    private const val LOCALHOST = "127.0.0.1"
 }

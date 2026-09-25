@@ -9,16 +9,21 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.TouchTarget
 import org.aegis.app.core.showSecure
+import org.aegis.app.net.EmbeddedTor
+import org.aegis.app.net.NetworkProxy
 import org.aegis.app.net.NotificationSocket
 import org.aegis.app.ui.BottomNav
 import org.aegis.app.ui.ChatListAdapter
@@ -96,6 +101,48 @@ class ChatListActivity : AppCompatActivity() {
         // попасть. Подробности — в TouchTarget.
         TouchTarget.expand(findViewById(R.id.chat_list_search))
         findViewById<ImageView>(R.id.new_chat_button).setOnClickListener { promptNewChat() }
+
+        watchTor()
+    }
+
+    /**
+     * Плашка «Подключение к Tor… N%», пока встроенный Tor не готов.
+     *
+     * Без неё первые секунды после запуска выглядели бы как «нет
+     * сообщений»: запросы ждут Tor. Когда он подключился, очередь
+     * забирается заново — первый приём мог не дождаться.
+     */
+    private fun watchTor() {
+        val banner = findViewById<TextView>(R.id.connection_banner)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var waited = false
+
+                while (true) {
+                    val status = EmbeddedTor.status()
+                    val connecting = NetworkProxy.viaEmbeddedTor && status.running && !status.ready
+
+                    if (connecting) {
+                        banner.text = getString(
+                            if (status.stalled) R.string.tor_status_stalled else R.string.tor_status_connecting,
+                            status.percent.toInt(),
+                        )
+                        banner.visibility = View.VISIBLE
+                        waited = true
+                    } else {
+                        banner.visibility = View.GONE
+
+                        if (waited) {
+                            waited = false
+                            loadChats()
+                        }
+                    }
+
+                    delay(TOR_POLL_MS)
+                }
+            }
+        }
     }
 
     /**
@@ -334,6 +381,9 @@ class ChatListActivity : AppCompatActivity() {
      * Имена взяты из UI kit, чтобы экран совпадал с макетом.
      */
     private companion object {
+        /** Как часто проверять подключение Tor. */
+        private const val TOR_POLL_MS = 1_000L
+
         /** Текущий счёт Security Center. */
         const val SECURITY_SCORE = 9
 

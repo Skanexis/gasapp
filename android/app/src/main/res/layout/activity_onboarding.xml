@@ -177,16 +177,6 @@
             tools:text="Имя уже занято"
             tools:visibility="visible" />
 
-        <!-- Появляется, когда регистрация через Tor не дошла до сервера. -->
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/onboarding_open_orbot"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/onboarding_open_orbot"
-            android:visibility="gone"
-            app:buttonVariant="secondary" />
-
         <ProgressBar
             android:id="@+id/onboarding_progress"
             android:layout_width="wrap_content"

@@ -85,7 +85,7 @@ object Core {
         // раньше её прочитать нечем; а после — уже поздно: запрос, ушедший
         // напрямую при включённом Tor, выдал бы адрес. Нечитаемая настройка
         // закрывает сеть, а не открывает её.
-        NetworkProxy.apply(runCatching { opened.proxy() }.getOrNull())
+        NetworkProxy.apply(context, runCatching { opened.proxy() }.getOrNull())
 
         // 🔐 Чистка истёкших сообщений сразу после открытия базы.
         //
