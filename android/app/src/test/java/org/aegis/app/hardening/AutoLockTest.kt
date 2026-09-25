@@ -202,6 +202,42 @@ class AutoLockTest {
      * Хранилище в тесте закрыто, поэтому [AutoLock] читает умолчание —
      * то же, что проверяет [default_threshold_matches_the_plan].
      */
+    /**
+     * 🔐 Запирание в фоне закрывает экраны с данными, не дожидаясь
+     * возвращения.
+     *
+     * Иначе расшифрованные превью и имена собеседников оставались
+     * в памяти запертого процесса — их показал дамп памяти на эмуляторе.
+     */
+    @Test
+    fun locking_in_the_background_finishes_data_screens() {
+        val dataScreen = Robolectric.buildActivity(Activity::class.java).setup().get()
+        trackAsDataScreen(dataScreen)
+
+        AutoLock.onActivityStopped(activity)
+        advance(thresholdMillis())
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofMillis(thresholdMillis()))
+
+        assertTrue("экран с данными пережил запирание в фоне", dataScreen.isFinishing)
+
+        // Возвращение для tearDown: счётчик видимых экранов парный.
+        AutoLock.onActivityStarted(activity)
+    }
+
+    /**
+     * Регистрирует экран как экран с данными.
+     *
+     * AutoLock отбирает их по пакету приложения, а тестовый экран —
+     * `android.app.Activity`; список пополняется отражением, чтобы
+     * не заводить в защитном коде ручку для тестов (как [resetAutoLock]).
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun trackAsDataScreen(screen: Activity) {
+        val field = AutoLock::class.java.getDeclaredField("dataScreens").apply { isAccessible = true }
+        (field.get(null) as MutableList<java.lang.ref.WeakReference<Activity>>) +=
+            java.lang.ref.WeakReference(screen)
+    }
+
     private fun thresholdMillis(): Long = Settings.AUTO_LOCK_DEFAULT * 1_000L
 
     private fun advance(millis: Long) {
