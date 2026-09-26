@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Рамка прицела сканера: прозрачная середина, акцентная линия, r16. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <stroke android:width="3dp" android:color="@color/accent_base" />
+    <corners android:radius="@dimen/radius_card" />
+</shape>

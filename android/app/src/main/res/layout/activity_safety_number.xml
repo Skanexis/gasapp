@@ -109,13 +109,27 @@
           Автоматическая отметка обесценила бы верификацию: она означает
           «я лично сверил», а не «приложение что-то посчитало».
         -->
+        <!--
+          Сканирование кода собеседника: устройство сравнивает все 60
+          цифр само — быстрее и точнее, чем глазами. Совпало — отметка
+          ставится; не совпало — предупреждение о возможной подмене.
+        -->
+        <org.aegis.app.components.AegisButton
+            android:id="@+id/scan_safety_number"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:drawablePadding="@dimen/space_s"
+            android:text="@string/safety_scan"
+            app:buttonVariant="primary" />
+
         <org.aegis.app.components.AegisButton
             android:id="@+id/mark_verified"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_s"
             android:text="@string/mark_verified"
-            app:buttonVariant="ok" />
+            app:buttonVariant="outline" />
 
         <org.aegis.app.components.AegisButton
             android:id="@+id/clear_verified"

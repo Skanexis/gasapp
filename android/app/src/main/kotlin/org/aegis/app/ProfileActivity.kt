@@ -4,6 +4,7 @@ package org.aegis.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -11,34 +12,36 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.aegis.app.components.AegisToast
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisToast
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.QrDrawable
-import uniffi.aegis.FfiException
+import org.aegis.app.ui.initialsOf
 
 /**
- * Экран собственного профиля: QR и ссылка для обмена контактами.
+ * Экран собственного профиля: `@имя` и QR-код.
  *
- * # Зачем это нужно
+ * # Два способа найти человека
  *
- * Ключ, полученный от сервера, приходится принимать на веру. Ключ,
- * снятый с экрана человека, стоящего рядом, проверять не нужно —
- * канал доверия проходит мимо сети. Этот экран и есть такой канал.
+ * **Имя** — чтобы найти через поиск: ключ по нему назовёт сервер,
+ * а сверит открытый журнал ключей. **QR** — при встрече: в коде сам
+ * identity-ключ, его сканируют встроенным сканером, и ключ приходит
+ * мимо сети — это точная сверка.
  *
- * 🔐 Ссылку строит ядро, а не Kotlin. Вторая реализация кодирования
- * разошлась бы с первой, и сканирование давало бы «неверную ссылку»
- * там, где ссылка верна.
+ * 🔐 Содержимое QR строит ядро (`ownContactLink` → `contactLinkQr`),
+ * а не Kotlin: вторая реализация кодирования разошлась бы с первой.
+ * Текстом эта строка больше не показывается и не отправляется —
+ * «Поделиться» отдаёт только имя.
  */
 class ProfileActivity : AppCompatActivity() {
 
-    private lateinit var linkView: TextView
     private lateinit var qrView: ImageView
 
-    /** Ссылка, показанная на экране; пуста, пока ядро не ответило. */
-    private var link: String = ""
+    /** Содержимое QR — только для отрисовки кода. */
+    private var qrPayload: String = ""
+    private var username: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,92 +52,57 @@ class ProfileActivity : AppCompatActivity() {
         SecureWindow.apply(this)
 
         setContentView(R.layout.activity_profile)
-        findViewById<android.view.View>(R.id.profile_back).setOnClickListener { finish() }
+        findViewById<View>(R.id.profile_back).setOnClickListener { finish() }
 
-
-        linkView = findViewById(R.id.profile_link)
         qrView = findViewById(R.id.profile_qr)
 
-        findViewById<AegisButton>(R.id.profile_copy).setOnClickListener { copyLink() }
-        findViewById<AegisButton>(R.id.profile_share).setOnClickListener { shareLink() }
+        findViewById<AegisButton>(R.id.profile_copy).setOnClickListener { copyUsername() }
+        findViewById<AegisButton>(R.id.profile_share).setOnClickListener { shareUsername() }
 
         loadProfile()
     }
 
-    /**
-     * 🔐 Убирает ссылку при уходе с экрана.
-     *
-     * Ссылка содержит identity-ключ и имя, то есть отвечает на вопрос
-     * «кто пользуется этим телефоном». В снимке для переключателя
-     * задач, который система делает при сворачивании, ей не место.
-     */
+    /** 🔐 Код с ключом не остаётся на экране, уходящем в фон. */
     override fun onStop() {
         super.onStop()
-
-        linkView.text = ""
         qrView.setImageDrawable(null)
     }
 
     override fun onStart() {
         super.onStart()
 
-        if (link.isNotEmpty()) {
-            render(link)
-        }
+        if (qrPayload.isNotEmpty()) renderQr(qrPayload)
     }
 
-    /**
-     * Запрашивает ссылку у ядра.
-     *
-     * Уходит на `Dispatchers.IO`: переход через границу FFI
-     * блокирующий, а внутри — чтение зашифрованного хранилища.
-     */
     private fun loadProfile() {
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { Core.messenger().ownContactLink() }
+            val loaded = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().ownUsername() to Core.messenger().ownContactLink()
+                }
             }
 
-            result
-                .onSuccess { uri ->
-                    link = uri
-                    render(uri)
-                }
-                // Текст ошибки ядра намеренно неинформативен, поэтому
-                // показывается собственная строка, а не `error.message`.
-                .onFailure { error ->
-                    if (error is FfiException || error is IllegalStateException) {
-                        linkView.text = getString(R.string.ffi_error)
-                    } else {
-                        throw error
-                    }
-                }
+            val (name, payload) = loaded.getOrElse {
+                findViewById<TextView>(R.id.profile_username).setText(R.string.ffi_error)
+                return@launch
+            }
+
+            username = name
+            qrPayload = payload
+
+            findViewById<TextView>(R.id.profile_username).text = when (name) {
+                null -> getString(R.string.profile_no_username)
+                else -> getString(R.string.contact_username, name)
+            }
+            findViewById<TextView>(R.id.profile_avatar).text = initialsOf(name.orEmpty())
+
+            renderQr(payload)
         }
     }
 
-    private fun render(uri: String) {
-        linkView.text = uri
-
-        val username = uri.substringAfter(NAME_PARAM, missingDelimiterValue = "")
-        findViewById<TextView>(R.id.profile_username).text = when {
-            username.isEmpty() -> getString(R.string.profile_no_username)
-            else -> getString(R.string.contact_username, decode(username))
-        }
-
-        renderQr(uri)
-    }
-
-    /**
-     * Рисует QR ссылки.
-     *
-     * Ошибка построения не показывается отдельным сообщением: ссылка
-     * уже на экране текстом, и передать контакт можно ею.
-     */
-    private fun renderQr(uri: String) {
-        // Кодируется та же строка, что показана ниже текстом: собери
-        // код заново из разобранных частей — и пропущенное поле
-        // развело бы QR с тем, что пользователь видит и диктует.
-        val matrix = runCatching { uniffi.aegis.contactLinkQr(uri) }
+    /** Рисует QR; ошибка построения не мешает поделиться именем. */
+    private fun renderQr(payload: String) {
+        val matrix = runCatching { uniffi.aegis.contactLinkQr(payload) }
             .getOrNull()
             ?: return
 
@@ -143,61 +111,45 @@ class ProfileActivity : AppCompatActivity() {
         qrView.setImageBitmap(QrDrawable.render(matrix, side))
     }
 
-    private fun copyLink() {
-        if (link.isEmpty()) {
-            return
-        }
+    private fun copyUsername() {
+        val name = username ?: return
 
-        // 🔐 Ссылка несёт identity-ключ — то, чем собеседник сверяет
-        // подлинность. В буфере обмена, который читает любое приложение
-        // на переднем плане, ей делать нечего дольше, чем нужно на одну
-        // вставку.
+        // Имя — не секрет, но и в буфере обмена, который читает любое
+        // приложение на переднем плане, ему незачем жить дольше вставки.
         SecureClipboard.copySensitive(
             context = this,
             label = getString(R.string.profile_title),
-            text = link,
+            text = getString(R.string.contact_username, name),
         )
 
         AegisToast.show(this, R.string.profile_copied, AegisToast.Tone.Success)
     }
 
     /**
-     * Отдаёт ссылку другому приложению.
+     * Отдаёт другому приложению только имя.
      *
-     * 🔐 Уходит только ссылка — identity-ключ и имя. Ни переписки,
-     * ни списка контактов в ней нет, и приложение, которое её примет,
-     * не узнаёт о пользователе ничего сверх того, что он сам решил
-     * показать.
+     * 🔐 Ни ключа, ни чего-либо ещё: получатель найдёт по имени, а ключ
+     * сверит журнал ключей — или QR при встрече.
      */
-    private fun shareLink() {
-        if (link.isEmpty()) {
-            return
-        }
+    private fun shareUsername() {
+        val name = username ?: return
 
         startActivity(
             Intent.createChooser(
                 Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, link),
+                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.profile_share_text, name)),
                 getString(R.string.profile_share),
             ),
         )
     }
 
-    /** Разбирает процентное кодирование имени для показа. */
-    private fun decode(raw: String): String =
-        runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
-
-    companion object {
-        /** Разделитель, после которого в ссылке идёт имя. */
-        private const val NAME_PARAM = "?name="
-
+    private companion object {
         /**
          * Сторона QR, если разметка ещё не измерена.
          *
-         * View сообщает ширину только после укладки, а код строится
-         * сразу.
+         * View сообщает ширину только после укладки, а код строится сразу.
          */
-        private const val QR_FALLBACK_PX = 780
+        const val QR_FALLBACK_PX = 700
     }
 }

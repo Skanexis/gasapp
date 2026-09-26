@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisToast
 import org.aegis.app.components.AegisButton
+import org.aegis.app.components.AegisDialog
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.QrDrawable
 import android.view.View
@@ -86,11 +87,51 @@ class SafetyNumberActivity : AppCompatActivity() {
         }
         findViewById<AegisButton>(R.id.clear_verified).setOnClickListener { setVerified(false) }
 
+        findViewById<AegisButton>(R.id.scan_safety_number).apply {
+            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_qr, 0, 0, 0)
+            compoundDrawablesRelative[0]?.setTint(currentTextColor)
+            setOnClickListener {
+                scan.launch(ScanActivity.Request(R.string.safety_scan, R.string.scan_hint_safety))
+            }
+        }
+
         loadSafetyNumber()
     }
 
     /** Счёт собеседника: по нему ядро находит его ключ. */
     private var accountId: String = ""
+
+    /** Показанные цифры — с ними сравнивается код собеседника. */
+    private var shownDigits: String = ""
+
+    private val scan = registerForActivityResult(ScanActivity.Contract()) { payload ->
+        if (payload != null) compareScanned(payload)
+    }
+
+    /**
+     * 🔐 Сравнивает отсканированный код с показанными цифрами.
+     *
+     * Safety number у обеих сторон одинаков (он строится из обоих
+     * ключей в каноническом порядке), и его QR — те же 60 цифр. Совпадение
+     * всех цифр — ровно то, что человек проверял бы глазами, только
+     * без пропусков. Несовпадение значит: у собеседника на экране другой
+     * ключ — подмена либо не тот человек.
+     */
+    private fun compareScanned(payload: String) {
+        val scanned = payload.filter { it in '0'..'9' }
+
+        if (shownDigits.isNotEmpty() && scanned == shownDigits && payload.length == shownDigits.length) {
+            setVerified(true)
+
+            return
+        }
+
+        AegisDialog(this)
+            .title(R.string.safety_scan_mismatch_title)
+            .message(R.string.safety_scan_mismatch_body)
+            .primary(R.string.safety_scan_mismatch_ok, AegisDialog.Tone.Danger)
+            .show()
+    }
 
     /**
      * 🔐 Ставит или снимает отметку о сверке — в ядре.
@@ -148,6 +189,7 @@ class SafetyNumberActivity : AppCompatActivity() {
             result
                 .onSuccess { number ->
                     digits.text = number
+                    shownDigits = number.filter { it in '0'..'9' }
                     renderMarkButtons()
 
                     // QR строится из тех же цифр, что показаны рядом:
@@ -181,6 +223,7 @@ class SafetyNumberActivity : AppCompatActivity() {
             }.getOrNull()
         } ?: return
 
+        findViewById<AegisButton>(R.id.scan_safety_number).visibility = if (verified) View.GONE else View.VISIBLE
         findViewById<AegisButton>(R.id.mark_verified).visibility = if (verified) View.GONE else View.VISIBLE
         findViewById<AegisButton>(R.id.clear_verified).visibility = if (verified) View.VISIBLE else View.GONE
     }
@@ -194,6 +237,7 @@ class SafetyNumberActivity : AppCompatActivity() {
      */
     private fun showUnavailable() {
         digits.text = getString(R.string.ffi_error)
+        findViewById<AegisButton>(R.id.scan_safety_number).visibility = View.GONE
         findViewById<AegisButton>(R.id.mark_verified).visibility = View.GONE
         findViewById<AegisButton>(R.id.clear_verified).visibility = View.GONE
     }

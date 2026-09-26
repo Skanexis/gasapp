@@ -90,8 +90,8 @@
 | # | Требование | Статус | Чем проверено |
 |---|---|---|---|
 | PLATFORM-1.1 | Content Provider'ы не экспортированы | ✅ | Провайдеров нет ни одного; манифест |
-| PLATFORM-1.2 | Экспортированы только launcher и приём `aegis://` | ✅ | `AndroidManifest.xml` — у всех прочих `exported="false"` |
-| PLATFORM-1.3 | Deep link валидируется и фаззится | ✅ | `aegis-protocol::contact_link::parse`; фаззинг — `fuzz/fuzz_targets/parse_contact_link.rs`, зеркало на стабильном компиляторе — `tests/fuzz_corpus.rs::contact_link_parsing_never_panics` |
+| PLATFORM-1.2 | Экспортирован только launcher | ✅ | `AndroidManifest.xml` — у всех прочих `exported="false"`. С 2026-09-26 приём ссылок `aegis://contact` снят вовсе: контакт добавляется по @имени или встроенным сканером QR, внешние приложения не могут открыть ни один экран, кроме входа. Закреплено тестом `only_the_launcher_is_exported` (и список разрешений — `permissions_are_exactly_the_expected_ones`, камера — только для сканера) |
+| PLATFORM-1.3 | Deep link валидируется и фаззится | ✅ | `aegis-protocol::contact_link::parse`; фаззинг — `fuzz/fuzz_targets/parse_contact_link.rs`, зеркало на стабильном компиляторе — `tests/fuzz_corpus.rs::contact_link_parsing_never_panics`. Содержимое QR контакта разбирается тем же `contact_link::parse` — после снятия приёма ссылок это единственный путь такого ввода |
 | PLATFORM-1.4 | iOS: URL scheme валидируется | ❌ | Клиент iOS не дошёл до приёма ссылок |
 | PLATFORM-2 | Безопасное использование WebView | ⛔ | WebView не используется нигде. Проверяется `grep -r WebView android/ ios/` — ноль вхождений |
 | PLATFORM-3.1 | `FLAG_SECURE` на Android | ✅ | `core/SecureWindow.kt`; на экранах ключей и файлов — безусловно (`applyAlways`). Диалоги и панели действий — отдельные окна и флаг наследуют явно; диалог ввода ключа восстановления — безусловно (`DialogScreenshotTest`, флаг окна панели подтверждён на эмуляторе). ⚠️ До 2026-09 отметка стояла, хотя ни один диалог флага не ставил |

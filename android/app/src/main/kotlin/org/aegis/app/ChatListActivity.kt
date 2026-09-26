@@ -8,7 +8,6 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -18,8 +17,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.aegis.app.components.AegisDialog
-import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.TouchTarget
@@ -32,8 +29,6 @@ import org.aegis.app.ui.ChatSummary
 import org.aegis.app.ui.EmptyState
 import org.aegis.app.ui.RowDivider
 import uniffi.aegis.FfiChatRequest
-import uniffi.aegis.FfiException
-import uniffi.aegis.canonicalUsername
 
 /**
  * Экран списка чатов — главный экран приложения.
@@ -305,105 +300,13 @@ class ChatListActivity : AppCompatActivity() {
     }
 
     /**
-     * Спрашивает имя собеседника и открывает переписку.
+     * Новый собеседник — экран с @именем и сканером QR.
      *
-     * Поиск по имени, а не по номеру телефона: номер связывает аккаунт
-     * с личностью и с записной книжкой всех, у кого он записан
-     * (ADR-007). Имя пользователь выбирает сам и может сменить.
+     * Прежде здесь был диалог с полем имени; добавление по QR жило
+     * отдельно. Один экран на оба пути — одна точка входа.
      */
     private fun promptNewChat() {
-        // 🔐 Имена собеседников не попадают в словарь клавиатуры:
-        // AegisTextField ставит запрет обучения сам.
-        val input = AegisTextField(this).apply {
-            setHint(R.string.new_chat_field_hint)
-            setSingleLine()
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
-                android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            // Вариант «видимый пароль» ставит моноширинный шрифт —
-            // возвращается шрифт макета.
-            typeface = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.inter)
-        }
-
-        val shown = AegisDialog(this)
-            .title(R.string.new_chat)
-            .message(R.string.new_chat_hint)
-            .content(input)
-            .secondary()
-            .primary(R.string.new_chat_open, closeOnClick = false) { dialog ->
-                // Каноничная форма: «@Bob» находит «bob», двойник
-                // с кириллицей не находит никого.
-                val username = runCatching { canonicalUsername(input.text?.toString().orEmpty()) }
-                    .getOrNull()
-                    ?.takeIf { it.isNotEmpty() }
-
-                if (username == null) {
-                    input.hasError = true
-                    dialog.showError(R.string.onboarding_error_username)
-
-                    return@primary
-                }
-
-                // Своё имя — не собеседник (ядро отвергнет его и само).
-                val own = runCatching { Core.messenger().ownUsername() }.getOrNull()
-                if (username == own) {
-                    input.hasError = true
-                    dialog.showError(R.string.new_chat_own_name)
-
-                    return@primary
-                }
-
-                openChatWith(username, dialog)
-            }
-            .show()
-
-        input.doAfterTextChanged {
-            input.hasError = false
-            shown.clearError()
-        }
-        input.requestFocus()
-    }
-
-    /**
-     * Открывает переписку с собеседником, найденным по имени.
-     *
-     * 🔐 Сначала ядро находит собеседника и записывает контактом —
-     * **неподтверждённым**, пока его ключ не подтвердит журнал ключей
-     * (сутки в открытом журнале) или сверка safety number: ключ назвал
-     * сервер. Писать до подтверждения нельзя (или по ссылке/QR самого
-     * собеседника).
-     *
-     * Ошибка показывается в диалоге, а не всплывающим сообщением:
-     * набранное имя остаётся на месте, и его можно поправить.
-     */
-    private fun openChatWith(username: String, dialog: AegisDialog.Shown) {
-        dialog.setBusy(true)
-
-        lifecycleScope.launch {
-            val found = withContext(Dispatchers.IO) {
-                runCatching { Core.messenger().discoverContact(username, System.currentTimeMillis()) }
-            }
-
-            dialog.setBusy(false)
-
-            val contact = found.getOrElse { failure ->
-                dialog.showError(
-                    if (failure is FfiException.IdentityChanged) R.string.key_changed_title else R.string.new_chat_not_found,
-                )
-
-                return@launch
-            }
-
-            dialog.dismiss()
-
-            startActivity(
-                Intent(this@ChatListActivity, ChatActivity::class.java)
-                    .putExtra(ChatActivity.EXTRA_CHAT_ID, contact.chatId.orEmpty())
-                    .putExtra(ChatActivity.EXTRA_CHAT_NAME, username)
-                    .putExtra(ChatActivity.EXTRA_PEER_USERNAME, username)
-                    .putExtra(ChatActivity.EXTRA_VERIFIED, contact.verified),
-            )
-        }
+        startActivity(Intent(this, AddContactActivity::class.java))
     }
 
     private fun render(chats: List<ChatSummary>) {
