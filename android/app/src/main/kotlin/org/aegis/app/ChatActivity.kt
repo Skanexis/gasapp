@@ -137,6 +137,7 @@ class ChatActivity : AppCompatActivity() {
         adapter = MessageAdapter(
             onAttachmentClick = ::openAttachment,
             onMessageLongClick = ::showMessageActions,
+            dayLabel = ::dayLabel,
         )
         findViewById<RecyclerView>(R.id.message_list).apply {
             layoutManager = LinearLayoutManager(context)
@@ -549,6 +550,7 @@ class ChatActivity : AppCompatActivity() {
                 time = timeNow(),
                 outgoing = true,
                 status = DeliveryMark.Pending,
+                timestampMillis = System.currentTimeMillis(),
             ),
         )
 
@@ -682,6 +684,7 @@ class ChatActivity : AppCompatActivity() {
             messageId = messageId,
             text = text,
             time = formatTime(timestamp),
+            timestampMillis = timestamp,
             outgoing = outgoing,
             status = when (status) {
                 FfiDeliveryStatus.PENDING -> DeliveryMark.Pending
@@ -1055,6 +1058,21 @@ class ChatActivity : AppCompatActivity() {
             .format(java.util.Date(millis))
 
     private fun timeNow(): String = formatTime(System.currentTimeMillis())
+
+    /** Подпись плашки дня: «Сегодня», «Вчера», иначе дата («25 сентября»). */
+    private fun dayLabel(millis: Long): String {
+        val zone = java.time.ZoneId.systemDefault()
+        val day = java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+        val today = java.time.LocalDate.now(zone)
+
+        return when (day) {
+            today -> getString(R.string.chat_day_today)
+            today.minusDays(1) -> getString(R.string.chat_day_yesterday)
+            else -> java.time.format.DateTimeFormatter
+                .ofPattern(if (day.year == today.year) "d MMMM" else "d MMMM yyyy", java.util.Locale.getDefault())
+                .format(day)
+        }
+    }
 
     /**
      * Открывает сверку safety number с собеседником этого чата.

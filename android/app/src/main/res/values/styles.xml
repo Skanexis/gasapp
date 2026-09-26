@@ -41,6 +41,16 @@
         <item name="android:textColor">@color/text_primary</item>
     </style>
 
+    <!--
+      Крупный заголовок корневых вкладок (Чаты, Звонки, Контакты): H1,
+      как в kit у заголовков экранов верхнего уровня. Вложенные экраны
+      со стрелкой «назад» остаются с обычным.
+    -->
+    <style name="AegisAppBarTitle.Large">
+        <item name="android:textSize">@dimen/text_h1</item>
+        <item name="android:accessibilityHeading">true</item>
+    </style>
+
 
     <!-- Точка PIN: 14dp, промежуток 14dp по макету -->
     <style name="AegisPinDot">

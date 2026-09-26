@@ -63,8 +63,7 @@ class CallsActivity : AppCompatActivity() {
         list.layoutManager = LinearLayoutManager(this)
 
         bindFilters()
-        bindNavigation()
-        BottomNav.highlight(this, BottomNav.Tab.Calls)
+        BottomNav.bind(this, BottomNav.Tab.Calls)
 
         render()
     }
@@ -115,28 +114,4 @@ class CallsActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Связывает вкладки нижней навигации.
-     *
-     * `finish()` после перехода: вкладки — разделы одного уровня,
-     * и накопление их в стеке заставляло бы жать «назад» столько раз,
-     * сколько было переключений.
-     */
-    private fun bindNavigation() {
-        findViewById<View>(R.id.nav_chats).setOnClickListener {
-            startActivity(Intent(this, ChatListActivity::class.java))
-            finish()
-        }
-        // Вкладка «Звонки» не обрабатывается: этот экран уже открыт,
-        // и переход на себя перезапустил бы его, потеряв выбранный
-        // фильтр.
-        findViewById<View>(R.id.nav_contacts).setOnClickListener {
-            startActivity(Intent(this, ContactsActivity::class.java))
-            finish()
-        }
-        findViewById<View>(R.id.nav_settings).setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-            finish()
-        }
-    }
 }

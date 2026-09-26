@@ -3,6 +3,12 @@
 package org.aegis.app.ui
 
 import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -68,6 +74,26 @@ data class MessageItem(
      * подмены.
      */
     val edited: Boolean = false,
+
+    /** Время сообщения — для группировки и плашки дня. */
+    val timestampMillis: Long = 0L,
+)
+
+/**
+ * Строка переписки: сообщение и его место в группе.
+ *
+ * Считается один раз на весь список в [MessageAdapter.submit], и разница
+ * строится по строкам: новое сообщение меняет форму предыдущего пузыря
+ * (он перестаёт быть последним в группе), и DiffUtil перерисует его сам.
+ */
+data class MessageRow(
+    val item: MessageItem,
+    /** Предыдущее сообщение — той же стороны и рядом по времени. */
+    val joinsPrevious: Boolean,
+    /** Следующее сообщение — той же стороны и рядом по времени. */
+    val joinsNext: Boolean,
+    /** Плашка дня над сообщением, если с него начинается день. */
+    val day: String?,
 )
 
 /**
@@ -139,40 +165,70 @@ class MessageAdapter(
      * каждый раз, когда человек промахнулся мимо прокрутки.
      */
     private val onMessageLongClick: ((MessageItem) -> Unit)? = null,
+
+    /** Подпись дня для плашки: «Сегодня», «Вчера», дата. */
+    private val dayLabel: (Long) -> String = { "" },
 ) : RecyclerView.Adapter<MessageAdapter.ViewHolder>() {
 
-    private val messages = mutableListOf<MessageItem>()
+    private val rows = mutableListOf<MessageRow>()
+
+    /** Сообщения в порядке показа. */
+    private val messages: List<MessageItem>
+        get() = rows.map { it.item }
 
     /** Заменяет содержимое переписки. */
     fun submit(items: List<MessageItem>) {
         // Разница, а не перерисовка всего списка: обновление приходит
         // на каждое событие сокета, и полная перерисовка мигала строками
         // и сбивала прокрутку.
-        val old = messages.toList()
+        val old = rows.toList()
+        val new = rowsOf(items)
         val diff = DiffUtil.calculateDiff(
             object : DiffUtil.Callback() {
                 override fun getOldListSize() = old.size
 
-                override fun getNewListSize() = items.size
+                override fun getNewListSize() = new.size
 
                 override fun areItemsTheSame(oldPosition: Int, newPosition: Int) =
-                    old[oldPosition].messageId == items[newPosition].messageId
+                    old[oldPosition].item.messageId == new[newPosition].item.messageId
 
                 override fun areContentsTheSame(oldPosition: Int, newPosition: Int) =
-                    old[oldPosition] == items[newPosition]
+                    old[oldPosition] == new[newPosition]
             },
         )
 
-        messages.clear()
-        messages.addAll(items)
+        rows.clear()
+        rows.addAll(new)
         diff.dispatchUpdatesTo(this)
     }
 
     /** Добавляет одно сообщение в конец. */
     fun append(item: MessageItem) {
-        messages.add(item)
-        notifyItemInserted(messages.size - 1)
+        submit(messages + item)
     }
+
+    /** Группы и плашки дня: считаются по соседям. */
+    private fun rowsOf(items: List<MessageItem>): List<MessageRow> {
+        val days = items.map { if (it.timestampMillis > 0) dayLabel(it.timestampMillis) else "" }
+
+        return items.mapIndexed { index, item ->
+            val previous = items.getOrNull(index - 1)
+            val next = items.getOrNull(index + 1)
+            val newDay = index == 0 || days[index] != days[index - 1]
+
+            MessageRow(
+                item = item,
+                joinsPrevious = previous != null && !newDay && together(previous, item),
+                joinsNext = next != null && days.getOrNull(index + 1) == days[index] && together(item, next),
+                day = days[index].takeIf { newDay && it.isNotEmpty() },
+            )
+        }
+    }
+
+    /** Одна сторона и не дальше [GROUP_GAP_MS] друг от друга. */
+    private fun together(first: MessageItem, second: MessageItem): Boolean =
+        first.outgoing == second.outgoing &&
+            kotlin.math.abs(second.timestampMillis - first.timestampMillis) <= GROUP_GAP_MS
 
     /**
      * Очищает переписку.
@@ -182,8 +238,8 @@ class MessageAdapter(
      * приложение.
      */
     fun clear() {
-        val removed = messages.size
-        messages.clear()
+        val removed = rows.size
+        rows.clear()
         notifyItemRangeRemoved(0, removed)
     }
 
@@ -195,10 +251,15 @@ class MessageAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        messages.getOrNull(position)?.let(holder::bind)
+        rows.getOrNull(position)?.let(holder::bind)
     }
 
-    override fun getItemCount(): Int = messages.size
+    override fun getItemCount(): Int = rows.size
+
+    private companion object {
+        /** Сообщения ближе пяти минут — одна группа. */
+        const val GROUP_GAP_MS = 5 * 60 * 1000L
+    }
 
     /** Держатель пузыря сообщения. */
     class ViewHolder(
@@ -251,11 +312,26 @@ class MessageAdapter(
         private val attachmentName: TextView = view.findViewById(R.id.attachment_name)
         private val attachmentSize: TextView = view.findViewById(R.id.attachment_size)
         private val editedMark: TextView = view.findViewById(R.id.message_edited)
+        private val day: TextView = view.findViewById(R.id.message_day)
 
         /** Заполняет пузырь данными сообщения. */
-        fun bind(message: MessageItem) {
-            text.text = message.text
+        fun bind(row: MessageRow) {
+            val message = row.item
+
+            text.text = withRoomForTime(message)
             time.text = message.time
+
+            day.text = row.day
+            day.visibility = if (row.day != null) View.VISIBLE else View.GONE
+
+            // Группа: плотно внутри, воздух между группами.
+            val density = itemView.resources.displayMetrics.density
+            container.setPadding(
+                container.paddingStart,
+                ((if (row.joinsPrevious) GAP_IN_GROUP_DP else GAP_BETWEEN_GROUPS_DP) * density).toInt(),
+                container.paddingEnd,
+                ((if (row.joinsNext) GAP_IN_GROUP_DP else GAP_BETWEEN_GROUPS_DP) * density).toInt(),
+            )
 
             bubble.setOnLongClickListener {
                 onMessageLongClick?.invoke(message)
@@ -275,13 +351,7 @@ class MessageAdapter(
             editedMark.visibility = if (message.edited) View.VISIBLE else View.GONE
 
             container.gravity = if (message.outgoing) Gravity.END else Gravity.START
-            bubble.setBackgroundResource(
-                if (message.outgoing) {
-                    R.drawable.bg_bubble_outgoing
-                } else {
-                    R.drawable.bg_bubble_incoming
-                },
-            )
+            bubble.background = bubbleShape(message.outgoing, row.joinsPrevious, row.joinsNext)
 
             // Статус показывается только у исходящих: у входящих он
             // не имеет смысла и сбивал бы с толку.
@@ -293,6 +363,70 @@ class MessageAdapter(
                 )
             } else {
                 status.visibility = View.GONE
+            }
+        }
+
+        /**
+         * Фон пузыря по месту в группе.
+         *
+         * Большой радиус снаружи группы, малый — со стороны отправителя
+         * там, где пузырь примыкает к соседу; у последнего в группе —
+         * малый нижний угол со стороны отправителя («хвостик»).
+         */
+        private fun bubbleShape(outgoing: Boolean, joinsPrevious: Boolean, joinsNext: Boolean): GradientDrawable {
+            val density = itemView.resources.displayMetrics.density
+            val big = BIG_RADIUS_DP * density
+            val small = SMALL_RADIUS_DP * density
+
+            val senderTop = if (joinsPrevious) small else big
+            // Нижний угол со стороны отправителя малый всегда: внутри
+            // группы — стык, у последнего — хвостик.
+            val senderBottom = small
+
+            // Порядок углов: левый верхний, правый верхний, правый нижний, левый нижний.
+            val corners = if (outgoing) {
+                floatArrayOf(big, big, senderTop, senderTop, senderBottom, senderBottom, big, big)
+            } else {
+                floatArrayOf(senderTop, senderTop, big, big, big, big, senderBottom, senderBottom)
+            }
+
+            return GradientDrawable().apply {
+                cornerRadii = corners
+                setColor(
+                    ContextCompat.getColor(
+                        itemView.context,
+                        if (outgoing) R.color.bubble_outgoing else R.color.bg_card,
+                    ),
+                )
+            }
+        }
+
+        /**
+         * Текст с местом под время в последней строке.
+         *
+         * Время лежит поверх пузыря внизу справа. Невидимый хвост той же
+         * ширины в конце текста резервирует ему место: если последняя
+         * строка короткая, время встаёт в неё, если длинная — хвост
+         * переносится, и время оказывается строкой ниже, не наезжая
+         * на текст.
+         */
+        private fun withRoomForTime(message: MessageItem): CharSequence {
+            if (message.text.isEmpty()) return ""
+
+            val context = itemView.context
+            val placeholder = buildString {
+                append("\u00A0\u00A0")
+                if (message.edited) append(context.getString(R.string.message_edited)).append('\u00A0')
+                append(message.time)
+                // Место под значок статуса у исходящих.
+                if (message.outgoing) append("\u00A0\u2003\u2003")
+            }
+
+            return SpannableStringBuilder(message.text).apply {
+                val start = length
+                append(placeholder)
+                setSpan(ForegroundColorSpan(Color.TRANSPARENT), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(AbsoluteSizeSpan(META_TEXT_SP, true), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
 
@@ -321,6 +455,16 @@ class MessageAdapter(
             DeliveryMark.Read -> R.color.accent_base
             DeliveryMark.Failed -> R.color.status_error
             else -> R.color.text_quaternary
+        }
+
+        private companion object {
+            const val BIG_RADIUS_DP = 18f
+            const val SMALL_RADIUS_DP = 6f
+            const val GAP_IN_GROUP_DP = 1f
+            const val GAP_BETWEEN_GROUPS_DP = 6f
+
+            /** Кегль времени — для ширины заполнителя. */
+            const val META_TEXT_SP = 11
         }
     }
 }

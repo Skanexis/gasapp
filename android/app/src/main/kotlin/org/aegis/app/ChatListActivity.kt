@@ -92,9 +92,7 @@ class ChatListActivity : AppCompatActivity() {
         // Вид не меняется: увеличивается только то, куда можно
         // попасть. Подробности — в TouchTarget.
         TouchTarget.expand(findViewById(R.id.security_center_badge))
-
-        bindNavigation()
-        BottomNav.highlight(this, BottomNav.Tab.Chats)
+        BottomNav.bind(this, BottomNav.Tab.Chats)
 
         findViewById<ImageView>(R.id.chat_list_search).setOnClickListener {
             startActivity(Intent(this, SearchActivity::class.java))
@@ -277,27 +275,6 @@ class ChatListActivity : AppCompatActivity() {
             .format(java.util.Date(millis))
 
 
-    /**
-     * Связывает вкладки нижней навигации.
-     *
-     * `finish()` после перехода: вкладки — это разделы одного уровня,
-     * и накопление их в стеке заставляло бы жать «назад» столько раз,
-     * сколько было переключений.
-     */
-    private fun bindNavigation() {
-        findViewById<View>(R.id.nav_calls).setOnClickListener {
-            startActivity(Intent(this, CallsActivity::class.java))
-            finish()
-        }
-        findViewById<View>(R.id.nav_contacts).setOnClickListener {
-            startActivity(Intent(this, ContactsActivity::class.java))
-            finish()
-        }
-        findViewById<View>(R.id.nav_settings).setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-            finish()
-        }
-    }
 
     /**
      * Новый собеседник — экран с @именем и сканером QR.

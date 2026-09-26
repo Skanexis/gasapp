@@ -662,4 +662,10 @@
     <string name="safety_scan_mismatch_title">Коды не совпадают</string>
     <string name="safety_scan_mismatch_body">На экране собеседника другой ключ. Возможно, сервер его подменил, или это не тот человек. Не отмечайте собеседника сверенным и не отправляйте ничего важного, пока не выясните причину.</string>
     <string name="safety_scan_mismatch_ok">Понятно</string>
+    <string name="chat_day_today">Сегодня</string>
+    <string name="chat_day_yesterday">Вчера</string>
+    <string name="settings_section_protection">Защита</string>
+    <string name="settings_section_app">Приложение</string>
+    <string name="settings_section_data">Данные</string>
+    <string name="settings_section_about">О приложении</string>
 </resources>
