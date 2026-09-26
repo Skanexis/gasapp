@@ -1,98 +1,128 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Добавление контакта по ссылке.
+  Новый собеседник: по @имени или по QR-коду.
 
-  Экран показывает, кого именно собирается добавить пользователь, и
-  требует подтверждения. Добавление без подтверждения было бы опасно:
-  ссылка приходит откуда угодно — из чужого чата, с наклейки, от
-  незнакомца, — и нажатие на неё не должно молча заводить контакт.
+  🔐 Два пути разной силы, и экран это не прячет. Имя сервер превращает
+  в ключ сам — ключ сверяется открытым журналом ключей (писать можно
+  сразу, если аккаунту больше суток). QR-код несёт сам ключ и приходит
+  мимо сервера: это точная сверка без ожидания.
 -->
-<ScrollView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_base"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/screen_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:accessibilityHeading="true"
+            android:text="@string/new_chat" />
+    </LinearLayout>
+
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="@dimen/screen_padding">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
-        <!-- Шапка: «назад» и заголовок (.appbar в UI kit). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="-12dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <ImageView
-                android:id="@+id/screen_back"
-                style="@style/AegisIconButton"
-                android:padding="12dp"
-                android:contentDescription="@string/back"
-                android:src="@drawable/ic_back"
-                app:tint="@color/text_primary" />
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisAppBarTitle"
-                android:layout_width="0dp"
-                android:layout_marginStart="@dimen/space_s"
-                android:layout_weight="1"
-                android:accessibilityHeading="true"
-                android:text="@string/add_contact_title" />
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_s"
+                android:labelFor="@id/add_contact_username"
+                android:text="@string/onboarding_username_label" />
+
+            <org.aegis.app.components.AegisTextField
+                android:id="@+id/add_contact_username"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/new_chat_field_hint"
+                android:imeOptions="actionGo"
+                android:importantForAutofill="no"
+                android:inputType="textNoSuggestions|textVisiblePassword"
+                android:maxLength="33"
+                android:maxLines="1"
+                app:fieldIcon="@drawable/ic_search" />
+
+            <!-- Подсказка, на её место встаёт итог (UI kit, Inputs). -->
+            <TextView
+                android:id="@+id/add_contact_status"
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_s"
+                android:accessibilityLiveRegion="polite"
+                android:drawablePadding="6dp"
+                android:text="@string/add_contact_username_helper" />
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/add_contact_open"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/add_contact_open"
+                app:buttonVariant="primary" />
+
+            <!-- «или» между двумя путями. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1"
+                    android:background="@color/line" />
+
+                <TextView
+                    style="@style/AegisText.Caption.Muted"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_m"
+                    android:layout_marginEnd="@dimen/space_m"
+                    android:text="@string/add_contact_or" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1"
+                    android:background="@color/line" />
+            </LinearLayout>
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/add_contact_scan"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:drawablePadding="@dimen/space_s"
+                android:text="@string/add_contact_scan"
+                app:buttonVariant="outline" />
+
+            <TextView
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/add_contact_scan_helper" />
         </LinearLayout>
-
-        <TextView
-            style="@style/AegisSectionLabel"
-            android:layout_marginTop="@dimen/space_l"
-            android:labelFor="@id/add_contact_link"
-            android:text="@string/add_contact_label" />
-
-        <org.aegis.app.components.AegisTextField
-            android:id="@+id/add_contact_link"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/add_contact_hint"
-            android:inputType="textUri"
-            android:textColor="@color/text_primary" />
-
-        <!--
-          Предупреждение стоит над кнопкой, а не под ней: его читают
-          до нажатия, а не после.
-        -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/add_contact_review"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <!-- Итог: зелёный с галочкой — добавлен, красный — нет (UI kit, Inputs). -->
-        <TextView
-            android:id="@+id/add_contact_status"
-            style="@style/AegisCaption"
-            android:layout_marginTop="16dp"
-            android:accessibilityLiveRegion="polite"
-            android:drawablePadding="6dp"
-            android:gravity="center_vertical"
-            android:visibility="gone"
-            tools:text="Контакт добавлен: bob" />
-
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/add_contact_confirm"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/add_contact_confirm"
-            app:buttonVariant="primary" />
-
-    </LinearLayout>
-
-</ScrollView>
+    </ScrollView>
+</LinearLayout>

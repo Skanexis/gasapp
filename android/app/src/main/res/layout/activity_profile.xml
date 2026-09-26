@@ -1,121 +1,118 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Экран собственного профиля: QR и ссылка для обмена контактами.
+  Свой профиль: @имя и QR-код.
 
-  Обмен контактами идёт мимо сервера: ключ, снятый с экрана человека,
-  стоящего рядом, не приходится принимать на веру у сервера. Поэтому
-  QR здесь крупный — его показывают другому телефону, а не читают сами.
-
-  Ссылка под кодом — то же самое текстом: её пересылают, когда люди
-  не рядом. Она видна целиком, а не спрятана за кнопкой «поделиться»:
-  пользователь вправе увидеть, что именно он отправляет.
+  По имени вас находят через сервер (ключ сверяет журнал ключей),
+  QR несёт сам ключ — его сканируют встроенным сканером при встрече.
+  Ссылки с ключом больше нет: для людей имя и QR понятнее, а ссылка
+  давала ровно то же, что QR.
 -->
-<ScrollView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_base"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/profile_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:accessibilityHeading="true"
+            android:text="@string/profile_title" />
+    </LinearLayout>
+
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="@dimen/screen_padding">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
-        <!--
-          Шапка как на остальных экранах (AegisAppBar): «назад» и
-          заголовок. Отрицательный отступ сверху компенсирует отступ
-          экрана, чтобы заголовок стоял на той же высоте.
-        -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="-8dp"
-            android:gravity="center_vertical"
-            android:minHeight="@dimen/touch_target"
-            android:orientation="horizontal">
-
-            <ImageView
-                android:id="@+id/profile_back"
-                style="@style/AegisIconButton"
-                android:layout_marginStart="-12dp"
-                android:contentDescription="@string/back"
-                android:src="@drawable/ic_back"
-                app:tint="@color/text_primary" />
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisAppBarTitle"
-                android:layout_marginStart="@dimen/space_s"
-                android:accessibilityHeading="true"
-                android:text="@string/profile_title" />
+                android:id="@+id/profile_avatar"
+                android:layout_width="@dimen/avatar_xl"
+                android:layout_height="@dimen/avatar_xl"
+                android:layout_marginTop="@dimen/space_s"
+                android:background="@drawable/bg_avatar"
+                android:fontFamily="@font/inter"
+                android:gravity="center"
+                android:importantForAccessibility="no"
+                android:textColor="@color/accent_base"
+                android:textFontWeight="600"
+                android:textSize="30sp"
+                tools:text="AB" />
+
+            <TextView
+                android:id="@+id/profile_username"
+                style="@style/AegisText.H2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_m"
+                android:textIsSelectable="true"
+                tools:text="\@anna_bk" />
+
+            <TextView
+                style="@style/AegisText.Caption.Muted"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:text="@string/profile_username_caption" />
+
+            <!-- QR в карточке: белое поле кода нужно камере для контраста. -->
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:background="@drawable/bg_qr_card"
+                android:padding="@dimen/space_m">
+
+                <ImageView
+                    android:id="@+id/profile_qr"
+                    android:layout_width="232dp"
+                    android:layout_height="232dp"
+                    android:contentDescription="@string/profile_qr_description" />
+            </FrameLayout>
+
+            <TextView
+                style="@style/AegisCaption"
+                android:layout_marginTop="@dimen/space_m"
+                android:gravity="center"
+                android:text="@string/profile_qr_hint" />
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/profile_share"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/profile_share"
+                app:buttonVariant="primary" />
+
+            <org.aegis.app.components.AegisButton
+                android:id="@+id/profile_copy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/profile_copy"
+                app:buttonVariant="ghost" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/profile_username"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp"
-            tools:text="@alex.v" />
-
-        <ImageView
-            android:id="@+id/profile_qr"
-            android:layout_width="260dp"
-            android:layout_height="260dp"
-            android:layout_gravity="center"
-            android:layout_marginTop="24dp"
-            android:background="@color/bg_card"
-            android:contentDescription="@string/profile_qr_description"
-            android:padding="12dp" />
-
-        <!--
-          Ссылка моноширинным шрифтом и с переносом: её сверяют
-          посимвольно, когда диктуют голосом, и пропорциональный шрифт
-          сливает похожие символы.
-        -->
-        <TextView
-            android:id="@+id/profile_link"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:background="@color/bg_card"
-            android:fontFamily="monospace"
-            app:fontFamily="monospace"
-            android:padding="12dp"
-            android:textColor="@color/text_primary"
-            android:textIsSelectable="true"
-            android:textSize="13sp"
-            tools:text="aegis://contact/AAAAAAAA" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/profile_link_hint"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/profile_copy"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/profile_copy"
-            app:buttonVariant="secondary" />
-
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/profile_share"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/profile_share"
-            app:buttonVariant="secondary" />
-
-    </LinearLayout>
-
-</ScrollView>
+    </ScrollView>
+</LinearLayout>

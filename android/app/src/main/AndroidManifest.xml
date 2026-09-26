@@ -11,6 +11,15 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!--
+      Камера — только для встроенного сканера QR (добавление контакта,
+      сверка safety number). Запрашивается в момент сканирования; кадры
+      разбираются на устройстве и никуда не уходят. Без камеры
+      приложение работает: контакт добавляется по @имени.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
       Доступа к галерее и файлам в списке нет намеренно.
       
       🔐 Фото, видео и документы выбираются системным диалогом
@@ -109,31 +118,19 @@
             android:exported="false" />
 
         <!--
-          Единственный экспортированный экран кроме launcher.
-
-          Экспорт обязателен: без него система не отдаст приложению
-          ссылку aegis://, и обмен контактами по QR не заработает.
-
-          🔐 Экран при этом безопасен по построению: он **только**
-          подставляет ссылку в поле ввода и ждёт нажатия. Внешнее
-          приложение не может ни добавить контакт, ни узнать что-либо
-          о пользователе — ответа у намерения нет.
-
-          launchMode=singleTop: вторая ссылка, открытая при уже
-          запущенном экране, приходит в onNewIntent, а не заводит
-          второй экземпляр поверх первого.
+          Не экспортируется. Прежде экран принимал ссылки aegis://contact
+          от любого приложения; ссылок в продукте больше нет — контакт
+          добавляется по @имени или встроенным сканером QR, — и открытая
+          дверь для чужих намерений убрана вместе с ними.
         -->
         <activity
             android:name=".AddContactActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
-            <intent-filter android:autoVerify="false">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="aegis" android:host="contact" />
-            </intent-filter>
-        </activity>
+            android:exported="false" />
+
+        <activity
+            android:name=".ScanActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".SearchActivity"

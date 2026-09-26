@@ -53,7 +53,7 @@
     <string name="key_changed_title">🔒 Two keys for one name</string>
     <string name="key_changed_body">The server now gives a different key for “%1$s”. It may be a reinstall — or an impostor. Sending is paused until you compare safety numbers in person or over video.</string>
     <string name="key_unconfirmed_title">🔒 Key not confirmed yet</string>
-    <string name="key_unconfirmed_body">The key of “%1$s” came from the server — and the server could have handed you its own. Once the same key has stood in the public key log for a day, the app confirms it by itself. Or compare safety numbers in person or over video, or add them from their own link or QR code. Until then you can read, but not write.</string>
+    <string name="key_unconfirmed_body">The key of “%1$s” came from the server — and the server could have handed you its own. Once the same key has stood in the public key log for a day, the app confirms it by itself. Or scan their safety number code in person, or compare it over video. Until then you can read, but not write.</string>
     <string name="key_replaced_title">This key was replaced</string>
     <string name="key_replaced_body">“%1$s” now uses a different key. This conversation stays readable; new messages go to the chat with the current key.</string>
     <string name="verify_safety_number">Compare safety number</string>
@@ -163,27 +163,18 @@
     <string name="profile_title">My profile</string>
     <string name="profile_no_username">No username set</string>
     <string name="profile_qr_description">Profile QR code: show it to someone so they can add you</string>
-    <string name="profile_link_hint">Show the code to someone next to you, or send them the link. The key reaches them without going through the server.</string>
-    <string name="profile_copy">Copy link</string>
-    <string name="profile_share">Share link</string>
-    <string name="profile_copied">Link copied</string>
+    <string name="profile_copy">Copy username</string>
+    <string name="profile_share">Share username</string>
+    <string name="profile_copied">Username copied</string>
 
-    <string name="add_contact_title">Add contact</string>
-    <string name="add_contact_hint">Paste a link like aegis://contact/…</string>
-    <string name="add_contact_label">Contact link</string>
-    <string name="add_contact_confirm">Add</string>
-    <string name="add_contact_added">Contact added: %1$s</string>
-    <string name="add_contact_added_unnamed">Contact added</string>
     <string name="add_contact_key_changed">“%1$s” was already in your contacts with a different key. It may be a reinstall — or an impostor. Compare safety numbers in person before messaging them.</string>
-    <string name="add_contact_invalid">This link is not valid: either it is not an AEGIS link, or the name in it belongs to a different key</string>
-    <string name="add_contact_own_link">This is your own link — send it to the person you want to talk to</string>
-    <string name="add_contact_review">Check who you are adding. The link does not prove the name — whoever made the link chose it.</string>
+    <string name="add_contact_own_link">This is your own code — show it to the person you want to talk to</string>
 
     <string name="search_title">Search</string>
     <string name="search_hint">Search your messages</string>
     <string name="search_empty">Nothing found</string>
     <string name="contact_no_username">No name</string>
-    <string name="contacts_empty_real">Add someone by username, QR code or link.</string>
+    <string name="contacts_empty_real">Add someone by username or by scanning their QR code.</string>
     <string name="contacts_empty_title">No contacts yet</string>
 
     <!-- Attachments -->
@@ -564,7 +555,7 @@
       меняется строка.
     -->
     <string name="about_section_limits">What AEGIS does not protect against</string>
-    <string name="about_limit_first_message">The key of a contact found by username comes from the server, and the server could hand you its own. So the app checks it against the public key log: you can write once the same key has stood in the log for at least a day, and the owner of the name checks their own entry every hour. A server that swaps a key has to show the swap to everyone — and it gets noticed. Someone who has not opened the app for over a day will only notice when they come back. For full certainty, compare safety numbers in person or add a contact from their own link or QR code. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
+    <string name="about_limit_first_message">The key of a contact found by username comes from the server, and the server could hand you its own. So the app checks it against the public key log: you can write once the same key has stood in the log for at least a day, and the owner of the name checks their own entry every hour. A server that swaps a key has to show the swap to everyone — and it gets noticed. Someone who has not opened the app for over a day will only notice when they come back. For full certainty, compare safety numbers in person or scan their QR code. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
     <string name="about_limit_address">By default the app connects through Tor, built into the app, and the server does not see your IP address. If you choose a direct connection (Settings → Connection), the server sees your IP address and the time of each request.</string>
     <string name="about_limit_notifications">There are no push notifications: messages arrive while the app is open.</string>
     <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>
@@ -607,4 +598,23 @@
     <string name="security_event_kt_peer_log_differs">A contact sees a different server key log than you do. The server may be showing one of you a fake one — compare safety numbers in person</string>
     <string name="security_event_undecryptable_envelopes_dropped">Unreadable incoming messages were discarded (repeats of old ones or junk)</string>
     <string name="security_event_kt_self_check_blocked">The server key log is available, but checking your own name in it keeps failing. Until it succeeds, ask contacts to compare safety numbers in person</string>
+    <string name="scan_title">Scan QR code</string>
+    <string name="scan_hint_contact">Point the camera at the QR code in the other person’s AEGIS profile</string>
+    <string name="scan_hint_safety">Point the camera at the safety number code on the other person’s screen</string>
+    <string name="scan_denied_title">No access to the camera</string>
+    <string name="scan_denied_body">The camera is needed only to read the code. Frames are processed on this device and are never stored or sent anywhere.</string>
+    <string name="scan_denied_settings">Open settings</string>
+    <string name="add_contact_username_helper">If the account is more than a day old, you can write right away: the key is checked by the public key log. Scanning their QR code in person is the strongest check.</string>
+    <string name="add_contact_open">Open chat</string>
+    <string name="add_contact_or">or</string>
+    <string name="add_contact_scan">Scan QR code</string>
+    <string name="add_contact_scan_helper">The code carries their key directly, bypassing the server — you can write immediately.</string>
+    <string name="add_contact_scan_invalid">This is not an AEGIS contact code, or the name in it belongs to a different key</string>
+    <string name="profile_username_caption">This is how people find you in AEGIS</string>
+    <string name="profile_qr_hint">Show this code to the person next to you — they scan it in AEGIS. It carries your key, so they can write to you right away: the strongest check.</string>
+    <string name="profile_share_text">Write to me in AEGIS: @%1$s</string>
+    <string name="safety_scan">Scan their code</string>
+    <string name="safety_scan_mismatch_title">The codes do not match</string>
+    <string name="safety_scan_mismatch_body">The other person’s screen shows a different key. The server may have swapped it, or this is not the person you think. Do not mark them as compared and do not send anything important until you find out why.</string>
+    <string name="safety_scan_mismatch_ok">Understood</string>
 </resources>

@@ -414,6 +414,17 @@ dependencies {
     // и это проверяет `tools/check-foss-apk.sh`.
     implementation 'androidx.biometric:biometric:1.1.0'
 
+    // Встроенный сканер QR: добавление контакта и сверка safety number
+    // по коду собеседника. CameraX — AndroidX (не Google Play Services,
+    // годится для foss), ZXing core — Apache-2.0, чистая Java без сети.
+    // 🔐 Кадры не покидают процесс: разбор на устройстве, без облака —
+    // в отличие от системной камеры и Google Lens, которые видели бы
+    // содержимое кода (имя и ключ). 1.4.x — последняя ветка под Kotlin 1.9.
+    implementation 'androidx.camera:camera-camera2:1.4.2'
+    implementation 'androidx.camera:camera-lifecycle:1.4.2'
+    implementation 'androidx.camera:camera-view:1.4.2'
+    implementation 'com.google.zxing:core:3.5.3'
+
     // JNA — обязательна для биндингов UniFFI: сгенерированный aegis.kt
     // обращается к нативной библиотеке через com.sun.jna. Классификатор
     // `@aar` важен: обычный jar не содержит нативных частей JNA под Android,

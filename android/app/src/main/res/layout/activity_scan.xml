@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Сканер QR: превью камеры во весь экран, рамка по центру, подсказка
+  снизу. Кадры разбираются на устройстве (ScanActivity).
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/scan_preview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+
+    <!-- Рамка прицела: 260dp, радиус карточки, акцентная линия. -->
+    <View
+        android:layout_width="260dp"
+        android:layout_height="260dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_scan_frame"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        style="@style/AegisAppBar"
+        android:layout_gravity="top"
+        android:background="@android:color/transparent">
+
+        <ImageView
+            android:id="@+id/scan_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <TextView
+            android:id="@+id/scan_title"
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:accessibilityHeading="true"
+            tools:text="Scan QR code" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/scan_hint"
+        style="@style/AegisText.Body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="@dimen/space_l"
+        android:layout_marginEnd="@dimen/space_l"
+        android:layout_marginBottom="96dp"
+        android:accessibilityLiveRegion="polite"
+        android:gravity="center"
+        android:shadowColor="#CC000000"
+        android:shadowRadius="8"
+        tools:text="Point the camera at the code on the other person's screen" />
+
+    <!-- Камера не разрешена: объяснение и путь в настройки. -->
+    <include
+        android:id="@+id/scan_denied"
+        layout="@layout/view_empty_state"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/bg_base"
+        android:visibility="gone" />
+</FrameLayout>

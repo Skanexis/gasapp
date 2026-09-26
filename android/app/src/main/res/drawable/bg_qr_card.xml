@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Подложка QR-кода: белая карточка r16. Белое поле вокруг кода
+  (quiet zone) камере нужно для распознавания — на тёмном фоне
+  код читается хуже.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+    <corners android:radius="@dimen/radius_card" />
+</shape>
