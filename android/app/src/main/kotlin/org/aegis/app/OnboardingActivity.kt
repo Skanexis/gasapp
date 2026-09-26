@@ -4,12 +4,17 @@ package org.aegis.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
-import android.widget.ProgressBar
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -34,12 +39,17 @@ import uniffi.aegis.canonicalUsername
 import uniffi.aegis.validateTorBridges
 
 /**
- * Онбординг: регистрация первого аккаунта.
+ * Онбординг: регистрация первого аккаунта — по шагам.
  *
- * 🔐 Предупреждение об отсутствии аудита показывается **до** кнопки
- * и тем же кеглем, что и остальной текст (раздел 21 плана). Мессенджер,
- * обещающий защиту, которую не проверял никто посторонний, обязан
- * сказать об этом до того, как пользователь начнёт ему доверять.
+ * Приветствие → имя (и сеть) → PIN. Возвращение из копии идёт
+ * с приветствия сразу к PIN: имя придёт из копии. Шаги — страницы
+ * одного экрана: PIN, Tor и мосты общие для обоих путей.
+ *
+ * 🔐 Предупреждение об отсутствии аудита показывается на первом шаге,
+ * **до** любой кнопки, и тем же кеглем, что и остальной текст (раздел 21
+ * плана). Мессенджер, обещающий защиту, которую не проверял никто
+ * посторонний, обязан сказать об этом до того, как пользователь начнёт
+ * ему доверять.
  */
 class OnboardingActivity : AppCompatActivity() {
 
@@ -48,11 +58,22 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var scroll: ScrollView
     private lateinit var pin: PinPad
     private lateinit var error: TextView
-    private lateinit var progress: ProgressBar
     private lateinit var progressLabel: TextView
     private lateinit var createButton: AegisButton
     private lateinit var direct: SwitchCompat
     private lateinit var addBridge: AegisButton
+    private lateinit var progressRow: View
+
+    /** Текущий шаг. */
+    private var step = Step.Welcome
+
+    /** Путь: новый аккаунт или возвращение из копии. */
+    private var restoring = false
+
+    /** «Назад» с шага возвращает на предыдущий, а не закрывает экран. */
+    private val stepBack = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = previousStep()
+    }
 
     /** Мосты, введённые на этом экране; сохраняются в базу при её создании. */
     private var bridgesText: String? = null
@@ -76,16 +97,41 @@ class OnboardingActivity : AppCompatActivity() {
         // 🔐 PIN — своей клавиатурой, не системной (см. [PinPad]).
         pin = PinPad(findViewById(android.R.id.content))
         error = findViewById(R.id.onboarding_error)
-        progress = findViewById(R.id.onboarding_progress)
         progressLabel = findViewById(R.id.onboarding_progress_label)
+        progressRow = findViewById(R.id.onboarding_progress_row)
         createButton = findViewById(R.id.onboarding_create)
 
         direct = findViewById(R.id.onboarding_direct)
         addBridge = findViewById(R.id.onboarding_add_bridge)
         addBridge.setOnClickListener { promptBridges() }
 
-        createButton.setOnClickListener { register() }
-        findViewById<AegisButton>(R.id.onboarding_recover).setOnClickListener { startRecovery() }
+        createButton.setOnClickListener { if (restoring) startRecovery() else register() }
+
+        findViewById<AegisButton>(R.id.onboarding_start).setOnClickListener {
+            restoring = false
+            showStep(Step.Username)
+        }
+        findViewById<AegisButton>(R.id.onboarding_recover).setOnClickListener {
+            restoring = true
+            showStep(Step.Pin)
+        }
+        findViewById<AegisButton>(R.id.onboarding_next).setOnClickListener { usernameDone() }
+        findViewById<View>(R.id.onboarding_back).setOnClickListener { previousStep() }
+
+        // «Далее» на клавиатуре — тот же шаг вперёд, что и кнопка;
+        // Enter подключённой клавиатуры приходит нажатием клавиши.
+        username.setOnEditorActionListener { _, action, event ->
+            val enter = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
+            (action == EditorInfo.IME_ACTION_NEXT || enter).also { if (it) usernameDone() }
+        }
+
+        onBackPressedDispatcher.addCallback(this, stepBack)
+
+        savedInstanceState?.let {
+            restoring = it.getBoolean(STATE_RESTORING)
+            step = Step.entries[it.getInt(STATE_STEP)]
+        }
+        showStep(step)
 
         direct.setOnCheckedChangeListener { _, checked ->
             findViewById<TextView>(R.id.onboarding_network_hint).setText(
@@ -107,22 +153,121 @@ class OnboardingActivity : AppCompatActivity() {
         watchTorForBlocking()
     }
 
-    private fun register() {
-        // 🔐 Правило имени — ядра, а не экрана: строчные латинские буквы,
-        // цифры и `_`. Двойник «аlice» с кириллической «а» здесь
-        // отвергается, а «Alice» становится «alice».
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_STEP, step.ordinal)
+        outState.putBoolean(STATE_RESTORING, restoring)
+    }
+
+    /**
+     * Показывает шаг: его страницу, его кнопку и ход в шапке.
+     *
+     * 🔐 PIN не переживает ухода с шага: набранные цифры стираются,
+     * а не ждут в памяти, пока человек вернётся.
+     */
+    private fun showStep(target: Step) {
+        if (target != Step.Pin) pin.clear()
+
+        step = target
+        error.visibility = View.GONE
+
+        findViewById<View>(R.id.onboarding_page_welcome).isVisible = target == Step.Welcome
+        findViewById<View>(R.id.onboarding_page_username).isVisible = target == Step.Username
+        findViewById<View>(R.id.onboarding_page_pin).isVisible = target == Step.Pin
+
+        findViewById<View>(R.id.onboarding_start).isVisible = target == Step.Welcome
+        findViewById<View>(R.id.onboarding_recover).isVisible = target == Step.Welcome
+        findViewById<View>(R.id.onboarding_next).isVisible = target == Step.Username
+        createButton.isVisible = target == Step.Pin
+
+        findViewById<View>(R.id.onboarding_bar).isVisible = target != Step.Welcome
+        stepBack.isEnabled = target != Step.Welcome
+
+        // Возвращение из копии — один шаг: полоска хода ему не нужна.
+        val current = if (target == Step.Pin) 2 else 1
+        findViewById<View>(R.id.onboarding_steps).visibility = if (restoring) View.INVISIBLE else View.VISIBLE
+        findViewById<TextView>(R.id.onboarding_step_label).apply {
+            isVisible = !restoring
+            text = getString(R.string.onboarding_step, current, STEPS)
+            contentDescription = getString(R.string.onboarding_step_description, current, STEPS)
+        }
+        findViewById<View>(R.id.onboarding_step_2).setBackgroundResource(
+            if (current == 2) R.drawable.bg_step_segment_active else R.drawable.bg_step_segment,
+        )
+        findViewById<View>(R.id.onboarding_step_1).setBackgroundResource(R.drawable.bg_step_segment_active)
+
+        findViewById<TextView>(R.id.onboarding_pin_title).setText(
+            if (restoring) R.string.onboarding_restore_pin_title else R.string.onboarding_pin_title,
+        )
+        createButton.setText(if (restoring) R.string.onboarding_restore_continue else R.string.onboarding_create)
+
+        placeNetwork(if (restoring) R.id.onboarding_page_pin else R.id.onboarding_page_username)
+        scroll.scrollTo(0, 0)
+
+        val keyboard = getSystemService(InputMethodManager::class.java)
+        if (target == Step.Username) {
+            username.requestFocus()
+            username.post { keyboard?.showSoftInput(username, 0) }
+        } else {
+            keyboard?.hideSoftInputFromWindow(username.windowToken, 0)
+            username.clearFocus()
+        }
+    }
+
+    /** Переносит блок сети на страницу [pageId] — в её конец. */
+    private fun placeNetwork(pageId: Int) {
+        val network = findViewById<View>(R.id.onboarding_network)
+        val page = findViewById<ViewGroup>(pageId)
+        if (network.parent === page) return
+
+        (network.parent as ViewGroup).removeView(network)
+        page.addView(network)
+    }
+
+    private fun previousStep() {
+        // Во время регистрации шаг не меняется: работа уже идёт.
+        if (createButton.isLoading) return
+
+        when (step) {
+            Step.Welcome -> Unit
+            Step.Username -> showStep(Step.Welcome)
+            Step.Pin -> showStep(if (restoring) Step.Welcome else Step.Username)
+        }
+    }
+
+    /** Шаг имени пройден, если имя годится по правилу ядра. */
+    private fun usernameDone() {
+        if (canonicalName() == null) return
+
+        showStep(Step.Pin)
+    }
+
+    /**
+     * Каноничное имя или `null` с ошибкой под полем.
+     *
+     * 🔐 Правило имени — ядра, а не экрана: строчные латинские буквы,
+     * цифры и `_`. Двойник «аlice» с кириллической «а» здесь
+     * отвергается, а «Alice» становится «alice».
+     */
+    private fun canonicalName(): String? {
         val raw = username.text?.toString().orEmpty()
-        val name = try {
+
+        return try {
             canonicalUsername(raw)
         } catch (_: FfiException) {
             showUsernameError()
-
-            return
+            null
         } catch (_: LinkageError) {
-            // Ядро не загрузилось — это не ошибка имени. Регистрация ниже
+            // Ядро не загрузилось — это не ошибка имени. Регистрация
             // упадёт на том же и сотрёт базу, как при любом сбое.
             raw.trim()
         }
+    }
+
+    private fun register() {
+        // Имя проверено на своём шаге; здесь — ещё раз: ошибка ведёт
+        // обратно к полю, а не регистрирует негодное имя.
+        val name = canonicalName() ?: return showStep(Step.Username)
 
         if (!pin.isComplete) {
             showError(getString(R.string.onboarding_error_pin))
@@ -419,15 +564,14 @@ class OnboardingActivity : AppCompatActivity() {
         direct.isEnabled = !working
         pin.setEnabled(!working)
 
-        val visibility = if (working) View.VISIBLE else View.GONE
-        progress.visibility = visibility
-        progressLabel.visibility = visibility
+        progressRow.visibility = if (working) View.VISIBLE else View.GONE
 
         if (working) {
             error.visibility = View.GONE
-            // Ход подключения Tor и подбора proof-of-work — под формой:
-            // без прокрутки человек видел бы только погасшую кнопку.
-            revealBelow(progressLabel)
+            // Ход подключения Tor и подбора proof-of-work — под
+            // клавиатурой: без прокрутки человек видел бы только
+            // погасшую кнопку.
+            revealBelow(progressRow)
         }
     }
 
@@ -451,7 +595,6 @@ class OnboardingActivity : AppCompatActivity() {
         usernameHelper.setTextColor(getColor(R.color.status_error))
         usernameHelper.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_alert_small, 0, 0, 0)
         usernameHelper.compoundDrawablesRelative[0]?.setTint(getColor(R.color.status_error))
-        scroll.post { scroll.smoothScrollTo(0, (username.top - usernameHelper.height).coerceAtLeast(0)) }
         username.requestFocus()
     }
 
@@ -482,7 +625,16 @@ class OnboardingActivity : AppCompatActivity() {
      */
     private fun serverUrl(): String = BuildConfig.AEGIS_SERVER_URL
 
+    /** Шаги онбординга, по порядку. */
+    private enum class Step { Welcome, Username, Pin }
+
     companion object {
+        private const val STATE_STEP = "step"
+        private const val STATE_RESTORING = "restoring"
+
+        /** Шагов у нового аккаунта: имя и PIN. */
+        private const val STEPS = 2
+
         /** Идентификатор устройства для последующих запросов. */
         const val EXTRA_DEVICE_ID = "device_id"
 
