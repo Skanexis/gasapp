@@ -52,7 +52,10 @@ class FailedRegistrationTest {
         val database = File(activity.filesDir, "aegis.db").apply { writeText("прежняя попытка") }
         assertTrue("заготовка теста: базы нет", Core.hasAccount(activity))
 
+        // Шаги как у человека: приветствие → имя → PIN.
+        activity.findViewById<Button>(R.id.onboarding_start).performClick()
         activity.findViewById<EditText>(R.id.onboarding_username).setText("alice")
+        activity.findViewById<Button>(R.id.onboarding_next).performClick()
         for (key in listOf(R.id.key_4, R.id.key_8, R.id.key_2, R.id.key_9, R.id.key_1, R.id.key_5)) {
             activity.findViewById<View>(key).performClick()
         }

@@ -9,6 +9,8 @@ import android.widget.EditText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.Root
+import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -119,6 +121,12 @@ class OnDeviceSmokeTest {
     fun pin_screens_have_the_keypad_and_no_password_field() {
         for (screen in listOf(OnboardingActivity::class.java, LockActivity::class.java)) {
             ActivityScenario.launch(screen).use { scenario ->
+                // Регистрация — по шагам: PIN на своём шаге.
+                if (screen == OnboardingActivity::class.java) {
+                    onView(withId(R.id.onboarding_start)).perform(click())
+                    onView(withId(R.id.onboarding_username)).perform(replaceText("alice"))
+                    onView(withId(R.id.onboarding_next)).perform(click())
+                }
                 onView(withId(R.id.keypad)).check(matches(isDisplayed()))
 
                 scenario.onActivity { activity ->

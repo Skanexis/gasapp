@@ -148,7 +148,7 @@
     <string name="onboarding_direct">Connect directly, without Tor</string>
     <string name="onboarding_network_tor">Connections go through Tor, built into the app, so the server does not see your IP address. Nothing else to install.</string>
     <string name="onboarding_network_direct">⚠️ The server will see your IP address: roughly where you are, and which of your accounts share a network.</string>
-    <string name="onboarding_error_tor">Could not connect through Tor. Check your internet connection and try again, or choose a direct connection above.</string>
+    <string name="onboarding_error_tor">Could not connect through Tor. Check your internet connection and try again, or choose a direct connection.</string>
     <string name="onboarding_error_network">Server unavailable. Check your connection.</string>
     <string name="new_chat_hint">Enter the other person\'s username</string>
     <string name="new_chat_not_found">Couldn’t find this person. Check the name and your connection.</string>
@@ -156,7 +156,6 @@
     <string name="new_chat_field_hint">@username</string>
     <string name="new_chat_own_name">This is your own username</string>
     <string name="onboarding_choose_pin">It encrypts your messages on this device. There is no way to reset it.</string>
-    <string name="onboarding_pin_label">PIN · 6 digits</string>
     <string name="onboarding_error_pin">The PIN must be exactly 6 digits</string>
 
     <!-- Profile -->
@@ -623,4 +622,18 @@
     <string name="settings_section_app">App</string>
     <string name="settings_section_data">Data</string>
     <string name="settings_section_about">About</string>
+    <string name="onboarding_welcome_title">Welcome to AEGIS</string>
+    <string name="onboarding_feature_e2e">Messages are encrypted on your phone. The server only passes them on and cannot read them.</string>
+    <string name="onboarding_feature_no_phone">No phone number or email. Your account is just a username.</string>
+    <string name="onboarding_feature_tor">Tor is built in: the server does not see your IP address.</string>
+    <string name="onboarding_get_started">Create account</string>
+    <string name="onboarding_username_title">Choose a username</string>
+    <string name="onboarding_username_subtitle">People will find you by it. Add them by their @username or by scanning a QR code.</string>
+    <string name="onboarding_network_label">Connection</string>
+    <string name="onboarding_next">Continue</string>
+    <string name="onboarding_pin_title">Create a PIN</string>
+    <string name="onboarding_restore_pin_title">A PIN for this phone</string>
+    <string name="onboarding_restore_continue">Continue to the backup</string>
+    <string name="onboarding_step">%1$d / %2$d</string>
+    <string name="onboarding_step_description">Step %1$d of %2$d</string>
 </resources>

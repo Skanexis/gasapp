@@ -132,7 +132,7 @@
     <string name="onboarding_direct">Подключаться напрямую, без Tor</string>
     <string name="onboarding_network_tor">Соединения идут через Tor, встроенный в приложение, и сервер не видит ваш IP-адрес. Ничего дополнительно ставить не нужно.</string>
     <string name="onboarding_network_direct">⚠️ Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети.</string>
-    <string name="onboarding_error_tor">Не удалось подключиться через Tor. Проверьте интернет и повторите или выберите прямое соединение выше.</string>
+    <string name="onboarding_error_tor">Не удалось подключиться через Tor. Проверьте интернет и повторите или выберите прямое соединение.</string>
     <string name="onboarding_error_network">Сервер недоступен. Проверьте соединение.</string>
     <string name="new_chat_hint">Введите имя пользователя собеседника</string>
     <string name="new_chat_not_found">Собеседник не найден. Проверьте имя и соединение.</string>
@@ -140,7 +140,6 @@
     <string name="new_chat_field_hint">@username</string>
     <string name="new_chat_own_name">Это ваше собственное имя</string>
     <string name="onboarding_choose_pin">Им шифруется переписка на этом устройстве. Сбросить его нельзя.</string>
-    <string name="onboarding_pin_label">PIN · 6 цифр</string>
     <string name="onboarding_error_pin">PIN — ровно 6 цифр</string>
 
     <!-- Экран профиля: @имя и QR для обмена контактами. -->
@@ -668,4 +667,18 @@
     <string name="settings_section_app">Приложение</string>
     <string name="settings_section_data">Данные</string>
     <string name="settings_section_about">О приложении</string>
+    <string name="onboarding_welcome_title">Добро пожаловать в AEGIS</string>
+    <string name="onboarding_feature_e2e">Сообщения шифруются на телефоне. Сервер только передаёт их и прочитать не может.</string>
+    <string name="onboarding_feature_no_phone">Без номера телефона и почты. Аккаунт — это только имя.</string>
+    <string name="onboarding_feature_tor">Tor встроен: сервер не видит ваш IP-адрес.</string>
+    <string name="onboarding_get_started">Создать аккаунт</string>
+    <string name="onboarding_username_title">Выберите имя</string>
+    <string name="onboarding_username_subtitle">По нему вас найдут. Собеседника добавляют по @имени или по QR-коду.</string>
+    <string name="onboarding_network_label">Соединение</string>
+    <string name="onboarding_next">Продолжить</string>
+    <string name="onboarding_pin_title">Придумайте PIN</string>
+    <string name="onboarding_restore_pin_title">PIN для этого телефона</string>
+    <string name="onboarding_restore_continue">Перейти к копии</string>
+    <string name="onboarding_step">%1$d / %2$d</string>
+    <string name="onboarding_step_description">Шаг %1$d из %2$d</string>
 </resources>

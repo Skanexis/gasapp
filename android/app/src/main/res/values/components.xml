@@ -181,15 +181,15 @@
 
     <!--
       Группа строк (UI kit, Settings: grouped list): карточка r16 без
-      внутренних отступов — строки дают свои. Обрезка по контуру держит
-      подсветку нажатия внутри скругления.
+      внутренних отступов — строки дают свои. Обрезку по контуру,
+      которая держит подсветку нажатия внутри скругления, ставит код
+      (SettingsActivity): атрибут стиля есть только с API 31.
     -->
     <style name="AegisGroup">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:background">@drawable/bg_group_card</item>
         <item name="android:orientation">vertical</item>
-        <item name="android:clipToOutline">true</item>
     </style>
 
     <!-- Разделитель строк в группе: с отступом под значок, как в kit. -->
@@ -216,6 +216,25 @@
         <item name="android:paddingEnd">@dimen/screen_padding</item>
         <item name="android:paddingTop">@dimen/space_m</item>
         <item name="android:paddingBottom">@dimen/space_s</item>
+    </style>
+
+    <!--
+      Строка обещания на приветствии: значок акцентом слева, текст Body.
+      Значок 20dp, как в строках настроек.
+    -->
+    <style name="AegisOnboardingFeature">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingTop">@dimen/space_s</item>
+        <item name="android:paddingBottom">@dimen/space_s</item>
+        <item name="android:drawablePadding">14dp</item>
+        <item name="android:drawableTint">@color/accent_base</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:lineSpacingExtra">3sp</item>
     </style>
 
     <!-- Панель на карточном фоне: вложенная группа внутри панели. -->

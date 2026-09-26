@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Онбординг: регистрация и честное предупреждение.
+  Онбординг по шагам (UI kit, Welcome): приветствие → имя → PIN.
 
-  🔐 Предупреждение об отсутствии аудита стоит **до** кнопки и набрано
-  тем же кеглем, что и остальной текст (раздел 21 плана: «не в мелком
-  шрифте»). Мессенджер, обещающий защиту, которой не проверял никто
-  посторонний, обязан сказать об этом до того, как пользователь начнёт
-  ему доверять, — а не в сноске, которую никто не читает.
--->
-<!--
-  Кнопка создания закреплена внизу, прокручивается только форма: прежде
-  кнопка стояла в конце прокрутки и на обычном телефоне уходила
-  за нижний край — её приходилось искать.
+  Прежде всё стояло одной длинной формой — имя, PIN, сеть и две кнопки
+  на одном экране, — и выглядело анкетой. Теперь каждый шаг задаёт один
+  вопрос, а кнопка шага закреплена внизу. Возвращение из копии идёт
+  с приветствия сразу к PIN: имя придёт из копии.
+
+  🔐 Предупреждение об отсутствии аудита стоит на первом шаге, **до**
+  любой кнопки, и набрано тем же кеглем, что и остальной текст (раздел 21
+  плана: «не в мелком шрифте»). Мессенджер, обещающий защиту, которой
+  не проверял никто посторонний, обязан сказать об этом до того, как
+  пользователь начнёт ему доверять.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -22,234 +22,420 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-<ScrollView
-    android:id="@+id/onboarding_scroll"
-    android:layout_width="match_parent"
-    android:layout_height="0dp"
-    android:layout_weight="1"
-    android:fillViewport="true">
-
+    <!-- Шапка шагов: назад и полоска хода. На приветствии скрыта. -->
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_horizontal"
-        android:orientation="vertical"
-        android:padding="24dp">
+        android:id="@+id/onboarding_bar"
+        style="@style/AegisAppBar"
+        android:visibility="gone"
+        tools:visibility="visible">
 
         <ImageView
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:layout_marginTop="16dp"
-            android:background="@drawable/bg_shield_large"
-            android:contentDescription="@null"
-            android:padding="20dp"
-            android:src="@drawable/ic_shield"
-            app:tint="@color/accent_base" />
+            android:id="@+id/onboarding_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/app_name"
-            android:textColor="@color/text_primary"
-            android:textSize="22sp"
-            android:fontFamily="@font/inter"
-            android:textFontWeight="700" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:gravity="center"
-            android:text="@string/onboarding_tagline"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp" />
-
-        <!--
-          🔐 Предупреждение об аудите. Красная рамка и полный кегль:
-          требование раздела 21 плана.
-        -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:background="@drawable/bg_warning_box"
-            android:padding="16dp"
-            android:text="@string/onboarding_audit_warning"
-            android:textColor="@color/status_error"
-            android:textSize="14sp" />
-
-        <!--
-          Поле по UI kit (Inputs): подпись прописными над полем, пример
-          внутри поля, подсказка под полем. Ошибка встаёт на место
-          подсказки, а не добавляется к ней.
-        -->
-        <TextView
-            style="@style/AegisSectionLabel"
-            android:layout_marginTop="@dimen/space_l"
-            android:labelFor="@id/onboarding_username"
-            android:text="@string/onboarding_username_label" />
-
-        <org.aegis.app.components.AegisTextField
-            android:id="@+id/onboarding_username"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/onboarding_username_hint"
-            android:importantForAutofill="no"
-            android:digits="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-            android:inputType="textNoSuggestions|textVisiblePassword"
-            android:maxLength="32"
-            android:maxLines="1"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="15sp" />
-
-        <TextView
-            android:id="@+id/onboarding_username_helper"
-            style="@style/AegisCaption"
-            android:layout_marginTop="@dimen/space_s"
-            android:accessibilityLiveRegion="polite"
-            android:drawablePadding="6dp"
-            android:text="@string/onboarding_username_helper" />
-
-
-        <TextView
-            style="@style/AegisSectionLabel"
-            android:layout_marginTop="@dimen/space_l"
-            android:text="@string/onboarding_pin_label" />
-
-        <TextView
-            style="@style/AegisCaption"
-            android:text="@string/onboarding_choose_pin" />
-
-        <!--
-          🔐 PIN шифрует хранилище: он растягивается Argon2id и даёт
-          ключ базы. Отдельного «пароля от аккаунта» нет и не будет —
-          пароль, который проверяет сервер, ничего не защищал бы
-          на изъятом устройстве.
-        -->
-        <!--
-          🔐 PIN набирается своей клавиатурой, а не системной: сторонняя
-          клавиатура получала бы каждую цифру (см. PinPad). Прежде здесь
-          было текстовое поле с системной клавиатурой.
-        -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:gravity="center_horizontal"
-            android:orientation="vertical">
+            android:id="@+id/onboarding_steps"
+            android:layout_width="0dp"
+            android:layout_height="4dp"
+            android:layout_marginStart="@dimen/space_s"
+            android:layout_marginEnd="@dimen/space_m"
+            android:layout_weight="1"
+            android:orientation="horizontal">
 
-            <include
-                layout="@layout/view_pin_dots"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+            <View
+                android:id="@+id/onboarding_step_1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/bg_step_segment" />
 
-            <include
-                layout="@layout/view_pin_keypad"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp" />
+            <View
+                android:id="@+id/onboarding_step_2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_step_segment" />
         </LinearLayout>
-        <!--
-          🔐 Tor — по умолчанию (ADR-024). Прямое соединение отдаёт
-          серверу IP-адрес, и выбрать его можно только явно: переключатель
-          выключен, а подпись говорит, чем за это платят.
-        -->
-        <androidx.appcompat.widget.SwitchCompat
-            android:id="@+id/onboarding_direct"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:checked="false"
-            android:minHeight="48dp"
-            android:text="@string/onboarding_direct"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
-            android:thumb="@drawable/bg_switch_thumb"
-            app:track="@drawable/bg_switch_track" />
 
         <TextView
-            android:id="@+id/onboarding_network_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/onboarding_network_tor"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/onboarding_error"
+            android:id="@+id/onboarding_step_label"
             style="@style/AegisCaption"
-            android:layout_marginTop="8dp"
-            android:accessibilityLiveRegion="assertive"
-            android:drawablePadding="6dp"
-            android:textColor="@color/status_error"
-            android:visibility="gone"
-            app:drawableStartCompat="@drawable/ic_alert_small"
-            app:drawableTint="@color/status_error"
-            tools:text="Имя уже занято"
-            tools:visibility="visible" />
-
-        <!-- Появляется, когда Tor не подключается: возможно, он заблокирован. -->
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/onboarding_add_bridge"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/onboarding_add_bridge"
-            android:visibility="gone"
-            app:buttonVariant="secondary" />
-
-        <ProgressBar
-            android:id="@+id/onboarding_progress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:indeterminateTint="@color/accent_base"
-            android:visibility="gone"
-            tools:visibility="visible" />
-
-        <TextView
-            android:id="@+id/onboarding_progress_label"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center"
-            android:text="@string/onboarding_working"
-            android:textColor="@color/text_muted"
-            android:textSize="12sp"
-            android:visibility="gone"
-            tools:visibility="visible" />
-
+            android:layout_marginEnd="@dimen/space_xs"
+            tools:text="1 / 2" />
     </LinearLayout>
-</ScrollView>
 
+    <ScrollView
+        android:id="@+id/onboarding_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <!-- ============ Шаг 0: приветствие ============ -->
+            <LinearLayout
+                android:id="@+id/onboarding_page_welcome"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/space_l"
+                android:paddingTop="@dimen/space_2xl"
+                android:paddingEnd="@dimen/space_l"
+                android:paddingBottom="@dimen/space_l">
+
+                <ImageView
+                    android:layout_width="88dp"
+                    android:layout_height="88dp"
+                    android:background="@drawable/bg_shield_large"
+                    android:contentDescription="@null"
+                    android:padding="22dp"
+                    android:src="@drawable/ic_shield"
+                    app:tint="@color/accent_base" />
+
+                <TextView
+                    style="@style/AegisText.H1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:accessibilityHeading="true"
+                    android:gravity="center"
+                    android:text="@string/onboarding_welcome_title" />
+
+                <TextView
+                    style="@style/AegisText.Body.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:gravity="center"
+                    android:lineSpacingExtra="4sp"
+                    android:text="@string/onboarding_tagline" />
+
+                <!-- Три обещания — коротко и без жаргона. -->
+                <LinearLayout
+                    style="@style/AegisGroup"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:background="@drawable/bg_card_rounded"
+                    android:paddingStart="@dimen/space_m"
+                    android:paddingTop="@dimen/space_xs"
+                    android:paddingEnd="@dimen/space_m"
+                    android:paddingBottom="@dimen/space_xs">
+
+                    <TextView
+                        style="@style/AegisOnboardingFeature"
+                        android:drawableStart="@drawable/ic_lock"
+                        android:text="@string/onboarding_feature_e2e" />
+
+                    <TextView
+                        style="@style/AegisOnboardingFeature"
+                        android:drawableStart="@drawable/ic_users"
+                        android:text="@string/onboarding_feature_no_phone" />
+
+                    <TextView
+                        style="@style/AegisOnboardingFeature"
+                        android:drawableStart="@drawable/ic_globe"
+                        android:text="@string/onboarding_feature_tor" />
+                </LinearLayout>
+
+                <!--
+                  🔐 Предупреждение об аудите. Красная рамка и полный кегль:
+                  требование раздела 21 плана.
+                -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:background="@drawable/bg_warning_box"
+                    android:drawablePadding="10dp"
+                    android:fontFamily="@font/inter"
+                    android:padding="14dp"
+                    android:text="@string/onboarding_audit_warning"
+                    android:textColor="@color/status_error"
+                    android:textSize="14sp"
+                    app:drawableStartCompat="@drawable/ic_alert_small"
+                    app:drawableTint="@color/status_error" />
+            </LinearLayout>
+
+            <!-- ============ Шаг 1: имя ============ -->
+            <LinearLayout
+                android:id="@+id/onboarding_page_username"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/space_l"
+                android:paddingTop="@dimen/space_s"
+                android:paddingEnd="@dimen/space_l"
+                android:paddingBottom="@dimen/space_l"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/AegisText.H1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="@string/onboarding_username_title" />
+
+                <TextView
+                    style="@style/AegisText.Body.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:lineSpacingExtra="4sp"
+                    android:text="@string/onboarding_username_subtitle" />
+
+                <!--
+                  Поле по UI kit (Inputs): подпись прописными над полем,
+                  пример внутри поля, подсказка под полем. Ошибка встаёт
+                  на место подсказки, а не добавляется к ней.
+                -->
+                <TextView
+                    style="@style/AegisSectionLabel"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:labelFor="@id/onboarding_username"
+                    android:text="@string/onboarding_username_label" />
+
+                <org.aegis.app.components.AegisTextField
+                    android:id="@+id/onboarding_username"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:digits="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+                    android:hint="@string/onboarding_username_hint"
+                    android:imeOptions="actionNext"
+                    android:importantForAutofill="no"
+                    android:inputType="textNoSuggestions|textVisiblePassword"
+                    android:maxLength="32"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="15sp"
+                    app:fieldIcon="@drawable/ic_users" />
+
+                <TextView
+                    android:id="@+id/onboarding_username_helper"
+                    style="@style/AegisCaption"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:accessibilityLiveRegion="polite"
+                    android:drawablePadding="6dp"
+                    android:text="@string/onboarding_username_helper" />
+
+                <!--
+                  🔐 Tor — по умолчанию (ADR-024). Прямое соединение отдаёт
+                  серверу IP-адрес, и выбрать его можно только явно:
+                  переключатель выключен, а подпись говорит, чем за это
+                  платят. Стоит на шаге имени: регистрация — первое, что
+                  видит сервер, и сеть выбирается до неё.
+                -->
+                <!--
+                  Блок сети переезжает на шаг PIN при возвращении из копии:
+                  шага имени там нет, а выбор сети нужен и там.
+                -->
+                <LinearLayout
+                    android:id="@+id/onboarding_network"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                <TextView
+                    style="@style/AegisSectionLabel"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:text="@string/onboarding_network_label" />
+
+                <LinearLayout
+                    style="@style/AegisGroup"
+                    android:background="@drawable/bg_card_rounded"
+                    android:paddingStart="@dimen/space_m"
+                    android:paddingTop="@dimen/space_xs"
+                    android:paddingEnd="@dimen/space_m"
+                    android:paddingBottom="14dp">
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/onboarding_direct"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:checked="false"
+                        android:fontFamily="@font/inter"
+                        android:minHeight="48dp"
+                        android:text="@string/onboarding_direct"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp"
+                        android:thumb="@drawable/bg_switch_thumb"
+                        app:track="@drawable/bg_switch_track" />
+
+                    <TextView
+                        android:id="@+id/onboarding_network_hint"
+                        style="@style/AegisCaption"
+                        android:text="@string/onboarding_network_tor" />
+                </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ============ Шаг 2: PIN ============ -->
+            <LinearLayout
+                android:id="@+id/onboarding_page_pin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/space_l"
+                android:paddingTop="@dimen/space_s"
+                android:paddingEnd="@dimen/space_l"
+                android:paddingBottom="@dimen/space_m"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/onboarding_pin_title"
+                    style="@style/AegisText.H1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="@string/onboarding_pin_title" />
+
+                <!--
+                  🔐 PIN шифрует хранилище: он растягивается Argon2id и даёт
+                  ключ базы. Отдельного «пароля от аккаунта» нет и не будет —
+                  пароль, который проверяет сервер, ничего не защищал бы
+                  на изъятом устройстве.
+                -->
+                <TextView
+                    style="@style/AegisText.Body.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:lineSpacingExtra="4sp"
+                    android:text="@string/onboarding_choose_pin" />
+
+                <!--
+                  🔐 PIN набирается своей клавиатурой, а не системной:
+                  сторонняя клавиатура получала бы каждую цифру (см. PinPad).
+                -->
+                <include
+                    layout="@layout/view_pin_dots"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xl" />
+
+                <include
+                    layout="@layout/view_pin_keypad"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_l" />
+
+                <TextView
+                    android:id="@+id/onboarding_error"
+                    style="@style/AegisCaption"
+                    android:layout_width="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:accessibilityLiveRegion="assertive"
+                    android:drawablePadding="6dp"
+                    android:gravity="center"
+                    android:textColor="@color/status_error"
+                    android:visibility="gone"
+                    app:drawableStartCompat="@drawable/ic_alert_small"
+                    app:drawableTint="@color/status_error"
+                    tools:text="Имя уже занято"
+                    tools:visibility="visible" />
+
+                <!-- Появляется, когда Tor не подключается: возможно, он заблокирован. -->
+                <org.aegis.app.components.AegisButton
+                    android:id="@+id/onboarding_add_bridge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/onboarding_add_bridge"
+                    android:visibility="gone"
+                    app:buttonSize="small"
+                    app:buttonVariant="secondary" />
+
+                <LinearLayout
+                    android:id="@+id/onboarding_progress_row"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <ProgressBar
+                        android:id="@+id/onboarding_progress"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:indeterminateTint="@color/accent_base" />
+
+                    <TextView
+                        android:id="@+id/onboarding_progress_label"
+                        style="@style/AegisCaption"
+                        android:layout_width="wrap_content"
+                        android:layout_marginStart="@dimen/space_s"
+                        android:accessibilityLiveRegion="polite"
+                        android:text="@string/onboarding_working" />
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+    </ScrollView>
+
+    <!-- Кнопки шага: закреплены внизу, видна та, что относится к шагу. -->
     <org.aegis.app.components.AegisButton
-        android:id="@+id/onboarding_create"
+        android:id="@+id/onboarding_start"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
+        android:layout_marginStart="@dimen/space_l"
         android:layout_marginTop="@dimen/space_s"
-        android:layout_marginEnd="24dp"
-        android:text="@string/onboarding_create"
+        android:layout_marginEnd="@dimen/space_l"
+        android:text="@string/onboarding_get_started"
         app:buttonSize="large"
         app:buttonVariant="primary" />
 
     <!--
       Возвращение аккаунта из резервной копии: имя и переписка остаются
-      за человеком после переустановки. PIN задаётся здесь же — им
-      шифруется новая база.
+      за человеком после переустановки. PIN задаётся на следующем шаге —
+      им шифруется новая база.
     -->
     <org.aegis.app.components.AegisButton
         android:id="@+id/onboarding_recover"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
+        android:layout_marginStart="@dimen/space_l"
         android:layout_marginTop="@dimen/space_xs"
-        android:layout_marginEnd="24dp"
-        android:layout_marginBottom="@dimen/space_m"
+        android:layout_marginEnd="@dimen/space_l"
         android:text="@string/onboarding_recover"
         app:buttonVariant="ghost" />
+
+    <org.aegis.app.components.AegisButton
+        android:id="@+id/onboarding_next"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_l"
+        android:layout_marginTop="@dimen/space_s"
+        android:layout_marginEnd="@dimen/space_l"
+        android:text="@string/onboarding_next"
+        android:visibility="gone"
+        app:buttonSize="large"
+        app:buttonVariant="primary" />
+
+    <org.aegis.app.components.AegisButton
+        android:id="@+id/onboarding_create"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_l"
+        android:layout_marginTop="@dimen/space_s"
+        android:layout_marginEnd="@dimen/space_l"
+        android:text="@string/onboarding_create"
+        android:visibility="gone"
+        app:buttonSize="large"
+        app:buttonVariant="primary" />
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/space_m" />
 
 </LinearLayout>
