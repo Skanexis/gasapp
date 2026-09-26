@@ -25,12 +25,42 @@ import org.aegis.app.R
  */
 object BottomNav {
 
-    /** Вкладки нижней навигации. */
-    enum class Tab(val viewId: Int) {
-        Chats(R.id.nav_chats),
-        Calls(R.id.nav_calls),
-        Contacts(R.id.nav_contacts),
-        Settings(R.id.nav_settings),
+    /** Вкладки нижней навигации и их экраны. */
+    enum class Tab(val viewId: Int, val screen: Class<out Activity>) {
+        Chats(R.id.nav_chats, org.aegis.app.ChatListActivity::class.java),
+        Calls(R.id.nav_calls, org.aegis.app.CallsActivity::class.java),
+        Contacts(R.id.nav_contacts, org.aegis.app.ContactsActivity::class.java),
+        Settings(R.id.nav_settings, org.aegis.app.SettingsActivity::class.java),
+    }
+
+    /**
+     * Подсвечивает активную вкладку и связывает остальные.
+     *
+     * Одно место на все экраны. Прежде каждый экран связывал вкладки
+     * сам, и они разошлись: из настроек нельзя было перейти в контакты.
+     *
+     * `finish()` после перехода: вкладки — разделы одного уровня, и
+     * накопление их в стеке заставляло бы жать «назад» столько раз,
+     * сколько было переключений. Смена — плавным наплывом, без сдвига:
+     * это переключение раздела, а не шаг вглубь. Активная вкладка
+     * не обрабатывается — переход на себя сбросил бы состояние экрана.
+     */
+    fun bind(activity: Activity, active: Tab) {
+        highlight(activity, active)
+
+        for (tab in Tab.entries) {
+            if (tab == active) continue
+
+            activity.findViewById<View>(tab.viewId)?.setOnClickListener {
+                val options = android.app.ActivityOptions.makeCustomAnimation(
+                    activity,
+                    android.R.anim.fade_in,
+                    android.R.anim.fade_out,
+                )
+                activity.startActivity(android.content.Intent(activity, tab.screen), options.toBundle())
+                activity.finish()
+            }
+        }
     }
 
     /**
@@ -52,7 +82,12 @@ object BottomNav {
             // читается как случайное различие, а не как «вы здесь».
             forEachChild(container) { child ->
                 when (child) {
-                    is ImageView -> child.setColorFilter(color)
+                    is ImageView -> {
+                        child.setColorFilter(color)
+                        // «Пилюля» под значком активной вкладки: видна
+                        // с одного взгляда и не держится на одном цвете.
+                        child.setBackgroundResource(if (selected) R.drawable.bg_nav_pill else 0)
+                    }
                     is TextView -> child.setTextColor(color)
                     else -> Unit
                 }

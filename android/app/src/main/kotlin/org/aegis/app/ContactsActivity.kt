@@ -101,9 +101,7 @@ class ContactsActivity : AppCompatActivity() {
 
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
             })
-
-        bindNavigation()
-        BottomNav.highlight(this, BottomNav.Tab.Contacts)
+        BottomNav.bind(this, BottomNav.Tab.Contacts)
     }
 
     /**
@@ -191,18 +189,4 @@ class ContactsActivity : AppCompatActivity() {
         )
     }
 
-    private fun bindNavigation() {
-        findViewById<View>(R.id.nav_chats).setOnClickListener {
-            startActivity(Intent(this, ChatListActivity::class.java))
-            finish()
-        }
-        findViewById<View>(R.id.nav_calls).setOnClickListener {
-            startActivity(Intent(this, CallsActivity::class.java))
-            finish()
-        }
-        findViewById<View>(R.id.nav_settings).setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-            finish()
-        }
-    }
 }

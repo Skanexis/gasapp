@@ -32,7 +32,7 @@
         android:paddingBottom="@dimen/space_m">
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/AegisAppBarTitle.Large"
             android:layout_weight="1"
             android:text="@string/nav_calls" />
     </LinearLayout>

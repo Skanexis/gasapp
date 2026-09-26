@@ -179,6 +179,45 @@
         <item name="android:padding">@dimen/space_m</item>
     </style>
 
+    <!--
+      Группа строк (UI kit, Settings: grouped list): карточка r16 без
+      внутренних отступов — строки дают свои. Обрезка по контуру держит
+      подсветку нажатия внутри скругления.
+    -->
+    <style name="AegisGroup">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/bg_group_card</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:clipToOutline">true</item>
+    </style>
+
+    <!-- Разделитель строк в группе: с отступом под значок, как в kit. -->
+    <style name="AegisGroupDivider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginStart">52dp</item>
+        <item name="android:background">@color/line</item>
+    </style>
+
+    <!--
+      Крупный заголовок корневых экранов (Чаты, Звонки, Контакты,
+      Настройки): H1 28/36, как «Security Center» в kit.
+    -->
+    <style name="AegisLargeTitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">700</item>
+        <item name="android:textSize">@dimen/text_h1</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:accessibilityHeading">true</item>
+        <item name="android:paddingStart">@dimen/screen_padding</item>
+        <item name="android:paddingEnd">@dimen/screen_padding</item>
+        <item name="android:paddingTop">@dimen/space_m</item>
+        <item name="android:paddingBottom">@dimen/space_s</item>
+    </style>
+
     <!-- Панель на карточном фоне: вложенная группа внутри панели. -->
     <style name="AegisPanel.Deep">
         <item name="android:background">@drawable/bg_panel_deep</item>

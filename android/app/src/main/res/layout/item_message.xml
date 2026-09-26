@@ -3,146 +3,188 @@
 <!--
   Пузырь сообщения.
 
-  Одна раскладка на входящие и исходящие: адаптер меняет фон
-  и гравитацию. Две отдельные разошлись бы при первой же правке.
+  Одна раскладка на входящие и исходящие: адаптер меняет фон,
+  скругления и гравитацию. Две отдельные разошлись бы при первой же
+  правке.
+
+  Подряд идущие сообщения одной стороны собираются в группу: плотные
+  промежутки, малый радиус со стороны соседей. Над первым сообщением
+  дня — плашка с датой. Время стоит в последней строке текста, если
+  там есть место (заполнитель в тексте резервирует его), иначе —
+  строкой ниже.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/message_container"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:paddingStart="@dimen/screen_padding"
-    android:paddingTop="3dp"
-    android:paddingEnd="@dimen/screen_padding"
-    android:paddingBottom="3dp">
+    android:orientation="vertical">
 
-    <LinearLayout
-        android:id="@+id/message_bubble"
+    <!-- Плашка дня (UI kit, Messaging: date chip). -->
+    <TextView
+        android:id="@+id/message_day"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_bubble_incoming"
-        android:maxWidth="@dimen/bubble_max_width"
-        android:orientation="vertical"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="@dimen/space_m"
+        android:layout_marginBottom="@dimen/space_s"
+        android:background="@drawable/bg_day_chip"
+        android:fontFamily="@font/inter"
         android:paddingStart="12dp"
-        android:paddingTop="9dp"
+        android:paddingTop="4dp"
         android:paddingEnd="12dp"
-        android:paddingBottom="8dp">
+        android:paddingBottom="4dp"
+        android:textColor="@color/text_secondary"
+        android:textFontWeight="600"
+        android:textSize="12sp"
+        android:visibility="gone"
+        tools:text="Today"
+        tools:visibility="visible" />
 
-        <!--
-          Строка вложения.
-
-          Скрыта у обычных сообщений. Показывает имя файла и его размер
-          — то, что человек решает по одному взгляду: открывать сейчас
-          или подождать сети.
-
-          🔐 Ни превью, ни содержимого до нажатия: файл лежит на сервере
-          зашифрованным, и загружать его автоматически значило бы
-          подтверждать отправителю, что сообщение открыли.
-        -->
-        <LinearLayout
-            android:id="@+id/message_attachment"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_card_rounded"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:padding="8dp"
-            android:visibility="gone">
-
-            <ImageView
-                android:id="@+id/attachment_icon"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:contentDescription="@string/attachment_document"
-                android:src="@drawable/ic_file"
-                app:tint="@color/accent_base" />
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/attachment_name"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="middle"
-                    android:maxWidth="200dp"
-                    android:singleLine="true"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    tools:text="договор.pdf" />
-
-                <TextView
-                    android:id="@+id/attachment_size"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    tools:text="2,4 МБ" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/message_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
-            tools:text="Проверим safety number?" />
+    <LinearLayout
+        android:id="@+id/message_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingTop="1dp"
+        android:paddingEnd="@dimen/screen_padding"
+        android:paddingBottom="1dp">
 
         <LinearLayout
+            android:id="@+id/message_bubble"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:layout_marginTop="3dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:background="@drawable/bg_bubble_incoming"
+            android:maxWidth="@dimen/bubble_max_width"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingTop="7dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="6dp">
 
             <!--
-              🔐 Пометка «изменено» стоит перед временем и не прячется.
+              Строка вложения.
 
-              Правка не скрывает исходный текст: получатель уже видел
-              его. Но без пометки отправитель мог бы переписать
-              разговор задним числом так, что собеседник не заметил бы.
+              Скрыта у обычных сообщений. Показывает имя файла и его размер
+              — то, что человек решает по одному взгляду: открывать сейчас
+              или подождать сети.
+
+              🔐 Ни превью, ни содержимого до нажатия: файл лежит на сервере
+              зашифрованным, и загружать его автоматически значило бы
+              подтверждать отправителю, что сообщение открыли.
             -->
-            <TextView
-                android:id="@+id/message_edited"
+            <LinearLayout
+                android:id="@+id/message_attachment"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/space_xs"
-                android:fontFamily="@font/inter"
-                android:textFontWeight="400"
-                android:includeFontPadding="false"
-                android:text="@string/message_edited"
-                android:textColor="@color/text_disabled"
-                android:textSize="12sp"
-                android:visibility="gone"
-                tools:visibility="visible" />
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/bg_card_rounded"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="8dp"
+                android:visibility="gone">
 
-            <TextView
-                android:id="@+id/message_time"
+                <ImageView
+                    android:id="@+id/attachment_icon"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:contentDescription="@string/attachment_document"
+                    android:src="@drawable/ic_file"
+                    app:tint="@color/accent_base" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/attachment_name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="middle"
+                        android:maxWidth="200dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp"
+                        tools:text="договор.pdf" />
+
+                    <TextView
+                        android:id="@+id/attachment_size"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        tools:text="2,4 МБ" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Текст и время в одной ячейке: время — внизу справа. -->
+            <FrameLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/text_disabled"
-                android:textSize="12sp"
-                tools:text="14:32" />
+                android:layout_height="wrap_content">
 
-            <ImageView
-                android:id="@+id/message_status"
-                android:layout_width="16dp"
-                android:layout_height="14dp"
-                android:layout_marginStart="4dp"
-                android:contentDescription="@null"
-                android:src="@drawable/ic_tick_double"
-                app:tint="@color/text_disabled"
-                android:visibility="gone"
-                tools:visibility="visible" />
+                <TextView
+                    android:id="@+id/message_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/inter"
+                    android:lineSpacingExtra="3sp"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    tools:text="Проверим safety number?" />
+
+                <LinearLayout
+                    android:id="@+id/message_meta"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|end"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <!--
+                      🔐 Пометка «изменено» стоит перед временем и не прячется.
+                      Правка не скрывает исходный текст: получатель уже видел
+                      его. Но без пометки отправитель мог бы переписать
+                      разговор задним числом так, что собеседник не заметил бы.
+                    -->
+                    <TextView
+                        android:id="@+id/message_edited"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="@dimen/space_xs"
+                        android:fontFamily="@font/inter"
+                        android:includeFontPadding="false"
+                        android:text="@string/message_edited"
+                        android:textColor="@color/text_muted"
+                        android:textFontWeight="400"
+                        android:textSize="11sp"
+                        android:visibility="gone"
+                        tools:visibility="visible" />
+
+                    <TextView
+                        android:id="@+id/message_time"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/inter"
+                        android:includeFontPadding="false"
+                        android:textColor="@color/text_muted"
+                        android:textSize="11sp"
+                        tools:text="14:32" />
+
+                    <ImageView
+                        android:id="@+id/message_status"
+                        android:layout_width="16dp"
+                        android:layout_height="14dp"
+                        android:layout_marginStart="3dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_tick_double"
+                        android:visibility="gone"
+                        app:tint="@color/text_disabled"
+                        tools:visibility="visible" />
+                </LinearLayout>
+            </FrameLayout>
         </LinearLayout>
-
     </LinearLayout>
-
 </LinearLayout>

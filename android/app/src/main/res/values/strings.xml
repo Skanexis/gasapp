@@ -617,4 +617,10 @@
     <string name="safety_scan_mismatch_title">The codes do not match</string>
     <string name="safety_scan_mismatch_body">The other person’s screen shows a different key. The server may have swapped it, or this is not the person you think. Do not mark them as compared and do not send anything important until you find out why.</string>
     <string name="safety_scan_mismatch_ok">Understood</string>
+    <string name="chat_day_today">Today</string>
+    <string name="chat_day_yesterday">Yesterday</string>
+    <string name="settings_section_protection">Protection</string>
+    <string name="settings_section_app">App</string>
+    <string name="settings_section_data">Data</string>
+    <string name="settings_section_about">About</string>
 </resources>

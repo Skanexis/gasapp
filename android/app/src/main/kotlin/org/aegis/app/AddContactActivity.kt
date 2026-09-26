@@ -71,8 +71,12 @@ class AddContactActivity : AppCompatActivity() {
         // возвращается шрифт макета.
         input.typeface = ResourcesCompat.getFont(this, R.font.inter)
         input.doAfterTextChanged { resetStatus() }
-        input.setOnEditorActionListener { _, action, _ ->
-            (action == EditorInfo.IME_ACTION_GO).also { if (it) openByUsername() }
+        // «Перейти» на экранной клавиатуре и Enter на подключённой:
+        // вторая приходит не действием, а нажатием клавиши.
+        input.setOnEditorActionListener { _, action, event ->
+            val enter = event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER &&
+                event.action == android.view.KeyEvent.ACTION_DOWN
+            (action == EditorInfo.IME_ACTION_GO || enter).also { if (it) openByUsername() }
         }
 
         openButton.setOnClickListener { openByUsername() }

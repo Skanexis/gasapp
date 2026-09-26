@@ -27,8 +27,12 @@
         style="@style/AegisNavItem">
 
         <ImageView
-            android:layout_width="21dp"
-            android:layout_height="21dp"
+            android:layout_width="56dp"
+            android:layout_height="30dp"
+            android:paddingStart="17dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="17dp"
+            android:paddingBottom="4dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_chat"
             app:tint="@color/accent_base" />
@@ -44,8 +48,12 @@
         style="@style/AegisNavItem">
 
         <ImageView
-            android:layout_width="21dp"
-            android:layout_height="21dp"
+            android:layout_width="56dp"
+            android:layout_height="30dp"
+            android:paddingStart="17dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="17dp"
+            android:paddingBottom="4dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_phone"
             app:tint="@color/text_disabled" />
@@ -60,8 +68,12 @@
         style="@style/AegisNavItem">
 
         <ImageView
-            android:layout_width="21dp"
-            android:layout_height="21dp"
+            android:layout_width="56dp"
+            android:layout_height="30dp"
+            android:paddingStart="17dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="17dp"
+            android:paddingBottom="4dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_users"
             app:tint="@color/text_disabled" />
@@ -76,8 +88,12 @@
         style="@style/AegisNavItem">
 
         <ImageView
-            android:layout_width="21dp"
-            android:layout_height="21dp"
+            android:layout_width="56dp"
+            android:layout_height="30dp"
+            android:paddingStart="17dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="17dp"
+            android:paddingBottom="4dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_settings"
             app:tint="@color/text_disabled" />
