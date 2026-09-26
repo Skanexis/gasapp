@@ -362,7 +362,6 @@
     -->
     <string name="recovery_title">Восстановление</string>
     <string name="recovery_intro">Резервная копия зашифрована ключом восстановления. Ключ есть только у вас: ни сервер, ни мы расшифровать копию не можем.</string>
-    <string name="recovery_section_state">Состояние</string>
     <string name="recovery_section_actions">Действия</string>
     <string name="recovery_pill_encrypted">Копия зашифрована</string>
     <string name="recovery_pill_server_cannot">Сервер расшифровать не может</string>
@@ -479,7 +478,6 @@
       проверка пройдена. «Защищено» показывается лишь при всех пройденных:
       заголовок, не зависящий от счёта, успокаивал бы при любом значении.
     -->
-    <string name="security_section_checks">Проверки</string>
     <string name="security_section_details">Подробнее</string>
     <string name="security_attention_title">Требует внимания</string>
     <string name="security_check_recovery">Ключ восстановления создан</string>
@@ -681,4 +679,7 @@
     <string name="onboarding_restore_continue">Перейти к копии</string>
     <string name="onboarding_step">%1$d / %2$d</string>
     <string name="onboarding_step_description">Шаг %1$d из %2$d</string>
+    <string name="security_section_passed">В порядке</string>
+    <string name="recovery_state_on">Копия настроена</string>
+    <string name="recovery_state_off">Копия не настроена</string>
 </resources>

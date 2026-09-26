@@ -47,44 +47,32 @@
                 style="@style/AegisSectionLabel"
                 android:text="@string/privacy_section_contacts" />
 
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/privacy_presence"
                     layout="@layout/item_settings_toggle" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/privacy_last_seen"
                     layout="@layout/item_settings_toggle" />
-            </LinearLayout>
+            </org.aegis.app.components.AegisGroup>
 
             <TextView
                 style="@style/AegisSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/privacy_section_device" />
 
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/privacy_screenshots"
                     layout="@layout/item_settings_toggle" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/privacy_preview"
                     layout="@layout/item_settings_toggle" />
-            </LinearLayout>
+            </org.aegis.app.components.AegisGroup>
 
             <!--
               🔐 Сеть: IP-адрес — последняя крупная утечка раздела 15.5.
@@ -96,12 +84,12 @@
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/privacy_section_network" />
 
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/privacy_network"
-                    layout="@layout/item_panel_row" />
-            </LinearLayout>
+                    layout="@layout/item_settings_row" />
+            </org.aegis.app.components.AegisGroup>
 
             <!--
               🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
@@ -115,11 +103,11 @@
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/privacy_section_account" />
 
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/privacy_autolock"
-                    layout="@layout/item_panel_row" />
+                    layout="@layout/item_settings_row" />
 
                 <include
                     android:id="@+id/privacy_biometric"
@@ -131,12 +119,12 @@
 
                 <include
                     android:id="@+id/privacy_export"
-                    layout="@layout/item_panel_row" />
+                    layout="@layout/item_settings_row" />
 
                 <include
                     android:id="@+id/privacy_delete_account"
-                    layout="@layout/item_panel_row" />
-            </LinearLayout>
+                    layout="@layout/item_settings_row" />
+            </org.aegis.app.components.AegisGroup>
 
             <TextView
                 style="@style/AegisCaption"

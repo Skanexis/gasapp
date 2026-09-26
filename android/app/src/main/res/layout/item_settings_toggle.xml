@@ -19,13 +19,17 @@
     android:gravity="center_vertical"
     android:minHeight="@dimen/list_row_min"
     android:orientation="horizontal"
-    android:paddingTop="@dimen/space_s"
-    android:paddingBottom="@dimen/space_s">
+    android:paddingStart="@dimen/space_m"
+    android:paddingTop="12dp"
+    android:paddingEnd="@dimen/space_m"
+    android:paddingBottom="12dp">
 
+    <!-- Поля и значок — как у item_settings_row: строки обоих видов
+         стоят в одной группе (AegisGroup) и должны совпадать. -->
     <ImageView
         android:id="@+id/toggle_icon"
-        android:layout_width="@dimen/icon_m"
-        android:layout_height="@dimen/icon_m"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
         android:contentDescription="@null"
         app:tint="@color/text_secondary"
         tools:src="@drawable/ic_lock" />
@@ -43,16 +47,18 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="@font/inter"
-            android:textFontWeight="400"
+            android:textFontWeight="600"
             android:includeFontPadding="false"
             android:textColor="@color/text_primary"
-            android:textSize="@dimen/text_body"
+            android:textSize="14sp"
             tools:text="Блокировать снимки экрана" />
 
         <TextView
             android:id="@+id/toggle_hint"
             style="@style/AegisCaption"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="4dp"
+            android:lineSpacingExtra="3sp"
+            android:textSize="12sp"
             android:visibility="gone"
             tools:text="Содержимое не попадёт в переключатель задач"
             tools:visibility="visible" />

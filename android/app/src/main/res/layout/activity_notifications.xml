@@ -47,22 +47,16 @@
             <TextView
                 style="@style/AegisSectionLabel"
                 android:text="@string/notifications_section_content" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/notifications_preview"
                     layout="@layout/item_settings_toggle" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/notifications_sender"
                     layout="@layout/item_settings_toggle" />
-            </LinearLayout>
+            </org.aegis.app.components.AegisGroup>
             <TextView
                 style="@style/AegisCaption"
                 android:layout_marginTop="@dimen/space_m"
@@ -71,22 +65,16 @@
                 style="@style/AegisSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/notifications_section_alerts" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/notifications_sound"
                     layout="@layout/item_settings_toggle" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/notifications_vibrate"
                     layout="@layout/item_settings_toggle" />
-            </LinearLayout>
+            </org.aegis.app.components.AegisGroup>
 
         </LinearLayout>
     </ScrollView>

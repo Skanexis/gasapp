@@ -181,23 +181,14 @@
 
     <!--
       Группа строк (UI kit, Settings: grouped list): карточка r16 без
-      внутренних отступов — строки дают свои. Обрезку по контуру,
-      которая держит подсветку нажатия внутри скругления, ставит код
-      (SettingsActivity): атрибут стиля есть только с API 31.
+      внутренних отступов — строки дают свои. Обрезку по скруглению
+      и разделители строк ставит класс AegisGroup.
     -->
     <style name="AegisGroup">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:background">@drawable/bg_group_card</item>
         <item name="android:orientation">vertical</item>
-    </style>
-
-    <!-- Разделитель строк в группе: с отступом под значок, как в kit. -->
-    <style name="AegisGroupDivider">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">1dp</item>
-        <item name="android:layout_marginStart">52dp</item>
-        <item name="android:background">@color/line</item>
     </style>
 
     <!--
@@ -241,6 +232,22 @@
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:lineSpacingExtra">3sp</item>
+    </style>
+
+    <!--
+      Свойство копии с галочкой (UI kit, Authentication: «✓ Stored
+      nowhere»): значок статуса слева, текст вторичного цвета.
+    -->
+    <style name="AegisRecoveryFact">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:drawableStart">@drawable/ic_check_small</item>
+        <item name="android:drawablePadding">8dp</item>
+        <item name="android:drawableTint">@color/status_ok</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
     </style>
 
     <!-- Панель на карточном фоне: вложенная группа внутри панели. -->

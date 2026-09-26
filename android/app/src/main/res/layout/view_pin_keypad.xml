@@ -6,7 +6,7 @@
   нажатие и вправе запомнить его или отправить куда угодно. PIN здесь —
   половина ключа базы, поэтому набирается только этой клавиатурой.
 
-  Три колонки, клавиши 56dp по макету. Общая для экрана входа
+  Три колонки, клавиши 80×64dp, подсветка нажатия — круг 60dp по макету. Общая для экрана входа
   и всех мест, где набирается PIN (PinPad).
 -->
 <GridLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -34,8 +34,8 @@
     -->
     <ImageView
         android:id="@+id/key_biometric"
-        android:layout_width="72dp"
-        android:layout_height="56dp"
+        android:layout_width="80dp"
+        android:layout_height="64dp"
         android:background="@drawable/bg_keypad_key"
         android:contentDescription="@string/lock_use_fingerprint"
         android:padding="16dp"
@@ -47,8 +47,8 @@
 
     <ImageView
         android:id="@+id/key_delete"
-        android:layout_width="72dp"
-        android:layout_height="56dp"
+        android:layout_width="80dp"
+        android:layout_height="64dp"
         android:background="@drawable/bg_keypad_key"
         android:contentDescription="@string/delete_digit"
         android:padding="16dp"

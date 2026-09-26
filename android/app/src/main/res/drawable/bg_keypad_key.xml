@@ -1,9 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Клавиша цифровой клавиатуры: круглая подсветка при нажатии. -->
+<!--
+  Клавиша цифровой клавиатуры: круглая подсветка 60dp при нажатии,
+  как в UI kit (Authentication). Маска задана размером, а не формой
+  клавиши: клавиша не квадратная, и овал по её рамке выходил эллипсом.
+-->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="@color/bg_hover">
-    <item android:id="@android:id/mask">
+    android:color="@color/bg_hover"
+    android:radius="30dp">
+    <item
+        android:id="@android:id/mask"
+        android:width="60dp"
+        android:height="60dp"
+        android:gravity="center">
         <shape android:shape="oval">
             <solid android:color="@color/bg_hover" />
         </shape>

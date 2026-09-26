@@ -46,42 +46,30 @@
             <TextView
                 style="@style/AegisSectionLabel"
                 android:text="@string/storage_section_usage" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/storage_messages"
                     layout="@layout/item_settings_row" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/storage_attachments"
                     layout="@layout/item_settings_row" />
-            </LinearLayout>
+            </org.aegis.app.components.AegisGroup>
             <TextView
                 style="@style/AegisSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/storage_section_cleanup" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/storage_purge_expired"
                     layout="@layout/item_settings_row" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/storage_clear_cache"
                     layout="@layout/item_settings_row" />
-            </LinearLayout>
+            </org.aegis.app.components.AegisGroup>
             <TextView
                 style="@style/AegisCaption"
                 android:layout_marginTop="@dimen/space_m"
