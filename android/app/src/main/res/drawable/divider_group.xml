@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Разделитель строк в группе: линия от текста до края, под значком её
+  нет (16 поле + 22 значок + 16 промежуток = 54).
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="54dp">
+    <shape android:shape="rectangle">
+        <solid android:color="@color/line" />
+        <size android:height="1dp" />
+    </shape>
+</inset>

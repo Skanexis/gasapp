@@ -365,7 +365,6 @@
     <!-- Recovery -->
     <string name="recovery_title">Recovery</string>
     <string name="recovery_intro">Your backup is encrypted with a recovery key. Only you have that key: neither we nor the server can decrypt the backup.</string>
-    <string name="recovery_section_state">Status</string>
     <string name="recovery_section_actions">Actions</string>
     <string name="recovery_pill_encrypted">Backup is encrypted</string>
     <string name="recovery_pill_server_cannot">The server cannot decrypt it</string>
@@ -460,7 +459,6 @@
     <string name="settings_vault">File vault</string>
 
     <!-- Security center -->
-    <string name="security_section_checks">Checks</string>
     <string name="security_section_details">Details</string>
     <string name="security_attention_title">Needs attention</string>
     <plurals name="security_attention">
@@ -636,4 +634,7 @@
     <string name="onboarding_restore_continue">Continue to the backup</string>
     <string name="onboarding_step">%1$d / %2$d</string>
     <string name="onboarding_step_description">Step %1$d of %2$d</string>
+    <string name="security_section_passed">Protected</string>
+    <string name="recovery_state_on">Backup is set up</string>
+    <string name="recovery_state_off">Backup is not set up</string>
 </resources>

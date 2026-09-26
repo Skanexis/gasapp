@@ -3,6 +3,11 @@
 <!--
   Recovery Center (раздел 12.4 плана).
 
+  Сверху — состояние копии одной карточкой и одно главное действие
+  (UI kit: одна главная кнопка на экран): пока ключа нет — создать
+  его, когда есть — сделать копию. Прочие действия — строками группы,
+  а не столбиком из четырёх кнопок, половина которых была погашена.
+
   🔐 Экран объясняет главное свойство резервной копии: расшифровать её
   можно только ключом восстановления, и второго экземпляра этого ключа
   не существует. Предупреждение стоит внизу и набрано как тревога,
@@ -30,6 +35,7 @@
         <TextView
             style="@style/AegisAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
+            android:accessibilityHeading="true"
             android:text="@string/recovery_title" />
     </LinearLayout>
 
@@ -43,63 +49,72 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="@dimen/screen_padding">
+            android:paddingStart="@dimen/screen_padding"
+            android:paddingEnd="@dimen/screen_padding"
+            android:paddingBottom="@dimen/space_l">
 
-            <TextView
-                style="@style/AegisText.Body.Secondary"
+            <!-- Состояние: значок, итог словами, последняя копия, главное действие. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/recovery_intro" />
+                android:layout_marginTop="@dimen/space_s"
+                android:background="@drawable/bg_card_rounded"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/space_l">
 
-            <!--
-              Состояние копии: три утверждения, каждое из которых либо
-              верно, либо нет. Пилюли, а не галочки в тексте: пользователь
-              должен видеть состояние, не читая абзац.
-            -->
-            <TextView
-                style="@style/AegisSectionLabel"
-                android:layout_marginTop="@dimen/space_l"
-                android:text="@string/recovery_section_state" />
-
-            <LinearLayout style="@style/AegisPanel">
-
-                <TextView
-                    android:id="@+id/recovery_pill_encrypted"
-                    style="@style/AegisPill.Ok"
-                    android:layout_marginBottom="@dimen/space_xs"
-                    android:text="@string/recovery_pill_encrypted" />
+                <ImageView
+                    android:id="@+id/recovery_state_icon"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/bg_shield_large"
+                    android:contentDescription="@null"
+                    android:padding="16dp"
+                    android:src="@drawable/ic_key"
+                    app:tint="@color/status_warn" />
 
                 <TextView
-                    android:id="@+id/recovery_pill_server"
-                    style="@style/AegisPill.Ok"
-                    android:layout_marginBottom="@dimen/space_xs"
-                    android:text="@string/recovery_pill_server_cannot" />
-
-                <TextView
-                    android:id="@+id/recovery_pill_configured"
-                    style="@style/AegisPill.Warn"
-                    tools:text="Копия ещё не настроена" />
+                    android:id="@+id/recovery_state_title"
+                    style="@style/AegisText.H3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:accessibilityLiveRegion="polite"
+                    tools:text="Backup is not set up" />
 
                 <TextView
                     android:id="@+id/recovery_last"
-                    style="@style/AegisText.Caption.Muted"
-                    android:layout_width="match_parent"
+                    style="@style/AegisText.Caption"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_s"
-                    tools:text="Последняя копия: 2 часа назад" />
-            </LinearLayout>
+                    android:layout_marginTop="@dimen/space_xs"
+                    tools:text="No backups yet" />
 
-            <TextView
-                style="@style/AegisSectionLabel"
-                android:layout_marginTop="@dimen/space_l"
-                android:text="@string/recovery_section_actions" />
+                <!--
+                  Два свойства копии, верные всегда: галочкой, а не
+                  абзацем — их видно, не читая.
+                -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:orientation="vertical">
 
-            <LinearLayout style="@style/AegisPanel">
+                    <TextView
+                        style="@style/AegisRecoveryFact"
+                        android:text="@string/recovery_pill_encrypted" />
+
+                    <TextView
+                        style="@style/AegisRecoveryFact"
+                        android:layout_marginTop="@dimen/space_s"
+                        android:text="@string/recovery_pill_server_cannot" />
+                </LinearLayout>
 
                 <org.aegis.app.components.AegisButton
                     android:id="@+id/recovery_create"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_l"
                     android:text="@string/recovery_create"
                     app:buttonVariant="primary" />
 
@@ -107,58 +122,68 @@
                     android:id="@+id/recovery_backup_now"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_s"
+                    android:layout_marginTop="@dimen/space_l"
                     android:text="@string/recovery_backup_now"
-                    app:buttonVariant="secondary" />
+                    android:visibility="gone"
+                    app:buttonVariant="primary" />
 
-                <org.aegis.app.components.AegisButton
-                    android:id="@+id/recovery_restore"
-                    android:layout_width="match_parent"
+                <TextView
+                    android:id="@+id/recovery_status"
+                    style="@style/AegisText.Caption"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
-                    android:text="@string/recovery_restore"
-                    app:buttonVariant="secondary" />
-
-                <!--
-                  Смена ключа помечена как разрушительная: она делает
-                  прежние копии недоступными этим устройством.
-                -->
-                <org.aegis.app.components.AegisButton
-                    android:id="@+id/recovery_new_key"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_s"
-                    android:text="@string/recovery_new_key"
-                    app:buttonVariant="outline" />
+                    android:accessibilityLiveRegion="polite"
+                    android:gravity="center"
+                    android:visibility="gone"
+                    tools:text="Backup created: 128 records"
+                    tools:visibility="visible" />
             </LinearLayout>
 
             <TextView
-                android:id="@+id/recovery_status"
-                style="@style/AegisText.Caption"
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:paddingStart="@dimen/space_xs"
+                android:text="@string/recovery_section_actions" />
+
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+
+                <include android:id="@+id/recovery_restore" layout="@layout/item_settings_row" />
+
+                <!--
+                  Смена ключа — только когда ключ есть: она делает
+                  прежние копии недоступными этим устройством.
+                -->
+                <include android:id="@+id/recovery_new_key" layout="@layout/item_settings_row" />
+            </org.aegis.app.components.AegisGroup>
+
+            <TextView
+                style="@style/AegisText.Body.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_m"
-                android:visibility="gone"
-                tools:text="Копия собрана: 128 записей"
-                tools:visibility="visible" />
+                android:layout_marginTop="@dimen/space_l"
+                android:paddingStart="@dimen/space_xs"
+                android:paddingEnd="@dimen/space_xs"
+                android:text="@string/recovery_intro" />
 
             <!--
               Предупреждение внизу и последним: это то, с чем человек
               уходит с экрана.
             -->
-            <LinearLayout
-                style="@style/AegisPanel.Deep"
-                android:layout_marginTop="@dimen/space_l">
-
-                <TextView
-                    style="@style/AegisText.Body"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/recovery_warning"
-                    android:textColor="@color/status_warn" />
-            </LinearLayout>
-
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_m"
+                android:background="@drawable/bg_notice_warn"
+                android:drawablePadding="12dp"
+                android:fontFamily="@font/inter"
+                android:lineSpacingExtra="4sp"
+                android:padding="@dimen/space_m"
+                android:text="@string/recovery_warning"
+                android:textColor="@color/status_warn"
+                android:textSize="14sp"
+                app:drawableStartCompat="@drawable/ic_alert"
+                app:drawableTint="@color/status_warn" />
         </LinearLayout>
     </ScrollView>
-
 </LinearLayout>

@@ -411,6 +411,9 @@ class SecurityCenterActivity : AppCompatActivity() {
 
         findViewById<ImageView>(R.id.score_ring).drawable?.let { ring ->
             ring.level = passed * MAX_LEVEL / total
+            // Дуга — цветом итога, как и число: зелёная дуга при
+            // «требует внимания» спорила бы с жёлтой цифрой.
+            (ring as? android.graphics.drawable.LayerDrawable)?.getDrawable(1)?.setTint(statusColor(pending == 0))
         }
 
         // «Защищено» — только когда это правда. Заголовок, не зависящий
@@ -426,12 +429,26 @@ class SecurityCenterActivity : AppCompatActivity() {
         }
     }
 
-    /** Заполняет список проверок: непройденные — первыми. */
+    /**
+     * Заполняет проверки двумя группами: требующие внимания — сверху,
+     * пройденные — ниже. Пустая группа прячется вместе с подписью.
+     */
     private fun renderChecks(checks: List<Check>) {
-        val list = findViewById<LinearLayout>(R.id.security_checks)
+        val (passed, attention) = checks.partition { it.passed }
+
+        fillChecks(R.id.security_checks_attention, R.id.security_attention_label, attention)
+        fillChecks(R.id.security_checks_passed, R.id.security_passed_label, passed)
+    }
+
+    private fun fillChecks(groupId: Int, labelId: Int, checks: List<Check>) {
+        val list = findViewById<LinearLayout>(groupId)
         list.removeAllViews()
 
-        checks.sortedBy { it.passed }.forEach { check ->
+        val shown = if (checks.isEmpty()) View.GONE else View.VISIBLE
+        list.visibility = shown
+        findViewById<View>(labelId).visibility = shown
+
+        checks.forEach { check ->
             val row = layoutInflater.inflate(R.layout.item_settings_row, list, false)
 
             // Короткое пояснение («Не сверено: 3») — значением справа,

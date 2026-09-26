@@ -19,6 +19,7 @@ import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.validateRecoveryKey
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -94,10 +95,18 @@ class RecoveryCenterActivity : AppCompatActivity() {
             startActivity(Intent(this, RecoveryKeyActivity::class.java))
         }
         findViewById<AegisButton>(R.id.recovery_backup_now).setOnClickListener { backupNow() }
-        findViewById<AegisButton>(R.id.recovery_restore).setOnClickListener {
-            startActivity(Intent(this, RestoreActivity::class.java))
-        }
-        findViewById<AegisButton>(R.id.recovery_new_key).setOnClickListener { newKey() }
+        SettingsRow.bind(
+            root = findViewById(R.id.recovery_restore),
+            label = R.string.recovery_restore,
+            icon = R.drawable.ic_database,
+            onClick = { startActivity(Intent(this, RestoreActivity::class.java)) },
+        )
+        SettingsRow.bind(
+            root = findViewById(R.id.recovery_new_key),
+            label = R.string.recovery_new_key,
+            icon = R.drawable.ic_key,
+            onClick = ::newKey,
+        )
     }
 
     override fun onStart() {
@@ -133,20 +142,27 @@ class RecoveryCenterActivity : AppCompatActivity() {
         val status = runCatching { Core.messenger().backupStatus() }.getOrNull()
 
         val configured = status?.configured == true
-        val pill = findViewById<TextView>(R.id.recovery_pill_configured)
 
-        // Меняется и фон, и цвет текста: жёлтый текст на зелёной
-        // подложке нечитаем, а пилюля должна опознаваться цветом
-        // с одного взгляда.
-        if (configured) {
-            pill.setText(R.string.recovery_pill_configured)
-            pill.setBackgroundResource(R.drawable.bg_pill_ok)
-            pill.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.status_ok))
-        } else {
-            pill.setText(R.string.recovery_pill_not_configured)
-            pill.setBackgroundResource(R.drawable.bg_pill_warn)
-            pill.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.status_warn))
+        // Состояние не только цветом (раздел 20.5): значок и слова
+        // тоже разные — щит с галочкой у настроенной копии, ключ
+        // у ненастроенной.
+        val stateColor = androidx.core.content.ContextCompat.getColor(
+            this,
+            if (configured) R.color.status_ok else R.color.status_warn,
+        )
+        findViewById<ImageView>(R.id.recovery_state_icon).apply {
+            setImageResource(if (configured) R.drawable.ic_shield_check else R.drawable.ic_key)
+            imageTintList = android.content.res.ColorStateList.valueOf(stateColor)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                androidx.core.content.ContextCompat.getColor(
+                    this@RecoveryCenterActivity,
+                    if (configured) R.color.status_ok_dim else R.color.status_warn_dim,
+                ),
+            )
         }
+        findViewById<TextView>(R.id.recovery_state_title).setText(
+            if (configured) R.string.recovery_state_on else R.string.recovery_state_off,
+        )
 
         findViewById<TextView>(R.id.recovery_last).text = when (val at = status?.lastBackupAtMillis) {
             null -> getString(R.string.recovery_never)
@@ -157,16 +173,13 @@ class RecoveryCenterActivity : AppCompatActivity() {
         // либо ключ создан прямо сейчас, либо цепочка уже начата и
         // ключ надо ввести.
         val hasKey = pendingKey != null || configured
-        findViewById<AegisButton>(R.id.recovery_backup_now).apply {
-            isEnabled = hasKey
-            // Главное действие — одно на экран (UI kit): пока ключа нет —
-            // создать его, когда есть — сделать копию. Прежде «Создать
-            // ключ» оставалась главной и при созданном ключе, хотя
-            // смена ключа — отдельная кнопка «Создать новый ключ».
-            variant = if (hasKey) AegisButton.Variant.Primary else AegisButton.Variant.Secondary
-        }
+        // Главное действие — одно на экран (UI kit): пока ключа нет —
+        // создать его, когда есть — сделать копию. Погашенная кнопка
+        // «Сделать копию» рядом с «Создать ключ» только мешала.
+        findViewById<AegisButton>(R.id.recovery_backup_now).visibility = if (hasKey) View.VISIBLE else View.GONE
         findViewById<AegisButton>(R.id.recovery_create).visibility = if (hasKey) View.GONE else View.VISIBLE
-        findViewById<AegisButton>(R.id.recovery_new_key).isEnabled = configured
+        // Сменить можно только существующий ключ.
+        findViewById<View>(R.id.recovery_new_key).visibility = if (configured) View.VISIBLE else View.GONE
     }
 
     /**

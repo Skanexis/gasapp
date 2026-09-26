@@ -46,52 +46,34 @@
             <TextView
                 style="@style/AegisSectionLabel"
                 android:text="@string/about_section_version" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/about_app_version"
-                    layout="@layout/item_panel_row" />
+                    layout="@layout/item_settings_row" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/about_core_version"
-                    layout="@layout/item_panel_row" />
+                    layout="@layout/item_settings_row" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/about_protocol_version"
-                    layout="@layout/item_panel_row" />
-            </LinearLayout>
+                    layout="@layout/item_settings_row" />
+            </org.aegis.app.components.AegisGroup>
             <TextView
                 style="@style/AegisSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/about_section_legal" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/about_license"
-                    layout="@layout/item_panel_row" />
+                    layout="@layout/item_settings_row" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="@dimen/space_xs"
-                    android:background="@color/line" />
-
-                <include
+<include
                     android:id="@+id/about_source"
-                    layout="@layout/item_panel_row" />
-            </LinearLayout>
+                    layout="@layout/item_settings_row" />
+            </org.aegis.app.components.AegisGroup>
             <TextView
                 style="@style/AegisCaption"
                 android:layout_marginTop="@dimen/space_m"

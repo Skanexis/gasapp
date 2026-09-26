@@ -66,12 +66,14 @@
 
     <!-- Клавиша цифровой клавиатуры -->
     <style name="AegisKeypadKey">
-        <item name="android:layout_width">72dp</item>
-        <item name="android:layout_height">56dp</item>
+        <item name="android:layout_width">80dp</item>
+        <item name="android:layout_height">64dp</item>
         <item name="android:background">@drawable/bg_keypad_key</item>
         <item name="android:gravity">center</item>
         <item name="android:textColor">@color/text_primary</item>
-        <item name="android:textSize">22sp</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">500</item>
+        <item name="android:textSize">26sp</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
     </style>

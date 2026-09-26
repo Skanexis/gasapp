@@ -37,12 +37,6 @@ class SettingsActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_settings)
 
-        // Подсветка нажатия — внутри скругления группы. Метод есть
-        // с API 21, атрибут разметки — только с 31, поэтому здесь.
-        for (row in listOf(R.id.settings_security, R.id.settings_appearance, R.id.settings_recovery, R.id.settings_about)) {
-            (findViewById<View>(row).parent as View).clipToOutline = true
-        }
-
         renderProfile()
         renderRows()
         BottomNav.bind(this, BottomNav.Tab.Settings)

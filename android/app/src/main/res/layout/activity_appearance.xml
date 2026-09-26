@@ -50,12 +50,12 @@
             <TextView
                 style="@style/AegisSectionLabel"
                 android:text="@string/appearance_section_theme" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/appearance_theme"
-                    layout="@layout/item_panel_row" />
-            </LinearLayout>
+                    layout="@layout/item_settings_row" />
+            </org.aegis.app.components.AegisGroup>
             <TextView
                 style="@style/AegisCaption"
                 android:layout_marginTop="@dimen/space_m"
@@ -64,12 +64,12 @@
                 style="@style/AegisSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/appearance_section_text" />
-            <LinearLayout style="@style/AegisPanel">
+            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
 
                 <include
                     android:id="@+id/appearance_language"
-                    layout="@layout/item_panel_row" />
-            </LinearLayout>
+                    layout="@layout/item_settings_row" />
+            </org.aegis.app.components.AegisGroup>
             <TextView
                 style="@style/AegisCaption"
                 android:layout_marginTop="@dimen/space_m"
