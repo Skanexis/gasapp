@@ -49,6 +49,9 @@
     <style name="AegisAppBarTitle.Large">
         <item name="android:textSize">@dimen/text_h1</item>
         <item name="android:accessibilityHeading">true</item>
+        <!-- Строка 48dp: с кнопками и без заголовок на одной высоте. -->
+        <item name="android:minHeight">@dimen/touch_target</item>
+        <item name="android:gravity">center_vertical</item>
     </style>
 
 

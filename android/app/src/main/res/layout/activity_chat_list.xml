@@ -23,7 +23,7 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="@dimen/screen_padding"
-            android:paddingTop="@dimen/space_s"
+            android:paddingTop="@dimen/space_m"
             android:paddingEnd="@dimen/space_xs"
             android:paddingBottom="@dimen/space_s">
 

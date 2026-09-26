@@ -216,6 +216,12 @@
         <item name="android:paddingEnd">@dimen/screen_padding</item>
         <item name="android:paddingTop">@dimen/space_m</item>
         <item name="android:paddingBottom">@dimen/space_s</item>
+        <!--
+          Строка 48dp, как в шапках с кнопками, — заголовки всех вкладок
+          на одной высоте. minHeight считает и отступы: 16 + 48 + 8.
+        -->
+        <item name="android:minHeight">72dp</item>
+        <item name="android:gravity">center_vertical</item>
     </style>
 
     <!--

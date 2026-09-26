@@ -21,9 +21,9 @@
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="@dimen/screen_padding"
-        android:paddingTop="16dp"
+        android:paddingTop="@dimen/space_m"
         android:paddingEnd="@dimen/screen_padding"
-        android:paddingBottom="16dp">
+        android:paddingBottom="@dimen/space_m">
 
         <TextView
             style="@style/AegisAppBarTitle.Large"
