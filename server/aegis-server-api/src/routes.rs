@@ -884,6 +884,21 @@ async fn recover_account(
 /// Длина ключа ML-DSA-65.
 const PQ_IDENTITY_KEY_LEN: usize = 1952;
 
+/// Наибольшая длина открытого предключа: ML-KEM-1024 (1568) с запасом.
+const MAX_PREKEY_PUBLIC_BYTES: usize = 2048;
+
+/// Наибольшая длина подписи предключа: гибридная (3373) с запасом.
+const MAX_PREKEY_SIGNATURE_BYTES: usize = 4096;
+
+/// Разбирает hex с пределом длины: сверх предела — отказ, а не запись.
+fn decode_key(hex_text: &str, max_bytes: usize) -> Result<Vec<u8>, ApiError> {
+    if hex_text.len() > max_bytes.saturating_mul(2) {
+        return Err(ApiError::BadRequest);
+    }
+
+    decode_hex(hex_text)
+}
+
 /// Длина гибридной подписи: XEdDSA (64) ‖ ML-DSA-65 (3309).
 const HYBRID_SIGNATURE_LEN: usize = 3373;
 
@@ -937,21 +952,35 @@ async fn publish_keys(
         return Err(ApiError::Unauthorized);
     }
 
-    let signed_public = decode_hex(&request.signed_public)?;
-    let signed_signature = decode_hex(&request.signed_signature)?;
-    let kem_public = decode_hex(&request.kem_public)?;
-    let kem_signature = decode_hex(&request.kem_signature)?;
+    // 🔐 Пределы до разбора: число ключей и длина каждого. Прежде
+    // сервер хранил и раздавал другим ключи любой длины — мегабайт
+    // на ключ, — и загрузка ничем не ограничивалась.
+    let max_keys = usize::try_from(repo::MAX_ONE_TIME_PREKEYS).unwrap_or(usize::MAX);
+    if request.one_time.len() > max_keys || request.one_time_kem.len() > max_keys {
+        return Err(ApiError::BadRequest);
+    }
+
+    let signed_public = decode_key(&request.signed_public, MAX_PREKEY_PUBLIC_BYTES)?;
+    let signed_signature = decode_key(&request.signed_signature, MAX_PREKEY_SIGNATURE_BYTES)?;
+    let kem_public = decode_key(&request.kem_public, MAX_PREKEY_PUBLIC_BYTES)?;
+    let kem_signature = decode_key(&request.kem_signature, MAX_PREKEY_SIGNATURE_BYTES)?;
 
     let one_time = request
         .one_time
         .iter()
-        .map(|(id, key)| decode_hex(key).map(|bytes| (*id, bytes)))
+        .map(|(id, key)| decode_key(key, MAX_PREKEY_PUBLIC_BYTES).map(|bytes| (*id, bytes)))
         .collect::<Result<Vec<_>, _>>()?;
 
     let one_time_kem = request
         .one_time_kem
         .iter()
-        .map(|(id, key, signature)| Ok((*id, decode_hex(key)?, decode_hex(signature)?)))
+        .map(|(id, key, signature)| {
+            Ok((
+                *id,
+                decode_key(key, MAX_PREKEY_PUBLIC_BYTES)?,
+                decode_key(signature, MAX_PREKEY_SIGNATURE_BYTES)?,
+            ))
+        })
         .collect::<Result<Vec<_>, ApiError>>()?;
 
     // Ключ sealed sender: длины проверяются до базы — неверная длина

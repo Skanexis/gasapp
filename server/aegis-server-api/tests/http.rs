@@ -814,6 +814,63 @@ async fn prekey_count_is_exposed() {
     assert_eq!(count.as_i64(), Some(2));
 }
 
+/// 🔐 Загрузка предключей ограничена: число и длина.
+///
+/// Прежде устройство добавляло сколько угодно ключей любой длины —
+/// любой зарегистрированный аккаунт забивал диск сервера.
+#[tokio::test]
+async fn prekey_uploads_are_bounded() {
+    let state = require_state!();
+    let (device_id, private) = register_signing_device(&state, &unique_name("hoarder"), 0x27).await;
+
+    let publish = |one_time: Vec<(i32, String)>, kem_public: String| {
+        let state = Arc::clone(&state);
+        let private = private.clone();
+        async move {
+            call_signed_json(
+                &state,
+                &private,
+                "PUT",
+                &format!("/v1/keys/{device_id}"),
+                Some(serde_json::json!({
+                    "signed_key_id": 1,
+                    "signed_public": hex::encode([0x11u8; 32]),
+                    "signed_signature": hex::encode([0xAAu8; 64]),
+                    "kem_key_id": 2,
+                    "kem_public": kem_public,
+                    "kem_signature": hex::encode([0xBBu8; 64]),
+                    "one_time": one_time,
+                    "one_time_kem": [],
+                })),
+            )
+            .await
+            .0
+        }
+    };
+    let keys = |from: i32, count: i32| -> Vec<(i32, String)> {
+        (from..from + count).map(|id| (id, hex::encode([0x33u8; 32]))).collect()
+    };
+    let kem = hex::encode([0x22u8; 1568]);
+
+    // Ключ в 64 КБ — в пределе тела, но не ключ: отказ.
+    assert_eq!(
+        publish(keys(1, 1), hex::encode(vec![0x22u8; 64 * 1024])).await,
+        StatusCode::BAD_REQUEST,
+        "принят предключ в 64 КБ"
+    );
+
+    // Полный пул клиента и пополнение до предела проходят…
+    assert_eq!(publish(keys(1, 100), kem.clone()).await, StatusCode::NO_CONTENT);
+    assert_eq!(publish(keys(101, 100), kem.clone()).await, StatusCode::NO_CONTENT);
+
+    // …а сверх предела — нет.
+    assert_eq!(
+        publish(keys(201, 1), kem).await,
+        StatusCode::INSUFFICIENT_STORAGE,
+        "пул предключей растёт без предела"
+    );
+}
+
 /// 🔐 Аутентификация с просроченным челленджем отвергается.
 #[tokio::test]
 async fn expired_challenge_is_rejected() {
