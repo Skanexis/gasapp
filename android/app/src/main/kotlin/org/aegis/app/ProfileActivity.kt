@@ -122,7 +122,10 @@ class ProfileActivity : AppCompatActivity() {
             text = getString(R.string.contact_username, name),
         )
 
-        AegisToast.show(this, R.string.profile_copied, AegisToast.Tone.Success)
+        // На Android 13+ подтверждает система (см. SecureClipboard).
+        if (!SecureClipboard.systemConfirmsCopy) {
+            AegisToast.show(this, R.string.profile_copied, AegisToast.Tone.Success)
+        }
     }
 
     /**

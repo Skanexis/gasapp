@@ -873,7 +873,10 @@ class ChatActivity : AppCompatActivity() {
             text = message.text,
         )
 
-        AegisToast.show(this, R.string.message_copied, AegisToast.Tone.Success)
+        // На Android 13+ подтверждает система (см. SecureClipboard).
+        if (!SecureClipboard.systemConfirmsCopy) {
+            AegisToast.show(this, R.string.message_copied, AegisToast.Tone.Success)
+        }
     }
 
     /**
