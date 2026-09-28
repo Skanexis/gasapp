@@ -268,8 +268,9 @@ class RecoveryCenterActivity : AppCompatActivity() {
             outcome.onSuccess { backup ->
                 pendingArchive = backup.archive
                 showStatus(
-                    getString(
-                        R.string.recovery_created,
+                    resources.getQuantityString(
+                        R.plurals.recovery_created,
+                        backup.recordCount.toInt(),
                         backup.recordCount.toInt(),
                         backup.generation.toInt(),
                     ),
