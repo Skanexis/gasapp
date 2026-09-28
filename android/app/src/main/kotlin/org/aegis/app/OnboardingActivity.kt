@@ -134,9 +134,11 @@ class OnboardingActivity : AppCompatActivity() {
         showStep(step)
 
         direct.setOnCheckedChangeListener { _, checked ->
-            findViewById<TextView>(R.id.onboarding_network_hint).setText(
-                if (checked) R.string.onboarding_network_direct else R.string.onboarding_network_tor,
-            )
+            findViewById<TextView>(R.id.onboarding_network_hint).apply {
+                setText(if (checked) R.string.onboarding_network_direct else R.string.onboarding_network_tor)
+                // Прямое соединение — цена за него жёлтым, а не значком в тексте.
+                setTextColor(getColor(if (checked) R.color.status_warn else R.color.text_muted))
+            }
             // Прямое соединение — Tor не нужен; снова Tor — прогрев.
             if (checked) {
                 lifecycleScope.launch(Dispatchers.IO) { EmbeddedTor.stop() }

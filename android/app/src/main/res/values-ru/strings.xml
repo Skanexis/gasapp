@@ -10,7 +10,7 @@
     <string name="ffi_error">Ошибка ядра</string>
     <!-- Отправка заблокирована: у верифицированного контакта сменился
          identity-ключ, нужна повторная сверка safety number. -->
-    <string name="send_blocked">🔒 Отправка заблокирована: ключ контакта сменился</string>
+    <string name="send_blocked">Отправка заблокирована: ключ контакта сменился</string>
     <string name="send_allowed">✓ Отправка разрешена</string>
 
     <!-- Компоненты дизайн-системы -->
@@ -32,16 +32,16 @@
     <string name="message_hint">Сообщение</string>
     <string name="message_hint_closed">Писать пока нельзя — см. выше</string>
     <string name="send">Отправить</string>
-    <string name="key_changed_title">🔒 Два ключа под одним именем</string>
+    <string name="key_changed_title">Два ключа под одним именем</string>
     <string name="key_changed_body">Сервер теперь называет для «%1$s» другой ключ. Это может быть переустановка — или подмена. Отправка остановлена, пока вы не сверите safety number при встрече или по видео.</string>
-    <string name="key_unconfirmed_title">🔒 Ключ ещё не подтверждён</string>
+    <string name="key_unconfirmed_title">Ключ ещё не подтверждён</string>
     <string name="key_unconfirmed_body">Ключ «%1$s» пришёл от сервера — а сервер мог подсунуть свой. Когда тот же ключ простоит в открытом журнале ключей сутки, приложение подтвердит его само. Или отсканируйте код safety number собеседника при встрече либо сверьте его по видео. До тех пор читать можно, писать — нет.</string>
     <string name="key_replaced_title">Этот ключ заменён</string>
     <string name="key_replaced_body">У «%1$s» теперь другой ключ. Эта переписка остаётся для чтения, новые сообщения — в чате с действующим ключом.</string>
     <string name="verify_safety_number">Сверить safety number</string>
 
     <!-- Блокировка -->
-    <string name="lock_icon">🔒</string>
+    <string name="lock_icon">Заблокировано</string>
     <string name="lock_title">AEGIS заблокирован</string>
     <string name="lock_subtitle">Введите PIN, чтобы расшифровать переписку</string>
     <string name="pin_hint">PIN</string>
@@ -131,7 +131,7 @@
     <string name="onboarding_error_taken">Это имя уже занято</string>
     <string name="onboarding_direct">Подключаться напрямую, без Tor</string>
     <string name="onboarding_network_tor">Соединения идут через Tor, встроенный в приложение, и сервер не видит ваш IP-адрес. Ничего дополнительно ставить не нужно.</string>
-    <string name="onboarding_network_direct">⚠️ Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети.</string>
+    <string name="onboarding_network_direct">Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети.</string>
     <string name="onboarding_error_tor">Не удалось подключиться через Tor. Проверьте интернет и повторите или выберите прямое соединение.</string>
     <string name="onboarding_error_network">Сервер недоступен. Проверьте соединение.</string>
     <string name="new_chat_hint">Введите имя пользователя собеседника</string>

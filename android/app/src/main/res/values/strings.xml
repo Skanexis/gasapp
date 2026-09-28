@@ -36,7 +36,7 @@
     <string name="ffi_error">Core error</string>
     <!-- Sending is blocked: a verified contact's identity key changed,
          the safety number has to be compared again. -->
-    <string name="send_blocked">🔒 Sending blocked: the contact\'s key changed</string>
+    <string name="send_blocked">Sending blocked: the contact\'s key changed</string>
     <string name="send_allowed">✓ Sending allowed</string>
     <string name="button_loading">Loading…</string>
     <string name="chat_verified_mark">✓</string>
@@ -50,16 +50,16 @@
     <string name="message_hint">Message</string>
     <string name="message_hint_closed">Writing is closed — see above</string>
     <string name="send">Send</string>
-    <string name="key_changed_title">🔒 Two keys for one name</string>
+    <string name="key_changed_title">Two keys for one name</string>
     <string name="key_changed_body">The server now gives a different key for “%1$s”. It may be a reinstall — or an impostor. Sending is paused until you compare safety numbers in person or over video.</string>
-    <string name="key_unconfirmed_title">🔒 Key not confirmed yet</string>
+    <string name="key_unconfirmed_title">Key not confirmed yet</string>
     <string name="key_unconfirmed_body">The key of “%1$s” came from the server — and the server could have handed you its own. Once the same key has stood in the public key log for a day, the app confirms it by itself. Or scan their safety number code in person, or compare it over video. Until then you can read, but not write.</string>
     <string name="key_replaced_title">This key was replaced</string>
     <string name="key_replaced_body">“%1$s” now uses a different key. This conversation stays readable; new messages go to the chat with the current key.</string>
     <string name="verify_safety_number">Compare safety number</string>
 
     <!-- Lock screen -->
-    <string name="lock_icon">🔒</string>
+    <string name="lock_icon">Locked</string>
     <string name="lock_title">AEGIS is locked</string>
     <string name="lock_subtitle">Enter your PIN to decrypt your messages</string>
     <string name="pin_hint">PIN</string>
@@ -147,7 +147,7 @@
     <string name="onboarding_error_taken">That username is taken</string>
     <string name="onboarding_direct">Connect directly, without Tor</string>
     <string name="onboarding_network_tor">Connections go through Tor, built into the app, so the server does not see your IP address. Nothing else to install.</string>
-    <string name="onboarding_network_direct">⚠️ The server will see your IP address: roughly where you are, and which of your accounts share a network.</string>
+    <string name="onboarding_network_direct">The server will see your IP address: roughly where you are, and which of your accounts share a network.</string>
     <string name="onboarding_error_tor">Could not connect through Tor. Check your internet connection and try again, or choose a direct connection.</string>
     <string name="onboarding_error_network">Server unavailable. Check your connection.</string>
     <string name="new_chat_hint">Enter the other person\'s username</string>
