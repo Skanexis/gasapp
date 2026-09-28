@@ -274,7 +274,7 @@ class VaultActivity : AppCompatActivity() {
                 runCatching {
                     val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: error("файл не читается")
-                    val name = displayName(uri)
+                    val name = org.aegis.app.core.VaultTemp.safeName(displayName(uri))
                     val blob = File(vaultDir(), "${System.nanoTime()}.enc")
 
                     val sealed = Core.messenger().addVaultFile(
@@ -427,7 +427,8 @@ class VaultActivity : AppCompatActivity() {
                         nowMillis = System.currentTimeMillis(),
                     )
 
-                    val opened = File(openDir(), file.name)
+                    // 🔐 Имя — от чужого провайдера: только внутри каталога (см. VaultTemp.safeName).
+                    val opened = org.aegis.app.core.VaultTemp.fileFor(this@VaultActivity, file.name)
                     opened.writeBytes(plaintext)
 
                     opened
@@ -472,7 +473,6 @@ class VaultActivity : AppCompatActivity() {
      * Определён в [org.aegis.app.core.VaultTemp]: там же лежит
      * подметание, которое убирает пережившее гибель процесса.
      */
-    private fun openDir(): File = org.aegis.app.core.VaultTemp.directory(this)
 
     private fun showStatus(text: String) {
         findViewById<TextView>(R.id.vault_status).apply {

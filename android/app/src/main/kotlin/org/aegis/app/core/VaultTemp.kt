@@ -48,6 +48,47 @@ object VaultTemp {
     /** Имя каталога временно расшифрованных файлов. */
     const val DIRECTORY = "vault-open"
 
+    /** Наибольшая длина имени файла: предел большинства файловых систем — 255 байт. */
+    private const val MAX_NAME_CHARS = 120
+
+    /**
+     * 🔐 Имя, безопасное как имя файла в каталоге.
+     *
+     * Имя приходит от провайдера, из которого человек выбрал файл
+     * (`DISPLAY_NAME`), то есть от чужого приложения. Вредоносный
+     * провайдер отдавал бы `../../databases/aegis.db`, и расшифрованный
+     * файл лёг бы поверх собственных файлов приложения. Остаётся только
+     * последний сегмент пути, без управляющих символов и точек по краям.
+     */
+    fun safeName(name: String): String {
+        val lastSegment = name.substringAfterLast('/').substringAfterLast('\\')
+        val cleaned = lastSegment
+            .filterNot { it.isISOControl() }
+            .trim()
+            .trim('.')
+            .take(MAX_NAME_CHARS)
+
+        return cleaned.ifEmpty { FALLBACK_NAME }
+    }
+
+    /**
+     * Файл для расшифрованной копии: всегда внутри [directory].
+     *
+     * 🔐 Проверка по канонпути — вторая линия после [safeName]: записи,
+     * сохранённые до исправления, несут имя как есть.
+     */
+    fun fileFor(context: Context, name: String): File {
+        val root = directory(context).canonicalFile
+        val target = File(root, safeName(name)).canonicalFile
+
+        check(target.parentFile == root) { "имя файла выводит за каталог" }
+
+        return target
+    }
+
+    /** Имя, если от исходного ничего не осталось. */
+    private const val FALLBACK_NAME = "file"
+
     /** Каталог временно расшифрованных файлов. */
     fun directory(context: Context): File =
         File(context.cacheDir, DIRECTORY).apply { mkdirs() }
