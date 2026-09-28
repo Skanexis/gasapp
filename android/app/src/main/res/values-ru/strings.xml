@@ -126,7 +126,7 @@
     <string name="onboarding_username_label">Имя пользователя</string>
     <string name="onboarding_username_helper">Латинские буквы, цифры и _. По нему вас найдут собеседники.</string>
     <string name="onboarding_create">Создать аккаунт</string>
-    <string name="onboarding_working">Подбирается доказательство работы…</string>
+    <string name="onboarding_working">Создаём аккаунт — это займёт несколько секунд…</string>
     <string name="onboarding_error_username">3–32 символа: строчные латинские буквы, цифры и _, начиная с буквы</string>
     <string name="onboarding_error_taken">Это имя уже занято</string>
     <string name="onboarding_direct">Подключаться напрямую, без Tor</string>
