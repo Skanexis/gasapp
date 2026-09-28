@@ -24,6 +24,7 @@ import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
+import org.aegis.app.core.ReadMarks
 import org.aegis.app.core.PendingSave
 import org.aegis.app.core.SecureClipboard
 import org.aegis.app.core.SecureWindow
@@ -625,6 +626,16 @@ class ChatActivity : AppCompatActivity() {
             }
 
             adapter.submit(messages)
+
+            // Показано — прочитано: счётчик в списке чатов обнуляется.
+            // Только пока экран виден: сообщение, пришедшее в фоне,
+            // остаётся непрочитанным.
+            val shown = messages.maxOfOrNull { it.timestampMillis }
+            if (shown != null && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                launch(Dispatchers.IO) {
+                    runCatching { ReadMarks.markRead(Core.messenger(), chatId, shown) }
+                }
+            }
 
             // Квитанция после показа: сообщение прочитано тогда, когда
             // оно на экране, а не когда пришло по сети.
