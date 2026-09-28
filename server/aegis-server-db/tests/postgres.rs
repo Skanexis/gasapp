@@ -331,6 +331,49 @@ async fn envelope_round_trips() {
     assert_eq!(first.ciphertext, b"opaque ciphertext");
 }
 
+/// 🔐 Очередь получателя не растёт без предела.
+///
+/// Незнакомец клал конверты в очередь любого, кто не в сети, — 3,7 ГБ
+/// в сутки на человека. Сверх потолка — отказ; получатель забирает
+/// очередь, и место освобождается.
+#[tokio::test]
+async fn a_recipients_queue_is_bounded() {
+    let pool = require_pool!();
+    let (_account, device) =
+        repo::register_account(&pool, &unique_name("flooded"), &[1u8; 32], &[2u8; 32])
+            .await
+            .unwrap();
+
+    let envelope = vec![0x5Au8; aegis_server_db::MAX_ENVELOPE_BYTES];
+    let fits = aegis_server_db::MAX_QUEUE_BYTES_PER_DEVICE
+        / i64::try_from(envelope.len()).unwrap();
+
+    for _ in 0..fits {
+        repo::enqueue_envelope(&pool, device, &envelope, 3600)
+            .await
+            .unwrap();
+    }
+
+    assert!(
+        matches!(
+            repo::enqueue_envelope(&pool, device, &envelope, 3600).await,
+            Err(RepoError::QuotaExceeded)
+        ),
+        "очередь растёт сверх потолка"
+    );
+
+    // Забрал — место освободилось.
+    let waiting = repo::fetch_envelopes(&pool, device, 10).await.unwrap();
+    for envelope in &waiting {
+        repo::acknowledge_envelope(&pool, device, envelope.envelope_id)
+            .await
+            .unwrap();
+    }
+    repo::enqueue_envelope(&pool, device, b"after", 3600)
+        .await
+        .expect("после приёма очередь снова принимает");
+}
+
 /// Время постановки, **выдаваемое клиенту**, округлено до часа.
 ///
 /// ⚠️ Этот тест проверяет выдачу, а не хранение — и был зелёным,

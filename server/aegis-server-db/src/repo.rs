@@ -21,7 +21,8 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use crate::{
-    bucket_to_hour, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES, TOTAL_ATTACHMENT_STORAGE_BYTES,
+    bucket_to_hour, MAX_ATTACHMENT_BYTES, MAX_ENVELOPE_BYTES, MAX_QUEUE_BYTES_PER_DEVICE,
+    TOTAL_ATTACHMENT_STORAGE_BYTES,
 };
 
 /// Ошибка доступа к хранилищу.
@@ -558,6 +559,7 @@ pub async fn count_one_time_prekeys(pool: &PgPool, device_id: Uuid) -> Result<i6
 /// # Errors
 ///
 /// * [`RepoError::EnvelopeTooLarge`] — превышен лимит в 256 КБ.
+/// * [`RepoError::QuotaExceeded`] — очередь получателя полна.
 /// * [`RepoError::NotFound`] — устройства-получателя нет.
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn enqueue_envelope(
@@ -570,6 +572,20 @@ pub async fn enqueue_envelope(
     // но осмысленная ошибка лучше, чем нарушение CHECK.
     if ciphertext.len() > MAX_ENVELOPE_BYTES {
         return Err(RepoError::EnvelopeTooLarge);
+    }
+
+    // 🔐 Потолок очереди получателя (см. `MAX_QUEUE_BYTES_PER_DEVICE`).
+    // Гонка двух постановок даёт небольшое превышение, а не обход.
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(octet_length(ciphertext)), 0)::BIGINT FROM envelopes WHERE destination_device_id = $1",
+    )
+    .bind(destination_device_id)
+    .fetch_one(pool)
+    .await?;
+
+    let after = queued.saturating_add(i64::try_from(ciphertext.len()).unwrap_or(i64::MAX));
+    if after > MAX_QUEUE_BYTES_PER_DEVICE {
+        return Err(RepoError::QuotaExceeded);
     }
 
     let envelope_id = Uuid::new_v4();

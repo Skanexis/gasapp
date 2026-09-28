@@ -825,7 +825,6 @@ async fn prekey_uploads_are_bounded() {
 
     let publish = |one_time: Vec<(i32, String)>, kem_public: String| {
         let state = Arc::clone(&state);
-        let private = private.clone();
         async move {
             call_signed_json(
                 &state,
