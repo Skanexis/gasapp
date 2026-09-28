@@ -682,4 +682,6 @@
     <string name="security_section_passed">В порядке</string>
     <string name="recovery_state_on">Копия настроена</string>
     <string name="recovery_state_off">Копия не настроена</string>
+    <string name="contact_profile_message">Написать</string>
+    <string name="contact_profile_safety_number">Safety number</string>
 </resources>

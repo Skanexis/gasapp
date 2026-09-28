@@ -12,9 +12,9 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.aegis.app.components.AegisButton
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.ui.initialsOf
 import uniffi.aegis.FfiContact
 
 /**
@@ -58,9 +58,8 @@ class ContactProfileActivity : AppCompatActivity() {
         hintView = findViewById(R.id.contact_profile_hint)
         keyView = findViewById(R.id.contact_profile_key)
 
-        findViewById<AegisButton>(R.id.contact_profile_verify).setOnClickListener { verify() }
-        findViewById<AegisButton>(R.id.contact_profile_open_chat)
-            .setOnClickListener { openChat() }
+        findViewById<View>(R.id.contact_profile_verify).setOnClickListener { verify() }
+        findViewById<View>(R.id.contact_profile_open_chat).setOnClickListener { openChat() }
     }
 
     /**
@@ -74,6 +73,7 @@ class ContactProfileActivity : AppCompatActivity() {
 
         nameView.text = ""
         keyView.text = ""
+        findViewById<TextView>(R.id.contact_profile_avatar).text = ""
         contact = null
     }
 
@@ -117,16 +117,28 @@ class ContactProfileActivity : AppCompatActivity() {
     }
 
     private fun render(contact: FfiContact) {
-        nameView.text = contact.username ?: getString(R.string.contact_no_username)
+        val name = contact.username ?: getString(R.string.contact_no_username)
+        nameView.text = name
+        findViewById<TextView>(R.id.contact_profile_avatar).text = initialsOf(name)
         keyView.text = formatKey(contact.identity)
+
+        // Состояние не только цветом (раздел 20.5): у сверенного —
+        // галочка на аватаре и в пилюле.
+        findViewById<View>(R.id.contact_profile_badge).visibility =
+            if (contact.verified) View.VISIBLE else View.GONE
 
         if (contact.verified) {
             verifiedView.setText(R.string.contact_profile_verified)
             verifiedView.setTextColor(ContextCompat.getColor(this, R.color.status_ok))
+            verifiedView.setBackgroundResource(R.drawable.bg_pill_ok)
+            verifiedView.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_check_small, 0, 0, 0)
+            verifiedView.compoundDrawablesRelative[0]?.setTint(ContextCompat.getColor(this, R.color.status_ok))
             hintView.visibility = View.GONE
         } else {
             verifiedView.setText(R.string.contact_profile_unverified)
             verifiedView.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+            verifiedView.setBackgroundResource(R.drawable.bg_pill_neutral)
+            verifiedView.setCompoundDrawablesRelative(null, null, null, null)
             hintView.visibility = View.VISIBLE
         }
     }
@@ -140,7 +152,10 @@ class ContactProfileActivity : AppCompatActivity() {
     private fun formatKey(identity: ByteArray): String =
         identity.joinToString("") { byte -> "%02X".format(byte) }
             .chunked(GROUP_SIZE)
-            .joinToString(" ")
+            // По четыре группы в строке: сетка, а не сплошной перенос,
+            // где строки обрывались на разных местах.
+            .chunked(GROUPS_PER_LINE)
+            .joinToString("\n") { line -> line.joinToString(" ") }
 
     /**
      * Открывает сверку safety number.
@@ -186,5 +201,8 @@ class ContactProfileActivity : AppCompatActivity() {
 
         /** По сколько знаков группировать ключ. */
         private const val GROUP_SIZE = 4
+
+        /** Групп в строке: 16 групп ключа — сетка 4 × 4. */
+        private const val GROUPS_PER_LINE = 4
     }
 }

@@ -250,6 +250,43 @@
         <item name="android:textColor">@color/text_secondary</item>
     </style>
 
+    <!--
+      Плитка действия (карточка контакта): значок в круге и подпись
+      под ним. Плитки делят ширину поровну — ни одно из двух главных
+      действий не выглядит второстепенным.
+    -->
+    <style name="AegisActionTile">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:minHeight">88dp</item>
+        <item name="android:background">@drawable/bg_group_card</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:gravity">center</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">@dimen/space_m</item>
+    </style>
+
+    <style name="AegisActionTileIcon">
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:background">@drawable/bg_avatar</item>
+        <item name="android:padding">9dp</item>
+        <item name="android:importantForAccessibility">no</item>
+        <item name="android:tint">@color/accent_base</item>
+    </style>
+
+    <style name="AegisActionTileLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_s</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">600</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
     <!-- Панель на карточном фоне: вложенная группа внутри панели. -->
     <style name="AegisPanel.Deep">
         <item name="android:background">@drawable/bg_panel_deep</item>
