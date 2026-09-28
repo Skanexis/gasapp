@@ -61,6 +61,16 @@ object SecureClipboard {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    /**
+     * Показывает ли система своё подтверждение копирования.
+     *
+     * С Android 13 система сама показывает всплывающее окно буфера;
+     * своё уведомление поверх него — дубль, который к тому же ложится
+     * на то же место внизу экрана.
+     */
+    val systemConfirmsCopy: Boolean
+        get() = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+
     /** Что именно сейчас лежит в буфере по нашей вине. */
     private var pending: Runnable? = null
 
