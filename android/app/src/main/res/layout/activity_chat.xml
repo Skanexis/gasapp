@@ -126,8 +126,12 @@
             android:id="@+id/key_change_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:drawablePadding="8dp"
+            android:gravity="center_vertical"
             android:text="@string/key_changed_title"
             android:textColor="@color/status_warn"
+            app:drawableStartCompat="@drawable/ic_lock_small"
+            app:drawableTint="@color/status_warn"
             android:textSize="15sp"
             android:fontFamily="@font/inter"
             android:textFontWeight="600" />

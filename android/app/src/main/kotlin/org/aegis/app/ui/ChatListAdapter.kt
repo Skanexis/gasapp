@@ -129,6 +129,20 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
                     if (chat.request) R.color.accent_base else R.color.text_disabled,
                 ),
             )
+            // Запрос — пилюлей, как прочие состояния в kit; время — простым текстом.
+            // Строки переиспользуются, поэтому фон и поля ставятся в обе стороны.
+            if (chat.request) {
+                val density = itemView.resources.displayMetrics.density
+                val horizontal = (8 * density).toInt()
+                val vertical = (3 * density).toInt()
+                time.setBackgroundResource(R.drawable.bg_pill_accent)
+                time.setPadding(horizontal, vertical, horizontal, vertical)
+                time.typeface = android.graphics.Typeface.create(time.typeface, 600, false)
+            } else {
+                time.background = null
+                time.setPadding(0, 0, 0, 0)
+                time.typeface = android.graphics.Typeface.create(time.typeface, 400, false)
+            }
 
             // 🔐 Значок верификации — только у сверенных контактов.
             // Галочка у несверенного означала бы, что проверка
