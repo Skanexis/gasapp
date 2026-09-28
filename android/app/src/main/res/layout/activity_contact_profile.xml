@@ -6,130 +6,188 @@
   Главное на экране — состояние ключа, а не имя и аватар. Имя контакт
   называет сам, и оно ничем не подтверждено; сверенный ключ —
   единственное, что говорит, с кем на самом деле идёт переписка.
+  Поэтому под именем сразу стоит состояние ключа, а сверка — одно
+  из двух главных действий.
 -->
-<ScrollView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_base"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <LinearLayout style="@style/AegisAppBar">
+
+        <ImageView
+            android:id="@+id/contact_profile_back"
+            style="@style/AegisIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <TextView
+            style="@style/AegisAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:accessibilityHeading="true"
+            android:text="@string/contact_profile_title" />
+    </LinearLayout>
+
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="@dimen/screen_padding">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
-        <!--
-          Шапка как на остальных экранах (AegisAppBar): «назад» и
-          заголовок. Отрицательный отступ сверху компенсирует отступ
-          экрана, чтобы заголовок стоял на той же высоте.
-        -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="-8dp"
-            android:gravity="center_vertical"
-            android:minHeight="@dimen/touch_target"
-            android:orientation="horizontal">
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingStart="@dimen/screen_padding"
+            android:paddingEnd="@dimen/screen_padding"
+            android:paddingBottom="@dimen/space_l">
 
-            <ImageView
-                android:id="@+id/contact_profile_back"
-                style="@style/AegisIconButton"
-                android:layout_marginStart="-12dp"
-                android:contentDescription="@string/back"
-                android:src="@drawable/ic_back"
-                app:tint="@color/text_primary" />
+            <!-- Аватар и отметка сверки поверх, как в списке чатов. -->
+            <FrameLayout
+                android:layout_width="@dimen/avatar_xl"
+                android:layout_height="@dimen/avatar_xl"
+                android:layout_marginTop="@dimen/space_s">
+
+                <TextView
+                    android:id="@+id/contact_profile_avatar"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_avatar"
+                    android:fontFamily="@font/inter"
+                    android:gravity="center"
+                    android:importantForAccessibility="no"
+                    android:includeFontPadding="false"
+                    android:textColor="@color/accent_base"
+                    android:textFontWeight="600"
+                    android:textSize="30sp"
+                    tools:text="BV" />
+
+                <ImageView
+                    android:id="@+id/contact_profile_badge"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_gravity="bottom|end"
+                    android:background="@drawable/bg_verified_badge"
+                    android:importantForAccessibility="no"
+                    android:padding="5dp"
+                    android:src="@drawable/ic_check"
+                    android:visibility="gone"
+                    app:tint="@color/accent_on"
+                    tools:visibility="visible" />
+            </FrameLayout>
 
             <TextView
-                style="@style/AegisAppBarTitle"
-                android:layout_marginStart="@dimen/space_s"
-                android:accessibilityHeading="true"
-                android:text="@string/contact_profile_title" />
+                android:id="@+id/contact_profile_name"
+                style="@style/AegisText.H2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_m"
+                tools:text="boris_v2" />
+
+            <!--
+              Состояние ключа. Цвет задаётся кодом: зелёный только после
+              личной сверки, иначе нейтральный.
+
+              🔐 Несверенный контакт не помечается красным: тревожный цвет
+              на состоянии по умолчанию быстро перестают замечать, и тогда
+              он не сработает там, где действительно важен — при смене
+              ключа.
+            -->
+            <TextView
+                android:id="@+id/contact_profile_verified"
+                style="@style/AegisPill.Neutral"
+                android:layout_height="28dp"
+                android:layout_marginTop="@dimen/space_s"
+                android:textSize="12sp"
+                android:drawablePadding="6dp"
+                tools:text="Ключ не сверен" />
+
+            <!-- Два главных действия — плитками рядом, как в карточке контакта. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/contact_profile_open_chat"
+                    style="@style/AegisActionTile">
+
+                    <ImageView
+                        style="@style/AegisActionTileIcon"
+                        android:src="@drawable/ic_chat" />
+
+                    <TextView
+                        style="@style/AegisActionTileLabel"
+                        android:text="@string/contact_profile_message" />
+                </LinearLayout>
+
+                <Space
+                    android:layout_width="@dimen/space_s"
+                    android:layout_height="0dp" />
+
+                <LinearLayout
+                    android:id="@+id/contact_profile_verify"
+                    style="@style/AegisActionTile">
+
+                    <ImageView
+                        style="@style/AegisActionTileIcon"
+                        android:src="@drawable/ic_shield_check" />
+
+                    <TextView
+                        style="@style/AegisActionTileLabel"
+                        android:text="@string/contact_profile_safety_number" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/contact_profile_hint"
+                style="@style/AegisText.Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_m"
+                android:background="@drawable/bg_card_rounded"
+                android:drawablePadding="12dp"
+                android:padding="@dimen/space_m"
+                android:text="@string/contact_profile_unverified_hint"
+                app:drawableStartCompat="@drawable/ic_info"
+                app:drawableTint="@color/text_secondary" />
+
+            <TextView
+                style="@style/AegisSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:paddingStart="@dimen/space_xs"
+                android:text="@string/contact_profile_key" />
+
+            <!--
+              Ключ моноширинным шрифтом и сеткой 4 × 4: его сверяют
+              посимвольно, а пропорциональный шрифт сливает похожие
+              знаки; по строкам глаз не теряет место (UI kit, Key
+              fingerprint).
+            -->
+            <TextView
+                android:id="@+id/contact_profile_key"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_card_rounded"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.06"
+                android:lineSpacingExtra="8sp"
+                android:padding="@dimen/space_m"
+                android:textColor="@color/text_primary"
+                android:textIsSelectable="true"
+                android:textSize="15sp"
+                app:fontFamily="monospace"
+                tools:text="499A 82CB 6E21 7E13\n9F0A 2A4D E4BC 7845" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/contact_profile_name"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:textColor="@color/text_primary"
-            android:textSize="22sp"
-            tools:text="alex.v" />
-
-        <!--
-          Состояние ключа. Цвет задаётся кодом: зелёный только после
-          личной сверки, иначе нейтральный.
-
-          🔐 Несверенный контакт не помечается красным: тревожный цвет
-          на состоянии по умолчанию быстро перестают замечать, и тогда
-          он не сработает там, где действительно важен — при смене
-          ключа.
-        -->
-        <TextView
-            android:id="@+id/contact_profile_verified"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="@drawable/bg_pill_warn"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="4dp"
-            android:textSize="13sp"
-            tools:text="Ключ не сверен" />
-
-        <TextView
-            android:id="@+id/contact_profile_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/contact_profile_unverified_hint"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/contact_profile_key"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <!--
-          Ключ моноширинным шрифтом: его сверяют посимвольно, а
-          пропорциональный шрифт сливает похожие знаки.
-        -->
-        <TextView
-            android:id="@+id/contact_profile_key"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:background="@color/bg_card"
-            android:fontFamily="monospace"
-            app:fontFamily="monospace"
-            android:padding="12dp"
-            android:textColor="@color/text_primary"
-            android:textIsSelectable="true"
-            android:textSize="12sp"
-            tools:text="A1B2 C3D4 E5F6" />
-
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/contact_profile_verify"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/contact_profile_verify"
-            app:buttonVariant="primary" />
-
-        <org.aegis.app.components.AegisButton
-            android:id="@+id/contact_profile_open_chat"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/contact_profile_open_chat"
-            app:buttonVariant="secondary" />
-
-    </LinearLayout>
-
-</ScrollView>
+    </ScrollView>
+</LinearLayout>
