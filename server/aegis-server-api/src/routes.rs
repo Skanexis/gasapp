@@ -884,6 +884,9 @@ async fn recover_account(
 /// Длина ключа ML-DSA-65.
 const PQ_IDENTITY_KEY_LEN: usize = 1952;
 
+/// Наибольшая длина токена push: у FCM и APNs — сотни символов.
+const MAX_PUSH_TOKEN_CHARS: usize = 4096;
+
 /// Наибольшая длина открытого предключа: ML-KEM-1024 (1568) с запасом.
 const MAX_PREKEY_PUBLIC_BYTES: usize = 2048;
 
@@ -1146,6 +1149,20 @@ async fn register_push_token(
 ) -> Result<StatusCode, ApiError> {
     if device.device_id != device_id {
         return Err(ApiError::Unauthorized);
+    }
+
+    // 🔐 Только известные провайдеры и токен разумной длины из печатных
+    // ASCII. Прежде принималось что угодно до двух мегабайт. Особенно
+    // важно для будущего UnifiedPush: там токен — адрес, куда сервер
+    // сам пойдёт запросом, и без списка разрешённых адресов это был бы
+    // запрос во внутреннюю сеть оператора по указке клиента (SSRF).
+    // Поэтому UnifiedPush здесь не принимается, пока такой защиты нет.
+    let known_provider = matches!(request.provider.as_str(), "fcm" | "apns");
+    let sane_token = !request.token.is_empty()
+        && request.token.len() <= MAX_PUSH_TOKEN_CHARS
+        && request.token.bytes().all(|byte| byte.is_ascii_graphic());
+    if !known_provider || !sane_token {
+        return Err(ApiError::BadRequest);
     }
 
     repo::save_push_token(&state.pool, device_id, &request.provider, &request.token).await?;

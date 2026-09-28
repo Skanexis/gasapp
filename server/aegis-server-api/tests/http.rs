@@ -1209,6 +1209,35 @@ async fn a_signature_does_not_cover_a_different_body() {
     );
 }
 
+/// 🔐 Токен push — только известного провайдера и разумной длины.
+///
+/// `UnifiedPush` (токен — адрес, куда сервер пойдёт сам) не принимается:
+/// без списка разрешённых адресов это запрос во внутреннюю сеть
+/// оператора по указке клиента.
+#[tokio::test]
+async fn push_tokens_are_validated() {
+    let state = require_state!();
+    let (device_id, private) = register_signing_device(&state, &unique_name("pusher"), 0x23).await;
+    let uri = format!("/v1/push/{device_id}");
+
+    let put = |provider: &str, token: String| {
+        let state = Arc::clone(&state);
+        let uri = uri.clone();
+        let body = serde_json::json!({ "provider": provider, "token": token });
+        async move { call_signed_json(&state, &private, "PUT", &uri, Some(body)).await.0 }
+    };
+
+    assert_eq!(put("fcm", "abc:DEF-123".to_owned()).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        put("unifiedpush", "http://10.0.0.1/internal".to_owned()).await,
+        StatusCode::BAD_REQUEST,
+        "принят провайдер с токеном-адресом"
+    );
+    assert_eq!(put("fcm", "x".repeat(100_000)).await, StatusCode::BAD_REQUEST);
+    assert_eq!(put("fcm", "with space\n".to_owned()).await, StatusCode::BAD_REQUEST);
+    assert_eq!(put("fcm", String::new()).await, StatusCode::BAD_REQUEST);
+}
+
 /// 🔐 Запрос без хеша тела — формат v1 — отвергается.
 #[tokio::test]
 async fn a_request_without_the_body_hash_is_refused() {
