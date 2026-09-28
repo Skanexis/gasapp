@@ -89,6 +89,15 @@ pub enum AegisError {
     #[error("network error")]
     Network,
 
+    /// Имя уже занято другим аккаунтом.
+    ///
+    /// Своим вариантом, а не [`AegisError::Malformed`]: прежде ответ
+    /// сервера «занято» превращался в «запрос отвергнут», а интерфейс
+    /// показывал его как сбой сети — человек повторял регистрацию
+    /// с тем же именем, каждый раз заново подбирая proof-of-work.
+    #[error("username already taken")]
+    UsernameTaken,
+
     /// Данные не прошли валидацию.
     #[error("malformed data")]
     Malformed,
@@ -155,6 +164,7 @@ mod tests {
             AegisError::IdentityChanged,
             AegisError::PeerUnconfirmed,
             AegisError::InvalidUsername,
+            AegisError::UsernameTaken,
         ];
 
         // Проверка полноты: если в перечислении появится новый вариант,
@@ -174,7 +184,8 @@ mod tests {
                 | AegisError::Malformed
                 | AegisError::IdentityChanged
                 | AegisError::PeerUnconfirmed
-                | AegisError::InvalidUsername => {}
+                | AegisError::InvalidUsername
+                | AegisError::UsernameTaken => {}
             }
         }
 

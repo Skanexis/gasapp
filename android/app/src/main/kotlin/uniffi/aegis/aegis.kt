@@ -6576,6 +6576,14 @@ sealed class FfiException(message: String): kotlin.Exception(message) {
         class InvalidArgument(message: String) : FfiException(message)
         
     /**
+     * Имя занято другим аккаунтом.
+     *
+     * Своим вариантом: интерфейс ведёт обратно к полю имени, а не
+     * показывает сбой сети (см. [`AegisError::UsernameTaken`]).
+     */
+        class UsernameTaken(message: String) : FfiException(message)
+        
+    /**
      * В ядре произошла паника.
      *
      * Сообщение паники сознательно **не** передаётся: оно может содержать
@@ -6600,7 +6608,8 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             2 -> FfiException.IdentityChanged(FfiConverterString.read(buf))
             3 -> FfiException.PeerUnconfirmed(FfiConverterString.read(buf))
             4 -> FfiException.InvalidArgument(FfiConverterString.read(buf))
-            5 -> FfiException.Panic(FfiConverterString.read(buf))
+            5 -> FfiException.UsernameTaken(FfiConverterString.read(buf))
+            6 -> FfiException.Panic(FfiConverterString.read(buf))
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
         
@@ -6628,8 +6637,12 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 buf.putInt(4)
                 Unit
             }
-            is FfiException.Panic -> {
+            is FfiException.UsernameTaken -> {
                 buf.putInt(5)
+                Unit
+            }
+            is FfiException.Panic -> {
+                buf.putInt(6)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

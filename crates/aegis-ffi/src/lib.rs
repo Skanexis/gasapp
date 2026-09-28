@@ -72,6 +72,13 @@ pub enum FfiError {
     #[error("invalid argument")]
     InvalidArgument,
 
+    /// Имя занято другим аккаунтом.
+    ///
+    /// Своим вариантом: интерфейс ведёт обратно к полю имени, а не
+    /// показывает сбой сети (см. [`AegisError::UsernameTaken`]).
+    #[error("username taken")]
+    UsernameTaken,
+
     /// В ядре произошла паника.
     ///
     /// Сообщение паники сознательно **не** передаётся: оно может содержать
@@ -87,6 +94,7 @@ impl From<AegisError> for FfiError {
             AegisError::PeerUnconfirmed => Self::PeerUnconfirmed,
             // Интерфейс показывает правило имени, а не сбой ядра.
             AegisError::InvalidUsername => Self::InvalidArgument,
+            AegisError::UsernameTaken => Self::UsernameTaken,
             other => Self::Core(other),
         }
     }

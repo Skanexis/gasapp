@@ -107,7 +107,6 @@
     <!-- Security Center -->
     <string name="security_center_title">Центр безопасности</string>
     <string name="security_protected">Защищено</string>
-    <string name="security_needs_attention">%1$d пункт требует внимания</string>
     <string name="security_all_clear">Все проверки пройдены</string>
     <string name="security_keys">Ключи шифрования</string>
     <string name="security_devices">Доверенные устройства</string>
@@ -375,7 +374,12 @@
     <string name="recovery_new_key_warning">Прежние копии останутся зашифрованными старым ключом — перешифровать их приложение не может. Сохраните старый ключ, пока эти копии вам нужны.</string>
     <string name="recovery_new_key_confirm">Создать новый</string>
     <string name="recovery_key_needed">Введите ключ восстановления</string>
-    <string name="recovery_created">Копия собрана: %1$d записей, поколение %2$d</string>
+    <plurals name="recovery_created">
+        <item quantity="one">Копия собрана: %1$d запись, поколение %2$d</item>
+        <item quantity="few">Копия собрана: %1$d записи, поколение %2$d</item>
+        <item quantity="many">Копия собрана: %1$d записей, поколение %2$d</item>
+        <item quantity="other">Копия собрана: %1$d записи, поколение %2$d</item>
+    </plurals>
     <string name="recovery_failed">Не удалось собрать копию</string>
     <string name="recovery_saved">Файл копии сохранён</string>
     <string name="recovery_save_failed">Не удалось сохранить файл</string>

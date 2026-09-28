@@ -140,7 +140,8 @@ impl<T: Transport> ApiClient<T> {
     /// # Errors
     ///
     /// * [`AegisError::InvalidSignature`] — proof-of-work не принят.
-    /// * [`AegisError::Malformed`] — имя занято либо запрос отвергнут.
+    /// * [`AegisError::UsernameTaken`] — имя занято.
+    /// * [`AegisError::Malformed`] — запрос отвергнут.
     /// * [`AegisError::Network`] — сбой соединения.
     pub fn register(&self, request: &RegisterRequest) -> Result<RegisterResponse> {
         let response = self.send(
@@ -595,6 +596,8 @@ fn check_status(response: &HttpResponse) -> Result<()> {
         200..=299 => Ok(()),
         401 => Err(AegisError::InvalidSignature),
         404 => Err(AegisError::SessionNotFound),
+        // 409 сервер отдаёт только на занятое имя при регистрации.
+        409 => Err(AegisError::UsernameTaken),
         // 429 и 5xx лечатся повтором, поэтому попадают в очередь.
         429 | 500..=599 => Err(AegisError::Network),
         _ => Err(AegisError::Malformed),
@@ -721,6 +724,19 @@ mod tests {
             client.transport.last_request().path,
             "/v1/discovery/username/bob"
         );
+    }
+
+    /// Занятое имя — своей ошибкой, а не «запрос отвергнут»: интерфейс
+    /// показывал его как сбой сети, и человек регистрировался снова
+    /// с тем же именем.
+    #[test]
+    fn a_taken_username_is_not_a_generic_refusal() {
+        let client = ApiClient::new(FakeTransport::with(409, ""));
+
+        assert!(matches!(
+            client.register(&register_request()),
+            Err(AegisError::UsernameTaken)
+        ));
     }
 
     /// 🔐 Неизвестное имя — не сетевой сбой.

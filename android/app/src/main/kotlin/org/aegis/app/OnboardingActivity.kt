@@ -381,6 +381,16 @@ class OnboardingActivity : AppCompatActivity() {
                     // Tor. Напрямую приложение само не уходит: человек
                     // либо повторяет, либо явно выбирает прямое
                     // соединение.
+                    // Имя занято — не сбой сети: назад к полю имени, с ошибкой
+                    // под ним. Прежде сюда приходило «проверьте интернет»,
+                    // и человек повторял регистрацию с тем же именем.
+                    if (failure is FfiException.UsernameTaken) {
+                        showStep(Step.Username)
+                        showUsernameError(R.string.onboarding_error_taken)
+
+                        return@onFailure
+                    }
+
                     val network = failure is FfiException || failure is TorNotReady
 
                     showError(
@@ -591,9 +601,9 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     /** Ошибка имени — на месте подсказки под полем (UI kit, Inputs). */
-    private fun showUsernameError() {
+    private fun showUsernameError(@androidx.annotation.StringRes message: Int = R.string.onboarding_error_username) {
         username.hasError = true
-        usernameHelper.setText(R.string.onboarding_error_username)
+        usernameHelper.setText(message)
         usernameHelper.setTextColor(getColor(R.color.status_error))
         usernameHelper.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_alert_small, 0, 0, 0)
         usernameHelper.compoundDrawablesRelative[0]?.setTint(getColor(R.color.status_error))

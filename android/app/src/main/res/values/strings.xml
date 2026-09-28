@@ -122,7 +122,6 @@
 
     <string name="security_center_title">Security center</string>
     <string name="security_protected">Protected</string>
-    <string name="security_needs_attention">%1$d item needs attention</string>
     <string name="security_all_clear">All checks passed</string>
     <string name="security_keys">Encryption keys</string>
     <string name="security_devices">Trusted devices</string>
@@ -378,7 +377,10 @@
     <string name="recovery_new_key_warning">Earlier backups stay encrypted with the old key — the app cannot re-encrypt them. Keep the old key for as long as you need those backups.</string>
     <string name="recovery_new_key_confirm">Create new</string>
     <string name="recovery_key_needed">Enter your recovery key</string>
-    <string name="recovery_created">Backup created: %1$d records, generation %2$d</string>
+    <plurals name="recovery_created">
+        <item quantity="one">Backup created: %1$d record, generation %2$d</item>
+        <item quantity="other">Backup created: %1$d records, generation %2$d</item>
+    </plurals>
     <string name="recovery_failed">Could not create the backup</string>
     <string name="recovery_saved">Backup file saved</string>
     <string name="recovery_save_failed">Could not save the file</string>
