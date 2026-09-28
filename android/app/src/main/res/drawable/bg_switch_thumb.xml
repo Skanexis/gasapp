@@ -1,25 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Ползунок переключателя: круг 22dp.
+  Ползунок переключателя (UI kit, Selection controls): круг 22dp
+  с отступом 3dp внутри дорожки 28dp.
 
-  Во включённом состоянии — цвет подложки акцента, в выключенном —
-  приглушённый текст. Так ползунок читается на обеих дорожках.
+  Включён — белый на акцентной дорожке, выключен — светло-серый
+  на тёмной. Прежде ползунок был вровень с краями дорожки и тёмным
+  во включённом состоянии: читался как тёмное пятно, а не как ручка.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item android:state_checked="true">
-        <shape android:shape="oval">
-            <solid android:color="@color/accent_on" />
-            <size android:width="22dp" android:height="22dp" />
-        </shape>
+        <inset android:inset="3dp">
+            <shape android:shape="oval">
+                <solid android:color="#FFFFFFFF" />
+                <size android:width="22dp" android:height="22dp" />
+            </shape>
+        </inset>
     </item>
 
     <item>
-        <shape android:shape="oval">
-            <solid android:color="@color/text_muted" />
-            <size android:width="22dp" android:height="22dp" />
-        </shape>
+        <inset android:inset="3dp">
+            <shape android:shape="oval">
+                <solid android:color="@color/text_secondary" />
+                <size android:width="22dp" android:height="22dp" />
+            </shape>
+        </inset>
     </item>
 
 </selector>
