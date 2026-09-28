@@ -340,8 +340,7 @@
     <string name="storage_cleared">Downloaded files deleted</string>
 
     <!-- Devices -->
-    <string name="devices_section_current">This device</string>
-    <string name="devices_this">Current device</string>
+    <string name="devices_section_current">Linked devices</string>
     <string name="devices_note">Every linked device can read all of your messages. Device linking will come with multi-device sync; for now, your account works only on this device.</string>
 
     <!-- About -->
@@ -639,4 +638,6 @@
     <string name="recovery_state_off">Backup is not set up</string>
     <string name="contact_profile_message">Message</string>
     <string name="contact_profile_safety_number">Safety number</string>
+    <string name="devices_this_pill">This device</string>
+    <string name="devices_this_id">ID %1$s</string>
 </resources>
