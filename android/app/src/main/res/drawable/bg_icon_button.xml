@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Подсветка иконки-кнопки: круг 40dp внутри области нажатия 48dp.
+
+  Прежде стояла системная безрамочная подсветка: её радиус больше
+  самой кнопки, и серый круг вылезал за шапку — особенно заметно
+  в фокусе с клавиатуры, где он держится, а не гаснет.
+-->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/bg_hover"
+    android:radius="20dp">
+    <item
+        android:id="@android:id/mask"
+        android:width="40dp"
+        android:height="40dp"
+        android:gravity="center">
+        <shape android:shape="oval">
+            <solid android:color="@color/bg_hover" />
+        </shape>
+    </item>
+</ripple>
