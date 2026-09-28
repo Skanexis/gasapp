@@ -69,6 +69,10 @@ fn certificate_key_is_configured() -> bool {
     bytes.len() == 32 && bytes.iter().any(|byte| *byte != 0)
 }
 
+/// Сколько ждать заголовков запроса, в том числе следующего запроса
+/// на соединении, оставленном открытым.
+const HEADER_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -215,9 +219,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         tracing::info!(address = %bind, "сервер AEGIS слушает по TLS");
 
-        axum_server::bind_rustls(bind, config)
-            .serve(app.into_make_service())
-            .await?;
+        let mut server = axum_server::bind_rustls(bind, config);
+
+        // 🔐 Медленные соединения (slowloris). Рукопожатие TLS axum-server
+        // ограничивает сам, а дальше соединение жило сколько угодно:
+        // проверено — заголовок по строке раз в пять секунд держал его
+        // больше полутора минут. Тысяча таких с одной машины занимает
+        // дескрипторы и память сервера. Умолчание hyper в 30 секунд
+        // не действовало: без таймера оно выключено.
+        server
+            .http_builder()
+            .http1()
+            .timer(hyper_util::rt::TokioTimer::new())
+            .header_read_timeout(HEADER_READ_TIMEOUT);
+
+        server.serve(app.into_make_service()).await?;
     } else {
         // Открытый HTTP оставлен только для интеграционных тестов,
         // где сертификат не нужен, и сопровождается предупреждением:

@@ -13,6 +13,7 @@ dependencies = [
  "curve25519-dalek",
  "ed25519-dalek",
  "hex",
+ "hyper-util",
  "ml-dsa",
  "rand",
  "rand_core",
