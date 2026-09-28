@@ -229,6 +229,7 @@ class VaultActivity : AppCompatActivity() {
 
             if (outcome.isFailure) {
                 button.isError = true
+                vaultPin.showWrong()
                 showStatus(getString(R.string.vault_unlock_failed))
             } else {
                 // Отказ прошлой попытки не должен висеть над открытым

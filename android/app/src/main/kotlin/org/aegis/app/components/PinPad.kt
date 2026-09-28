@@ -5,6 +5,7 @@ package org.aegis.app.components
 import android.view.View
 import android.view.ViewGroup
 import org.aegis.app.R
+import org.aegis.app.ui.PinFeedback
 import org.aegis.app.core.PinBuffer
 
 /**
@@ -71,6 +72,11 @@ class PinPad(
         render()
 
         return pin
+    }
+
+    /** Отклик на неверный PIN: точки краснеют и вздрагивают (см. [PinFeedback]). */
+    fun showWrong() {
+        PinFeedback.wrong(dots) { render() }
     }
 
     /** 🔐 Затирает набранное. */
