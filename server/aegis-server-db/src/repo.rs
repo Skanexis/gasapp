@@ -314,6 +314,28 @@ pub async fn publish_prekeys(
 ) -> Result<(), RepoError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
 
+    // 🔐 Пул не растёт без предела. Прежде устройство добавляло сколько
+    // угодно одноразовых ключей с новыми номерами, и любой
+    // зарегистрированный аккаунт забивал диск сервера. Предел — вдвое
+    // больше пула клиента: пополнение до полного всегда проходит.
+    for (is_kem, adding) in [(false, one_time.len()), (true, one_time_kem.len())] {
+        if adding == 0 {
+            continue;
+        }
+
+        let existing: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM one_time_prekeys WHERE device_id = $1 AND is_kem = $2",
+        )
+        .bind(device_id)
+        .bind(is_kem)
+        .fetch_one(&mut *transaction)
+        .await?;
+
+        if existing.saturating_add(i64::try_from(adding).unwrap_or(i64::MAX)) > MAX_ONE_TIME_PREKEYS {
+            return Err(RepoError::QuotaExceeded);
+        }
+    }
+
     sqlx::query(
         "
         INSERT INTO signed_prekeys
@@ -376,6 +398,12 @@ pub async fn publish_prekeys(
 
     Ok(())
 }
+
+/// Сколько одноразовых предключей каждого вида держит устройство.
+///
+/// Вдвое больше пула клиента (100): пополнение до полного проходит
+/// всегда, а бесконечный рост — нет.
+pub const MAX_ONE_TIME_PREKEYS: i64 = 200;
 
 /// Выдаёт prekey bundle, **расходуя** по одному одноразовому предключу.
 ///
