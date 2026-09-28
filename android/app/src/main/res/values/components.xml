@@ -416,6 +416,10 @@
     <!-- Шапка одного цвета с экраном, как в UI kit (.appbar): полоса
          другого цвета делила экран там, где макет его не делит. -->
     <style name="AegisAppBar">
+        <!-- Кнопка «назад» сдвинута в поле отступа (-12dp): без этого
+             её подсветка обрезалась по краю отступа. -->
+        <item name="android:clipToPadding">false</item>
+        <item name="android:clipChildren">false</item>
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minHeight">@dimen/touch_target</item>
@@ -440,7 +444,7 @@
         <item name="android:layout_width">@dimen/touch_target</item>
         <item name="android:layout_height">@dimen/touch_target</item>
         <item name="android:padding">@dimen/space_m</item>
-        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:background">@drawable/bg_icon_button</item>
         <item name="android:scaleType">fitCenter</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
