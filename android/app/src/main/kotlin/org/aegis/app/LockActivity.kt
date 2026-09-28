@@ -23,6 +23,7 @@ import org.aegis.app.core.Pin
 import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.PinBuffer
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.ui.PinFeedback
 
 /**
  * Экран блокировки.
@@ -459,6 +460,8 @@ class LockActivity : AppCompatActivity() {
             },
         )
         error.visibility = View.VISIBLE
+        // Точки краснеют и вздрагивают; по окончании — снова по вводу.
+        PinFeedback.wrong(dots) { renderDots() }
     }
 
     /**
