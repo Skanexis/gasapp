@@ -142,7 +142,7 @@
     <string name="onboarding_username_label">Username</string>
     <string name="onboarding_username_helper">Latin letters, digits and _. This is how others will find you.</string>
     <string name="onboarding_create">Create account</string>
-    <string name="onboarding_working">Computing proof of work…</string>
+    <string name="onboarding_working">Creating your account — this takes a few seconds…</string>
     <string name="onboarding_error_username">3–32 characters: lowercase Latin letters, digits and _, starting with a letter</string>
     <string name="onboarding_error_taken">That username is taken</string>
     <string name="onboarding_direct">Connect directly, without Tor</string>
