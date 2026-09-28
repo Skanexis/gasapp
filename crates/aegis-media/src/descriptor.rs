@@ -224,6 +224,17 @@ impl AttachmentDescriptor {
             if name.contains(['/', '\\', '\0']) {
                 return Err(AegisError::Malformed);
             }
+
+            // 🔐 Управляющие символы и смена направления текста — тоже:
+            // «счёт\u{202E}fdp.exe» показался бы в переписке как
+            // «счётexe.pdf», то есть документом, а сохранился бы
+            // исполняемым. Та же проверка, что у имени в ссылке контакта.
+            if name.chars().any(|character| {
+                character.is_control()
+                    || matches!(character, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+            }) {
+                return Err(AegisError::Malformed);
+            }
         }
 
         if let Some(description) = &self.description {
@@ -712,6 +723,23 @@ mod tests {
         descriptor.name = Some("file\0.exe".to_owned());
 
         assert!(descriptor.validate().is_err());
+    }
+
+    /// 🔐 Смена направления текста и управляющие символы в имени
+    /// отвергаются: «счёт\u{202E}fdp.exe» выглядел бы документом.
+    #[test]
+    fn bidi_and_control_characters_in_name_are_rejected() {
+        for name in [
+            "счёт\u{202E}fdp.exe",
+            "a\u{2066}b.txt",
+            "две\nстроки.txt",
+            "таб\tуляция",
+        ] {
+            let mut descriptor = document();
+            descriptor.name = Some(name.to_owned());
+
+            assert!(descriptor.validate().is_err(), "имя {name:?} прошло проверку");
+        }
     }
 
     #[test]

@@ -44,6 +44,8 @@ class VaultFileNameTest {
         assertEquals("file", VaultTemp.safeName(""))
         assertEquals("name.pdf", VaultTemp.safeName("name\u0000.pdf"))
         assertEquals("Отчёт за март.pdf", VaultTemp.safeName("Отчёт за март.pdf"))
+        // Смена направления текста: «счёт‮fdp.exe» выглядел бы документом.
+        assertEquals("счётfdp.exe", VaultTemp.safeName("счёт‮fdp.exe"))
     }
 
     @Test
