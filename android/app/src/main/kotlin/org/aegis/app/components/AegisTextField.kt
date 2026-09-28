@@ -59,7 +59,13 @@ class AegisTextField @JvmOverloads constructor(
         }
 
     init {
-        setBackgroundResource(R.drawable.bg_aegis_text_field)
+        // Фон поля kit — если разметка не задала свой. Прежде он ставился
+        // всегда и молча затирал заданный: поле сообщения в переписке
+        // выходило прямоугольником вместо «таблетки» из kit.
+        val ownBackground = attrs?.getAttributeResourceValue(ANDROID_NS, "background", 0) ?: 0
+        if (ownBackground == 0) {
+            setBackgroundResource(R.drawable.bg_aegis_text_field)
+        }
 
         // 🔐 Порядок важен: суперконструктор уже разобрал атрибуты
         // разметки, поэтому `imeOptions` здесь содержит заданное в XML
@@ -98,6 +104,8 @@ class AegisTextField @JvmOverloads constructor(
 
     private companion object {
         const val EXTRA_STATES = 1
+
+        const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
 
         val STATE_ERROR = intArrayOf(R.attr.state_error)
     }
