@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
+import org.aegis.app.core.ReadMarks
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.TouchTarget
 import org.aegis.app.net.EmbeddedTor
@@ -225,22 +226,23 @@ class ChatListActivity : AppCompatActivity() {
                     val contacts = messenger.contacts().associateBy { it.chatId }
 
                     messenger.chats().map { chatId ->
-                        // Одно последнее сообщение на чат: превью — это
-                        // именно оно, а загружать переписку целиком ради
-                        // одной строки значило бы расшифровывать всё
-                        // при каждом открытии списка.
+                        // Не больше сотни последних сообщений на чат: превью —
+                        // последнее из них, счётчик — входящие после отметки
+                        // прочтения. Вся переписка ради списка не читается.
+                        val recent = messenger.messages(chatId, ReadMarks.SCAN_LIMIT)
                         ChatRow(
                             chatId,
-                            messenger.messages(chatId, PREVIEW_LIMIT).lastOrNull(),
+                            recent.lastOrNull(),
                             contacts[chatId],
                             runCatching { messenger.chatRequest(chatId) }.getOrNull() == FfiChatRequest.INCOMING,
+                            runCatching { ReadMarks.unread(messenger, chatId, recent) }.getOrDefault(0),
                         )
                     }
                 }.getOrDefault(emptyList())
             }
 
             render(
-                chats.map { (chatId, last, contact, request) ->
+                chats.map { (chatId, last, contact, request, unread) ->
                     val username = contact?.username.orEmpty()
 
                     ChatSummary(
@@ -256,6 +258,7 @@ class ChatListActivity : AppCompatActivity() {
                         verified = contact?.verified == true,
                         peerUsername = username,
                         request = request,
+                        unread = unread,
                     )
                 },
             )
@@ -268,6 +271,7 @@ class ChatListActivity : AppCompatActivity() {
         val last: uniffi.aegis.FfiMessage?,
         val contact: uniffi.aegis.FfiContact?,
         val request: Boolean,
+        val unread: Int,
     )
 
     private fun formatTime(millis: Long): String =
@@ -321,9 +325,6 @@ class ChatListActivity : AppCompatActivity() {
 
         /** Максимальный счёт. */
         const val SECURITY_MAX = 10
-
-        /** Сколько сообщений читать ради превью. */
-        const val PREVIEW_LIMIT = 1u
 
         /** Сколько символов идентификатора чата показывать вместо имени. */
         const val CHAT_LABEL_CHARS = 8

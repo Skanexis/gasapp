@@ -126,7 +126,8 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
             time.setTextColor(
                 androidx.core.content.ContextCompat.getColor(
                     itemView.context,
-                    if (chat.request) R.color.accent_base else R.color.text_disabled,
+                    // Непрочитанное — время акцентом, как в kit (Chat list).
+                    if (chat.request || chat.unread > 0) R.color.accent_base else R.color.text_disabled,
                 ),
             )
             // Запрос — пилюлей, как прочие состояния в kit; время — простым текстом.
