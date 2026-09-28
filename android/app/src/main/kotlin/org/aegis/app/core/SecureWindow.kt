@@ -150,6 +150,18 @@ object SecureWindow {
     }
 
     /**
+     * 🔐 То же для диалога и панели: это отдельные окна, и флаг экрана
+     * на них не переходит. А опасные подтверждения — «Стереть
+     * и восстановить», удаление аккаунта, новый ключ копии — живут
+     * именно в диалогах: прежде чужое наложение могло подвести человека
+     * к нажатию, которого он не видел (Android 9–11; с 12 система
+     * режет такие касания сама, но не все).
+     */
+    fun blockObscuredTouches(dialog: Dialog) {
+        dialog.window?.decorView?.filterTouchesWhenObscured = true
+    }
+
+    /**
      * 🔐 Диалог наследует запрет снимков от своего экрана.
      *
      * Диалог — отдельное окно, и `FLAG_SECURE` экрана на него
@@ -163,6 +175,7 @@ object SecureWindow {
      */
     fun inherit(dialog: Dialog, host: Activity) {
         hideFromNonToolAccessibility(dialog.window)
+        blockObscuredTouches(dialog)
 
         val flags = host.window.attributes.flags
 
@@ -180,6 +193,7 @@ object SecureWindow {
      */
     fun always(dialog: Dialog) {
         hideFromNonToolAccessibility(dialog.window)
+        blockObscuredTouches(dialog)
 
         dialog.window?.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,

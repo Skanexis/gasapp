@@ -62,6 +62,26 @@ class AegisDialogTest {
         assertEquals(AegisButton.Variant.Primary, (plain.view(R.id.dialog_primary) as AegisButton).variant)
     }
 
+    /**
+     * 🔐 Диалог и панель отбрасывают касания сквозь чужое наложение.
+     *
+     * Это отдельные окна, и флаг экрана на них не переходил: чужое
+     * наложение могло подвести к нажатию «Стереть и восстановить»,
+     * которого человек не видел.
+     */
+    @Test
+    fun dialogs_and_sheets_drop_touches_through_overlays() {
+        val activity = host()
+        val plain = AegisDialog(activity).primary(R.string.action_save).show()
+        val secure = AegisDialog(activity).primary(R.string.action_delete).alwaysSecure().show()
+        AegisSheet.on(activity, "Меню").action("Действие") {}.show()
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+
+        assertTrue(plain.dialog.window!!.decorView.filterTouchesWhenObscured)
+        assertTrue(secure.dialog.window!!.decorView.filterTouchesWhenObscured)
+        assertTrue(sheet.window!!.decorView.filterTouchesWhenObscured)
+    }
+
     /** Основное действие по умолчанию закрывает диалог и выполняется. */
     @Test
     fun the_primary_action_runs_and_closes() {
