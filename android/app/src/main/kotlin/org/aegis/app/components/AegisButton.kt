@@ -3,7 +3,10 @@
 package org.aegis.app.components
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.util.AttributeSet
+import android.view.Gravity
 import androidx.appcompat.widget.AppCompatButton
 import androidx.core.content.res.use
 import com.google.android.material.progressindicator.CircularProgressIndicatorSpec
@@ -123,7 +126,12 @@ class AegisButton @JvmOverloads constructor(
 
         isAllCaps = false
         letterSpacing = 0f
-        gravity = android.view.Gravity.CENTER
+        // Значок из разметки уже стоит: тогда группа центрируется в onDraw.
+        gravity = if (compoundDrawablesRelative[0] != null) {
+            Gravity.START or Gravity.CENTER_VERTICAL
+        } else {
+            Gravity.CENTER
+        }
         stateListAnimator = null
 
         isFocusable = true
@@ -244,6 +252,41 @@ class AegisButton @JvmOverloads constructor(
 
     /** Во время загрузки нажатие — и касанием, и из TalkBack — не проходит. */
     override fun performClick(): Boolean = if (isLoading) false else super.performClick()
+
+    /**
+     * Значок и подпись — одной группой по центру.
+     *
+     * Штатно TextView прижимает значок к краю, а подпись центрирует
+     * в оставшемся месте: на широкой кнопке значок («Сканировать
+     * QR-код», спиннер загрузки) оказывался у самого края, далеко
+     * от своей подписи. Здесь при значке содержимое прижимается
+     * к началу и сдвигается на половину свободного места.
+     */
+    override fun onDraw(canvas: Canvas) {
+        val icon = compoundDrawablesRelative[0]
+        if (icon == null) {
+            super.onDraw(canvas)
+            return
+        }
+
+        val label = layout?.let { layout ->
+            (0 until layout.lineCount).maxOfOrNull { layout.getLineWidth(it) } ?: 0f
+        } ?: 0f
+        val content = icon.bounds.width() + compoundDrawablePadding + label
+        val free = (width - paddingLeft - paddingRight - content).coerceAtLeast(0f)
+        val shift = free / 2 * if (layoutDirection == LAYOUT_DIRECTION_RTL) -1 else 1
+
+        canvas.save()
+        canvas.translate(shift, 0f)
+        super.onDraw(canvas)
+        canvas.restore()
+    }
+
+    override fun setCompoundDrawablesRelative(start: Drawable?, top: Drawable?, end: Drawable?, bottom: Drawable?) {
+        super.setCompoundDrawablesRelative(start, top, end, bottom)
+        // С значком — от начала (сдвиг в onDraw), без — по центру.
+        gravity = if (start != null) Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
+    }
 
     override fun onCreateDrawableState(extraSpace: Int): IntArray {
         val state = super.onCreateDrawableState(extraSpace + EXTRA_STATES)
