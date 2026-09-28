@@ -4,6 +4,7 @@ package org.aegis.app
 
 import android.os.Bundle
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
@@ -31,13 +32,32 @@ class DevicesActivity : AppCompatActivity() {
 
         findViewById<ImageView>(R.id.devices_back).setOnClickListener { finish() }
 
+        // Как в UI kit (Devices): модель — названием, отметка «это
+        // устройство» — пилюлей, идентификатор — строкой под названием.
+        // Модель видна только здесь и на сервер не уходит.
+        val row = findViewById<android.view.View>(R.id.devices_this)
         SettingsRow.bind(
-            root = findViewById(R.id.devices_this),
-            label = R.string.devices_this,
-            value = shortDeviceId(),
+            root = row,
+            title = android.os.Build.MODEL,
+            value = getString(R.string.devices_this_pill),
             icon = R.drawable.ic_mobile,
         )
+        row.findViewById<TextView>(R.id.row_detail).apply {
+            text = getString(R.string.devices_this_id, shortDeviceId())
+            visibility = android.view.View.VISIBLE
+        }
+        row.findViewById<TextView>(R.id.row_value).apply {
+            setBackgroundResource(R.drawable.bg_pill_ok)
+            setTextColor(getColor(R.color.status_ok))
+            textSize = 11f
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }
+        row.findViewById<android.view.View>(R.id.row_chevron).visibility = android.view.View.GONE
+        row.findViewById<ImageView>(R.id.row_icon).imageTintList =
+            android.content.res.ColorStateList.valueOf(getColor(R.color.accent_base))
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     /**
      * Начало идентификатора устройства.

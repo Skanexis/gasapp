@@ -329,8 +329,7 @@
     <string name="storage_cleared">Загруженные файлы удалены</string>
 
     <!-- Устройства. -->
-    <string name="devices_section_current">Это устройство</string>
-    <string name="devices_this">Текущее устройство</string>
+    <string name="devices_section_current">Связанные устройства</string>
     <string name="devices_note">Каждое связанное устройство читает переписку целиком. Связывание появится вместе с синхронизацией между устройствами; пока аккаунт доступен только отсюда.</string>
 
     <!-- О программе. -->
@@ -684,4 +683,6 @@
     <string name="recovery_state_off">Копия не настроена</string>
     <string name="contact_profile_message">Написать</string>
     <string name="contact_profile_safety_number">Safety number</string>
+    <string name="devices_this_pill">Это устройство</string>
+    <string name="devices_this_id">ID %1$s</string>
 </resources>
