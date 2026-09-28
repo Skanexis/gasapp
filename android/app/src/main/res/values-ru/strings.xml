@@ -664,7 +664,7 @@
     <string name="settings_section_app">Приложение</string>
     <string name="settings_section_data">Данные</string>
     <string name="settings_section_about">О приложении</string>
-    <string name="onboarding_welcome_title">Добро пожаловать в AEGIS</string>
+    <string name="onboarding_welcome_title">Добро пожаловать в AEGIS</string>
     <string name="onboarding_feature_e2e">Сообщения шифруются на телефоне. Сервер только передаёт их и прочитать не может.</string>
     <string name="onboarding_feature_no_phone">Без номера телефона и почты. Аккаунт — это только имя.</string>
     <string name="onboarding_feature_tor">Tor встроен: сервер не видит ваш IP-адрес.</string>
