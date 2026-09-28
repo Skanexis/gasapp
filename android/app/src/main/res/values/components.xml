@@ -287,6 +287,24 @@
         <item name="android:textColor">@color/text_primary</item>
     </style>
 
+    <!--
+      Строка выбора из списка (UI kit, Lists &amp; Selection Controls):
+      подпись слева, переключатель-кружок справа, строка 52dp.
+    -->
+    <style name="AegisRadioRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:button">@null</item>
+        <item name="android:drawableEnd">?android:attr/listChoiceIndicatorSingle</item>
+        <item name="android:drawableTint">@color/accent_base</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textFontWeight">600</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
     <!-- Панель на карточном фоне: вложенная группа внутри панели. -->
     <style name="AegisPanel.Deep">
         <item name="android:background">@drawable/bg_panel_deep</item>

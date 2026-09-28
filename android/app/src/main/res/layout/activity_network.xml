@@ -62,35 +62,25 @@
                     android:id="@+id/network_mode"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:divider="@drawable/divider_line"
+                    android:orientation="vertical"
+                    android:showDividers="middle">
 
                     <!-- Встроенный Tor — первым: он по умолчанию. -->
                     <RadioButton
                         android:id="@+id/network_tor"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent_base"
-                        android:minHeight="48dp"
-                        android:text="@string/network_mode_tor"
-                        android:textColor="@color/text_primary" />
+                        style="@style/AegisRadioRow"
+                        android:text="@string/network_mode_tor" />
 
                     <RadioButton
                         android:id="@+id/network_direct"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent_base"
-                        android:minHeight="48dp"
-                        android:text="@string/network_mode_direct"
-                        android:textColor="@color/text_primary" />
+                        style="@style/AegisRadioRow"
+                        android:text="@string/network_mode_direct" />
 
                     <RadioButton
                         android:id="@+id/network_socks"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent_base"
-                        android:minHeight="48dp"
-                        android:text="@string/network_mode_socks"
-                        android:textColor="@color/text_primary" />
+                        style="@style/AegisRadioRow"
+                        android:text="@string/network_mode_socks" />
                 </RadioGroup>
 
                 <!-- Адрес прокси нужен только для SOCKS5: встроенный Tor — внутри приложения. -->

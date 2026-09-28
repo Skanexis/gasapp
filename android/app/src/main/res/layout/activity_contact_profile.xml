@@ -123,6 +123,7 @@
 
                     <ImageView
                         style="@style/AegisActionTileIcon"
+                        android:contentDescription="@null"
                         android:src="@drawable/ic_chat" />
 
                     <TextView
@@ -140,6 +141,7 @@
 
                     <ImageView
                         style="@style/AegisActionTileIcon"
+                        android:contentDescription="@null"
                         android:src="@drawable/ic_shield_check" />
 
                     <TextView
