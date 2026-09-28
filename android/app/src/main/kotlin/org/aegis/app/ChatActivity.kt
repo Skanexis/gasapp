@@ -324,7 +324,8 @@ class ChatActivity : AppCompatActivity() {
                 val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
 
                 if (column >= 0 && cursor.moveToFirst()) {
-                    cursor.getString(column)
+                    // 🔐 Имя — от чужого провайдера (см. FileNames).
+                    cursor.getString(column)?.let(org.aegis.app.core.FileNames::safe)
                 } else {
                     null
                 }
