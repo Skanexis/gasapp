@@ -233,8 +233,18 @@ pub async fn websocket_handler(
     // экстрактора разошлась бы с этим обработчиком молча.
     let device_id = device.device_id;
 
-    upgrade.on_upgrade(move |socket| handle_socket(socket, state, device_id))
+    // 🔐 Клиент по сокету ничего не присылает, кроме управляющих кадров
+    // (pong, close): сокет — только для уведомлений. Прежде действовали
+    // умолчания — сообщение до 64 МБ, кадр до 16 МБ, — и любой
+    // бесплатный аккаунт заставлял узел буферизовать их в память.
+    upgrade
+        .max_message_size(MAX_CLIENT_FRAME_BYTES)
+        .max_frame_size(MAX_CLIENT_FRAME_BYTES)
+        .on_upgrade(move |socket| handle_socket(socket, state, device_id))
 }
+
+/// Наибольший кадр от клиента: управляющим кадрам хватает 125 байт.
+const MAX_CLIENT_FRAME_BYTES: usize = 4096;
 
 /// Ведёт одно соединение.
 async fn handle_socket(
