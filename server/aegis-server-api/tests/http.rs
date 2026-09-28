@@ -1859,6 +1859,48 @@ async fn recovery_rebinds_the_account_and_keeps_the_name() {
 }
 
 /// 🔐 Чужой ключ, повтор и просроченный запрос — отказ.
+/// 🔐 Посторонний, зная имя, не мешает владельцу вернуть аккаунт.
+///
+/// Прежде перепривязка делила ограничитель с discovery: двадцать
+/// бесплатных запросов в минуту по имени — и владелец получал 429
+/// на каждую попытку. Теперь в бюджет идут только отказы, а верная
+/// подпись ключа восстановления проходит всегда.
+#[tokio::test]
+async fn a_stranger_cannot_lock_the_owner_out_of_recovery() {
+    let state = require_state!();
+    let username = unique_name("besieged");
+    let keys = recovery_keys(0x53);
+    register_with_recovery(&state, &username, &keys).await;
+
+    let stranger = recovery_keys(0x54);
+    let mut refused_for_rate = false;
+
+    for _ in 0..30 {
+        let _ = call(&state, "GET", &format!("/v1/discovery/username/{username}"), None).await;
+        let status = call(
+            &state,
+            "POST",
+            "/v1/accounts/recover",
+            Some(recover_body(&username, 0x55, &stranger, common::now_millis())),
+        )
+        .await
+        .0;
+        assert_ne!(status, StatusCode::OK, "чужой ключ перепривязал аккаунт");
+        refused_for_rate |= status == StatusCode::TOO_MANY_REQUESTS;
+    }
+    assert!(refused_for_rate, "неудачные попытки не ограничены вовсе");
+
+    let status = call(
+        &state,
+        "POST",
+        "/v1/accounts/recover",
+        Some(recover_body(&username, 0x56, &keys, common::now_millis())),
+    )
+    .await
+    .0;
+    assert_eq!(status, StatusCode::OK, "посторонний заблокировал владельцу восстановление");
+}
+
 #[tokio::test]
 async fn recovery_refuses_foreign_keys_replays_and_stale_requests() {
     let state = require_state!();

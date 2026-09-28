@@ -70,6 +70,15 @@ pub struct AppState {
     /// 🔐 Отдельный от остальных: выдача расходует одноразовый предключ,
     /// то есть тратит ресурс получателя, а не пропускную способность.
     pub bundle_limiter: Mutex<RateLimiter>,
+    /// Неудачные попытки перепривязки аккаунта, по имени.
+    ///
+    /// 🔐 Считаются **только отказы**: верная подпись ключа
+    /// восстановления проходит всегда. Прежде перепривязка делила
+    /// ограничитель с discovery, и посторонний, зная имя, двадцатью
+    /// бесплатными запросами в минуту не давал владельцу вернуть
+    /// аккаунт — а подделать подпись ключа восстановления нельзя,
+    /// так что ограничитель ничего не защищал, только мешал.
+    pub recovery_failures_limiter: Mutex<RateLimiter>,
     /// Соль для ключей ограничителя.
     ///
     /// Живёт только в памяти процесса: после перезапуска счётчики нельзя
@@ -159,6 +168,10 @@ impl AppState {
             discovery_cache: Mutex::new(HashMap::new()),
             bundle_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 rate_limit::BUNDLE_PER_MINUTE,
+                nodes,
+            ))),
+            recovery_failures_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                rate_limit::DISCOVERY_PER_MINUTE,
                 nodes,
             ))),
             sealed_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
@@ -794,18 +807,21 @@ async fn recover_account(
         return Err(ApiError::Unauthorized);
     }
 
-    // Тот же ограничитель, что у discovery, и тот же ключ — имя.
-    {
+    // Отказ считается в бюджет имени; сверх бюджета — 429 вместо 401.
+    // Верную подпись бюджет не задерживает (см. `recovery_failures_limiter`).
+    let refuse = |state: &AppState| -> ApiError {
         let key = rate_limit::key_from_addr(&state.limiter_salt, &request.username);
-        let mut limiter = state
-            .discovery_limiter
-            .lock()
-            .map_err(|_| ApiError::Internal)?;
-
-        if !limiter.allow(key, now_millis()) {
-            return Err(ApiError::TooManyRequests);
+        match state.recovery_failures_limiter.lock() {
+            Ok(mut limiter) => {
+                if limiter.allow(key, now_millis()) {
+                    ApiError::Unauthorized
+                } else {
+                    ApiError::TooManyRequests
+                }
+            }
+            Err(_) => ApiError::Internal,
         }
-    }
+    };
 
     let identity = decode_hex(&request.identity_key)?;
     let device_identity = decode_hex(&request.device_identity_key)?;
@@ -821,15 +837,17 @@ async fn recover_account(
     }
 
     if now_millis().abs_diff(request.issued_at) > crate::recovery::MAX_SKEW_MILLIS.unsigned_abs() {
-        return Err(ApiError::Unauthorized);
+        return Err(refuse(&state));
     }
 
-    let account = repo::find_by_username(&state.pool, &request.username)
-        .await
-        .map_err(|_| ApiError::Unauthorized)?;
-    let (recovery_key, recovery_pq_key) = repo::recovery_key_of(&state.pool, account.account_id)
-        .await?
-        .ok_or(ApiError::Unauthorized)?;
+    let Ok(account) = repo::find_by_username(&state.pool, &request.username).await else {
+        return Err(refuse(&state));
+    };
+    let Some((recovery_key, recovery_pq_key)) =
+        repo::recovery_key_of(&state.pool, account.account_id).await?
+    else {
+        return Err(refuse(&state));
+    };
 
     let message = crate::recovery::message(
         &request.username,
@@ -841,7 +859,7 @@ async fn recover_account(
     );
 
     if !crate::recovery::verify(&recovery_key, &recovery_pq_key, &message, &signature) {
-        return Err(ApiError::Unauthorized);
+        return Err(refuse(&state));
     }
 
     let device_id = repo::rebind_account(
