@@ -918,6 +918,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -954,6 +956,8 @@ fun uniffi_aegis_checksum_func_derive_storage_key(
 fun uniffi_aegis_checksum_func_derive_storage_key_bound(
 ): Short
 fun uniffi_aegis_checksum_func_embedded_tor_status(
+): Short
+fun uniffi_aegis_checksum_func_fetch_tor_bridges(
 ): Short
 fun uniffi_aegis_checksum_func_format_safety_number(
 ): Short
@@ -1323,6 +1327,8 @@ fun uniffi_aegis_fn_func_derive_storage_key_bound(`pin`: RustBuffer.ByValue,`sal
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_embedded_tor_status(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_fetch_tor_bridges(`country`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_format_safety_number(`local`: RustBuffer.ByValue,`remote`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRustCallStatus, 
@@ -1512,6 +1518,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_embedded_tor_status() != 64994.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_func_fetch_tor_bridges() != 43592.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_func_format_safety_number() != 12850.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1557,7 +1566,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_validate_tor_bridges() != 8097.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 50023.toShort()) {
+    if (lib.uniffi_aegis_checksum_method_httptransport_execute() != 28308.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_accept_chat() != 62841.toShort()) {
@@ -2253,7 +2262,7 @@ public interface HttpTransport {
      *
      * # Errors
      *
-     * [`FfiError::Core`] при сбое соединения.
+     * [`FfiTransportError::Network`] при сбое соединения.
      */
     fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>, `anonymous`: kotlin.Boolean): FfiHttpResponse
     
@@ -2358,12 +2367,12 @@ open class HttpTransportImpl: Disposable, AutoCloseable, HttpTransport
      *
      * # Errors
      *
-     * [`FfiError::Core`] при сбое соединения.
+     * [`FfiTransportError::Network`] при сбое соединения.
      */
-    @Throws(FfiException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>, `anonymous`: kotlin.Boolean): FfiHttpResponse {
+    @Throws(FfiTransportException::class)override fun `execute`(`method`: kotlin.String, `path`: kotlin.String, `body`: kotlin.String?, `binaryBody`: kotlin.ByteArray?, `headers`: List<FfiHeader>, `anonymous`: kotlin.Boolean): FfiHttpResponse {
             return FfiConverterTypeFfiHttpResponse.lift(
     callWithPointer {
-    uniffiRustCallWithError(FfiException) { _status ->
+    uniffiRustCallWithError(FfiTransportException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_httptransport_execute(
         it, FfiConverterString.lower(`method`),FfiConverterString.lower(`path`),FfiConverterOptionalString.lower(`body`),FfiConverterOptionalByteArray.lower(`binaryBody`),FfiConverterSequenceTypeFfiHeader.lower(`headers`),FfiConverterBoolean.lower(`anonymous`),_status)
 }
@@ -2401,7 +2410,7 @@ internal object uniffiCallbackInterfaceHttpTransport {
                 uniffiCallStatus,
                 makeCall,
                 writeReturn,
-                { e: FfiException -> FfiConverterTypeFfiError.lower(e) }
+                { e: FfiTransportException -> FfiConverterTypeFfiTransportError.lower(e) }
             )
         }
     }
@@ -6763,6 +6772,73 @@ public object FfiConverterTypeFfiProxy : FfiConverterRustBuffer<FfiProxy>{
 
 
 
+
+
+/**
+ * Сбой транспорта платформы.
+ *
+ * Свой тип, а не [`FfiError`]: тот объявлен «плоским» (`flat_error`),
+ * а плоские ошибки UniFFI умеет только отдавать наружу, но не принимать
+ * обратно — ошибка, брошенная платформой из [`HttpTransport::execute`],
+ * поднимала панику внутри ядра («Can't lift flat errors»). Любой сбой
+ * сети — таймаут Tor, обрыв — превращался в «внутреннюю ошибку»
+ * посреди операции вместо [`AegisError::Network`], которого ждут
+ * повторы и очередь отправки.
+ */
+sealed class FfiTransportException: kotlin.Exception() {
+    
+    /**
+     * Сеть недоступна: соединение не открылось или оборвалось.
+     */
+    class Network(
+        ) : FfiTransportException() {
+        override val message
+            get() = ""
+    }
+    
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiTransportException> {
+        override fun lift(error_buf: RustBuffer.ByValue): FfiTransportException = FfiConverterTypeFfiTransportError.lift(error_buf)
+    }
+
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiTransportError : FfiConverterRustBuffer<FfiTransportException> {
+    override fun read(buf: ByteBuffer): FfiTransportException {
+        
+
+        return when(buf.getInt()) {
+            1 -> FfiTransportException.Network()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: FfiTransportException): ULong {
+        return when(value) {
+            is FfiTransportException.Network -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: FfiTransportException, buf: ByteBuffer) {
+        when(value) {
+            is FfiTransportException.Network -> {
+                buf.putInt(1)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
 /**
  * Состояние блокировки в терминах UI.
  */
@@ -7566,6 +7642,36 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_embedded_tor_status(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Свежие мосты `WebTunnel` от Tor Project (moat) — там, где Tor
+         * заблокирован, а встроенные в сборку мосты уже не проходят.
+         *
+         * `country` — код страны ISO 3166-1 (`ru`, `ir`…) или `None`.
+         * Блокирует до двух минут: звать из фонового потока.
+         *
+         * 🔐 Сервер AEGIS в этом не участвует. Tor Project видит, что с этого
+         * адреса спросили мосты для такой-то страны, — как у Tor Browser;
+         * провайдер — HTTPS к крупному сайту (meek через CDN). Строки
+         * проверяются той же [`aegis_net::proxy::normalize_bridge_line`], что
+         * и введённые человеком; негодные отбрасываются поштучно — это чужой
+         * ответ, а не список, на который человек рассчитывает.
+         *
+         * # Errors
+         *
+         * * [`FfiError::InvalidArgument`] — код страны не из двух букв;
+         * * [`FfiError::Core`] ([`AegisError::Network`]) — moat недостижим или
+         * ответ не разобран.
+         */
+    @Throws(FfiException::class) fun `fetchTorBridges`(`country`: kotlin.String?): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_fetch_tor_bridges(
+        FfiConverterOptionalString.lower(`country`),_status)
 }
     )
     }

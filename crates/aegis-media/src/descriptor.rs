@@ -738,7 +738,10 @@ mod tests {
             let mut descriptor = document();
             descriptor.name = Some(name.to_owned());
 
-            assert!(descriptor.validate().is_err(), "имя {name:?} прошло проверку");
+            assert!(
+                descriptor.validate().is_err(),
+                "имя {name:?} прошло проверку"
+            );
         }
     }
 

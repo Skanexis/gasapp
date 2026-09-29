@@ -11,6 +11,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use aegis_tor::moat::MoatError;
 use aegis_tor::{Allowlist, EmbeddedTor, TorError, TorSettings, TorStatus};
 use aegis_types::AegisError;
 
@@ -124,7 +125,12 @@ pub fn start_embedded_tor(settings: FfiTorSettings) -> Result<u16, FfiError> {
     // Onion-сервис сервера — проверяется до запуска: опечатка в адресе
     // увела бы всё соединение в никуда.
     let mut destinations = Allowlist::new([(settings.server_host.as_str(), settings.server_port)]);
-    if let Some(onion) = settings.server_onion.as_deref().map(str::trim).filter(|text| !text.is_empty()) {
+    if let Some(onion) = settings
+        .server_onion
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
         let (host, port) = onion
             .rsplit_once(':')
             .and_then(|(host, port)| Some((host, port.parse::<u16>().ok()?)))
@@ -200,6 +206,52 @@ pub fn validate_tor_bridges(text: String) -> bool {
     aegis_net::proxy::parse_bridges(&text).is_ok()
 }
 
+/// Свежие мосты `WebTunnel` от Tor Project (moat) — там, где Tor
+/// заблокирован, а встроенные в сборку мосты уже не проходят.
+///
+/// `country` — код страны ISO 3166-1 (`ru`, `ir`…) или `None`.
+/// Блокирует до двух минут: звать из фонового потока.
+///
+/// 🔐 Сервер AEGIS в этом не участвует. Tor Project видит, что с этого
+/// адреса спросили мосты для такой-то страны, — как у Tor Browser;
+/// провайдер — HTTPS к крупному сайту (meek через CDN). Строки
+/// проверяются той же [`aegis_net::proxy::normalize_bridge_line`], что
+/// и введённые человеком; негодные отбрасываются поштучно — это чужой
+/// ответ, а не список, на который человек рассчитывает.
+///
+/// # Errors
+///
+/// * [`FfiError::InvalidArgument`] — код страны не из двух букв;
+/// * [`FfiError::Core`] ([`AegisError::Network`]) — moat недостижим или
+///   ответ не разобран.
+#[uniffi::export]
+pub fn fetch_tor_bridges(country: Option<String>) -> Result<Vec<String>, FfiError> {
+    catch_unwind(|| {
+        let country = country
+            .as_deref()
+            .map(str::trim)
+            .filter(|code| !code.is_empty());
+        let lines = aegis_tor::moat::fetch_bridges(country).map_err(|error| match error {
+            MoatError::Country => FfiError::InvalidArgument,
+            MoatError::Unreachable | MoatError::Answer => FfiError::Core(AegisError::Network),
+        })?;
+
+        let mut bridges: Vec<String> = Vec::new();
+        for bridge in lines
+            .iter()
+            .filter_map(|line| aegis_net::proxy::normalize_bridge_line(line).ok())
+        {
+            if !bridges.contains(&bridge) {
+                bridges.push(bridge);
+            }
+        }
+        bridges.truncate(aegis_net::proxy::MAX_BRIDGES);
+
+        Ok(bridges)
+    })
+    .unwrap_or(Err(FfiError::Panic))
+}
+
 /// Состояние встроенного Tor — для индикатора подключения.
 #[uniffi::export]
 #[must_use]
@@ -248,13 +300,32 @@ mod tests {
     fn a_bad_server_onion_is_refused_before_start() {
         let dir = std::env::temp_dir();
 
-        for onion in ["notanonion:443", "abc.onion", "abc.onion:x", "abc.onion:443"] {
+        for onion in [
+            "notanonion:443",
+            "abc.onion",
+            "abc.onion:x",
+            "abc.onion:443",
+        ] {
             let mut bad = settings(&dir, "aegis.example.org", 443);
             bad.server_onion = Some(onion.to_owned());
 
             assert!(
                 matches!(start_embedded_tor(bad), Err(FfiError::InvalidArgument)),
                 "принят onion {onion:?}"
+            );
+        }
+    }
+
+    /// 🔐 Код страны уходит в запрос к moat — негодный отвергается до сети.
+    #[test]
+    fn a_bad_country_is_refused_before_moat() {
+        for country in ["rus", "r1", "\"}"] {
+            assert!(
+                matches!(
+                    fetch_tor_bridges(Some(country.to_owned())),
+                    Err(FfiError::InvalidArgument)
+                ),
+                "принята страна {country:?}"
             );
         }
     }

@@ -149,6 +149,23 @@ fn the_server_destination_reaches_its_onion_service() {
     let (onion_host, onion_port) = onion.rsplit_once(':').expect("адрес:порт");
     let onion_port: u16 = onion_port.parse().expect("порт");
 
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .try_init();
+
+    // Мосты — как в первом тесте: AEGIS_TOR_BRIDGES — файл со строками.
+    let bridges: Vec<String> = std::env::var("AEGIS_TOR_BRIDGES")
+        .map(|path| {
+            std::fs::read_to_string(path)
+                .expect("файл мостов")
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+
     let dir = tempfile::tempdir().expect("каталог");
     let tor = EmbeddedTor::start(TorSettings {
         state_dir: dir.path().join("state"),
@@ -157,7 +174,7 @@ fn the_server_destination_reaches_its_onion_service() {
         destinations: Allowlist::new([("aegis.test", PORT)])
             .via_onion("aegis.test", PORT, onion_host, onion_port)
             .expect("onion"),
-        bridges: Vec::new(),
+        bridges,
         transports: Vec::new(),
         allow_private_bridges: false,
     })
@@ -173,4 +190,19 @@ fn the_server_destination_reaches_its_onion_service() {
     let (_socket, code) = socks_connect(&tor, "aegis.test");
     eprintln!("встреча с onion-сервисом: {:?}", started.elapsed());
     assert_eq!(code, 0, "onion-сервис сервера недостижим");
+}
+
+/// Свежие мосты от moat через свой клиент meek.
+#[test]
+#[ignore = "нужна сеть"]
+fn moat_gives_fresh_webtunnel_bridges() {
+    let started = Instant::now();
+    let bridges = aegis_tor::moat::fetch_bridges(Some("ru")).expect("moat");
+    eprintln!("moat: {} мостов за {:?}", bridges.len(), started.elapsed());
+    for bridge in &bridges {
+        eprintln!("  {bridge}");
+    }
+
+    assert!(!bridges.is_empty(), "moat не дал мостов");
+    assert!(bridges.iter().all(|line| line.starts_with("webtunnel ")));
 }

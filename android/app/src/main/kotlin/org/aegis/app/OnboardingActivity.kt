@@ -33,8 +33,10 @@ import org.aegis.app.core.Pin
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
+import uniffi.aegis.FfiAccount
 import uniffi.aegis.FfiException
 import uniffi.aegis.FfiProxy
+import uniffi.aegis.Messenger
 import uniffi.aegis.canonicalUsername
 import uniffi.aegis.validateTorBridges
 
@@ -334,8 +336,7 @@ class OnboardingActivity : AppCompatActivity() {
                         awaitTor()
                     }
 
-                    messenger
-                        .register(name, System.currentTimeMillis())
+                    registerWithRetry(messenger, name, viaTor)
                         .also { Core.maintainPrekeysNow() }
                 }.onFailure {
                     // 🔐 Незарегистрированная база стирается.
@@ -468,6 +469,29 @@ class OnboardingActivity : AppCompatActivity() {
                         getString(if (failure is TorNotReady) R.string.onboarding_error_tor else R.string.ffi_error),
                     )
                 }
+        }
+    }
+
+    /**
+     * Регистрирует имя; через Tor при сбое сети повторяет в течение
+     * [REGISTER_RETRY_WINDOW_MS].
+     *
+     * Сразу после подключения к сети Tor (особенно через мосты) Arti ещё
+     * докачивает каталог, и встреча с onion-сервисом сервера первые
+     * секунды отказывает сразу («нет цепочки для точки встречи»), а
+     * потом проходит. Повтор безопасен: до ответа сервера ядро ничего
+     * не сохраняет, identity создаётся заново.
+     */
+    private suspend fun registerWithRetry(messenger: Messenger, name: String, viaTor: Boolean): FfiAccount {
+        val deadline = System.currentTimeMillis() + REGISTER_RETRY_WINDOW_MS
+
+        while (true) {
+            try {
+                return messenger.register(name, System.currentTimeMillis())
+            } catch (failure: FfiException.Core) {
+                if (!viaTor || System.currentTimeMillis() >= deadline) throw failure
+                delay(REGISTER_RETRY_MS)
+            }
         }
     }
 
@@ -652,8 +676,19 @@ class OnboardingActivity : AppCompatActivity() {
         /** Идентификатор устройства для последующих запросов. */
         const val EXTRA_DEVICE_ID = "device_id"
 
-        /** Сколько ждать подключения Tor перед регистрацией. */
-        private const val TOR_WAIT_MS = 120_000L
+        /**
+         * Сколько ждать подключения Tor перед регистрацией.
+         *
+         * С запасом на всю лестницу там, где Tor блокируют: 45 с прямой
+         * попытки, запрос свежих мостов к moat и бутстрап через мост.
+         */
+        private const val TOR_WAIT_MS = 180_000L
+
+        /** Сколько повторять регистрацию через Tor после сбоя сети. */
+        private const val REGISTER_RETRY_WINDOW_MS = 60_000L
+
+        /** Пауза между попытками регистрации. */
+        private const val REGISTER_RETRY_MS = 3_000L
 
         /** Как часто проверять, не заблокирован ли Tor. */
         private const val TOR_WATCH_MS = 2_000L

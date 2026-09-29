@@ -1350,7 +1350,10 @@ fn own_name_and_own_link_are_not_a_contact() {
         Err(AegisError::Malformed)
     ));
 
-    assert!(alice.contacts().expect("контакты").is_empty(), "завёлся контакт с собой");
+    assert!(
+        alice.contacts().expect("контакты").is_empty(),
+        "завёлся контакт с собой"
+    );
 }
 
 /// 🔐 Ссылка с чужим именем не приклеивает имя к ключу.

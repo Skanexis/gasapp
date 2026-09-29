@@ -9,6 +9,10 @@
 # Для разработки (сервер на этой же машине, AEGIS_BIND=0.0.0.0:8443):
 #   AEGIS_UPSTREAM=host.docker.internal:8443 docker compose -f server/deploy/onion/docker-compose.yml up -d
 #
+# Tor у сервера заблокирован («Stuck at 5% … CONNECTREFUSED») — через
+# мосты snowflake из образа:
+#   AEGIS_TOR_BRIDGES=snowflake AEGIS_UPSTREAM=… docker compose … up -d --build
+#
 # Напечатанный адрес вписывается в сборку приложения:
 #   ./gradlew assembleRelease -PaegisServerOnion=<адрес>.onion:443
 
@@ -20,10 +24,14 @@ services:
     environment:
       AEGIS_UPSTREAM: ${AEGIS_UPSTREAM:?задайте AEGIS_UPSTREAM}
       AEGIS_ONION_PORT: ${AEGIS_ONION_PORT:-443}
+      # Мосты — где сеть Tor блокируют: строки через «\n»
+      # или файл ./bridges/bridges.txt (он не в git).
+      AEGIS_TOR_BRIDGES: ${AEGIS_TOR_BRIDGES:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - aegis-onion-keys:/var/lib/tor/aegis
+      - ./bridges:/etc/aegis:ro
 
 volumes:
   # 🔐 Ключ onion-адреса. Потерять — сменить адрес во всех сборках;

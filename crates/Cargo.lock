@@ -183,6 +183,7 @@ dependencies = [
  "futures",
  "rand_core 0.6.4",
  "rustls",
+ "serde_json",
  "sha2",
  "tempfile",
  "thiserror 2.0.20",

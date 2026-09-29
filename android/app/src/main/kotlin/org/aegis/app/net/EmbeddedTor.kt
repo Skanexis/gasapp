@@ -4,6 +4,7 @@ package org.aegis.app.net
 
 import android.content.Context
 import android.net.Uri
+import android.telephony.TelephonyManager
 import java.io.File
 import java.net.Authenticator
 import java.net.PasswordAuthentication
@@ -17,6 +18,7 @@ import org.aegis.app.BuildConfig
 import uniffi.aegis.FfiTorSettings
 import uniffi.aegis.FfiTorStatus
 import uniffi.aegis.embeddedTorStatus
+import uniffi.aegis.fetchTorBridges
 import uniffi.aegis.startEmbeddedTor
 import uniffi.aegis.stopEmbeddedTor
 import uniffi.aegis.validateTorBridges
@@ -40,13 +42,25 @@ import uniffi.aegis.validateTorBridges
  * Tor, и порт может смениться — поэтому порт всегда берётся отсюда,
  * а не запоминается.
  *
- * **Встроенные мосты** едут в сборке (`assets/tor/bridges.txt`, см.
- * задачу `aegisBridges`). Сначала Tor подключается напрямую; если за
- * [SLOW_MS] не вышло или бутстрап застрял — сам перезапускается через
- * встроенные мосты и запоминает это ([KEY_BUILTIN]): следующий запуск
- * сразу идёт через них, без прямой попытки, которая там, где Tor
- * блокируют, выдаёт его провайдеру. Свои мосты человека дополняются
- * встроенными — чем больше мостов, тем труднее заблокировать все.
+ * **Мосты без участия человека** — лестница:
+ * 1. напрямую;
+ * 2. если за [SLOW_MS] не вышло или бутстрап застрял — через мосты сборки
+ *    (`assets/tor/bridges.txt`, см. задачу `aegisBridges`) и свежие; это
+ *    запоминается ([KEY_BUILTIN]), и следующий запуск сразу идёт через
+ *    мосты, без прямой попытки, которая там, где Tor блокируют, выдаёт
+ *    его провайдеру;
+ * 3. одновременно — **свежие мосты от Tor Project** (moat, [refreshFresh]):
+ *    встроенные со временем попадают в списки цензора, а moat раздаёт
+ *    новые без капчи. Они запоминаются ([KEY_FRESH]) и идут первыми;
+ *    если Tor ещё не подключился, он перезапускается с ними.
+ *
+ * Лишь если и это не помогло, человеку предлагают свои мосты
+ * ([needsUserBridges]). Свои мосты человека дополняются автоматическими —
+ * чем больше мостов, тем труднее заблокировать все.
+ *
+ * 🔐 moat — служба Tor Project, запрос идёт через CDN (meek): сервер
+ * AEGIS не участвует. Tor Project видит адрес устройства и страну сети
+ * (как у Tor Browser), провайдер — HTTPS к крупному сайту.
  *
  * # Onion-адрес сервера
  *
@@ -106,14 +120,15 @@ object EmbeddedTor {
         val host = server.host ?: return 0
         val serverPort = if (server.port > 0) server.port else DEFAULT_HTTPS_PORT
 
-        val builtin = builtinBridges(context)
+        val automatic = automaticBridges(context)
         val effective = when {
-            // Свои мосты — вместе со встроенными: больше мостов, больше
+            // Свои мосты — вместе с автоматическими: больше мостов, больше
             // шансов, что хоть часть не заблокирована.
-            bridges.isNotEmpty() -> (bridges + builtin).distinct()
-            usesBuiltin(context) && builtin.isNotEmpty() -> builtin
+            bridges.isNotEmpty() -> (bridges + automatic).distinct()
+            usesBuiltin(context) && automatic.isNotEmpty() -> automatic
             else -> emptyList()
         }
+        lastUserBridges = bridges
 
         val noBackup = context.applicationContext.noBackupFilesDir
         val tor = File(noBackup, "tor")
@@ -149,13 +164,70 @@ object EmbeddedTor {
             startedAt = System.currentTimeMillis()
         }
 
-        // Напрямую, а встроенные мосты есть — следить, не заблокирован ли Tor.
-        if (port != 0 && effective.isEmpty() && builtin.isNotEmpty()) {
-            watchForBlocking(context.applicationContext)
-        }
+        // Следить, не заблокирован ли Tor: напрямую — перейти на мосты,
+        // с мостами — добыть свежие.
+        if (port != 0) watchForBlocking(context.applicationContext)
 
         return port
     }
+
+    /** Мосты без участия человека: свежие от moat — первыми, затем сборки. */
+    private fun automaticBridges(context: Context): List<String> =
+        (freshBridges(context) + builtinBridges(context)).distinct()
+
+    /** Свежие мосты от moat, полученные раньше, — только годные строки. */
+    private fun freshBridges(context: Context): List<String> =
+        prefs(context).getString(KEY_FRESH, null).orEmpty()
+            .lines()
+            .map { it.trim() }
+            .filter { line -> line.isNotEmpty() && runCatching { validateTorBridges(line) }.getOrDefault(false) }
+
+    /**
+     * Спрашивает у moat свежие мосты и запоминает их.
+     *
+     * Не чаще раза в [FRESH_RETRY_MS]: moat — чужая служба, и частые
+     * запросы с одного адреса ни к чему. Блокирует до двух минут — звать
+     * только из фона.
+     *
+     * @return появились ли мосты, которых ещё не было.
+     */
+    private fun refreshFresh(context: Context): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastFreshAttempt < FRESH_RETRY_MS) return false
+        lastFreshAttempt = now
+
+        val known = automaticBridges(context).toSet()
+        val fetched = runCatching { fetchTorBridges(networkCountry(context)) }
+            .getOrDefault(emptyList())
+        if (fetched.isEmpty()) return false
+
+        // Новые — первыми; прежние свежие остаются, пока не вытеснены.
+        val kept = (fetched + freshBridges(context)).distinct().take(MAX_FRESH)
+        prefs(context).edit().putString(KEY_FRESH, kept.joinToString("\n")).apply()
+
+        return fetched.any { it !in known }
+    }
+
+    /**
+     * Страна сети (ISO 3166-1) — от неё зависит, какие мосты там
+     * работают. Без неё moat отдаёт общий набор стран с блокировкой.
+     */
+    private fun networkCountry(context: Context): String? {
+        val telephony = context.getSystemService(TelephonyManager::class.java)
+        val country = runCatching { telephony?.networkCountryIso }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: runCatching { telephony?.simCountryIso }.getOrNull()
+
+        return country?.trim()?.takeIf { it.length == 2 && it.all(Char::isLetter) }
+    }
+
+    /** Время последнего запроса к moat в этом процессе. */
+    @Volatile
+    private var lastFreshAttempt: Long = 0L
+
+    /** Свои мосты человека последнего запуска — для перезапуска со свежими. */
+    @Volatile
+    private var lastUserBridges: List<String> = emptyList()
 
     /**
      * Встроенные мосты сборки — только годные строки.
@@ -188,46 +260,62 @@ object EmbeddedTor {
     /**
      * Пора ли предложить человеку свои мосты.
      *
-     * Только когда Tor не подключается, а помочь нечем: встроенных
-     * мостов нет либо Tor уже идёт через них и всё равно не подключился.
-     * Пока приложение само может переключиться на встроенные — не
-     * предлагает: предложение раньше времени только сбивало бы.
+     * Только когда Tor не подключается, а приложению помочь нечем:
+     * автоматических мостов нет либо Tor уже идёт через них, и свежих
+     * от moat не нашлось. Пока приложение само может переключиться или
+     * ищет свежие мосты — не предлагает: предложение раньше времени
+     * только сбивало бы.
      */
     fun needsUserBridges(context: Context): Boolean {
         val status = status()
         val blocked = status.running && !status.ready &&
             (status.stalled || System.currentTimeMillis() - startedAt > SLOW_MS)
 
-        return blocked && (status.bridges || builtinBridges(context).isEmpty())
+        return blocked && !refreshing &&
+            (status.bridges || automaticBridges(context).isEmpty())
     }
 
-    /** Шёл ли Tor в прошлый раз через встроенные мосты. */
+    /** Шёл ли Tor в прошлый раз через мосты без участия человека. */
     fun usesBuiltin(context: Context): Boolean = prefs(context).getBoolean(KEY_BUILTIN, false)
 
     /**
-     * Следит за прямым подключением и при признаках блокировки
-     * переключается на встроенные мосты.
+     * Следит за подключением, пока Tor не готов, и при признаках
+     * блокировки идёт дальше по лестнице: напрямую — на мосты, с мостами —
+     * за свежими к moat.
      *
      * Один сторож на процесс: повторный запуск прежнего не дублирует.
+     * Перезапуск Tor изнутри сторожа сторожа не дублирует тоже.
      */
     private fun watchForBlocking(context: Context) {
         if (watcher?.isActive == true) return
 
         watcher = watchScope.launch {
-            val since = System.currentTimeMillis()
-
             while (true) {
                 delay(WATCH_MS)
                 val status = status()
 
-                // Остановлен, готов или уже с мостами — следить не за чем.
-                if (!status.running || status.ready || status.bridges) return@launch
+                // Остановлен или готов — следить не за чем.
+                if (!status.running || status.ready) return@launch
+                if (!looksBlocked(status, startedAt)) continue
 
-                if (looksBlocked(status, since)) {
+                if (!status.bridges) {
+                    // Напрямую не выходит — сразу на мосты, какие есть,
+                    // а свежие ищутся уже во время их попытки.
                     prefs(context).edit().putBoolean(KEY_BUILTIN, true).apply()
-                    ensureStarted(context, emptyList())
+                    if (automaticBridges(context).isNotEmpty()) ensureStarted(context, emptyList())
+                }
 
-                    return@launch
+                refreshing = true
+                val fresh = try {
+                    refreshFresh(context)
+                } finally {
+                    refreshing = false
+                }
+
+                when {
+                    fresh && !status().ready -> ensureStarted(context, lastUserBridges)
+                    // С мостами, и свежих нет — дальше только мосты человека.
+                    !fresh && status().bridges -> return@launch
                 }
             }
         }
@@ -235,6 +323,10 @@ object EmbeddedTor {
 
     @Volatile
     private var watcher: Job? = null
+
+    /** Идёт запрос к moat — предлагать свои мосты рано. */
+    @Volatile
+    private var refreshing = false
 
     private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -297,13 +389,23 @@ object EmbeddedTor {
      */
     suspend fun awaitReady(timeoutMs: Long, onProgress: suspend (FfiTorStatus) -> Unit): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
+        var stoppedSince = 0L
 
         while (true) {
             val status = status()
+            val now = System.currentTimeMillis()
             if (status.ready) return true
-            if (!status.running || System.currentTimeMillis() >= deadline) return false
+            if (now >= deadline) return false
 
-            onProgress(status)
+            // Сторож перезапускает Tor с мостами — на миг он не запущен.
+            // Остановлен дольше — значит, остановлен всерьёз.
+            if (!status.running) {
+                if (stoppedSince == 0L) stoppedSince = now
+                if (now - stoppedSince > RESTART_GRACE_MS) return false
+            } else {
+                stoppedSince = 0L
+                onProgress(status)
+            }
             delay(POLL_MS)
         }
     }
@@ -364,6 +466,9 @@ object EmbeddedTor {
 
     private const val POLL_MS = 500L
 
+    /** Сколько «не запущен» считать перезапуском, а не остановкой. */
+    private const val RESTART_GRACE_MS = 5_000L
+
     /** Сколько подключения без готовности считать признаком блокировки. */
     private const val SLOW_MS = 45_000L
 
@@ -371,8 +476,22 @@ object EmbeddedTor {
 
     private const val KEY_PREWARM = "tor_prewarm"
 
-    /** Tor понадобились встроенные мосты — дальше сразу через них. */
+    /** Tor понадобились мосты — дальше сразу через них. */
     private const val KEY_BUILTIN = "tor_builtin_bridges"
+
+    /**
+     * Свежие мосты от moat, строка на мост.
+     *
+     * Вне зашифрованной базы — они нужны до PIN (прогрев). Выдают они
+     * то же, что и мосты внутри APK: что приложение ходит в Tor через мосты.
+     */
+    private const val KEY_FRESH = "tor_fresh_bridges"
+
+    /** Сколько свежих мостов хранить. */
+    private const val MAX_FRESH = 8
+
+    /** Не чаще одного запроса к moat за это время. */
+    private const val FRESH_RETRY_MS = 10 * 60_000L
 
     /** Файл встроенных мостов в assets. */
     private const val BUILTIN_BRIDGES_ASSET = "tor/bridges.txt"

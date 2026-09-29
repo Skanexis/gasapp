@@ -49,6 +49,14 @@ object NetworkProxy {
          * цепочкой; у внешнего SOCKS5 — тот же прокси.
          */
         data class Through(val proxy: Proxy, val anonymous: Proxy) : State()
+
+        /**
+         * Через встроенный Tor. Порты — не снимок, а берутся у
+         * [EmbeddedTor] при каждом соединении: сторож блокировки
+         * перезапускает Tor с мостами, и порт моста меняется. Со снимком
+         * вся сеть до перезапуска приложения стучалась бы в закрытый порт.
+         */
+        object Embedded : State()
         object Blocked : State()
     }
 
@@ -72,7 +80,7 @@ object NetworkProxy {
 
     /** Идёт ли сеть через прокси: сокет по этому признаку чаще переподключается. */
     val isProxied: Boolean
-        get() = state is State.Through
+        get() = state.let { it is State.Through || it is State.Embedded }
 
     /**
      * Применяет режим, прочитанный из ядра.
@@ -94,14 +102,10 @@ object NetworkProxy {
         state = when (mode) {
             null -> State.Blocked
             is FfiProxy.Direct -> State.Direct
-            is FfiProxy.Tor -> bridges
-                ?.let { EmbeddedTor.ensureStarted(context, it) }
-                ?.takeIf { it != 0 }
-                // 🔐 Без изолированного порта — закрыто: анонимный запрос
-                // по общей цепочке связал бы себя с подписанными.
-                ?.let { port -> EmbeddedTor.isolatedPort().takeIf { it != 0 }?.let { port to it } }
-                ?.let { (port, isolated) -> through(LOCALHOST, port, isolated) }
-                ?: State.Blocked
+            is FfiProxy.Tor -> {
+                val started = bridges?.let { EmbeddedTor.ensureStarted(context, it) } ?: 0
+                if (started != 0 && proxySupported) State.Embedded else State.Blocked
+            }
             is FfiProxy.Socks5 -> through(mode.host, mode.port.toInt(), mode.port.toInt())
         }
 
@@ -130,7 +134,24 @@ object NetworkProxy {
     fun current(anonymous: Boolean = false): Proxy = when (val snapshot = state) {
         is State.Direct -> Proxy.NO_PROXY
         is State.Through -> if (anonymous) snapshot.anonymous else snapshot.proxy
+        is State.Embedded -> embeddedProxy(anonymous)
         is State.Blocked -> throw IOException("network closed: proxy unavailable")
+    }
+
+    /**
+     * Прокси встроенного Tor по его текущим портам.
+     *
+     * 🔐 Не запущен (или нет изолированного порта) — закрыто, а не
+     * напрямую: анонимный запрос по общей цепочке связал бы себя
+     * с подписанными.
+     */
+    @Throws(IOException::class)
+    private fun embeddedProxy(anonymous: Boolean): Proxy {
+        val port = EmbeddedTor.port()
+        val isolated = EmbeddedTor.isolatedPort()
+        if (port == 0 || isolated == 0) throw IOException("network closed: tor not running")
+
+        return Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved(LOCALHOST, if (anonymous) isolated else port))
     }
 
     /**

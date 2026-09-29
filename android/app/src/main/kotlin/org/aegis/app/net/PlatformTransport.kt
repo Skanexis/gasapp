@@ -5,7 +5,7 @@ package org.aegis.app.net
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import uniffi.aegis.FfiException
+import uniffi.aegis.FfiTransportException
 import uniffi.aegis.FfiHeader
 import uniffi.aegis.FfiHttpResponse
 import uniffi.aegis.HttpTransport
@@ -48,7 +48,7 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
         val connection = try {
             openConnection(method, path, anonymous)
         } catch (error: IOException) {
-            throw FfiException.Core("network unavailable: ${error.javaClass.simpleName}")
+            throw FfiTransportException.Network()
         }
 
         try {
@@ -116,7 +116,7 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
             // не является и возвращается выше как обычный ответ.
             // Ядро реагирует на эти случаи по-разному: первый повторяет
             // через очередь, второй показывает пользователю.
-            throw FfiException.Core("network unavailable: ${error.javaClass.simpleName}")
+            throw FfiTransportException.Network()
         } finally {
             connection.disconnect()
         }
