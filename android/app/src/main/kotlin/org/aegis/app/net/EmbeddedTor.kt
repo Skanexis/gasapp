@@ -4,7 +4,6 @@ package org.aegis.app.net
 
 import android.content.Context
 import android.net.Uri
-import android.telephony.TelephonyManager
 import java.io.File
 import java.net.Authenticator
 import java.net.PasswordAuthentication
@@ -59,8 +58,8 @@ import uniffi.aegis.validateTorBridges
  * чем больше мостов, тем труднее заблокировать все.
  *
  * 🔐 moat — служба Tor Project, запрос идёт через CDN (meek): сервер
- * AEGIS не участвует. Tor Project видит адрес устройства и страну сети
- * (как у Tor Browser), провайдер — HTTPS к крупному сайту.
+ * AEGIS не участвует. Tor Project видит адрес устройства (как у Tor
+ * Browser), страна ему не передаётся; провайдер — HTTPS к крупному сайту.
  *
  * # Onion-адрес сервера
  *
@@ -197,7 +196,11 @@ object EmbeddedTor {
         lastFreshAttempt = now
 
         val known = automaticBridges(context).toSet()
-        val fetched = runCatching { fetchTorBridges(networkCountry(context)) }
+        // 🔐 Без страны: moat отдаёт общий набор стран с блокировкой
+        // (он один для России, Ирана и Китая). Страна сети, переданная
+        // Tor Project, — это местоположение, отданное третьей стороне,
+        // а выигрыша от неё сейчас нет.
+        val fetched = runCatching { fetchTorBridges(null) }
             .getOrDefault(emptyList())
         if (fetched.isEmpty()) return false
 
@@ -206,19 +209,6 @@ object EmbeddedTor {
         prefs(context).edit().putString(KEY_FRESH, kept.joinToString("\n")).apply()
 
         return fetched.any { it !in known }
-    }
-
-    /**
-     * Страна сети (ISO 3166-1) — от неё зависит, какие мосты там
-     * работают. Без неё moat отдаёт общий набор стран с блокировкой.
-     */
-    private fun networkCountry(context: Context): String? {
-        val telephony = context.getSystemService(TelephonyManager::class.java)
-        val country = runCatching { telephony?.networkCountryIso }.getOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?: runCatching { telephony?.simCountryIso }.getOrNull()
-
-        return country?.trim()?.takeIf { it.length == 2 && it.all(Char::isLetter) }
     }
 
     /** Время последнего запроса к moat в этом процессе. */

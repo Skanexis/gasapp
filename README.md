@@ -104,7 +104,11 @@ AEGIS **защищает** от: провайдера связи, операто
 | [SECURITY.md](SECURITY.md) | Как сообщить об уязвимости |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Правила разработки |
 | [NOTICE](NOTICE) | Карта лицензий |
-| [doc.md](doc.md) | Исходное обоснование выбора стека |
+| [docs/store/README.md](docs/store/README.md) | Публикация в Google Play и App Store: тексты, анкеты, что мешает подаче |
+| [docs/legal/privacy-policy.md](docs/legal/privacy-policy.md) ([EN](docs/legal/privacy-policy.en.md)) | Политика конфиденциальности |
+| [docs/dev/testing-on-phones.md](docs/dev/testing-on-phones.md) | Проверка на двух телефонах |
+| [docs/dev/binding-generation.md](docs/dev/binding-generation.md) | Генерация биндингов UniFFI |
+| [docs/history/stack-rationale.md](docs/history/stack-rationale.md) | Исходное обоснование выбора стека |
 
 **Начинать чтение следует с `AEGIS_MASTER_PLAN.md`** — там записано не только
 что мы делаем, но и почему именно так, включая отвергнутые альтернативы.
