@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Onion-адрес сервера AEGIS.
+#
+# Запуск рядом с узлом:
+#   AEGIS_UPSTREAM=10.0.0.1:8443 docker compose -f server/deploy/onion/docker-compose.yml up -d
+#   docker compose -f server/deploy/onion/docker-compose.yml logs onion | grep "AEGIS onion"
+#
+# Для разработки (сервер на этой же машине, AEGIS_BIND=0.0.0.0:8443):
+#   AEGIS_UPSTREAM=host.docker.internal:8443 docker compose -f server/deploy/onion/docker-compose.yml up -d
+#
+# Напечатанный адрес вписывается в сборку приложения:
+#   ./gradlew assembleRelease -PaegisServerOnion=<адрес>.onion:443
+
+services:
+  onion:
+    build: .
+    container_name: aegis-onion
+    restart: unless-stopped
+    environment:
+      AEGIS_UPSTREAM: ${AEGIS_UPSTREAM:?задайте AEGIS_UPSTREAM}
+      AEGIS_ONION_PORT: ${AEGIS_ONION_PORT:-443}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - aegis-onion-keys:/var/lib/tor/aegis
+
+volumes:
+  # 🔐 Ключ onion-адреса. Потерять — сменить адрес во всех сборках;
+  # утечь — дать другому выдать себя за адрес (TLS и пиннинг при этом
+  # по-прежнему не пустят его к трафику).
+  aegis-onion-keys:

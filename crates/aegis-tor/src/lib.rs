@@ -53,7 +53,7 @@ use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-pub use socks::Allowlist;
+pub use socks::{Allowlist, OnionError};
 
 use bridge::Connector;
 use socks::Target;
@@ -277,6 +277,14 @@ impl EmbeddedTor {
         let credentials = Arc::new(socks::Credentials::new(&username, &password));
 
         let destinations = Arc::new(settings.destinations);
+
+        // Прогрев onion-сервиса сервера: первая встреча — это дескриптор
+        // и цепочки встречи, десятки секунд. Без прогрева их ждал первый
+        // настоящий запрос (регистрация) и не укладывался в таймаут.
+        for (host, port) in destinations.onion_targets() {
+            runtime.spawn(warm_onion(Arc::clone(&client), host, port));
+        }
+
         runtime.spawn(bridge::serve(
             listener,
             Arc::new(Arti {
@@ -474,6 +482,22 @@ async fn keep_bootstrapping<R: tor_rtcompat::Runtime>(client: Arc<TorClient<R>>)
     }
 }
 
+/// Один раз соединяется с onion-сервисом после бутстрапа и закрывает
+/// соединение: дескриптор и цепочки встречи остаются у Arti.
+async fn warm_onion<R: tor_rtcompat::Runtime>(client: Arc<TorClient<R>>, host: String, port: u16) {
+    while client.bootstrap().await.is_err() {
+        tokio::time::sleep(RETRY_FIRST).await;
+    }
+
+    let mut prefs = StreamPrefs::new();
+    prefs.connect_to_onion_services(BoolOrAuto::Explicit(true));
+
+    if let Err(error) = client.connect_with_prefs((host, port), &prefs).await {
+        // Не страшно: настоящий запрос попробует сам.
+        tracing::debug!(kind = ?error.kind(), "tor: onion warm-up failed");
+    }
+}
+
 /// Соединитель через Arti.
 ///
 /// `isolated` — каждое соединение в своей изоляции Arti, то есть на
@@ -495,6 +519,16 @@ impl<R: tor_rtcompat::Runtime> Connector for Arti<R> {
         let mut prefs = StreamPrefs::new();
         if self.isolated {
             prefs.set_isolation(IsolationToken::new());
+        }
+        // Onion-сервис сервера (см. `Allowlist::via_onion`): Arti по
+        // умолчанию к ним не ходит, разрешение — явное и только для
+        // адресов `.onion`, которые мост получил из собственного списка.
+        if target
+            .0
+            .rsplit_once('.')
+            .is_some_and(|(_, tld)| tld.eq_ignore_ascii_case("onion"))
+        {
+            prefs.connect_to_onion_services(BoolOrAuto::Explicit(true));
         }
 
         async move {

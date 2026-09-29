@@ -16,11 +16,13 @@ workspace = true
 [dependencies]
 # Arti — реализация Tor на Rust от Tor Project (MIT OR Apache-2.0).
 #
-# 🔐 default-features = false: без native-tls (OpenSSL) и без
-# onion-сервисов, которые нам не нужны. rustls — TLS до входного узла;
+# 🔐 default-features = false: без native-tls (OpenSSL). Клиент
+# onion-сервисов — чтобы ходить на onion-адрес сервера AEGIS без
+# выходного узла (свой onion-сервис приложение не поднимает).
+# rustls — TLS до входного узла;
 # tokio — рантайм; compression — сжатие каталогов (иначе бутстрап
 # качает в разы больше).
-arti-client = { version = "=0.46.0", default-features = false, features = ["tokio", "rustls", "compression", "pt-client"] }
+arti-client = { version = "=0.46.0", default-features = false, features = ["tokio", "rustls", "compression", "pt-client", "onion-service-client"] }
 # Тот же tor-rtcompat, что внутри arti-client: тип рантайма клиента.
 tor-rtcompat = { version = "=0.46.0", default-features = false, features = ["tokio", "rustls"] }
 # Криптопровайдер TLS до узлов Tor. Arti оставляет выбор приложению.

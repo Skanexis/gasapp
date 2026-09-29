@@ -96,7 +96,9 @@ class NetworkActivity : AppCompatActivity() {
         }
 
         view.text = when {
+            status.ready && status.bridges -> getString(R.string.tor_status_ready_bridges)
             status.ready -> getString(R.string.tor_status_ready)
+            status.bridges -> getString(R.string.tor_status_via_bridges, status.percent.toInt())
             status.stalled -> getString(R.string.tor_status_stalled, status.percent.toInt())
             else -> getString(R.string.tor_status_connecting, status.percent.toInt())
         }

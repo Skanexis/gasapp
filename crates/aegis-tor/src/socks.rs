@@ -131,9 +131,21 @@ pub(crate) enum HandshakeError {
 /// ходить в Tor через AEGIS — и, хуже, пользоваться нашим бутстрапом
 /// как своим. Со списком чужое приложение достигает только сервера
 /// AEGIS, куда ему и так можно без нас.
+///
+/// # Onion-адрес сервера
+///
+/// Назначению можно сопоставить onion-сервис ([`Allowlist::via_onion`]):
+/// платформа по-прежнему соединяется с `домен:порт` — её TLS, SNI
+/// и пиннинг не меняются, — а мост ведёт это соединение на `.onion`.
+/// Выходной узел Tor тогда не участвует вовсе, и сервер достижим без
+/// публичного адреса. 🔐 Сопоставление задаёт сборка приложения, а не
+/// сервер: подменить onion-адрес сервер не может.
 #[derive(Debug, Clone)]
 pub struct Allowlist {
     entries: Vec<(String, u16)>,
+    /// Куда на самом деле ведёт каждое назначение: `(хост, порт)` →
+    /// onion-адрес и порт.
+    onion: Vec<((String, u16), (String, u16))>,
 }
 
 impl Allowlist {
@@ -149,7 +161,49 @@ impl Allowlist {
                 .into_iter()
                 .map(|(host, port)| (normalize(host.as_ref()), port))
                 .collect(),
+            onion: Vec::new(),
         }
+    }
+
+    /// Ведёт назначение `host:port` на onion-сервис `onion:onion_port`.
+    ///
+    /// # Errors
+    ///
+    /// [`OnionError`] — назначения нет в списке либо адрес не onion v3
+    /// (56 знаков base32 и `.onion`): опечатка в адресе увела бы всё
+    /// соединение в никуда, и лучше узнать об этом при запуске.
+    pub fn via_onion(
+        mut self,
+        host: &str,
+        port: u16,
+        onion: &str,
+        onion_port: u16,
+    ) -> Result<Self, OnionError> {
+        let from = (normalize(host), port);
+        if !self.entries.contains(&from) {
+            return Err(OnionError::UnknownDestination);
+        }
+
+        let onion = normalize(onion);
+        if !is_onion_v3(&onion) || onion_port == 0 {
+            return Err(OnionError::BadAddress);
+        }
+
+        self.onion.retain(|(key, _)| *key != from);
+        self.onion.push((from, (onion, onion_port)));
+
+        Ok(self)
+    }
+
+    /// Onion-сервисы, на которые ведут назначения, — для прогрева.
+    pub(crate) fn onion_targets(&self) -> Vec<(String, u16)> {
+        self.onion.iter().map(|(_, to)| to.clone()).collect()
+    }
+
+    /// Ведёт ли хоть одно назначение на onion-сервис.
+    #[must_use]
+    pub fn uses_onion(&self) -> bool {
+        !self.onion.is_empty()
     }
 
     /// Пуст ли список: такой мост никого никуда не пустит.
@@ -168,13 +222,54 @@ impl Allowlist {
     }
 
     /// Разрешено ли назначение.
+    #[cfg(test)]
     pub(crate) fn permits(&self, target: &Target) -> bool {
-        let host = normalize(&target.host);
-
-        self.entries
-            .iter()
-            .any(|(allowed, port)| *allowed == host && *port == target.port)
+        self.route(target).is_some()
     }
+
+    /// Куда на самом деле соединяться; `None` — назначение не разрешено.
+    pub(crate) fn route(&self, target: &Target) -> Option<Target> {
+        let key = (normalize(&target.host), target.port);
+
+        if !self.entries.contains(&key) {
+            return None;
+        }
+
+        let routed = self
+            .onion
+            .iter()
+            .find(|(from, _)| *from == key)
+            .map_or_else(
+                || target.clone(),
+                |(_, (onion, port))| Target {
+                    host: onion.clone(),
+                    port: *port,
+                },
+            );
+
+        Some(routed)
+    }
+}
+
+/// Почему onion-сопоставление не принято.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum OnionError {
+    /// Сопоставляемого назначения нет в списке.
+    #[error("onion: destination is not allowed")]
+    UnknownDestination,
+    /// Адрес не onion v3.
+    #[error("onion: not a v3 onion address")]
+    BadAddress,
+}
+
+/// Адрес onion-сервиса v3: 56 знаков base32 (a–z, 2–7) и `.onion`.
+fn is_onion_v3(host: &str) -> bool {
+    host.strip_suffix(".onion").is_some_and(|label| {
+        label.len() == 56
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || (b'2'..=b'7').contains(&byte))
+    })
 }
 
 /// Хост в сравнимом виде: нижний регистр, без завершающей точки
@@ -523,6 +618,54 @@ mod tests {
         assert!(!list.permits(&target("evil.example.org", 443)));
         assert!(!list.permits(&target("aegis.example.org.evil.org", 443)));
         assert!(!Allowlist::new(Vec::<(String, u16)>::new().into_iter()).permits(&target("x", 1)));
+    }
+
+    /// Onion v3 из примеров спецификации Tor: 56 знаков base32.
+    const ONION: &str = "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion";
+
+    /// Назначение сервера ведёт на его onion-сервис; прочее — как было.
+    #[test]
+    fn the_server_destination_leads_to_its_onion_service() {
+        let target = |host: &str, port| Target {
+            host: host.to_owned(),
+            port,
+        };
+        let list = Allowlist::new([("aegis.example.org", 443), ("10.0.2.2", 8443)])
+            .via_onion("Aegis.Example.org", 443, ONION, 443)
+            .expect("onion принят");
+
+        assert!(list.uses_onion());
+        assert_eq!(list.route(&target("aegis.example.org", 443)), Some(target(ONION, 443)));
+        assert_eq!(list.route(&target("10.0.2.2", 8443)), Some(target("10.0.2.2", 8443)));
+        assert_eq!(list.route(&target("evil.example.org", 443)), None);
+    }
+
+    /// 🔐 Опечатка в onion-адресе или чужое назначение — отказ при
+    /// запуске, а не соединения в никуда.
+    #[test]
+    fn a_bad_onion_route_is_refused() {
+        let list = || Allowlist::new([("aegis.example.org", 443)]);
+
+        assert_eq!(
+            list().via_onion("other.example.org", 443, ONION, 443).err(),
+            Some(OnionError::UnknownDestination)
+        );
+        for bad in [
+            "short.onion",
+            "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscry1.onion",
+            "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.com",
+            "",
+        ] {
+            assert_eq!(
+                list().via_onion("aegis.example.org", 443, bad, 443).err(),
+                Some(OnionError::BadAddress),
+                "принят адрес {bad:?}"
+            );
+        }
+        assert_eq!(
+            list().via_onion("aegis.example.org", 443, ONION, 0).err(),
+            Some(OnionError::BadAddress)
+        );
     }
 
     #[tokio::test]

@@ -37,6 +37,12 @@ pub struct FfiTorSettings {
     /// Мосты Tor (как их возвращает `Messenger::tor_bridges`); пусто —
     /// прямое подключение к сети Tor.
     pub bridges: Vec<String>,
+    /// Onion-сервис сервера, `адрес.onion:порт`, если сборка его знает.
+    ///
+    /// Соединения к серверу мост ведёт туда, а не через выходной узел:
+    /// TLS и пиннинг платформы — прежние (см. `Allowlist::via_onion`).
+    /// 🔐 Задаётся сборкой приложения, не сервером.
+    pub server_onion: Option<String>,
 }
 
 /// Состояние встроенного Tor.
@@ -115,6 +121,20 @@ pub fn start_embedded_tor(settings: FfiTorSettings) -> Result<u16, FfiError> {
         return Err(FfiError::InvalidArgument);
     }
 
+    // Onion-сервис сервера — проверяется до запуска: опечатка в адресе
+    // увела бы всё соединение в никуда.
+    let mut destinations = Allowlist::new([(settings.server_host.as_str(), settings.server_port)]);
+    if let Some(onion) = settings.server_onion.as_deref().map(str::trim).filter(|text| !text.is_empty()) {
+        let (host, port) = onion
+            .rsplit_once(':')
+            .and_then(|(host, port)| Some((host, port.parse::<u16>().ok()?)))
+            .ok_or(FfiError::InvalidArgument)?;
+
+        destinations = destinations
+            .via_onion(&settings.server_host, settings.server_port, host, port)
+            .map_err(|_| FfiError::InvalidArgument)?;
+    }
+
     // 🔐 Та же проверка, что при сохранении: отпечаток обязателен,
     // транспорт — только поддерживаемый.
     let bridges = settings
@@ -141,7 +161,7 @@ pub fn start_embedded_tor(settings: FfiTorSettings) -> Result<u16, FfiError> {
             state_dir: PathBuf::from(settings.state_dir),
             cache_dir: PathBuf::from(settings.cache_dir),
             trusted_prefix: settings.trusted_prefix.map(PathBuf::from),
-            destinations: Allowlist::new([(settings.server_host, settings.server_port)]),
+            destinations,
             bridges,
             transports: Vec::new(),
             allow_private_bridges: false,
@@ -202,6 +222,7 @@ mod tests {
             server_host: host.to_owned(),
             server_port: port,
             bridges: Vec::new(),
+            server_onion: None,
         }
     }
 
@@ -219,5 +240,22 @@ mod tests {
             start_embedded_tor(settings(&dir, "aegis.example.org", 0)),
             Err(FfiError::InvalidArgument)
         ));
+    }
+
+    /// 🔐 Опечатка в onion-адресе сервера — отказ до запуска, а не Tor,
+    /// который ведёт все соединения в никуда.
+    #[test]
+    fn a_bad_server_onion_is_refused_before_start() {
+        let dir = std::env::temp_dir();
+
+        for onion in ["notanonion:443", "abc.onion", "abc.onion:x", "abc.onion:443"] {
+            let mut bad = settings(&dir, "aegis.example.org", 443);
+            bad.server_onion = Some(onion.to_owned());
+
+            assert!(
+                matches!(start_embedded_tor(bad), Err(FfiError::InvalidArgument)),
+                "принят onion {onion:?}"
+            );
+        }
     }
 }

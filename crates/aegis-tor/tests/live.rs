@@ -132,3 +132,45 @@ fn a_request_goes_through_real_tor_and_nothing_else_does() {
 
     assert_eq!(tor.status(), TorStatus::Ready);
 }
+
+/// Соединение к серверу идёт на его onion-сервис, а не через выход.
+///
+/// `AEGIS_TOR_ONION=адрес.onion:порт` — onion-сервис, за которым
+/// слушает что угодно по TCP (например, `server/deploy/onion`).
+/// Проверяется, что встреча с onion-сервисом состоялась: мост ответил
+/// успехом и дальше пошли байты.
+#[test]
+#[ignore = "нужна сеть Tor и свой onion-сервис"]
+fn the_server_destination_reaches_its_onion_service() {
+    let Ok(onion) = std::env::var("AEGIS_TOR_ONION") else {
+        eprintln!("AEGIS_TOR_ONION не задан — пропуск");
+        return;
+    };
+    let (onion_host, onion_port) = onion.rsplit_once(':').expect("адрес:порт");
+    let onion_port: u16 = onion_port.parse().expect("порт");
+
+    let dir = tempfile::tempdir().expect("каталог");
+    let tor = EmbeddedTor::start(TorSettings {
+        state_dir: dir.path().join("state"),
+        cache_dir: dir.path().join("cache"),
+        trusted_prefix: None,
+        destinations: Allowlist::new([("aegis.test", PORT)])
+            .via_onion("aegis.test", PORT, onion_host, onion_port)
+            .expect("onion"),
+        bridges: Vec::new(),
+        transports: Vec::new(),
+        allow_private_bridges: false,
+    })
+    .expect("запуск");
+
+    let started = Instant::now();
+    while tor.status() != TorStatus::Ready && started.elapsed() < Duration::from_mins(3) {
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    eprintln!("бутстрап: {:?} за {:?}", tor.status(), started.elapsed());
+
+    let started = Instant::now();
+    let (_socket, code) = socks_connect(&tor, "aegis.test");
+    eprintln!("встреча с onion-сервисом: {:?}", started.elapsed());
+    assert_eq!(code, 0, "onion-сервис сервера недостижим");
+}

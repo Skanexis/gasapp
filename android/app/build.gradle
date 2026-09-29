@@ -109,6 +109,14 @@ android {
         // устройствах; релиз обязан переопределить его.
         buildConfigField "String", "AEGIS_SERVER_URL",
                 "\"${project.findProperty('aegisServerUrl') ?: 'https://10.0.2.2:8443'}\""
+        // Onion-сервис сервера (`адрес.onion:порт`, см.
+        // server/deploy/onion): в режиме Tor соединения к серверу идут
+        // туда, без выходного узла. Пусто — через выходной узел.
+        //
+        // 🔐 Задаётся сборкой, а не сервером: подменить адрес сервер
+        // не может, а TLS и пиннинг к домену сервера остаются в силе.
+        buildConfigField "String", "AEGIS_SERVER_ONION",
+                "\"${project.findProperty('aegisServerOnion') ?: ''}\""
         // 🔐 Эталон подписи для проверки во время работы (MASVS
         // RESILIENCE-2.1, `core/AppSignature.kt`). Пусто в отладочной
         // сборке: подписывать её нашим ключом никто не будет, и сверять
@@ -308,7 +316,8 @@ android {
             manifest.srcFile 'src/main/AndroidManifest.xml'
             java.srcDirs = ['src/main/java', 'src/main/kotlin']
             res.srcDirs = ['src/main/res']
-            assets.srcDirs = ['src/main/assets']
+            // Встроенные мосты Tor — генерируются задачей aegisBridges.
+            assets.srcDirs = ['src/main/assets', "$buildDir/generated/aegis-bridges"]
         }
 
         // Flavor-specific source sets
@@ -519,3 +528,26 @@ gradle.taskGraph.whenReady { graph ->
         )
     }
 }
+
+// Встроенные мосты Tor (WebTunnel), строка на мост.
+//
+// По умолчанию — android/tor/bridges.txt из репозитория. Свои мосты,
+// которые не стоит светить в открытом репозитории (их адреса
+// блокировщики собирали бы оттуда), подставляются при сборке:
+//   ./gradlew assembleRelease -PaegisBridgesFile=/путь/к/bridges.txt
+// Строки проверяет ядро при запуске Tor; негодная отбрасывается,
+// а не ломает Tor целиком.
+def aegisBridgesSource = file(project.findProperty('aegisBridgesFile') ?: "${rootDir}/tor/bridges.txt")
+def aegisBridgesOut = file("$buildDir/generated/aegis-bridges/tor")
+
+tasks.register('aegisBridges') {
+    inputs.file(aegisBridgesSource).optional()
+    outputs.dir(aegisBridgesOut)
+    doLast {
+        aegisBridgesOut.mkdirs()
+        def text = aegisBridgesSource.exists() ? aegisBridgesSource.getText('UTF-8') : ''
+        new File(aegisBridgesOut, 'bridges.txt').setText(text, 'UTF-8')
+    }
+}
+
+preBuild.dependsOn('aegisBridges')

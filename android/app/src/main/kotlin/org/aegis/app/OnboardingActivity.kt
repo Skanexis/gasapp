@@ -480,12 +480,15 @@ class OnboardingActivity : AppCompatActivity() {
      * @throws TorNotReady Tor не подключился за отведённое время.
      */
     private suspend fun awaitTor() {
-        val since = System.currentTimeMillis()
         val ready = EmbeddedTor.awaitReady(TOR_WAIT_MS) { status ->
             withContext(Dispatchers.Main) {
-                if (EmbeddedTor.looksBlocked(status, since)) addBridge.visibility = View.VISIBLE
+                if (EmbeddedTor.needsUserBridges(this@OnboardingActivity)) addBridge.visibility = View.VISIBLE
                 progressLabel.text = getString(
-                    if (status.stalled) R.string.tor_status_stalled else R.string.tor_status_connecting,
+                    when {
+                        status.bridges -> R.string.tor_status_via_bridges
+                        status.stalled -> R.string.tor_status_stalled
+                        else -> R.string.tor_status_connecting
+                    },
                     status.percent.toInt(),
                 )
             }
@@ -513,10 +516,9 @@ class OnboardingActivity : AppCompatActivity() {
     private fun watchTorForBlocking() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                val since = System.currentTimeMillis()
 
                 while (true) {
-                    if (!direct.isChecked && EmbeddedTor.looksBlocked(EmbeddedTor.status(), since)) {
+                    if (!direct.isChecked && EmbeddedTor.needsUserBridges(this@OnboardingActivity)) {
                         addBridge.visibility = View.VISIBLE
                     }
                     delay(TOR_WATCH_MS)

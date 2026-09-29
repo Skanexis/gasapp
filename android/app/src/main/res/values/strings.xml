@@ -642,4 +642,6 @@
     <string name="contact_profile_safety_number">Safety number</string>
     <string name="devices_this_pill">This device</string>
     <string name="devices_this_id">ID %1$s</string>
+    <string name="tor_status_via_bridges">Tor is blocked here — connecting through bridges… %1$d%%</string>
+    <string name="tor_status_ready_bridges">Connected to Tor through bridges</string>
 </resources>

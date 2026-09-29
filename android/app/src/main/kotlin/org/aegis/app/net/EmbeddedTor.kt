@@ -7,13 +7,19 @@ import android.net.Uri
 import java.io.File
 import java.net.Authenticator
 import java.net.PasswordAuthentication
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.aegis.app.BuildConfig
 import uniffi.aegis.FfiTorSettings
 import uniffi.aegis.FfiTorStatus
 import uniffi.aegis.embeddedTorStatus
 import uniffi.aegis.startEmbeddedTor
 import uniffi.aegis.stopEmbeddedTor
+import uniffi.aegis.validateTorBridges
 
 /**
  * Встроенный Tor (Arti в ядре, `aegis-tor`) — вместо Orbot.
@@ -33,6 +39,20 @@ import uniffi.aegis.stopEmbeddedTor
  * (клиент — в ядре, без сторонних программ). Смена мостов перезапускает
  * Tor, и порт может смениться — поэтому порт всегда берётся отсюда,
  * а не запоминается.
+ *
+ * **Встроенные мосты** едут в сборке (`assets/tor/bridges.txt`, см.
+ * задачу `aegisBridges`). Сначала Tor подключается напрямую; если за
+ * [SLOW_MS] не вышло или бутстрап застрял — сам перезапускается через
+ * встроенные мосты и запоминает это ([KEY_BUILTIN]): следующий запуск
+ * сразу идёт через них, без прямой попытки, которая там, где Tor
+ * блокируют, выдаёт его провайдеру. Свои мосты человека дополняются
+ * встроенными — чем больше мостов, тем труднее заблокировать все.
+ *
+ * # Onion-адрес сервера
+ *
+ * Если сборка знает onion-сервис сервера ([BuildConfig.AEGIS_SERVER_ONION]),
+ * мост ведёт соединения к серверу туда: без выходного узла, и сервер
+ * достижим даже без публичного адреса. TLS и пиннинг — прежние.
  *
  * # Прогрев
  *
@@ -86,6 +106,15 @@ object EmbeddedTor {
         val host = server.host ?: return 0
         val serverPort = if (server.port > 0) server.port else DEFAULT_HTTPS_PORT
 
+        val builtin = builtinBridges(context)
+        val effective = when {
+            // Свои мосты — вместе со встроенными: больше мостов, больше
+            // шансов, что хоть часть не заблокирована.
+            bridges.isNotEmpty() -> (bridges + builtin).distinct()
+            usesBuiltin(context) && builtin.isNotEmpty() -> builtin
+            else -> emptyList()
+        }
+
         val noBackup = context.applicationContext.noBackupFilesDir
         val tor = File(noBackup, "tor")
 
@@ -106,15 +135,108 @@ object EmbeddedTor {
                     trustedPrefix = noBackup.path,
                     serverHost = host,
                     serverPort = serverPort.toUShort(),
-                    bridges = bridges,
+                    bridges = effective,
+                    serverOnion = BuildConfig.AEGIS_SERVER_ONION.ifBlank { null },
                 ),
             ).toInt()
         }.getOrDefault(0)
 
         if (port != 0) installAuthenticator()
 
+        // Отсчёт «долго подключается» — заново при каждой смене пути.
+        if (effective != lastEffective) {
+            lastEffective = effective
+            startedAt = System.currentTimeMillis()
+        }
+
+        // Напрямую, а встроенные мосты есть — следить, не заблокирован ли Tor.
+        if (port != 0 && effective.isEmpty() && builtin.isNotEmpty()) {
+            watchForBlocking(context.applicationContext)
+        }
+
         return port
     }
+
+    /**
+     * Встроенные мосты сборки — только годные строки.
+     *
+     * Каждая проверяется ядром по отдельности: одна испорченная строка
+     * иначе отвергла бы весь список, и Tor не запустился бы вовсе.
+     */
+    fun builtinBridges(context: Context): List<String> =
+        builtinCache ?: runCatching {
+            context.applicationContext.assets.open(BUILTIN_BRIDGES_ASSET)
+                .bufferedReader(Charsets.UTF_8)
+                .use { it.readLines() }
+        }
+            .getOrDefault(emptyList())
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .filter { line -> runCatching { validateTorBridges(line) }.getOrDefault(false) }
+            .also { builtinCache = it }
+
+    @Volatile
+    private var builtinCache: List<String>? = null
+
+    /** Мосты последнего запуска и его время — для отсчёта блокировки. */
+    @Volatile
+    private var lastEffective: List<String>? = null
+
+    @Volatile
+    private var startedAt: Long = 0L
+
+    /**
+     * Пора ли предложить человеку свои мосты.
+     *
+     * Только когда Tor не подключается, а помочь нечем: встроенных
+     * мостов нет либо Tor уже идёт через них и всё равно не подключился.
+     * Пока приложение само может переключиться на встроенные — не
+     * предлагает: предложение раньше времени только сбивало бы.
+     */
+    fun needsUserBridges(context: Context): Boolean {
+        val status = status()
+        val blocked = status.running && !status.ready &&
+            (status.stalled || System.currentTimeMillis() - startedAt > SLOW_MS)
+
+        return blocked && (status.bridges || builtinBridges(context).isEmpty())
+    }
+
+    /** Шёл ли Tor в прошлый раз через встроенные мосты. */
+    fun usesBuiltin(context: Context): Boolean = prefs(context).getBoolean(KEY_BUILTIN, false)
+
+    /**
+     * Следит за прямым подключением и при признаках блокировки
+     * переключается на встроенные мосты.
+     *
+     * Один сторож на процесс: повторный запуск прежнего не дублирует.
+     */
+    private fun watchForBlocking(context: Context) {
+        if (watcher?.isActive == true) return
+
+        watcher = watchScope.launch {
+            val since = System.currentTimeMillis()
+
+            while (true) {
+                delay(WATCH_MS)
+                val status = status()
+
+                // Остановлен, готов или уже с мостами — следить не за чем.
+                if (!status.running || status.ready || status.bridges) return@launch
+
+                if (looksBlocked(status, since)) {
+                    prefs(context).edit().putBoolean(KEY_BUILTIN, true).apply()
+                    ensureStarted(context, emptyList())
+
+                    return@launch
+                }
+            }
+        }
+    }
+
+    @Volatile
+    private var watcher: Job? = null
+
+    private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * Ставит [BridgeAuthenticator] источником паролей процесса.
@@ -198,7 +320,12 @@ object EmbeddedTor {
         prefs(context).edit().putBoolean(KEY_PREWARM, enabled).apply()
     }
 
-    /** Прогрев при старте приложения, если в прошлый раз выбран Tor. */
+    /**
+     * Прогрев при старте приложения, если в прошлый раз выбран Tor.
+     *
+     * Если Tor в прошлый раз понадобились встроенные мосты — сразу
+     * с ними: они в сборке, а не в базе, и до PIN доступны.
+     */
     fun prewarmIfChosen(context: Context) {
         if (prefs(context).getBoolean(KEY_PREWARM, false)) {
             ensureStarted(context, emptyList())
@@ -243,4 +370,13 @@ object EmbeddedTor {
     private const val PREFS = "aegis_network"
 
     private const val KEY_PREWARM = "tor_prewarm"
+
+    /** Tor понадобились встроенные мосты — дальше сразу через них. */
+    private const val KEY_BUILTIN = "tor_builtin_bridges"
+
+    /** Файл встроенных мостов в assets. */
+    private const val BUILTIN_BRIDGES_ASSET = "tor/bridges.txt"
+
+    /** Как часто сторож смотрит на прямое подключение. */
+    private const val WATCH_MS = 2_000L
 }
