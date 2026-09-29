@@ -31,9 +31,12 @@
 //! # Чего это НЕ меняет
 //!
 //! Tor прячет адрес от сервера, но не факт использования Tor от
-//! провайдера. Мосты (obfs4, Snowflake) — отдельный шаг.
+//! провайдера. Там, где Tor блокируют, — мосты `WebTunnel` ([`webtunnel`],
+//! свой клиент в этом крейте); свежие мосты — от Tor Project ([`moat`]).
 
 mod bridge;
+mod meek;
+pub mod moat;
 pub mod socks;
 pub mod webtunnel;
 
@@ -225,15 +228,7 @@ impl EmbeddedTor {
             let isolated_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
                 .await
                 .map_err(|_| TorError::Runtime)?;
-            let tunnel = if tunnel_targets.is_empty() {
-                None
-            } else {
-                Some(
-                    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-                        .await
-                        .map_err(|_| TorError::Runtime)?,
-                )
-            };
+            let tunnel = pt_listener(!tunnel_targets.is_empty()).await?;
 
             Ok::<_, TorError>((listener, isolated_listener, tunnel))
         })?;
@@ -348,8 +343,20 @@ impl EmbeddedTor {
     }
 }
 
-/// Случайная строка для логина и пароля моста: 16 байт в hex.
-fn random_token() -> String {
+/// Слушатель своего PT на 127.0.0.1 — только если есть его мосты.
+async fn pt_listener(needed: bool) -> Result<Option<TcpListener>, TorError> {
+    if !needed {
+        return Ok(None);
+    }
+
+    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .map(Some)
+        .map_err(|_| TorError::Runtime)
+}
+
+/// Случайная строка: 16 байт в hex (пароль моста, сессия meek).
+pub(crate) fn random_token() -> String {
     use rand_core::RngCore as _;
 
     let mut bytes = [0u8; 16];

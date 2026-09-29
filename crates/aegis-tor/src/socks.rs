@@ -635,8 +635,14 @@ mod tests {
             .expect("onion принят");
 
         assert!(list.uses_onion());
-        assert_eq!(list.route(&target("aegis.example.org", 443)), Some(target(ONION, 443)));
-        assert_eq!(list.route(&target("10.0.2.2", 8443)), Some(target("10.0.2.2", 8443)));
+        assert_eq!(
+            list.route(&target("aegis.example.org", 443)),
+            Some(target(ONION, 443))
+        );
+        assert_eq!(
+            list.route(&target("10.0.2.2", 8443)),
+            Some(target("10.0.2.2", 8443))
+        );
         assert_eq!(list.route(&target("evil.example.org", 443)), None);
     }
 

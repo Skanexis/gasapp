@@ -3592,7 +3592,11 @@ mod tests {
         assert_eq!(last_two, [3, 4], "лимит отрезал новые сообщения");
 
         let newest = storage.load_messages(&chat, 1).unwrap();
-        assert_eq!(newest[0].content.as_bytes()[0], 4, "превью — не последнее сообщение");
+        assert_eq!(
+            newest[0].content.as_bytes()[0],
+            4,
+            "превью — не последнее сообщение"
+        );
     }
 
     /// Сообщения других чатов не попадают в выборку.

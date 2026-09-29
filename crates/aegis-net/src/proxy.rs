@@ -378,6 +378,8 @@ mod tests {
             format!("192.0.2.7:9001 {FPR} extra=1"),
             format!("webtunnel host.example:443 {FPR} url=https://b/p"),
             format!("webtunnel [2001:db8::1]:443 {FPR} url=https://b/p\u{7}"),
+            // meek через CDN слишком медленен для каталога Arti (см. aegis-tor).
+            format!("meek_lite 192.0.2.20:80 {FPR} url=https://c.example.net front=f.example.org"),
             "192.0.2.7:9001 NOTHEX0123456789ABCDEF0123456789ABCDEF01".to_owned(),
             String::new(),
         ] {

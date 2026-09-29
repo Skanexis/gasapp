@@ -144,7 +144,7 @@ struct Endpoint {
 
 /// Почему соединение не состоялось.
 #[derive(Debug, thiserror::Error)]
-enum TunnelError {
+pub(crate) enum TunnelError {
     #[error("webtunnel i/o")]
     Io(#[from] std::io::Error),
     #[error("webtunnel protocol")]
@@ -240,7 +240,10 @@ impl Endpoint {
 }
 
 /// Хост и порт из `authority` URL (IPv6 — в квадратных скобках).
-fn split_host_port(authority: &str, default_port: u16) -> Result<(String, u16), TunnelError> {
+pub(crate) fn split_host_port(
+    authority: &str,
+    default_port: u16,
+) -> Result<(String, u16), TunnelError> {
     if authority.contains('@') {
         return Err(TunnelError::Protocol);
     }
@@ -424,11 +427,19 @@ fn is_public(ip: IpAddr) -> bool {
 
 /// TCP до первой отвечающей публичной точки.
 async fn connect_tcp(endpoint: &Endpoint, allow_private: bool) -> Result<TcpStream, TunnelError> {
-    let addresses: Vec<SocketAddr> =
-        tokio::net::lookup_host((endpoint.host.as_str(), endpoint.port))
-            .await?
-            .filter(|address| allow_private || is_public(address.ip()))
-            .collect();
+    connect_public(&endpoint.host, endpoint.port, allow_private).await
+}
+
+/// TCP до первого отвечающего публичного адреса узла.
+pub(crate) async fn connect_public(
+    host: &str,
+    port: u16,
+    allow_private: bool,
+) -> Result<TcpStream, TunnelError> {
+    let addresses: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
+        .await?
+        .filter(|address| allow_private || is_public(address.ip()))
+        .collect();
 
     for address in addresses {
         if let Ok(stream) = TcpStream::connect(address).await {

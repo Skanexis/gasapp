@@ -164,7 +164,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение не удалось.
     pub fn sealed_sender_enabled(&self) -> Result<bool, FfiError> {
-        let client = self.client()?;
+        let client = self.reader()?;
 
         guard(|| client.sealed_sender_enabled())
     }
@@ -175,7 +175,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение не удалось.
     pub fn security_report(&self, now_millis: i64) -> Result<FfiSecurityReport, FfiError> {
-        let client = self.client()?;
+        let client = self.reader()?;
 
         let report = guard(|| client.security_report(Timestamp::from_millis(now_millis)))?;
 

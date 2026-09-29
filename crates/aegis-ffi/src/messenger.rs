@@ -41,7 +41,7 @@ pub trait HttpTransport: Send + Sync {
     ///
     /// # Errors
     ///
-    /// [`FfiError::Core`] при сбое соединения.
+    /// [`FfiTransportError::Network`] при сбое соединения.
     fn execute(
         &self,
         method: String,
@@ -50,7 +50,31 @@ pub trait HttpTransport: Send + Sync {
         binary_body: Option<Vec<u8>>,
         headers: Vec<FfiHeader>,
         anonymous: bool,
-    ) -> Result<FfiHttpResponse, FfiError>;
+    ) -> Result<FfiHttpResponse, FfiTransportError>;
+}
+
+/// Сбой транспорта платформы.
+///
+/// Свой тип, а не [`FfiError`]: тот объявлен «плоским» (`flat_error`),
+/// а плоские ошибки UniFFI умеет только отдавать наружу, но не принимать
+/// обратно — ошибка, брошенная платформой из [`HttpTransport::execute`],
+/// поднимала панику внутри ядра («Can't lift flat errors»). Любой сбой
+/// сети — таймаут Tor, обрыв — превращался в «внутреннюю ошибку»
+/// посреди операции вместо [`AegisError::Network`], которого ждут
+/// повторы и очередь отправки.
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum FfiTransportError {
+    /// Сеть недоступна: соединение не открылось или оборвалось.
+    #[error("network unavailable")]
+    Network,
+}
+
+/// Исключение платформы, которого транспорт не объявлял (например,
+/// `RuntimeException` в Kotlin), — тоже сбой сети, а не паника ядра.
+impl From<uniffi::UnexpectedUniFFICallbackError> for FfiTransportError {
+    fn from(_: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::Network
+    }
 }
 
 /// Заголовок HTTP.
@@ -435,7 +459,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn chats(&self) -> Result<Vec<String>, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         let chats = guard(|| client.chats())?;
 
@@ -737,7 +761,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn own_device_id(&self) -> Result<Option<String>, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.own_device_id())
     }
@@ -1340,7 +1364,7 @@ impl Messenger {
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn attachments_of(&self, message_id: String) -> Result<Vec<Vec<u8>>, FfiError> {
         let parsed = parse_message_id(&message_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         let descriptors = guard(|| client.attachments_of(&parsed))?;
 
@@ -1394,8 +1418,8 @@ mod reader_tests {
             _binary_body: Option<Vec<u8>>,
             _headers: Vec<FfiHeader>,
             _anonymous: bool,
-        ) -> Result<FfiHttpResponse, FfiError> {
-            Err(FfiError::Core(AegisError::Network))
+        ) -> Result<FfiHttpResponse, FfiTransportError> {
+            Err(FfiTransportError::Network)
         }
     }
 
@@ -1431,5 +1455,39 @@ mod reader_tests {
 
             drop(busy);
         });
+    }
+}
+
+#[cfg(test)]
+mod transport_error_tests {
+    use super::*;
+
+    /// Ошибка платформы доходит до ядра как ошибка, а не как паника:
+    /// путь тот же, что у исключения Kotlin из `execute`.
+    #[test]
+    fn a_platform_network_error_crosses_back_into_the_core() {
+        let lowered =
+            <FfiTransportError as uniffi::Lower<crate::UniFfiTag>>::lower_into_rust_buffer(
+                FfiTransportError::Network,
+            );
+        let lifted =
+            <FfiTransportError as uniffi::Lift<crate::UniFfiTag>>::try_lift_from_rust_buffer(
+                lowered,
+            );
+
+        assert!(matches!(lifted, Ok(FfiTransportError::Network)));
+    }
+
+    /// Почему не `FfiError`: плоскую ошибку UniFFI обратно не поднимает.
+    #[test]
+    fn a_flat_error_cannot_be_lifted() {
+        let lowered = <FfiError as uniffi::Lower<crate::UniFfiTag>>::lower_into_rust_buffer(
+            FfiError::Core(AegisError::Network),
+        );
+        let lifted = std::panic::catch_unwind(|| {
+            <FfiError as uniffi::Lift<crate::UniFfiTag>>::try_lift_from_rust_buffer(lowered).is_ok()
+        });
+
+        assert!(lifted.is_err(), "UniFFI научился поднимать плоские ошибки");
     }
 }
