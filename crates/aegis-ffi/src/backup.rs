@@ -332,7 +332,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение базы не удалось.
     pub fn backup_status(&self) -> Result<FfiBackupStatus, FfiError> {
-        let client = self.client()?;
+        let client = self.reader()?;
 
         let (configured, last) =
             guard(|| Ok((client.backup_configured()?, client.last_backup_at()?)))?;
@@ -379,7 +379,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение не удалось.
     pub fn security_events(&self, limit: u32) -> Result<Vec<FfiSecurityEvent>, FfiError> {
-        let client = self.client()?;
+        let client = self.reader()?;
 
         let events = guard(|| client.security_events(limit))?;
 
@@ -489,7 +489,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение не удалось.
     pub fn vault_file_count(&self) -> Result<u32, FfiError> {
-        let client = self.client()?;
+        let client = self.reader()?;
 
         guard(|| client.vault_file_count())
     }

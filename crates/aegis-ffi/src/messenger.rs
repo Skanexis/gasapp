@@ -287,6 +287,25 @@ pub struct Messenger {
     // и параллельная отправка двух сообщений в один чат провернула бы
     // храповик дважды из одного состояния, потеряв одно из них.
     client: Mutex<Client<ForeignTransport>>,
+
+    /// Клиент для локальных чтений — своё соединение с той же базой.
+    ///
+    /// Основной клиент держит замок всё время сетевого запроса, а через
+    /// Tor (встреча с onion-сервисом, медленные цепочки) это десятки
+    /// секунд. Интерфейс читает настройки и списки из главного потока —
+    /// и ждал весь запрос: «AEGIS не отвечает». Этот клиент сети не
+    /// имеет вовсе ([`Offline`]) и отвечает сразу; база в режиме WAL,
+    /// чтения не мешают записи основного.
+    reader: Mutex<Client<Offline>>,
+}
+
+/// Транспорт без сети — у клиента локальных чтений.
+pub(crate) struct Offline;
+
+impl Transport for Offline {
+    fn execute(&self, _request: &HttpRequest) -> aegis_types::Result<HttpResponse> {
+        Err(AegisError::Network)
+    }
 }
 
 impl Messenger {
@@ -300,6 +319,11 @@ impl Messenger {
         &self,
     ) -> Result<std::sync::MutexGuard<'_, Client<ForeignTransport>>, FfiError> {
         self.client.lock().map_err(|_| FfiError::Panic)
+    }
+
+    /// Клиент локальных чтений: не ждёт сетевых запросов основного.
+    pub(crate) fn reader(&self) -> Result<std::sync::MutexGuard<'_, Client<Offline>>, FfiError> {
+        self.reader.lock().map_err(|_| FfiError::Panic)
     }
 }
 
@@ -328,9 +352,13 @@ impl Messenger {
             .map_err(|_| FfiError::InvalidArgument)?;
 
         let storage = guard(|| Storage::new(&database_path, &key))?;
+        // Второе соединение — после первого: схему уже довёл до текущей
+        // версии основной.
+        let reading = guard(|| Storage::new(&database_path, &key))?;
 
         Ok(Self {
             client: Mutex::new(Client::new(ForeignTransport { inner: transport }, storage)),
+            reader: Mutex::new(Client::new(Offline, reading)),
         })
     }
 
@@ -421,7 +449,7 @@ impl Messenger {
     /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
     pub fn chat_request(&self, chat_id: String) -> Result<FfiChatRequest, FfiError> {
         let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         let state = guard(|| client.chat_request(&ChatId::from_uuid(parsed)))?;
 
@@ -471,7 +499,7 @@ impl Messenger {
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn messages(&self, chat_id: String, limit: u32) -> Result<Vec<FfiMessage>, FfiError> {
         let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         let messages = guard(|| client.messages(&ChatId::from_uuid(parsed), limit))?;
 
@@ -588,7 +616,7 @@ impl Messenger {
     /// не прочитались.
     pub fn safety_number_with(&self, account_id: String) -> Result<String, FfiError> {
         let account = parse_account_id(&account_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.safety_number(&account))
     }
@@ -643,7 +671,7 @@ impl Messenger {
     /// [`FfiError::Core`] — свои ключи не читаются либо имя не подходит
     /// для ссылки.
     pub fn own_contact_link(&self) -> Result<String, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.own_contact_link())
     }
@@ -658,7 +686,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn setting_bool(&self, key: String, default: bool) -> Result<bool, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.setting_bool(&key, default))
     }
@@ -669,7 +697,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — запись не удалась.
     pub fn set_setting_bool(&self, key: String, enabled: bool) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.set_setting_bool(&key, enabled))
     }
@@ -680,7 +708,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn setting_int(&self, key: String, default: i64) -> Result<i64, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.setting_int(&key, default))
     }
@@ -691,7 +719,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — запись не удалась.
     pub fn set_setting_int(&self, key: String, value: i64) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.set_setting_int(&key, value))
     }
@@ -887,7 +915,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn own_username(&self) -> Result<Option<String>, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.own_username())
     }
@@ -898,7 +926,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn contacts(&self) -> Result<Vec<FfiContact>, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         let contacts = guard(|| client.contacts())?;
 
@@ -915,7 +943,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
     pub fn search(&self, query: String, limit: u32) -> Result<Vec<FfiSearchHit>, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         let hits = guard(|| client.search(&query, limit))?;
 
@@ -1109,7 +1137,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение не удалось.
     pub fn presence_sharing_enabled(&self) -> Result<bool, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.reader()?;
 
         guard(|| client.presence_sharing_enabled())
     }
@@ -1347,5 +1375,61 @@ impl Messenger {
 
             client.fetch_attachment(&device_id, &descriptor, Timestamp::from_millis(now_millis))
         })
+    }
+}
+
+#[cfg(test)]
+mod reader_tests {
+    use super::*;
+
+    /// Транспорт без сети: тесту нужна только база.
+    struct NoNetwork;
+
+    impl HttpTransport for NoNetwork {
+        fn execute(
+            &self,
+            _method: String,
+            _path: String,
+            _body: Option<String>,
+            _binary_body: Option<Vec<u8>>,
+            _headers: Vec<FfiHeader>,
+            _anonymous: bool,
+        ) -> Result<FfiHttpResponse, FfiError> {
+            Err(FfiError::Core(AegisError::Network))
+        }
+    }
+
+    /// Локальные чтения не ждут сетевого запроса основного клиента.
+    ///
+    /// Прежде настройка «блокировать снимки», которую каждый экран
+    /// читает при открытии, стояла в очереди за запросом через Tor —
+    /// десятки секунд, и Android показывал «AEGIS не отвечает».
+    #[test]
+    fn local_reads_do_not_wait_for_the_network_lock() {
+        let dir = tempfile::tempdir().expect("каталог");
+        let path = dir.path().join("aegis.db").to_string_lossy().into_owned();
+        let messenger = Messenger::open(path, vec![7; 32], std::sync::Arc::new(NoNetwork))
+            .expect("база открывается");
+
+        messenger
+            .set_setting_bool("block_screenshots".to_owned(), false)
+            .expect("запись");
+
+        // Основной клиент занят — как во время долгого запроса через Tor.
+        let busy = messenger.client().expect("замок");
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let _ = sender.send(messenger.setting_bool("block_screenshots".to_owned(), true));
+            });
+
+            let answer = receiver
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("чтение настройки ждало сетевой запрос");
+            assert!(!answer.expect("чтение"), "прочитано не то, что записано");
+
+            drop(busy);
+        });
     }
 }

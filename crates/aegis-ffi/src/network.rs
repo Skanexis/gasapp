@@ -107,7 +107,7 @@ impl Messenger {
     /// 🔐 Платформа при ошибке обязана закрыть сеть, а не открыть её:
     /// повреждённая запись «Tor» не должна превращаться в «напрямую».
     pub fn proxy(&self) -> Result<FfiProxy, FfiError> {
-        let client = self.client()?;
+        let client = self.reader()?;
 
         guard(|| client.proxy_mode()).map(FfiProxy::from)
     }
@@ -136,7 +136,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — чтение не удалось либо запись повреждена.
     pub fn tor_bridges(&self) -> Result<Vec<String>, FfiError> {
-        let client = self.client()?;
+        let client = self.reader()?;
 
         guard(|| client.tor_bridges())
     }
