@@ -72,3 +72,6 @@ path = "src/bin/uniffi-bindgen.rs"
 # Проброс: сборка под Android требует вендоринга OpenSSL,
 # а флаг задаётся на уровне собираемого крейта.
 vendored-openssl = ["aegis-storage/vendored-openssl"]
+
+[dev-dependencies]
+tempfile = "3"
