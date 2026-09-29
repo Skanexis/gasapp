@@ -53,6 +53,7 @@ class EmbeddedTorOnDeviceTest {
                 serverHost = HOST,
                 serverPort = PORT.toUShort(),
                 bridges = emptyList(),
+                serverOnion = null,
             ),
         ).toInt()
         EmbeddedTor.installAuthenticator()

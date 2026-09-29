@@ -6198,7 +6198,15 @@ data class FfiTorSettings (
      * Мосты Tor (как их возвращает `Messenger::tor_bridges`); пусто —
      * прямое подключение к сети Tor.
      */
-    var `bridges`: List<kotlin.String>
+    var `bridges`: List<kotlin.String>, 
+    /**
+     * Onion-сервис сервера, `адрес.onion:порт`, если сборка его знает.
+     *
+     * Соединения к серверу мост ведёт туда, а не через выходной узел:
+     * TLS и пиннинг платформы — прежние (см. `Allowlist::via_onion`).
+     * 🔐 Задаётся сборкой приложения, не сервером.
+     */
+    var `serverOnion`: kotlin.String?
 ) {
     
     companion object
@@ -6216,6 +6224,7 @@ public object FfiConverterTypeFfiTorSettings: FfiConverterRustBuffer<FfiTorSetti
             FfiConverterString.read(buf),
             FfiConverterUShort.read(buf),
             FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -6225,7 +6234,8 @@ public object FfiConverterTypeFfiTorSettings: FfiConverterRustBuffer<FfiTorSetti
             FfiConverterOptionalString.allocationSize(value.`trustedPrefix`) +
             FfiConverterString.allocationSize(value.`serverHost`) +
             FfiConverterUShort.allocationSize(value.`serverPort`) +
-            FfiConverterSequenceString.allocationSize(value.`bridges`)
+            FfiConverterSequenceString.allocationSize(value.`bridges`) +
+            FfiConverterOptionalString.allocationSize(value.`serverOnion`)
     )
 
     override fun write(value: FfiTorSettings, buf: ByteBuffer) {
@@ -6235,6 +6245,7 @@ public object FfiConverterTypeFfiTorSettings: FfiConverterRustBuffer<FfiTorSetti
             FfiConverterString.write(value.`serverHost`, buf)
             FfiConverterUShort.write(value.`serverPort`, buf)
             FfiConverterSequenceString.write(value.`bridges`, buf)
+            FfiConverterOptionalString.write(value.`serverOnion`, buf)
     }
 }
 

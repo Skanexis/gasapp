@@ -115,12 +115,15 @@ async fn handle<C: Connector>(
 
     // 🔐 Назначение не из списка — отказ. Имя назначения в журнал не
     // пишется: журнал — не место для адресов.
-    if !allow.permits(&target) {
+    //
+    // Разрешённое назначение может вести на onion-сервис сервера
+    // (см. `Allowlist::via_onion`): соединяемся туда, куда оно ведёт.
+    let Some(target) = allow.route(&target) else {
         tracing::debug!("tor bridge: destination refused");
         let _ = socks::reply(&mut socket, Reply::NotAllowed).await;
 
         return;
-    }
+    };
 
     let Ok(Ok(mut upstream)) = timeout(CONNECT_TIMEOUT, connector.connect(&target)).await else {
         let _ = socks::reply(&mut socket, Reply::HostUnreachable).await;

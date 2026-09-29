@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Свой мост Tor для AEGIS — WebTunnel за обычным HTTPS-сайтом.
+#
+# Снаружи — сайт с сертификатом Let's Encrypt; по секретному пути —
+# туннель Tor. Мост частный: в каталог Tor Project не публикуется и
+# раздаётся только в сборках AEGIS (строка — в android/tor/bridges.txt
+# или в файле -PaegisBridgesFile).
+#
+# Проще всего — скриптом: ./new-bridge.sh домен почта
+# Вручную: заполнить .env (DOMAIN, EMAIL, WT_PATH, NICKNAME) и
+#   docker compose up -d && docker compose exec webtunnel get-bridge-line.sh
+#
+# Требования к машине: публичный адрес, открытые 80 и 443, домен,
+# указывающий на машину. Лучше — несколько мостов у разных хостеров:
+# блокировщику труднее закрыть все сразу.
+
+services:
+  webtunnel:
+    image: thetorproject/webtunnel-bridge:latest
+    restart: unless-stopped
+    environment:
+      NICKNAME: ${NICKNAME:-AegisBridge}
+      EMAIL: ${EMAIL:?задайте EMAIL}
+      PT_PORT: "15000"
+      OR_PORT: "9001"
+      WEBTUNNEL_URL: https://${DOMAIN:?задайте DOMAIN}/${WT_PATH:?задайте WT_PATH}
+      WEBTUNNEL_ENABLE_ADDITIONAL_VARIABLES: "1"
+      # 🔐 Частный мост: Tor Project его не раздаёт, в каталог он не
+      # попадает — его адрес знают только сборки AEGIS.
+      WEBTUNNELV_PublishServerDescriptor: "0"
+      WEBTUNNELV_BridgeDistribution: "none"
+    volumes:
+      - webtunnel-data:/var/lib/tor
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - webtunnel
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      EMAIL: ${EMAIL}
+      WT_PATH: ${WT_PATH}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv:ro
+      - caddy-data:/data
+
+volumes:
+  # Ключи моста: сменятся — сменится отпечаток, и строку в сборках
+  # придётся заменить.
+  webtunnel-data:
+  caddy-data:
