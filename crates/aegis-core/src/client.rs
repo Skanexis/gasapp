@@ -1013,8 +1013,15 @@ impl<T: Transport> Client<T> {
             // Сессию ищем по всем известным чатам: конверт сообщения
             // не несёт идентификатора отправителя — это и есть защита
             // метаданных, за которую платится перебором сессий.
-            let Some((incoming, known_chat)) = self.try_decrypt(&identity, &secrets, &raw, now)
-            else {
+            let Some((incoming, known_chat)) = self.try_decrypt(
+                &identity,
+                &secrets,
+                certificate
+                    .as_ref()
+                    .map(|certificate| &certificate.identity_key),
+                &raw,
+                now,
+            ) else {
                 dropped.push(envelope.envelope_id.clone());
                 continue;
             };
@@ -2833,39 +2840,44 @@ impl<T: Transport> Client<T> {
     /// для сообщения в установленной сессии — это тот чат, чья сессия
     /// подошла: сам конверт отправителя не называет, и это намеренно —
     /// иначе сервер узнавал бы, кто кому пишет.
+    ///
+    /// `sender` — identity-ключ из проверенного сертификата запечатанного
+    /// конверта; `None` — конверт не запечатан.
     fn try_decrypt(
         &self,
         identity: &IdentityKeyPair,
         secrets: &PreKeySecrets,
+        sender: Option<&PublicKeyBytes>,
         raw: &[u8],
         now: Timestamp,
     ) -> Option<(session::IncomingMessage, Option<ChatId>)> {
+        // 🔐 Незапечатанный конверт не принимается вовсе. Сервер такие
+        // не берёт (`/v1/sealed/messages` — единственный путь отправки),
+        // значит положить его в очередь мог только тот, кто держит
+        // сервер. Прежде он перебирался по всем сессиям.
+        let sender = sender?;
+
         // Сначала как конверт инициации: он самодостаточен и не требует
         // угадывать сессию.
         if let Ok(incoming) = session::receive(identity, secrets, None, raw, now) {
             return Some((incoming, None));
         }
 
-        // Иначе перебираем существующие сессии.
+        // 🔐 Иначе — только сессия того, кто назван в сертификате.
         //
-        // Именно сессии, а не чаты интерфейса: сессия появляется раньше
-        // чата. Первым сообщением новой сессии приходит ключ доступа
-        // sealed sender, и чата он не создаёт — перебор по списку чатов
-        // такую сессию не находил, и следующее за ключом сообщение
-        // молча терялось.
-        let chats = self.storage.session_chat_ids(MAX_CHATS_TO_PROBE).ok()?;
+        // Прежде конверт перебирался по всем сессиям (до 256), и в
+        // каждой поддельный заголовок заставлял досчитать до 2000 ключей
+        // цепочки и сделать два DH: мусорный конверт от любого
+        // зарегистрированного занимал процессор получателя на секунды,
+        // сотня в очереди — на минуты. А подойти могла только одна
+        // сессия: сертификат обязан быть привязан к чату
+        // (`certificate_matches`), остальные отбрасывались бы всё равно.
+        let chat_id = derive_chat_id(identity.public().public(), sender);
+        let state = self.storage.load_session(&chat_id).ok()??;
 
-        for chat_id in chats {
-            let Ok(Some(state)) = self.storage.load_session(&chat_id) else {
-                continue;
-            };
-
-            if let Ok(incoming) = session::receive(identity, secrets, Some(&state), raw, now) {
-                return Some((incoming, Some(chat_id)));
-            }
-        }
-
-        None
+        session::receive(identity, secrets, Some(&state), raw, now)
+            .ok()
+            .map(|incoming| (incoming, Some(chat_id)))
     }
 
     /// Загружает identity-пару и секреты предключей.

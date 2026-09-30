@@ -157,27 +157,104 @@ const BOUND_KEY_INFO: &[u8] = b"AEGIS storage key v2 (hardware-bound)";
 /// длины либо `hardware` не [`HARDWARE_SECRET_LEN`] байт;
 /// [`AegisError::Crypto`] — сбой `Argon2id` или HKDF.
 pub fn derive_key_bound(pin: &str, salt: &[u8], hardware: &[u8]) -> Result<Secret<[u8; KEY_LEN]>> {
-    if hardware.len() != HARDWARE_SECRET_LEN {
-        return Err(AegisError::Malformed);
-    }
-
     // Проверки PIN и соли делает `derive_key`; дублировать их здесь
     // значило бы завести второе место, где эти правила могут разойтись.
     let stretched = derive_key(pin, salt)?;
 
-    let mut ikm = [0u8; KEY_LEN + HARDWARE_SECRET_LEN];
+    bind_hardware(stretched.expose_secret(), salt, hardware)
+}
+
+/// Ключ схемы v2 из уже растянутого PIN ([`derive_key`]).
+///
+/// Нужен переходу со схемы v2 на v3: `Argon2id` считается один раз,
+/// а ключи обеих схем выводятся из его результата.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — соль или `hardware` не той длины;
+/// [`AegisError::Crypto`] — сбой HKDF.
+pub fn bind_hardware(
+    stretched: &[u8; KEY_LEN],
+    salt: &[u8],
+    hardware: &[u8],
+) -> Result<Secret<[u8; KEY_LEN]>> {
+    if hardware.len() != HARDWARE_SECRET_LEN {
+        return Err(AegisError::Malformed);
+    }
+
+    combine(stretched, salt, hardware, BOUND_KEY_INFO)
+}
+
+/// Длина ответа защищённого оборудования для схемы v3.
+pub const TEE_MAC_LEN: usize = 32;
+
+/// Метка HKDF для ключа хранилища схемы v3.
+const TEE_KEY_INFO: &[u8] = b"AEGIS storage key v3 (TEE-chained)";
+
+/// 🔐 Ключ хранилища схемы v3: растянутый PIN и ответ защищённого
+/// оборудования **на этот PIN**.
+///
+/// # Чем плоха схема v2
+///
+/// В v2 ключ Keystore расшифровывал 32 случайных байта, и дальше они
+/// жили в памяти приложения. Ключ не требовал ни подтверждения, ни
+/// разблокированного экрана: кто один раз выполнил код от имени
+/// приложения (root, инструмент криминалистики на изъятом телефоне),
+/// получал эти байты — и перебирал шестизначный PIN уже вне телефона,
+/// на видеокартах, за часы. Счётчик неверных попыток при этом не
+/// участвовал вовсе: он живёт в коде приложения.
+///
+/// # Что меняет v3
+///
+/// `tee_mac` — цепочка HMAC над растянутым PIN, посчитанная **внутри**
+/// Android Keystore ключом, который оттуда не извлекается. Ответ
+/// зависит от PIN, поэтому его нельзя получить один раз и унести:
+/// каждая попытка перебора требует самого телефона, идёт по очереди и
+/// не переносится на видеокарты. Ключ Keystore к тому же работает
+/// только при разблокированном экране телефона.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — соль или `tee_mac` не той длины;
+/// [`AegisError::Crypto`] — сбой HKDF.
+pub fn bind_tee(
+    stretched: &[u8; KEY_LEN],
+    salt: &[u8],
+    tee_mac: &[u8],
+) -> Result<Secret<[u8; KEY_LEN]>> {
+    if tee_mac.len() != TEE_MAC_LEN {
+        return Err(AegisError::Malformed);
+    }
+
+    combine(stretched, salt, tee_mac, TEE_KEY_INFO)
+}
+
+/// `HKDF-Extract(salt, stretched ‖ second)`, затем `Expand` с меткой
+/// схемы. Не XOR и не склейка прямо в ключ: HKDF даёт равномерный
+/// результат, даже если вторая половина распределена неидеально.
+fn combine(
+    stretched: &[u8; KEY_LEN],
+    salt: &[u8],
+    second: &[u8],
+    info: &[u8],
+) -> Result<Secret<[u8; KEY_LEN]>> {
+    if salt.len() != SALT_LEN || second.len() != KEY_LEN {
+        return Err(AegisError::Malformed);
+    }
+
+    let mut ikm = [0u8; KEY_LEN * 2];
 
     // Обе половины пишутся по фиксированным смещениям: срез по
     // вычисленной длине здесь запрещён правилами линтинга, а ошибка
     // в нём дала бы молча другой ключ.
     let (left, right) = ikm.split_at_mut(KEY_LEN);
-    left.copy_from_slice(stretched.expose_secret());
-    right.copy_from_slice(hardware);
+    left.copy_from_slice(stretched);
+    right.copy_from_slice(second);
 
     let hkdf = Hkdf::<Sha256>::new(Some(salt), &ikm);
 
     let mut key = [0u8; KEY_LEN];
-    hkdf.expand(BOUND_KEY_INFO, &mut key)
+    hkdf.expand(info, &mut key)
         .map_err(|_| AegisError::Crypto)?;
 
     // Промежуточный материал затирается сразу: он равносилен ключу.
@@ -386,6 +463,47 @@ mod tests {
     ///
     /// Молчаливое дополнение нулями до 32 байт дало бы рабочий ключ
     /// при пустом секрете — то есть тихий откат к защите одним PIN.
+    #[test]
+    fn schemes_give_different_keys_from_the_same_inputs() {
+        let salt = [0x03u8; SALT_LEN];
+        let stretched = *derive_key("123456", &salt).expect("ключ").expose_secret();
+        let second = hardware();
+
+        let v2 = bind_hardware(&stretched, &salt, &second).expect("v2");
+        let v3 = bind_tee(&stretched, &salt, &second).expect("v3");
+
+        assert_ne!(
+            v2.expose_secret(),
+            v3.expose_secret(),
+            "метки схем должны разводить ключи"
+        );
+        assert_eq!(
+            v2.expose_secret(),
+            derive_key_bound("123456", &salt, &second)
+                .expect("v2 из PIN")
+                .expose_secret(),
+            "v2 из растянутого PIN обязан совпасть с прежним выводом"
+        );
+    }
+
+    #[test]
+    fn tee_response_changes_the_key() {
+        let salt = [0x03u8; SALT_LEN];
+        let stretched = *derive_key("123456", &salt).expect("ключ").expose_secret();
+        let mut other = hardware();
+        other[0] ^= 1;
+
+        assert_ne!(
+            bind_tee(&stretched, &salt, &hardware())
+                .expect("v3")
+                .expose_secret(),
+            bind_tee(&stretched, &salt, &other)
+                .expect("v3")
+                .expose_secret()
+        );
+        assert!(bind_tee(&stretched, &salt, &[0u8; 31]).is_err());
+    }
+
     #[test]
     fn hardware_secret_of_wrong_length_is_rejected() {
         let salt = [0x42u8; SALT_LEN];

@@ -31,6 +31,12 @@ jobs:
     name: build and hash
     runs-on: ubuntu-latest
 
+    # 🔐 Ключ подписи выдаётся только в окружении `release`. В настройках
+    # репозитория у него должны стоять обязательные подтверждающие и
+    # правило «только теги v*»: иначе любой, кто может запушить тег,
+    # получает подписанную сборку, неотличимую для телефона от настоящей.
+    environment: release
+
     # Публикация требует права на запись; они выдаются одному шагу,
     # а не всему workflow.
     permissions:
@@ -45,7 +51,7 @@ jobs:
       HAS_SIGNING_KEY: ${{ secrets.AEGIS_KEYSTORE_BASE64 != '' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Полная история: SOURCE_DATE_EPOCH берётся из времени
           # последнего коммита, а мелкая копия его не содержит.
@@ -58,16 +64,17 @@ jobs:
       - name: NDK pins agree
         run: bash tools/check-ndk-pins.sh
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "21"
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      # 🔐 Без кэша сборки. Кэш общий для всех workflow репозитория, и
+      # тот, кто может запустить сборку из ветки, может положить туда
+      # скомпилированные файлы — а это задание подписывает результат
+      # релизным ключом. Релиз собирается с нуля: медленнее, но из
+      # исходников, а не из чужого кэша.
 
       # Ядро собирается в том же контейнере, что и у разработчика:
       # сборка на голом раннере зависит от его OpenSSL и libc,
@@ -147,7 +154,7 @@ jobs:
               ;;
           esac
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: aegis-release
           path: |

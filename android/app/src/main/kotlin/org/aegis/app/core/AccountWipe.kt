@@ -64,6 +64,9 @@ object AccountWipe {
         if (runCatching { HardwareKey.destroy() }.isFailure) {
             clean = false
         }
+        if (runCatching { TeeKey.destroy() }.isFailure) {
+            clean = false
+        }
 
         // 🔐 Биометрический конверт и его ключ Keystore: в конверте
         // лежит ключ базы. Оставить его значило бы оставить вход

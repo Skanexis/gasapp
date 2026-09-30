@@ -23,6 +23,7 @@ import org.aegis.app.core.Pin
 import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.PinBuffer
 import org.aegis.app.core.SecureWindow
+import org.aegis.app.core.TamperGuard
 import org.aegis.app.ui.PinFeedback
 
 /**
@@ -95,6 +96,10 @@ class LockActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.key_biometric).setOnClickListener { offerBiometricUnlock() }
         findViewById<View>(R.id.lock_forgot).setOnClickListener { confirmForgotPin() }
+
+        // 🔐 До ввода PIN: поддельная копия должна быть видна раньше,
+        // чем ей что-то отдали.
+        TamperGuard.warnIfForged(this)
     }
 
     /**

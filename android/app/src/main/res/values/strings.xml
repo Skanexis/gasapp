@@ -668,4 +668,9 @@
     <string name="report_already">You have already reported this account.</string>
     <string name="report_unavailable">You can report once they have sent you a message.</string>
     <string name="report_failed">Could not send the report. Check the connection and try again.</string>
+    <!-- Пересобранная копия (TamperGuard) -->
+    <string name="tamper_title">This copy of AEGIS may be fake</string>
+    <string name="tamper_body">This app is not signed by the AEGIS developers. Someone may have modified it to read your messages or steal your PIN. Delete it and install AEGIS only from the official store page or the project site.</string>
+    <string name="tamper_close">Close the app</string>
+    <string name="tamper_continue">Continue anyway</string>
 </resources>

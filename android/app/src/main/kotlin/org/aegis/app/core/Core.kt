@@ -10,6 +10,7 @@ import org.aegis.app.net.NetworkProxy
 import org.aegis.app.net.PlatformTransport
 import uniffi.aegis.deriveStorageKey
 import uniffi.aegis.deriveStorageKeyBound
+import uniffi.aegis.deriveStorageKeyTee
 import uniffi.aegis.generateStorageSalt
 import uniffi.aegis.Messenger
 
@@ -180,25 +181,28 @@ object Core {
      * экран регистрации и экран блокировки, — и вторая ключ вовсе
      * не строила (см. историю `LockActivity.unlock`).
      *
-     * # Из чего состоит ключ
+     * # Из чего состоит ключ (схема v3)
      *
-     * Из растянутого `Argon2id` PIN и из [HardwareKey] — 32 байт,
-     * зашифрованных ключом Android Keystore. Одного PIN мало: он
-     * шестизначный, и снятый файл базы вместе с солью перебирается
-     * примерно за пару часов аренды. Одного аппаратного секрета тоже
-     * мало: его отдаст хранилище любому, кто держит разблокированный
-     * телефон.
+     * Из растянутого `Argon2id` PIN и ответа Android Keystore на него
+     * ([TeeKey]) — цепочки HMAC невынимаемым ключом. Каждая попытка
+     * перебора требует самого телефона, идёт по очереди и не
+     * переносится на видеокарты.
      *
-     * # Переход со старых баз
+     * # Переход со старых схем
      *
-     * База, созданная до этой правки, зашифрована ключом из одного
-     * PIN. Выбросить её значило бы стереть переписку при обновлении,
-     * поэтому она открывается прежним ключом и **сразу**
-     * перешифровывается новым ([Messenger.rekeyStorage]).
+     * * v1 — ключ из одного PIN;
+     * * v2 — PIN и 32 байта [HardwareKey], которые расшифровывались
+     *   в память приложения: достав их один раз, PIN перебирали вне
+     *   телефона за часы.
      *
-     * Признак старой базы — отсутствие `aegis.hw` при наличии
-     * `aegis.db`; проверяется **до** создания секрета, потому что
-     * создание этот признак и стирает.
+     * Старая база открывается прежним ключом и **сразу**
+     * перешифровывается ключом v3 ([Messenger.rekeyStorage]); секрет v2
+     * после этого уничтожается.
+     *
+     * Сначала всегда пробуется v3: так прерванный переход (база уже
+     * перешифрована, а старый секрет не успели удалить) не запирает
+     * человека — база откроется первой же попыткой, а остаток старой
+     * схемы уберётся здесь же.
      *
      * 🔐 Порядок внутри перехода обязателен: сначала успешное
      * открытие, потом смена ключа. Перешифровать можно только то, что
@@ -216,27 +220,80 @@ object Core {
         // PIN оставалась на базе под первым.
         close()
 
-        // До обращения к HardwareKey: оно создаёт файл и тем самым
-        // стирает признак старой базы.
-        val legacy = hasAccount(context) && !HardwareKey.exists(context)
-
         val salt = salt(context)
-        val key = deriveKey(context, pin)
+        val stretched = deriveStorageKey(pin, salt)
 
-        if (!legacy) {
-            return open(context, key).also { establishVaultVerifier(it, pin, salt) }
+        try {
+            val key = teeKey(stretched, salt)
+            val current = runCatching { open(context, key) }
+
+            current.getOrNull()?.let { opened ->
+                retireLegacy(context)
+                establishVaultVerifier(opened, pin, salt)
+                return opened
+            }
+
+            // Новой базы старые схемы не касаются: отказ — настоящий.
+            if (!hasAccount(context)) throw current.exceptionOrNull() ?: IllegalStateException()
+
+            for (legacyKey in legacyKeys(context, stretched, salt)) {
+                val opened = runCatching { open(context, legacyKey) }.getOrNull() ?: continue
+
+                opened.rekeyStorage(key)
+                openedKey.remember(key)
+                // В биометрическом конверте лежит прежний ключ — открыть
+                // перешифрованную базу он уже не сможет. Включить заново —
+                // в настройках приватности.
+                runCatching { BiometricUnlock.disable(context) }
+                retireLegacy(context)
+                establishVaultVerifier(opened, pin, salt)
+
+                return opened
+            }
+
+            // Неверный PIN: ни одна схема не открыла базу.
+            throw current.exceptionOrNull() ?: IllegalStateException()
+        } finally {
+            stretched.fill(0)
+        }
+    }
+
+    /** Ключи старых схем, от новой к старой (см. [unlock]). */
+    private fun legacyKeys(context: Context, stretched: ByteArray, salt: ByteArray): List<ByteArray> =
+        buildList {
+            // Только если секрет v2 уже есть: `HardwareKey.secret`
+            // создаёт его при отсутствии.
+            if (HardwareKey.exists(context)) {
+                runCatching { deriveStorageKeyBound(stretched, salt, HardwareKey.secret(context)) }
+                    .getOrNull()
+                    ?.let(::add)
+            }
+            // v1: ключ — сам растянутый PIN.
+            add(stretched.copyOf())
         }
 
-        // Старая база: открывается прежним ключом, затем переезжает
-        // на новый. Неверный PIN тоже приходит сюда — и так же не
-        // откроет базу, просто на строку ниже.
-        val opened = open(context, deriveStorageKey(pin, salt))
+    /**
+     * 🔐 Уничтожает секрет схемы v2 — только когда база уже открыта
+     * ключом v3. Пока он лежит, достать его и перебирать PIN вне
+     * телефона по старой копии базы всё ещё можно.
+     */
+    private fun retireLegacy(context: Context) {
+        if (!HardwareKey.exists(context)) return
 
-        opened.rekeyStorage(key)
-        openedKey.remember(key)
-        establishVaultVerifier(opened, pin, salt)
+        runCatching {
+            HardwareKey.destroy()
+            HardwareKey.deleteSecretFile(context)
+        }
+    }
 
-        return opened
+    /** Ключ схемы v3 из растянутого PIN. */
+    private fun teeKey(stretched: ByteArray, salt: ByteArray): ByteArray {
+        val response = TeeKey.respond(stretched)
+        try {
+            return deriveStorageKeyTee(stretched, salt, response)
+        } finally {
+            response.fill(0)
+        }
     }
 
     /**
@@ -271,8 +328,15 @@ object Core {
      * ключом напрямую не нужно — для этого есть [unlock] и [open],
      * и только они знают про переход со старых баз.
      */
-    fun deriveKey(context: Context, pin: ByteArray): ByteArray =
-        deriveStorageKeyBound(pin, salt(context), HardwareKey.secret(context))
+    fun deriveKey(context: Context, pin: ByteArray): ByteArray {
+        val salt = salt(context)
+        val stretched = deriveStorageKey(pin, salt)
+        try {
+            return teeKey(stretched, salt)
+        } finally {
+            stretched.fill(0)
+        }
+    }
 
     /**
      * 🔐 Открыта ли база именно этим ключом.

@@ -43,8 +43,7 @@ jobs:
     name: targets build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # libFuzzer требует nightly: санитайзеры и `-C passes=sancov-module`
       # на стабильном канале недоступны.
       #
@@ -52,9 +51,8 @@ jobs:
       # линковке — x64-библиотеки ASan отсутствуют в Build Tools 2019,
       # поэтому локально прогон идёт через `fuzz/Dockerfile`
       # (см. `fuzz/README.md`). В CI контейнер не нужен.
-      - uses: dtolnay/rust-toolchain@nightly
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: fuzz
 
@@ -125,11 +123,9 @@ jobs:
           - parse_sealed_sender
           - parse_contact_link
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@nightly
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: fuzz
 
@@ -140,7 +136,7 @@ jobs:
       # дают следующему прогону стартовать не с нуля. Ключ включает номер
       # запуска, restore-keys подхватывают последний доступный корпус.
       - name: restore corpus
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_number }}
@@ -176,7 +172,7 @@ jobs:
       # краш, и он нужен для отладки. При успехе сохранять нечего.
       - name: upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-crash-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}
