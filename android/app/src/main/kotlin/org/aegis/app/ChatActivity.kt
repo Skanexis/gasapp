@@ -58,6 +58,9 @@ class ChatActivity : AppCompatActivity() {
 
     /** Мы начали переписку, собеседник ещё не ответил. */
     private var awaitingPeer = false
+
+    /** Собеседник заблокирован (только на этом устройстве). */
+    private var blocked = false
     private lateinit var keyChangeBanner: LinearLayout
 
     /** Сверял ли пользователь safety number этого контакта. */
@@ -155,8 +158,10 @@ class ChatActivity : AppCompatActivity() {
 
         findViewById<AegisButton>(R.id.request_accept).setOnClickListener { acceptRequest() }
         findViewById<AegisButton>(R.id.request_decline).setOnClickListener { confirmDeclineRequest() }
+        // Одна кнопка плашки на два дела: сверить ключ или, если
+        // собеседник заблокирован, снять блокировку.
         findViewById<AegisButton>(R.id.key_change_verify).setOnClickListener {
-            openSafetyNumber(chatName)
+            if (sendMode == SendGuard.Mode.BLOCKED) confirmUnblock() else openSafetyNumber(chatName)
         }
 
         sendButton.setOnClickListener { send() }
@@ -411,9 +416,19 @@ class ChatActivity : AppCompatActivity() {
             if (awaitingPeer) View.VISIBLE else View.GONE
 
         val name = peerUsername.ifEmpty { intent.getStringExtra(EXTRA_CHAT_NAME).orEmpty() }
+        val bannerButton = findViewById<AegisButton>(R.id.key_change_verify)
+        bannerButton.setText(
+            if (sendMode == SendGuard.Mode.BLOCKED) R.string.chat_unblock else R.string.verify_safety_number,
+        )
 
         when (sendMode) {
             SendGuard.Mode.OPEN -> Unit
+
+            SendGuard.Mode.BLOCKED -> {
+                findViewById<TextView>(R.id.key_change_title).text = getString(R.string.blocked_title, name)
+                findViewById<TextView>(R.id.key_change_body).setText(R.string.blocked_body)
+                bannerButton.visibility = View.VISIBLE
+            }
 
             SendGuard.Mode.CHOOSE_KEY -> {
                 findViewById<TextView>(R.id.key_change_title).setText(R.string.key_changed_title)
@@ -474,6 +489,11 @@ class ChatActivity : AppCompatActivity() {
                     ?: FfiChatRequest.SETTLED
             }
             awaitingPeer = request == FfiChatRequest.OUTGOING
+            blocked = withContext(Dispatchers.IO) {
+                chatId.takeIf { it.isNotEmpty() }
+                    ?.let { runCatching { Core.messenger().isChatBlocked(it) }.getOrNull() }
+                    ?: false
+            }
 
             peerAccountId = contact?.accountId
             wasVerified = contact?.verified ?: wasVerified
@@ -484,6 +504,7 @@ class ChatActivity : AppCompatActivity() {
                 replaced = contact?.replaced == true,
                 keyConfirmed = contact?.keyConfirmed == true,
                 request = request == FfiChatRequest.INCOMING,
+                blocked = blocked,
             )
 
             // Три уровня: сверен лично, подтверждён журналом ключей
@@ -762,10 +783,11 @@ class ChatActivity : AppCompatActivity() {
     }
 
     /**
-     * Меню чата: сверка, таймер исчезновения, присутствие.
+     * Меню чата: сверка, таймер исчезновения, присутствие, жалоба и
+     * блокировка.
      */
     private fun showChatMenu() {
-        AegisSheet.on(this, chatName())
+        val sheet = AegisSheet.on(this, chatName())
             .action(getString(R.string.chat_verify), R.drawable.ic_shield) {
                 openSafetyNumber(chatName())
             }
@@ -775,7 +797,108 @@ class ChatActivity : AppCompatActivity() {
             .action(getString(R.string.chat_presence), R.drawable.ic_alert) {
                 showPresenceOptions()
             }
+
+        // Жаловаться и блокировать можно только в существующем чате:
+        // у нового, ещё без переписки, нет ни собеседника на этом
+        // устройстве, ни доказательства для жалобы.
+        if (chatId.isNotEmpty()) {
+            sheet.action(getString(R.string.chat_report), R.drawable.ic_alert, destructive = true) {
+                confirmReport()
+            }
+            if (blocked) {
+                sheet.action(getString(R.string.chat_unblock), R.drawable.ic_block) { confirmUnblock() }
+            } else {
+                sheet.action(getString(R.string.chat_block), R.drawable.ic_block, destructive = true) {
+                    confirmBlock()
+                }
+            }
+        }
+
+        sheet.show()
+    }
+
+    /** Блокировка после подтверждения — только на этом устройстве. */
+    private fun confirmBlock() {
+        AegisDialog(this)
+            .title(getString(R.string.block_confirm_title, chatName()))
+            .message(R.string.block_confirm_body)
+            .secondary()
+            .primary(R.string.chat_block, AegisDialog.Tone.Danger) { block(announce = true) }
             .show()
+    }
+
+    private fun block(announce: Boolean) {
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().blockChat(chatId, chatName().ifEmpty { null }, System.currentTimeMillis())
+                }.isSuccess
+            }
+            if (done && announce) AegisToast.show(this@ChatActivity, R.string.block_done, AegisToast.Tone.Success)
+            refreshSendMode()
+        }
+    }
+
+    private fun confirmUnblock() {
+        AegisDialog(this)
+            .title(getString(R.string.unblock_confirm_title, chatName()))
+            .secondary()
+            .primary(R.string.chat_unblock) {
+                lifecycleScope.launch {
+                    val done = withContext(Dispatchers.IO) {
+                        runCatching { Core.messenger().unblockChat(chatId) }.isSuccess
+                    }
+                    if (done) AegisToast.show(this@ChatActivity, R.string.unblock_done, AegisToast.Tone.Success)
+                    refreshSendMode()
+                }
+            }
+            .show()
+    }
+
+    /**
+     * 🔐 Жалоба оператору. Уходит доказательство, что аккаунт писал, —
+     * сертификат с его конверта, — но не переписка. Без хотя бы одного
+     * сообщения от собеседника доказывать нечем, и жалоба невозможна.
+     */
+    private fun confirmReport() {
+        lifecycleScope.launch {
+            val possible = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().canReportChat(chatId) }.getOrDefault(false)
+            }
+            if (!possible) {
+                AegisToast.show(this@ChatActivity, R.string.report_unavailable, AegisToast.Tone.Info)
+                return@launch
+            }
+
+            val name = chatName()
+            AegisDialog(this@ChatActivity)
+                .title(getString(R.string.report_confirm_title, name))
+                .message(getString(R.string.report_confirm_body, name))
+                .secondary(R.string.report_only) { report(alsoBlock = false) }
+                .primary(R.string.report_and_block, AegisDialog.Tone.Danger) { report(alsoBlock = true) }
+                .show()
+        }
+    }
+
+    private fun report(alsoBlock: Boolean) {
+        lifecycleScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().reportChat(chatId, System.currentTimeMillis()) }
+            }
+            outcome
+                .onSuccess { recorded ->
+                    AegisToast.show(
+                        this@ChatActivity,
+                        if (recorded) R.string.report_done else R.string.report_already,
+                        AegisToast.Tone.Success,
+                    )
+                }
+                .onFailure { AegisToast.show(this@ChatActivity, R.string.report_failed, AegisToast.Tone.Error) }
+
+            // Блокировка не зависит от того, дошла ли жалоба: человек
+            // попросил больше не получать сообщений от этого собеседника.
+            if (alsoBlock) block(announce = false)
+        }
     }
 
     /**

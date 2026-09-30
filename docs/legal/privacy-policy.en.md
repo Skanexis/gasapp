@@ -140,6 +140,26 @@ build knows that address.
 The AEGIS server takes no part in any of this and knows nothing about
 bridges.
 
+## Blocking and reporting
+
+**Blocking** happens only on your phone. Messages from a blocked contact
+are received and silently dropped; they are not told. The server does not
+know about the block: if it did, it would learn that you knew each other.
+
+**A report** goes to the server operator. 🔐 It reveals to the server
+**who reported whom** — without that, reports could be neither verified
+nor counted. The proof is the sender certificate from their envelope,
+signed by the server itself: you can only report someone who actually
+wrote to you. **Your conversation is not sent** — the server does not have
+it. The reported person is not told.
+
+In the admin center the operator sees the reported account's username and
+the **number** of distinct reporters — not who they are. A report is kept
+while both accounts exist, or until the operator decides. The decision
+(deleting the account or dismissing the reports) is recorded in the
+operator log **without the username**: what was done, why, and how many
+people reported. The transparency report is built from this log.
+
 ## Push notifications
 
 ⚠️ **There are no push notifications in any build today.** A new message

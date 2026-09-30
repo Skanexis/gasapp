@@ -54,6 +54,7 @@ use aegis_storage::{MessageStatus, Storage, StoredMessage, VaultFileRow};
 use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
 use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 
+mod blocks;
 mod kt;
 mod network;
 mod pq;
@@ -67,6 +68,7 @@ use aegis_types::{
     canonical_username, AccountId, AegisError, ChatId, DeviceId, MessageId, Plaintext,
     PublicKeyBytes, Result, Timestamp,
 };
+pub use blocks::ReportOutcome;
 pub use kt::{KtSelfCheck, KtVerdict};
 pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 use rand_core::{CryptoRng, RngCore};
@@ -582,6 +584,63 @@ impl<T: Transport> Client<T> {
 
         self.note_outgoing(&chat_id, existing.is_none())?;
 
+        // Сообщение записывается до сети: дальше — обмен ключом доступа
+        // с proof-of-work и доставка через Tor, и сбой любого из них
+        // прежде терял текст бесследно (он был только в поле ввода).
+        // Теперь неудача оставляет его в переписке «не отправленным».
+        self.store_message(
+            &chat_id,
+            message_id,
+            text,
+            now,
+            true,
+            MessageStatus::Pending,
+        )?;
+        self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+
+        let delivered = self.send_stored_message(
+            &identity,
+            &chat_id,
+            existing,
+            &peer,
+            &peer_identity,
+            &peer_kem,
+            &plaintext,
+            now,
+            rng,
+        );
+        if let Err(error) = delivered {
+            let _ = self
+                .storage
+                .set_message_status(&message_id, MessageStatus::Failed, now);
+            return Err(error);
+        }
+
+        self.storage
+            .set_message_status(&message_id, MessageStatus::Sent, now)?;
+
+        // Сверка журнала ключей с собеседником (§9.7) — не чаще раза
+        // в сутки. Сбой не мешает сообщению: оно уже ушло.
+        let _ = self.kt_gossip_head(peer_username, now, rng);
+
+        Ok(message_id)
+    }
+
+    /// Сетевая часть отправки уже записанного сообщения: ключ доступа
+    /// (при нужде), шифрование, доставка.
+    #[allow(clippy::too_many_arguments)]
+    fn send_stored_message<R: RngCore + CryptoRng>(
+        &self,
+        identity: &IdentityKeyPair,
+        chat_id: &ChatId,
+        existing: Option<aegis_protocol::keys::SessionState>,
+        peer: &DiscoveryResponse,
+        peer_identity: &PublicKeyBytes,
+        peer_kem: &[u8],
+        plaintext: &Plaintext,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
         // Устройство собеседника: bundle и доставка адресуются по нему.
         // Берётся первое из списка — многоустройственная доставка
         // появится вместе с синхронизацией (раздел 13.1).
@@ -590,7 +649,7 @@ impl<T: Transport> Client<T> {
             .first()
             .cloned()
             .ok_or(AegisError::SessionNotFound)?;
-        let peer = peer_account(&peer_identity);
+        let peer = peer_account(peer_identity);
 
         // 🔐 Ключ доступа sealed sender уходит раньше текста — та же
         // логика, что в `send_content` (см. модуль `sealed`). Прежде
@@ -600,51 +659,31 @@ impl<T: Transport> Client<T> {
         let session = match existing {
             Some(state) if self.storage.access_key_shared_with(&peer)? => state,
             other => self.send_own_access_key(
-                &identity,
-                &chat_id,
+                identity,
+                chat_id,
                 other,
-                &peer_identity,
+                peer_identity,
                 &peer_device,
-                &peer_kem,
+                peer_kem,
                 now,
                 rng,
             )?,
         };
 
-        let outgoing = session::continue_session(&session, &plaintext)?;
+        let outgoing = session::continue_session(&session, plaintext)?;
 
         // Сессия сохраняется до отправки: см. порядок операций.
-        self.storage
-            .save_session(&chat_id, &outgoing.session, now)?;
-
-        self.store_message(
-            &chat_id,
-            message_id,
-            text,
-            now,
-            true,
-            MessageStatus::Pending,
-        )?;
+        self.storage.save_session(chat_id, &outgoing.session, now)?;
 
         self.deliver(
-            &identity,
-            &peer_identity,
+            identity,
+            peer_identity,
             &peer_device,
-            &peer_kem,
+            peer_kem,
             &outgoing.envelope,
             now,
             rng,
-        )?;
-
-        self.storage
-            .set_message_status(&message_id, MessageStatus::Sent, now)?;
-        self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
-
-        // Сверка журнала ключей с собеседником (§9.7) — не чаще раза
-        // в сутки. Сбой не мешает сообщению: оно уже ушло.
-        let _ = self.kt_gossip_head(peer_username, now, rng);
-
-        Ok(message_id)
+        )
     }
 
     /// Отправляет реакцию на сообщение.
@@ -950,6 +989,10 @@ impl<T: Transport> Client<T> {
         // сообщения до истечения срока хранения, тридцать дней. Собрать
         // запечатанный конверт на открытый ключ получателя может любой.
         let mut dropped: Vec<String> = Vec::new();
+        // Конверты заблокированных собеседников: тоже подтверждаются, но
+        // в журнал безопасности не идут — это не «нечитаемые», а
+        // отброшенные по решению человека.
+        let mut silenced: Vec<String> = Vec::new();
 
         for envelope in envelopes {
             let Ok(wire) = unhex(&envelope.ciphertext) else {
@@ -1026,6 +1069,32 @@ impl<T: Transport> Client<T> {
                     continue;
                 }
             };
+
+            // 🔐 Заблокированный собеседник. Сессия продвигается и
+            // сохраняется — иначе после разблокировки переписка встала бы,
+            // — но содержимое не сохраняется, запроса на переписку и
+            // записи в контактах не возникает, в ответ не уходит ничего.
+            // Конверт подтверждается: в очереди он приходил бы снова.
+            if self.storage.is_chat_blocked(&chat_id)? {
+                self.storage
+                    .save_session(&chat_id, &incoming.session, now)?;
+                if let Some(initial) = incoming.initial {
+                    self.storage.remember_initial(
+                        initial.base_key.as_bytes(),
+                        initial.signed_pre_key.as_bytes(),
+                        now,
+                    )?;
+                }
+                silenced.push(envelope.envelope_id.clone());
+                continue;
+            }
+
+            // Доказательство для жалобы: сертификат уже проверен (подпись
+            // сервера) и привязан к сессии этого чата — см. выше.
+            if let Some(certificate) = certificate.as_ref() {
+                self.storage
+                    .save_report_certificate(&chat_id, &certificate.to_bytes(), now)?;
+            }
 
             // Собеседник этого конверта: из конверта инициации либо
             // из проверенного и привязанного сертификата.
@@ -1253,6 +1322,11 @@ impl<T: Transport> Client<T> {
         }
 
         self.persist_secrets(&secrets, now)?;
+
+        for envelope_id in &silenced {
+            self.api
+                .acknowledge(device_id, envelope_id, &DeviceSigner::new(&identity, now))?;
+        }
 
         if !dropped.is_empty() {
             for envelope_id in &dropped {

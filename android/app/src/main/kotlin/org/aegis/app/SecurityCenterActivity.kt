@@ -14,6 +14,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.aegis.app.components.AegisDialog
+import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.AegisToast
 import org.aegis.app.core.AppSignature
 import org.aegis.app.core.Core
@@ -192,11 +194,7 @@ class SecurityCenterActivity : AppCompatActivity() {
             startActivity(Intent(this, RecoveryCenterActivity::class.java))
         }
 
-        // Блокировка контактов появится вместе с Report/Block (ADR-025).
-        // Пустой список — честный ответ, а не заглушка.
-        findViewById<View>(R.id.security_blocked).setOnClickListener {
-            AegisToast.show(this, R.string.security_blocked_empty, AegisToast.Tone.Info)
-        }
+        findViewById<View>(R.id.security_blocked).setOnClickListener { showBlocked() }
     }
 
     private fun collectChecks(): List<Check> {
@@ -503,9 +501,61 @@ class SecurityCenterActivity : AppCompatActivity() {
             recoveryState(),
         )
 
-        // Блокировки ещё нет, значит и заблокированных нет. Число здесь
-        // было бы выдумкой.
         bindRow(R.id.security_blocked, R.drawable.ic_block, R.string.security_blocked, null)
+        refreshBlockedCount()
+    }
+
+    /** Число заблокированных — в строке навигации, когда они есть. */
+    private fun refreshBlockedCount() {
+        lifecycleScope.launch {
+            val count = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().blockedChats().size }.getOrDefault(0)
+            }
+            bindRow(
+                R.id.security_blocked,
+                R.drawable.ic_block,
+                R.string.security_blocked,
+                count.takeIf { it > 0 }?.toString(),
+            )
+        }
+    }
+
+    /** Список заблокированных: касание — снять блокировку. */
+    private fun showBlocked() {
+        lifecycleScope.launch {
+            val blocked = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().blockedChats() }.getOrDefault(emptyList())
+            }
+            if (blocked.isEmpty()) {
+                AegisToast.show(this@SecurityCenterActivity, R.string.security_blocked_empty, AegisToast.Tone.Info)
+                return@launch
+            }
+
+            val sheet = AegisSheet.on(this@SecurityCenterActivity, R.string.security_blocked_title)
+            for (entry in blocked) {
+                val name = entry.username ?: getString(R.string.blocked_unknown)
+                sheet.action(name, R.drawable.ic_block) { confirmUnblock(entry.chatId, name) }
+            }
+            sheet.show()
+        }
+    }
+
+    private fun confirmUnblock(chatId: String, name: String) {
+        AegisDialog(this)
+            .title(getString(R.string.unblock_confirm_title, name))
+            .secondary()
+            .primary(R.string.chat_unblock) {
+                lifecycleScope.launch {
+                    val done = withContext(Dispatchers.IO) {
+                        runCatching { Core.messenger().unblockChat(chatId) }.isSuccess
+                    }
+                    if (done) {
+                        AegisToast.show(this@SecurityCenterActivity, R.string.unblock_done, AegisToast.Tone.Success)
+                    }
+                    refreshBlockedCount()
+                }
+            }
+            .show()
     }
 
     /**

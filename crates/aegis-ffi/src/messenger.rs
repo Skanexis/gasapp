@@ -253,6 +253,24 @@ pub struct FfiSearchHit {
     pub message: FfiMessage,
 }
 
+/// Разбирает идентификатор чата с границы FFI.
+fn parse_chat(chat_id: &str) -> Result<ChatId, FfiError> {
+    uuid::Uuid::parse_str(chat_id)
+        .map(ChatId::from_uuid)
+        .map_err(|_| FfiError::InvalidArgument)
+}
+
+/// Заблокированный собеседник — для списка «Заблокированные».
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiBlockedChat {
+    /// Чат.
+    pub chat_id: String,
+    /// Имя собеседника на момент блокировки, если было известно.
+    pub username: Option<String>,
+    /// Когда заблокирован.
+    pub blocked_at_millis: i64,
+}
+
 /// Состояние запроса на переписку (см. `aegis_core::client::ChatRequest`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FfiChatRequest {
@@ -513,6 +531,106 @@ impl Messenger {
                 Timestamp::from_millis(now_millis),
             )
         })
+    }
+
+    /// Блокирует собеседника чата — только на этом устройстве: сервер
+    /// о блокировке не знает. Его конверты принимаются и отбрасываются.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+    pub fn block_chat(
+        &self,
+        chat_id: String,
+        username: Option<String>,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+
+        guard(|| {
+            client.block_chat(
+                &chat,
+                username.as_deref(),
+                Timestamp::from_millis(now_millis),
+            )
+        })
+    }
+
+    /// Снимает блокировку.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+    pub fn unblock_chat(&self, chat_id: String) -> Result<(), FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+
+        guard(|| client.unblock_chat(&chat))
+    }
+
+    /// Заблокирован ли собеседник чата.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+    pub fn is_chat_blocked(&self, chat_id: String) -> Result<bool, FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+
+        guard(|| client.is_chat_blocked(&chat))
+    }
+
+    /// Заблокированные — свежие первыми.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn blocked_chats(&self) -> Result<Vec<FfiBlockedChat>, FfiError> {
+        let client = self.reader()?;
+
+        let blocked = guard(|| client.blocked_chats())?;
+
+        Ok(blocked
+            .into_iter()
+            .map(|entry| FfiBlockedChat {
+                chat_id: entry.chat_id.as_uuid().to_string(),
+                username: entry.username,
+                blocked_at_millis: entry.blocked_at.as_millis(),
+            })
+            .collect())
+    }
+
+    /// Можно ли пожаловаться на собеседника: пришёл ли от него конверт,
+    /// сертификат которого докажет жалобу.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+    pub fn can_report_chat(&self, chat_id: String) -> Result<bool, FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+
+        guard(|| client.can_report_chat(&chat))
+    }
+
+    /// 🔐 Жалуется оператору на собеседника чата. Серверу уходит
+    /// сертификат отправителя с его конверта — не переписка.
+    ///
+    /// Возвращает, учтена ли жалоба (повторная — нет).
+    ///
+    /// # Errors
+    ///
+    /// * [`FfiError::InvalidArgument`] — идентификатор чата не разобран;
+    /// * [`FfiError::Core`] — доказать жалобу нечем
+    ///   ([`AegisError::Uninitialized`]) либо сеть недоступна.
+    pub fn report_chat(&self, chat_id: String, now_millis: i64) -> Result<bool, FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+
+        let outcome = guard(|| client.report_chat(&chat, Timestamp::from_millis(now_millis)))?;
+
+        Ok(outcome.recorded)
     }
 
     /// Возвращает сообщения чата.

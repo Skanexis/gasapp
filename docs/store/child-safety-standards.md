@@ -39,7 +39,7 @@ CSAE is suspended and deleted. Where the law requires, and in every case of
 apparent CSAM we become aware of, we report to the relevant authorities —
 in the EU to the national hotline (INHOPE network), in the US to NCMEC.
 We hand over what the server has, which is limited by design: the
-username, its public keys and its creation date (see our data retention
+username, its public keys and the month it was last active (see our data retention
 policy).
 
 **Child safety contact:** `abuse@<domain>`.
@@ -72,7 +72,7 @@ AEGIS запрещает сексуальное насилие над детьм
 и в каждом известном нам случае явных материалов насилия — мы сообщаем
 в компетентные органы: в ЕС — на национальную горячую линию (сеть INHOPE),
 в США — в NCMEC. Передаём то, что есть у сервера, а это немного по
-устройству системы: имя пользователя, его открытые ключи и дату создания
+устройству системы: имя пользователя, его открытые ключи и месяц последней активности
 (см. политику хранения данных).
 
 **Контакт по безопасности детей:** `abuse@<домен>`.

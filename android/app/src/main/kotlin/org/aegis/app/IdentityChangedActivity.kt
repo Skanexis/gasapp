@@ -50,9 +50,17 @@ class IdentityChangedActivity : AppCompatActivity() {
         setContentView(R.layout.activity_identity_changed)
 
         val applied = intent.getIntExtra(EXTRA_APPLIED, 0)
+        val backupAt = intent.getLongExtra(EXTRA_BACKUP_AT, 0L)
 
+        // 🔐 Дата состояния копии — чтобы неполная цепочка была видна
+        // (находка B-1): восстановление без последних файлов проходит,
+        // возвращая прежнее состояние, и проверить полноту приложению нечем.
         findViewById<TextView>(R.id.identity_changed_summary).text =
-            getString(R.string.identity_changed_restored_count, applied)
+            if (backupAt > 0L) {
+                getString(R.string.identity_changed_restored_as_of, applied, backupDate(backupAt))
+            } else {
+                getString(R.string.identity_changed_restored_count, applied)
+            }
 
         findViewById<AegisButton>(R.id.identity_changed_verify).setOnClickListener {
             // Сверять safety number идут в список контактов: у каждого
@@ -80,6 +88,10 @@ class IdentityChangedActivity : AppCompatActivity() {
         }
     }
 
+    private fun backupDate(millis: Long): String =
+        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.LONG, java.text.DateFormat.SHORT)
+            .format(java.util.Date(millis))
+
     private fun goTo(screen: Class<*>) {
         startActivity(
             Intent(this, screen)
@@ -92,5 +104,8 @@ class IdentityChangedActivity : AppCompatActivity() {
 
         /** Сколько записей восстановлено — для строки итога. */
         const val EXTRA_APPLIED: String = "applied"
+
+        /** Когда сделана последняя восстановленная копия, мс. */
+        const val EXTRA_BACKUP_AT: String = "backup_at"
     }
 }

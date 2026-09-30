@@ -38,7 +38,8 @@ use std::collections::HashMap;
 use aegis_core::client::{ChatRequest, Client, Contact};
 use aegis_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
-    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedSendRequest,
+    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
+    SealedReportResponse, SealedSendRequest,
 };
 use aegis_net::client::{HttpRequest, HttpResponse, Method, Transport};
 use aegis_protocol::key_transparency as kt;
@@ -111,12 +112,19 @@ struct ServerState {
     /// 🔐 Discovery отвечает 429 — как при чужом переборе по имени.
     discovery_refused: bool,
 
+    /// Сервер не принимает конверты — как при обрыве сети посреди отправки.
+    sends_refused: bool,
+
     /// 🔐 «Сервер» не выдаёт доказательств журнала для этого индекса.
     kt_refused_index: Option<[u8; 32]>,
 
     /// Журнал ключей (§9.7): эпохи — номер, корень, вершина, дерево
     /// и листы (identity, хеш PQ-половины, версия) по индексу.
     kt_epochs: Vec<KtEpochState>,
+
+    /// Жалобы: (устройство жалобщика, устройство отправителя из
+    /// проверенного сертификата) — одна пара учитывается один раз.
+    reports: Vec<(String, [u8; 16])>,
 }
 
 /// Эпоха журнала ключей поддельного сервера.
@@ -377,6 +385,13 @@ impl Transport for FakeServer {
         state
             .requests
             .push((request.path.clone(), request.headers.clone()));
+
+        if state.sends_refused
+            && request.method == Method::Post
+            && (path.starts_with("/v1/sealed/messages") || path.starts_with("/v1/messages"))
+        {
+            return Err(AegisError::Network);
+        }
 
         let (status, body) = match (&request.method, path) {
             (Method::Post, "/v1/accounts/register") => {
@@ -677,6 +692,38 @@ impl Transport for FakeServer {
                 state.access_hashes.insert(device_id, hash);
 
                 (200, String::new())
+            }
+            // Жалоба: как на настоящем сервере — сертификат обязан быть
+            // подписан ключом сервера, иначе это слово жалобщика.
+            (Method::Post, path) if path.starts_with("/v1/sealed/report/") => {
+                let complainant = path.trim_start_matches("/v1/sealed/report/").to_owned();
+                let request: SealedReportRequest =
+                    serde_json::from_str(request.body.as_deref().unwrap_or_default())
+                        .expect("тело жалобы");
+                let raw = hex::decode(&request.certificate).expect("hex сертификата");
+                let certificate = SenderCertificate::from_bytes(&raw).expect("сертификат");
+                let private = PrivateKeyBytes::new(FAKE_SERVER_KEY);
+                let server_key = xeddsa::montgomery::public_key(&private).expect("ключ сервера");
+
+                if certificate.verify(&server_key, 0).is_err() {
+                    (400, String::new())
+                } else {
+                    let pair = (complainant, certificate.device_id);
+                    let recorded = !state.reports.contains(&pair);
+                    if recorded {
+                        state.reports.push(pair);
+                    }
+                    let total_reporters = i64::try_from(state.reports.len()).unwrap_or(i64::MAX);
+
+                    (
+                        200,
+                        serde_json::to_string(&SealedReportResponse {
+                            recorded,
+                            total_reporters,
+                        })
+                        .unwrap_or_default(),
+                    )
+                }
             }
             (Method::Get, path) if path.starts_with("/v1/sealed/certificate/") => {
                 let device_id = path
@@ -5108,4 +5155,86 @@ fn a_blocked_self_check_raises_an_event() {
         .expect("журнал")
         .iter()
         .any(|(kind, _, _)| kind == "kt_self_check_blocked"));
+}
+
+/// 🔐 Заблокированный собеседник молчит, пока его не разблокируют,
+/// а жалоба на него доказывается сертификатом с его конверта.
+#[test]
+fn a_blocked_contact_is_silenced_and_can_be_reported() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob) = unconfirmed_pair(&server, &dir);
+    confirm_pair(&alice, "alice", &bob, "bob");
+    let bob_device = bob.own_device_id().expect("устройство").expect("есть");
+
+    alice
+        .send_message("bob", "hello", now(), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+
+    let chat = *bob.chats().expect("чаты").first().expect("чат с Алисой");
+    assert!(
+        bob.can_report_chat(&chat).expect("чтение"),
+        "запечатанный конверт должен оставить доказательство для жалобы"
+    );
+
+    // Заблокирована: конверт принят и отброшен, в переписке его нет.
+    bob.block_chat(&chat, Some("alice"), now())
+        .expect("блокировка");
+    alice
+        .send_message("bob", "spam", now(), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 0);
+    assert_eq!(bob.messages(&chat, 10).expect("переписка").len(), 1);
+    assert_eq!(bob.blocked_chats().expect("список").len(), 1);
+    // Отброшенное по блокировке — не «нечитаемое»: журнал об этом молчит.
+    assert!(
+        !bob.security_events(50)
+            .expect("журнал")
+            .iter()
+            .any(|(kind, _, _)| kind == "undecryptable_envelopes_dropped"),
+        "сообщение заблокированного записано как нечитаемое"
+    );
+
+    // Разблокирована: переписка идёт дальше — сессия не сломана.
+    bob.unblock_chat(&chat).expect("разблокировка");
+    alice
+        .send_message("bob", "sorry", now(), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(bob.receive_messages(&bob_device, now()).expect("приём"), 1);
+
+    // Жалоба учитывается один раз.
+    assert!(bob.report_chat(&chat, now()).expect("жалоба").recorded);
+    assert!(!bob.report_chat(&chat, now()).expect("повтор").recorded);
+}
+
+/// Сбой сети посреди отправки не теряет текст: сообщение остаётся
+/// в переписке «не отправленным». Прежде оно исчезало бесследно, если
+/// сбой пришёлся на обмен ключом доступа (первое сообщение новому
+/// собеседнику — proof-of-work и Tor, десятки секунд).
+#[test]
+fn a_failed_send_keeps_the_message_as_failed() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob) = unconfirmed_pair(&server, &dir);
+    confirm_pair(&alice, "alice", &bob, "bob");
+
+    server.state.borrow_mut().sends_refused = true;
+    assert!(alice
+        .send_message("bob", "important", now(), &mut OsRng)
+        .is_err());
+
+    let chat = *alice.chats().expect("чаты").first().expect("чат с Бобом");
+    let messages = alice.messages(&chat, 10).expect("переписка");
+    assert_eq!(messages.len(), 1, "текст не должен теряться");
+    assert_eq!(messages[0].text, "important");
+    assert_eq!(messages[0].status, MessageStatus::Failed);
+
+    // Сеть вернулась — следующее сообщение уходит, как обычно.
+    server.state.borrow_mut().sends_refused = false;
+    alice
+        .send_message("bob", "again", now(), &mut OsRng)
+        .expect("отправлено");
+    let bob_device = bob.own_device_id().expect("устройство").expect("есть");
+    assert!(bob.receive_messages(&bob_device, now()).expect("приём") >= 1);
 }
