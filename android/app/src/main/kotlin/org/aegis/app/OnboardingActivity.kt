@@ -90,6 +90,9 @@ class OnboardingActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_onboarding)
 
+        // 🔐 До регистрации: поддельной копии не отдают ни имени, ни PIN.
+        org.aegis.app.core.TamperGuard.warnIfForged(this)
+
         username = findViewById(R.id.onboarding_username)
         usernameHelper = findViewById(R.id.onboarding_username_helper)
         scroll = findViewById(R.id.onboarding_scroll)

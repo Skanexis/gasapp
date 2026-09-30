@@ -34,7 +34,15 @@ def releaseSigningCertSha256() {
 }
 
 // Релиз разбивается на APK по архитектурам (см. `splits`).
-def releaseAbiSplit = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+//
+// ⚠️ Кроме сборки AAB (`bundle…`): Google Play делит её по устройствам
+// сам, а AGP с включёнными `splits` падает на `buildGmsReleasePreBundle`
+// («Sequence contains more than one matching element») — AAB для
+// магазина не собиралась вовсе (найдено 2026-09-30).
+def releaseAbiSplit = gradle.startParameter.taskNames.any {
+    def task = it.toLowerCase()
+    task.contains('release') && !task.contains('bundle')
+}
 
 android {
     // Обязателен начиная с AGP 8: пакет, в котором генерируется класс R.

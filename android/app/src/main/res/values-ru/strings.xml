@@ -712,4 +712,9 @@
     <string name="report_already">Вы уже жаловались на этот аккаунт.</string>
     <string name="report_unavailable">Пожаловаться можно, когда собеседник вам что-нибудь напишет.</string>
     <string name="report_failed">Жалобу отправить не удалось. Проверьте связь и попробуйте ещё раз.</string>
+    <!-- Пересобранная копия (TamperGuard) -->
+    <string name="tamper_title">Эта копия AEGIS может быть поддельной</string>
+    <string name="tamper_body">Приложение подписано не разработчиками AEGIS. Его могли изменить, чтобы читать вашу переписку или украсть PIN. Удалите его и установите AEGIS только со страницы в официальном магазине или с сайта проекта.</string>
+    <string name="tamper_close">Закрыть приложение</string>
+    <string name="tamper_continue">Всё равно продолжить</string>
 </resources>

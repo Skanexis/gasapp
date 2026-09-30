@@ -434,9 +434,13 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — сбой вывода ключа или записи.
+    ///
+    /// Локальная запись — через клиент локальных операций: сетевой замок
+    /// сразу после входа держит пополнение предключей через Tor, и вход
+    /// ждал его десятки секунд.
     pub fn establish_vault_verifier(&self, pin: Vec<u8>, salt: Vec<u8>) -> Result<(), FfiError> {
         let pin = crate::pin_bytes(pin);
-        let client = self.client()?;
+        let client = self.reader()?;
 
         guard(|| {
             client.establish_vault_verifier(crate::pin_text(&pin)?, &salt, &mut rand_core::OsRng)

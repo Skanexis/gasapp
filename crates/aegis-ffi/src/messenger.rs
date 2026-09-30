@@ -339,6 +339,8 @@ pub struct Messenger {
     /// имеет вовсе ([`Offline`]) и отвечает сразу; база в режиме WAL,
     /// чтения не мешают записи основного.
     reader: Mutex<Client<Offline>>,
+    /// Путь базы — чтобы переоткрыть читающее соединение после смены ключа.
+    database_path: String,
 }
 
 /// Транспорт без сети — у клиента локальных чтений.
@@ -401,6 +403,7 @@ impl Messenger {
         Ok(Self {
             client: Mutex::new(Client::new(ForeignTransport { inner: transport }, storage)),
             reader: Mutex::new(Client::new(Offline, reading)),
+            database_path,
         })
     }
 
@@ -900,9 +903,26 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — ключ не 32 байта либо смена не удалась.
     pub fn rekey_storage(&self, new_key: Vec<u8>) -> Result<(), FfiError> {
+        let key: [u8; 32] = new_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| FfiError::InvalidArgument)?;
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        // Чтения ждут, пока идёт перешифровка: на полпути страницы базы
+        // уже под новым ключом, и читающее соединение со старым ключом
+        // видело бы мусор.
+        let mut reader = self.reader.lock().map_err(|_| FfiError::Panic)?;
 
-        guard(|| client.rekey_storage(&new_key))
+        guard(|| client.rekey_storage(&new_key))?;
+
+        // 🔐 Читающее соединение открыто прежним ключом и после смены
+        // не читает ничего: до перезапуска приложения списки чатов и
+        // контактов были пусты, будто переписка пропала (найдено при
+        // переходе на схему ключа v3, 2026-09-30).
+        let reading = guard(|| Storage::new(&self.database_path, &key))?;
+        *reader = Client::new(Offline, reading);
+
+        Ok(())
     }
 
     /// 🔐 Пополняет одноразовые предключи и ротирует подписанный.
@@ -1573,6 +1593,35 @@ mod reader_tests {
 
             drop(busy);
         });
+    }
+
+    /// После смены ключа базы чтения идут новым ключом — сразу, без
+    /// перезапуска. Прежде читающее соединение оставалось на старом, и
+    /// списки чатов и контактов были пусты до перезапуска приложения.
+    #[test]
+    fn reads_follow_the_new_key_after_rekey() {
+        let dir = tempfile::tempdir().expect("каталог");
+        let path = dir.path().join("aegis.db").to_string_lossy().into_owned();
+        let messenger = Messenger::open(path.clone(), vec![7; 32], std::sync::Arc::new(NoNetwork))
+            .expect("база открывается");
+
+        messenger
+            .set_setting_bool("block_screenshots".to_owned(), false)
+            .expect("запись");
+        messenger.rekey_storage(vec![9; 32]).expect("смена ключа");
+
+        assert!(
+            !messenger
+                .setting_bool("block_screenshots".to_owned(), true)
+                .expect("чтение после смены ключа"),
+            "читающее соединение не видит базу после смены ключа"
+        );
+        drop(messenger);
+
+        assert!(
+            Messenger::open(path, vec![9; 32], std::sync::Arc::new(NoNetwork)).is_ok(),
+            "база открывается новым ключом"
+        );
     }
 }
 

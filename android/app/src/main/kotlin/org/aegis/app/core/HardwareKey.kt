@@ -218,6 +218,14 @@ object HardwareKey {
         }
     }
 
+    /**
+     * Удаляет файл секрета — после перехода базы на схему v3 он не
+     * нужен, а оставленный даёт перебор PIN по старой копии базы.
+     */
+    fun deleteSecretFile(context: Context) {
+        File(context.filesDir, SECRET_FILE).delete()
+    }
+
     /** Возвращает ключ Keystore, создавая его при первом обращении. */
     private fun key(): SecretKey {
         val store = KeyStore.getInstance(PROVIDER).apply { load(null) }

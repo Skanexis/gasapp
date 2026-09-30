@@ -603,17 +603,50 @@ pub fn derive_storage_key(pin: Vec<u8>, salt: Vec<u8>) -> Result<Vec<u8>, FfiErr
 ///
 /// [`FfiError::InvalidArgument`] — PIN короче шести символов, соль
 /// не 16 байт либо секрет не 32 байта.
+///
+/// Принимает растянутый PIN ([`derive_storage_key`]), а не сам PIN:
+/// при переходе со схемы v2 на v3 `Argon2id` считается один раз.
 #[uniffi::export]
 pub fn derive_storage_key_bound(
-    pin: Vec<u8>,
+    stretched: Vec<u8>,
     salt: Vec<u8>,
     hardware_secret: Vec<u8>,
 ) -> Result<Vec<u8>, FfiError> {
-    let pin = pin_bytes(pin);
-    let key =
-        guard(|| aegis_keystore::pin::derive_key_bound(pin_text(&pin)?, &salt, &hardware_secret))?;
+    let stretched = stretched_array(stretched)?;
+    let key = guard(|| aegis_keystore::pin::bind_hardware(&stretched, &salt, &hardware_secret))?;
 
     Ok(key.expose_secret().to_vec())
+}
+
+/// 🔐 Ключ хранилища схемы v3: растянутый PIN и ответ Android Keystore
+/// на него (цепочка HMAC невынимаемым ключом, см.
+/// [`aegis_keystore::pin::bind_tee`]).
+///
+/// # Errors
+///
+/// [`FfiError::InvalidArgument`] — растянутый PIN, соль или ответ
+/// оборудования не той длины.
+#[uniffi::export]
+pub fn derive_storage_key_tee(
+    stretched: Vec<u8>,
+    salt: Vec<u8>,
+    tee_mac: Vec<u8>,
+) -> Result<Vec<u8>, FfiError> {
+    let stretched = stretched_array(stretched)?;
+    let key = guard(|| aegis_keystore::pin::bind_tee(&stretched, &salt, &tee_mac))?;
+
+    Ok(key.expose_secret().to_vec())
+}
+
+/// Растянутый PIN с границы FFI — затираемый массив ровной длины.
+fn stretched_array(
+    stretched: Vec<u8>,
+) -> Result<zeroize::Zeroizing<[u8; aegis_keystore::pin::KEY_LEN]>, FfiError> {
+    let stretched = zeroize::Zeroizing::new(stretched);
+    let array = <[u8; aegis_keystore::pin::KEY_LEN]>::try_from(stretched.as_slice())
+        .map_err(|_| FfiError::InvalidArgument)?;
+
+    Ok(zeroize::Zeroizing::new(array))
 }
 
 /// 🔐 PIN приходит байтами и затирается при выходе из вызова.

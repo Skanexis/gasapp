@@ -932,6 +932,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -966,6 +968,8 @@ fun uniffi_aegis_checksum_func_core_version(
 fun uniffi_aegis_checksum_func_derive_storage_key(
 ): Short
 fun uniffi_aegis_checksum_func_derive_storage_key_bound(
+): Short
+fun uniffi_aegis_checksum_func_derive_storage_key_tee(
 ): Short
 fun uniffi_aegis_checksum_func_embedded_tor_status(
 ): Short
@@ -1359,7 +1363,9 @@ fun uniffi_aegis_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_derive_storage_key(`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_aegis_fn_func_derive_storage_key_bound(`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`hardwareSecret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_aegis_fn_func_derive_storage_key_bound(`stretched`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`hardwareSecret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_func_derive_storage_key_tee(`stretched`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`teeMac`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_func_embedded_tor_status(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1548,7 +1554,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_func_derive_storage_key() != 1640.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_func_derive_storage_key_bound() != 33869.toShort()) {
+    if (lib.uniffi_aegis_checksum_func_derive_storage_key_bound() != 22593.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_func_derive_storage_key_tee() != 48547.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_func_embedded_tor_status() != 64994.toShort()) {
@@ -1659,7 +1668,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_edit_message() != 51366.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aegis_checksum_method_messenger_establish_vault_verifier() != 4841.toShort()) {
+    if (lib.uniffi_aegis_checksum_method_messenger_establish_vault_verifier() != 43280.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_export_data() != 23159.toShort()) {
@@ -2861,6 +2870,10 @@ public interface MessengerInterface {
      * # Errors
      *
      * [`FfiError::Core`] — сбой вывода ключа или записи.
+     *
+     * Локальная запись — через клиент локальных операций: сетевой замок
+     * сразу после входа держит пополнение предключей через Tor, и вход
+     * ждал его десятки секунд.
      */
     fun `establishVaultVerifier`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray)
     
@@ -4022,6 +4035,10 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      * # Errors
      *
      * [`FfiError::Core`] — сбой вывода ключа или записи.
+     *
+     * Локальная запись — через клиент локальных операций: сетевой замок
+     * сразу после входа держит пополнение предключей через Tor, и вход
+     * ждал его десятки секунд.
      */
     @Throws(FfiException::class)override fun `establishVaultVerifier`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray)
         = 
@@ -7940,12 +7957,35 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
          *
          * [`FfiError::InvalidArgument`] — PIN короче шести символов, соль
          * не 16 байт либо секрет не 32 байта.
+         *
+         * Принимает растянутый PIN ([`derive_storage_key`]), а не сам PIN:
+         * при переходе со схемы v2 на v3 `Argon2id` считается один раз.
          */
-    @Throws(FfiException::class) fun `deriveStorageKeyBound`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray, `hardwareSecret`: kotlin.ByteArray): kotlin.ByteArray {
+    @Throws(FfiException::class) fun `deriveStorageKeyBound`(`stretched`: kotlin.ByteArray, `salt`: kotlin.ByteArray, `hardwareSecret`: kotlin.ByteArray): kotlin.ByteArray {
             return FfiConverterByteArray.lift(
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_func_derive_storage_key_bound(
-        FfiConverterByteArray.lower(`pin`),FfiConverterByteArray.lower(`salt`),FfiConverterByteArray.lower(`hardwareSecret`),_status)
+        FfiConverterByteArray.lower(`stretched`),FfiConverterByteArray.lower(`salt`),FfiConverterByteArray.lower(`hardwareSecret`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * 🔐 Ключ хранилища схемы v3: растянутый PIN и ответ Android Keystore
+         * на него (цепочка HMAC невынимаемым ключом, см.
+         * [`aegis_keystore::pin::bind_tee`]).
+         *
+         * # Errors
+         *
+         * [`FfiError::InvalidArgument`] — растянутый PIN, соль или ответ
+         * оборудования не той длины.
+         */
+    @Throws(FfiException::class) fun `deriveStorageKeyTee`(`stretched`: kotlin.ByteArray, `salt`: kotlin.ByteArray, `teeMac`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_func_derive_storage_key_tee(
+        FfiConverterByteArray.lower(`stretched`),FfiConverterByteArray.lower(`salt`),FfiConverterByteArray.lower(`teeMac`),_status)
 }
     )
     }
