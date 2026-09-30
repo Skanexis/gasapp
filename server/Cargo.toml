@@ -11,6 +11,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "aegis-server-admin",
     "aegis-server-api",
     "aegis-server-db",
 ]

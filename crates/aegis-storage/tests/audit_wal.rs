@@ -10,10 +10,10 @@
 //! обрезая журнал по границе более ранней фиксации: `SQLite` сам
 //! воспроизводит базу на тот момент.
 //!
-//! Тест утверждает правильное поведение (прежнее состояние не
-//! извлекается) и потому падает, пока дефект не исправлен: он выключен
-//! (`ignore`) и числится открытой находкой W-1 в
-//! `docs/security/audit-2026-09-28.md`. Исправлено — снять `ignore`.
+//! Находка W-1 (`docs/security/audit-2026-09-28.md`). Исправлено
+//! 2026-09-30: контрольная точка после записи сессии и собственных ключей
+//! (`checkpoint_after_secret_write`). Тест проверяет, что прежнее
+//! состояние из снимка файлов не извлекается.
 
 #![allow(
     clippy::expect_used,
@@ -53,8 +53,20 @@ fn open_copy(path: &Path) -> rusqlite::Connection {
 /// обрезкой журнала по каждой фиксации.
 fn recoverable_states(db: &Path, wal: &[u8], chat: &ChatId) -> Vec<Vec<u8>> {
     let mut found = Vec::new();
+
+    // Основной файл сам по себе — без журнала.
+    {
+        let dir = tempfile::tempdir().expect("каталог");
+        let copy = dir.path().join("copy.db");
+        std::fs::copy(db, &copy).expect("копия базы");
+        if let Some(state) = session_state(&open_copy(&copy), chat) {
+            found.push(state);
+        }
+    }
+
+    // Пустой журнал (после контрольной точки) — кадров нет.
     let frame = FRAME_HEADER + PAGE;
-    let frames = (wal.len() - WAL_HEADER) / frame;
+    let frames = wal.len().saturating_sub(WAL_HEADER) / frame;
 
     for index in 0..frames {
         let header = WAL_HEADER + index * frame;
@@ -69,16 +81,7 @@ fn recoverable_states(db: &Path, wal: &[u8], chat: &ChatId) -> Vec<Vec<u8>> {
         std::fs::write(dir.path().join("copy.db-wal"), &wal[..header + frame])
             .expect("копия журнала");
 
-        let connection = open_copy(&copy);
-        let state: Option<Vec<u8>> = connection
-            .query_row(
-                "SELECT state FROM sessions WHERE chat_id = ?",
-                [chat.as_bytes().to_vec()],
-                |row| row.get(0),
-            )
-            .ok();
-
-        if let Some(state) = state {
+        if let Some(state) = session_state(&open_copy(&copy), chat) {
             if !found.contains(&state) {
                 found.push(state);
             }
@@ -88,8 +91,18 @@ fn recoverable_states(db: &Path, wal: &[u8], chat: &ChatId) -> Vec<Vec<u8>> {
     found
 }
 
+/// Состояние сессии чата в открытой копии, если оно там есть.
+fn session_state(connection: &rusqlite::Connection, chat: &ChatId) -> Option<Vec<u8>> {
+    connection
+        .query_row(
+            "SELECT state FROM sessions WHERE chat_id = ?",
+            [chat.as_bytes().to_vec()],
+            |row| row.get(0),
+        )
+        .ok()
+}
+
 #[test]
-#[ignore = "открытая находка W-1: прежнее состояние храповика живёт в WAL до контрольной точки"]
 fn audit_previous_ratchet_state_must_not_survive_in_wal() {
     let dir = tempfile::tempdir().expect("каталог");
     let path = dir.path().join("aegis.db");
@@ -120,7 +133,8 @@ fn audit_previous_ratchet_state_must_not_survive_in_wal() {
 
     // Снимок файлов при живом приложении (или после того, как система
     // убила процесс, не закрыв базу, — обычное дело на Android).
-    let wal = std::fs::read(dir.path().join("aegis.db-wal")).expect("журнал WAL есть");
+    // Журнала может не быть вовсе или он пуст — это и есть исправление.
+    let wal = std::fs::read(dir.path().join("aegis.db-wal")).unwrap_or_default();
 
     let states = recoverable_states(&path, &wal, &chat);
 

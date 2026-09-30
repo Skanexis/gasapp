@@ -137,6 +137,9 @@ impl Storage {
             "DELETE FROM messages WHERE chat_id = ?",
             "DELETE FROM sessions WHERE chat_id = ?",
             "DELETE FROM chat_states WHERE chat_id = ?",
+            // Доказательство для жалобы — запись о том, что собеседник
+            // писал; уходит вместе с перепиской. Блокировка остаётся.
+            "DELETE FROM report_certificates WHERE chat_id = ?",
             "DELETE FROM known_contacts
              WHERE chat_id = ?
                AND confirmed_by_link = 0

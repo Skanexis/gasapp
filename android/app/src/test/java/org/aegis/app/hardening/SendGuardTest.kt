@@ -60,4 +60,17 @@ class SendGuardTest {
             SendGuard.decide(keyChanged = true, replaced = false, keyConfirmed = true, request = true),
         )
     }
+
+    /** Заблокированному писать нельзя — что бы ни было с ключом и запросом. */
+    @Test
+    fun a_blocked_contact_cannot_be_written_to() {
+        assertEquals(
+            Mode.BLOCKED,
+            SendGuard.decide(keyChanged = false, replaced = false, keyConfirmed = true, blocked = true),
+        )
+        assertEquals(
+            Mode.BLOCKED,
+            SendGuard.decide(keyChanged = true, replaced = true, keyConfirmed = false, request = true, blocked = true),
+        )
+    }
 }

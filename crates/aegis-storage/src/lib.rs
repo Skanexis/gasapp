@@ -25,6 +25,7 @@
 //! опознаваемых строк, ни заголовка `SQLite format 3`.
 
 pub mod backup;
+pub mod blocks;
 pub mod kt;
 pub mod pq;
 pub mod requests;
@@ -123,6 +124,25 @@ const SQLITE_PRAGMAS: &[&str] = &[
 ///
 /// ⚠️ Физических ячеек флеш-памяти это не касается: перезапись
 /// страницы файла их не затирает. Закрывается чтение из самого файла.
+/// 🔐 Контрольная точка после записи, заменившей секрет, — по возможности.
+///
+/// Состояние храповика и секреты предключей переписываются на каждом
+/// сообщении, и прежняя версия страницы оставалась кадром журнала WAL до
+/// автоматической точки. Тот, у кого есть ключ базы и снимок файлов,
+/// обрезал журнал по более ранней фиксации — и `SQLite` сам отдавал
+/// прежнее состояние, то есть уже израсходованные ключи цепочки
+/// (находка W-1 аудита, спецификация §10.1: ключ уничтожается сразу).
+///
+/// Почему «по возможности», а не ошибка, как при удалении: запись уже
+/// состоялась, и отказ здесь выглядел бы для вызывающего как несохранённое
+/// состояние — сообщение, уже расшифрованное и израсходовавшее ключ,
+/// посчиталось бы необработанным. Занятый читатель (второе соединение
+/// с базой) бывает лишь мгновение, `busy_timeout` ждёт его; если и так
+/// не вышло — точка повторится при следующей такой записи.
+pub(crate) fn checkpoint_after_secret_write(connection: &Connection) {
+    let _ = checkpoint_truncate(connection);
+}
+
 pub(crate) fn checkpoint_truncate(connection: &Connection) -> Result<()> {
     let busy: i64 = connection
         .query_row("PRAGMA wal_checkpoint(TRUNCATE);", [], |row| row.get(0))
@@ -380,7 +400,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 14;
+    const SCHEMA_VERSION: i32 = 15;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -802,6 +822,24 @@ impl Storage {
                              version       INTEGER NOT NULL
                          )",
                         "ALTER TABLE known_contacts ADD COLUMN confirmed_by_kt INTEGER NOT NULL DEFAULT 0",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
+                    }
+                }
+                // 14 → 15: блокировка собеседника и доказательство для
+                // жалобы на него (`blocks`).
+                15 => {
+                    for statement in [
+                        "CREATE TABLE IF NOT EXISTS blocked_chats (
+                             chat_id    BLOB PRIMARY KEY,
+                             username   TEXT,
+                             blocked_at INTEGER NOT NULL
+                         )",
+                        "CREATE TABLE IF NOT EXISTS report_certificates (
+                             chat_id     BLOB PRIMARY KEY,
+                             certificate BLOB NOT NULL,
+                             received_at INTEGER NOT NULL
+                         )",
                     ] {
                         transaction.execute(statement, []).map_err(storage_error)?;
                     }
@@ -1497,6 +1535,10 @@ impl Storage {
             ],
         )
         .map_err(storage_error)?;
+        // Израсходованный одноразовый предключ и сменённый подписанный
+        // живут в этой же записи — прежняя версия не должна пережить её
+        // в журнале.
+        checkpoint_after_secret_write(&conn);
 
         Ok(())
     }
@@ -1606,6 +1648,8 @@ impl Storage {
             params![chat_id.as_bytes(), state_bytes, now.as_millis()],
         )
         .map_err(storage_error)?;
+        checkpoint_after_secret_write(&conn);
+
         Ok(())
     }
 

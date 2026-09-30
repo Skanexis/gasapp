@@ -202,7 +202,14 @@ class RestoreActivity : AppCompatActivity() {
 
             outcome.onSuccess { restored ->
                 recovered = true
-                showStatus(getString(R.string.restore_done, restored.applied.toInt()))
+                showStatus(
+                    getString(
+                        R.string.restore_done_as_of,
+                        restored.applied.toInt(),
+                        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.LONG, java.text.DateFormat.SHORT)
+                            .format(java.util.Date(restored.createdAtMillis)),
+                    ),
+                )
 
                 // 🔐 Объяснение смены ключа безопасности — обязательный
                 // шаг, а не любезность: собеседники увидят её как
@@ -213,7 +220,8 @@ class RestoreActivity : AppCompatActivity() {
                             .putExtra(
                                 IdentityChangedActivity.EXTRA_APPLIED,
                                 restored.applied.toInt(),
-                            ),
+                            )
+                            .putExtra(IdentityChangedActivity.EXTRA_BACKUP_AT, restored.createdAtMillis),
                     )
                     finish()
                 }

@@ -388,6 +388,8 @@ impl<T: Transport> Client<T> {
             .to_bytes()?,
         );
 
+        let initial = existing.is_none();
+
         let outgoing = if let Some(state) = existing {
             session::continue_session(&state, &share)?
         } else {
@@ -423,18 +425,38 @@ impl<T: Transport> Client<T> {
             started
         };
 
-        // Сессия сохраняется до отправки — тот же порядок, что у любого
-        // сообщения: потерянное состояние храповика хуже повторной попытки.
-        self.storage.save_session(chat_id, &outgoing.session, now)?;
-        self.deliver(
-            identity,
-            peer_identity,
-            peer_device,
-            peer_kem,
-            &outgoing.envelope,
-            now,
-            rng,
-        )?;
+        if initial {
+            // 🔐 Конверт инициации — сессия сохраняется только после
+            // доставки. Сохранённая до неё и не доставленная (сбой Tor
+            // на первом сообщении — самое вероятное место) она
+            // продолжалась бы следующими сообщениями, а у собеседника её
+            // нет: он не прочёл бы ни одного, и переписка ломалась
+            // навсегда. Повтор здесь безопасен: он начнёт новую сессию
+            // с новыми ключами — ни один ключ не используется дважды.
+            self.deliver(
+                identity,
+                peer_identity,
+                peer_device,
+                peer_kem,
+                &outgoing.envelope,
+                now,
+                rng,
+            )?;
+            self.storage.save_session(chat_id, &outgoing.session, now)?;
+        } else {
+            // Сессия сохраняется до отправки — тот же порядок, что у любого
+            // сообщения: потерянное состояние храповика хуже повторной попытки.
+            self.storage.save_session(chat_id, &outgoing.session, now)?;
+            self.deliver(
+                identity,
+                peer_identity,
+                peer_device,
+                peer_kem,
+                &outgoing.envelope,
+                now,
+                rng,
+            )?;
+        }
         self.storage
             .mark_access_key_shared(&peer_account(peer_identity), now)?;
 

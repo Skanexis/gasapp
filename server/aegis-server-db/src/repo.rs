@@ -332,7 +332,8 @@ pub async fn publish_prekeys(
         .fetch_one(&mut *transaction)
         .await?;
 
-        if existing.saturating_add(i64::try_from(adding).unwrap_or(i64::MAX)) > MAX_ONE_TIME_PREKEYS {
+        if existing.saturating_add(i64::try_from(adding).unwrap_or(i64::MAX)) > MAX_ONE_TIME_PREKEYS
+        {
             return Err(RepoError::QuotaExceeded);
         }
     }

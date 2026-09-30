@@ -413,7 +413,7 @@
     <string name="restore_key_ok">The key looks right</string>
     <string name="restore_key_invalid">There is a typo in the key</string>
     <string name="restore_confirm">Restore</string>
-    <string name="restore_done">Records restored: %1$d</string>
+    <string name="restore_done_as_of">Records restored: %1$d. Backup as of %2$s</string>
     <string name="restore_failed">Restore failed: wrong key, or files are missing from the chain</string>
     <string name="restore_note">Messages, contacts and settings will be restored. Disappearing messages are not in backups. This device will get a new security key — that is normal, and we\'ll explain why.</string>
 
@@ -422,6 +422,10 @@
     <string name="identity_changed_headline">Your security key has changed</string>
     <string name="identity_changed_restored">Your messages have been restored.</string>
     <string name="identity_changed_restored_count">Records restored: %1$d.</string>
+    <!-- 🔐 Дата состояния — единственная защита от неполной цепочки копий
+         (находка B-1): без последних файлов восстановление проходит,
+         но возвращает прежнее состояние. Человек узнаёт это по дате. -->
+    <string name="identity_changed_restored_as_of">Records restored: %1$d. Your backup is as of %2$s. If you backed up later than that, some files were missing: restore again with all of them — otherwise messages you deleted since may be back.</string>
     <string name="identity_changed_explain">Your contacts will see a warning that your security key changed. After a restore this is normal: the device gets a new key, and the old one is not carried over.</string>
     <string name="identity_changed_why">Keys are not carried over on purpose. Moving the old encryption state across would mean two different messages could be encrypted with the same key — and that reveals what they say. A changed security key is the price of that never happening.</string>
     <string name="identity_changed_not_restored">Not restored: active secure sessions — they will be set up again with the first message — and backups: create a new recovery key in Settings → Backup, otherwise no new backups will be made.</string>
@@ -644,4 +648,24 @@
     <string name="devices_this_id">ID %1$s</string>
     <string name="tor_status_via_bridges">Tor is blocked here — connecting through bridges… %1$d%%</string>
     <string name="tor_status_ready_bridges">Connected to Tor through bridges</string>
+    <!-- Блокировка и жалоба (Apple 1.2, Google Play UGC) -->
+    <string name="chat_block">Block</string>
+    <string name="chat_unblock">Unblock</string>
+    <string name="chat_report">Report</string>
+    <string name="block_confirm_title">Block %1$s?</string>
+    <string name="block_confirm_body">Their messages will stop arriving, and you will not be able to write to them. They are not told. Only this phone knows about the block — not the server.</string>
+    <string name="block_done">Blocked</string>
+    <string name="unblock_confirm_title">Unblock %1$s?</string>
+    <string name="unblock_done">Unblocked</string>
+    <string name="blocked_title">You blocked %1$s</string>
+    <string name="blocked_body">Their messages do not arrive, and you cannot write to them.</string>
+    <string name="blocked_unknown">Unknown contact</string>
+    <string name="report_confirm_title">Report %1$s?</string>
+    <string name="report_confirm_body">The server operator gets proof that this account wrote to you — not your conversation: the server does not have it. %1$s is not told.</string>
+    <string name="report_and_block">Report and block</string>
+    <string name="report_only">Report only</string>
+    <string name="report_done">Report sent. Thank you.</string>
+    <string name="report_already">You have already reported this account.</string>
+    <string name="report_unavailable">You can report once they have sent you a message.</string>
+    <string name="report_failed">Could not send the report. Check the connection and try again.</string>
 </resources>

@@ -847,7 +847,9 @@ async fn prekey_uploads_are_bounded() {
         }
     };
     let keys = |from: i32, count: i32| -> Vec<(i32, String)> {
-        (from..from + count).map(|id| (id, hex::encode([0x33u8; 32]))).collect()
+        (from..from + count)
+            .map(|id| (id, hex::encode([0x33u8; 32])))
+            .collect()
     };
     let kem = hex::encode([0x22u8; 1568]);
 
@@ -859,8 +861,14 @@ async fn prekey_uploads_are_bounded() {
     );
 
     // Полный пул клиента и пополнение до предела проходят…
-    assert_eq!(publish(keys(1, 100), kem.clone()).await, StatusCode::NO_CONTENT);
-    assert_eq!(publish(keys(101, 100), kem.clone()).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        publish(keys(1, 100), kem.clone()).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        publish(keys(101, 100), kem.clone()).await,
+        StatusCode::NO_CONTENT
+    );
 
     // …а сверх предела — нет.
     assert_eq!(
@@ -1224,17 +1232,30 @@ async fn push_tokens_are_validated() {
         let state = Arc::clone(&state);
         let uri = uri.clone();
         let body = serde_json::json!({ "provider": provider, "token": token });
-        async move { call_signed_json(&state, &private, "PUT", &uri, Some(body)).await.0 }
+        async move {
+            call_signed_json(&state, &private, "PUT", &uri, Some(body))
+                .await
+                .0
+        }
     };
 
-    assert_eq!(put("fcm", "abc:DEF-123".to_owned()).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        put("fcm", "abc:DEF-123".to_owned()).await,
+        StatusCode::NO_CONTENT
+    );
     assert_eq!(
         put("unifiedpush", "http://10.0.0.1/internal".to_owned()).await,
         StatusCode::BAD_REQUEST,
         "принят провайдер с токеном-адресом"
     );
-    assert_eq!(put("fcm", "x".repeat(100_000)).await, StatusCode::BAD_REQUEST);
-    assert_eq!(put("fcm", "with space\n".to_owned()).await, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        put("fcm", "x".repeat(100_000)).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        put("fcm", "with space\n".to_owned()).await,
+        StatusCode::BAD_REQUEST
+    );
     assert_eq!(put("fcm", String::new()).await, StatusCode::BAD_REQUEST);
 }
 
@@ -1961,12 +1982,23 @@ async fn a_stranger_cannot_lock_the_owner_out_of_recovery() {
     let mut refused_for_rate = false;
 
     for _ in 0..30 {
-        let _ = call(&state, "GET", &format!("/v1/discovery/username/{username}"), None).await;
+        let _ = call(
+            &state,
+            "GET",
+            &format!("/v1/discovery/username/{username}"),
+            None,
+        )
+        .await;
         let status = call(
             &state,
             "POST",
             "/v1/accounts/recover",
-            Some(recover_body(&username, 0x55, &stranger, common::now_millis())),
+            Some(recover_body(
+                &username,
+                0x55,
+                &stranger,
+                common::now_millis(),
+            )),
         )
         .await
         .0;
@@ -1983,7 +2015,11 @@ async fn a_stranger_cannot_lock_the_owner_out_of_recovery() {
     )
     .await
     .0;
-    assert_eq!(status, StatusCode::OK, "посторонний заблокировал владельцу восстановление");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "посторонний заблокировал владельцу восстановление"
+    );
 }
 
 #[tokio::test]

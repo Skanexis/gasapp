@@ -920,6 +920,18 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1001,6 +1013,12 @@ fun uniffi_aegis_checksum_method_messenger_attachments_of(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_backup_status(
 ): Short
+fun uniffi_aegis_checksum_method_messenger_block_chat(
+): Short
+fun uniffi_aegis_checksum_method_messenger_blocked_chats(
+): Short
+fun uniffi_aegis_checksum_method_messenger_can_report_chat(
+): Short
 fun uniffi_aegis_checksum_method_messenger_chat_request(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_chats(
@@ -1030,6 +1048,8 @@ fun uniffi_aegis_checksum_method_messenger_fetch_attachment(
 fun uniffi_aegis_checksum_method_messenger_forget_backup_chain(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_inspect_backup(
+): Short
+fun uniffi_aegis_checksum_method_messenger_is_chat_blocked(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_is_vault_open(
 ): Short
@@ -1062,6 +1082,8 @@ fun uniffi_aegis_checksum_method_messenger_recover_account(
 fun uniffi_aegis_checksum_method_messenger_register(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_rekey_storage(
+): Short
+fun uniffi_aegis_checksum_method_messenger_report_chat(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_restore_backup(
 ): Short
@@ -1108,6 +1130,8 @@ fun uniffi_aegis_checksum_method_messenger_setting_int(
 fun uniffi_aegis_checksum_method_messenger_socket_auth_headers(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_tor_bridges(
+): Short
+fun uniffi_aegis_checksum_method_messenger_unblock_chat(
 ): Short
 fun uniffi_aegis_checksum_method_messenger_unlock_vault(
 ): Short
@@ -1191,6 +1215,12 @@ fun uniffi_aegis_fn_method_messenger_attachments_of(`ptr`: Pointer,`messageId`: 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_backup_status(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_block_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`username`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_aegis_fn_method_messenger_blocked_chats(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_can_report_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_aegis_fn_method_messenger_chat_request(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_chats(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1221,6 +1251,8 @@ fun uniffi_aegis_fn_method_messenger_forget_backup_chain(`ptr`: Pointer,uniffi_o
 ): Unit
 fun uniffi_aegis_fn_method_messenger_inspect_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`archive`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_is_chat_blocked(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_aegis_fn_method_messenger_is_vault_open(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_aegis_fn_method_messenger_maintain_prekeys(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1253,6 +1285,8 @@ fun uniffi_aegis_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuf
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_aegis_fn_method_messenger_report_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_aegis_fn_method_messenger_restore_backup(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`links`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_safety_number_with(`ptr`: Pointer,`accountId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1299,6 +1333,8 @@ fun uniffi_aegis_fn_method_messenger_socket_auth_headers(`ptr`: Pointer,`deviceI
 ): RustBuffer.ByValue
 fun uniffi_aegis_fn_method_messenger_tor_bridges(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_aegis_fn_method_messenger_unblock_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_aegis_fn_method_messenger_unlock_vault(`ptr`: Pointer,`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_aegis_fn_method_messenger_vault_file_count(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1584,6 +1620,15 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_aegis_checksum_method_messenger_backup_status() != 58549.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_aegis_checksum_method_messenger_block_chat() != 14566.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_blocked_chats() != 6028.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_can_report_chat() != 65305.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_aegis_checksum_method_messenger_chat_request() != 45022.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1627,6 +1672,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_inspect_backup() != 5477.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_is_chat_blocked() != 58037.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_is_vault_open() != 1174.toShort()) {
@@ -1675,6 +1723,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_rekey_storage() != 59389.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_report_chat() != 41924.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_restore_backup() != 31001.toShort()) {
@@ -1744,6 +1795,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_tor_bridges() != 35051.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_aegis_checksum_method_messenger_unblock_chat() != 64642.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aegis_checksum_method_messenger_unlock_vault() != 64899.toShort()) {
@@ -2633,6 +2687,35 @@ public interface MessengerInterface {
     fun `backupStatus`(): FfiBackupStatus
     
     /**
+     * Блокирует собеседника чата — только на этом устройстве: сервер
+     * о блокировке не знает. Его конверты принимаются и отбрасываются.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    fun `blockChat`(`chatId`: kotlin.String, `username`: kotlin.String?, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Заблокированные — свежие первыми.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `blockedChats`(): List<FfiBlockedChat>
+    
+    /**
+     * Можно ли пожаловаться на собеседника: пришёл ли от него конверт,
+     * сертификат которого докажет жалобу.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    fun `canReportChat`(`chatId`: kotlin.String): kotlin.Boolean
+    
+    /**
      * Состояние запроса на переписку. Чата ещё нет — обычная переписка.
      *
      * # Errors
@@ -2847,6 +2930,15 @@ public interface MessengerInterface {
     fun `inspectBackup`(`recoveryKey`: kotlin.String, `archive`: kotlin.ByteArray): FfiBackupMeta
     
     /**
+     * Заблокирован ли собеседник чата.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    fun `isChatBlocked`(`chatId`: kotlin.String): kotlin.Boolean
+    
+    /**
      * Открыт ли vault.
      *
      * # Errors
@@ -3059,6 +3151,20 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — ключ не 32 байта либо смена не удалась.
      */
     fun `rekeyStorage`(`newKey`: kotlin.ByteArray)
+    
+    /**
+     * 🔐 Жалуется оператору на собеседника чата. Серверу уходит
+     * сертификат отправителя с его конверта — не переписка.
+     *
+     * Возвращает, учтена ли жалоба (повторная — нет).
+     *
+     * # Errors
+     *
+     * * [`FfiError::InvalidArgument`] — идентификатор чата не разобран;
+     * * [`FfiError::Core`] — доказать жалобу нечем
+     * ([`AegisError::Uninitialized`]) либо сеть недоступна.
+     */
+    fun `reportChat`(`chatId`: kotlin.String, `nowMillis`: kotlin.Long): kotlin.Boolean
     
     /**
      * Восстанавливает данные из цепочки копий.
@@ -3348,6 +3454,15 @@ public interface MessengerInterface {
     fun `torBridges`(): List<kotlin.String>
     
     /**
+     * Снимает блокировку.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    fun `unblockChat`(`chatId`: kotlin.String)
+    
+    /**
      * Открывает File Vault после повторной аутентификации.
      *
      * 🔐 PIN передаётся сюда, а ключ vault наружу не выходит:
@@ -3586,6 +3701,67 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_backup_status(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Блокирует собеседника чата — только на этом устройстве: сервер
+     * о блокировке не знает. Его конверты принимаются и отбрасываются.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    @Throws(FfiException::class)override fun `blockChat`(`chatId`: kotlin.String, `username`: kotlin.String?, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_block_chat(
+        it, FfiConverterString.lower(`chatId`),FfiConverterOptionalString.lower(`username`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Заблокированные — свежие первыми.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `blockedChats`(): List<FfiBlockedChat> {
+            return FfiConverterSequenceTypeFfiBlockedChat.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_blocked_chats(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Можно ли пожаловаться на собеседника: пришёл ли от него конверт,
+     * сертификат которого докажет жалобу.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    @Throws(FfiException::class)override fun `canReportChat`(`chatId`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_can_report_chat(
+        it, FfiConverterString.lower(`chatId`),_status)
 }
     }
     )
@@ -3960,6 +4136,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_inspect_backup(
         it, FfiConverterString.lower(`recoveryKey`),FfiConverterByteArray.lower(`archive`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Заблокирован ли собеседник чата.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    @Throws(FfiException::class)override fun `isChatBlocked`(`chatId`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_is_chat_blocked(
+        it, FfiConverterString.lower(`chatId`),_status)
 }
     }
     )
@@ -4352,6 +4548,31 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 }
     }
     
+    
+
+    
+    /**
+     * 🔐 Жалуется оператору на собеседника чата. Серверу уходит
+     * сертификат отправителя с его конверта — не переписка.
+     *
+     * Возвращает, учтена ли жалоба (повторная — нет).
+     *
+     * # Errors
+     *
+     * * [`FfiError::InvalidArgument`] — идентификатор чата не разобран;
+     * * [`FfiError::Core`] — доказать жалобу нечем
+     * ([`AegisError::Uninitialized`]) либо сеть недоступна.
+     */
+    @Throws(FfiException::class)override fun `reportChat`(`chatId`: kotlin.String, `nowMillis`: kotlin.Long): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_report_chat(
+        it, FfiConverterString.lower(`chatId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -4885,6 +5106,25 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Снимает блокировку.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
+     */
+    @Throws(FfiException::class)override fun `unblockChat`(`chatId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_aegis_fn_method_messenger_unblock_chat(
+        it, FfiConverterString.lower(`chatId`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Открывает File Vault после повторной аутентификации.
      *
      * 🔐 PIN передаётся сюда, а ключ vault наружу не выходит:
@@ -5407,6 +5647,54 @@ public object FfiConverterTypeFfiBackupStatus: FfiConverterRustBuffer<FfiBackupS
     override fun write(value: FfiBackupStatus, buf: ByteBuffer) {
             FfiConverterBoolean.write(value.`configured`, buf)
             FfiConverterOptionalLong.write(value.`lastBackupAtMillis`, buf)
+    }
+}
+
+
+
+/**
+ * Заблокированный собеседник — для списка «Заблокированные».
+ */
+data class FfiBlockedChat (
+    /**
+     * Чат.
+     */
+    var `chatId`: kotlin.String, 
+    /**
+     * Имя собеседника на момент блокировки, если было известно.
+     */
+    var `username`: kotlin.String?, 
+    /**
+     * Когда заблокирован.
+     */
+    var `blockedAtMillis`: kotlin.Long
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiBlockedChat: FfiConverterRustBuffer<FfiBlockedChat> {
+    override fun read(buf: ByteBuffer): FfiBlockedChat {
+        return FfiBlockedChat(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiBlockedChat) = (
+            FfiConverterString.allocationSize(value.`chatId`) +
+            FfiConverterOptionalString.allocationSize(value.`username`) +
+            FfiConverterLong.allocationSize(value.`blockedAtMillis`)
+    )
+
+    override fun write(value: FfiBlockedChat, buf: ByteBuffer) {
+            FfiConverterString.write(value.`chatId`, buf)
+            FfiConverterOptionalString.write(value.`username`, buf)
+            FfiConverterLong.write(value.`blockedAtMillis`, buf)
     }
 }
 
@@ -7222,6 +7510,34 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterByteArray.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiBlockedChat: FfiConverterRustBuffer<List<FfiBlockedChat>> {
+    override fun read(buf: ByteBuffer): List<FfiBlockedChat> {
+        val len = buf.getInt()
+        return List<FfiBlockedChat>(len) {
+            FfiConverterTypeFfiBlockedChat.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiBlockedChat>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiBlockedChat.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiBlockedChat>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiBlockedChat.write(it, buf)
         }
     }
 }

@@ -345,8 +345,7 @@ async fn a_recipients_queue_is_bounded() {
             .unwrap();
 
     let envelope = vec![0x5Au8; aegis_server_db::MAX_ENVELOPE_BYTES];
-    let fits = aegis_server_db::MAX_QUEUE_BYTES_PER_DEVICE
-        / i64::try_from(envelope.len()).unwrap();
+    let fits = aegis_server_db::MAX_QUEUE_BYTES_PER_DEVICE / i64::try_from(envelope.len()).unwrap();
 
     for _ in 0..fits {
         repo::enqueue_envelope(&pool, device, &envelope, 3600)

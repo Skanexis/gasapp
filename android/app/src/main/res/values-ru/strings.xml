@@ -416,7 +416,7 @@
     <string name="restore_key_ok">Ключ выглядит правильно</string>
     <string name="restore_key_invalid">В ключе опечатка</string>
     <string name="restore_confirm">Восстановить</string>
-    <string name="restore_done">Восстановлено записей: %1$d</string>
+    <string name="restore_done_as_of">Восстановлено записей: %1$d. Копия — на %2$s</string>
     <string name="restore_failed">Восстановить не удалось: не тот ключ или цепочка файлов неполная</string>
     <string name="restore_note">Восстановятся переписка, контакты и настройки. Исчезающих сообщений в копии нет. Ключ безопасности устройства будет новым — это нормально, и мы объясним почему.</string>
 
@@ -425,6 +425,7 @@
     <string name="identity_changed_headline">Ваш ключ безопасности изменился</string>
     <string name="identity_changed_restored">Переписка восстановлена.</string>
     <string name="identity_changed_restored_count">Восстановлено записей: %1$d.</string>
+    <string name="identity_changed_restored_as_of">Восстановлено записей: %1$d. Копия — на %2$s. Если вы делали копию позже, часть файлов не выбрана: восстановите заново со всеми — иначе могли вернуться сообщения, удалённые с тех пор.</string>
     <string name="identity_changed_explain">Собеседники увидят предупреждение о смене ключа безопасности. При восстановлении это нормально: устройство получает новый ключ, и старый не переносится.</string>
     <string name="identity_changed_why">Ключи не переносятся намеренно. Перенос старого состояния шифрования означал бы, что два разных сообщения могут быть зашифрованы одним ключом, — а это раскрывает их содержимое. Смена ключа безопасности — цена того, что такого не случится.</string>
     <string name="identity_changed_not_restored">Не восстановлены: активные защищённые сессии — они установятся заново при первом сообщении — и резервные копии: создайте новый ключ восстановления в «Настройки → Резервная копия», иначе новых копий не будет.</string>
@@ -691,4 +692,24 @@
     <string name="devices_this_id">ID %1$s</string>
     <string name="tor_status_via_bridges">Tor здесь заблокирован — подключаюсь через мосты… %1$d%%</string>
     <string name="tor_status_ready_bridges">Tor подключён через мосты</string>
+    <!-- Блокировка и жалоба (Apple 1.2, Google Play UGC) -->
+    <string name="chat_block">Заблокировать</string>
+    <string name="chat_unblock">Разблокировать</string>
+    <string name="chat_report">Пожаловаться</string>
+    <string name="block_confirm_title">Заблокировать %1$s?</string>
+    <string name="block_confirm_body">Сообщения от собеседника перестанут приходить, и писать ему вы не сможете. Он об этом не узнает. О блокировке знает только этот телефон — не сервер.</string>
+    <string name="block_done">Заблокирован</string>
+    <string name="unblock_confirm_title">Разблокировать %1$s?</string>
+    <string name="unblock_done">Разблокирован</string>
+    <string name="blocked_title">Вы заблокировали %1$s</string>
+    <string name="blocked_body">Сообщения от собеседника не приходят, и писать ему нельзя.</string>
+    <string name="blocked_unknown">Неизвестный собеседник</string>
+    <string name="report_confirm_title">Пожаловаться на %1$s?</string>
+    <string name="report_confirm_body">Оператор сервера получит доказательство, что этот аккаунт вам писал, — но не переписку: её у сервера нет. %1$s об этом не узнает.</string>
+    <string name="report_and_block">Пожаловаться и заблокировать</string>
+    <string name="report_only">Только пожаловаться</string>
+    <string name="report_done">Жалоба отправлена. Спасибо.</string>
+    <string name="report_already">Вы уже жаловались на этот аккаунт.</string>
+    <string name="report_unavailable">Пожаловаться можно, когда собеседник вам что-нибудь напишет.</string>
+    <string name="report_failed">Жалобу отправить не удалось. Проверьте связь и попробуйте ещё раз.</string>
 </resources>
