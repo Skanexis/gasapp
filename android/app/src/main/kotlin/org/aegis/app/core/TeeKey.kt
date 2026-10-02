@@ -82,6 +82,26 @@ object TeeKey {
     fun exists(): Boolean = runCatching { keyStore().containsAlias(ALIAS) }.getOrDefault(false)
 
     /**
+     * Где живёт ключ: StrongBox, TEE или программно — ответ системы.
+     *
+     * 🔐 Для Центра безопасности. Прежде он спрашивал ключ схемы v2
+     * ([HardwareKey]), которого после перехода на v3 нет, а у новых
+     * аккаунтов не было никогда: проверка «аппаратный ключ» проваливалась
+     * у всех, а ключ, на котором держится база, не проверялся вовсе
+     * (аудит 2026-10-02, A-7).
+     *
+     * `null` — ключа нет или спросить не удалось. Ключ здесь не создаётся.
+     */
+    fun securityLevel(): KeyAttestation.Level? = runCatching {
+        val key = keyStore().getKey(ALIAS, null) as? SecretKey ?: return null
+        val info = javax.crypto.SecretKeyFactory.getInstance(key.algorithm, PROVIDER)
+            .getKeySpec(key, android.security.keystore.KeyInfo::class.java)
+            as android.security.keystore.KeyInfo
+
+        HardwareKey.levelOf(info)
+    }.getOrNull()
+
+    /**
      * Удаляет ключ. После этого база схемы v3 не открывается ничем —
      * вызывать только при стирании аккаунта.
      */

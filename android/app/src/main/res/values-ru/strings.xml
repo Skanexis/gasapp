@@ -717,4 +717,15 @@
     <string name="tamper_body">Приложение подписано не разработчиками AEGIS. Его могли изменить, чтобы читать вашу переписку или украсть PIN. Удалите его и установите AEGIS только со страницы в официальном магазине или с сайта проекта.</string>
     <string name="tamper_close">Закрыть приложение</string>
     <string name="tamper_continue">Всё равно продолжить</string>
+    <!-- Повторный PIN перед опасными действиями (аудит 2026-10-02, A-3). -->
+    <string name="reauth_body">Подтвердите, что это вы: это действие нельзя отдать тому, у кого в руках ваш разблокированный телефон.</string>
+    <string name="reauth_export">Выгрузка переписки</string>
+    <string name="reauth_recovery">Ключ восстановления</string>
+    <string name="reauth_delete_account">Удаление аккаунта</string>
+    <string name="reauth_weaken">Отключение защиты</string>
+    <string name="reauth_network">Подключение без Tor</string>
+    <string name="recovery_wrong_key">Это не ключ ваших копий. Введите записанный ключ восстановления или создайте новый.</string>
+    <string name="onboarding_error_pin_simple">Слишком простой PIN: такие пробуют первыми. Выберите другой.</string>
+    <string name="security_event_contact_blocked">Собеседник заблокирован на этом устройстве</string>
+    <string name="security_event_contact_reported">На собеседника отправлена жалоба оператору сервера</string>
 </resources>

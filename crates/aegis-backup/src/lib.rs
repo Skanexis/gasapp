@@ -196,6 +196,15 @@ impl BackupChain {
         &self.last_digest
     }
 
+    /// Проверочное значение ключа цепочки — см. [`kdf::BackupRootKey::key_check`].
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой HKDF.
+    pub fn key_check(&self) -> Result<[u8; kdf::KEY_LEN]> {
+        self.root.key_check()
+    }
+
     /// Собирает полный снимок — начало цепочки.
     ///
     /// Сбрасывает номер поколения в ноль: полный снимок делает

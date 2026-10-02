@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisToast
 import org.aegis.app.core.AccountWipe
+import org.aegis.app.core.AppScope
 import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.Pin
@@ -149,6 +150,16 @@ class LockActivity : AppCompatActivity() {
      */
     override fun onStart() {
         super.onStart()
+
+        // Аккаунт стёрт, пока экран был жив (десятая неверная попытка
+        // завершилась после поворота): спрашивать PIN не от чего.
+        if (!hasAccount()) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+            finish()
+
+            return
+        }
+
         applyCooldown()
         renderBiometricKey()
         offerBiometricUnlock()
@@ -388,7 +399,27 @@ class LockActivity : AppCompatActivity() {
         clearEntry()
         setKeypadEnabled(false)
 
-        lifecycleScope.launch {
+        val app = applicationContext
+
+        // 🔐 Попытка засчитывается ДО проверки (аудит 2026-10-02, A-1).
+        //
+        // Прежде неверная попытка записывалась после проверки, в области
+        // жизни экрана: поворот телефона в эту секунду пересоздавал экран,
+        // корутина отменялась, и запись не происходила — перебор без
+        // задержек и без стирания после десяти. Теперь прерванная
+        // проверка остаётся неверной, а верный PIN её снимает.
+        val failures = runCatching { PinAttempts.beginAttempt(app) }.getOrElse {
+            // Не записалось — не проверяем: проверка без записанной
+            // попытки и есть обход счётчика.
+            pin.fill(0)
+            applyCooldown()
+
+            return
+        }
+
+        // Процессная область, а не `lifecycleScope`: исход проверки
+        // записывается, даже если экран пересоздан.
+        AppScope.launch {
             val opened = withContext(Dispatchers.IO) {
                 runCatching {
                     // Argon2id считается около секунды и обязан идти
@@ -400,7 +431,7 @@ class LockActivity : AppCompatActivity() {
                     // две точки сборки ключа разошлись бы, и вторая
                     // открывала бы базу слабее первой.
                     try {
-                        Core.unlock(this@LockActivity, pin)
+                        Core.unlock(app, pin)
                     } finally {
                         pin.fill(0)
                     }
@@ -408,7 +439,9 @@ class LockActivity : AppCompatActivity() {
             }
 
             if (opened.isSuccess) {
-                PinAttempts.recordSuccess(this@LockActivity)
+                PinAttempts.recordSuccess(app)
+
+                if (isFinishing || isDestroyed) return@launch
 
                 setKeypadEnabled(true)
                 startActivity(Intent(this@LockActivity, ChatListActivity::class.java))
@@ -422,26 +455,23 @@ class LockActivity : AppCompatActivity() {
             // бы мессенджер с неверным ключом.
             Core.close()
 
-            val failures = PinAttempts.recordFailure(
-                this@LockActivity,
-                System.currentTimeMillis(),
-            )
-
             // 🔐 Opt-in стирание после десяти неверных PIN (раздел 19.3).
             // Стирает то же, что удаление аккаунта на устройстве, —
             // кроме записи на сервере: для запроса к нему нужен ключ,
             // которого без PIN нет.
-            if (PinAttempts.shouldWipe(failures, PinAttempts.wipeEnabled(this@LockActivity))) {
-                withContext(Dispatchers.IO) { AccountWipe.wipe(this@LockActivity) }
+            if (PinAttempts.shouldWipe(failures, PinAttempts.wipeEnabled(app))) {
+                withContext(Dispatchers.IO) { AccountWipe.wipe(app) }
 
                 startActivity(
-                    Intent(this@LockActivity, OnboardingActivity::class.java)
+                    Intent(app, OnboardingActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
                 )
-                finish()
+                if (!isFinishing && !isDestroyed) finish()
 
                 return@launch
             }
+
+            if (isFinishing || isDestroyed) return@launch
 
             showError(failures)
             applyCooldown()
@@ -480,7 +510,7 @@ class LockActivity : AppCompatActivity() {
         cooldown?.cancel()
         cooldown = null
 
-        val remaining = PinAttempts.remainingMillis(this, System.currentTimeMillis())
+        val remaining = PinAttempts.remainingMillis(this)
 
         if (remaining <= 0L) {
             setKeypadEnabled(true)

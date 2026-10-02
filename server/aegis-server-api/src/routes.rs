@@ -120,7 +120,24 @@ pub struct AppState {
     /// через какой узел пришло сообщение. Задаётся переменной
     /// окружения, а не генерируется при старте.
     pub certificate_key: [u8; 32],
+
+    /// Места для одновременных загрузок вложений (см. [`limit_uploads`]).
+    pub upload_slots: Arc<tokio::sync::Semaphore>,
 }
+
+/// Сколько вложений узел принимает одновременно.
+///
+/// 🔐 Тело загрузки буферизуется целиком (до 101 МБ): работа считается
+/// над всем блобом. Без предела десяток медленных загрузок через
+/// onion-сервис — где нет ни nginx, ни ограничения по адресу — занимал
+/// бы гигабайт памяти узла (аудит 2026-10-02, S-3).
+pub const MAX_CONCURRENT_UPLOADS: usize = 8;
+
+/// Сколько может длиться одна загрузка вложения.
+///
+/// Сто мегабайт через Tor — десять-пятнадцать минут; дольше место
+/// держит уже не человек, а тот, кто занимает его нарочно.
+pub const UPLOAD_DEADLINE: std::time::Duration = std::time::Duration::from_mins(20);
 
 impl AppState {
     /// Собирает состояние с лимитами из плана.
@@ -191,8 +208,30 @@ impl AppState {
             hub: Arc::new(crate::hub::Hub::new()),
             push: Arc::new(crate::push::NoPush),
             health: Arc::new(crate::health::HealthState::new()),
+            upload_slots: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_UPLOADS)),
         }
     }
+}
+
+/// 🔐 Ограничивает одновременные загрузки вложений и их длительность.
+///
+/// Место занимается до чтения тела: тело и есть то, что занимает память.
+/// Мест нет — `429`, клиент повторит через очередь. Загрузка дольше
+/// [`UPLOAD_DEADLINE`] обрывается, и место освобождается.
+async fn limit_uploads(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+
+    let Ok(_slot) = Arc::clone(&state.upload_slots).try_acquire_owned() else {
+        return ApiError::TooManyRequests.into_response();
+    };
+
+    tokio::time::timeout(UPLOAD_DEADLINE, next.run(request))
+        .await
+        .unwrap_or_else(|_| ApiError::TooManyRequests.into_response())
 }
 
 /// Ошибка API в терминах HTTP.
@@ -244,6 +283,9 @@ impl From<RepoError> for ApiError {
             // Повтор перепривязки — отказ авторизации, а не «конфликт»:
             // отличать их вслух незачем.
             RepoError::Conflict => Self::Unauthorized,
+            // Чужой ключ identity — испорченный запрос, а не «имя занято»:
+            // настоящему владельцу свежего ключа сюда не попасть.
+            RepoError::IdentityInUse => Self::BadRequest,
             RepoError::EnvelopeTooLarge | RepoError::AttachmentTooLarge => Self::PayloadTooLarge,
             // Исчерпанная квота — не «слишком большой файл»: тот же
             // файл пройдёт, когда прежние вложения истекут. 507 говорит
@@ -531,7 +573,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route(
             "/v1/attachments/blob",
             post(upload_attachment)
-                .layer(axum::extract::DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES)),
+                .layer(axum::extract::DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES))
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    limit_uploads,
+                )),
         )
         .route(
             "/v1/attachments/blob/:attachment_id",
@@ -560,6 +606,13 @@ async fn register(
     let challenge = decode_hex(&request.pow_challenge)?;
     let identity = decode_hex(&request.identity_key)?;
     let device_identity = decode_hex(&request.device_identity_key)?;
+
+    // 🔐 Ключи — ровно 32 байта, как при перепривязке. Прежде длина
+    // не проверялась: сервер хранил и раздавал ключ любой длины, а журнал
+    // ключей такой аккаунт молча пропускал.
+    if identity.len() != 32 || device_identity.len() != 32 {
+        return Err(ApiError::BadRequest);
+    }
 
     // 🔐 Челлендж обязан быть выведен из этой самой регистрации.
     //
@@ -1690,11 +1743,20 @@ async fn report_sealed_sender(
         return Err(ApiError::BadRequest);
     }
 
+    // 🔐 Каким сертификатом доказана жалоба: он предъявительский, и
+    // десяток жалоб с одним сертификатом — скорее один человек с десятком
+    // аккаунтов, чем десять пострадавших (аудит 2026-10-02, S-4).
+    let certificate_hash: [u8; 32] = {
+        use sha2::Digest as _;
+        sha2::Sha256::digest(&raw).into()
+    };
+
     let recorded = repo::record_sealed_sender_report(
         &state.pool,
         reported_account,
         reported_device,
         device_id,
+        &certificate_hash,
     )
     .await?;
 

@@ -97,7 +97,8 @@ fn solve(challenge: &[u8]) -> u64 {
 
 /// Регистрирует аккаунт, возвращая идентификаторы.
 async fn register(state: &Arc<AppState>, username: &str) -> (Uuid, Uuid) {
-    let challenge = pow::registration_challenge(username, &[1u8; 32], &[2u8; 32]);
+    let (identity, device) = (key(), key());
+    let challenge = pow::registration_challenge(username, &identity, &device);
     let nonce = solve(&challenge);
 
     let (status, body) = call(
@@ -106,8 +107,8 @@ async fn register(state: &Arc<AppState>, username: &str) -> (Uuid, Uuid) {
         "/v1/accounts/register",
         Some(serde_json::json!({
             "username": username,
-            "identity_key": hex::encode([1u8; 32]),
-            "device_identity_key": hex::encode([2u8; 32]),
+            "identity_key": hex::encode(identity),
+            "device_identity_key": hex::encode(device),
             "pq_identity_key": hex::encode([0x51u8; 1952]),
             "identity_binding": hex::encode([0x52u8; 3373]),
             "pow_challenge": hex::encode(challenge),
@@ -122,6 +123,15 @@ async fn register(state: &Arc<AppState>, username: &str) -> (Uuid, Uuid) {
         body["account_id"].as_str().unwrap().parse().unwrap(),
         body["device_id"].as_str().unwrap().parse().unwrap(),
     )
+}
+
+/// Случайный ключ: сервер не принимает ключ identity, уже занятый
+/// другим аккаунтом (аудит 2026-10-02, S-1), а база у тестов общая.
+fn key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    key[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    key[16..].copy_from_slice(Uuid::new_v4().as_bytes());
+    key
 }
 
 fn unique_name(prefix: &str) -> String {
@@ -252,7 +262,8 @@ async fn one_pow_solution_registers_only_one_account() {
     let state = require_state!();
 
     let first = unique_name("spam");
-    let challenge = pow::registration_challenge(&first, &[1u8; 32], &[2u8; 32]);
+    let (identity, device) = (key(), key());
+    let challenge = pow::registration_challenge(&first, &identity, &device);
     let nonce = solve(&challenge);
 
     let mut accepted = 0;
@@ -269,8 +280,8 @@ async fn one_pow_solution_registers_only_one_account() {
             "/v1/accounts/register",
             Some(serde_json::json!({
                 "username": username,
-                "identity_key": hex::encode([1u8; 32]),
-                "device_identity_key": hex::encode([2u8; 32]),
+                "identity_key": hex::encode(identity),
+                "device_identity_key": hex::encode(device),
                 "pq_identity_key": hex::encode([0x51u8; 1952]),
                 "identity_binding": hex::encode([0x52u8; 3373]),
                 "pow_challenge": hex::encode(challenge),
@@ -298,7 +309,8 @@ async fn duplicate_username_conflicts() {
 
     register(&state, &username).await;
 
-    let challenge = pow::registration_challenge(&username, &[9u8; 32], &[9u8; 32]);
+    let other = key();
+    let challenge = pow::registration_challenge(&username, &other, &other);
     let nonce = solve(&challenge);
     let (status, _) = call(
         &state,
@@ -306,8 +318,8 @@ async fn duplicate_username_conflicts() {
         "/v1/accounts/register",
         Some(serde_json::json!({
             "username": username,
-            "identity_key": hex::encode([9u8; 32]),
-            "device_identity_key": hex::encode([9u8; 32]),
+            "identity_key": hex::encode(other),
+            "device_identity_key": hex::encode(other),
             "pq_identity_key": hex::encode([0x51u8; 1952]),
             "identity_binding": hex::encode([0x52u8; 3373]),
             "pow_challenge": hex::encode(challenge),
@@ -1060,7 +1072,8 @@ async fn register_signing_device(
 ) -> (Uuid, DeviceKey) {
     let private: DeviceKey = [seed; 32];
 
-    let challenge = pow::registration_challenge(username, &[1u8; 32], &public_key(&private));
+    let identity = key();
+    let challenge = pow::registration_challenge(username, &identity, &public_key(&private));
     let nonce = solve(&challenge);
 
     let (status, body) = call(
@@ -1069,7 +1082,7 @@ async fn register_signing_device(
         "/v1/accounts/register",
         Some(serde_json::json!({
             "username": username,
-            "identity_key": hex::encode([1u8; 32]),
+            "identity_key": hex::encode(identity),
             "device_identity_key": hex::encode(public_key(&private)),
             "pq_identity_key": hex::encode([0x51u8; 1952]),
             "identity_binding": hex::encode([0x52u8; 3373]),
@@ -1842,7 +1855,7 @@ async fn register_with_recovery(
     username: &str,
     keys: &RecoveryKeys,
 ) -> (String, String) {
-    let private: DeviceKey = [0x31; 32];
+    let private: DeviceKey = key();
     let challenge =
         pow::registration_challenge(username, &public_key(&private), &public_key(&private));
     let nonce = solve(&challenge);
@@ -1872,6 +1885,17 @@ async fn register_with_recovery(
     )
 }
 
+/// Закрытый ключ из `seed` — свой на каждый прогон: база у тестов общая,
+/// а ключ identity, занятый прошлым прогоном, сервер не примет (S-1).
+fn seeded(seed: u8) -> DeviceKey {
+    static BASE: std::sync::OnceLock<DeviceKey> = std::sync::OnceLock::new();
+    let mut private = *BASE.get_or_init(key);
+    // Не нулевой байт: у X25519 младшие три бита первого байта
+    // обнуляются, и `seed` 0x40…0x47 давали бы один и тот же ключ.
+    private[1] = seed;
+    private
+}
+
 /// Запрос перепривязки на новый identity-ключ `seed`, подписанный `keys`.
 fn recover_body(
     username: &str,
@@ -1879,7 +1903,7 @@ fn recover_body(
     keys: &RecoveryKeys,
     issued_at: i64,
 ) -> serde_json::Value {
-    let identity = public_key(&[seed; 32]);
+    let identity = public_key(&seeded(seed));
     let pq = [0x61u8; 1952];
     let binding = [0x62u8; 3373];
     let message = aegis_server_api::recovery::message(
@@ -1929,7 +1953,10 @@ async fn recovery_rebinds_the_account_and_keeps_the_name() {
         None,
     )
     .await;
-    assert_eq!(found["identity_key"], hex::encode(public_key(&[0x42; 32])));
+    assert_eq!(
+        found["identity_key"],
+        hex::encode(public_key(&seeded(0x42)))
+    );
     assert_eq!(found["device_ids"].as_array().map(Vec::len), Some(1));
     assert_ne!(
         found["device_ids"][0].as_str(),
@@ -1938,7 +1965,7 @@ async fn recovery_rebinds_the_account_and_keeps_the_name() {
     );
 
     // Имя за аккаунтом: чужая регистрация его не получит.
-    let private: DeviceKey = [0x77; 32];
+    let private: DeviceKey = key();
     let challenge =
         pow::registration_challenge(&username, &public_key(&private), &public_key(&private));
     let nonce = solve(&challenge);
@@ -2083,4 +2110,112 @@ async fn recovery_refuses_foreign_keys_replays_and_stale_requests() {
         .await,
         StatusCode::UNAUTHORIZED
     );
+}
+
+// --- Аудит 2026-10-02 ---------------------------------------------------------
+
+/// Регистрирует с заданными ключами и возвращает код ответа.
+async fn register_with_keys(
+    state: &Arc<AppState>,
+    username: &str,
+    identity: &[u8],
+    device: &[u8],
+) -> StatusCode {
+    let challenge = pow::registration_challenge(username, identity, device);
+    let nonce = solve(&challenge);
+
+    call(
+        state,
+        "POST",
+        "/v1/accounts/register",
+        Some(serde_json::json!({
+            "username": username,
+            "identity_key": hex::encode(identity),
+            "device_identity_key": hex::encode(device),
+            "pq_identity_key": hex::encode([0x51u8; 1952]),
+            "identity_binding": hex::encode([0x52u8; 3373]),
+            "pow_challenge": hex::encode(challenge),
+            "pow_nonce": nonce,
+        })),
+    )
+    .await
+    .0
+}
+
+/// 🔐 Чужой ключ identity не регистрируется под другим именем (S-1).
+///
+/// Владение ключом при регистрации не доказывается, а открытый ключ
+/// любого человека отдаёт discovery. Прежде его можно было занять
+/// под своим именем — «двойник» с тем же ключом.
+#[tokio::test]
+async fn someone_elses_identity_key_cannot_be_registered_again() {
+    let state = require_state!();
+    let identity = key();
+
+    assert_eq!(
+        register_with_keys(&state, &unique_name("owner"), &identity, &key()).await,
+        StatusCode::OK,
+        "заготовка теста: владелец не зарегистрирован"
+    );
+    assert_eq!(
+        register_with_keys(&state, &unique_name("twin"), &identity, &key()).await,
+        StatusCode::BAD_REQUEST,
+        "чужой ключ identity занят под вторым именем"
+    );
+}
+
+/// 🔐 Ключи — ровно 32 байта (S-1): прежде длина не проверялась.
+#[tokio::test]
+async fn identity_keys_of_the_wrong_length_are_refused() {
+    let state = require_state!();
+
+    for (identity, device) in [
+        (vec![1u8; 31], key().to_vec()),
+        (key().to_vec(), vec![2u8; 33]),
+    ] {
+        assert_eq!(
+            register_with_keys(&state, &unique_name("short"), &identity, &device).await,
+            StatusCode::BAD_REQUEST,
+        );
+    }
+}
+
+/// 🔐 Подписанное тело — не больше 4 МиБ (S-3).
+///
+/// Прежде предел был от вложений — 101 МБ на любой подписанный
+/// маршрут, и узел буферизовал такие тела целиком.
+#[tokio::test]
+async fn a_signed_body_is_bounded() {
+    let state = require_state!();
+    let (device_id, private) = register_signing_device(&state, &unique_name("bulky"), 0x23).await;
+
+    let request = signed_request(
+        &private,
+        "PUT",
+        &format!("/v1/push/{device_id}"),
+        "application/json",
+        vec![b' '; 5 * 1024 * 1024],
+    );
+    let status = aegis_server_api::router(Arc::clone(&state))
+        .oneshot(request)
+        .await
+        .unwrap()
+        .status();
+
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+/// 🔐 Мест для загрузки нет — отказ до чтения тела (S-3).
+#[tokio::test]
+async fn uploads_wait_for_a_free_slot() {
+    let state = require_state!();
+    let mut state = Arc::try_unwrap(state)
+        .ok()
+        .expect("одна ссылка на состояние");
+    state.upload_slots = Arc::new(tokio::sync::Semaphore::new(0));
+    let state = Arc::new(state);
+
+    let (status, _) = upload_anonymously(&state, b"blob".to_vec()).await;
+
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 }

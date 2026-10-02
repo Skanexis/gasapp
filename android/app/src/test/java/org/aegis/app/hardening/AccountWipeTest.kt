@@ -120,8 +120,8 @@ class AccountWipeTest {
      */
     @Test
     fun wipe_forgets_the_pin_attempt_history() {
-        PinAttempts.recordFailure(context, now = 1_000L)
-        PinAttempts.recordFailure(context, now = 2_000L)
+        PinAttempts.beginAttempt(context, PinAttempts.Moment(elapsed = 1_000L, boot = 1))
+        PinAttempts.beginAttempt(context, PinAttempts.Moment(elapsed = 2_000L, boot = 1))
 
         assertEquals(
             "тест не подготовил историю — проверять будет нечего",

@@ -69,6 +69,15 @@ macro_rules! require_pool {
     };
 }
 
+/// Случайный ключ: сервер не принимает ключ identity, уже занятый
+/// другим аккаунтом (аудит 2026-10-02, S-1), а база у тестов общая.
+fn key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    key[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    key[16..].copy_from_slice(Uuid::new_v4().as_bytes());
+    key
+}
+
 fn unique_name(prefix: &str) -> String {
     // Каноничное имя: строчные буквы, цифры и `_`, не длиннее 32.
     format!("{prefix}_{}", &Uuid::new_v4().simple().to_string()[..16])
@@ -79,7 +88,7 @@ async fn account_registers_with_first_device() {
     let pool = require_pool!();
     let username = unique_name("alice");
 
-    let (account_id, device_id) = repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+    let (account_id, device_id) = repo::register_account(&pool, &username, &key(), &key())
         .await
         .expect("регистрация проходит");
 
@@ -100,11 +109,11 @@ async fn duplicate_username_is_rejected() {
     let pool = require_pool!();
     let username = unique_name("bob");
 
-    repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+    repo::register_account(&pool, &username, &key(), &key())
         .await
         .unwrap();
 
-    let second = repo::register_account(&pool, &username, &[3u8; 32], &[4u8; 32]).await;
+    let second = repo::register_account(&pool, &username, &key(), &key()).await;
 
     assert!(matches!(second, Err(RepoError::UsernameTaken)));
 }
@@ -123,7 +132,7 @@ async fn the_database_refuses_lookalike_usernames() {
 
     for lookalike in lookalikes {
         assert!(
-            repo::register_account(&pool, &lookalike, &[1u8; 32], &[2u8; 32])
+            repo::register_account(&pool, &lookalike, &key(), &key())
                 .await
                 .is_err(),
             "база приняла двойника {lookalike:?}"
@@ -140,13 +149,13 @@ async fn failed_registration_leaves_nothing_behind() {
     let pool = require_pool!();
     let username = unique_name("carol");
 
-    repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+    repo::register_account(&pool, &username, &key(), &key())
         .await
         .unwrap();
     let before = repo::find_by_username(&pool, &username).await.unwrap();
 
     // Повторная попытка падает на уникальности имени.
-    let _ = repo::register_account(&pool, &username, &[9u8; 32], &[9u8; 32]).await;
+    let _ = repo::register_account(&pool, &username, &key(), &key()).await;
 
     let after = repo::find_by_username(&pool, &username).await.unwrap();
     assert_eq!(before.account_id, after.account_id, "аккаунт подменился");
@@ -168,10 +177,9 @@ async fn unknown_username_is_not_found() {
 #[tokio::test]
 async fn prekey_bundle_round_trips() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("dave"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("dave"), &key(), &key())
+        .await
+        .unwrap();
 
     repo::publish_prekeys(
         &pool,
@@ -200,10 +208,9 @@ async fn prekey_bundle_round_trips() {
 #[tokio::test]
 async fn one_time_prekey_is_consumed() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("erin"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("erin"), &key(), &key())
+        .await
+        .unwrap();
 
     repo::publish_prekeys(
         &pool,
@@ -231,10 +238,9 @@ async fn one_time_prekey_is_consumed() {
 #[tokio::test]
 async fn exhausted_pool_still_yields_a_bundle() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("frank"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("frank"), &key(), &key())
+        .await
+        .unwrap();
 
     repo::publish_prekeys(
         &pool,
@@ -257,10 +263,9 @@ async fn exhausted_pool_still_yields_a_bundle() {
 #[tokio::test]
 async fn prekey_count_decreases() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("grace"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("grace"), &key(), &key())
+        .await
+        .unwrap();
 
     repo::publish_prekeys(
         &pool,
@@ -290,10 +295,9 @@ async fn prekey_count_decreases() {
 #[tokio::test]
 async fn refill_adds_to_the_pool() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("heidi"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("heidi"), &key(), &key())
+        .await
+        .unwrap();
 
     let signed = (1, &[0x11; 32][..], &[0xAA; 64][..]);
     let kem = (2, &[0x22; 1568][..], &[0xBB; 64][..]);
@@ -314,10 +318,9 @@ async fn refill_adds_to_the_pool() {
 #[tokio::test]
 async fn envelope_round_trips() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("ivan"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("ivan"), &key(), &key())
+        .await
+        .unwrap();
 
     let envelope_id = repo::enqueue_envelope(&pool, device, b"opaque ciphertext", 3600)
         .await
@@ -339,10 +342,9 @@ async fn envelope_round_trips() {
 #[tokio::test]
 async fn a_recipients_queue_is_bounded() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("flooded"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("flooded"), &key(), &key())
+        .await
+        .unwrap();
 
     let envelope = vec![0x5Au8; aegis_server_db::MAX_ENVELOPE_BYTES];
     let fits = aegis_server_db::MAX_QUEUE_BYTES_PER_DEVICE / i64::try_from(envelope.len()).unwrap();
@@ -381,10 +383,9 @@ async fn a_recipients_queue_is_bounded() {
 #[tokio::test]
 async fn queued_time_is_bucketed_to_the_hour() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("judy"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("judy"), &key(), &key())
+        .await
+        .unwrap();
 
     repo::enqueue_envelope(&pool, device, b"payload", 3600)
         .await
@@ -419,10 +420,9 @@ async fn unaligned(pool: &PgPool, table: &str, column: &str, owner: &str, id: Uu
 #[tokio::test]
 async fn stored_envelope_times_are_hour_aligned() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("kate"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("kate"), &key(), &key())
+        .await
+        .unwrap();
 
     repo::enqueue_envelope(&pool, device, b"payload", 30 * 24 * 3600)
         .await
@@ -453,10 +453,9 @@ async fn stored_envelope_times_are_hour_aligned() {
 #[tokio::test]
 async fn stored_attachment_times_are_hour_aligned() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("liam"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("liam"), &key(), &key())
+        .await
+        .unwrap();
 
     repo::store_attachment(&pool, &[0xAB; 64], 30 * 24 * 3600)
         .await
@@ -478,10 +477,9 @@ async fn stored_attachment_times_are_hour_aligned() {
 #[tokio::test]
 async fn stored_prekey_time_is_hour_aligned() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("nina"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("nina"), &key(), &key())
+        .await
+        .unwrap();
 
     // Дважды: вставка берёт умолчание столбца, обновление — выражение
     // в запросе. Точным могло остаться любое из двух.
@@ -515,11 +513,11 @@ async fn stored_prekey_time_is_hour_aligned() {
 async fn reports_about_an_account_are_hour_aligned_and_leave_with_it() {
     let pool = require_pool!();
     let (reported_account, reported_device) =
-        repo::register_account(&pool, &unique_name("oscar"), &[3u8; 32], &[4u8; 32])
+        repo::register_account(&pool, &unique_name("oscar"), &key(), &key())
             .await
             .unwrap();
     let (_complainant, complainant_device) =
-        repo::register_account(&pool, &unique_name("pia"), &[5u8; 32], &[6u8; 32])
+        repo::register_account(&pool, &unique_name("pia"), &key(), &key())
             .await
             .unwrap();
 
@@ -528,7 +526,8 @@ async fn reports_about_an_account_are_hour_aligned_and_leave_with_it() {
             &pool,
             reported_account,
             reported_device,
-            complainant_device
+            complainant_device,
+            &key(),
         )
         .await
         .unwrap(),
@@ -568,10 +567,9 @@ async fn reports_about_an_account_are_hour_aligned_and_leave_with_it() {
 #[tokio::test]
 async fn envelopes_within_one_hour_keep_their_order() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("mona"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("mona"), &key(), &key())
+        .await
+        .unwrap();
 
     let mut sent = Vec::new();
     for index in 0u8..8 {
@@ -598,10 +596,9 @@ async fn envelopes_within_one_hour_keep_their_order() {
 #[tokio::test]
 async fn acknowledged_envelope_is_deleted() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("karl"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("karl"), &key(), &key())
+        .await
+        .unwrap();
 
     let envelope_id = repo::enqueue_envelope(&pool, device, b"payload", 3600)
         .await
@@ -621,10 +618,10 @@ async fn acknowledged_envelope_is_deleted() {
 #[tokio::test]
 async fn foreign_device_cannot_acknowledge() {
     let pool = require_pool!();
-    let (_a, first) = repo::register_account(&pool, &unique_name("liam"), &[1u8; 32], &[2u8; 32])
+    let (_a, first) = repo::register_account(&pool, &unique_name("liam"), &key(), &key())
         .await
         .unwrap();
-    let (_b, second) = repo::register_account(&pool, &unique_name("mia"), &[3u8; 32], &[4u8; 32])
+    let (_b, second) = repo::register_account(&pool, &unique_name("mia"), &key(), &key())
         .await
         .unwrap();
 
@@ -647,10 +644,9 @@ async fn foreign_device_cannot_acknowledge() {
 #[tokio::test]
 async fn oversized_envelope_is_rejected() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("nina"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("nina"), &key(), &key())
+        .await
+        .unwrap();
 
     let too_big = vec![0u8; aegis_server_db::MAX_ENVELOPE_BYTES + 1];
     let result = repo::enqueue_envelope(&pool, device, &too_big, 3600).await;
@@ -662,10 +658,9 @@ async fn oversized_envelope_is_rejected() {
 #[tokio::test]
 async fn expired_envelopes_are_purged() {
     let pool = require_pool!();
-    let (_account, device) =
-        repo::register_account(&pool, &unique_name("olga"), &[1u8; 32], &[2u8; 32])
-            .await
-            .unwrap();
+    let (_account, device) = repo::register_account(&pool, &unique_name("olga"), &key(), &key())
+        .await
+        .unwrap();
 
     // Отрицательный TTL: конверт просрочен в момент создания.
     repo::enqueue_envelope(&pool, device, b"stale", -1)
@@ -692,7 +687,7 @@ async fn expired_envelopes_are_purged() {
 async fn account_deletion_cascades() {
     let pool = require_pool!();
     let username = unique_name("peter");
-    let (account, device) = repo::register_account(&pool, &username, &[1u8; 32], &[2u8; 32])
+    let (account, device) = repo::register_account(&pool, &username, &key(), &key())
         .await
         .unwrap();
 
@@ -777,10 +772,10 @@ async fn an_account_inactive_for_a_year_is_removed_and_frees_its_name() {
     let idle = unique_name("idle");
     let active = unique_name("active");
 
-    repo::register_account(&pool, &idle, &[1u8; 32], &[2u8; 32])
+    repo::register_account(&pool, &idle, &key(), &key())
         .await
         .unwrap();
-    let (_, active_device) = repo::register_account(&pool, &active, &[3u8; 32], &[4u8; 32])
+    let (_, active_device) = repo::register_account(&pool, &active, &key(), &key())
         .await
         .unwrap();
 
@@ -809,7 +804,7 @@ async fn an_account_inactive_for_a_year_is_removed_and_frees_its_name() {
     );
 
     // Имя свободно: его можно занять заново.
-    repo::register_account(&pool, &idle, &[5u8; 32], &[6u8; 32])
+    repo::register_account(&pool, &idle, &key(), &key())
         .await
         .expect("имя освободилось");
 }
@@ -821,7 +816,7 @@ async fn an_account_inactive_for_eleven_months_stays() {
     let _purge = PURGE.lock().await;
     let name = unique_name("recent");
 
-    repo::register_account(&pool, &name, &[1u8; 32], &[2u8; 32])
+    repo::register_account(&pool, &name, &key(), &key())
         .await
         .unwrap();
     sqlx::query(

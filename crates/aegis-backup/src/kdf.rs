@@ -85,6 +85,9 @@ const INFO_META: &[u8] = b"AEGIS_BACKUP_v1_META";
 /// Метка вывода ключа вложений.
 const INFO_ATTACHMENTS: &[u8] = b"AEGIS_BACKUP_v1_ATTACHMENT";
 
+/// Метка проверочного значения ключа (см. [`BackupRootKey::key_check`]).
+const INFO_KEY_CHECK: &[u8] = b"AEGIS_BACKUP_v1_KEY_CHECK";
+
 /// Параметры растягивания, записанные в заголовок копии.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KdfParams {
@@ -223,6 +226,21 @@ impl BackupRootKey {
     /// [`AegisError::Crypto`] — сбой HKDF.
     pub fn attachment_key(&self) -> Result<Zeroizing<[u8; KEY_LEN]>> {
         self.expand(INFO_ATTACHMENTS)
+    }
+
+    /// Проверочное значение ключа: тот ли recovery key продолжает цепочку.
+    ///
+    /// 🔐 Не секрет и не ключ: отдельная метка HKDF, по значению нельзя
+    /// вывести ни один из ключей копии. Хранится рядом с состоянием
+    /// цепочки и сверяется перед дописыванием инкремента — иначе любой
+    /// годный по контрольной сумме ключ (старый с бумажки или чужой)
+    /// дописывал бы звено, которое настоящим ключом не открывается.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — сбой HKDF.
+    pub fn key_check(&self) -> Result<[u8; KEY_LEN]> {
+        Ok(*self.expand(INFO_KEY_CHECK)?)
     }
 
     /// Общий шаг HKDF-Expand с меткой назначения.

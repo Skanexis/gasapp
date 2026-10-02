@@ -25,6 +25,15 @@ use uuid::Uuid;
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef-operator";
 
+/// Случайный ключ: сервер не принимает ключ identity, уже занятый
+/// другим аккаунтом (аудит 2026-10-02, S-1), а база у тестов общая.
+fn key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    key[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    key[16..].copy_from_slice(Uuid::new_v4().as_bytes());
+    key
+}
+
 async fn state() -> Option<Arc<AdminState>> {
     let url = std::env::var("AEGIS_TEST_DATABASE_URL").ok()?;
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -151,6 +160,55 @@ async fn without_a_session_everything_leads_to_login() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+/// 🔐 Чужая страница не закрывает вход оператору и не говорит с
+/// админ-центром через переназначенное имя (аудит 2026-10-02, S-5).
+#[tokio::test]
+async fn a_foreign_page_cannot_lock_the_operator_out() {
+    let Some(state) = state().await else {
+        eprintln!("AEGIS_TEST_DATABASE_URL не задан — тест пропущен");
+        return;
+    };
+
+    // Прежде пять таких форм закрывали вход на десять минут.
+    for _ in 0..10 {
+        let (status, _, _) = send(
+            &state,
+            Request::post("/login")
+                .header(header::HOST, "127.0.0.1:8480")
+                .header(header::ORIGIN, "https://evil.example")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("token=wrong"))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    // DNS rebinding: имя чужого сайта, указывающее на петлю.
+    let (status, _, _) = send(
+        &state,
+        Request::get("/login")
+            .header(header::HOST, "evil.example:8480")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::MISDIRECTED_REQUEST);
+
+    // Своя страница входа работает, и вход не закрыт.
+    let (status, _, _) = send(
+        &state,
+        Request::post("/login")
+            .header(header::HOST, "127.0.0.1:8480")
+            .header(header::ORIGIN, "http://127.0.0.1:8480")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(format!("token={TOKEN}")))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "вход оператору закрыт");
+}
+
 /// 🔐 Полный путь жалобы: видна с числом жалобщиков, подделанный CSRF
 /// отвергается, удаление уносит аккаунт, а журнал хранит причину без имени.
 #[tokio::test]
@@ -163,7 +221,7 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
     let suffix = &Uuid::new_v4().simple().to_string()[..10];
     let spammer = format!("spam{suffix}");
     let (spam_account, spam_device) =
-        aegis_server_db::repo::register_account(&state.pool, &spammer, &[1; 32], &[1; 32])
+        aegis_server_db::repo::register_account(&state.pool, &spammer, &key(), &key())
             .await
             .expect("спамер");
 
@@ -171,8 +229,8 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
         let (_, complainant) = aegis_server_db::repo::register_account(
             &state.pool,
             &format!("victim{index}{suffix}"),
-            &[index + 2; 32],
-            &[index + 2; 32],
+            &key(),
+            &key(),
         )
         .await
         .expect("жалобщик");
@@ -181,6 +239,7 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
             spam_account,
             spam_device,
             complainant,
+            &[index; 32],
         )
         .await
         .expect("жалоба");
@@ -193,6 +252,15 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
     assert!(
         html.contains(&format!("@{spammer}")),
         "аккаунт с жалобами виден"
+    );
+    // 🔐 Видно и число разных сертификатов (S-4): у двух жалоб здесь
+    // разные сертификаты.
+    assert!(html.contains("Сертификатов"), "столбца сертификатов нет");
+    assert!(
+        html.contains(&format!(
+            "@{spammer}</td><td class=\"num\">2</td><td class=\"num\">2</td>"
+        )),
+        "жалобщики и сертификаты не посчитаны"
     );
 
     let csrf = csrf_of(&html);
@@ -268,7 +336,7 @@ async fn an_account_is_found_by_exact_name_only() {
 
     let suffix = &Uuid::new_v4().simple().to_string()[..10];
     let name = format!("exact{suffix}");
-    aegis_server_db::repo::register_account(&state.pool, &name, &[9; 32], &[9; 32])
+    aegis_server_db::repo::register_account(&state.pool, &name, &key(), &key())
         .await
         .expect("аккаунт");
 

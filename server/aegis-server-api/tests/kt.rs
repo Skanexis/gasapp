@@ -65,6 +65,15 @@ async fn call(
     )
 }
 
+/// Случайный ключ: сервер не принимает ключ identity, уже занятый
+/// другим аккаунтом (аудит 2026-10-02, S-1), а база у тестов общая.
+fn key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    key[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    key[16..].copy_from_slice(Uuid::new_v4().as_bytes());
+    key
+}
+
 fn to32(text: &str) -> [u8; 32] {
     hex::decode(text).unwrap().try_into().unwrap()
 }
@@ -136,7 +145,9 @@ async fn epochs_prove_keys_track_versions_and_expire() {
     let name = format!("kt_{}", &Uuid::new_v4().simple().to_string()[..16]);
     let absent = format!("kt_{}", &Uuid::new_v4().simple().to_string()[..16]);
 
-    let (account, _device) = repo::register_account(pool, &name, &[7u8; 32], &[8u8; 32])
+    let first_key = key();
+    let second_key = key();
+    let (account, _device) = repo::register_account(pool, &name, &first_key, &key())
         .await
         .unwrap();
     repo::set_pq_identity(pool, account, &[0x51u8; 1952], &[0x52u8; 3373])
@@ -161,7 +172,7 @@ async fn epochs_prove_keys_track_versions_and_expire() {
     let proofs = proof(&state, &name, &[start]).await;
     let (root, leaf) = root_from(&proofs[0], &kt::index(&name));
     assert_eq!(root, first.root, "доказательство не сходится с корнем");
-    assert_eq!(leaf, Some((hex::encode([7u8; 32]), 1)));
+    assert_eq!(leaf, Some((hex::encode(first_key), 1)));
 
     let proofs = proof(&state, &absent, &[start]).await;
     let (root, leaf) = root_from(&proofs[0], &kt::index(&absent));
@@ -173,8 +184,8 @@ async fn epochs_prove_keys_track_versions_and_expire() {
         pool,
         account,
         Rebind {
-            identity_key: &[9u8; 32],
-            device_identity_key: &[10u8; 32],
+            identity_key: &second_key,
+            device_identity_key: &key(),
             pq_identity_key: &[0x61u8; 1952],
             identity_binding: &[0x62u8; 3373],
             issued_at_millis: 1,
@@ -192,12 +203,12 @@ async fn epochs_prove_keys_track_versions_and_expire() {
     let (root, leaf) = root_from(&proofs[0], &kt::index(&name));
     assert_eq!(
         (root, leaf),
-        (first.root, Some((hex::encode([7u8; 32]), 1)))
+        (first.root, Some((hex::encode(first_key), 1)))
     );
     let (root, leaf) = root_from(&proofs[1], &kt::index(&name));
     assert_eq!(
         (root, leaf),
-        (second.root, Some((hex::encode([9u8; 32]), 2)))
+        (second.root, Some((hex::encode(second_key), 2)))
     );
 
     // --- Цепочка вершин.

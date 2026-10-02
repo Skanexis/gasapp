@@ -21,6 +21,7 @@ import org.aegis.app.core.AppSignature
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeviceIntegrity
 import org.aegis.app.core.HardwareKey
+import org.aegis.app.core.TeeKey
 import org.aegis.app.core.KeyAttestation
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.SecurityEvents
@@ -308,7 +309,9 @@ class SecurityCenterActivity : AppCompatActivity() {
     }
 
     private fun hardwareKeyCheck(): Check {
-        val level = HardwareKey.securityLevel()
+        // Ключ, на котором держится база: схема v3 ([TeeKey]); у базы,
+        // ещё не перешедшей на неё, — ключ схемы v2.
+        val level = TeeKey.securityLevel() ?: HardwareKey.securityLevel()
 
         return Check(
             label = R.string.security_check_hardware_key,

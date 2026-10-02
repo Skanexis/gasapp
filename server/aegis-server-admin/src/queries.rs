@@ -110,6 +110,11 @@ pub struct ReportedAccount {
     pub active_month: String,
     /// Сколько **разных** людей пожаловались.
     pub reporters: i64,
+    /// Сколькими **разными** сертификатами отправителя доказаны жалобы.
+    ///
+    /// 🔐 Сертификат предъявительский: десяток жалоб одним сертификатом —
+    /// скорее один человек с десятком аккаунтов (аудит 2026-10-02, S-4).
+    pub certificates: i64,
     /// Первая и последняя жалоба — с точностью до часа.
     pub first_report: String,
     pub last_report: String,
@@ -124,6 +129,8 @@ pub struct AccountCard {
     pub active_month: String,
     pub devices: i64,
     pub reporters: i64,
+    /// Разных сертификатов в жалобах — см. [`ReportedAccount::certificates`].
+    pub certificates: i64,
 }
 
 /// Строка отчёта о прозрачности: месяц, действие, причина, сколько.
@@ -167,17 +174,22 @@ pub async fn summary(pool: &PgPool) -> Result<Summary, sqlx::Error> {
 ///
 /// Ошибка базы.
 pub async fn reported_accounts(pool: &PgPool) -> Result<Vec<ReportedAccount>, sqlx::Error> {
-    let rows: Vec<(Uuid, String, String, i64, String, String)> = sqlx::query_as(
+    // Выше — у кого больше разных сертификатов: их не накрутить
+    // одним полученным сообщением, в отличие от числа жалобщиков.
+    let rows: Vec<(Uuid, String, String, i64, i64, String, String)> = sqlx::query_as(
         "SELECT a.account_id,
                 a.username,
                 to_char(a.active_month, 'YYYY-MM'),
                 count(DISTINCT r.complainant_device),
+                count(DISTINCT r.certificate_hash),
                 to_char(min(r.created_at), 'YYYY-MM-DD HH24:00'),
                 to_char(max(r.created_at), 'YYYY-MM-DD HH24:00')
            FROM sealed_sender_reports r
            JOIN accounts a ON a.account_id = r.reported_account
           GROUP BY a.account_id, a.username, a.active_month
-          ORDER BY count(DISTINCT r.complainant_device) DESC, max(r.created_at) DESC
+          ORDER BY count(DISTINCT r.certificate_hash) DESC,
+                   count(DISTINCT r.complainant_device) DESC,
+                   max(r.created_at) DESC
           LIMIT 200",
     )
     .fetch_all(pool)
@@ -186,12 +198,21 @@ pub async fn reported_accounts(pool: &PgPool) -> Result<Vec<ReportedAccount>, sq
     Ok(rows
         .into_iter()
         .map(
-            |(account_id, username, active_month, reporters, first_report, last_report)| {
+            |(
+                account_id,
+                username,
+                active_month,
+                reporters,
+                certificates,
+                first_report,
+                last_report,
+            )| {
                 ReportedAccount {
                     account_id,
                     username,
                     active_month,
                     reporters,
+                    certificates,
                     first_report,
                     last_report,
                 }
@@ -210,12 +231,15 @@ pub async fn account_by_username(
     pool: &PgPool,
     username: &str,
 ) -> Result<Option<AccountCard>, sqlx::Error> {
-    let row: Option<(Uuid, String, String, i64, i64)> = sqlx::query_as(
+    let row: Option<(Uuid, String, String, i64, i64, i64)> = sqlx::query_as(
         "SELECT a.account_id,
                 a.username,
                 to_char(a.active_month, 'YYYY-MM'),
                 (SELECT count(*) FROM devices d WHERE d.account_id = a.account_id),
                 (SELECT count(DISTINCT r.complainant_device)
+                   FROM sealed_sender_reports r
+                  WHERE r.reported_account = a.account_id),
+                (SELECT count(DISTINCT r.certificate_hash)
                    FROM sealed_sender_reports r
                   WHERE r.reported_account = a.account_id)
            FROM accounts a
@@ -226,12 +250,13 @@ pub async fn account_by_username(
     .await?;
 
     Ok(row.map(
-        |(account_id, username, active_month, devices, reporters)| AccountCard {
+        |(account_id, username, active_month, devices, reporters, certificates)| AccountCard {
             account_id,
             username,
             active_month,
             devices,
             reporters,
+            certificates,
         },
     ))
 }

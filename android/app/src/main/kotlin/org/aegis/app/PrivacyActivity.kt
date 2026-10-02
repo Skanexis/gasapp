@@ -20,6 +20,8 @@ import org.aegis.app.core.BiometricUnlock
 import org.aegis.app.core.Core
 import org.aegis.app.core.DeleteAccount
 import org.aegis.app.core.PinAttempts
+import org.aegis.app.core.PinCheck
+import org.aegis.app.core.Reauth
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.Settings
 import org.aegis.app.ui.SettingsRow
@@ -123,23 +125,50 @@ class PrivacyActivity : AppCompatActivity() {
      * и честнее — применять при создании экрана.
      */
     private fun bindScreenshots() {
-        SettingsToggle.bind(
+        lateinit var toggle: SettingsToggle
+
+        toggle = SettingsToggle.bind(
             root = findViewById(R.id.privacy_screenshots),
             label = R.string.privacy_screenshots,
             hint = R.string.privacy_screenshots_hint,
             icon = R.drawable.ic_eye_off,
             checked = readBool(Settings.BLOCK_SCREENSHOTS, default = true),
-        ) { wanted -> writeBool(Settings.BLOCK_SCREENSHOTS, wanted) }
+        ) { wanted ->
+            // 🔐 Снять запрет снимков — ослабить защиту: только по PIN.
+            if (wanted) return@bind writeBool(Settings.BLOCK_SCREENSHOTS, true)
+
+            weakenAfterPin { if (writeBool(Settings.BLOCK_SCREENSHOTS, false)) toggle.isChecked = false }
+            false
+        }
     }
 
     private fun bindNotificationPreview() {
-        SettingsToggle.bind(
+        lateinit var toggle: SettingsToggle
+
+        toggle = SettingsToggle.bind(
             root = findViewById(R.id.privacy_preview),
             label = R.string.privacy_preview,
             hint = R.string.privacy_preview_hint,
             icon = R.drawable.ic_bell,
             checked = readBool(Settings.NOTIFICATION_PREVIEW, default = false),
-        ) { wanted -> writeBool(Settings.NOTIFICATION_PREVIEW, wanted) }
+        ) { wanted ->
+            // 🔐 Текст сообщений на экране блокировки — только по PIN.
+            if (!wanted) return@bind writeBool(Settings.NOTIFICATION_PREVIEW, false)
+
+            weakenAfterPin { if (writeBool(Settings.NOTIFICATION_PREVIEW, true)) toggle.isChecked = true }
+            false
+        }
+    }
+
+    /**
+     * 🔐 Ослабление защиты — после повторного PIN (аудит 2026-10-02, A-3).
+     *
+     * Включать защиту можно сразу; выключать — только владельцу:
+     * иначе тот, кому дали подержать разблокированный телефон, тихо
+     * снимал бы её на потом.
+     */
+    private fun weakenAfterPin(action: () -> Unit) {
+        Reauth.require(this, R.string.reauth_weaken, action)
     }
 
     /**
@@ -216,6 +245,14 @@ class PrivacyActivity : AppCompatActivity() {
      * видно, какие клавиши нажаты.
      */
     private fun askPinThenEnableBiometric() {
+        // 🔐 Идёт задержка после неверных PIN — не спрашиваем: этот
+        // диалог тоже проверяет PIN и считается в те же попытки.
+        val waiting = PinAttempts.remainingMillis(this)
+        if (waiting > 0L) {
+            AegisToast.show(this, PinCheck.waitText(this, waiting), AegisToast.Tone.Warning)
+            return
+        }
+
         val view = layoutInflater.inflate(R.layout.dialog_pin, null)
         var dialog: AegisDialog.Shown? = null
 
@@ -284,11 +321,22 @@ class PrivacyActivity : AppCompatActivity() {
         pin: ByteArray,
         result: androidx.biometric.BiometricPrompt.AuthenticationResult,
     ) {
+        val app = applicationContext
+
+        // 🔐 Этот диалог отвечает на вопрос «верен ли PIN» — значит,
+        // считается в общие попытки (аудит 2026-10-02, A-4). Прежде
+        // здесь PIN подбирали без задержек и без стирания после десяти.
+        val failures = runCatching { PinAttempts.beginAttempt(app) }.getOrElse {
+            pin.fill(0)
+            toast(R.string.privacy_biometric_failed)
+            return
+        }
+
         lifecycleScope.launch {
             val sealed = withContext(Dispatchers.IO) {
                 runCatching {
                     // Argon2id: около секунды, главный поток не переживёт.
-                    val key = Core.deriveKey(applicationContext, pin)
+                    val key = Core.deriveKey(app, pin)
 
                     try {
                         // 🔐 Запечатывается только ключ, который открывает
@@ -297,7 +345,8 @@ class PrivacyActivity : AppCompatActivity() {
                         // базу никогда, — а человек узнавал об этом, уже
                         // забыв PIN в расчёте на отпечаток.
                         if (Core.keyOpensStorage(key)) {
-                            BiometricUnlock.seal(applicationContext, result, key)
+                            PinAttempts.recordSuccess(app)
+                            BiometricUnlock.seal(app, result, key)
                             true
                         } else {
                             false
@@ -309,6 +358,18 @@ class PrivacyActivity : AppCompatActivity() {
             }
 
             pin.fill(0)
+
+            if (sealed.getOrNull() == false &&
+                PinAttempts.shouldWipe(failures, PinAttempts.wipeEnabled(app))
+            ) {
+                withContext(Dispatchers.IO) { org.aegis.app.core.AccountWipe.wipe(app) }
+                startActivity(
+                    Intent(app, OnboardingActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                )
+                finish()
+                return@launch
+            }
 
             when (sealed.getOrNull()) {
                 true -> toast(R.string.privacy_biometric_enabled, AegisToast.Tone.Success)
@@ -377,9 +438,15 @@ class PrivacyActivity : AppCompatActivity() {
             checked = PinAttempts.wipeEnabled(this),
         ) { wanted ->
             if (!wanted) {
-                PinAttempts.setWipeEnabled(this, false)
+                // 🔐 Выключить стирание — ослабить защиту от перебора:
+                // только по PIN. Иначе его выключали бы до того, как
+                // начать подбирать PIN.
+                weakenAfterPin {
+                    PinAttempts.setWipeEnabled(this, false)
+                    toggle.isChecked = false
+                }
 
-                return@bind true
+                return@bind false
             }
 
             AegisDialog(this)
@@ -414,12 +481,21 @@ class PrivacyActivity : AppCompatActivity() {
     private fun chooseAutoLock() {
         val sheet = AegisSheet.on(this, R.string.privacy_autolock)
 
+        val current = runCatching {
+            Core.messenger().settingInt(Settings.AUTO_LOCK_SECONDS, Settings.AUTO_LOCK_DEFAULT)
+        }.getOrDefault(Settings.AUTO_LOCK_DEFAULT)
+
         Settings.AUTO_LOCK_CHOICES.forEach { seconds ->
             sheet.action(autoLockLabel(seconds)) {
                 // Запись в зашифрованную базу; отказ оставляет прежний срок,
                 // и строка покажет его, а не выбранный.
-                runCatching { Core.messenger().setSettingInt(Settings.AUTO_LOCK_SECONDS, seconds) }
-                bindAutoLock()
+                val choose = {
+                    runCatching { Core.messenger().setSettingInt(Settings.AUTO_LOCK_SECONDS, seconds) }
+                    bindAutoLock()
+                }
+
+                // 🔐 Дольше — ослабление: только по PIN.
+                if (seconds > current) weakenAfterPin(choose) else choose()
             }
         }
 
@@ -436,7 +512,8 @@ class PrivacyActivity : AppCompatActivity() {
             root = findViewById(R.id.privacy_export),
             label = R.string.privacy_export,
             icon = R.drawable.ic_file,
-            onClick = { confirmExport() },
+            // 🔐 Вся переписка открытым текстом — только владельцу.
+            onClick = { Reauth.require(this, R.string.reauth_export) { confirmExport() } },
         )
     }
 
@@ -522,7 +599,7 @@ class PrivacyActivity : AppCompatActivity() {
             label = R.string.privacy_delete_account,
             icon = R.drawable.ic_alert,
             destructive = true,
-            onClick = { confirmDeleteAccount() },
+            onClick = { Reauth.require(this, R.string.reauth_delete_account) { confirmDeleteAccount() } },
         )
     }
 

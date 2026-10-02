@@ -54,4 +54,43 @@ object Pin {
      */
     fun isAcceptable(pin: ByteArray): Boolean =
         pin.size == LENGTH && pin.all { it in '0'.code.toByte()..'9'.code.toByte() }
+
+    /**
+     * 🔐 Слишком ли PIN прост, чтобы его выбирать (аудит 2026-10-02).
+     *
+     * Перебор начинают не с `000000` подряд, а со списка самых частых:
+     * одна цифра, ряды, повторы пар и троек. По открытым утечкам такие
+     * PIN — заметная доля всех шестизначных, и с ними задержки и
+     * аппаратная половина ключа защищают минуты вместо суток.
+     *
+     * Проверяется только при **выборе** PIN: того, кто уже пользуется
+     * простым, это не запирает.
+     */
+    fun isTooSimple(pin: ByteArray): Boolean {
+        if (!isAcceptable(pin)) return false
+
+        val digits = pin.map { it - '0'.code.toByte() }
+        val steps = digits.zipWithNext { a, b -> b - a }.toSet()
+
+        // 111111, 123456, 654321, 135791 — шаг один и тот же.
+        if (steps.size == 1) return true
+        // 121212, 101010 — повтор пары; 123123 — повтор тройки.
+        if ((2 until LENGTH).all { digits[it] == digits[it - 2] }) return true
+        if ((3 until LENGTH).all { digits[it] == digits[it - 3] }) return true
+        // 112233, 111222 — пары и тройки одинаковых.
+        if ((0 until LENGTH step 2).all { digits[it] == digits[it + 1] } && digits.toSet().size <= 3) return true
+
+        return String(pin, Charsets.US_ASCII) in COMMON
+    }
+
+    /**
+     * Частые шестизначные PIN, которых не ловят правила выше: рисунки на
+     * клавиатуре и «запоминающиеся» числа.
+     */
+    private val COMMON = setOf(
+        "159753", "147258", "258369", "789456", "456123", "147852",
+        "963852", "142536", "100200", "696969", "102030", "131313",
+        "123654", "123321", "654456", "112358", "111222", "000111",
+        "111000", "222111",
+    )
 }

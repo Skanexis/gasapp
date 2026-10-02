@@ -18,6 +18,7 @@ import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisTextField
 import org.aegis.app.core.Core
+import org.aegis.app.core.Reauth
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.SettingsRow
 import uniffi.aegis.validateRecoveryKey
@@ -91,8 +92,13 @@ class RecoveryCenterActivity : AppCompatActivity() {
 
         findViewById<ImageView>(R.id.recovery_back).setOnClickListener { finish() }
 
+        // 🔐 Новый ключ восстановления — только владельцу (аудит
+        // 2026-10-02, A-3): ключ и копия под ним — это аккаунт целиком,
+        // переносимый на чужой телефон.
         findViewById<AegisButton>(R.id.recovery_create).setOnClickListener {
-            startActivity(Intent(this, RecoveryKeyActivity::class.java))
+            Reauth.require(this, R.string.reauth_recovery) {
+                startActivity(Intent(this, RecoveryKeyActivity::class.java))
+            }
         }
         findViewById<AegisButton>(R.id.recovery_backup_now).setOnClickListener { backupNow() }
         SettingsRow.bind(
@@ -192,7 +198,12 @@ class RecoveryCenterActivity : AppCompatActivity() {
     private fun backupNow() {
         // Ключа под рукой нет — значит, его надо спросить: приложение
         // его не хранит и достать неоткуда.
-        val key = pendingKey ?: return askForKey(::runBackup)
+        // 🔐 Копия под введённым ключом — только по PIN: иначе тот, кому
+        // дали разблокированный телефон, ввёл бы свой ключ и унёс копию
+        // (а с ней и аккаунт). Ключ этой сессии создан уже после PIN.
+        val key = pendingKey ?: return Reauth.require(this, R.string.reauth_recovery) {
+            askForKey { typed -> runBackup(typed, entered = true) }
+        }
 
         runBackup(key)
     }
@@ -246,7 +257,7 @@ class RecoveryCenterActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun runBackup(key: String) {
+    private fun runBackup(key: String, entered: Boolean = false) {
         val button = findViewById<AegisButton>(R.id.recovery_backup_now)
         button.isLoading = true
 
@@ -276,9 +287,14 @@ class RecoveryCenterActivity : AppCompatActivity() {
                     ),
                 )
                 askWhereToSave(backup.generation.toInt())
-            }.onFailure {
+            }.onFailure { error ->
                 button.isError = true
-                showStatus(getString(R.string.recovery_failed))
+                // Введённый ключ не того ряда копий: ядро отказало до
+                // сборки файла (см. `BackupService::create`).
+                val wrongKey = entered &&
+                    error is uniffi.aegis.FfiException.Core &&
+                    error.message.orEmpty().contains("cryptographic")
+                showStatus(getString(if (wrongKey) R.string.recovery_wrong_key else R.string.recovery_failed))
             }
 
             render()
@@ -333,7 +349,7 @@ class RecoveryCenterActivity : AppCompatActivity() {
      * перешифровать их приложение не может — они лежат в чужом
      * хранилище. Сказать это надо до, а не после.
      */
-    private fun newKey() {
+    private fun newKey() = Reauth.require(this, R.string.reauth_recovery) {
         AegisDialog(this)
             .title(R.string.recovery_new_key)
             .message(R.string.recovery_new_key_warning)

@@ -2,8 +2,10 @@
 
 package org.aegis.app.core
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
 
 /**
  * Счётчик неверных попыток PIN и экспоненциальные задержки.
@@ -24,58 +26,70 @@ import android.content.SharedPreferences
  * ровно тот, кому надоело ждать после своих же опечаток — то есть тот,
  * кому она нужнее всего.
  *
+ * Считает **все** проверки PIN: экран входа, повторное подтверждение
+ * перед опасными действиями ([Reauth]), хранилище файлов, включение
+ * отпечатка. Любая из них отвечает на вопрос «верен ли PIN», и
+ * незасчитанная превращалась бы в обход задержек.
+ *
+ * # Попытка засчитывается до проверки (аудит 2026-10-02, A-1)
+ *
+ * Прежде неверная попытка записывалась **после** проверки, в области
+ * жизни экрана. Поворот телефона во время проверки (около секунды)
+ * пересоздавал экран, корутина отменялась — и запись не происходила:
+ * перебор без задержек, по попытке в секунду. Теперь [beginAttempt]
+ * записывает попытку на диск до вывода ключа, а [recordSuccess] снимает
+ * её, только если PIN подошёл. Прерванная проверка остаётся неверной.
+ *
+ * # Время — монотонное (аудит 2026-10-02, A-2)
+ *
+ * Прежде срок считался по настенным часам, а перевод их **вперёд**
+ * снимал любую задержку из настроек даты — без root, одним движением.
+ * Теперь срок считается по `SystemClock.elapsedRealtime`: от загрузки,
+ * идёт во сне, не настраивается ничем. После перезагрузки этот счёт
+ * начинается заново, и пройденное до неё время узнать честно нельзя —
+ * поэтому перезагрузка начинает ожидание сначала. Владельцу это стоит
+ * лишнего ожидания в редком случае; перебирающему отнимает способ
+ * его обойти.
+ *
  * # Почему счётчик не в зашифрованной базе
  *
- * Очевидное место для него — та же база, где лежат настройки. Но база
- * открывается ключом, выведенным из PIN: пока PIN не подошёл, читать
- * счётчик неоткуда. Счётчик, который нельзя прочитать до проверки,
- * не ограничивает проверку.
- *
- * Поэтому он лежит в обычных `SharedPreferences` приложения. Они
- * приватны для процесса, не уходят в облачную копию
- * (`allowBackup="false"`) и переживают перезапуск — то самое требование
- * раздела 19.3.
+ * База открывается ключом, выведенным из PIN: пока PIN не подошёл,
+ * читать счётчик неоткуда. Счётчик, который нельзя прочитать до
+ * проверки, не ограничивает проверку. Поэтому он лежит в приватных
+ * `SharedPreferences` приложения: не уходят в облачную копию
+ * (`allowBackup="false"`) и переживают перезапуск.
  *
  * # Чего этот счётчик не даёт
  *
- * ⚠️ Он не мешает перебору **вне** приложения, и это сейчас главное
- * ограничение всей схемы. Кто снял с устройства `aegis.db` и
- * `aegis.salt`, перебирает PIN у себя, где никаких задержек нет.
- *
- * Считать стоит честно. PIN ровно шестизначный — миллион вариантов.
- * Argon2id (m=64 МиБ, t=3, p=4) даёт порядка полусекунды на попытку
- * на одном ядре, но он ограничен памятью, а не только временем:
- * машина с 64 ядрами и 4 ГиБ свободной памяти считает около двухсот
- * попыток в секунду и проходит весь миллион **за пару часов**.
- * Это аренда за несколько долларов, а не государственный бюджет.
- *
- * Закрывает это аппаратный секрет ([HardwareKey], раздел 7.3,
- * ADR-017): ключ базы выводится из PIN **и** секрета, обёрнутого ключом
- * Keystore, и файл базы без самого устройства не перебирается. Задержки
- * ниже защищают от того, кто подбирает PIN на самом устройстве.
- *
- * ⚠️ Прежде здесь было сказано, что этой схемы в приложении нет
- * (находка пентеста P-5, раздел 23.6): её с тех пор сделали, а абзац
- * остался.
- *
- * ⚠️ Он не защищён от перевода часов вперёд. Срок хранится по
- * настенному времени, и владелец устройства вправе его сдвинуть.
- * Переводу **назад** противодействие есть (см. [remainingMillis]),
- * потому что это единственное направление, в котором ошибка была бы
- * в пользу атакующего незаметно для пользователя.
+ * ⚠️ Он не мешает перебору **вне** приложения. От перебора по снятому
+ * файлу защищает аппаратная половина ключа ([TeeKey], схема v3): каждая
+ * попытка требует этого телефона. Под root на разблокированном телефоне
+ * Keystore можно звать в обход этого счётчика — против такого противника
+ * держит только длина PIN.
  *
  * ⚠️ Он обнуляется при переустановке приложения — вместе с данными
- * приложения. Требование раздела 19.3 «не сбрасывается при
- * переустановке» на Android выполнить нечем: система стирает и
- * приватные файлы, и записи Keystore. Впрочем, переустановка стирает
- * и саму базу, так что перебирать после неё нечего.
+ * приложения и ключами Keystore, так что перебирать после неё нечего.
  */
 object PinAttempts {
 
     /**
+     * Момент по монотонным часам: время от загрузки и номер загрузки.
+     *
+     * [boot] — `Settings.Global.BOOT_COUNT`, `-1`, если система его
+     * не отдала; тогда перезагрузку выдаёт время, пошедшее назад.
+     */
+    data class Moment(val elapsed: Long, val boot: Int) {
+        companion object {
+            /** Сейчас. */
+            fun now(context: Context): Moment = Moment(SystemClock.elapsedRealtime(), bootCount(context))
+        }
+    }
+
+    /**
      * Сколько неверных попыток подряд уже сделано.
      *
-     * Ноль после последнего успешного ввода.
+     * Ноль после последнего успешного ввода. Прерванная проверка
+     * считается неверной.
      */
     fun failures(context: Context): Int = prefs(context).getInt(KEY_FAILURES, 0)
 
@@ -84,42 +98,57 @@ object PinAttempts {
      *
      * Ноль — можно пробовать.
      *
-     * 🔐 Перевод часов назад не сокращает ожидание: отрицательное
-     * «прошло» трактуется как ноль прошедшего времени, то есть ждать
-     * придётся полный срок заново. Противоположная трактовка позволила
-     * бы снять любую задержку одним движением в настройках даты.
+     * 🔐 После перезагрузки (или если монотонное время пошло назад)
+     * отсчёт начинается сначала: отметка переносится на [at] и
+     * записывается, так что ждать придётся полный срок.
      */
-    fun remainingMillis(context: Context, now: Long): Long {
+    fun remainingMillis(context: Context, at: Moment = Moment.now(context)): Long {
         val store = prefs(context)
-        val failures = store.getInt(KEY_FAILURES, 0)
-        val required = delayMillis(failures)
+        val required = delayMillis(store.getInt(KEY_FAILURES, 0))
 
         if (required == 0L) {
             return 0L
         }
 
-        val last = store.getLong(KEY_LAST_ATTEMPT, 0L)
-        val elapsed = (now - last).coerceAtLeast(0L)
+        val lastElapsed = store.getLong(KEY_LAST_ELAPSED, NEVER)
+        val lastBoot = store.getInt(KEY_LAST_BOOT, UNKNOWN_BOOT)
+        val rebooted = lastElapsed == NEVER ||
+            at.elapsed < lastElapsed ||
+            (at.boot != UNKNOWN_BOOT && lastBoot != UNKNOWN_BOOT && at.boot != lastBoot)
 
-        return (required - elapsed).coerceAtLeast(0L)
+        if (rebooted) {
+            store.edit()
+                .putLong(KEY_LAST_ELAPSED, at.elapsed)
+                .putInt(KEY_LAST_BOOT, at.boot)
+                .commitOrThrow()
+
+            return required
+        }
+
+        return (required - (at.elapsed - lastElapsed)).coerceAtLeast(0L)
     }
 
     /**
-     * Записывает неверную попытку.
+     * 🔐 Засчитывает попытку **до** проверки PIN.
      *
-     * @return число неверных попыток подряд после этой.
+     * Вызывать перед выводом ключа, а не после неудачи: проверка,
+     * прерванная поворотом экрана или убитым процессом, должна остаться
+     * неверной. Верный PIN снимает попытку через [recordSuccess].
+     *
+     * @return число неверных попыток подряд, считая эту.
+     * @throws IllegalStateException запись не удалась — проверять PIN
+     *   без записанной попытки нельзя.
      */
-    fun recordFailure(context: Context, now: Long): Int {
-        val failures = failures(context) + 1
+    fun beginAttempt(context: Context, at: Moment = Moment.now(context)): Int {
+        val failures = failures(context).let { if (it == Int.MAX_VALUE) it else it + 1 }
 
         prefs(context).edit()
             .putInt(KEY_FAILURES, failures)
-            .putLong(KEY_LAST_ATTEMPT, now)
+            .putLong(KEY_LAST_ELAPSED, at.elapsed)
+            .putInt(KEY_LAST_BOOT, at.boot)
             // commit, а не apply: apply пишет на диск асинхронно, и
-            // убитый сразу после неверной попытки процесс унёс бы
-            // запись с собой. Перебор при этом состоял бы из «ввести
-            // неверный PIN и снять приложение из недавних».
-            .commit()
+            // убитый сразу после ввода процесс унёс бы запись с собой.
+            .commitOrThrow()
 
         return failures
     }
@@ -131,10 +160,13 @@ object PinAttempts {
      * открылось: «верный PIN» здесь не отдельная проверка, а факт
      * успешной расшифровки.
      */
+    @SuppressLint("ApplySharedPref")
     fun recordSuccess(context: Context) {
         prefs(context).edit()
             .remove(KEY_FAILURES)
-            .remove(KEY_LAST_ATTEMPT)
+            .remove(KEY_LAST_ELAPSED)
+            .remove(KEY_LAST_BOOT)
+            .remove(LEGACY_LAST_ATTEMPT)
             .commit()
     }
 
@@ -142,8 +174,7 @@ object PinAttempts {
      * Задержка после [failures] неверных попыток подряд.
      *
      * Вынесена отдельно и открыта для теста: таблица задержек — это
-     * и есть политика, и проверять её на живом `SharedPreferences`
-     * значило бы проверять заодно и платформу.
+     * и есть политика.
      */
     fun delayMillis(failures: Int): Long = when {
         failures <= FREE_ATTEMPTS -> 0L
@@ -152,12 +183,9 @@ object PinAttempts {
         failures == 6 -> 5 * 60_000L
         failures == 7 -> 30 * 60_000L
         else -> {
-            // 8 → час, 9 → два, 10 → четыре и так далее.
-            //
-            // Сдвиг ограничен: на 70-й попытке `1L shl 62` переполнило бы
-            // знаковый тип и задержка стала бы отрицательной, то есть
-            // защита превратилась бы в свою противоположность ровно
-            // у самого упорного перебирающего.
+            // 8 → час, 9 → два, 10 → четыре и так далее. Сдвиг ограничен:
+            // переполнение сделало бы задержку отрицательной, то есть
+            // защиту — своей противоположностью.
             val steps = (failures - 8).coerceAtMost(MAX_DOUBLINGS)
 
             HOUR_MILLIS shl steps
@@ -169,50 +197,29 @@ object PinAttempts {
      *
      * Раздел 19.3: opt-in, по умолчанию **выключено**. Случайное
      * стирание ребёнком или в кармане — частый сценарий, а вернуть
-     * данные можно только ключом восстановления, которого у большинства
-     * под рукой нет.
+     * данные можно только ключом восстановления.
      *
-     * Флаг лежит рядом со счётчиком, а не в базе, по той же причине,
-     * что и счётчик: база открывается ключом из PIN, и до верного PIN
+     * Флаг лежит рядом со счётчиком, а не в базе: до верного PIN
      * прочитать из неё нечего.
-     *
-     * ⚠️ Это защита от перебора **через экран входа**. Тот, кто снял
-     * копию файлов с устройства, экраном не пользуется и стирания
-     * не вызовет; от него защищает аппаратная половина ключа
-     * ([HardwareKey]).
      */
     fun wipeEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_WIPE, false)
 
-    @android.annotation.SuppressLint("ApplySharedPref")
+    @SuppressLint("ApplySharedPref")
     fun setWipeEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_WIPE, enabled).commit()
     }
 
-    /**
-     * Пора ли стирать после [failures] неверных попыток подряд.
-     *
-     * Отдельно и открыто для теста: порог — политика, и ошибка в нём
-     * в одну сторону стирает данные раньше обещанного, в другую —
-     * не стирает никогда.
-     */
+    /** Пора ли стирать после [failures] неверных попыток подряд. */
     fun shouldWipe(failures: Int, enabled: Boolean): Boolean = enabled && failures >= WIPE_AFTER
 
     /** Порог стирания — раздел 19.3. */
     const val WIPE_AFTER = 10
 
     /**
-     * 🔐 Забывает историю попыток — при удалении аккаунта.
-     *
-     * Счётчик неверных попыток и время последней — это след того,
-     * что телефоном пользовались и в какой момент. После удаления
-     * аккаунта его быть не должно: удаление, оставляющее «последняя
-     * попытка входа — вчера в 23:40», удалением не является.
-     *
-     * `commit()`, а не `apply()`, по той же причине, что и везде
-     * в этом файле: асинхронная запись не переживёт процесс,
-     * убитый сразу после выхода.
+     * 🔐 Забывает историю попыток — при удалении аккаунта: «последняя
+     * попытка входа — вчера» после удаления удалением не является.
      */
-    @android.annotation.SuppressLint("ApplySharedPref")
+    @SuppressLint("ApplySharedPref")
     fun forget(context: Context) {
         prefs(context).edit().clear().commit()
     }
@@ -220,21 +227,37 @@ object PinAttempts {
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(STORE, Context.MODE_PRIVATE)
 
+    @SuppressLint("ApplySharedPref")
+    private fun SharedPreferences.Editor.commitOrThrow() {
+        check(commit()) { "счётчик попыток PIN не записан" }
+    }
+
+    /** Номер загрузки устройства (API 24+); `-1` — неизвестен. */
+    private fun bootCount(context: Context): Int = runCatching {
+        android.provider.Settings.Global.getInt(
+            context.contentResolver,
+            android.provider.Settings.Global.BOOT_COUNT,
+            UNKNOWN_BOOT,
+        )
+    }.getOrDefault(UNKNOWN_BOOT)
+
     /** Сколько попыток проходит без задержки. */
     private const val FREE_ATTEMPTS = 3
 
     private const val HOUR_MILLIS = 60 * 60_000L
 
-    /**
-     * Предел удвоений.
-     *
-     * 20 удвоений часа — больше ста лет; дальше расти бессмысленно,
-     * а переполнение начинается на 43-м.
-     */
+    /** Предел удвоений: 20 удвоений часа — больше ста лет. */
     private const val MAX_DOUBLINGS = 20
+
+    private const val NEVER = -1L
+    private const val UNKNOWN_BOOT = -1
 
     private const val STORE = "aegis_pin_attempts"
     private const val KEY_FAILURES = "failures"
-    private const val KEY_LAST_ATTEMPT = "last_attempt"
+    private const val KEY_LAST_ELAPSED = "last_attempt_elapsed"
+    private const val KEY_LAST_BOOT = "last_attempt_boot"
+
+    /** Отметка прежних версий по настенным часам — только убирается. */
+    private const val LEGACY_LAST_ATTEMPT = "last_attempt"
     private const val KEY_WIPE = "wipe_after_failures"
 }

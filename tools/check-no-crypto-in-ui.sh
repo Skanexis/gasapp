@@ -62,10 +62,17 @@ FORBIDDEN_ANDROID='javax\.crypto|java\.security\.(KeyPairGenerator|Signature|Mes
 # Исключение задним числом: файл нарушал правило с появления, и джоб
 # падал так же незаметно, как в истории с `HardwareKey.kt` выше.
 #
+# `core/TeeKey.kt` (2026-09-30, схема ключа v3) — HMAC внутри Keystore
+# невынимаемым ключом: `KeyGenerator`/`Mac` — единственный вход в него,
+# ключ из оборудования не выходит, приложение получает лишь ответ на PIN.
+# Исключение задним числом (аудит 2026-10-02): файл появился без него,
+# и джоб снова падал незаметно — ровно как с `HardwareKey.kt` и
+# `OpenedKey.kt` выше.
+#
 # Тестовые исходники (`src/test`, `src/androidTest`) не сканируются:
 # они не часть интерфейса и не попадают в APK, а заготовки для
 # проверки аттестации без `KeyPairGenerator` и `Signature` не собрать.
-ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/aegis/app/core/BiometricUnlock.kt|android/app/src/main/kotlin/org/aegis/app/core/KeyAttestation.kt|android/app/src/main/kotlin/org/aegis/app/core/AppSignature.kt|android/app/src/main/kotlin/org/aegis/app/core/OpenedKey.kt|/src/test/|/src/androidTest/'
+ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/aegis/app/core/BiometricUnlock.kt|android/app/src/main/kotlin/org/aegis/app/core/KeyAttestation.kt|android/app/src/main/kotlin/org/aegis/app/core/AppSignature.kt|android/app/src/main/kotlin/org/aegis/app/core/OpenedKey.kt|android/app/src/main/kotlin/org/aegis/app/core/TeeKey.kt|/src/test/|/src/androidTest/'
 
 violations=0
 

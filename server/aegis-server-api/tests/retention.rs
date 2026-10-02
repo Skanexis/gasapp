@@ -37,6 +37,15 @@ async fn exists(pool: &sqlx::PgPool, table: &str, column: &str, id: Uuid) -> boo
     .unwrap()
 }
 
+/// Случайный ключ: сервер не принимает ключ identity, уже занятый
+/// другим аккаунтом (аудит 2026-10-02, S-1), а база у тестов общая.
+fn key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    key[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    key[16..].copy_from_slice(Uuid::new_v4().as_bytes());
+    key
+}
+
 /// 🔐 Проход очистки удаляет истёкшее и не трогает живое.
 #[tokio::test]
 async fn a_purge_removes_expired_rows_and_keeps_live_ones() {
@@ -46,8 +55,8 @@ async fn a_purge_removes_expired_rows_and_keeps_live_ones() {
     let (_account, device) = repo::register_account(
         pool,
         &format!("retention_{}", &Uuid::new_v4().simple().to_string()[..16]),
-        &[1u8; 32],
-        &[2u8; 32],
+        &key(),
+        &key(),
     )
     .await
     .unwrap();

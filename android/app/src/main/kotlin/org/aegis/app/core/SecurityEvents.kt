@@ -47,6 +47,8 @@ object SecurityEvents {
         "backup_restored" to R.string.security_event_backup_restored,
         "session_started_without_one_time_key" to R.string.security_event_degraded_session,
         "initial_envelope_replayed" to R.string.security_event_initial_replayed,
+        "contact_blocked" to R.string.security_event_contact_blocked,
+        "contact_reported" to R.string.security_event_contact_reported,
     )
 
     /** Подпись события либо `null`, если тип неизвестен этому экрану. */
