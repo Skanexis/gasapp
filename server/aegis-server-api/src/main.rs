@@ -56,7 +56,7 @@ const MAX_DB_CONNECTIONS: u32 = 16;
 /// один и тот же результат — нули, — и отличать их по факту наличия
 /// значило бы пропустить опечатку в секрете.
 fn certificate_key_is_configured() -> bool {
-    let Ok(encoded) = std::env::var("AEGIS_CERTIFICATE_KEY") else {
+    let Some(encoded) = aegis_server_db::runtime::secret("AEGIS_CERTIFICATE_KEY") else {
         return false;
     };
 
@@ -82,8 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let database_url =
-        std::env::var("DATABASE_URL").map_err(|_| "не задана переменная окружения DATABASE_URL")?;
+    // Секреты — из файла (`*_FILE`, учётные данные systemd) или окружения:
+    // см. `aegis_server_db::runtime::secret`.
+    let database_url = aegis_server_db::runtime::secret("DATABASE_URL")
+        .ok_or("не задан DATABASE_URL (или DATABASE_URL_FILE)")?;
 
     // 🔐 Небезопасная настройка не запускается молча.
     //
@@ -103,7 +105,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // отсутствие, и различать их здесь нельзя.
     let has_certificate_key = certificate_key_is_configured();
 
-    let gaps = config::missing(has_tls, has_certificate_key);
+    let mut gaps = config::missing(has_tls, has_certificate_key);
+    gaps.extend(config::environment_gaps(
+        &database_url,
+        aegis_server_db::runtime::running_as_root(),
+    ));
 
     if !gaps.is_empty() {
         if std::env::var(config::ALLOW_INSECURE).is_ok() {

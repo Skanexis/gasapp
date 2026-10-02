@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=AEGIS: run host monitor every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

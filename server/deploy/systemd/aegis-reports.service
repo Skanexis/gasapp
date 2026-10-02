@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Новые жалобы → уведомление оператору. Запускается таймером
+# aegis-reports.timer на машине админ-центра.
+#
+# 🔐 В уведомлении — только число жалоб; кто и на кого — в админ-центре.
+# Канал уведомлений — чужая служба, в ней не должно оседать ничего,
+# кроме «загляни».
+#
+# Сеть здесь открыта наружу (Telegram), поэтому это отдельная короткая
+# служба, а не часть админ-центра: долгоживущий процесс с доступом к базе
+# в интернет не ходит.
+
+[Unit]
+Description=AEGIS: notify operator about new abuse reports
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aegis-admin
+Group=aegis-admin
+ExecStart=/usr/local/bin/aegis-server-admin watch-reports
+
+LoadCredential=database_url:/etc/aegis/credentials/admin_database_url
+LoadCredential=telegram:/etc/aegis/credentials/telegram
+Environment=AEGIS_NOTIFY_CMD=/opt/aegis/notify-telegram.sh
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @debug
+UMask=0077
+LimitCORE=0

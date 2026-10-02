@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=AEGIS: check abuse reports every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

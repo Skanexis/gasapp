@@ -84,4 +84,4 @@ psql \
     --set ON_ERROR_STOP=on \
     --file="$DUMP"
 
-echo "готово. Запустите узлы: systemctl start aegis"
+echo "готово. Запустите узлы: systemctl start aegis-server (на каждом)"

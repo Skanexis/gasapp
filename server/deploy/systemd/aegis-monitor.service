@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Монитор хоста AEGIS: /opt/aegis/monitor/aegis-monitor.sh раз в две
+# минуты (aegis-monitor.timer). Роль хоста и пороги —
+# в /etc/aegis/monitor.env.
+#
+# Свой пользователь без прав (aegis-monitor, создаёт harden-host.sh),
+# чтение журнала — через группу systemd-journal. Монитор только смотрит:
+# ему не нужно ни писать в систему, ни чинить её. Оповещения — через
+# notify-telegram.sh.
+#
+# ⚠️ Не DynamicUser: dbus-daemon не узнаёт динамического пользователя
+# без libnss-systemd, которого нет в минимальных образах, — и
+# `systemctl is-active` в мониторе молча отвечал бы «не работает»
+# про живые службы. Проверено на стенде.
+
+[Unit]
+Description=AEGIS: host and service monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aegis-monitor
+Group=aegis-monitor
+SupplementaryGroups=systemd-journal
+StateDirectory=aegis-monitor
+StateDirectoryMode=0700
+EnvironmentFile=/etc/aegis/monitor.env
+Environment=AEGIS_MONITOR_STATE=%S/aegis-monitor
+Environment=AEGIS_NOTIFY_CMD=/opt/aegis/notify-telegram.sh
+LoadCredential=telegram:/etc/aegis/credentials/telegram
+ExecStart=/opt/aegis/monitor/aegis-monitor.sh
+TimeoutStartSec=90
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+LimitCORE=0

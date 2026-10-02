@@ -34,6 +34,9 @@
 # Из cron, раз в минуту:
 #
 #     * * * * * . /etc/aegis/monitor.env && /opt/aegis/check-nodes.sh
+#
+# Обычно его запускает aegis-monitor.sh на балансировщике (роль lb),
+# отдельная строка cron не нужна.
 
 set -uo pipefail
 
@@ -50,6 +53,13 @@ readonly PORT="${AEGIS_HEALTH_PORT:-8443}"
 # о том, кому доверить сведения об отказах.
 readonly NOTIFY="${AEGIS_NOTIFY_CMD:-logger -t aegis-monitor}"
 
+# 🔐 Центр, которым подписаны сертификаты узлов (pki/internal-ca.sh).
+#
+# С ним узел проверяется по имени aegis-node: ответ «я здоров» от того,
+# кто встал посреди внутренней сети, не принимается. Без него — прежнее
+# поведение (-k), только чтобы не сломать уже настроенные установки.
+readonly CA="${AEGIS_INTERNAL_CA:-/etc/aegis/pki/ca.pem}"
+
 # Файл состояния: чтобы не слать оповещение каждую минуту.
 readonly STATE_DIR="${AEGIS_MONITOR_STATE:-/var/lib/aegis-monitor}"
 
@@ -65,15 +75,22 @@ for node in $NODES; do
     state_file="${STATE_DIR}/$(echo "$node" | tr -c 'a-zA-Z0-9' '_')"
 
     # --max-time: зависший узел не должен задерживать проверку
-    # остальных. -k: у узлов самоподписанные сертификаты во внутренней
-    # сети; проверка подлинности здесь ничего не добавляет, потому что
-    # сеть уже закрыта, а имени у узла нет.
+    # остальных. --resolve: сертификат узла выписан на имя aegis-node,
+    # а ходим по адресу.
     #
     # Код возврата берётся отдельной проверкой `if`, а не через `$?`
     # после присваивания: `$?` в этом случае относится к подстановке
     # команды, а не к curl, и недоступный узел определялся бы как
     # «не видит базу» — то есть дежурный искал бы проблему не там.
-    if body="$(curl -sk --max-time 5 "https://${node}:${PORT}/health" 2>/dev/null)"; then
+    if [[ -r "$CA" ]]; then
+        url="https://aegis-node:${PORT}/health"
+        tls=(--cacert "$CA" --resolve "aegis-node:${PORT}:${node}")
+    else
+        url="https://${node}:${PORT}/health"
+        tls=(-k)
+    fi
+
+    if body="$(curl -s "${tls[@]}" --max-time 5 "$url" 2>/dev/null)"; then
         if ! grep -q '"database":true' <<< "$body"; then
             status="не видит базу"
         elif ! grep -q '"listener":true' <<< "$body"; then
