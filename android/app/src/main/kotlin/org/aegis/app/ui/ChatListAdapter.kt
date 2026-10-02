@@ -118,6 +118,7 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
         fun bind(chat: ChatSummary) {
             // Инициалы, а не фото: см. комментарий в раскладке.
             avatar.text = initialsOf(chat.name)
+            paintAvatar(avatar, chat.name)
             name.text = chat.name
             preview.text = chat.preview
             // Запрос виден в списке сразу: иначе незнакомец выглядел бы

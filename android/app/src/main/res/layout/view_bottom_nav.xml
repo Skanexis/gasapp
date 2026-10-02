@@ -43,9 +43,16 @@
             android:textColor="@color/accent_base" />
     </LinearLayout>
 
+    <!--
+      Звонков в продукте нет — и вкладка их не обещает. Четверть
+      навигации ради «Звонков в этой версии нет» учила искать то, чего
+      нет. Экран (`CallsActivity`) остаётся: вкладка вернётся вместе
+      со звонками.
+    -->
     <LinearLayout
         android:id="@+id/nav_calls"
-        style="@style/AegisNavItem">
+        style="@style/AegisNavItem"
+        android:visibility="gone">
 
         <ImageView
             android:layout_width="56dp"
@@ -56,7 +63,7 @@
             android:paddingBottom="4dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_phone"
-            app:tint="@color/text_disabled" />
+            app:tint="@color/text_tertiary" />
 
         <TextView
             style="@style/AegisNavLabel"
@@ -76,7 +83,7 @@
             android:paddingBottom="4dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_users"
-            app:tint="@color/text_disabled" />
+            app:tint="@color/text_tertiary" />
 
         <TextView
             style="@style/AegisNavLabel"
@@ -96,7 +103,7 @@
             android:paddingBottom="4dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_settings"
-            app:tint="@color/text_disabled" />
+            app:tint="@color/text_tertiary" />
 
         <TextView
             style="@style/AegisNavLabel"

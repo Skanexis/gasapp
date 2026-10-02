@@ -11,50 +11,50 @@ public enum AegisTokens {
     // MARK: - Colors
 
     public enum Color {
-        /// `#0D0F12`
-        public static let bgBase = SwiftUI.Color(.sRGB, red: 0.0510, green: 0.0588, blue: 0.0706, opacity: 1)
-        /// `#15181D`
-        public static let bgRaised = SwiftUI.Color(.sRGB, red: 0.0824, green: 0.0941, blue: 0.1137, opacity: 1)
-        /// `#1C2128`
-        public static let bgCard = SwiftUI.Color(.sRGB, red: 0.1098, green: 0.1294, blue: 0.1569, opacity: 1)
-        /// `#252B33`
-        public static let bgHover = SwiftUI.Color(.sRGB, red: 0.1451, green: 0.1686, blue: 0.2000, opacity: 1)
-        /// `#2E353E`
-        public static let line = SwiftUI.Color(.sRGB, red: 0.1804, green: 0.2078, blue: 0.2431, opacity: 1)
-        /// `#FFFFFF`
-        public static let textPrimary = SwiftUI.Color(.sRGB, red: 1.0000, green: 1.0000, blue: 1.0000, opacity: 1)
-        /// `#B9C1CC`
-        public static let textSecondary = SwiftUI.Color(.sRGB, red: 0.7255, green: 0.7569, blue: 0.8000, opacity: 1)
-        /// `#7C8796`
-        public static let textMuted = SwiftUI.Color(.sRGB, red: 0.4863, green: 0.5294, blue: 0.5882, opacity: 1)
-        /// `#596170`
-        public static let textDisabled = SwiftUI.Color(.sRGB, red: 0.3490, green: 0.3804, blue: 0.4392, opacity: 1)
-        /// `#37B8FF`
-        public static let accentBase = SwiftUI.Color(.sRGB, red: 0.2157, green: 0.7216, blue: 1.0000, opacity: 1)
-        /// `#5CC6FF`
-        public static let accentHover = SwiftUI.Color(.sRGB, red: 0.3608, green: 0.7765, blue: 1.0000, opacity: 1)
-        /// `#2AA3E8`
-        public static let accentPressed = SwiftUI.Color(.sRGB, red: 0.1647, green: 0.6392, blue: 0.9098, opacity: 1)
-        /// `#06121B`
-        public static let accentOn = SwiftUI.Color(.sRGB, red: 0.0235, green: 0.0706, blue: 0.1059, opacity: 1)
-        /// `rgba(55,184,255,.12)`
-        public static let accentDim = SwiftUI.Color(.sRGB, red: 0.2157, green: 0.7216, blue: 1.0000, opacity: 0.12)
-        /// `rgba(55,184,255,.38)`
-        public static let accentLine = SwiftUI.Color(.sRGB, red: 0.2157, green: 0.7216, blue: 1.0000, opacity: 0.38)
-        /// `#18C37A`
-        public static let statusSuccess = SwiftUI.Color(.sRGB, red: 0.0941, green: 0.7647, blue: 0.4784, opacity: 1)
-        /// `#E4B545`
-        public static let statusWarning = SwiftUI.Color(.sRGB, red: 0.8941, green: 0.7098, blue: 0.2706, opacity: 1)
-        /// `#E5484D`
-        public static let statusError = SwiftUI.Color(.sRGB, red: 0.8980, green: 0.2824, blue: 0.3020, opacity: 1)
-        /// `#37B8FF`
-        public static let statusInfo = SwiftUI.Color(.sRGB, red: 0.2157, green: 0.7216, blue: 1.0000, opacity: 1)
-        /// `rgba(24,195,122,.12)`
-        public static let statusSuccessDim = SwiftUI.Color(.sRGB, red: 0.0941, green: 0.7647, blue: 0.4784, opacity: 0.12)
-        /// `rgba(228,181,69,.12)`
-        public static let statusWarningDim = SwiftUI.Color(.sRGB, red: 0.8941, green: 0.7098, blue: 0.2706, opacity: 0.12)
-        /// `rgba(229,72,77,.12)`
-        public static let statusErrorDim = SwiftUI.Color(.sRGB, red: 0.8980, green: 0.2824, blue: 0.3020, opacity: 0.12)
+        /// `#0F1629`
+        public static let bgBase = SwiftUI.Color(.sRGB, red: 0.0588, green: 0.0863, blue: 0.1608, opacity: 1)
+        /// `#151D34`
+        public static let bgRaised = SwiftUI.Color(.sRGB, red: 0.0824, green: 0.1137, blue: 0.2039, opacity: 1)
+        /// `#1B2442`
+        public static let bgCard = SwiftUI.Color(.sRGB, red: 0.1059, green: 0.1412, blue: 0.2588, opacity: 1)
+        /// `#242F52`
+        public static let bgHover = SwiftUI.Color(.sRGB, red: 0.1412, green: 0.1843, blue: 0.3216, opacity: 1)
+        /// `#2E3A5C`
+        public static let line = SwiftUI.Color(.sRGB, red: 0.1804, green: 0.2275, blue: 0.3608, opacity: 1)
+        /// `#F2F4FC`
+        public static let textPrimary = SwiftUI.Color(.sRGB, red: 0.9490, green: 0.9569, blue: 0.9882, opacity: 1)
+        /// `#B4BCD6`
+        public static let textSecondary = SwiftUI.Color(.sRGB, red: 0.7059, green: 0.7373, blue: 0.8392, opacity: 1)
+        /// `#8E99B8`
+        public static let textMuted = SwiftUI.Color(.sRGB, red: 0.5569, green: 0.6000, blue: 0.7216, opacity: 1)
+        /// `#5A6585`
+        public static let textDisabled = SwiftUI.Color(.sRGB, red: 0.3529, green: 0.3961, blue: 0.5216, opacity: 1)
+        /// `#8FA5FF`
+        public static let accentBase = SwiftUI.Color(.sRGB, red: 0.5608, green: 0.6471, blue: 1.0000, opacity: 1)
+        /// `#A8B9FF`
+        public static let accentHover = SwiftUI.Color(.sRGB, red: 0.6588, green: 0.7255, blue: 1.0000, opacity: 1)
+        /// `#7890F5`
+        public static let accentPressed = SwiftUI.Color(.sRGB, red: 0.4706, green: 0.5647, blue: 0.9608, opacity: 1)
+        /// `#0A1030`
+        public static let accentOn = SwiftUI.Color(.sRGB, red: 0.0392, green: 0.0627, blue: 0.1882, opacity: 1)
+        /// `rgba(143,165,255,.14)`
+        public static let accentDim = SwiftUI.Color(.sRGB, red: 0.5608, green: 0.6471, blue: 1.0000, opacity: 0.14)
+        /// `rgba(143,165,255,.40)`
+        public static let accentLine = SwiftUI.Color(.sRGB, red: 0.5608, green: 0.6471, blue: 1.0000, opacity: 0.4)
+        /// `#3DD598`
+        public static let statusSuccess = SwiftUI.Color(.sRGB, red: 0.2392, green: 0.8353, blue: 0.5961, opacity: 1)
+        /// `#F0B84C`
+        public static let statusWarning = SwiftUI.Color(.sRGB, red: 0.9412, green: 0.7216, blue: 0.2980, opacity: 1)
+        /// `#FF6B78`
+        public static let statusError = SwiftUI.Color(.sRGB, red: 1.0000, green: 0.4196, blue: 0.4706, opacity: 1)
+        /// `#8FA5FF`
+        public static let statusInfo = SwiftUI.Color(.sRGB, red: 0.5608, green: 0.6471, blue: 1.0000, opacity: 1)
+        /// `rgba(61,213,152,.13)`
+        public static let statusSuccessDim = SwiftUI.Color(.sRGB, red: 0.2392, green: 0.8353, blue: 0.5961, opacity: 0.13)
+        /// `rgba(240,184,76,.13)`
+        public static let statusWarningDim = SwiftUI.Color(.sRGB, red: 0.9412, green: 0.7216, blue: 0.2980, opacity: 0.13)
+        /// `rgba(255,107,120,.13)`
+        public static let statusErrorDim = SwiftUI.Color(.sRGB, red: 1.0000, green: 0.4196, blue: 0.4706, opacity: 0.13)
     }
 
     // MARK: - Radius

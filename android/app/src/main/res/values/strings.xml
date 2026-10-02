@@ -135,7 +135,7 @@
     <string name="contact_username">@%1$s</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_tagline">An end-to-end encrypted messenger built to resist quantum computers</string>
+    <string name="onboarding_tagline">An end-to-end encrypted messenger. Starting a conversation is protected against future quantum computers too.</string>
     <string name="onboarding_audit_warning">Not independently audited. Do not rely on it where life or liberty is at stake.</string>
     <string name="onboarding_username_hint">e.g. anna_k</string>
     <string name="onboarding_username_label">Username</string>
@@ -684,4 +684,13 @@
     <string name="onboarding_error_pin_simple">This PIN is too easy to guess: such PINs are tried first. Choose another one.</string>
     <string name="security_event_contact_blocked">A contact was blocked on this device</string>
     <string name="security_event_contact_reported">A contact was reported to the server operator</string>
+    <string name="delivery_pending">Sending</string>
+    <string name="delivery_sent">Sent</string>
+    <string name="delivery_delivered">Delivered</string>
+    <string name="delivery_read">Read</string>
+    <string name="delivery_failed">Not sent</string>
+    <string name="onboarding_stage_keys">Encryption keys on this phone</string>
+    <string name="onboarding_stage_tor">Connecting through Tor</string>
+    <string name="onboarding_stage_register">Registering your name</string>
+    <string name="connection_direct">Direct connection: the server sees your IP address</string>
 </resources>

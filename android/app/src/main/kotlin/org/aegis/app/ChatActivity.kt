@@ -37,6 +37,7 @@ import org.aegis.app.ui.DeliveryMark
 import org.aegis.app.ui.MessageAdapter
 import org.aegis.app.ui.MessageItem
 import org.aegis.app.ui.initialsOf
+import org.aegis.app.ui.paintAvatar
 import uniffi.aegis.FfiAttachmentFile
 import uniffi.aegis.FfiChatRequest
 import uniffi.aegis.FfiException
@@ -132,6 +133,7 @@ class ChatActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.chat_title).text = chatName
         findViewById<TextView>(R.id.chat_avatar).text = initialsOf(chatName)
+        paintAvatar(findViewById(R.id.chat_avatar), chatName)
         findViewById<View>(R.id.chat_back).setOnClickListener { finish() }
 
         input = findViewById(R.id.message_input)
@@ -146,6 +148,7 @@ class ChatActivity : AppCompatActivity() {
         findViewById<RecyclerView>(R.id.message_list).apply {
             layoutManager = LinearLayoutManager(context)
             adapter = this@ChatActivity.adapter
+            itemAnimator = org.aegis.app.ui.RiseItemAnimator()
         }
 
         findViewById<TextView>(R.id.chat_verification_state).apply {

@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.initialsOf
+import org.aegis.app.ui.paintAvatar
 import uniffi.aegis.FfiContact
 
 /**
@@ -120,6 +121,7 @@ class ContactProfileActivity : AppCompatActivity() {
         val name = contact.username ?: getString(R.string.contact_no_username)
         nameView.text = name
         findViewById<TextView>(R.id.contact_profile_avatar).text = initialsOf(name)
+        paintAvatar(findViewById(R.id.contact_profile_avatar), name)
         keyView.text = formatKey(contact.identity)
 
         // Состояние не только цветом (раздел 20.5): у сверенного —

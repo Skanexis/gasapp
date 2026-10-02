@@ -353,6 +353,15 @@ class MessageAdapter(
             container.gravity = if (message.outgoing) Gravity.END else Gravity.START
             bubble.background = bubbleShape(message.outgoing, row.joinsPrevious, row.joinsNext)
 
+            // Исходящее — «чернила» акцента с тёмным текстом, входящее —
+            // бумага карточки со светлым: сторона читается без подписи.
+            val context = itemView.context
+            val ink = if (message.outgoing) R.color.bubble_outgoing_text else R.color.text_primary
+            val meta = if (message.outgoing) R.color.bubble_outgoing_meta else R.color.text_tertiary
+            text.setTextColor(ContextCompat.getColor(context, ink))
+            time.setTextColor(ContextCompat.getColor(context, meta))
+            editedMark.setTextColor(ContextCompat.getColor(context, meta))
+
             // Статус показывается только у исходящих: у входящих он
             // не имеет смысла и сбивал бы с толку.
             if (message.outgoing) {
@@ -361,6 +370,7 @@ class MessageAdapter(
                 status.imageTintList = ColorStateList.valueOf(
                     ContextCompat.getColor(itemView.context, tintFor(message.status)),
                 )
+                status.contentDescription = itemView.context.getString(labelFor(message.status))
             } else {
                 status.visibility = View.GONE
             }
@@ -426,7 +436,14 @@ class MessageAdapter(
                 val start = length
                 append(placeholder)
                 setSpan(ForegroundColorSpan(Color.TRANSPARENT), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(AbsoluteSizeSpan(META_TEXT_SP, true), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                // В sp, как и само время: в dp заполнитель не рос бы вместе
+                // с системным шрифтом, и на крупном время наезжало на текст.
+                val metaPx = android.util.TypedValue.applyDimension(
+                    android.util.TypedValue.COMPLEX_UNIT_SP,
+                    META_TEXT_SP.toFloat(),
+                    context.resources.displayMetrics,
+                ).toInt()
+                setSpan(AbsoluteSizeSpan(metaPx), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
 
@@ -451,10 +468,20 @@ class MessageAdapter(
          * только цветом — так же, как в макете и в мессенджерах,
          * к которым пользователь привык.
          */
+        /** Статус словами — для чтения с экрана: значок сам по себе немой. */
+        private fun labelFor(status: DeliveryMark): Int = when (status) {
+            DeliveryMark.Pending -> R.string.delivery_pending
+            DeliveryMark.Sent -> R.string.delivery_sent
+            DeliveryMark.Delivered -> R.string.delivery_delivered
+            DeliveryMark.Read -> R.string.delivery_read
+            DeliveryMark.Failed -> R.string.delivery_failed
+        }
+
         private fun tintFor(status: DeliveryMark): Int = when (status) {
-            DeliveryMark.Read -> R.color.accent_base
-            DeliveryMark.Failed -> R.color.status_error
-            else -> R.color.text_quaternary
+            // На «чернилах» исходящего пузыря: прочитанное — полной
+            // краской, остальное — приглушённой; неудача видна формой.
+            DeliveryMark.Read, DeliveryMark.Failed -> R.color.bubble_outgoing_text
+            else -> R.color.bubble_outgoing_meta
         }
 
         private companion object {

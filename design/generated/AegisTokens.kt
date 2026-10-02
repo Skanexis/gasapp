@@ -14,50 +14,50 @@ import androidx.compose.ui.unit.sp
 object AegisTokens {
 
     object Colors {
-        /** `#0D0F12` */
-        val bgBase = Color(0xFF0D0F12)
-        /** `#15181D` */
-        val bgRaised = Color(0xFF15181D)
-        /** `#1C2128` */
-        val bgCard = Color(0xFF1C2128)
-        /** `#252B33` */
-        val bgHover = Color(0xFF252B33)
-        /** `#2E353E` */
-        val line = Color(0xFF2E353E)
-        /** `#FFFFFF` */
-        val textPrimary = Color(0xFFFFFFFF)
-        /** `#B9C1CC` */
-        val textSecondary = Color(0xFFB9C1CC)
-        /** `#7C8796` */
-        val textMuted = Color(0xFF7C8796)
-        /** `#596170` */
-        val textDisabled = Color(0xFF596170)
-        /** `#37B8FF` */
-        val accentBase = Color(0xFF37B8FF)
-        /** `#5CC6FF` */
-        val accentHover = Color(0xFF5CC6FF)
-        /** `#2AA3E8` */
-        val accentPressed = Color(0xFF2AA3E8)
-        /** `#06121B` */
-        val accentOn = Color(0xFF06121B)
-        /** `rgba(55,184,255,.12)` */
-        val accentDim = Color(0x1F37B8FF)
-        /** `rgba(55,184,255,.38)` */
-        val accentLine = Color(0x6137B8FF)
-        /** `#18C37A` */
-        val statusSuccess = Color(0xFF18C37A)
-        /** `#E4B545` */
-        val statusWarning = Color(0xFFE4B545)
-        /** `#E5484D` */
-        val statusError = Color(0xFFE5484D)
-        /** `#37B8FF` */
-        val statusInfo = Color(0xFF37B8FF)
-        /** `rgba(24,195,122,.12)` */
-        val statusSuccessDim = Color(0x1F18C37A)
-        /** `rgba(228,181,69,.12)` */
-        val statusWarningDim = Color(0x1FE4B545)
-        /** `rgba(229,72,77,.12)` */
-        val statusErrorDim = Color(0x1FE5484D)
+        /** `#0F1629` */
+        val bgBase = Color(0xFF0F1629)
+        /** `#151D34` */
+        val bgRaised = Color(0xFF151D34)
+        /** `#1B2442` */
+        val bgCard = Color(0xFF1B2442)
+        /** `#242F52` */
+        val bgHover = Color(0xFF242F52)
+        /** `#2E3A5C` */
+        val line = Color(0xFF2E3A5C)
+        /** `#F2F4FC` */
+        val textPrimary = Color(0xFFF2F4FC)
+        /** `#B4BCD6` */
+        val textSecondary = Color(0xFFB4BCD6)
+        /** `#8E99B8` */
+        val textMuted = Color(0xFF8E99B8)
+        /** `#5A6585` */
+        val textDisabled = Color(0xFF5A6585)
+        /** `#8FA5FF` */
+        val accentBase = Color(0xFF8FA5FF)
+        /** `#A8B9FF` */
+        val accentHover = Color(0xFFA8B9FF)
+        /** `#7890F5` */
+        val accentPressed = Color(0xFF7890F5)
+        /** `#0A1030` */
+        val accentOn = Color(0xFF0A1030)
+        /** `rgba(143,165,255,.14)` */
+        val accentDim = Color(0x248FA5FF)
+        /** `rgba(143,165,255,.40)` */
+        val accentLine = Color(0x668FA5FF)
+        /** `#3DD598` */
+        val statusSuccess = Color(0xFF3DD598)
+        /** `#F0B84C` */
+        val statusWarning = Color(0xFFF0B84C)
+        /** `#FF6B78` */
+        val statusError = Color(0xFFFF6B78)
+        /** `#8FA5FF` */
+        val statusInfo = Color(0xFF8FA5FF)
+        /** `rgba(61,213,152,.13)` */
+        val statusSuccessDim = Color(0x213DD598)
+        /** `rgba(240,184,76,.13)` */
+        val statusWarningDim = Color(0x21F0B84C)
+        /** `rgba(255,107,120,.13)` */
+        val statusErrorDim = Color(0x21FF6B78)
     }
 
     object Radius {

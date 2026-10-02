@@ -78,6 +78,10 @@ object NetworkProxy {
     val proxySupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
 
+    /** Идёт ли сеть напрямую — сервер видит адрес устройства. */
+    val isDirect: Boolean
+        get() = state is State.Direct
+
     /** Идёт ли сеть через прокси: сокет по этому признаку чаще переподключается. */
     val isProxied: Boolean
         get() = state.let { it is State.Through || it is State.Embedded }

@@ -117,6 +117,8 @@ class ChatListActivity : AppCompatActivity() {
      */
     private fun watchTor() {
         val banner = findViewById<TextView>(R.id.connection_banner)
+        val strip = findViewById<View>(R.id.connection_strip)
+        val progress = findViewById<View>(R.id.connection_progress)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -144,10 +146,40 @@ class ChatListActivity : AppCompatActivity() {
                                 null
                             },
                         )
-                        banner.visibility = View.VISIBLE
+                        // Подключение — не тревога: спокойная полоса цвета
+                        // акцента с линией прогресса. Жёлтая — только
+                        // когда Tor здесь, похоже, заблокирован.
+                        val tone = if (blocked) R.color.status_warn else R.color.accent_base
+                        banner.setTextColor(getColor(tone))
+                        strip.setBackgroundColor(getColor(if (blocked) R.color.bg_raised else R.color.accent_dim))
+                        progress.setBackgroundColor(getColor(tone))
+                        progress.pivotX = 0f
+                        val fraction = if (blocked) 0f else status.percent.toInt().coerceIn(0, 100) / 100f
+                        if (strip.visibility == View.VISIBLE && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+                            progress.animate().scaleX(fraction).setDuration(TOR_POLL_MS / 2).start()
+                        } else {
+                            progress.scaleX = fraction
+                        }
+                        strip.visibility = View.VISIBLE
                         waited = true
+                    } else if (NetworkProxy.isDirect) {
+                        // 🔐 Прямое соединение — не «онлайн», а снятая
+                        // защита: сервер видит адрес. Видно всегда, пока
+                        // так, и ведёт туда, где это меняется.
+                        banner.setText(R.string.connection_direct)
+                        // Синяя поверхность и жёлтая черта по краю: полупрозрачный
+                        // жёлтый на синем фоне смешивался в серый.
+                        banner.setTextColor(getColor(R.color.status_warn))
+                        strip.setBackgroundColor(getColor(R.color.bg_raised))
+                        progress.setBackgroundColor(getColor(R.color.status_warn))
+                        progress.animate().cancel()
+                        progress.scaleX = 1f
+                        banner.setOnClickListener {
+                            startActivity(Intent(this@ChatListActivity, NetworkActivity::class.java))
+                        }
+                        strip.visibility = View.VISIBLE
                     } else {
-                        banner.visibility = View.GONE
+                        strip.visibility = View.GONE
 
                         if (waited) {
                             waited = false
@@ -307,6 +339,8 @@ class ChatListActivity : AppCompatActivity() {
                 .putExtra(ChatActivity.EXTRA_PEER_USERNAME, chat.peerUsername)
                 .putExtra(ChatActivity.EXTRA_VERIFIED, chat.verified),
         )
+        // Знак на пустом списке — со значком в окне.
+        findViewById<org.aegis.app.components.GuillocheView>(R.id.empty_seal)?.window = EMPTY_SEAL_WINDOW
     }
 
     /**
@@ -316,6 +350,9 @@ class ChatListActivity : AppCompatActivity() {
      * Имена взяты из UI kit, чтобы экран совпадал с макетом.
      */
     private companion object {
+        /** Окно розетки пустого списка: в нём значок чата. */
+        const val EMPTY_SEAL_WINDOW = 0.5f
+
         /** Как часто проверять подключение Tor. */
         private const val TOR_POLL_MS = 1_000L
 

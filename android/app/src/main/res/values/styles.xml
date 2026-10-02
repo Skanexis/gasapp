@@ -29,7 +29,9 @@
         <item name="android:layout_marginTop">4dp</item>
         <item name="android:textSize">10sp</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:textColor">@color/text_quaternary</item>
+        <!-- Третичный, не «отключённый»: неактивная вкладка — работающая
+             кнопка, и её подпись обязана читаться (≥ 4,5:1). -->
+        <item name="android:textColor">@color/text_tertiary</item>
     </style>
 
     <!-- Заголовок экрана -->

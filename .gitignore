@@ -116,3 +116,7 @@ Thumbs.db
 # проект, может выдать себя за сервер. Сертификат (публичная часть)
 # коммитится — по нему клиент строит пин.
 server/deploy/tls/key.pem
+
+# Снимки проверок дизайна (impeccable): рабочие, не исходники.
+.impeccable/review/
+.impeccable/config.local.json

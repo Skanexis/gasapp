@@ -75,7 +75,7 @@ object BottomNav {
 
             val color = ContextCompat.getColor(
                 activity,
-                if (selected) R.color.accent_base else R.color.text_disabled,
+                if (selected) R.color.accent_base else R.color.text_tertiary,
             )
 
             // Иконка и подпись красятся вместе: подсветка только значка

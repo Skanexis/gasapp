@@ -38,7 +38,8 @@
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:defaultFocusHighlightEnabled="false">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -61,16 +62,20 @@
                 android:paddingEnd="@dimen/space_m"
                 android:paddingBottom="@dimen/space_l">
 
+                <!--
+                  Итог — сама розетка: кольцо на каждую проверку, пройденная
+                  прорисована «чернилами» цвета итога. Не прогресс ради
+                  украшения, а тот же знак, что на входе: защита собрана
+                  из этих колец.
+                -->
                 <FrameLayout
-                    android:layout_width="104dp"
-                    android:layout_height="104dp">
+                    android:layout_width="176dp"
+                    android:layout_height="176dp">
 
-                    <ImageView
-                        android:id="@+id/score_ring"
+                    <org.aegis.app.components.GuillocheView
+                        android:id="@+id/score_seal"
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:contentDescription="@null"
-                        android:src="@drawable/bg_score_ring" />
+                        android:layout_height="match_parent" />
 
                     <TextView
                         android:id="@+id/score_value"
@@ -119,6 +124,7 @@
             <org.aegis.app.components.AegisGroup
                 android:id="@+id/security_checks_attention"
                 style="@style/AegisGroup"
+                android:layout_marginTop="@dimen/space_l"
                 android:visibility="gone"
                 tools:visibility="visible" />
 

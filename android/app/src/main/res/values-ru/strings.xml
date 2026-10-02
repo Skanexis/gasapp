@@ -119,7 +119,7 @@
     <string name="contact_verified">@%1$s · верифицирован</string>
     <string name="contact_username">@%1$s</string>
     <!-- Онбординг -->
-    <string name="onboarding_tagline">Мессенджер со сквозным шифрованием, устойчивым к квантовому компьютеру</string>
+    <string name="onboarding_tagline">Мессенджер со сквозным шифрованием. Начало переписки защищено и от будущих квантовых компьютеров.</string>
     <string name="onboarding_audit_warning">Не прошёл независимый аудит. Не используйте для защиты жизни и свободы.</string>
     <string name="onboarding_username_hint">например, anna_k</string>
     <string name="onboarding_username_label">Имя пользователя</string>
@@ -728,4 +728,13 @@
     <string name="onboarding_error_pin_simple">Слишком простой PIN: такие пробуют первыми. Выберите другой.</string>
     <string name="security_event_contact_blocked">Собеседник заблокирован на этом устройстве</string>
     <string name="security_event_contact_reported">На собеседника отправлена жалоба оператору сервера</string>
+    <string name="delivery_pending">Отправляется</string>
+    <string name="delivery_sent">Отправлено</string>
+    <string name="delivery_delivered">Доставлено</string>
+    <string name="delivery_read">Прочитано</string>
+    <string name="delivery_failed">Не отправлено</string>
+    <string name="onboarding_stage_keys">Ключи шифрования на этом телефоне</string>
+    <string name="onboarding_stage_tor">Подключение через Tor</string>
+    <string name="onboarding_stage_register">Регистрация имени на сервере</string>
+    <string name="connection_direct">Прямое соединение: сервер видит ваш IP-адрес</string>
 </resources>
