@@ -60,6 +60,10 @@ pub enum Missing {
     Tls,
     /// Не задан или неверен `AEGIS_CERTIFICATE_KEY`.
     CertificateKey,
+    /// Связь с базой на другой машине без TLS с проверкой сертификата.
+    DatabaseLink,
+    /// Процесс работает от root.
+    Root,
 }
 
 impl Missing {
@@ -92,6 +96,29 @@ impl Missing {
                 "
       AEGIS_CERTIFICATE_KEY=$(openssl rand -hex 32)",
             ),
+            Self::DatabaseLink => concat!(
+                "DATABASE_URL ведёт на другую машину без проверенного TLS — ",
+                "конверты и время их доставки
+",
+                "    (то есть кто кому пишет) увидит любой во внутренней сети.
+",
+                "
+    Включите TLS в Postgres и проверку его сертификата:
+",
+                "
+      DATABASE_URL=postgres://aegis:…@10.0.0.4/aegis",
+                "?sslmode=verify-full&sslrootcert=/etc/aegis/pki/ca.pem&sslcert=/etc/aegis/pki/client-aegis.pem&sslkey=/run/credentials/aegis-server.service/db_client_key",
+            ),
+            Self::Root => concat!(
+                "сервер запущен от root — дыра в нём стала бы всей машиной: ",
+                "ключи TLS, ключ подписи
+",
+                "    сертификатов, доступ к базе.
+",
+                "
+    Запускайте от отдельного пользователя (служба systemd ",
+                "из server/deploy/systemd).",
+            ),
         }
     }
 }
@@ -119,6 +146,22 @@ pub fn missing(has_tls: bool, has_certificate_key: bool) -> Vec<Missing> {
 /// Собирает сообщение об отказе запуска.
 ///
 /// Отдельно от печати, чтобы тест проверял текст, а не вывод.
+/// Чего не хватает окружению процесса: защищённой связи с базой и
+/// непривилегированного пользователя (см. `aegis_server_db::runtime`).
+#[must_use]
+pub fn environment_gaps(database_url: &str, as_root: bool) -> Vec<Missing> {
+    let mut gaps = Vec::new();
+
+    if !aegis_server_db::runtime::database_link_protected(database_url) {
+        gaps.push(Missing::DatabaseLink);
+    }
+    if as_root {
+        gaps.push(Missing::Root);
+    }
+
+    gaps
+}
+
 #[must_use]
 pub fn refusal(gaps: &[Missing]) -> String {
     let mut text = String::from(
@@ -146,6 +189,25 @@ pub fn refusal(gaps: &[Missing]) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// 🔐 Удалённая база без проверенного TLS и запуск от root — отказ.
+    #[test]
+    fn an_exposed_database_link_and_root_are_refused() {
+        assert_eq!(
+            environment_gaps("postgres://aegis:x@10.0.0.4/aegis?sslmode=require", true),
+            vec![Missing::DatabaseLink, Missing::Root]
+        );
+        assert!(environment_gaps(
+            "postgres://aegis:x@10.0.0.4/aegis?sslmode=verify-full&sslrootcert=/etc/aegis/pki/ca.pem&sslcert=/etc/aegis/pki/client-aegis.pem&sslkey=/run/credentials/aegis-server.service/db_client_key",
+            false
+        )
+        .is_empty());
+
+        let text = refusal(&[Missing::DatabaseLink, Missing::Root]);
+        assert!(text.contains("verify-full"));
+        assert!(text.contains("root"));
+    }
+
     use super::*;
 
     /// Полная настройка не вызывает возражений.

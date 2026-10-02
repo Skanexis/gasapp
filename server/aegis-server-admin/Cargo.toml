@@ -14,6 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+aegis-server-db.workspace = true
 # Формы входа и действий — `form`; поиск аккаунта — `query`.
 axum = { workspace = true, features = ["form", "query"] }
 sqlx.workspace = true
@@ -28,5 +29,4 @@ hex.workspace = true
 rand = "0.8"
 
 [dev-dependencies]
-aegis-server-db.workspace = true
 tower = { workspace = true, features = ["util"] }

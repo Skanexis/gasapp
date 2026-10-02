@@ -1787,7 +1787,7 @@ async fn report_sealed_sender(
 /// угодно, — и предупреждение об этом обязано быть громким.
 #[must_use]
 pub fn certificate_key_from_env() -> [u8; 32] {
-    let Ok(encoded) = std::env::var("AEGIS_CERTIFICATE_KEY") else {
+    let Some(encoded) = aegis_server_db::runtime::secret("AEGIS_CERTIFICATE_KEY") else {
         tracing::warn!(
             "AEGIS_CERTIFICATE_KEY не задан: сертификаты отправителя \
              подписываются известным ключом и подделываются кем угодно"

@@ -68,7 +68,19 @@ async fn hash_token() -> Result<(), Box<dyn Error>> {
 }
 
 async fn pool() -> Result<sqlx::PgPool, Box<dyn Error>> {
-    let url = std::env::var("DATABASE_URL").map_err(|_| "не задан DATABASE_URL")?;
+    // Секреты — из файла (`*_FILE`, учётные данные systemd) или окружения.
+    let url = aegis_server_db::runtime::secret("DATABASE_URL")
+        .ok_or("не задан DATABASE_URL (или DATABASE_URL_FILE)")?;
+
+    // 🔐 Те же правила, что у узла: удалённая база — только по TLS
+    // с проверкой её сертификата, и никогда — от root.
+    if !aegis_server_db::runtime::database_link_protected(&url) {
+        return Err("DATABASE_URL ведёт на другую машину без sslmode=verify-full                     (или verify-ca): связь с базой видна во внутренней сети"
+            .into());
+    }
+    if aegis_server_db::runtime::running_as_root() {
+        return Err("админ-центр запущен от root — запускайте от отдельного пользователя".into());
+    }
 
     Ok(PgPoolOptions::new()
         .max_connections(MAX_DB_CONNECTIONS)
@@ -90,8 +102,7 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         .into());
     }
 
-    let auth = std::env::var("AEGIS_ADMIN_TOKEN_SHA256")
-        .ok()
+    let auth = aegis_server_db::runtime::secret("AEGIS_ADMIN_TOKEN_SHA256")
         .and_then(|hash| Auth::from_hash_hex(&hash))
         .ok_or("не задан или негоден AEGIS_ADMIN_TOKEN_SHA256 (aegis-server-admin hash-token)")?;
 

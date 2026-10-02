@@ -54,8 +54,14 @@ tokio-rustls = { version = "=0.26.4", default-features = false, features = ["aws
 rcgen = "0.13"
 
 # Хранилище.
+# 🔐 `tls-rustls-aws-lc-rs`: TLS до Postgres (аудит 2026-10-02). Без него
+# руководство требовало `sslmode=require` и `hostssl` — а драйвер TLS не
+# умел: такой узел не подключался к базе, и оставался путь «убрать
+# sslmode», то есть конверты и метаданные между машинами открытым
+# текстом. Тот же поставщик криптографии, что у TLS самого узла.
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
+    "tls-rustls-aws-lc-rs",
     "postgres",
     "macros",
     "migrate",

@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Продление публичного сертификата балансировщика: /opt/aegis/certbot/aegis-cert.sh
+# Ключ свой и не меняется; certbot только подписывает запрос, а nginx
+# получает сертификат, лишь если ключ — из набора пинов (/etc/aegis/pins.txt).
+#
+# ⚠️ Таймер certbot из пакета (certbot.timer) выключить: он продлевает
+# цепочки certbot с НОВЫМ ключом. Здесь цепочек certbot нет вовсе.
+
+[Unit]
+Description=AEGIS: renew public TLS certificate (pinned key)
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/aegis/certbot/aegis-cert.sh renew
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes
+LimitCORE=0
+UMask=0077
