@@ -53,6 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
           # Полная история: SOURCE_DATE_EPOCH берётся из времени
           # последнего коммита, а мелкая копия его не содержит.
           fetch-depth: 0
@@ -142,7 +145,7 @@ jobs:
           # и отличить такой файл от подписанного по имени нельзя.
           case "$apk" in
             *unsigned*)
-              if [ "${{ github.event_name }}" = "push" ]; then
+              if [ "$GITHUB_EVENT_NAME" = "push" ]; then
                 echo "::error::релиз по тегу собран без подписи — нет секретов?"
                 exit 1
               fi
@@ -168,6 +171,9 @@ jobs:
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+          # 🔐 Имя тега — через окружение, а не подстановкой `${{ }}`
+          # в текст скрипта: подстановка вставляет строку в shell как код.
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -178,7 +184,7 @@ jobs:
           {
             printf '## Проверка сборки\n\n'
             printf '```\n'
-            printf 'git checkout %s\n' "${{ github.ref_name }}"
+            printf 'git checkout %s\n' "$TAG"
             printf 'tools/reproducible-build.sh --verify SHA256SUMS.txt\n'
             printf '```\n\n'
             printf 'Расхождение — это другая ревизия, другое окружение сборки\n'
@@ -198,8 +204,8 @@ jobs:
             printf '> в `docs/ops/reproducible-builds.md`.\n'
           } > notes.md
 
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
+          gh release create "$TAG" \
+            --title "$TAG" \
             --notes-file notes.md \
             android/app/build/outputs/SHA256SUMS.txt \
             $(find android/app/build/outputs/apk -name '*-release*.apk')

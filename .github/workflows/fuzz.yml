@@ -44,6 +44,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       # libFuzzer требует nightly: санитайзеры и `-C passes=sancov-module`
       # на стабильном канале недоступны.
       #
@@ -124,6 +128,10 @@ jobs:
           - parse_contact_link
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:

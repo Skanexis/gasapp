@@ -52,6 +52,9 @@ pub enum RepoError {
     /// Состояние уже новее запроса (повтор перепривязки).
     #[error("conflict")]
     Conflict,
+    /// Ключ identity уже принадлежит другому аккаунту.
+    #[error("identity key in use")]
+    IdentityInUse,
     /// Сбой базы данных.
     ///
     /// Текст ошибки Postgres наружу не отдаётся: он может содержать
@@ -131,6 +134,39 @@ pub struct Envelope {
     pub queued_at_bucketed: i64,
 }
 
+/// 🔐 Занят ли ключ identity другим аккаунтом.
+///
+/// Владение ключом при регистрации не доказывается: открытый ключ
+/// любого человека отдаёт discovery. Без этой проверки его можно было
+/// зарегистрировать под своим именем — журнал ключей и discovery
+/// называли бы один ключ двумя именами, и собеседник, добавивший
+/// «двойника», видел бы переписку с настоящим владельцем под чужим
+/// именем, а отправленное туда уходило бы в очередь двойника (аудит
+/// 2026-10-02, S-1). Свежий ключ настоящего владельца до регистрации
+/// не известен никому, так что первым его занять нельзя.
+///
+/// Ключ устройства не проверяется: сервер находит устройство по
+/// идентификатору, а не по ключу, и чужой открытый ключ устройства
+/// без его приватной половины ни на что не годится.
+///
+/// `except` — аккаунт, которому ключ и так принадлежит (перепривязка).
+async fn identity_in_use(
+    transaction: &mut Transaction<'_, Postgres>,
+    identity_key: &[u8],
+    except: Option<Uuid>,
+) -> Result<bool, RepoError> {
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM accounts
+                         WHERE identity_key = $1 AND account_id IS DISTINCT FROM $2)",
+    )
+    .bind(identity_key)
+    .bind(except)
+    .fetch_one(&mut **transaction)
+    .await?;
+
+    Ok(taken)
+}
+
 /// Регистрирует аккаунт вместе с первым устройством.
 ///
 /// Операция атомарна: аккаунт без устройства бесполезен, а устройство
@@ -147,6 +183,10 @@ pub async fn register_account(
     device_identity: &[u8],
 ) -> Result<(Uuid, Uuid), RepoError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
+
+    if identity_in_use(&mut transaction, identity_key, None).await? {
+        return Err(RepoError::IdentityInUse);
+    }
 
     let account_id = Uuid::new_v4();
     let device_id = Uuid::new_v4();
@@ -1147,12 +1187,13 @@ pub async fn record_sealed_sender_report(
     reported_account: Uuid,
     reported_device: Uuid,
     complainant_device: Uuid,
+    certificate_hash: &[u8; 32],
 ) -> Result<bool, RepoError> {
     let result = sqlx::query(
         "
         INSERT INTO sealed_sender_reports
-            (report_id, reported_account, reported_device, complainant_device)
-        VALUES ($1, $2, $3, $4)
+            (report_id, reported_account, reported_device, complainant_device, certificate_hash)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (complainant_device, reported_device) DO NOTHING
         ",
     )
@@ -1160,6 +1201,7 @@ pub async fn record_sealed_sender_report(
     .bind(reported_account)
     .bind(reported_device)
     .bind(complainant_device)
+    .bind(certificate_hash.as_slice())
     .execute(pool)
     .await?;
 
@@ -1396,6 +1438,10 @@ pub async fn rebind_account(
 
     if recovered_at.is_some_and(|previous| previous >= rebind.issued_at_millis) {
         return Err(RepoError::Conflict);
+    }
+
+    if identity_in_use(&mut transaction, rebind.identity_key, Some(account_id)).await? {
+        return Err(RepoError::IdentityInUse);
     }
 
     sqlx::query("DELETE FROM devices WHERE account_id = $1")

@@ -22,6 +22,9 @@ import org.aegis.app.components.AegisDialog
 import org.aegis.app.components.AegisSheet
 import org.aegis.app.components.PinPad
 import org.aegis.app.core.Core
+import org.aegis.app.core.AccountWipe
+import org.aegis.app.core.PinCheck
+import org.aegis.app.core.PinAttempts
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.core.VaultBlob
 import org.aegis.app.ui.FileSize
@@ -205,6 +208,23 @@ class VaultActivity : AppCompatActivity() {
         // к которому вернутся через переключатель задач.
         val pin = vaultPin.take()
         val button = findViewById<AegisButton>(R.id.vault_unlock)
+        val app = applicationContext
+
+        // 🔐 PIN хранилища — тот же PIN, и подбирать его здесь нельзя
+        // быстрее, чем на экране входа (аудит 2026-10-02, A-4). Прежде
+        // проверка не считалась вовсе: с разблокированным телефоном PIN
+        // перебирался по попытке в секунду. Попытка — до проверки.
+        val waiting = PinAttempts.remainingMillis(app)
+        if (waiting > 0L) {
+            pin.fill(0)
+            showStatus(PinCheck.waitText(this, waiting))
+            return
+        }
+        val failures = runCatching { PinAttempts.beginAttempt(app) }.getOrElse {
+            pin.fill(0)
+            showStatus(getString(R.string.vault_unlock_failed))
+            return
+        }
 
         button.isLoading = true
 
@@ -226,6 +246,19 @@ class VaultActivity : AppCompatActivity() {
             }
 
             button.isLoading = false
+
+            if (outcome.isSuccess) {
+                PinAttempts.recordSuccess(app)
+            } else if (PinAttempts.shouldWipe(failures, PinAttempts.wipeEnabled(app))) {
+                withContext(Dispatchers.IO) { AccountWipe.wipe(app) }
+                startActivity(
+                    Intent(app, OnboardingActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                )
+                finish()
+
+                return@launch
+            }
 
             if (outcome.isFailure) {
                 button.isError = true

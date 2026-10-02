@@ -137,6 +137,15 @@ fn pq_fields() -> String {
     )
 }
 
+/// Случайный ключ: сервер не принимает ключ identity, уже занятый
+/// другим аккаунтом (аудит 2026-10-02, S-1), а база у тестов общая.
+fn key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    key[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+    key[16..].copy_from_slice(Uuid::new_v4().as_bytes());
+    key
+}
+
 fn unique_name(prefix: &str) -> String {
     // Каноничное имя: строчные буквы, цифры и `_`, не длиннее 32.
     format!("{prefix}_{}", &Uuid::new_v4().simple().to_string()[..16])
@@ -150,7 +159,8 @@ fn unique_name(prefix: &str) -> String {
 async fn client_register_shape_is_accepted() {
     let state = require_state!();
     let username = unique_name("wire");
-    let challenge = pow::registration_challenge(&username, &[1u8; 32], &[2u8; 32]);
+    let (identity, device) = (key(), key());
+    let challenge = pow::registration_challenge(&username, &identity, &device);
     let nonce = solve(&challenge);
 
     // Точная форма клиентского запроса: порядок полей неважен,
@@ -158,8 +168,8 @@ async fn client_register_shape_is_accepted() {
     let body = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
         username,
-        hex::encode([1u8; 32]),
-        hex::encode([2u8; 32]),
+        hex::encode(identity),
+        hex::encode(device),
         hex::encode(challenge),
         nonce,
         pq = pq_fields(),
@@ -186,12 +196,13 @@ async fn client_publish_keys_shape_is_accepted() {
     // фиктивные 32 байта для неё не годятся.
     let private: DeviceKey = [0x31u8; 32];
     let username = unique_name("keys");
-    let challenge = pow::registration_challenge(&username, &[1u8; 32], &public_key(&private));
+    let identity = key();
+    let challenge = pow::registration_challenge(&username, &identity, &public_key(&private));
     let nonce = solve(&challenge);
     let register = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
         username,
-        hex::encode([1u8; 32]),
+        hex::encode(identity),
         hex::encode(public_key(&private)),
         hex::encode(challenge),
         nonce,
@@ -255,12 +266,13 @@ async fn client_send_shape_is_accepted() {
 
     let private: DeviceKey = [0x32u8; 32];
     let username = unique_name("send");
-    let challenge = pow::registration_challenge(&username, &[1u8; 32], &public_key(&private));
+    let identity = key();
+    let challenge = pow::registration_challenge(&username, &identity, &public_key(&private));
     let nonce = solve(&challenge);
     let register = format!(
         r#"{{"username":"{}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
         username,
-        hex::encode([1u8; 32]),
+        hex::encode(identity),
         hex::encode(public_key(&private)),
         hex::encode(challenge),
         nonce,
@@ -311,12 +323,13 @@ async fn client_discovery_shape_matches() {
     let state = require_state!();
     let username = unique_name("disco");
 
-    let challenge = pow::registration_challenge(&username, &[1u8; 32], &[2u8; 32]);
+    let (identity, device) = (key(), key());
+    let challenge = pow::registration_challenge(&username, &identity, &device);
     let nonce = solve(&challenge);
     let register = format!(
         r#"{{"username":"{username}","identity_key":"{}","device_identity_key":"{}",{pq}"pow_challenge":"{}","pow_nonce":{}}}"#,
-        hex::encode([1u8; 32]),
-        hex::encode([2u8; 32]),
+        hex::encode(identity),
+        hex::encode(device),
         hex::encode(challenge),
         nonce,
         pq = pq_fields(),

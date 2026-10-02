@@ -179,29 +179,31 @@ impl<'a> BackupService<'a> {
     ) -> Result<BackupOutcome> {
         let previous = self.storage.backup_chain_state()?;
 
-        // Инкремент возможен, только если прежняя цепочка цела
+        // 🔐 Тот ли ключ продолжает цепочку.
+        //
+        // Прежде ключ не сверялся: любой годный по контрольной сумме ключ —
+        // старый с бумажки после смены или чужой, введённый тем, кому
+        // дали разблокированный телефон, — дописывал инкремент, который
+        // настоящим ключом не открывается. Состояние цепочки при этом
+        // сдвигалось, и всё, что попало в это звено, из копий пропадало
+        // молча. Теперь неверный ключ — отказ до сборки файла.
+        //
+        // Цепочка, заведённая до проверочного значения, сверить нечем:
+        // она начинается заново полным снимком, и значение заводится.
+        let verified = match previous.as_ref() {
+            Some(state) => self.verified_chain(recovery_key, state)?,
+            None => None,
+        };
+
+        // Инкремент возможен, только если прежняя цепочка цела, сверена
         // и не слишком длинная.
-        let continuing = previous
-            .as_ref()
-            .filter(|state| state.generation < INCREMENTS_BEFORE_FULL)
-            .filter(|state| state.salt.len() == aegis_backup::kdf::SALT_LEN)
-            .filter(|state| state.last_digest.len() == aegis_backup::archive::DIGEST_LEN);
+        let continuing = verified.filter(|(_, state)| {
+            state.generation < INCREMENTS_BEFORE_FULL
+                && state.last_digest.len() == aegis_backup::archive::DIGEST_LEN
+        });
 
         let (mut chain, is_full) = match continuing {
-            Some(state) => {
-                let salt = to_salt(&state.salt)?;
-                let digest = to_digest(&state.last_digest)?;
-                let params = KdfParams {
-                    memory_kib: state.memory_kib,
-                    iterations: state.iterations,
-                    parallelism: state.parallelism,
-                };
-
-                (
-                    BackupChain::resume(recovery_key, salt, params, state.generation, digest)?,
-                    false,
-                )
-            }
+            Some((chain, _)) => (chain, false),
             None => (BackupChain::start(recovery_key, self.params, rng)?, true),
         };
 
@@ -237,6 +239,10 @@ impl<'a> BackupService<'a> {
             watermark: now,
             last_backup_at: Some(now),
         })?;
+        self.storage.set_setting_text(
+            KEY_CHECK_SETTING,
+            &key_check_record(chain.salt(), &chain.key_check()?),
+        )?;
 
         // Надгробия уехали в копию — держать их дальше незачем.
         self.storage.prune_tombstones(now)?;
@@ -247,6 +253,59 @@ impl<'a> BackupService<'a> {
             is_full,
             record_count,
         })
+    }
+
+    /// Цепочка, продолженная этим ключом, — если он её ключ.
+    ///
+    /// `Ok(None)` — сверить нечем (цепочка заведена до проверочного
+    /// значения либо её состояние испорчено): начинать заново.
+    ///
+    /// # Errors
+    ///
+    /// [`AegisError::Crypto`] — ключ не тот;
+    /// [`AegisError::Storage`] — чтение не удалось.
+    fn verified_chain<'s>(
+        &self,
+        recovery_key: &RecoveryKey,
+        state: &'s BackupChainState,
+    ) -> Result<Option<(BackupChain, &'s BackupChainState)>> {
+        let Some(record) = self.storage.setting_text(KEY_CHECK_SETTING)? else {
+            return Ok(None);
+        };
+        let Ok(salt) = to_salt(&state.salt) else {
+            return Ok(None);
+        };
+        // Значение другой цепочки (после смены ключа или восстановления
+        // состояние сброшено, а запись осталась) — сверять не с чем.
+        let Some(expected) = parse_key_check_record(&record, &salt) else {
+            return Ok(None);
+        };
+
+        let digest =
+            to_digest(&state.last_digest).unwrap_or([0u8; aegis_backup::archive::DIGEST_LEN]);
+        let chain = BackupChain::resume(
+            recovery_key,
+            salt,
+            KdfParams {
+                memory_kib: state.memory_kib,
+                iterations: state.iterations,
+                parallelism: state.parallelism,
+            },
+            state.generation,
+            digest,
+        )?;
+
+        let presented = chain.key_check()?;
+        let same = presented
+            .iter()
+            .zip(expected.iter())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0;
+        if !same {
+            return Err(AegisError::Crypto);
+        }
+
+        Ok(Some((chain, state)))
     }
 
     /// Читает метаданные копии, не расшифровывая тело.
@@ -403,6 +462,32 @@ fn to_salt(raw: &[u8]) -> Result<[u8; aegis_backup::kdf::SALT_LEN]> {
 /// Переводит хеш из базы в массив нужной длины.
 fn to_digest(raw: &[u8]) -> Result<[u8; aegis_backup::archive::DIGEST_LEN]> {
     raw.try_into().map_err(|_| AegisError::Storage)
+}
+
+/// Настройка с проверочным значением ключа цепочки копий.
+const KEY_CHECK_SETTING: &str = "backup_key_check";
+
+/// Запись проверочного значения: `соль:значение`, hex.
+///
+/// Соль — чтобы значение прежней цепочки (после смены ключа или
+/// восстановления состояние сброшено, а запись осталась) не сверялось
+/// с новой.
+fn key_check_record(salt: &[u8], check: &[u8]) -> String {
+    format!("{}:{}", crate::client::hex(salt), crate::client::hex(check))
+}
+
+/// Проверочное значение из записи — если оно этой цепочки.
+fn parse_key_check_record(
+    record: &str,
+    salt: &[u8; aegis_backup::kdf::SALT_LEN],
+) -> Option<[u8; aegis_backup::kdf::KEY_LEN]> {
+    let (salt_hex, check_hex) = record.split_once(':')?;
+
+    if crate::client::unhex(salt_hex).ok()?.as_slice() != salt.as_slice() {
+        return None;
+    }
+
+    crate::client::unhex(check_hex).ok()?.try_into().ok()
 }
 
 /// Переводит выгрузку хранилища в записи бандла.
@@ -847,6 +932,80 @@ mod tests {
             .expect("восстановление");
 
         assert_eq!(fresh.load_messages(&chat, 10).expect("чтение").len(), 2);
+    }
+
+    /// 🔐 Чужой ключ не продолжает цепочку.
+    ///
+    /// Прежде ключ при продолжении не сверялся: годный по контрольной
+    /// сумме, но другой ключ дописывал инкремент, который настоящим
+    /// ключом не открывается, — а состояние цепочки сдвигалось, и это
+    /// звено из копий пропадало молча.
+    #[test]
+    fn a_different_key_cannot_continue_the_chain() {
+        let (storage, _dir) = open_storage();
+        let (chat, contact, _) = populate(&storage);
+
+        let owner = RecoveryKey::generate(&mut OsRng);
+        let stranger = RecoveryKey::generate(&mut OsRng);
+        let service = cheap_service(&storage);
+
+        let full = service
+            .create(&owner, None, now(), &mut OsRng)
+            .expect("снимок");
+
+        storage
+            .save_message(&message(chat, contact, later(2_000)))
+            .expect("новое сообщение");
+
+        assert!(
+            matches!(
+                service.create(&stranger, None, later(3_000), &mut OsRng),
+                Err(AegisError::Crypto)
+            ),
+            "чужой ключ продолжил цепочку"
+        );
+
+        // Состояние цепочки не сдвинулось: инкремент верным ключом
+        // несёт новое сообщение, и цепочка восстанавливается целиком.
+        let increment = service
+            .create(&owner, None, later(4_000), &mut OsRng)
+            .expect("инкремент");
+        assert_eq!(increment.generation, 1);
+
+        let (fresh, _fresh_dir) = open_storage();
+        cheap_service(&fresh)
+            .restore(&owner, &[full.archive, increment.archive], later(5_000))
+            .expect("восстановление");
+        assert_eq!(fresh.load_messages(&chat, 10).expect("чтение").len(), 2);
+    }
+
+    /// Цепочка, заведённая до проверочного значения, начинается заново
+    /// полным снимком: сверить ключ не с чем, а снимок под введённым
+    /// ключом им же и открывается.
+    #[test]
+    fn a_chain_without_a_key_check_restarts_with_a_full_snapshot() {
+        let (storage, _dir) = open_storage();
+        populate(&storage);
+
+        let recovery_key = RecoveryKey::generate(&mut OsRng);
+        let service = cheap_service(&storage);
+
+        service
+            .create(&recovery_key, None, now(), &mut OsRng)
+            .expect("снимок");
+        // Как у базы прежней версии: состояния цепочки есть, значения нет.
+        storage
+            .set_setting_text(KEY_CHECK_SETTING, "")
+            .expect("запись");
+
+        let next = service
+            .create(&recovery_key, None, later(1_000), &mut OsRng)
+            .expect("копия");
+
+        assert!(
+            next.is_full,
+            "без проверочного значения — только полный снимок"
+        );
     }
 
     /// 🔐 Исчезнувшее сообщение не возвращается из копии.

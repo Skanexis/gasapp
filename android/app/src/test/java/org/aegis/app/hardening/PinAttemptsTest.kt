@@ -5,6 +5,7 @@ package org.aegis.app.hardening
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.aegis.app.core.PinAttempts
+import org.aegis.app.core.PinAttempts.Moment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -16,9 +17,10 @@ import org.robolectric.RobolectricTestRunner
 /**
  * 🔐 Ограничение перебора PIN — таблица раздела 19.3.
  *
- * Проверяется то, что нельзя увидеть в коде экрана: что счётчик
- * переживает перезапуск, что задержка растёт по таблице и что её
- * нельзя снять переводом часов назад.
+ * Проверяется то, что нельзя увидеть в коде экрана: что попытка
+ * засчитывается до проверки, что счётчик переживает перезапуск, что
+ * задержка растёт по таблице и что её не снять ни часами, ни
+ * перезагрузкой (аудит 2026-10-02, A-1 и A-2).
  */
 @RunWith(RobolectricTestRunner::class)
 class PinAttemptsTest {
@@ -34,15 +36,40 @@ class PinAttemptsTest {
     /**
      * Первые три попытки проходят без ожидания.
      *
-     * Так задумано: три опечатки подряд — обычное дело, и наказывать
-     * за них означало бы наказывать в основном владельца телефона.
+     * Три опечатки подряд — обычное дело, и наказывать за них означало
+     * бы наказывать в основном владельца телефона.
      */
     @Test
     fun first_three_failures_do_not_delay() {
-        repeat(3) { PinAttempts.recordFailure(context, NOW) }
+        repeat(3) { PinAttempts.beginAttempt(context, AT) }
 
         assertEquals(3, PinAttempts.failures(context))
-        assertEquals(0L, PinAttempts.remainingMillis(context, NOW))
+        assertEquals(0L, PinAttempts.remainingMillis(context, AT))
+    }
+
+    /**
+     * 🔐 Попытка засчитана ещё до проверки (A-1).
+     *
+     * Прежде неверная попытка записывалась после проверки, и поворот
+     * экрана в эту секунду отменял запись. Здесь проверки нет вовсе —
+     * её «прервали», — а попытка уже на диске.
+     */
+    @Test
+    fun an_interrupted_check_still_counts() {
+        repeat(4) { PinAttempts.beginAttempt(context, AT) }
+
+        assertEquals(4, PinAttempts.failures(context))
+        assertEquals(5_000L, PinAttempts.remainingMillis(context, AT))
+    }
+
+    /** Верный PIN снимает и попытку, засчитанную до проверки. */
+    @Test
+    fun success_clears_the_counter() {
+        repeat(6) { PinAttempts.beginAttempt(context, AT) }
+        PinAttempts.recordSuccess(context)
+
+        assertEquals(0, PinAttempts.failures(context))
+        assertEquals(0L, PinAttempts.remainingMillis(context, AT))
     }
 
     /** Таблица задержек раздела 19.3, дословно. */
@@ -64,13 +91,7 @@ class PinAttemptsTest {
         assertEquals(PinAttempts.delayMillis(9) * 2, PinAttempts.delayMillis(10))
     }
 
-    /**
-     * Удвоение не переполняется и не становится отрицательным.
-     *
-     * 🔐 Без ограничения сдвига защита обращалась бы в свою
-     * противоположность ровно у самого упорного перебирающего:
-     * отрицательная задержка — это отсутствие задержки.
-     */
+    /** Удвоение не переполняется и не становится отрицательным. */
     @Test
     fun delay_never_overflows_into_negative() {
         listOf(30, 60, 100, 1_000, Int.MAX_VALUE).forEach { failures ->
@@ -81,67 +102,81 @@ class PinAttemptsTest {
         }
     }
 
-    /** Ожидание сокращается по мере того, как время идёт. */
+    /** Ожидание сокращается по мере того, как идёт монотонное время. */
     @Test
     fun remaining_delay_shrinks_as_time_passes() {
-        repeat(4) { PinAttempts.recordFailure(context, NOW) }
+        repeat(4) { PinAttempts.beginAttempt(context, AT) }
 
-        assertEquals(5_000L, PinAttempts.remainingMillis(context, NOW))
-        assertEquals(2_000L, PinAttempts.remainingMillis(context, NOW + 3_000L))
-        assertEquals(0L, PinAttempts.remainingMillis(context, NOW + 5_000L))
-        assertEquals(0L, PinAttempts.remainingMillis(context, NOW + 10_000L))
+        assertEquals(5_000L, PinAttempts.remainingMillis(context, AT))
+        assertEquals(2_000L, PinAttempts.remainingMillis(context, AT.after(3_000L)))
+        assertEquals(0L, PinAttempts.remainingMillis(context, AT.after(5_000L)))
+        assertEquals(0L, PinAttempts.remainingMillis(context, AT.after(10_000L)))
     }
 
     /**
-     * 🔐 Перевод часов назад не сокращает ожидание.
+     * 🔐 Настенные часы ни при чём (A-2).
      *
-     * Иначе любую задержку снимали бы одним движением в настройках даты.
-     * Здесь отрицательное «прошло» трактуется как ноль прошедшего
-     * времени, то есть ждать придётся полный срок.
+     * Прежде срок считался по ним, и перевод даты вперёд в настройках
+     * снимал любую задержку. Теперь в расчёт идёт только время от
+     * загрузки: пока оно не прошло, ждать придётся, что бы ни показывали
+     * часы.
      */
     @Test
-    fun moving_the_clock_backwards_does_not_shorten_the_wait() {
-        repeat(4) { PinAttempts.recordFailure(context, NOW) }
+    fun the_wall_clock_is_not_consulted() {
+        repeat(8) { PinAttempts.beginAttempt(context, AT) }
 
-        assertEquals(5_000L, PinAttempts.remainingMillis(context, NOW - 3_600_000L))
+        // Час задержки; монотонно прошла секунда — «перевод часов на сутки
+        // вперёд» здесь нечем выразить, и в этом смысл.
+        assertEquals(3_599_000L, PinAttempts.remainingMillis(context, AT.after(1_000L)))
+    }
+
+    /**
+     * 🔐 Перезагрузка начинает ожидание заново.
+     *
+     * Сколько прошло до перезагрузки, честно узнать нельзя (настенным
+     * часам веры нет), поэтому отсчёт идёт сначала — с первой проверки
+     * после загрузки.
+     */
+    @Test
+    fun a_reboot_restarts_the_wait() {
+        repeat(5) { PinAttempts.beginAttempt(context, AT) }
+
+        val afterReboot = Moment(elapsed = 40_000L, boot = AT.boot + 1)
+
+        assertEquals(30_000L, PinAttempts.remainingMillis(context, afterReboot))
+        assertEquals(20_000L, PinAttempts.remainingMillis(context, afterReboot.after(10_000L)))
+    }
+
+    /**
+     * 🔐 Время, пошедшее назад, — тоже перезагрузка: номер загрузки
+     * система может не отдать.
+     */
+    @Test
+    fun monotonic_time_going_backwards_restarts_the_wait() {
+        repeat(5) { PinAttempts.beginAttempt(context, AT) }
+
+        val unknownBoot = Moment(elapsed = AT.elapsed - 1_000L, boot = -1)
+
+        assertEquals(30_000L, PinAttempts.remainingMillis(context, unknownBoot))
     }
 
     /**
      * 🔐 Счётчик переживает перезапуск приложения.
-     *
-     * Требование раздела 19.3. Счётчик в памяти процесса сводил бы
-     * перебор к «снять приложение из недавних и попробовать снова».
      *
      * Проверяется через новый контекст приложения: значение читается
      * не из поля объекта, а с диска.
      */
     @Test
     fun counter_survives_process_restart() {
-        repeat(5) { PinAttempts.recordFailure(context, NOW) }
+        repeat(5) { PinAttempts.beginAttempt(context, AT) }
 
         val afterRestart: Context = ApplicationProvider.getApplicationContext()
 
         assertEquals(5, PinAttempts.failures(afterRestart))
-        assertEquals(30_000L, PinAttempts.remainingMillis(afterRestart, NOW))
+        assertEquals(30_000L, PinAttempts.remainingMillis(afterRestart, AT))
     }
 
-    /** Верный PIN обнуляет счётчик и снимает ожидание. */
-    @Test
-    fun success_clears_the_counter() {
-        repeat(6) { PinAttempts.recordFailure(context, NOW) }
-        PinAttempts.recordSuccess(context)
-
-        assertEquals(0, PinAttempts.failures(context))
-        assertEquals(0L, PinAttempts.remainingMillis(context, NOW))
-    }
-
-    /**
-     * 🔐 Стирание — только по выбору человека (раздел 19.3).
-     *
-     * По умолчанию выключено: случайное стирание ребёнком или
-     * в кармане — частый сценарий, а вернуть данные можно только
-     * ключом восстановления.
-     */
+    /** Стирание — только по выбору человека (раздел 19.3). */
     @Test
     fun wipe_is_off_by_default_and_never_fires_when_off() {
         assertFalse("стирание включено по умолчанию", PinAttempts.wipeEnabled(context))
@@ -173,8 +208,10 @@ class PinAttemptsTest {
         assertFalse("выбор пережил удаление аккаунта", PinAttempts.wipeEnabled(context))
     }
 
+    private fun Moment.after(millis: Long): Moment = copy(elapsed = elapsed + millis)
+
     private companion object {
-        /** Произвольная фиксированная отметка: тест не зависит от часов. */
-        const val NOW = 1_700_000_000_000L
+        /** Фиксированная отметка: тест не зависит от часов. */
+        val AT = Moment(elapsed = 100_000L, boot = 7)
     }
 }

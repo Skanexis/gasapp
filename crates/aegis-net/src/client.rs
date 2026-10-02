@@ -542,6 +542,13 @@ impl<T: Transport> ApiClient<T> {
     ///
     /// [`AegisError::Network`] — вложения нет или оно истекло.
     pub fn download_attachment(&self, attachment_id: &str) -> Result<Vec<u8>> {
+        // 🔐 Адрес приходит от собеседника (описание вложения) и иначе
+        // попадал бы в путь как есть: `../../v1/keys/…/bundle?x=` — и
+        // устройство жертвы, открыв вложение, ходило бы туда, куда велел
+        // собеседник (аудит 2026-10-02, N-1). Сервер выдаёт адреса UUID —
+        // только их и принимаем.
+        let attachment_id = canonical_attachment_id(attachment_id)?;
+
         let response = self.send(
             Method::Get,
             format!("/v1/attachments/blob/{attachment_id}"),
@@ -617,10 +624,61 @@ fn parse<T: serde::de::DeserializeOwned>(response: &HttpResponse) -> Result<T> {
     serde_json::from_str(&response.body).map_err(|_| AegisError::Malformed)
 }
 
+/// Адрес вложения — UUID в каноническом виде (`8-4-4-4-12`, строчные), иначе отказ.
+///
+/// Так сервер и выдаёт адреса (`Json<Uuid>`). Всё прочее — не адрес,
+/// а попытка собеседника вписать в путь что-то своё.
+///
+/// # Errors
+///
+/// [`AegisError::Malformed`] — не UUID.
+fn canonical_attachment_id(raw: &str) -> Result<String> {
+    let bytes = raw.as_bytes();
+    let well_formed = bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        });
+
+    if well_formed {
+        Ok(raw.to_ascii_lowercase())
+    } else {
+        Err(AegisError::Malformed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    /// 🔐 Адрес вложения от собеседника не попадает в путь как есть.
+    #[test]
+    fn attachment_id_must_be_a_uuid() {
+        let api = ApiClient::new(FakeTransport::with(200, ""));
+
+        for hostile in [
+            "../../v1/keys/00000000-0000-0000-0000-000000000000/bundle",
+            "00000000-0000-0000-0000-000000000000/../../health",
+            "00000000-0000-0000-0000-000000000000?x=1",
+            "00000000-0000-0000-0000-00000000000%",
+            "",
+            "blob-1",
+        ] {
+            assert!(
+                matches!(api.download_attachment(hostile), Err(AegisError::Malformed)),
+                "принят адрес {hostile:?}"
+            );
+        }
+        assert!(api.transport.seen.borrow().is_empty(), "запрос ушёл");
+
+        api.download_attachment("3F2504E0-4F89-11D3-9A0C-0305E82C3301")
+            .expect("канонический UUID");
+        assert_eq!(
+            api.transport.last_request().path,
+            "/v1/attachments/blob/3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+        );
+    }
 
     /// Транспорт-двойник: записывает запросы и отдаёт заданные ответы.
     ///

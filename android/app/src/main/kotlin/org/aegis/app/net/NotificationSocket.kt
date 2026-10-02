@@ -132,6 +132,14 @@ class NotificationSocket(
     private fun runSession() {
         val uri = URI.create(baseUrl)
         val secure = uri.scheme == "https"
+
+        // 🔐 Запрет открытого текста из network_security_config на голые
+        // сокеты не распространяется: он действует на HTTP-стек платформы.
+        // Адрес без https в релизе — ошибка сборки, и сокет не должен
+        // молча пойти открытым текстом, пока запросы отказывают.
+        if (!secure && !org.aegis.app.BuildConfig.DEBUG) {
+            throw IOException("сокет уведомлений только по TLS")
+        }
         val port = if (uri.port > 0) uri.port else if (secure) DEFAULT_TLS_PORT else DEFAULT_PORT
 
         // 🔐 Сокет открывается через тот же прокси, что и HTTP: сокет,
@@ -277,7 +285,12 @@ class NotificationSocket(
 
             when (opcode) {
                 OPCODE_TEXT -> onEnvelope()
-                OPCODE_PING -> sendPong(output, payload)
+                OPCODE_PING -> {
+                    // Управляющий кадр длиннее 125 байт запрещён RFC 6455, и
+                    // ответный pong с ним не уложился бы в короткую длину.
+                    if (length > MAX_CONTROL_PAYLOAD) throw IOException("ping недопустимой длины")
+                    sendPong(output, payload)
+                }
                 OPCODE_CLOSE -> return
                 else -> {}
             }
@@ -390,5 +403,8 @@ class NotificationSocket(
 
         /** Длина маски. */
         const val MASK_BYTES = 4
+
+        /** Предел полезной нагрузки управляющего кадра (RFC 6455, 5.5). */
+        const val MAX_CONTROL_PAYLOAD = 125
     }
 }

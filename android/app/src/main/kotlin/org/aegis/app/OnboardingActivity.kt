@@ -298,6 +298,14 @@ class OnboardingActivity : AppCompatActivity() {
             return
         }
 
+        // 🔐 Такие PIN перебирают первыми (см. [Pin.isTooSimple]).
+        if (Pin.isTooSimple(pinValue)) {
+            pinValue.fill(0)
+            showError(getString(R.string.onboarding_error_pin_simple))
+
+            return
+        }
+
         // 🔐 Выбор сети берётся один раз, до работы: переключатель
         // на время регистрации заблокирован.
         val viaTor = !direct.isChecked
@@ -428,6 +436,14 @@ class OnboardingActivity : AppCompatActivity() {
         if (!Pin.isAcceptable(pinValue)) {
             pinValue.fill(0)
             showError(getString(R.string.onboarding_error_pin))
+
+            return
+        }
+
+        // 🔐 Такие PIN перебирают первыми (см. [Pin.isTooSimple]).
+        if (Pin.isTooSimple(pinValue)) {
+            pinValue.fill(0)
+            showError(getString(R.string.onboarding_error_pin_simple))
 
             return
         }

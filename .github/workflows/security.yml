@@ -30,6 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
           fetch-depth: 0   # gitleaks должен видеть всю историю
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
@@ -43,6 +46,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2
         with:
@@ -73,6 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: bash tools/check-no-crypto-in-ui.sh
 
   # --------------------------------------------------------------------------
@@ -83,6 +94,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: bash tools/check-no-telemetry.sh
 
   # --------------------------------------------------------------------------
@@ -93,6 +108,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: bash tools/check-ndk-pins.sh
 
   # --------------------------------------------------------------------------
@@ -109,6 +128,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
 
   # --------------------------------------------------------------------------
@@ -123,6 +146,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: python3 tools/masvs-summary.py --check
 
   # --------------------------------------------------------------------------
@@ -137,6 +164,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: bash tools/check-settings-are-used.sh
 
   # --------------------------------------------------------------------------
@@ -152,6 +183,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: bash tools/check-sources-tracked.sh
 
   # --------------------------------------------------------------------------
@@ -166,6 +201,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: python3 tools/check-protocol-spec.py
 
   # --------------------------------------------------------------------------
@@ -180,6 +219,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
@@ -217,6 +260,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
@@ -242,6 +289,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: python3 tools/check-strings-parity.py
 
   # --------------------------------------------------------------------------
@@ -256,6 +307,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: python3 tools/check-layout-sizes.py
 
   # --------------------------------------------------------------------------
@@ -270,6 +325,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: python3 tools/check-ffi-exports-used.py
 
   # --------------------------------------------------------------------------
@@ -285,6 +344,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: python3 tools/check-security-events-labelled.py
 
   # --------------------------------------------------------------------------
@@ -295,6 +358,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - run: bash tools/check-no-secrets-in-logs.sh
 
   # --------------------------------------------------------------------------
@@ -305,6 +372,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - name: check unsafe_code lint is forbidden outside aegis-ffi
         run: |
           set -euo pipefail
@@ -337,6 +408,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
@@ -350,6 +425,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
         with:
           python-version: "3.x"
@@ -364,6 +443,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - name: server crates must not appear in client dependency graph
         run: |

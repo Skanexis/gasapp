@@ -141,7 +141,7 @@ object HardwareKey {
     }.getOrNull()
 
     @Suppress("DEPRECATION")
-    private fun levelOf(info: KeyInfo): KeyAttestation.Level =
+    internal fun levelOf(info: KeyInfo): KeyAttestation.Level =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             when (info.securityLevel) {
                 KeyProperties.SECURITY_LEVEL_STRONGBOX -> KeyAttestation.Level.STRONGBOX

@@ -673,4 +673,15 @@
     <string name="tamper_body">This app is not signed by the AEGIS developers. Someone may have modified it to read your messages or steal your PIN. Delete it and install AEGIS only from the official store page or the project site.</string>
     <string name="tamper_close">Close the app</string>
     <string name="tamper_continue">Continue anyway</string>
+    <!-- Повторный PIN перед опасными действиями (аудит 2026-10-02, A-3). -->
+    <string name="reauth_body">Confirm it is you: this action cannot be left to whoever holds your unlocked phone.</string>
+    <string name="reauth_export">Export your messages</string>
+    <string name="reauth_recovery">Recovery key</string>
+    <string name="reauth_delete_account">Delete account</string>
+    <string name="reauth_weaken">Turn off a protection</string>
+    <string name="reauth_network">Connect without Tor</string>
+    <string name="recovery_wrong_key">This is not the key of your backups. Enter the recovery key you wrote down, or create a new one.</string>
+    <string name="onboarding_error_pin_simple">This PIN is too easy to guess: such PINs are tried first. Choose another one.</string>
+    <string name="security_event_contact_blocked">A contact was blocked on this device</string>
+    <string name="security_event_contact_reported">A contact was reported to the server operator</string>
 </resources>

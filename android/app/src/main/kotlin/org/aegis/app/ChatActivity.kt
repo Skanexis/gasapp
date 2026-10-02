@@ -264,6 +264,10 @@ class ChatActivity : AppCompatActivity() {
                     val raw = readAttachment(uri)
                         ?: return@runCatching AttachOutcome.Unreadable
 
+                    if (raw.size > MAX_ATTACHMENT_BYTES) {
+                        return@runCatching AttachOutcome.TooLarge
+                    }
+
                     // HEIC/AVIF — в JPEG: их метаданные ядро вырезать не может
                     // и отвергает такие файлы (см. AttachmentPrep).
                     val bytes = AttachmentPrep.prepare(raw)
@@ -314,7 +318,21 @@ class ChatActivity : AppCompatActivity() {
      */
     private fun readAttachment(uri: Uri): ByteArray? =
         runCatching {
-            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            // Не больше предела плюс байт: гигабайтный файл иначе читался
+            // в память целиком ради отказа «слишком большой» (и ронял
+            // приложение раньше, чем до отказа доходило).
+            contentResolver.openInputStream(uri)?.use { stream ->
+                val out = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(READ_BUFFER)
+                var total = 0
+                while (total <= MAX_ATTACHMENT_BYTES) {
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                    total += read
+                }
+                out.toByteArray()
+            }
         }.getOrNull()
 
     /**
@@ -1285,6 +1303,9 @@ class ChatActivity : AppCompatActivity() {
          * ради заведомого отказа.
          */
         const val MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024
+
+        /** Шаг чтения выбранного файла. */
+        private const val READ_BUFFER = 64 * 1024
 
         /** Сколько сообщений загружается в переписку. */
         private const val MESSAGE_LIMIT = 200u

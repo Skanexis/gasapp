@@ -79,8 +79,66 @@ pub fn router(state: Arc<AdminState>) -> Router {
     Router::new()
         .route("/login", get(login_page).post(login_submit))
         .merge(protected)
+        .layer(middleware::from_fn(same_origin))
         .layer(middleware::from_fn(security_headers))
         .with_state(state)
+}
+
+/// 🔐 Запросы — только к своему имени и только со своих страниц
+/// (аудит 2026-10-02, S-5).
+///
+/// * `Host` — петля или `.onion`. Админ-центр слушает петлю, но браузер
+///   оператора ходит туда со всех открытых вкладок: чужой сайт, чьё имя
+///   переназначено на 127.0.0.1 (DNS rebinding), иначе говорил бы
+///   с админ-центром как со своим.
+/// * `Origin` у POST — тот же хост. Прежде чужая страница отправляла
+///   форму входа с пятью неверными токенами и закрывала вход оператору
+///   на десять минут — сколько угодно раз. Cookie с `SameSite=Strict`
+///   от этого не защищает: вход происходит без сессии.
+async fn same_origin(request: Request, next: Next) -> Response {
+    let host = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    // Без `Host` браузер не ходит (HTTP/1.1 его требует), а переназначение
+    // имени — атака именно через браузер.
+    if !host.is_empty() && !host_allowed(&host) {
+        return StatusCode::MISDIRECTED_REQUEST.into_response();
+    }
+
+    if request.method() == axum::http::Method::POST {
+        if let Some(origin) = request
+            .headers()
+            .get(axum::http::header::ORIGIN)
+            .and_then(|value| value.to_str().ok())
+        {
+            let origin = origin.to_ascii_lowercase();
+            let same = origin == format!("http://{host}") || origin == format!("https://{host}");
+            if !same {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+        }
+    }
+
+    next.run(request).await
+}
+
+/// Петля (`127.0.0.1`, `localhost`, `[::1]`) или onion-адрес, с портом или без.
+#[must_use]
+pub fn host_allowed(host: &str) -> bool {
+    let name = if let Some(rest) = host.strip_prefix('[') {
+        rest.split(']').next().unwrap_or_default()
+    } else {
+        host.rsplit_once(':').map_or(host, |(name, _)| name)
+    };
+
+    matches!(name, "127.0.0.1" | "localhost" | "::1")
+        || name
+            .strip_suffix(".onion")
+            .is_some_and(|label| !label.is_empty())
 }
 
 /// 🔐 Заголовки на каждый ответ: без скриптов, без встраивания, без
@@ -515,7 +573,12 @@ fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str
         "<p class=\"note\">Каждая жалоба доказана сертификатом отправителя, подписанным \
          сервером: пожаловаться можно только на того, кто действительно писал. \
          Переписки в жалобе нет. Срок реакции — 24 часа; CSAE — сразу и с сообщением в \
-         компетентные органы (docs/ops/admin-center.md).</p>",
+         компетентные органы (docs/ops/admin-center.md).</p>\
+         <p class=\"note\">⚠️ Сертификат предъявительский: получивший одно сообщение \
+         может пожаловаться с десятка своих аккаунтов. Смотрите на число <b>разных \
+         сертификатов</b>: настоящий спам приходит многим и в разные сутки, накрутка \
+         одним сообщением — одним сертификатом. Удалять только по числу жалобщиков \
+         нельзя.</p>",
     );
 
     if rows.is_empty() {
@@ -525,18 +588,20 @@ fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str
 
     html.push_str(
         "<table><tr><th>Аккаунт</th><th class=\"num\">Жалобщиков</th>\
+         <th class=\"num\">Сертификатов</th>\
          <th>Первая / последняя</th><th>Активен</th><th>Решение</th></tr>",
     );
     for row in rows {
         let _ = write!(
             html,
             "<tr><td>@{name}</td><td class=\"num\">{reporters}</td>\
-             <td>{first}<br>{last}</td><td>{active}</td><td>{delete}\
+             <td class=\"num\">{certificates}</td><td>{first}<br>{last}</td><td>{active}</td><td>{delete}\
              <form class=\"inline\" method=\"post\" action=\"/accounts/{id}/dismiss\">\
              <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
              <button>Отклонить жалобы</button></form></td></tr>",
             name = escape(&row.username),
             reporters = row.reporters,
+            certificates = row.certificates,
             first = escape(&row.first_report),
             last = escape(&row.last_report),
             active = escape(&row.active_month),
@@ -571,11 +636,13 @@ fn account_html(wanted: Option<&str>, card: Option<&queries::AccountCard>, csrf:
                  <tr><th>Активен</th><td>{active}</td></tr>\
                  <tr><th>Устройств</th><td class=\"num\">{devices}</td></tr>\
                  <tr><th>Жалобщиков</th><td class=\"num\">{reporters}</td></tr>\
+                 <tr><th>Сертификатов</th><td class=\"num\">{certificates}</td></tr>\
                  <tr><th>Решение</th><td>{delete}</td></tr></table>",
                 name = escape(&card.username),
                 active = escape(&card.active_month),
                 devices = card.devices,
                 reporters = card.reporters,
+                certificates = card.certificates,
                 delete = delete_form(card.account_id, csrf),
             );
         }
@@ -628,6 +695,31 @@ fn transparency_html(rows: &[queries::TransparencyRow]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 🔐 Только петля и onion: имя чужого сайта, переназначенное
+    /// на 127.0.0.1, не проходит (аудит 2026-10-02, S-5).
+    #[test]
+    fn only_loopback_and_onion_hosts_are_allowed() {
+        for allowed in [
+            "127.0.0.1:8480",
+            "localhost:8480",
+            "localhost",
+            "[::1]:8480",
+            "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion",
+        ] {
+            assert!(host_allowed(allowed), "{allowed} отвергнут");
+        }
+
+        for refused in [
+            "evil.example:8480",
+            "127.0.0.1.evil.example",
+            "localhost.evil.example:8480",
+            "onion.evil.example",
+            "[::2]:8480",
+        ] {
+            assert!(!host_allowed(refused), "{refused} принят");
+        }
+    }
 
     /// 🔐 Имя выбирает пользователь — в HTML оно попадает только экранированным.
     #[test]

@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import org.aegis.app.components.AegisButton
 import org.aegis.app.components.AegisDialog
 import org.aegis.app.core.Core
+import org.aegis.app.core.Reauth
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.net.EmbeddedTor
 import org.aegis.app.net.NetworkProxy
@@ -173,19 +174,28 @@ class NetworkActivity : AppCompatActivity() {
             return
         }
 
-        // 🔐 Прямое соединение отдаёт серверу адрес — только явным
-        // согласием, после которого человек знает, чем платит.
-        if (mode is FfiProxy.Direct) {
-            AegisDialog(this)
-                .title(R.string.network_direct_confirm_title)
-                .message(R.string.network_direct_confirm_body)
-                .secondary()
-                .primary(R.string.network_direct_confirm_ok) { store(mode) }
-                .show()
+        if (mode is FfiProxy.Tor) {
+            store(mode)
             return
         }
 
-        store(mode)
+        // 🔐 Сеть мимо Tor — только владельцу (аудит 2026-10-02, A-3):
+        // свой SOCKS-прокси, тихо вписанный тем, кому дали подержать
+        // телефон, узнавал бы адрес и время каждого соединения.
+        Reauth.require(this, R.string.reauth_network) {
+            // 🔐 Прямое соединение отдаёт серверу адрес — только явным
+            // согласием, после которого человек знает, чем платит.
+            if (mode is FfiProxy.Direct) {
+                AegisDialog(this)
+                    .title(R.string.network_direct_confirm_title)
+                    .message(R.string.network_direct_confirm_body)
+                    .secondary()
+                    .primary(R.string.network_direct_confirm_ok) { store(mode) }
+                    .show()
+            } else {
+                store(mode)
+            }
+        }
     }
 
     private fun store(mode: FfiProxy) {
