@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Пустое состояние со знаком AEGIS — для пустого списка чатов: значок
+  в окне гильоширной розетки, заголовок, пояснение и одно действие.
+  Те же id, что у view_empty_state: заполняется тем же EmptyState.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/space_xl"
+    android:paddingEnd="@dimen/space_xl">
+
+    <FrameLayout
+        android:layout_width="152dp"
+        android:layout_height="152dp">
+
+        <org.aegis.app.components.GuillocheView
+            android:id="@+id/empty_seal"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <ImageView
+            android:id="@+id/empty_icon"
+            android:layout_width="@dimen/icon_l"
+            android:layout_height="@dimen/icon_l"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            app:tint="@color/accent_base"
+            tools:src="@drawable/ic_chat" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/empty_title"
+        style="@style/AegisText.H4"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_m"
+        android:gravity="center"
+        tools:text="No conversations yet" />
+
+    <TextView
+        android:id="@+id/empty_body"
+        style="@style/AegisText.Caption.Muted"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_s"
+        android:gravity="center"
+        tools:text="Find someone by username to start one." />
+
+    <org.aegis.app.components.AegisButton
+        android:id="@+id/empty_action"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_l"
+        android:visibility="gone"
+        app:buttonSize="small"
+        app:buttonVariant="secondary"
+        tools:text="Start a chat"
+        tools:visibility="visible" />
+</LinearLayout>

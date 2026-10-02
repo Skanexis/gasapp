@@ -104,6 +104,13 @@ class OnboardingActivity : AppCompatActivity() {
         error = findViewById(R.id.onboarding_error)
         progressLabel = findViewById(R.id.onboarding_progress_label)
         progressRow = findViewById(R.id.onboarding_progress_row)
+
+        // Знак на приветствии «печатается» кольцо за кольцом — один раз,
+        // при первом показе; без анимаций — сразу целиком.
+        findViewById<org.aegis.app.components.GuillocheView>(R.id.onboarding_seal).apply {
+            window = WELCOME_SEAL_WINDOW
+            if (savedInstanceState == null) inkTo(rings) else inked = rings
+        }
         createButton = findViewById(R.id.onboarding_create)
 
         direct = findViewById(R.id.onboarding_direct)
@@ -329,6 +336,7 @@ class OnboardingActivity : AppCompatActivity() {
                     // режима сети (см. EmbeddedTor.pendingBridges).
                     if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
 
+                    stage(Stage.KEYS)
                     // 🔐 PIN байтами обнуляется сразу после вывода ключа.
                     val messenger = try {
                         Core.unlock(this@OnboardingActivity, pinValue)
@@ -344,9 +352,11 @@ class OnboardingActivity : AppCompatActivity() {
                         messenger.setProxy(FfiProxy.Direct)
                         NetworkProxy.apply(this@OnboardingActivity, FfiProxy.Direct)
                     } else {
+                        stage(Stage.TOR)
                         awaitTor()
                     }
 
+                    stage(Stage.REGISTER)
                     registerWithRetry(messenger, name, viaTor)
                         .also { Core.maintainPrekeysNow() }
                 }.onFailure {
@@ -457,6 +467,7 @@ class OnboardingActivity : AppCompatActivity() {
                 runCatching {
                     if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
 
+                    stage(Stage.KEYS)
                     // 🔐 PIN байтами обнуляется сразу после вывода ключа.
                     val messenger = try {
                         Core.unlock(this@OnboardingActivity, pinValue)
@@ -468,6 +479,7 @@ class OnboardingActivity : AppCompatActivity() {
                         messenger.setProxy(FfiProxy.Direct)
                         NetworkProxy.apply(this@OnboardingActivity, FfiProxy.Direct)
                     } else {
+                        stage(Stage.TOR)
                         awaitTor()
                     }
                 }.onFailure { AccountWipe.wipe(this@OnboardingActivity) }
@@ -613,6 +625,46 @@ class OnboardingActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Этапы хода регистрации — по порядку, как они идут на деле. */
+    private enum class Stage(val row: Int, val dot: Int, val spinner: Int, val done: Int, val label: Int) {
+        KEYS(R.id.onboarding_stage_1, R.id.onboarding_stage_1_dot, R.id.onboarding_stage_1_spinner, R.id.onboarding_stage_1_done, R.id.onboarding_stage_1_label),
+        TOR(R.id.onboarding_stage_2, R.id.onboarding_stage_2_dot, R.id.onboarding_stage_2_spinner, R.id.onboarding_stage_2_done, R.id.onboarding_stage_2_label),
+        REGISTER(R.id.onboarding_stage_3, R.id.onboarding_stage_3_dot, R.id.onboarding_stage_3_spinner, R.id.onboarding_stage_3_done, R.id.onboarding_stage_3_label),
+    }
+
+    /**
+     * Отмечает этап [current] текущим, прежние — пройденными.
+     *
+     * Зовётся из фонового потока: переключение — на главном.
+     */
+    private suspend fun stage(current: Stage) = withContext(Dispatchers.Main) {
+        for (step in Stage.entries) {
+            val state = step.ordinal.compareTo(current.ordinal)
+            findViewById<View>(step.dot).visibility = if (state > 0) View.VISIBLE else View.GONE
+            findViewById<View>(step.spinner).visibility = if (state == 0) View.VISIBLE else View.GONE
+            findViewById<View>(step.done).visibility = if (state < 0) View.VISIBLE else View.GONE
+            findViewById<TextView>(step.label).setTextColor(
+                getColor(if (state == 0) R.color.text_primary else R.color.text_tertiary),
+            )
+        }
+    }
+
+    /**
+     * Все этапы — впереди; этап Tor и регистрации виден, только если
+     * он будет: прямое соединение Tor не ждёт, восстановление имя не
+     * регистрирует.
+     */
+    private fun resetStages() {
+        for (step in Stage.entries) {
+            findViewById<View>(step.dot).visibility = View.VISIBLE
+            findViewById<View>(step.spinner).visibility = View.GONE
+            findViewById<View>(step.done).visibility = View.GONE
+            findViewById<TextView>(step.label).setTextColor(getColor(R.color.text_tertiary))
+        }
+        findViewById<View>(Stage.TOR.row).visibility = if (direct.isChecked) View.GONE else View.VISIBLE
+        findViewById<View>(Stage.REGISTER.row).visibility = if (restoring) View.GONE else View.VISIBLE
+    }
+
     private fun setWorking(working: Boolean) {
         // Кнопка блокируется на время подбора proof-of-work: повторное
         // нажатие запустило бы вторую регистрацию поверх первой.
@@ -622,6 +674,7 @@ class OnboardingActivity : AppCompatActivity() {
         pin.setEnabled(!working)
 
         progressRow.visibility = if (working) View.VISIBLE else View.GONE
+        if (working) resetStages()
 
         if (working) {
             error.visibility = View.GONE
@@ -686,6 +739,9 @@ class OnboardingActivity : AppCompatActivity() {
     private enum class Step { Welcome, Username, Pin }
 
     companion object {
+        /** Окно розетки приветствия: в нём щит. */
+        private const val WELCOME_SEAL_WINDOW = 0.46f
+
         private const val STATE_STEP = "step"
         private const val STATE_RESTORING = "restoring"
 

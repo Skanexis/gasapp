@@ -45,6 +45,9 @@ class LockActivity : AppCompatActivity() {
     private lateinit var dots: LinearLayout
     private lateinit var error: TextView
 
+    /** Знак AEGIS: поворачивается на каждую цифру, раскрывается на верный PIN. */
+    private lateinit var seal: org.aegis.app.components.GuillocheView
+
     /**
      * Введённые цифры.
      *
@@ -53,6 +56,13 @@ class LockActivity : AppCompatActivity() {
      * массиве — дамп памяти запертого приложения показывал PIN.
      */
     private val entered = PinBuffer()
+
+    /**
+     * Идёт проверка набранного PIN: точки остаются заполненными. Буфер
+     * к этому моменту уже затёрт; погасшие точки читались бы как «PIN
+     * стёрт», а не «проверяю».
+     */
+    private var checking = false
 
     /** Обратный отсчёт задержки; `null` — ввод разрешён. */
     private var cooldown: CountDownTimer? = null
@@ -91,6 +101,7 @@ class LockActivity : AppCompatActivity() {
 
         dots = findViewById(R.id.pin_dots)
         error = findViewById(R.id.pin_error)
+        seal = findViewById(R.id.lock_seal)
 
         bindKeypad()
         renderDots()
@@ -272,8 +283,7 @@ class LockActivity : AppCompatActivity() {
 
             if (opened.isSuccess) {
                 PinAttempts.recordSuccess(this@LockActivity)
-                startActivity(Intent(this@LockActivity, ChatListActivity::class.java))
-                finish()
+                openInto()
 
                 return@launch
             }
@@ -332,6 +342,7 @@ class LockActivity : AppCompatActivity() {
 
         error.visibility = View.INVISIBLE
         renderDots()
+        seal.turn()
 
         // Проверка запускается сама при наборе полной длины: отдельная
         // кнопка «ОК» здесь лишняя, длина PIN фиксирована.
@@ -344,6 +355,7 @@ class LockActivity : AppCompatActivity() {
         if (entered.length > 0) {
             entered.removeLast()
             renderDots()
+            if (entered.length == 0) seal.settle()
         }
     }
 
@@ -354,7 +366,7 @@ class LockActivity : AppCompatActivity() {
      */
     private fun renderDots() {
         for (index in 0 until dots.childCount) {
-            val filled = index < entered.length
+            val filled = checking || index < entered.length
             dots.getChildAt(index).setBackgroundResource(
                 if (filled) R.drawable.bg_pin_dot_filled else R.drawable.bg_pin_dot,
             )
@@ -396,6 +408,7 @@ class LockActivity : AppCompatActivity() {
         // ключа (см. PinBuffer).
         val pin = entered.take()
 
+        checking = true
         clearEntry()
         setKeypadEnabled(false)
 
@@ -412,6 +425,8 @@ class LockActivity : AppCompatActivity() {
             // Не записалось — не проверяем: проверка без записанной
             // попытки и есть обход счётчика.
             pin.fill(0)
+            checking = false
+            renderDots()
             applyCooldown()
 
             return
@@ -444,8 +459,7 @@ class LockActivity : AppCompatActivity() {
                 if (isFinishing || isDestroyed) return@launch
 
                 setKeypadEnabled(true)
-                startActivity(Intent(this@LockActivity, ChatListActivity::class.java))
-                finish()
+                openInto()
 
                 return@launch
             }
@@ -473,8 +487,27 @@ class LockActivity : AppCompatActivity() {
 
             if (isFinishing || isDestroyed) return@launch
 
+            checking = false
             showError(failures)
+            seal.reject()
             applyCooldown()
+        }
+    }
+
+    /**
+     * Розетка раскрывается, и за ней — переписка.
+     *
+     * Переход — растворение, а не сдвиг: экран входа не «страница»,
+     * которую листают, а замок, который открылся.
+     */
+    private fun openInto() {
+        seal.open {
+            if (isFinishing || isDestroyed) return@open
+
+            startActivity(Intent(this, ChatListActivity::class.java))
+            @Suppress("DEPRECATION")
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+            finish()
         }
     }
 

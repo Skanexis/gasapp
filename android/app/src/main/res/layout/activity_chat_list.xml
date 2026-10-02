@@ -47,7 +47,7 @@
                 android:padding="12dp"
                 android:contentDescription="@string/security_center_description"
                 android:src="@drawable/ic_shield"
-                app:tint="@color/status_ok" />
+                app:tint="@color/text_secondary" />
         </LinearLayout>
 
         <!--
@@ -57,18 +57,40 @@
           индикатор «онлайн» приучает не смотреть на него, и в момент,
           когда он действительно понадобится, его не заметят.
         -->
-        <TextView
-            android:id="@+id/connection_banner"
+        <LinearLayout
+            android:id="@+id/connection_strip"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/status_warn_dim"
-            android:gravity="center"
-            android:padding="10dp"
-            android:text="@string/connection_offline"
-            android:textColor="@color/status_warn"
-            android:textSize="12sp"
+            android:background="@color/accent_dim"
+            android:orientation="vertical"
             android:visibility="gone"
-            tools:visibility="visible" />
+            tools:visibility="visible">
+
+            <TextView
+                android:id="@+id/connection_banner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite"
+                android:fontFamily="@font/inter"
+                android:gravity="center"
+                android:minHeight="40dp"
+                android:paddingStart="@dimen/screen_padding"
+                android:paddingTop="10dp"
+                android:paddingEnd="@dimen/screen_padding"
+                android:paddingBottom="10dp"
+                android:text="@string/connection_offline"
+                android:textColor="@color/accent_base"
+                android:textFontWeight="500"
+                android:textSize="13sp" />
+
+            <!-- Линия прогресса подключения: ширина — процент готовности Tor. -->
+            <View
+                android:id="@+id/connection_progress"
+                android:layout_width="match_parent"
+                android:layout_height="2dp"
+                android:background="@color/accent_base"
+                android:scaleX="0" />
+        </LinearLayout>
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -86,7 +108,7 @@
 
         <include
             android:id="@+id/chat_list_empty"
-            layout="@layout/view_empty_state"
+            layout="@layout/view_empty_state_seal"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="gone" />

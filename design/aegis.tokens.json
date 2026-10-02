@@ -3,34 +3,34 @@
   "$description": "Design tokens AEGIS. Сгенерировано из design/secure-messenger-ui-kit.html — не редактировать вручную.",
   "color": {
     "bg": {
-      "base": "#0D0F12",
-      "raised": "#15181D",
-      "card": "#1C2128",
-      "hover": "#252B33"
+      "base": "#0F1629",
+      "raised": "#151D34",
+      "card": "#1B2442",
+      "hover": "#242F52"
     },
-    "line": "#2E353E",
+    "line": "#2E3A5C",
     "text": {
-      "primary": "#FFFFFF",
-      "secondary": "#B9C1CC",
-      "muted": "#7C8796",
-      "disabled": "#596170"
+      "primary": "#F2F4FC",
+      "secondary": "#B4BCD6",
+      "muted": "#8E99B8",
+      "disabled": "#5A6585"
     },
     "accent": {
-      "base": "#37B8FF",
-      "hover": "#5CC6FF",
-      "pressed": "#2AA3E8",
-      "on": "#06121B",
-      "dim": "rgba(55,184,255,.12)",
-      "line": "rgba(55,184,255,.38)"
+      "base": "#8FA5FF",
+      "hover": "#A8B9FF",
+      "pressed": "#7890F5",
+      "on": "#0A1030",
+      "dim": "rgba(143,165,255,.14)",
+      "line": "rgba(143,165,255,.40)"
     },
     "status": {
-      "success": "#18C37A",
-      "warning": "#E4B545",
-      "error": "#E5484D",
-      "info": "#37B8FF",
-      "successDim": "rgba(24,195,122,.12)",
-      "warningDim": "rgba(228,181,69,.12)",
-      "errorDim": "rgba(229,72,77,.12)"
+      "success": "#3DD598",
+      "warning": "#F0B84C",
+      "error": "#FF6B78",
+      "info": "#8FA5FF",
+      "successDim": "rgba(61,213,152,.13)",
+      "warningDim": "rgba(240,184,76,.13)",
+      "errorDim": "rgba(255,107,120,.13)"
     }
   },
   "radius": {

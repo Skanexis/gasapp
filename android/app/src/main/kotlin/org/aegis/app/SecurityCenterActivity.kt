@@ -410,11 +410,18 @@ class SecurityCenterActivity : AppCompatActivity() {
             setTextColor(statusColor(pending == 0))
         }
 
-        findViewById<ImageView>(R.id.score_ring).drawable?.let { ring ->
-            ring.level = passed * MAX_LEVEL / total
-            // Дуга — цветом итога, как и число: зелёная дуга при
-            // «требует внимания» спорила бы с жёлтой цифрой.
-            (ring as? android.graphics.drawable.LayerDrawable)?.getDrawable(1)?.setTint(statusColor(pending == 0))
+        // Кольцо на проверку; пройденные «печатаются» по одному —
+        // цветом итога, как и число: зелёные кольца при «требует
+        // внимания» спорили бы с жёлтой цифрой.
+        findViewById<org.aegis.app.components.GuillocheView>(R.id.score_seal).apply {
+            if (rings != total) rings = total.coerceAtLeast(1)
+            window = SEAL_WINDOW
+            // Счётная печать: одна нить на кольцо и зазоры между кольцами —
+            // проверки можно сосчитать, а не угадать по фактуре.
+            strands = 1
+            gap = SEAL_GAP
+            setInkColor(statusColor(pending == 0))
+            inkTo(passed)
         }
 
         // «Защищено» — только когда это правда. Заголовок, не зависящий
@@ -439,6 +446,10 @@ class SecurityCenterActivity : AppCompatActivity() {
 
         fillChecks(R.id.security_checks_attention, R.id.security_attention_label, attention)
         fillChecks(R.id.security_checks_passed, R.id.security_passed_label, passed)
+
+        // Подпись «Требует внимания» повторяла бы заголовок итога прямо
+        // над ней: группа и так стоит под ним и читается как его список.
+        findViewById<View>(R.id.security_attention_label).visibility = View.GONE
     }
 
     private fun fillChecks(groupId: Int, labelId: Int, checks: List<Check>) {
@@ -605,8 +616,11 @@ class SecurityCenterActivity : AppCompatActivity() {
         ContextCompat.getColor(this, if (ok) R.color.status_ok else R.color.status_warn)
 
     private companion object {
-        /** Максимальный уровень drawable. */
-        const val MAX_LEVEL = 10_000
+        /** Окно розетки итога: в нём — число пройденных проверок. */
+        const val SEAL_WINDOW = 0.5f
+
+        /** Зазор между кольцами печати — доля полосы кольца. */
+        const val SEAL_GAP = 0.45f
 
         /** Пояснение длиннее — второй строкой, а не значением справа. */
         const val SHORT_DETAIL_CHARS = 24

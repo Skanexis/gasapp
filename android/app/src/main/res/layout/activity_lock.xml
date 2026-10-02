@@ -21,19 +21,9 @@
     android:orientation="vertical"
     android:padding="24dp">
 
-    <ImageView
-        android:layout_width="72dp"
-        android:layout_height="72dp"
-        android:background="@drawable/bg_shield_large"
-        android:contentDescription="@string/lock_icon"
-        android:padding="20dp"
-        android:src="@drawable/ic_shield"
-        app:tint="@color/accent_base" />
-
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
         android:text="@string/lock_title"
         android:textColor="@color/text_primary"
         android:textSize="@dimen/text_h2"
@@ -45,23 +35,40 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
+        android:gravity="center"
         android:text="@string/lock_subtitle"
         android:textColor="@color/text_secondary"
         android:fontFamily="@font/inter"
         android:textSize="14sp" />
 
-    <!-- Шесть точек: показывают длину введённого, но не сам PIN -->
-    <include
-        layout="@layout/view_pin_dots"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp" />
+    <!--
+      Знак AEGIS — гильоширная розетка, точки PIN на её оси.
+      Каждая цифра поворачивает розетку на насечку, верный PIN её
+      раскрывает (GuillocheView). Сама розетка для чтения с экрана
+      немая: всё, что важно, — в точках и тексте ошибки.
+    -->
+    <FrameLayout
+        android:layout_width="288dp"
+        android:layout_height="288dp"
+        android:layout_marginTop="12dp">
+
+        <org.aegis.app.components.GuillocheView
+            android:id="@+id/lock_seal"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <include
+            layout="@layout/view_pin_dots"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center" />
+    </FrameLayout>
 
     <TextView
         android:id="@+id/pin_error"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="4dp"
         android:text="@string/pin_error"
         android:textColor="@color/status_error"
         android:textSize="12sp"
@@ -73,7 +80,7 @@
         layout="@layout/view_pin_keypad"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="18dp" />
+        android:layout_marginTop="8dp" />
 
     <!--
       «Забыли PIN?» — честный ответ вместо тупика: PIN не сбросить,

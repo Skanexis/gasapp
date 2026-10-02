@@ -9,17 +9,17 @@
 <resources>
 
     <!-- Поверхности -->
-    <color name="bg_base">#FF0D0F12</color>
-    <color name="bg_raised">#FF15181D</color>
-    <color name="bg_card">#FF1C2128</color>
-    <color name="bg_hover">#FF252B33</color>
-    <color name="line">#FF2E353E</color>
+    <color name="bg_base">#FF0F1629</color>
+    <color name="bg_raised">#FF151D34</color>
+    <color name="bg_card">#FF1B2442</color>
+    <color name="bg_hover">#FF242F52</color>
+    <color name="line">#FF2E3A5C</color>
 
     <!-- Текст: четыре ступени контраста, как в макете -->
-    <color name="text_primary">#FFFFFFFF</color>
-    <color name="text_secondary">#FFB9C1CC</color>
-    <color name="text_tertiary">#FF7C8796</color>
-    <color name="text_quaternary">#FF596170</color>
+    <color name="text_primary">#FFF2F4FC</color>
+    <color name="text_secondary">#FFB4BCD6</color>
+    <color name="text_tertiary">#FF8E99B8</color>
+    <color name="text_quaternary">#FF5A6585</color>
 
     <!-- Акцент -->
     <!--
@@ -34,12 +34,12 @@
     <color name="text_disabled">@color/text_quaternary</color>
     <color name="status_success">@color/status_ok</color>
     <color name="status_warning">@color/status_warn</color>
-    <color name="accent_line">#6137B8FF</color>
+    <color name="accent_line">#668FA5FF</color>
 
-    <color name="accent_base">#FF37B8FF</color>
-    <color name="accent_hover">#FF5CC6FF</color>
-    <color name="accent_pressed">#FF2AA3E8</color>
-    <color name="accent_on">#FF06121B</color>
+    <color name="accent_base">#FF8FA5FF</color>
+    <color name="accent_hover">#FFA8B9FF</color>
+    <color name="accent_pressed">#FF7890F5</color>
+    <color name="accent_on">#FF0A1030</color>
 
     <!--
       Приглушённый акцент для подложек.
@@ -47,15 +47,19 @@
       Прозрачность, а не сплошной цвет: подложка ложится поверх разных
       поверхностей, и сплошной вариант пришлось бы заводить для каждой.
     -->
-    <color name="accent_dim">#2637B8FF</color>
+    <color name="accent_dim">#248FA5FF</color>
 
     <!--
       Пузырь исходящего сообщения.
 
-      Приглушённый синий из макета: сплошной акцент ухудшил бы
-      читаемость текста и обесценил сам акцент.
+      «Чернила» акцента с тёмным текстом (DESIGN.md, «Ink On Paper»):
+      сторона разговора читается без подписи. Текст на нём — 8:1,
+      метки — 5:1 (bubble_outgoing_text / _meta).
     -->
-    <color name="bubble_outgoing">#FF173850</color>
+    <color name="bubble_outgoing">#FF8FA5FF</color>
+    <!-- Текст и метки на «чернилах» исходящего пузыря. -->
+    <color name="bubble_outgoing_text">#FF0A1030</color>
+    <color name="bubble_outgoing_meta">#C00A1030</color>
 
     <!--
       Состояния.
@@ -65,14 +69,14 @@
       назначению: зелёная галочка у неверифицированного контакта
       обесценила бы верификацию.
     -->
-    <color name="status_ok">#FF18C37A</color>
-    <color name="status_warn">#FFE4B545</color>
-    <color name="status_error">#FFE5484D</color>
-    <color name="status_info">#FF37B8FF</color>
+    <color name="status_ok">#FF3DD598</color>
+    <color name="status_warn">#FFF0B84C</color>
+    <color name="status_error">#FFFF6B78</color>
+    <color name="status_info">#FF8FA5FF</color>
 
     <!-- Приглушённые варианты состояний для подложек -->
-    <color name="status_ok_dim">#2618C37A</color>
-    <color name="status_warn_dim">#26E4B545</color>
-    <color name="status_error_dim">#26E5484D</color>
+    <color name="status_ok_dim">#213DD598</color>
+    <color name="status_warn_dim">#21F0B84C</color>
+    <color name="status_error_dim">#21FF6B78</color>
 
 </resources>
