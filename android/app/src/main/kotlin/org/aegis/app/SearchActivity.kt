@@ -25,6 +25,7 @@ import org.aegis.app.core.Core
 import org.aegis.app.core.SecureWindow
 import org.aegis.app.ui.ChatListAdapter
 import org.aegis.app.ui.ChatSummary
+import uniffi.aegis.FfiContact
 import uniffi.aegis.FfiSearchHit
 
 /**
@@ -119,30 +120,39 @@ class SearchActivity : AppCompatActivity() {
         pending = lifecycleScope.launch {
             delay(SEARCH_DELAY_MILLIS)
 
-            val hits = withContext(Dispatchers.IO) {
-                runCatching { Core.messenger().search(query, SEARCH_LIMIT) }
+            val (hits, contacts) = withContext(Dispatchers.IO) {
+                val messenger = Core.messenger()
+                val found = runCatching { messenger.search(query, SEARCH_LIMIT) }
                     .getOrDefault(emptyList())
+                // Собеседник каждого чата — как в списке чатов: имя
+                // хранится с контактом, а не с сообщением.
+                val byChat = runCatching { messenger.contacts().associateBy { it.chatId } }
+                    .getOrDefault(emptyMap())
+                found to byChat
             }
 
-            render(hits)
+            render(hits, contacts)
         }
     }
 
-    private fun render(hits: List<FfiSearchHit>) {
+    private fun render(hits: List<FfiSearchHit>, contacts: Map<String?, FfiContact> = emptyMap()) {
         chatOf.clear()
 
         val items = hits.map { hit ->
             chatOf[hit.message.messageId] = hit.chatId
+            val contact = contacts[hit.chatId]
 
             ChatSummary(
                 // Идентификатор сообщения, а не чата: по нажатию нужно
                 // открыть переписку на найденном сообщении, а не
                 // в начале.
                 chatId = hit.message.messageId,
-                name = shortChat(hit.chatId),
+                // Прежде здесь всегда стояло начало идентификатора чата:
+                // поиск подписывал результаты «d3c3e055» вместо имени.
+                name = contact?.username?.ifEmpty { null } ?: shortChat(hit.chatId),
                 preview = hit.message.text,
                 time = formatTime(hit.message.timestamp),
-                verified = false,
+                verified = contact?.verified == true,
             )
         }
 
@@ -163,12 +173,10 @@ class SearchActivity : AppCompatActivity() {
     }
 
     /**
-     * Короткая подпись чата.
+     * Короткая подпись чата, пока имя собеседника неизвестно.
      *
-     * Имени собеседника у результата нет: сообщение хранится с чатом,
-     * а не с контактом. Показывается начало идентификатора — этого
-     * хватает, чтобы отличить результаты из разных чатов друг от
-     * друга, и не больше.
+     * Показывается начало идентификатора — этого хватает, чтобы отличить
+     * результаты из разных чатов друг от друга, и не больше.
      */
     private fun shortChat(chatId: String): String = chatId.take(CHAT_LABEL_CHARS)
 
