@@ -556,15 +556,6 @@
       🔐 Пределы защиты. Каждая строка сверена с кодом; меняется код —
       меняется строка.
     -->
-    <string name="about_section_limits">What AEGIS does not protect against</string>
-    <string name="about_limit_first_message">The key of a contact found by username comes from the server, and the server could hand you its own. So the app checks it against the public key log: you can write once the same key has stood in the log for at least a day, and the owner of the name checks their own entry every hour. A server that swaps a key has to show the swap to everyone — and it gets noticed. Someone who has not opened the app for over a day will only notice when they come back. For full certainty, compare safety numbers in person or scan their QR code. Every message, the first included, is sealed: the server does not see who wrote to whom.</string>
-    <string name="about_limit_address">By default the app connects through Tor, built into the app, and the server does not see your IP address. If you choose a direct connection (Settings → Connection), the server sees your IP address and the time of each request.</string>
-    <string name="about_limit_notifications">There are no push notifications: messages arrive while the app is open.</string>
-    <string name="about_limit_backup">Disappearing messages are not in backups. A deleted message stays in backups made before you deleted it.</string>
-    <string name="about_limit_recovery_key">If you lose the recovery key, the backup cannot be read. Not even by us.</string>
-    <string name="about_limit_peer">The other person has already seen your message: they can photograph or remember it. “Delete for everyone” is a request, not a guarantee.</string>
-    <string name="about_limit_inactive">Your username belongs to your account for as long as the account exists: reinstalling the app does not free it. To keep it on a new phone, restore your backup. An account nobody has opened for 12 months is deleted, and its username becomes free.</string>
-    <string name="about_limit_calls">There are no calls in this version.</string>
 
     <!-- File sizes, 1024-based. -->
     <string name="size_bytes">%1$d B</string>
