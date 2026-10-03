@@ -2,7 +2,7 @@
 
 # AEGIS Privacy Policy
 
-**Version:** 2026-09-30. This is a translation of
+**Version:** 2026-10-03. This is a translation of
 [`privacy-policy.md`](privacy-policy.md); if the two differ, the Russian
 text is the reference and the difference is a bug — please report it.
 
@@ -207,6 +207,42 @@ link" mark.
 ⚠️ **Losing the recovery key means losing your messages.** This follows
 directly from our inability to read them. Promising otherwise would mean
 promising access we must not have.
+
+## Security limitations
+
+No messenger protects against everything. These are the limits of AEGIS
+today, so you can decide how to use it.
+
+**A contact found by username.** When you look someone up by username,
+their key comes from the server, and a dishonest server could hand you a
+different one. AEGIS checks it against a public key log: you can write
+once the same key has stood in the log for at least a day, and every
+account checks its own entry every hour, so a swapped key has to be shown
+to everyone and gets noticed. Someone who has not opened the app for more
+than a day notices only when they return. For full certainty, compare
+safety numbers in person or add the person by their QR code or contact
+link — then the key does not come from the server at all. Conversations
+you already have are not affected: a contact's key is remembered, and a
+change is always shown. Every message, the first included, is sealed: the
+server does not see who wrote to whom.
+
+**The other person.** Whoever received your message has seen it and can
+photograph or remember it. "Delete for everyone" is a request to their
+app, not a guarantee.
+
+**Your network address.** With the built-in Tor (the default) the server
+does not see it; with a direct connection it does — see
+[Tor, bridges and Tor Project services](#tor-bridges-and-tor-project-services).
+
+**Backups and the recovery key** — see
+[What stays on your device](#what-stays-on-your-device).
+
+**Notifications** — see [Push notifications](#push-notifications).
+
+**Usernames and inactive accounts** — see
+[Usernames and inactive accounts](#usernames-and-inactive-accounts).
+
+**Calls.** There are no calls in this version.
 
 ## Your rights and how to exercise them
 
