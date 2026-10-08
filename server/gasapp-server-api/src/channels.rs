@@ -356,7 +356,7 @@ pub struct ReactRequest {
 }
 
 /// Аккаунт подписавшего устройства — и только если оно названо в пути.
-async fn owner_of(
+pub(crate) async fn owner_of(
     state: &AppState,
     device: AuthenticatedDevice,
     device_id: Uuid,

@@ -19,6 +19,7 @@
 //! недоставленный — через 30 дней по `expires_at`. Обе границы заданы
 //! разделом 14.4 и вынесены в константы ниже.
 
+pub mod bots;
 pub mod channels;
 pub mod email;
 pub mod kt;
