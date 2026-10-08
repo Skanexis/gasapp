@@ -26,9 +26,8 @@ use gasapp_types::{GasAppError, Result};
 use crate::api::{
     AccountDeletedResponse, AccountStatusResponse, AddChannelAdminRequest, BundleResponse,
     CertificateResponse, ChannelMediaResponse, ChannelPostResponse, ChannelReactRequest,
-    ChannelResponse, ChannelSeenRequest, ChannelSubscribeRequest, ChannelTokenRequest,
-    CreateChannelRequest, DeleteChannelMediaRequest, DiscoveryResponse, EmailChallengeResponse,
-    EmailCodeRequest, EnvelopeResponse, IssuePassesRequest, IssuePassesResponse, KtHeadsResponse,
+    ChannelResponse, ChannelSeenRequest, CreateChannelRequest, DeleteChannelMediaRequest,
+    DiscoveryResponse, EmailChallengeResponse, EmailCodeRequest, EnvelopeResponse, KtHeadsResponse,
     KtProofsRequest, KtProofsResponse, PublishKeysRequest, PublishPostRequest, PublishPostResponse,
     RecoverAccountRequest, RegisterRequest, RegisterResponse, RemoveChannelAdminRequest,
     ReplacePostRequest, SealedAccessRequest, SealedReportRequest, SealedReportResponse,
@@ -594,70 +593,61 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
-    /// Берёт у сервера пропуска: он подписывает замаскированные точки,
-    /// не видя, во что они превратятся.
+    /// Подписывает аккаунт на канал — за подписью устройства.
     ///
-    /// За подписью устройства: пропуска выдаются аккаунту и в
-    /// ограниченном числе в сутки.
-    ///
-    /// # Errors
-    ///
-    /// * [`GasAppError::Network`] — сбой соединения либо суточный
-    ///   предел пропусков исчерпан.
-    /// * [`GasAppError::Malformed`] — сервер не принял запрос.
-    pub fn issue_passes(
-        &self,
-        device_id: &str,
-        request: &IssuePassesRequest,
-        signer: &dyn crate::auth::RequestSigner,
-    ) -> Result<IssuePassesResponse> {
-        let response = self.send_signed(
-            Method::Post,
-            format!("/v1/passes/issue/{device_id}"),
-            Some(to_json(request)?),
-            signer,
-        )?;
-
-        parse(&response)
-    }
-
-    /// Подписывает жетон читателя на канал — **без подписи устройства**.
+    /// 🔐 Один аккаунт — один подписчик: анонимную подписку нечем было
+    /// ограничить, и счётчик накручивался. Сервер знает, на какие
+    /// каналы подписан аккаунт; читать канал по ссылке можно и без
+    /// подписки — анонимно.
     ///
     /// # Errors
     ///
-    /// * [`GasAppError::InvalidSignature`] — пропуск не принят: уже
-    ///   потрачен либо не подходит.
     /// * [`GasAppError::SessionNotFound`] — канала нет.
     /// * [`GasAppError::Network`] — сбой соединения.
     pub fn subscribe_channel(
         &self,
+        device_id: &str,
         channel_id: &str,
-        request: &ChannelSubscribeRequest,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<()> {
-        self.reader_action(channel_id, "subscribe", to_json(request)?)
+        self.reader_action(device_id, channel_id, "subscribe", None, signer)
     }
 
-    /// Снимает жетон читателя с канала вместе с его реакциями.
+    /// Отписывает аккаунт от канала вместе с его реакциями.
     ///
     /// # Errors
     ///
     /// [`GasAppError::Network`] — сбой соединения.
     pub fn unsubscribe_channel(
         &self,
+        device_id: &str,
         channel_id: &str,
-        request: &ChannelTokenRequest,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<()> {
-        self.reader_action(channel_id, "unsubscribe", to_json(request)?)
+        self.reader_action(device_id, channel_id, "unsubscribe", None, signer)
     }
 
     /// Отмечает, что подписчик дочитал до записи.
     ///
     /// # Errors
     ///
-    /// [`GasAppError::Network`] — сбой соединения либо слишком частые
-    /// запросы.
-    pub fn mark_channel_seen(&self, channel_id: &str, request: &ChannelSeenRequest) -> Result<()> {
-        self.reader_action(channel_id, "seen", to_json(request)?)
+    /// * [`GasAppError::SessionNotFound`] — аккаунт не подписан.
+    /// * [`GasAppError::Network`] — сбой соединения либо слишком частые
+    ///   запросы.
+    pub fn mark_channel_seen(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &ChannelSeenRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.reader_action(
+            device_id,
+            channel_id,
+            "seen",
+            Some(to_json(request)?),
+            signer,
+        )
     }
 
     /// Ставит, меняет или снимает реакцию подписчика на запись.
@@ -665,25 +655,41 @@ impl<T: Transport> ApiClient<T> {
     /// # Errors
     ///
     /// * [`GasAppError::Malformed`] — эмодзи не из набора сервера.
-    /// * [`GasAppError::SessionNotFound`] — жетон не подписан либо
+    /// * [`GasAppError::SessionNotFound`] — аккаунт не подписан либо
     ///   записи нет.
     /// * [`GasAppError::Network`] — сбой соединения.
     pub fn react_to_channel_post(
         &self,
+        device_id: &str,
         channel_id: &str,
         request: &ChannelReactRequest,
+        signer: &dyn crate::auth::RequestSigner,
     ) -> Result<()> {
-        self.reader_action(channel_id, "react", to_json(request)?)
+        self.reader_action(
+            device_id,
+            channel_id,
+            "react",
+            Some(to_json(request)?),
+            signer,
+        )
     }
 
-    /// Действие читателя канала — анонимный `POST` с жетоном в теле.
-    fn reader_action(&self, channel_id: &str, action: &str, body: String) -> Result<()> {
+    /// Действие подписчика канала — `POST` за подписью устройства.
+    fn reader_action(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        action: &str,
+        body: Option<String>,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
         let channel_id = canonical_uuid(channel_id)?;
 
-        self.send(
+        self.send_signed(
             Method::Post,
-            format!("/v1/channels/feed/{channel_id}/{action}"),
-            Some(body),
+            format!("/v1/channels/reader/{device_id}/{channel_id}/{action}"),
+            body,
+            signer,
         )?;
 
         Ok(())
@@ -1647,26 +1653,26 @@ mod tests {
         );
     }
 
+    /// 🔐 Подписчик — аккаунт: его действия подписаны устройством.
     #[test]
-    fn reader_actions_are_anonymous() {
+    fn reader_actions_are_signed() {
         let client = ApiClient::new(FakeTransport::with(204, ""));
 
         client
             .mark_channel_seen(
+                "dev",
                 "6f9619ff-8b86-d011-b42d-00c04fc964ff",
-                &ChannelSeenRequest {
-                    token: "ab".repeat(32),
-                    seq: 7,
-                },
+                &ChannelSeenRequest { seq: 7 },
+                &TestSigner,
             )
             .expect("seen");
 
         let request = client.transport.last_request();
-        assert!(request.anonymous);
-        assert!(request.headers.is_empty());
+        assert!(!request.anonymous);
+        assert!(!header(&request, crate::auth::SIGNATURE_HEADER).is_empty());
         assert_eq!(
             request.path,
-            "/v1/channels/feed/6f9619ff-8b86-d011-b42d-00c04fc964ff/seen"
+            "/v1/channels/reader/dev/6f9619ff-8b86-d011-b42d-00c04fc964ff/seen"
         );
     }
 }

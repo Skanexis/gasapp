@@ -9,8 +9,9 @@
 //! ссылке-приглашении. У **публичного** канала (с `@именем`) автор сам
 //! отдаёт серверу эту ссылку — такой канал сервер прочитать может.
 //!
-//! Подписчик — случайный жетон, а не аккаунт: сервер считает жетоны
-//! и помнит, до какой записи каждый дочитал, но не знает, чьи они.
+//! Подписчик — аккаунт: один аккаунт — один подписчик. Сервер знает,
+//! какие аккаунты подписаны на канал и до какой записи каждый дочитал.
+//! Читать канал по ссылке можно и без подписки — этого сервер не видит.
 
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -760,7 +761,7 @@ pub async fn delete_media(
     Ok(())
 }
 
-/// Записывает подписчика-жетон. Повтор ничего не меняет.
+/// Подписывает аккаунт на канал. Повтор ничего не меняет.
 ///
 /// Счётчик подписчиков канала растёт здесь же: считать строки при
 /// каждом чтении канала значило бы дать анонимному запросу работу,
@@ -770,11 +771,7 @@ pub async fn delete_media(
 ///
 /// * [`RepoError::NotFound`] — канала нет.
 /// * [`RepoError::Database`] — сбой базы.
-pub async fn subscribe(
-    pool: &PgPool,
-    channel_id: Uuid,
-    token_hash: &[u8; 32],
-) -> Result<(), RepoError> {
+pub async fn subscribe(pool: &PgPool, channel_id: Uuid, account_id: Uuid) -> Result<(), RepoError> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
     // Блокировка строки канала: вставка и счётчик меняются вместе.
@@ -789,11 +786,11 @@ pub async fn subscribe(
     }
 
     let added = sqlx::query(
-        "INSERT INTO channel_subscribers (channel_id, token_hash) VALUES ($1, $2)
+        "INSERT INTO channel_subscribers (channel_id, account_id) VALUES ($1, $2)
          ON CONFLICT DO NOTHING",
     )
     .bind(channel_id)
-    .bind(token_hash.as_slice())
+    .bind(account_id)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -810,7 +807,7 @@ pub async fn subscribe(
     Ok(())
 }
 
-/// Убирает подписчика-жетон вместе с его реакциями.
+/// Отписывает аккаунт от канала вместе с его реакциями.
 ///
 /// Просмотры остаются: запись, которую человек видел, он видел.
 ///
@@ -820,7 +817,7 @@ pub async fn subscribe(
 pub async fn unsubscribe(
     pool: &PgPool,
     channel_id: Uuid,
-    token_hash: &[u8; 32],
+    account_id: Uuid,
 ) -> Result<(), RepoError> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
@@ -830,37 +827,14 @@ pub async fn unsubscribe(
         .fetch_optional(&mut *tx)
         .await?;
 
-    // Счётчики реакций — до удаления самих реакций (они уйдут каскадом
-    // вместе с подписчиком).
-    sqlx::query(
-        "UPDATE channel_reaction_counts c
-            SET n = GREATEST(c.n - 1, 0)
-           FROM channel_reactions r
-          WHERE r.channel_id = $1 AND r.token_hash = $2
-            AND c.channel_id = r.channel_id AND c.seq = r.seq AND c.emoji = r.emoji",
-    )
-    .bind(channel_id)
-    .bind(token_hash.as_slice())
-    .execute(&mut *tx)
-    .await?;
-
-    let removed =
-        sqlx::query("DELETE FROM channel_subscribers WHERE channel_id = $1 AND token_hash = $2")
-            .bind(channel_id)
-            .bind(token_hash.as_slice())
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
-
-    if removed > 0 {
-        sqlx::query(
-            "UPDATE channels SET subscribers = GREATEST(subscribers - 1, 0)
-              WHERE channel_id = $1",
-        )
+    // Счётчики подписчиков и реакций уменьшают триггеры базы
+    // (миграция 0019): они срабатывают и здесь, и при каскадном
+    // удалении вместе с аккаунтом.
+    sqlx::query("DELETE FROM channel_subscribers WHERE channel_id = $1 AND account_id = $2")
         .bind(channel_id)
+        .bind(account_id)
         .execute(&mut *tx)
         .await?;
-    }
 
     tx.commit().await?;
 
@@ -881,22 +855,22 @@ pub async fn unsubscribe(
 pub async fn mark_seen(
     pool: &PgPool,
     channel_id: Uuid,
-    token_hash: &[u8; 32],
+    account_id: Uuid,
     seq: i64,
 ) -> Result<(), RepoError> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
     // Блокировка строки подписчика: два одновременных запроса одного
-    // жетона не засчитают просмотр дважды.
+    // аккаунта не засчитают просмотр дважды.
     let known: Option<(i64, i64)> = sqlx::query_as(
         "SELECT s.seen_seq, c.last_seq
            FROM channel_subscribers s
            JOIN channels c ON c.channel_id = s.channel_id
-          WHERE s.channel_id = $1 AND s.token_hash = $2
+          WHERE s.channel_id = $1 AND s.account_id = $2
             FOR UPDATE OF s",
     )
     .bind(channel_id)
-    .bind(token_hash.as_slice())
+    .bind(account_id)
     .fetch_optional(&mut *tx)
     .await?;
 
@@ -909,10 +883,10 @@ pub async fn mark_seen(
     if reached > seen {
         sqlx::query(
             "UPDATE channel_subscribers SET seen_seq = $3
-              WHERE channel_id = $1 AND token_hash = $2",
+              WHERE channel_id = $1 AND account_id = $2",
         )
         .bind(channel_id)
-        .bind(token_hash.as_slice())
+        .bind(account_id)
         .bind(reached)
         .execute(&mut *tx)
         .await?;
@@ -945,21 +919,21 @@ pub async fn mark_seen(
 pub async fn react(
     pool: &PgPool,
     channel_id: Uuid,
-    token_hash: &[u8; 32],
+    account_id: Uuid,
     seq: i64,
     emoji: Option<&str>,
 ) -> Result<(), RepoError> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
-    // Блокировка строки подписчика: реакции одного жетона идут по
+    // Блокировка строки подписчика: реакции одного аккаунта идут по
     // очереди, и счётчик не расходится с таблицей реакций.
     let subscribed: Option<i32> = sqlx::query_scalar(
         "SELECT 1 FROM channel_subscribers
-          WHERE channel_id = $1 AND token_hash = $2
+          WHERE channel_id = $1 AND account_id = $2
             FOR UPDATE",
     )
     .bind(channel_id)
-    .bind(token_hash.as_slice())
+    .bind(account_id)
     .fetch_optional(&mut *tx)
     .await?;
 
@@ -978,11 +952,11 @@ pub async fn react(
 
     let previous: Option<String> = sqlx::query_scalar(
         "SELECT emoji FROM channel_reactions
-          WHERE channel_id = $1 AND seq = $2 AND token_hash = $3",
+          WHERE channel_id = $1 AND seq = $2 AND account_id = $3",
     )
     .bind(channel_id)
     .bind(seq)
-    .bind(token_hash.as_slice())
+    .bind(account_id)
     .fetch_optional(&mut *tx)
     .await?;
 
@@ -993,13 +967,13 @@ pub async fn react(
     match emoji {
         Some(emoji) => {
             sqlx::query(
-                "INSERT INTO channel_reactions (channel_id, seq, token_hash, emoji)
+                "INSERT INTO channel_reactions (channel_id, seq, account_id, emoji)
                  VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (channel_id, seq, token_hash) DO UPDATE SET emoji = EXCLUDED.emoji",
+                 ON CONFLICT (channel_id, seq, account_id) DO UPDATE SET emoji = EXCLUDED.emoji",
             )
             .bind(channel_id)
             .bind(seq)
-            .bind(token_hash.as_slice())
+            .bind(account_id)
             .bind(emoji)
             .execute(&mut *tx)
             .await?;
@@ -1021,28 +995,32 @@ pub async fn react(
         None => {
             sqlx::query(
                 "DELETE FROM channel_reactions
-                  WHERE channel_id = $1 AND seq = $2 AND token_hash = $3",
+                  WHERE channel_id = $1 AND seq = $2 AND account_id = $3",
             )
             .bind(channel_id)
             .bind(seq)
-            .bind(token_hash.as_slice())
+            .bind(account_id)
             .execute(&mut *tx)
             .await?;
         }
     }
 
-    sqlx::query(
-        "UPDATE channel_reaction_counts
-            SET n = CASE WHEN emoji = $4 THEN n + 1 ELSE GREATEST(n - 1, 0) END
-          WHERE channel_id = $1 AND seq = $2
-            AND (emoji = $3 OR emoji = $4)",
-    )
-    .bind(channel_id)
-    .bind(seq)
-    .bind(previous)
-    .bind(emoji)
-    .execute(&mut *tx)
-    .await?;
+    // Снятую реакцию считает триггер базы; здесь — только смена
+    // и новая реакция: прежняя строка счётчика убывает, новая растёт.
+    if emoji.is_some() {
+        sqlx::query(
+            "UPDATE channel_reaction_counts
+                SET n = CASE WHEN emoji = $4 THEN n + 1 ELSE GREATEST(n - 1, 0) END
+              WHERE channel_id = $1 AND seq = $2
+                AND (emoji = $3 OR emoji = $4)",
+        )
+        .bind(channel_id)
+        .bind(seq)
+        .bind(previous)
+        .bind(emoji)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
 

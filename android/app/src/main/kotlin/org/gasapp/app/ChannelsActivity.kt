@@ -128,10 +128,6 @@ class ChannelsActivity : AppCompatActivity() {
                     runCatching { messenger.syncChannels() }
                     // Премиум — заодно: кнопка создания узнаёт о нём до нажатия.
                     runCatching { messenger.refreshPremium(System.currentTimeMillis()) }
-                    // 🔐 Запас пропусков для подписки берётся здесь, заранее,
-                    // а не в момент подписки: иначе сервер видел бы рядом
-                    // «аккаунт взял пропуск» и «кто-то подписался на канал».
-                    runCatching { messenger.refillPasses(System.currentTimeMillis()) }
 
                     messenger.channels()
                 }.getOrNull()

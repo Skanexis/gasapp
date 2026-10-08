@@ -442,14 +442,8 @@ impl Messenger {
 
         let client = self.client()?;
 
-        guard(|| {
-            client.join_channel(
-                &link,
-                Timestamp::from_millis(now_millis),
-                &mut rand_core::OsRng,
-            )
-        })
-        .map(FfiChannel::from)
+        guard(|| client.join_channel(&link, Timestamp::from_millis(now_millis)))
+            .map(FfiChannel::from)
     }
 
     /// Каналы на этом устройстве — без сети.
@@ -609,10 +603,10 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — сервер недоступен.
-    pub fn report_channel_seen(&self, channel_id: String) -> Result<(), FfiError> {
+    pub fn report_channel_seen(&self, channel_id: String, now_millis: i64) -> Result<(), FfiError> {
         let client = self.client()?;
 
-        guard(|| client.report_channel_seen(&channel_id))
+        guard(|| client.report_channel_seen(&channel_id, Timestamp::from_millis(now_millis)))
     }
 
     /// Публикует запись в своём канале: текст, вложения или и то и
@@ -850,7 +844,6 @@ impl Messenger {
                 seq,
                 emoji.as_deref(),
                 Timestamp::from_millis(now_millis),
-                &mut rand_core::OsRng,
             )
         })
         .map(FfiChannelPost::from)
@@ -905,23 +898,6 @@ impl Messenger {
             .into_iter()
             .map(FfiChannelPreview::from)
             .collect())
-    }
-
-    /// Пополняет запас пропусков — анонимных одноразовых прав на
-    /// подписку, — если он на исходе. Сетевой вызов, за подписью
-    /// устройства. Возвращает, сколько пропусков добавилось.
-    ///
-    /// Вызывается заранее, при открытии списка каналов: так сервер не
-    /// видит рядом «аккаунт взял пропуск» и «кто-то подписался».
-    ///
-    /// # Errors
-    ///
-    /// [`FfiError::Core`] — сервер недоступен, суточный предел исчерпан
-    /// либо сервер подписал пропуска не тем ключом, который объявил.
-    pub fn refill_passes(&self, now_millis: i64) -> Result<u32, FfiError> {
-        let client = self.client()?;
-
-        guard(|| client.refill_passes(Timestamp::from_millis(now_millis), &mut rand_core::OsRng))
     }
 
     /// Заявка на администрирование канала — строка, которую читатель

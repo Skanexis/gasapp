@@ -663,14 +663,18 @@ value it has seen and asks for changes after it. The first
 synchronisation takes the newest page of posts instead of the whole
 history; older pages are fetched on demand.
 
-**Subscribers, views and reactions.** A reader that joins a channel
-generates a 32-byte random token for that channel and registers it
-(`/v1/channels/feed/…/subscribe`). Registration costs one pass (§9.9),
-bound to the channel and the token. The server stores `SHA-256(token)`.
-Requests carrying the token — subscribe, unsubscribe, "read up to post
-N", react — are **not** signed by the device and are sent on a separate
-anonymous Tor circuit. A reaction is one of eight fixed emoji; free text
-is refused, otherwise readers could write into someone else's channel.
+**Subscribers, views and reactions.** A subscriber is an account. When a
+reader adds a channel, the app subscribes the account
+(`/v1/channels/reader/{device}/{channel}/subscribe`); "read up to post
+N" and reactions go the same way. All of these are signed by the device
+(§12.6): one account is one subscriber, however many times it asks, so
+the counts cannot be inflated without creating accounts. A reaction is
+one of eight fixed emoji; free text is refused, otherwise readers could
+write into someone else's channel.
+
+Reading is separate from subscribing: the channel, its posts and its
+media are fetched without a signature, so a channel can be read by link
+without the server learning who reads it.
 
 Counts of subscribers, views and reactions are server statistics. They
 are not signed by anyone, and clients present them as such.
@@ -706,11 +710,11 @@ The server does not verify record signatures. Reads
   channel except the server's word; it could answer a handle with a
   different (internally consistent) channel tomorrow. Readers who need
   certainty compare the link out of band.
-* **A subscriber token is a pseudonym.** The server sees that one
-  unknown reader of a channel read up to post N and reacted to post M.
-  Tokens of the same person in different channels are unrelated in the
-  database; they can be correlated by network address and timing if the
-  reader does not use Tor.
+* **The server knows who subscribes.** It stores which accounts follow
+  which channels, how far each has read and how each reacted. This is
+  the price of counts that cannot be inflated: an anonymous subscription
+  cannot be rationed. Reading by link without subscribing stays
+  anonymous.
 * **Withholding.** The server can omit the newest posts, an edit or a
   deletion mark, or stop serving a channel. It cannot forge, alter or
   reorder records.
@@ -733,62 +737,6 @@ The server does not verify record signatures. Reads
   (bundle version 3): whoever holds the recovery key and a backup file
   can read and post to those channels. Posts are not backed up — they
   are fetched again and verified.
-
-### 9.9. Passes
-
-A pass is an anonymous, single-use right issued blindly — the same
-construction as Privacy Pass, over ristretto255. It lets the server
-ration an anonymous action per account without learning which account
-performs it. Passes pay for channel subscriptions (§9.8); without them
-the subscriber count could be inflated in a loop, and proof-of-work only
-slowed that down. Implementation: `crates/gasapp-protocol/src/pass.rs`
-(client), `server/gasapp-server-api/src/pass.rs` (server).
-
-```
-H1(seed)  = ristretto255.from_uniform_bytes(SHA-512("GASAPP_PASS_v1_POINT" ‖ seed))
-k         = SHA-512("GASAPP_PASS_v1_KEY" ‖ node secret) mod ℓ;   K = k·G
-
-client:   seed ← 32 random bytes;  r ← random scalar;  P = r·H1(seed)
-server:   Q = k·P
-          DLEQ proof (c, s):  n ← random;  A = n·G;  B = n·P
-              c = SHA-512("GASAPP_PASS_v1_DLEQ" ‖ G ‖ K ‖ P ‖ Q ‖ A ‖ B) mod ℓ
-              s = n + c·k
-client:   checks c against A' = s·G − c·K, B' = s·P − c·Q;   W = r⁻¹·Q
-spend:    seed, HMAC-SHA-256(W, "GASAPP_PASS_v1_REDEEM" ‖ SHA-256(binding))
-server:   recomputes W = k·H1(seed), checks the MAC, records
-          SHA-256(seed) as spent
-```
-
-For a subscription, `binding` is
-`"GASAPP_PASS_v1_SUBSCRIBE" ‖ len ‖ lowercase(channel_uuid) ‖ len ‖ token`
-(`len` is the field length as u64 big-endian).
-
-Issuance (`POST /v1/passes/issue/{device}`) is signed by the device and
-limited to 40 passes per account per day, at most 16 per request.
-Spending is unsigned and anonymous. The client fetches passes in a batch
-ahead of need, so that issuance and spending do not stand next to each
-other in time. A batch in which any proof fails is discarded whole.
-
-**What this provides.** The server cannot link a spent pass to the
-account it was issued to: it saw `P`, blinded by `r`, and later sees
-`seed`. The DLEQ proof stops it from signing with a per-account key to
-tell accounts apart. A spent pass cannot be spent twice or redirected to
-another channel or token.
-
-**What it does not provide.**
-
-* **Timing.** If the client had no stock, issuance and spending are
-  seconds apart and can be correlated.
-* **One key for everyone is an assumption.** A client checks the key
-  only against what the server showed that client. There is no
-  transparency log for this key.
-* **Not post-quantum.** A quantum adversary who recorded issuance could
-  remove the blinding and learn which account subscribed to which
-  channel. Channel contents are not affected.
-* **A bound, not a proof.** One account still yields up to 40
-  subscriptions a day; an attacker with many accounts inflates the
-  count that many times over. Subscriber counts remain server
-  statistics.
 
 ## 10. Security Considerations
 

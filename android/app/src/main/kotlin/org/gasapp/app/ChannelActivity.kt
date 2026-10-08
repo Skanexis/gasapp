@@ -226,12 +226,13 @@ class ChannelActivity : AppCompatActivity() {
                         runCatching { messenger.channelPost(channelId, it) }.getOrNull()
                     }
 
-                    // Открытая лента прочитана. Серверу об этом сообщает
-                    // жетон подписчика, без подписи устройства, — и только
-                    // вместе с синхронизацией, а не при каждой перерисовке.
+                    // Открытая лента прочитана. Серверу об этом сообщается
+                    // от имени аккаунта (из этого складываются просмотры) —
+                    // и только вместе с синхронизацией, а не при каждой
+                    // перерисовке.
                     if (found != null) {
                         runCatching { messenger.markChannelRead(channelId) }
-                        if (sync) runCatching { messenger.reportChannelSeen(channelId) }
+                        if (sync) runCatching { messenger.reportChannelSeen(channelId, System.currentTimeMillis()) }
                     }
 
                     Loaded(found, entries, pinned)

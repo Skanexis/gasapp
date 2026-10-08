@@ -255,8 +255,6 @@ pub struct ChannelRecord {
     pub title: String,
     /// «Без звука».
     pub muted: bool,
-    /// Жетон подписчика.
-    pub sub_token: Option<[u8; CHANNEL_KEY_LEN]>,
     /// Когда канал был добавлен.
     pub joined_at_millis: i64,
     /// Имена, которыми владелец подписал администраторов: ключ и имя.
@@ -761,7 +759,6 @@ fn write_channel(out: &mut Vec<u8>, channel: &ChannelRecord) -> Result<()> {
     write_optional_key(out, channel.signing_key.as_ref());
     write_bytes(out, channel.title.as_bytes())?;
     out.push(u8::from(channel.muted));
-    write_optional_key(out, channel.sub_token.as_ref());
     out.extend_from_slice(&channel.joined_at_millis.to_be_bytes());
 
     write_count(out, channel.admin_labels.len())?;
@@ -814,7 +811,6 @@ fn take_version_three_tail(
         let signing_key = take_optional_key(cursor)?;
         let title = take_text(cursor)?;
         let muted = cursor.take_bool()?;
-        let sub_token = take_optional_key(cursor)?;
         let joined_at_millis = cursor.take_i64()?;
 
         let labels = cursor.take_count()?;
@@ -833,7 +829,6 @@ fn take_version_three_tail(
             signing_key,
             title,
             muted,
-            sub_token,
             joined_at_millis,
             admin_labels,
         });
@@ -1208,7 +1203,6 @@ mod tests {
             signing_key: (id == 1).then_some([0x23; 32]),
             title: format!("Канал {id}"),
             muted: id == 2,
-            sub_token: Some([0x24; 32]),
             joined_at_millis: 1_760_000_000_000,
             admin_labels: vec![([0x25; 32], "anna".to_owned())],
         }

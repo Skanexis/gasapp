@@ -761,7 +761,7 @@
     <string name="channels_error_unavailable">Канал не открылся: нет связи с сервером либо канал удалён.</string>
     <string name="channels_error_network">Нет связи с сервером. Повторите попытку.</string>
     <string name="channels_empty_title">Каналов пока нет</string>
-    <string name="channels_empty">Канал — лента одного автора. Добавьте его по ссылке или QR-коду. Сервер не знает, какие каналы вы читаете.</string>
+    <string name="channels_empty">Канал — лента одного автора. Добавьте его по ссылке, QR-коду или \@имени. Сервер видит, на какие каналы подписан ваш аккаунт; читать закрытые каналы он не может.</string>
     <string name="channels_create">Создать канал</string>
     <string name="channels_create_action">Создать</string>
     <string name="channels_create_help">Название и записи сервер хранит зашифрованными. Читать их сможет каждый, у кого есть ссылка на канал.</string>
@@ -910,7 +910,7 @@
     <string name="channel_admin_remove_body">Сервер перестанет принимать от него записи, а читатели — всё новое, подписанное его ключом. Уже написанные записи останутся. Снятый администратор в сговоре с сервером мог бы переписать записи, вышедшие до снятия.</string>
     <string name="channel_admin_request">Стать администратором</string>
     <string name="channel_admin_request_qr">QR-код заявки на администрирование канала</string>
-    <string name="channel_admin_request_body">Покажите этот код владельцу канала или отправьте ему текст. Секретов в нём нет. Если владелец примет заявку, сервер узнает, что ваш аккаунт ведёт этот канал: как читатель вы ему неизвестны.</string>
+    <string name="channel_admin_request_body">Покажите этот код владельцу канала или отправьте ему текст. Секретов в нём нет. Если владелец примет заявку, сервер узнает, что ваш аккаунт ведёт этот канал.</string>
     <string name="channel_admin_request_copy">Скопировать заявку</string>
     <string name="channel_admin_request_copied">Заявка скопирована</string>
 </resources>

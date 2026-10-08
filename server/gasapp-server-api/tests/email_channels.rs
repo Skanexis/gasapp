@@ -883,133 +883,40 @@ async fn channel_with_posts(state: &Arc<AppState>, count: usize) -> (DeviceKey, 
     (private, device_id, channel_id)
 }
 
-/// Клиентская половина пропуска — то же, что делает приложение
-/// (`gasapp-protocol::pass`): замаскировать, снять маску, посчитать
-/// код траты. Сервер видит только то, что эти функции отдают наружу.
-#[allow(clippy::arithmetic_side_effects)]
-mod pass_client {
-    use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-    use curve25519_dalek::scalar::Scalar;
-    use hmac::{Hmac, Mac as _};
-    use sha2::{Digest as _, Sha256, Sha512};
+/// Подписчик: ключ устройства и само устройство.
+type Subscriber = (DeviceKey, Uuid);
 
-    /// Заготовка: зерно и маска.
-    pub struct Pending {
-        pub seed: [u8; 32],
-        blind: Scalar,
-    }
-
-    fn point_of(seed: &[u8; 32]) -> RistrettoPoint {
-        let mut hasher = Sha512::new();
-        hasher.update(b"GASAPP_PASS_v1_POINT");
-        hasher.update(seed);
-
-        RistrettoPoint::from_uniform_bytes(&hasher.finalize().into())
-    }
-
-    pub fn prepare(seed: [u8; 32], blind: [u8; 32]) -> (Pending, String) {
-        let mut wide = [0u8; 64];
-        wide[..32].copy_from_slice(&blind);
-        let blind = Scalar::from_bytes_mod_order_wide(&wide);
-        let blinded = (blind * point_of(&seed)).compress();
-
-        (Pending { seed, blind }, hex::encode(blinded.as_bytes()))
-    }
-
-    /// Секрет пропуска по ответу сервера.
-    pub fn finish(pending: &Pending, signed_hex: &str) -> [u8; 32] {
-        let signed: [u8; 32] = hex::decode(signed_hex).unwrap().try_into().unwrap();
-        let point = CompressedRistretto(signed).decompress().unwrap();
-
-        (pending.blind.invert() * point).compress().to_bytes()
-    }
-
-    pub fn mac(secret: &[u8; 32], binding: &[u8]) -> String {
-        let mut mac = Hmac::<Sha256>::new_from_slice(secret).unwrap();
-        mac.update(b"GASAPP_PASS_v1_REDEEM");
-        mac.update(&Sha256::digest(binding));
-
-        hex::encode(mac.finalize().into_bytes())
-    }
-}
-
-/// Пропуск: зерно и секрет.
-type Pass = ([u8; 32], [u8; 32]);
-
-/// Берёт `count` пропусков для аккаунта — как приложение.
-async fn take_passes(
+/// Действие подписчика над каналом — за подписью его устройства.
+async fn reader(
     state: &Arc<AppState>,
-    private: &DeviceKey,
-    device_id: Uuid,
-    count: usize,
-) -> (StatusCode, Vec<Pass>) {
-    let pending: Vec<_> = (0..count)
-        .map(|_| pass_client::prepare(key(), key()))
-        .collect();
-    let blinded: Vec<&String> = pending.iter().map(|(_, blinded)| blinded).collect();
-
-    let (status, issued) = signed(
+    who: &Subscriber,
+    channel_id: Uuid,
+    action: &str,
+    body: Option<serde_json::Value>,
+) -> StatusCode {
+    signed(
         state,
-        private,
+        &who.0,
         "POST",
-        &format!("/v1/passes/issue/{device_id}"),
-        Some(serde_json::json!({ "blinded": blinded })),
+        &format!("/v1/channels/reader/{}/{channel_id}/{action}", who.1),
+        body,
     )
-    .await;
-
-    if status != StatusCode::OK {
-        return (status, Vec::new());
-    }
-
-    let passes = pending
-        .iter()
-        .zip(issued["signed"].as_array().unwrap())
-        .map(|((pending, _), signed)| {
-            (
-                pending.seed,
-                pass_client::finish(pending, signed["point"].as_str().unwrap()),
-            )
-        })
-        .collect();
-
-    (status, passes)
+    .await
+    .0
 }
 
-/// Один пропуск от только что заведённого аккаунта.
-async fn fresh_pass(state: &Arc<AppState>) -> Pass {
+/// Заводит аккаунт и подписывает его на канал.
+async fn subscriber(state: &Arc<AppState>, channel_id: Uuid) -> Subscriber {
     let private = device_key();
     let device_id = register(state, &unique_name("reader"), &private).await;
-    let (status, mut passes) = take_passes(state, &private, device_id, 1).await;
-    assert_eq!(status, StatusCode::OK);
+    let who = (private, device_id);
 
-    passes.pop().unwrap()
-}
+    assert_eq!(
+        reader(state, &who, channel_id, "subscribe", None).await,
+        StatusCode::NO_CONTENT
+    );
 
-/// Тело запроса подписки жетона `token` с пропуском `pass`.
-fn subscription(channel_id: Uuid, token: &[u8; 32], pass: &Pass) -> serde_json::Value {
-    let binding = gasapp_server_api::pass::subscribe_binding(&channel_id.to_string(), token);
-
-    serde_json::json!({
-        "token": hex::encode(token),
-        "pass_seed": hex::encode(pass.0),
-        "pass_mac": pass_client::mac(&pass.1, &binding),
-    })
-}
-
-/// Подписывает случайный жетон на канал; возвращает жетон в hex.
-async fn subscribe_token(state: &Arc<AppState>, channel_id: Uuid) -> String {
-    let token = key();
-    let pass = fresh_pass(state).await;
-
-    let (status, _) = post(
-        state,
-        &format!("/v1/channels/feed/{channel_id}/subscribe"),
-        subscription(channel_id, &token, &pass),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    hex::encode(token)
+    who
 }
 
 /// Правка и удаление видны читателю как изменения: у каждой свой номер
@@ -1318,67 +1225,76 @@ async fn a_taken_or_malformed_handle_is_refused() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-/// Подписчики, просмотры и реакции считаются по жетонам.
+/// Подписчики, просмотры и реакции считаются по аккаунтам.
 #[tokio::test]
 async fn subscribers_views_and_reactions_are_counted() {
     let (state, _mailer) = require_state!();
     let (_private, _device, channel_id) = channel_with_posts(&state, 3).await;
     let feed = format!("/v1/channels/feed/{channel_id}");
 
-    let first = subscribe_token(&state, channel_id).await;
-    let second = subscribe_token(&state, channel_id).await;
+    let first = subscriber(&state, channel_id).await;
+    let second = subscriber(&state, channel_id).await;
 
-    // Повторная подписка тем же жетоном второго подписчика не даёт.
-    let token: [u8; 32] = hex::decode(&first).unwrap().try_into().unwrap();
-    let again = fresh_pass(&state).await;
-    post(
-        &state,
-        &format!("{feed}/subscribe"),
-        subscription(channel_id, &token, &again),
-    )
-    .await;
+    // 🔐 Один аккаунт — один подписчик, сколько бы раз он ни подписался.
+    for _ in 0..3 {
+        reader(&state, &first, channel_id, "subscribe", None).await;
+    }
 
     let (_, info) = get(&state, &feed).await;
     assert_eq!(info["subscribers"], 2);
 
     // Первый дочитал до второй записи, второй — до третьей.
-    for (token, seq) in [(&first, 2), (&second, 3)] {
-        let (status, _) = post(
-            &state,
-            &format!("{feed}/seen"),
-            serde_json::json!({ "token": token, "seq": seq }),
-        )
-        .await;
-        assert_eq!(status, StatusCode::NO_CONTENT);
+    for (who, seq) in [(&first, 2), (&second, 3)] {
+        assert_eq!(
+            reader(
+                &state,
+                who,
+                channel_id,
+                "seen",
+                Some(serde_json::json!({ "seq": seq }))
+            )
+            .await,
+            StatusCode::NO_CONTENT
+        );
     }
     // Отметка назад не двигается, а «дочитал до сотой» обрезается.
-    post(
+    reader(
         &state,
-        &format!("{feed}/seen"),
-        serde_json::json!({ "token": first, "seq": 1 }),
+        &first,
+        channel_id,
+        "seen",
+        Some(serde_json::json!({ "seq": 1 })),
     )
     .await;
-    post(
+    reader(
         &state,
-        &format!("{feed}/seen"),
-        serde_json::json!({ "token": second, "seq": 100 }),
+        &second,
+        channel_id,
+        "seen",
+        Some(serde_json::json!({ "seq": 100 })),
     )
     .await;
 
-    for (token, emoji) in [(&first, "🔥"), (&second, "🔥")] {
-        let (status, _) = post(
-            &state,
-            &format!("{feed}/react"),
-            serde_json::json!({ "token": token, "seq": 2, "emoji": emoji }),
-        )
-        .await;
-        assert_eq!(status, StatusCode::NO_CONTENT);
+    for who in [&first, &second] {
+        assert_eq!(
+            reader(
+                &state,
+                who,
+                channel_id,
+                "react",
+                Some(serde_json::json!({ "seq": 2, "emoji": "🔥" })),
+            )
+            .await,
+            StatusCode::NO_CONTENT
+        );
     }
     // Смена реакции — не вторая реакция.
-    post(
+    reader(
         &state,
-        &format!("{feed}/react"),
-        serde_json::json!({ "token": second, "seq": 2, "emoji": "👍" }),
+        &second,
+        channel_id,
+        "react",
+        Some(serde_json::json!({ "seq": 2, "emoji": "👍" })),
     )
     .await;
 
@@ -1392,19 +1308,18 @@ async fn subscribers_views_and_reactions_are_counted() {
     assert_eq!(posts[0]["reactions"], "");
 
     // Снятие реакции и отписка.
-    post(
+    reader(
         &state,
-        &format!("{feed}/react"),
-        serde_json::json!({ "token": first, "seq": 2 }),
+        &first,
+        channel_id,
+        "react",
+        Some(serde_json::json!({ "seq": 2 })),
     )
     .await;
-    let (status, _) = post(
-        &state,
-        &format!("{feed}/unsubscribe"),
-        serde_json::json!({ "token": second }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        reader(&state, &second, channel_id, "unsubscribe", None).await,
+        StatusCode::NO_CONTENT
+    );
 
     let (_, info) = get(&state, &feed).await;
     assert_eq!(info["subscribers"], 1);
@@ -1433,25 +1348,29 @@ async fn subscribers_views_and_reactions_are_counted() {
 }
 
 /// 🔐 Повтор одной и той же отметки и той же реакции счётчики не
-/// накручивает: считается жетон, а не запрос.
+/// накручивает: считается аккаунт, а не запрос.
 #[tokio::test]
 async fn repeating_a_request_does_not_inflate_counters() {
     let (state, _mailer) = require_state!();
     let (_private, _device, channel_id) = channel_with_posts(&state, 2).await;
     let feed = format!("/v1/channels/feed/{channel_id}");
-    let token = subscribe_token(&state, channel_id).await;
+    let who = subscriber(&state, channel_id).await;
 
     for _ in 0..5 {
-        post(
+        reader(
             &state,
-            &format!("{feed}/seen"),
-            serde_json::json!({ "token": token, "seq": 2 }),
+            &who,
+            channel_id,
+            "seen",
+            Some(serde_json::json!({ "seq": 2 })),
         )
         .await;
-        post(
+        reader(
             &state,
-            &format!("{feed}/react"),
-            serde_json::json!({ "token": token, "seq": 1, "emoji": "🎉" }),
+            &who,
+            channel_id,
+            "react",
+            Some(serde_json::json!({ "seq": 1, "emoji": "🎉" })),
         )
         .await;
     }
@@ -1504,202 +1423,118 @@ async fn a_malformed_recovery_key_leaves_no_half_made_account() {
 async fn reactions_are_a_closed_set_from_subscribers_only() {
     let (state, _mailer) = require_state!();
     let (_private, _device, channel_id) = channel_with_posts(&state, 1).await;
-    let feed = format!("/v1/channels/feed/{channel_id}");
-    let token = subscribe_token(&state, channel_id).await;
+    let who = subscriber(&state, channel_id).await;
+    let react = |seq: i64, emoji: &str| Some(serde_json::json!({ "seq": seq, "emoji": emoji }));
 
-    let (status, _) = post(
-        &state,
-        &format!("{feed}/react"),
-        serde_json::json!({ "token": token, "seq": 1, "emoji": "купи слона" }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        reader(&state, &who, channel_id, "react", react(1, "купи слона")).await,
+        StatusCode::BAD_REQUEST
+    );
 
-    let (status, _) = post(
-        &state,
-        &format!("{feed}/react"),
-        serde_json::json!({ "token": hex::encode(key()), "seq": 1, "emoji": "👍" }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "жетон без подписки");
+    // Аккаунт без подписки.
+    let outsider_key = device_key();
+    let outsider = register(&state, &unique_name("outsider"), &outsider_key).await;
+    assert_eq!(
+        reader(
+            &state,
+            &(outsider_key, outsider),
+            channel_id,
+            "react",
+            react(1, "👍")
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+        "аккаунт без подписки"
+    );
 
-    let (status, _) = post(
-        &state,
-        &format!("{feed}/react"),
-        serde_json::json!({ "token": token, "seq": 9, "emoji": "👍" }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "записи нет");
+    assert_eq!(
+        reader(&state, &who, channel_id, "react", react(9, "👍")).await,
+        StatusCode::NOT_FOUND,
+        "записи нет"
+    );
 }
 
-/// 🔐 Подписка стоит пропуска: без него, с поддельным, с чужим
-/// (на другой канал или жетон) и с уже потраченным счётчик не растёт.
+/// 🔐 Подписчик — аккаунт: без подписи устройства и от чужого имени
+/// подписаться нельзя, и накрутить счётчик нечем.
 #[tokio::test]
-async fn subscribing_costs_a_pass() {
+async fn subscribing_needs_an_account() {
     let (state, _mailer) = require_state!();
     let (_private, _device, channel_id) = channel_with_posts(&state, 0).await;
-    let (_other_key, _other_device, other_channel) = channel_with_posts(&state, 0).await;
-    let uri = format!("/v1/channels/feed/{channel_id}/subscribe");
-    let token = key();
+    let who = subscriber(&state, channel_id).await;
 
-    // Выдуманный пропуск: секрета `k·H(seed)` у выдумавшего нет.
-    let forged = (key(), key());
-    let (status, _) = post(&state, &uri, subscription(channel_id, &token, &forged)).await;
+    // Без подписи устройства.
+    let (status, _) = post(
+        &state,
+        &format!("/v1/channels/reader/{}/{channel_id}/subscribe", who.1),
+        serde_json::json!({}),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    // Настоящий пропуск, но код траты посчитан на другой канал и на
-    // другой жетон: перехвативший запрос не потратит его на своё.
-    let pass = fresh_pass(&state).await;
-    let (status, _) = post(&state, &uri, subscription(other_channel, &token, &pass)).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let mut swapped = subscription(channel_id, &token, &pass);
-    swapped["token"] = serde_json::json!(hex::encode(key()));
-    let (status, _) = post(&state, &uri, swapped).await;
+    // Своей подписью — за чужое устройство.
+    let other_key = device_key();
+    let other = register(&state, &unique_name("other"), &other_key).await;
+    let (status, _) = signed(
+        &state,
+        &other_key,
+        "POST",
+        &format!("/v1/channels/reader/{}/{channel_id}/subscribe", who.1),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    let (_, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
-    assert_eq!(info["subscribers"], 0);
-
-    // Тот же пропуск по назначению проходит — отказы выше его не сожгли.
-    let (status, _) = post(&state, &uri, subscription(channel_id, &token, &pass)).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    // И второй раз — уже нет: ни на тот же жетон, ни на другой.
-    let (status, _) = post(&state, &uri, subscription(channel_id, &token, &pass)).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let another = key();
-    let (status, _) = post(&state, &uri, subscription(channel_id, &another, &pass)).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // Канала нет.
+    assert_eq!(
+        reader(
+            &state,
+            &(other_key, other),
+            Uuid::new_v4(),
+            "subscribe",
+            None
+        )
+        .await,
+        StatusCode::NOT_FOUND
+    );
 
     let (_, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
     assert_eq!(info["subscribers"], 1);
 }
 
-/// Пропуск не сгорает на канале, которого нет.
+/// Удаление аккаунта уносит его подписки и реакции.
 #[tokio::test]
-async fn a_pass_survives_a_missing_channel() {
+async fn deleting_an_account_removes_its_subscriptions() {
     let (state, _mailer) = require_state!();
-    let (_private, _device, channel_id) = channel_with_posts(&state, 0).await;
-    let pass = fresh_pass(&state).await;
-    let token = key();
-    let missing = Uuid::new_v4();
-
-    let (status, _) = post(
+    let (_private, _device, channel_id) = channel_with_posts(&state, 1).await;
+    let who = subscriber(&state, channel_id).await;
+    reader(
         &state,
-        &format!("/v1/channels/feed/{missing}/subscribe"),
-        subscription(missing, &token, &pass),
+        &who,
+        channel_id,
+        "react",
+        Some(serde_json::json!({ "seq": 1, "emoji": "👍" })),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
 
-    let (status, _) = post(
-        &state,
-        &format!("/v1/channels/feed/{channel_id}/subscribe"),
-        subscription(channel_id, &token, &pass),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-}
-
-/// 🔐 Пропуска выдаются аккаунту и в ограниченном числе: это и есть
-/// предел накрутки подписчиков. Без подписи устройства их не дают.
-#[tokio::test]
-async fn passes_are_rationed_per_account() {
-    let (state, _mailer) = require_state!();
-    let private = device_key();
-    let device_id = register(&state, &unique_name("greedy"), &private).await;
-    let per_day = usize::try_from(gasapp_server_db::passes::PASSES_PER_DAY).unwrap();
-    let per_request = gasapp_server_db::passes::MAX_PASSES_PER_REQUEST;
-
-    let (status, _) = take_passes(&state, &private, device_id, per_request + 1).await;
-    assert_eq!(
-        status,
-        StatusCode::BAD_REQUEST,
-        "больше, чем за один запрос"
-    );
-
-    let mut taken = 0;
-    while taken + per_request <= per_day {
-        let (status, passes) = take_passes(&state, &private, device_id, per_request).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(passes.len(), per_request);
-        taken += per_request;
-    }
-
-    // Остаток до предела берётся, сверх него — нет; и отказ ничего
-    // не списывает: меньший запрос в пределах всё ещё проходит.
-    let left = per_day - taken;
-    let (status, _) = take_passes(&state, &private, device_id, left + 1).await;
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-    if left > 0 {
-        let (status, _) = take_passes(&state, &private, device_id, left).await;
-        assert_eq!(status, StatusCode::OK);
-    }
-    let (status, _) = take_passes(&state, &private, device_id, 1).await;
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-
-    // Без подписи устройства — никому.
-    let (status, _) = post(
-        &state,
-        &format!("/v1/passes/issue/{device_id}"),
-        serde_json::json!({ "blinded": [hex::encode(key())] }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-
-    // Мусор вместо точки — отказ, а не подпись.
-    let other = device_key();
-    let other_device = register(&state, &unique_name("junk"), &other).await;
     let (status, _) = signed(
         &state,
-        &other,
-        "POST",
-        &format!("/v1/passes/issue/{other_device}"),
-        Some(serde_json::json!({ "blinded": [hex::encode([0xffu8; 32])] })),
+        &who.0,
+        "DELETE",
+        &format!("/v1/accounts/{}", who.1),
+        None,
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
+    assert_eq!(status, StatusCode::OK);
 
-/// 🔐 В базе выданное с потраченным не связать: у выдачи — аккаунт
-/// и число, у траты — хеш зерна, которого сервер при выдаче не видел.
-#[tokio::test]
-async fn issuance_and_spending_are_not_linked_in_the_database() {
-    let (state, _mailer) = require_state!();
-    let (_private, _device, channel_id) = channel_with_posts(&state, 0).await;
-    let private = device_key();
-    let device_id = register(&state, &unique_name("quiet"), &private).await;
-    let (_, passes) = take_passes(&state, &private, device_id, 1).await;
-    let pass = passes[0];
-
-    post(
-        &state,
-        &format!("/v1/channels/feed/{channel_id}/subscribe"),
-        subscription(channel_id, &key(), &pass),
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM channel_subscribers WHERE channel_id = $1)
+              + (SELECT count(*) FROM channel_reactions WHERE channel_id = $1)",
     )
-    .await;
-
-    let spent: Vec<Vec<u8>> = sqlx::query_scalar("SELECT seed_hash FROM spent_passes")
-        .fetch_all(&state.pool)
-        .await
-        .unwrap();
-    assert!(spent.iter().any(|hash| hash.len() == 32));
-    // Само зерно и секрет пропуска в базе не лежат.
-    assert!(spent
-        .iter()
-        .all(|hash| hash.as_slice() != pass.0.as_slice()));
-    assert!(spent
-        .iter()
-        .all(|hash| hash.as_slice() != pass.1.as_slice()));
-
-    let columns: Vec<String> = sqlx::query_scalar(
-        "SELECT column_name::text FROM information_schema.columns
-          WHERE table_name = 'spent_passes' ORDER BY column_name",
-    )
-    .fetch_all(&state.pool)
+    .bind(channel_id)
+    .fetch_one(&state.pool)
     .await
     .unwrap();
-    assert_eq!(columns, vec!["seed_hash", "spent_on"]);
+    assert_eq!(rows, 0);
 }
 
 // ---------------------------------------------------------------------------

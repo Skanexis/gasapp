@@ -28,7 +28,6 @@ pub mod backup;
 pub mod blocks;
 pub mod channels;
 pub mod kt;
-pub mod passes;
 pub mod pq;
 pub mod requests;
 pub mod sealed;
@@ -886,7 +885,7 @@ impl Storage {
                         ("channels", "muted", "INTEGER NOT NULL DEFAULT 0"),
                         ("channels", "last_rev", "INTEGER NOT NULL DEFAULT 0"),
                         ("channels", "seen_sent_seq", "INTEGER NOT NULL DEFAULT 0"),
-                        ("channels", "sub_token", "BLOB"),
+                        ("channels", "subscribed", "INTEGER NOT NULL DEFAULT 0"),
                         ("channel_posts", "revision", "INTEGER NOT NULL DEFAULT 0"),
                         ("channel_posts", "edited_at", "INTEGER NOT NULL DEFAULT 0"),
                         ("channel_posts", "deleted", "INTEGER NOT NULL DEFAULT 0"),
@@ -914,8 +913,7 @@ impl Storage {
                     }
                 }
                 // 17 → 18: администраторы каналов — список из описания
-                // канала и имена, которыми владелец их подписал; запас
-                // пропусков для анонимной подписки.
+                // канала и имена, которыми владелец их подписал.
                 18 => {
                     let present: bool = transaction
                         .query_row(
@@ -932,21 +930,17 @@ impl Storage {
                             .map_err(storage_error)?;
                     }
 
-                    for statement in [
-                        "CREATE TABLE IF NOT EXISTS channel_admin_labels (
-                             channel_id BLOB NOT NULL,
-                             verify_key BLOB NOT NULL,
-                             label      TEXT NOT NULL,
-                             PRIMARY KEY (channel_id, verify_key)
-                         )",
-                        // Запас пропусков: зерно и секрет (`passes`).
-                        "CREATE TABLE IF NOT EXISTS passes (
-                             seed   BLOB PRIMARY KEY,
-                             secret BLOB NOT NULL
-                         )",
-                    ] {
-                        transaction.execute(statement, []).map_err(storage_error)?;
-                    }
+                    transaction
+                        .execute(
+                            "CREATE TABLE IF NOT EXISTS channel_admin_labels (
+                                 channel_id BLOB NOT NULL,
+                                 verify_key BLOB NOT NULL,
+                                 label      TEXT NOT NULL,
+                                 PRIMARY KEY (channel_id, verify_key)
+                             )",
+                            [],
+                        )
+                        .map_err(storage_error)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.

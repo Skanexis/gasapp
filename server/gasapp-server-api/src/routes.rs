@@ -151,8 +151,6 @@ pub struct AppState {
     pub channel_post_limiter: Mutex<RateLimiter>,
     /// Ограничитель действий читателя канала — по жетону подписчика.
     pub channel_reader_limiter: Mutex<RateLimiter>,
-    /// Ключ, которым узел подписывает пропуска (см. `pass`).
-    pub pass_key: crate::pass::PassKey,
 }
 
 /// Сколько вложений узел принимает одновременно.
@@ -263,7 +261,6 @@ impl AppState {
                 crate::channels::READER_ACTIONS_PER_MINUTE,
                 nodes,
             ))),
-            pass_key: crate::pass::PassKey::derive(&certificate_key),
         }
     }
 }
@@ -612,10 +609,23 @@ fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/channels/own/:device_id/:channel_id/posts",
             post(crate::channels::publish).put(crate::channels::replace),
         )
-        // Пропуска: аккаунт берёт их за подписью, тратит анонимно.
+        // Подписчик канала — аккаунт: подписка, отметка «дочитал»
+        // и реакция идут за подписью устройства.
         .route(
-            "/v1/passes/issue/:device_id",
-            post(crate::channels::issue_passes),
+            "/v1/channels/reader/:device_id/:channel_id/subscribe",
+            post(crate::channels::subscribe),
+        )
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/unsubscribe",
+            post(crate::channels::unsubscribe),
+        )
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/seen",
+            post(crate::channels::seen),
+        )
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/react",
+            post(crate::channels::react),
         )
         // Администраторы канала: назначает и снимает только владелец.
         .route(
@@ -634,8 +644,8 @@ fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
                     crate::authz::MAX_CHANNEL_MEDIA_BODY_BYTES,
                 )),
         )
-        // 🔐 Чтение — без подписи: сервер не должен знать, кто читает
-        // канал. Подписчик для него — случайный жетон (миграция 0019).
+        // 🔐 Чтение — без подписи: по ссылке канал читается анонимно.
+        // Подписчик — аккаунт, его маршруты выше (миграция 0019).
         .route("/v1/channels/feed/:channel_id", get(crate::channels::info))
         .route(
             "/v1/channels/feed/:channel_id/posts",
@@ -647,22 +657,6 @@ fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
                 state.clone(),
                 limit_downloads,
             )),
-        )
-        .route(
-            "/v1/channels/feed/:channel_id/subscribe",
-            post(crate::channels::subscribe),
-        )
-        .route(
-            "/v1/channels/feed/:channel_id/unsubscribe",
-            post(crate::channels::unsubscribe),
-        )
-        .route(
-            "/v1/channels/feed/:channel_id/seen",
-            post(crate::channels::seen),
-        )
-        .route(
-            "/v1/channels/feed/:channel_id/react",
-            post(crate::channels::react),
         )
         // Публичные каналы: по точному имени и поиском по его началу.
         .route(

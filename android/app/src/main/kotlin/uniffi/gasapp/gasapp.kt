@@ -1022,8 +1022,6 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
-
-
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1232,8 +1230,6 @@ fun uniffi_gasapp_checksum_method_messenger_react_to_channel_post(
 fun uniffi_gasapp_checksum_method_messenger_receive_messages(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_recover_account(
-): Short
-fun uniffi_gasapp_checksum_method_messenger_refill_passes(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_refresh_premium(
 ): Short
@@ -1509,8 +1505,6 @@ fun uniffi_gasapp_fn_method_messenger_receive_messages(`ptr`: Pointer,`deviceId`
 ): Int
 fun uniffi_gasapp_fn_method_messenger_recover_account(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`links`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_gasapp_fn_method_messenger_refill_passes(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
-): Int
 fun uniffi_gasapp_fn_method_messenger_refresh_premium(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_gasapp_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuffer.ByValue,`email`: RustBuffer.ByValue,`emailCode`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1519,7 +1513,7 @@ fun uniffi_gasapp_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: Rus
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_remove_channel_admin(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`verifyKey`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_gasapp_fn_method_messenger_report_channel_seen(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_gasapp_fn_method_messenger_report_channel_seen(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_report_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -2088,9 +2082,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_recover_account() != 12588.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_refill_passes() != 51444.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if (lib.uniffi_gasapp_checksum_method_messenger_refresh_premium() != 8947.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2103,7 +2094,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_remove_channel_admin() != 5412.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_report_channel_seen() != 62397.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_report_channel_seen() != 57060.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_report_chat() != 12722.toShort()) {
@@ -3770,21 +3761,6 @@ public interface MessengerInterface {
     fun `recoverAccount`(`recoveryKey`: kotlin.String, `links`: List<kotlin.ByteArray>, `nowMillis`: kotlin.Long): FfiRecoveredAccount
     
     /**
-     * Пополняет запас пропусков — анонимных одноразовых прав на
-     * подписку, — если он на исходе. Сетевой вызов, за подписью
-     * устройства. Возвращает, сколько пропусков добавилось.
-     *
-     * Вызывается заранее, при открытии списка каналов: так сервер не
-     * видит рядом «аккаунт взял пропуск» и «кто-то подписался».
-     *
-     * # Errors
-     *
-     * [`FfiError::Core`] — сервер недоступен, суточный предел исчерпан
-     * либо сервер подписал пропуска не тем ключом, который объявил.
-     */
-    fun `refillPasses`(`nowMillis`: kotlin.Long): kotlin.UInt
-    
-    /**
      * Спрашивает сервер, есть ли у аккаунта премиум. Сетевой вызов.
      *
      * # Errors
@@ -3852,7 +3828,7 @@ public interface MessengerInterface {
      *
      * [`FfiError::Core`] — сервер недоступен.
      */
-    fun `reportChannelSeen`(`channelId`: kotlin.String)
+    fun `reportChannelSeen`(`channelId`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
      * 🔐 Жалуется оператору на собеседника чата. Серверу уходит
@@ -5799,32 +5775,6 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
-     * Пополняет запас пропусков — анонимных одноразовых прав на
-     * подписку, — если он на исходе. Сетевой вызов, за подписью
-     * устройства. Возвращает, сколько пропусков добавилось.
-     *
-     * Вызывается заранее, при открытии списка каналов: так сервер не
-     * видит рядом «аккаунт взял пропуск» и «кто-то подписался».
-     *
-     * # Errors
-     *
-     * [`FfiError::Core`] — сервер недоступен, суточный предел исчерпан
-     * либо сервер подписал пропуска не тем ключом, который объявил.
-     */
-    @Throws(FfiException::class)override fun `refillPasses`(`nowMillis`: kotlin.Long): kotlin.UInt {
-            return FfiConverterUInt.lift(
-    callWithPointer {
-    uniffiRustCallWithError(FfiException) { _status ->
-    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_refill_passes(
-        it, FfiConverterLong.lower(`nowMillis`),_status)
-}
-    }
-    )
-    }
-    
-
-    
-    /**
      * Спрашивает сервер, есть ли у аккаунта премиум. Сетевой вызов.
      *
      * # Errors
@@ -5935,12 +5885,12 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      *
      * [`FfiError::Core`] — сервер недоступен.
      */
-    @Throws(FfiException::class)override fun `reportChannelSeen`(`channelId`: kotlin.String)
+    @Throws(FfiException::class)override fun `reportChannelSeen`(`channelId`: kotlin.String, `nowMillis`: kotlin.Long)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_report_channel_seen(
-        it, FfiConverterString.lower(`channelId`),_status)
+        it, FfiConverterString.lower(`channelId`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     
