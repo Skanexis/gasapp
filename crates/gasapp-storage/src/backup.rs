@@ -1772,6 +1772,7 @@ mod tests {
             subscribed: true,
             joined_at: Timestamp::from_millis(1_000),
             admins: Vec::new(),
+            closed: false,
         };
         let followed = StoredChannel {
             channel_id: [2; 16],

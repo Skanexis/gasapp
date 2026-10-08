@@ -1113,6 +1113,26 @@ pub(crate) async fn remove_subscriber(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Удалённые из канала — тем, кто его ведёт.
+pub(crate) async fn list_bans(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Vec<MemberResponse>>, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    Ok(Json(
+        channels::list_bans(&state.pool, account_id, channel_id)
+            .await?
+            .into_iter()
+            .map(|member| MemberResponse {
+                account_id: member.account_id,
+                username: member.username,
+            })
+            .collect(),
+    ))
+}
+
 /// Снимает запрет: удалённый снова может подать заявку.
 pub(crate) async fn unban(
     State(state): State<Arc<AppState>>,

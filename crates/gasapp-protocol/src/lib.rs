@@ -30,6 +30,7 @@
 pub mod account_recovery;
 pub mod aead;
 pub mod channel;
+pub mod channel_join;
 pub mod contact_link;
 pub mod content;
 pub mod double_ratchet;

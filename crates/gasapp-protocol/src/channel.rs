@@ -881,7 +881,7 @@ pub fn format_uuid(id: &ChannelId) -> String {
     out
 }
 
-fn push_hex(out: &mut String, bytes: &[u8]) {
+pub(crate) fn push_hex(out: &mut String, bytes: &[u8]) {
     for byte in bytes {
         out.push(hex_digit(byte >> 4));
         out.push(hex_digit(byte & 0x0f));
@@ -896,7 +896,7 @@ fn hex_digit(nibble: u8) -> char {
     )
 }
 
-fn hex_value(symbol: u8) -> Result<u8> {
+pub(crate) fn hex_value(symbol: u8) -> Result<u8> {
     match symbol {
         b'0'..=b'9' => Ok(symbol.saturating_sub(b'0')),
         b'a'..=b'f' => Ok(symbol.saturating_sub(b'a').saturating_add(10)),

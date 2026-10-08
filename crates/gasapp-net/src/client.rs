@@ -24,14 +24,16 @@
 use gasapp_types::{GasAppError, Result};
 
 use crate::api::{
-    AccountDeletedResponse, AccountStatusResponse, AddChannelAdminRequest, BundleResponse,
-    CertificateResponse, ChannelMediaResponse, ChannelPostResponse, ChannelReactRequest,
+    AccountDeletedResponse, AccountStatusResponse, AddChannelAdminRequest,
+    AnswerChannelJoinRequest, BundleResponse, CertificateResponse, ChannelInviteRequest,
+    ChannelJoinRequestResponse, ChannelJoinStatusResponse, ChannelMediaResponse,
+    ChannelMemberRequest, ChannelMemberResponse, ChannelPostResponse, ChannelReactRequest,
     ChannelResponse, ChannelSeenRequest, CreateChannelRequest, DeleteChannelMediaRequest,
-    DiscoveryResponse, EmailChallengeResponse, EmailCodeRequest, EnvelopeResponse, KtHeadsResponse,
-    KtProofsRequest, KtProofsResponse, PublishKeysRequest, PublishPostRequest, PublishPostResponse,
-    RecoverAccountRequest, RegisterRequest, RegisterResponse, RemoveChannelAdminRequest,
-    ReplacePostRequest, SealedAccessRequest, SealedReportRequest, SealedReportResponse,
-    SealedSendRequest, UpdateChannelRequest,
+    DiscoveryResponse, EmailChallengeResponse, EmailCodeRequest, EnvelopeResponse,
+    JoinChannelRequest, KtHeadsResponse, KtProofsRequest, KtProofsResponse, PublishKeysRequest,
+    PublishPostRequest, PublishPostResponse, RecoverAccountRequest, RegisterRequest,
+    RegisterResponse, RemoveChannelAdminRequest, ReplacePostRequest, SealedAccessRequest,
+    SealedReportRequest, SealedReportResponse, SealedSendRequest, UpdateChannelRequest,
 };
 
 /// Метод HTTP.
@@ -695,6 +697,304 @@ impl<T: Transport> ApiClient<T> {
         Ok(())
     }
 
+    /// Заводит (`revoke == false`) либо отзывает ссылку-приглашение
+    /// закрытого канала. Серверу уходит хеш метки, не сама ссылка.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет.
+    /// * [`GasAppError::Network`] — сбой соединения либо у канала предел
+    ///   действующих ссылок.
+    pub fn set_channel_invite(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &ChannelInviteRequest,
+        revoke: bool,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        self.send_signed(
+            if revoke { Method::Delete } else { Method::Post },
+            format!("/v1/channels/own/{device_id}/{channel_id}/invites"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Подаёт заявку на вход в закрытый канал.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет, он открытый либо
+    ///   ссылка не действует.
+    /// * [`GasAppError::Forbidden`] — аккаунт удалён из этого канала.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn request_channel_join(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &JoinChannelRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.reader_action(
+            device_id,
+            channel_id,
+            "join",
+            Some(to_json(request)?),
+            signer,
+        )
+    }
+
+    /// Что с заявкой: ждёт, одобрена (тогда — с ответом) либо её нет.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_join_status(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<ChannelJoinStatusResponse> {
+        parse(&self.member_get(device_id, channel_id, "join", signer)?)
+    }
+
+    /// Заявки, ждущие ответа, — для того, кто ведёт канал.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_join_requests(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<ChannelJoinRequestResponse>> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        parse(&self.send_signed(
+            Method::Get,
+            format!("/v1/channels/own/{device_id}/{channel_id}/requests"),
+            None,
+            signer,
+        )?)
+    }
+
+    /// Одобряет (с ответом) либо отклоняет заявку.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет либо
+    ///   заявки уже нет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn answer_channel_join(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &AnswerChannelJoinRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+        // Аккаунт приходит от сервера — в запрос уходит только UUID.
+        let request = AnswerChannelJoinRequest {
+            account_id: canonical_uuid(&request.account_id)?,
+            grant: request.grant.clone(),
+        };
+
+        self.send_signed(
+            Method::Post,
+            format!("/v1/channels/own/{device_id}/{channel_id}/requests"),
+            Some(to_json(&request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Подписчики канала, страницей после аккаунта `after`.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_subscribers(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        after: Option<&str>,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<ChannelMemberResponse>> {
+        let channel_id = canonical_uuid(channel_id)?;
+        let path = match after {
+            Some(after) => format!(
+                "/v1/channels/own/{device_id}/{channel_id}/subscribers?after={}",
+                canonical_uuid(after)?
+            ),
+            None => format!("/v1/channels/own/{device_id}/{channel_id}/subscribers"),
+        };
+
+        parse(&self.send_signed(Method::Get, path, None, signer)?)
+    }
+
+    /// Удалённые из канала — кому можно вернуть право подать заявку.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_bans(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<ChannelMemberResponse>> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        parse(&self.send_signed(
+            Method::Get,
+            format!("/v1/channels/own/{device_id}/{channel_id}/bans"),
+            None,
+            signer,
+        )?)
+    }
+
+    /// Удаляет подписчика из канала (`unban == false`) либо снимает с
+    /// удалённого запрет на новую заявку.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет.
+    /// * [`GasAppError::Malformed`] — удаляют того, кто сам ведёт канал.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn remove_channel_subscriber(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        account_id: &str,
+        unban: bool,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+        let request = ChannelMemberRequest {
+            account_id: canonical_uuid(account_id)?,
+        };
+        let what = if unban { "bans" } else { "subscribers" };
+
+        self.send_signed(
+            Method::Delete,
+            format!("/v1/channels/own/{device_id}/{channel_id}/{what}"),
+            Some(to_json(&request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Закрытый канал — участнику, **за подписью**: сервер отдаёт его
+    /// только тем, кого одобрили.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет либо аккаунт не
+    ///   участник (удалён).
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn member_channel_info(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<ChannelResponse> {
+        parse(&self.member_get(device_id, channel_id, "info", signer)?)
+    }
+
+    /// Изменения закрытого канала после ревизии — участнику.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт не участник.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn member_channel_changes(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        after_rev: u64,
+        limit: u32,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<ChannelPostResponse>> {
+        parse(&self.member_get(
+            device_id,
+            channel_id,
+            &format!("posts?after_rev={after_rev}&limit={limit}"),
+            signer,
+        )?)
+    }
+
+    /// Страница ленты закрытого канала — участнику.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт не участник.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn member_channel_page(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        before_seq: Option<u64>,
+        limit: u32,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<ChannelPostResponse>> {
+        let what = match before_seq {
+            Some(before) => format!("posts?before_seq={before}&limit={limit}"),
+            None => format!("posts?limit={limit}"),
+        };
+
+        parse(&self.member_get(device_id, channel_id, &what, signer)?)
+    }
+
+    /// Медиаблоб закрытого канала — участнику.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — блоба нет либо аккаунт не
+    ///   участник.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn member_download_channel_media(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        media_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<u8>> {
+        let media_id = canonical_uuid(media_id)?;
+
+        Ok(self
+            .member_get(device_id, channel_id, &format!("media/{media_id}"), signer)?
+            .binary_body)
+    }
+
+    /// Чтение от имени участника канала — `GET` за подписью устройства.
+    fn member_get(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        what: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<HttpResponse> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        self.send_signed(
+            Method::Get,
+            format!("/v1/channels/reader/{device_id}/{channel_id}/{what}"),
+            None,
+            signer,
+        )
+    }
+
     /// Перепривязывает аккаунт к новой identity (восстановление
     /// на новом устройстве). Без подписи устройства: право доказывает
     /// подпись ключа восстановления внутри запроса.
@@ -1002,10 +1302,14 @@ impl<T: Transport> ApiClient<T> {
         body: Option<String>,
         signer: &dyn crate::auth::RequestSigner,
     ) -> Result<HttpResponse> {
+        // Сервер сверяет подпись с путём без строки запроса. Параметры
+        // после `?` поэтому не подписаны: ими выбирают только страницу
+        // выдачи, прав они не дают.
+        let signed_path = path.split('?').next().unwrap_or(&path);
         let headers = crate::auth::signature_headers(
             signer,
             method.as_str(),
-            &path,
+            signed_path,
             body.as_deref().unwrap_or("").as_bytes(),
         )?;
 

@@ -625,7 +625,7 @@ fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
         )
         .route(
             "/v1/channels/own/:device_id/:channel_id/bans",
-            axum::routing::delete(crate::channels::unban),
+            get(crate::channels::list_bans).delete(crate::channels::unban),
         )
         // Заявка на вход и её состояние — от имени заявителя.
         .route(

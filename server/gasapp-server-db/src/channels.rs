@@ -1665,6 +1665,44 @@ pub async fn list_subscribers(
         .collect())
 }
 
+/// Удалённые из канала — для владельца и администраторов: кому можно
+/// вернуть право подать заявку. Не больше страницы, от недавних.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn list_bans(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+) -> Result<Vec<Member>, RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT b.account_id, a.username
+           FROM channel_bans b
+           JOIN accounts a ON a.account_id = b.account_id
+          WHERE b.channel_id = $1
+          ORDER BY b.banned_at DESC, b.account_id
+          LIMIT $2",
+    )
+    .bind(channel_id)
+    .bind(MAX_MEMBERS_PER_PAGE)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(account_id, username)| Member {
+            account_id,
+            username,
+        })
+        .collect())
+}
+
 /// Удаляет подписчика из канала: подписка, реакции, ответ на заявку
 /// и сама заявка исчезают, а новая заявка от него не принимается.
 ///

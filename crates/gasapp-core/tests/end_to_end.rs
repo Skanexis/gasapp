@@ -457,6 +457,16 @@ struct FakeChannel {
     admins: HashMap<String, String>,
     /// Сколько ближайших публикаций отвергнуть как «номер занят».
     conflicts: u32,
+    /// Закрытый ли канал.
+    closed: bool,
+    /// Хеши меток действующих ссылок-приглашений, hex.
+    invites: std::collections::HashSet<String>,
+    /// Заявки: аккаунт → заявка, hex.
+    requests: HashMap<String, String>,
+    /// Ответы на одобренные заявки: аккаунт → ответ, hex.
+    grants: HashMap<String, String>,
+    /// Удалённые из канала аккаунты.
+    bans: std::collections::HashSet<String>,
 }
 
 impl FakeChannel {
@@ -482,7 +492,15 @@ impl FakeChannel {
             handle: self.handle.clone(),
             public_link: self.public_link.clone(),
             subscribers: self.subscribers.len() as u64,
+            closed: self.closed,
         }
+    }
+
+    /// Участник ли устройство: владелец, администратор либо подписчик.
+    fn member(&self, device_id: &str) -> bool {
+        self.owner_device == device_id
+            || self.admins.contains_key(device_id)
+            || self.subscribers.contains_key(device_id)
     }
 
     fn post(&self, index: usize) -> gasapp_net::api::ChannelPostResponse {
@@ -554,6 +572,24 @@ impl ChannelJson for Vec<gasapp_net::api::ChannelPostResponse> {
     }
 }
 
+impl ChannelJson for Vec<gasapp_net::api::ChannelMemberResponse> {
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+impl ChannelJson for Vec<gasapp_net::api::ChannelJoinRequestResponse> {
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+impl ChannelJson for gasapp_net::api::ChannelJoinStatusResponse {
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
 /// Место записи в списке по её номеру; несуществующий номер даёт
 /// место за концом списка.
 fn post_index(seq: u64) -> usize {
@@ -591,9 +627,20 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
             return plain(401, String::new());
         }
 
+        let tail = rest.splitn(3, '/').nth(2).unwrap_or_default();
+
+        if let Some(response) = channel_member_route(state, request, device_id, channel_id, tail) {
+            return response;
+        }
+
         let Some(channel) = state.channels.get_mut(channel_id) else {
             return plain(404, String::new());
         };
+
+        // 🔐 В закрытый канал подписчиком делает только одобренная заявка.
+        if action == "subscribe" && channel.closed && !channel.subscribers.contains_key(device_id) {
+            return plain(403, String::new());
+        }
 
         return channel_reader_action(channel, device_id, action, body);
     }
@@ -634,6 +681,7 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
         return plain(404, String::new());
     };
 
+    let (rest, _) = rest.split_once('?').unwrap_or((rest, ""));
     let mut parts = rest.split('/');
     let device_id = parts.next().unwrap_or_default().to_owned();
     let channel_id = parts.next().map(str::to_owned);
@@ -674,11 +722,15 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
 
     // Записи и файлы — владелец и администраторы; остальное — владелец.
     let allowed = match tail {
-        Some("posts" | "media") => writes,
+        Some("posts" | "media" | "invites" | "requests" | "subscribers" | "bans") => writes,
         _ => owned,
     };
     if !allowed {
         return plain(404, String::new());
+    }
+
+    if matches!(tail, Some("invites" | "requests" | "subscribers" | "bans")) {
+        return channel_moderation(state, request, &channel_id, tail.unwrap_or_default());
     }
 
     match (&request.method, tail) {
@@ -737,6 +789,16 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
             }
 
             let channel = state.channels.get_mut(&channel_id).expect("канал есть");
+
+            // Закрытый канал публичным не бывает — и наоборот.
+            if parsed.closed == Some(true) && channel.handle.is_some()
+                || parsed.set_public && parsed.handle.is_some() && channel.closed
+            {
+                return plain(400, String::new());
+            }
+            if let Some(closed) = parsed.closed {
+                channel.closed = closed;
+            }
 
             if let Some(meta) = parsed.meta {
                 channel.meta = meta;
@@ -837,38 +899,283 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
     }
 }
 
+/// Выборка записей по строке запроса — общая для открытого и закрытого
+/// чтения.
+fn select_posts(channel: &FakeChannel, query: &str) -> Vec<gasapp_net::api::ChannelPostResponse> {
+    let limit = query_number(query, "limit").unwrap_or(100).min(100) as usize;
+    let all = (0..channel.posts.len()).map(|index| channel.post(index));
+
+    if let Some(after) = query_number(query, "after_rev") {
+        let mut changed: Vec<_> = all.filter(|post| post.rev > after).collect();
+        changed.sort_by_key(|post| post.rev);
+        changed.truncate(limit);
+        changed
+    } else {
+        let before = query_number(query, "before_seq").unwrap_or(u64::MAX);
+        let mut page: Vec<_> = all
+            .filter(|post| !post.deleted && post.seq < before)
+            .collect();
+        page.reverse();
+        page.truncate(limit);
+        page
+    }
+}
+
+/// Аккаунт устройства.
+fn account_of(state: &ServerState, device_id: &str) -> Option<String> {
+    state
+        .devices
+        .iter()
+        .find(|(_, device)| device.as_str() == device_id)
+        .map(|(account, _)| account.clone())
+}
+
+/// Имя аккаунта.
+fn username_of(state: &ServerState, account_id: &str) -> String {
+    state
+        .accounts
+        .iter()
+        .find(|(_, (account, _))| account == account_id)
+        .map(|(username, _)| username.clone())
+        .unwrap_or_default()
+}
+
+fn member_list(state: &ServerState, accounts: Vec<String>) -> HttpResponse {
+    let mut list: Vec<_> = accounts
+        .into_iter()
+        .map(|account_id| gasapp_net::api::ChannelMemberResponse {
+            username: username_of(state, &account_id),
+            account_id,
+        })
+        .collect();
+    list.sort_by(|left, right| left.account_id.cmp(&right.account_id));
+
+    json(&list)
+}
+
+/// Заявка и чтение закрытого канала — от имени участника, за подписью.
+/// `None` — это не такой запрос.
+fn channel_member_route(
+    state: &mut ServerState,
+    request: &HttpRequest,
+    device_id: &str,
+    channel_id: &str,
+    tail: &str,
+) -> Option<HttpResponse> {
+    let (action, query) = tail.split_once('?').unwrap_or((tail, ""));
+    let body = request.body.as_deref().unwrap_or_default();
+
+    if !matches!(action, "join" | "info" | "posts") && !action.starts_with("media/") {
+        return None;
+    }
+
+    let account = account_of(state, device_id)?;
+    let Some(channel) = state.channels.get_mut(channel_id) else {
+        // Статус заявки в несуществующий канал — «нет», а не ошибка.
+        return Some(if action == "join" && request.method == Method::Get {
+            json(&gasapp_net::api::ChannelJoinStatusResponse {
+                status: "none".to_owned(),
+                grant: None,
+            })
+        } else {
+            plain(404, String::new())
+        });
+    };
+
+    Some(match (&request.method, action) {
+        (Method::Post, "join") => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::JoinChannelRequest>(body)
+            else {
+                return Some(plain(400, String::new()));
+            };
+            let hash = hex::encode(Sha256::digest(
+                hex::decode(&parsed.invite).unwrap_or_default(),
+            ));
+
+            if !channel.closed || !channel.invites.contains(&hash) {
+                plain(404, String::new())
+            } else if channel.bans.contains(&account) {
+                plain(403, String::new())
+            } else {
+                channel.requests.insert(account, parsed.request);
+                plain(204, String::new())
+            }
+        }
+        (Method::Get, "join") => {
+            let (status, grant) = if let Some(grant) = channel.grants.get(&account) {
+                ("approved", Some(grant.clone()))
+            } else if channel.requests.contains_key(&account) {
+                ("pending", None)
+            } else {
+                ("none", None)
+            };
+
+            json(&gasapp_net::api::ChannelJoinStatusResponse {
+                status: status.to_owned(),
+                grant,
+            })
+        }
+        (Method::Get, _) if !channel.member(device_id) => plain(404, String::new()),
+        (Method::Get, "info") => json(&channel.info(channel_id)),
+        (Method::Get, "posts") => json(&select_posts(channel, query)),
+        (Method::Get, media) => media
+            .strip_prefix("media/")
+            .and_then(|media_id| channel.media.get(media_id))
+            .map_or_else(
+                || plain(404, String::new()),
+                |blob| HttpResponse {
+                    status: 200,
+                    body: String::new(),
+                    binary_body: blob.clone(),
+                },
+            ),
+        _ => plain(404, String::new()),
+    })
+}
+
+/// Приглашения, заявки, подписчики и удалённые — для тех, кто ведёт
+/// канал. Право уже проверено.
+fn channel_moderation(
+    state: &mut ServerState,
+    request: &HttpRequest,
+    channel_id: &str,
+    what: &str,
+) -> HttpResponse {
+    let body = request.body.as_deref().unwrap_or_default();
+    let member = serde_json::from_str::<gasapp_net::api::ChannelMemberRequest>(body)
+        .map(|parsed| parsed.account_id);
+
+    match (&request.method, what) {
+        (Method::Post | Method::Delete, "invites") => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelInviteRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+            let channel = state.channels.get_mut(channel_id).expect("канал есть");
+
+            if request.method == Method::Post {
+                channel.invites.insert(parsed.invite_hash);
+            } else {
+                channel.invites.remove(&parsed.invite_hash);
+            }
+
+            plain(204, String::new())
+        }
+        (Method::Get, "requests") => {
+            let channel = &state.channels[channel_id];
+            let mut list: Vec<_> = channel
+                .requests
+                .iter()
+                .map(
+                    |(account_id, request)| gasapp_net::api::ChannelJoinRequestResponse {
+                        account_id: account_id.clone(),
+                        username: username_of(state, account_id),
+                        request: request.clone(),
+                    },
+                )
+                .collect();
+            list.sort_by(|left, right| left.account_id.cmp(&right.account_id));
+
+            json(&list)
+        }
+        (Method::Post, "requests") => {
+            let Ok(parsed) =
+                serde_json::from_str::<gasapp_net::api::AnswerChannelJoinRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+            let device = state.devices.get(&parsed.account_id).cloned();
+            let channel = state.channels.get_mut(channel_id).expect("канал есть");
+
+            if channel.requests.remove(&parsed.account_id).is_none() {
+                return plain(404, String::new());
+            }
+
+            if let (Some(grant), Some(device)) = (parsed.grant, device) {
+                channel.grants.insert(parsed.account_id, grant);
+                channel.subscribers.entry(device).or_insert(0);
+            }
+
+            plain(204, String::new())
+        }
+        (Method::Get, "subscribers") => {
+            let accounts = state.channels[channel_id]
+                .subscribers
+                .keys()
+                .filter_map(|device| account_of(state, device))
+                .collect();
+
+            member_list(state, accounts)
+        }
+        (Method::Delete, "subscribers") => {
+            let Ok(account_id) = member else {
+                return plain(400, String::new());
+            };
+            let device = state.devices.get(&account_id).cloned().unwrap_or_default();
+            let channel = state.channels.get_mut(channel_id).expect("канал есть");
+
+            // Того, кто ведёт канал, так не удалить.
+            if channel.owner_device == device || channel.admins.contains_key(&device) {
+                return plain(400, String::new());
+            }
+
+            channel.subscribers.remove(&device);
+            for post in &mut channel.posts {
+                post.reactions.remove(&device);
+            }
+            channel.grants.remove(&account_id);
+            channel.requests.remove(&account_id);
+            channel.bans.insert(account_id);
+
+            plain(204, String::new())
+        }
+        (Method::Get, "bans") => {
+            let accounts = state.channels[channel_id].bans.iter().cloned().collect();
+
+            member_list(state, accounts)
+        }
+        (Method::Delete, "bans") => {
+            let Ok(account_id) = member else {
+                return plain(400, String::new());
+            };
+
+            state
+                .channels
+                .get_mut(channel_id)
+                .expect("канал есть")
+                .bans
+                .remove(&account_id);
+
+            plain(204, String::new())
+        }
+        _ => plain(404, String::new()),
+    }
+}
+
 /// Чтение канала — анонимно: канал, записи, медиа.
 fn channel_feed(state: &mut ServerState, request: &HttpRequest, rest: &str) -> HttpResponse {
     let (target, query) = rest.split_once('?').unwrap_or((rest, ""));
     let (channel_id, action) = target.split_once('/').unwrap_or((target, ""));
 
     if request.method == Method::Get && action == "posts" {
-        // Несуществующий канал даёт пустой список, как на настоящем.
-        let Some(channel) = state.channels.get(channel_id) else {
+        // Несуществующий канал даёт пустой список, как на настоящем;
+        // закрытый для запроса без подписи не существует.
+        let Some(channel) = state
+            .channels
+            .get(channel_id)
+            .filter(|channel| !channel.closed)
+        else {
             return json(&Vec::<gasapp_net::api::ChannelPostResponse>::new());
         };
-        let limit = query_number(query, "limit").unwrap_or(100).min(100) as usize;
-        let all = (0..channel.posts.len()).map(|index| channel.post(index));
 
-        let posts: Vec<_> = if let Some(after) = query_number(query, "after_rev") {
-            let mut changed: Vec<_> = all.filter(|post| post.rev > after).collect();
-            changed.sort_by_key(|post| post.rev);
-            changed.truncate(limit);
-            changed
-        } else {
-            let before = query_number(query, "before_seq").unwrap_or(u64::MAX);
-            let mut page: Vec<_> = all
-                .filter(|post| !post.deleted && post.seq < before)
-                .collect();
-            page.reverse();
-            page.truncate(limit);
-            page
-        };
-
-        return json(&posts);
+        return json(&select_posts(channel, query));
     }
 
-    let Some(channel) = state.channels.get_mut(channel_id) else {
+    let Some(channel) = state
+        .channels
+        .get_mut(channel_id)
+        .filter(|channel| !channel.closed)
+    else {
         return plain(404, String::new());
     };
 
@@ -6167,7 +6474,7 @@ fn a_reader_follows_a_channel_by_link() {
 
     post_text(&author, &channel.channel_id, "вторая запись");
 
-    assert_eq!(reader.sync_channels().expect("синхронизация"), 1);
+    assert_eq!(reader.sync_channels(now()).expect("синхронизация"), 1);
     assert_eq!(
         texts(&reader, &channel.channel_id),
         vec!["первая запись", "вторая запись"]
@@ -6245,7 +6552,9 @@ fn a_reader_cannot_post() {
     let (author, reader) = author_and_reader(&server, &dir);
     let (channel_id, _) = followed_channel(&author, &reader);
     let seq = post_text(&author, &channel_id, "авторская");
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
 
     assert!(matches!(
         reader.publish_channel_post(&channel_id, "чужая", &[], now(), &mut OsRng),
@@ -6313,7 +6622,7 @@ fn a_post_forged_by_the_server_is_dropped() {
     // Отброшенные записи непрочитанными не считаются.
     assert_eq!(reader.channels().expect("список")[0].unread, 2);
     // И синхронизация на них не зацикливается.
-    assert_eq!(reader.sync_channels().expect("синхронизация"), 0);
+    assert_eq!(reader.sync_channels(now()).expect("синхронизация"), 0);
 }
 
 /// 🔐 Сервер не подменит автора: канал с другим ключом подписи — не тот
@@ -6361,13 +6670,13 @@ fn a_renamed_channel_does_not_roll_back() {
         .expect("переименование");
     assert_eq!(renamed.title, "Новое");
 
-    reader.sync_channels().expect("синхронизация");
+    reader.sync_channels(now()).expect("синхронизация");
     assert_eq!(reader.channels().expect("список")[0].title, "Новое");
 
     // «Сервер» возвращает прежнее описание — оно подписано автором,
     // но старше известного.
     server.tamper_channel(&channel.channel_id, |stored| stored.meta = old_meta);
-    reader.sync_channels().expect("синхронизация");
+    reader.sync_channels(now()).expect("синхронизация");
 
     assert_eq!(reader.channels().expect("список")[0].title, "Новое");
 }
@@ -6393,7 +6702,12 @@ fn a_post_carries_attachments() {
         .expect("запись с файлом");
     assert_eq!(published.attachments.len(), 1);
 
-    assert_eq!(reader.sync_channel(&channel_id).expect("синхронизация"), 1);
+    assert_eq!(
+        reader
+            .sync_channel(&channel_id, now())
+            .expect("синхронизация"),
+        1
+    );
     let received = reader.channel_posts(&channel_id, 10).expect("записи");
     let attachment = &received[0].attachments[0];
 
@@ -6406,7 +6720,7 @@ fn a_post_carries_attachments() {
     );
     assert_eq!(
         reader
-            .fetch_channel_media(&channel_id, &attachment.descriptor)
+            .fetch_channel_media(&channel_id, &attachment.descriptor, now())
             .expect("файл"),
         original
     );
@@ -6426,7 +6740,7 @@ fn a_post_carries_attachments() {
         }
     });
     assert!(reader
-        .fetch_channel_media(&channel_id, &attachment.descriptor)
+        .fetch_channel_media(&channel_id, &attachment.descriptor, now())
         .is_err());
 
     // Пустая запись и лишние вложения не уходят — и файлов не оставляют.
@@ -6452,7 +6766,9 @@ fn an_edit_reaches_readers_and_does_not_roll_back() {
     let (channel_id, _) = followed_channel(&author, &reader);
 
     let seq = post_text(&author, &channel_id, "с ошыбкой");
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     let first_edition = server.channel(&channel_id).posts[0].clone();
 
     let edited = author
@@ -6462,7 +6778,12 @@ fn an_edit_reaches_readers_and_does_not_roll_back() {
     assert!(edited.edited_at.is_some());
 
     // Правка — не новая запись: счётчик непрочитанного не растёт.
-    assert_eq!(reader.sync_channel(&channel_id).expect("синхронизация"), 0);
+    assert_eq!(
+        reader
+            .sync_channel(&channel_id, now())
+            .expect("синхронизация"),
+        0
+    );
     let seen = reader.channel_posts(&channel_id, 10).expect("записи");
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].text, "без ошибки");
@@ -6476,7 +6797,9 @@ fn an_edit_reaches_readers_and_does_not_roll_back() {
             ..first_edition
         };
     });
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
 
     assert_eq!(texts(&reader, &channel_id), vec!["без ошибки"]);
 
@@ -6508,7 +6831,9 @@ fn a_deletion_needs_the_authors_signature() {
         )
         .expect("запись")
         .seq;
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     reader.mark_channel_read(&channel_id).expect("прочитано");
     let doomed_body = server.channel(&channel_id).posts[1].clone();
 
@@ -6518,7 +6843,9 @@ fn a_deletion_needs_the_authors_signature() {
         stored.posts[0].rev = stored.last_rev;
         stored.posts[0].deleted = true;
     });
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&reader, &channel_id), vec!["остаётся", "уйдёт"]);
     server.tamper_channel(&channel_id, |stored| stored.posts[0].deleted = false);
 
@@ -6534,7 +6861,9 @@ fn a_deletion_needs_the_authors_signature() {
     // Закреп удалённой записи снимается вместе с ней.
     assert_eq!(author.channel(&channel_id).expect("канал").pinned_seq, 0);
 
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&reader, &channel_id), vec!["остаётся"]);
     assert!(reader
         .channel_post(&channel_id, doomed)
@@ -6549,7 +6878,9 @@ fn a_deletion_needs_the_authors_signature() {
             ..doomed_body
         };
     });
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&reader, &channel_id), vec!["остаётся"]);
 
     // Второй раз удалить нечего.
@@ -6582,13 +6913,15 @@ fn pin_and_avatar_travel_in_the_signed_meta() {
         .set_channel_avatar(&channel_id, Some(&picture), now(), &mut OsRng)
         .expect("аватар");
 
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     let seen = reader.channel(&channel_id).expect("канал");
     assert_eq!(seen.pinned_seq, seq);
     assert_eq!(seen.title, "Канал");
     assert_eq!(
         reader
-            .fetch_channel_media(&channel_id, &seen.avatar.expect("аватар"))
+            .fetch_channel_media(&channel_id, &seen.avatar.expect("аватар"), now())
             .expect("картинка"),
         picture
     );
@@ -6607,7 +6940,9 @@ fn pin_and_avatar_travel_in_the_signed_meta() {
         .expect("без закрепа");
     assert!(server.channel(&channel_id).media.is_empty());
 
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     let cleared = reader.channel(&channel_id).expect("канал");
     assert_eq!(cleared.pinned_seq, 0);
     assert!(cleared.avatar.is_none());
@@ -6687,7 +7022,7 @@ fn a_public_channel_is_found_by_handle() {
         Err(GasAppError::SessionNotFound)
     ));
     reader
-        .sync_channel(&channel.channel_id)
+        .sync_channel(&channel.channel_id, now())
         .expect("синхронизация");
     assert!(reader
         .channel(&channel.channel_id)
@@ -6738,10 +7073,14 @@ fn subscribers_views_and_reactions() {
     let (channel_id, _) = followed_channel(&author, &reader);
 
     let seq = post_text(&author, &channel_id, "запись");
-    author.sync_channel(&channel_id).expect("синхронизация");
+    author
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(author.channel(&channel_id).expect("канал").subscribers, 2);
 
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     reader.mark_channel_read(&channel_id).expect("прочитано");
     reader
         .report_channel_seen(&channel_id, now())
@@ -6766,7 +7105,9 @@ fn subscribers_views_and_reactions() {
     author
         .react_to_channel_post(&channel_id, seq, Some("👍"), now())
         .expect("реакция автора");
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     let seen = reader
         .channel_post(&channel_id, seq)
         .expect("запись")
@@ -6824,14 +7165,14 @@ fn older_posts_load_on_demand() {
 
     assert_eq!(
         reader
-            .load_older_channel_posts(&channel.channel_id)
+            .load_older_channel_posts(&channel.channel_id, now())
             .expect("история"),
         5
     );
     assert_eq!(texts(&reader, &channel.channel_id).len(), 105);
     assert_eq!(
         reader
-            .load_older_channel_posts(&channel.channel_id)
+            .load_older_channel_posts(&channel.channel_id, now())
             .expect("история"),
         0
     );
@@ -6846,7 +7187,7 @@ fn older_posts_load_on_demand() {
 
     // Новое после подписки приходит изменениями, а не страницей.
     post_text(&author, &channel.channel_id, "запись 106");
-    assert_eq!(reader.sync_channels().expect("синхронизация"), 1);
+    assert_eq!(reader.sync_channels(now()).expect("синхронизация"), 1);
 }
 
 /// «Без звука» убирает канал из общего счётчика; поиск по каналу —
@@ -6860,7 +7201,9 @@ fn mute_unread_total_and_search() {
 
     post_text(&author, &channel_id, "скидка на бензин");
     post_text(&author, &channel_id, "новости недели");
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
 
     assert_eq!(reader.unread_channel_posts().expect("счётчик"), 2);
     // Свой канал автором прочитан.
@@ -6952,7 +7295,9 @@ fn an_admin_posts_and_readers_accept_it() {
     assert_eq!(admins[0].label, "Анна");
     assert!(admins[0].active);
 
-    admin.sync_channel(&channel_id).expect("синхронизация");
+    admin
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     let appointed = admin.channel(&channel_id).expect("канал");
     assert!(appointed.can_post() && !appointed.owned() && !appointed.admin_pending());
 
@@ -6967,12 +7312,16 @@ fn an_admin_posts_and_readers_accept_it() {
         )
         .expect("правка чужой записи");
 
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(
         texts(&reader, &channel_id),
         vec!["исправил администратор", "от администратора"]
     );
-    owner.sync_channel(&channel_id).expect("синхронизация");
+    owner
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&owner, &channel_id).len(), 2);
 
     // 🔐 Администратор — не владелец.
@@ -7016,7 +7365,9 @@ fn the_server_cannot_appoint_an_admin() {
     owner
         .add_channel_admin(&channel_id, &request, "временный", now(), &mut OsRng)
         .expect("назначение");
-    impostor.sync_channel(&channel_id).expect("синхронизация");
+    impostor
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     let before = post_text(&impostor, &channel_id, "до снятия");
 
     let admins = owner
@@ -7044,7 +7395,9 @@ fn the_server_cannot_appoint_an_admin() {
         .publish_channel_post(&channel_id, "подделка", &[], now(), &mut OsRng)
         .expect("сервер принял");
 
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&reader, &channel_id), vec!["настоящая", "до снятия"]);
     assert!(reader
         .channel_post(&channel_id, before)
@@ -7052,7 +7405,9 @@ fn the_server_cannot_appoint_an_admin() {
         .is_some());
 
     // Сам снятый узнаёт о снятии при синхронизации и больше не пишет.
-    impostor.sync_channel(&channel_id).expect("синхронизация");
+    impostor
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     let removed = impostor.channel(&channel_id).expect("канал");
     assert!(!removed.can_post() && removed.admin_pending());
 }
@@ -7073,7 +7428,9 @@ fn a_taken_post_number_is_retried() {
     assert_eq!(seq, 3);
     assert_eq!(server.channel(&channel_id).posts.len(), 3);
 
-    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&reader, &channel_id), vec!["дошла"]);
 }
 
@@ -7208,4 +7565,291 @@ fn a_pending_registration_survives_until_the_account_exists() {
         .expect("регистрация");
 
     assert_eq!(alice.pending_registration().expect("чтение"), None);
+}
+
+// ---------------------------------------------------------------------------
+//  Закрытые каналы
+// ---------------------------------------------------------------------------
+
+/// Закрытый канал автора с одной записью и ссылкой-приглашением.
+fn closed_channel(author: &Client<FakeServer>) -> (String, String) {
+    let channel = author
+        .create_channel("Свои", "", now(), &mut OsRng)
+        .expect("канал");
+    post_text(author, &channel.channel_id, "только для своих");
+
+    assert!(
+        author
+            .set_channel_closed(&channel.channel_id, true, now())
+            .expect("закрыть")
+            .closed
+    );
+
+    let invite = author
+        .create_channel_invite(&channel.channel_id, now(), &mut OsRng)
+        .expect("ссылка");
+
+    (channel.channel_id, invite)
+}
+
+/// Автор одобряет единственную заявку.
+fn approve_only_request(author: &Client<FakeServer>, channel_id: &str) {
+    let requests = author
+        .channel_join_requests(channel_id, now())
+        .expect("заявки");
+    assert_eq!(requests.len(), 1);
+
+    author
+        .answer_channel_join(channel_id, &requests[0].account_id, true, now(), &mut OsRng)
+        .expect("одобрение");
+}
+
+/// 🔐 В закрытый канал входят по заявке: ссылка секрета не несёт,
+/// секрет приходит одобренному шифротекстом, а записи забираются за
+/// подписью.
+#[test]
+fn a_closed_channel_is_joined_by_approved_request() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, invite) = closed_channel(&author);
+
+    // Ссылка-приглашение — не ссылка открытого канала, и секрета в ней нет.
+    assert!(matches!(
+        reader.join_channel(&invite, now()),
+        Err(GasAppError::Malformed)
+    ));
+    assert_eq!(
+        author.channel_invites(&channel_id).expect("ссылки"),
+        vec![invite.clone()]
+    );
+
+    // Полная ссылка с секретом закрытый канал не открывает: сервер
+    // его без подписи не отдаёт, а подписаться в обход нельзя.
+    let full = author.channel_link(&channel_id).expect("ссылка");
+    assert!(reader.join_channel(&full, now()).is_err());
+    assert!(reader.channels().expect("каналы").is_empty());
+
+    reader
+        .request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка");
+    let pending = reader.pending_channel_joins().expect("заявки");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].channel_id, channel_id);
+
+    // Пока не одобрили — канала нет, заявка ждёт.
+    assert!(reader
+        .check_channel_joins(now())
+        .expect("проверка")
+        .is_empty());
+    assert_eq!(reader.pending_channel_joins().expect("заявки").len(), 1);
+
+    let requests = author
+        .channel_join_requests(&channel_id, now())
+        .expect("заявки");
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].username, "reader");
+    assert!(!requests[0].known_contact);
+
+    approve_only_request(&author, &channel_id);
+    assert!(author
+        .channel_join_requests(&channel_id, now())
+        .expect("заявки")
+        .is_empty());
+
+    let joined = reader.check_channel_joins(now()).expect("проверка");
+    assert_eq!(joined.len(), 1);
+    assert_eq!(joined[0].title, "Свои");
+    assert!(joined[0].closed);
+    assert!(reader.pending_channel_joins().expect("заявки").is_empty());
+    assert_eq!(texts(&reader, &channel_id), ["только для своих"]);
+
+    // Новые записи доходят — запросом за подписью, а не анонимным.
+    post_text(&author, &channel_id, "вторая");
+    let before = server.state.borrow().requests.len();
+    assert_eq!(
+        reader
+            .sync_channel(&channel_id, now())
+            .expect("синхронизация"),
+        1
+    );
+    assert_eq!(texts(&reader, &channel_id), ["только для своих", "вторая"]);
+    assert!(
+        server.state.borrow().requests[before..]
+            .iter()
+            .all(|(path, _)| path.starts_with("/v1/channels/reader/")),
+        "закрытый канал читается только за подписью"
+    );
+
+    let members = author
+        .channel_subscribers(&channel_id, None, now())
+        .expect("подписчики");
+    assert!(members.iter().any(|member| member.username == "reader"));
+}
+
+/// Отклонённая заявка исчезает у заявителя; удалённый подписчик
+/// перестаёт получать записи и не может подать заявку, пока запрет
+/// не снят.
+#[test]
+fn declined_and_removed_readers_are_locked_out() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, invite) = closed_channel(&author);
+
+    reader
+        .request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка");
+    let requests = author
+        .channel_join_requests(&channel_id, now())
+        .expect("заявки");
+    let account_id = requests[0].account_id.clone();
+
+    author
+        .answer_channel_join(&channel_id, &account_id, false, now(), &mut OsRng)
+        .expect("отказ");
+    assert!(reader
+        .check_channel_joins(now())
+        .expect("проверка")
+        .is_empty());
+    assert!(reader.pending_channel_joins().expect("заявки").is_empty());
+
+    // Вторая попытка — одобрена.
+    reader
+        .request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка");
+    approve_only_request(&author, &channel_id);
+    assert_eq!(
+        reader.check_channel_joins(now()).expect("проверка").len(),
+        1
+    );
+
+    author
+        .remove_channel_subscriber(&channel_id, &account_id, false, now())
+        .expect("удаление");
+    post_text(&author, &channel_id, "после удаления");
+
+    assert!(matches!(
+        reader.sync_channel(&channel_id, now()),
+        Err(GasAppError::SessionNotFound)
+    ));
+    assert_eq!(texts(&reader, &channel_id), ["только для своих"]);
+
+    let banned = author
+        .channel_banned(&channel_id, now())
+        .expect("удалённые");
+    assert_eq!(banned.len(), 1);
+    assert_eq!(banned[0].username, "reader");
+
+    // Удалённый уходит из канала у себя и просится снова — нельзя.
+    reader.leave_channel(&channel_id, now()).expect("уход");
+    assert!(matches!(
+        reader.request_channel_join(&invite, now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(reader.pending_channel_joins().expect("заявки").is_empty());
+
+    author
+        .remove_channel_subscriber(&channel_id, &account_id, true, now())
+        .expect("снятие запрета");
+    reader
+        .request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка");
+}
+
+/// Отозванная ссылка заявок не принимает; читатель канал не ведёт;
+/// закрытому каналу нельзя дать `@имя`.
+#[test]
+fn closed_channel_rules_hold() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, invite) = closed_channel(&author);
+
+    assert!(matches!(
+        author.set_channel_handle(&channel_id, Some("svoi_kanal"), now()),
+        Err(GasAppError::Malformed)
+    ));
+
+    author
+        .revoke_channel_invite(&channel_id, &invite, now())
+        .expect("отзыв");
+    assert!(author
+        .channel_invites(&channel_id)
+        .expect("ссылки")
+        .is_empty());
+    assert!(matches!(
+        reader.request_channel_join(&invite, now(), &mut OsRng),
+        Err(GasAppError::SessionNotFound)
+    ));
+    assert!(reader.pending_channel_joins().expect("заявки").is_empty());
+
+    // Открытый канал читателя: вести его он не может.
+    let (open_id, _) = followed_channel(&author, &reader);
+    assert!(matches!(
+        reader.set_channel_closed(&open_id, true, now()),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        reader.create_channel_invite(&open_id, now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        reader.channel_join_requests(&open_id, now()),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        reader.channel_subscribers(&open_id, None, now()),
+        Err(GasAppError::Forbidden)
+    ));
+
+    // Канал, закрытый после подписки, читатель продолжает читать — уже
+    // за подписью.
+    post_text(&author, &open_id, "до закрытия");
+    reader.sync_channel(&open_id, now()).expect("синхронизация");
+    author
+        .set_channel_closed(&open_id, true, now())
+        .expect("закрыть");
+    post_text(&author, &open_id, "после закрытия");
+    assert_eq!(
+        reader.sync_channel(&open_id, now()).expect("синхронизация"),
+        1
+    );
+    assert!(reader.channel(&open_id).expect("канал").closed);
+    assert_eq!(texts(&reader, &open_id), ["до закрытия", "после закрытия"]);
+}
+
+/// 🔐 Ответ с чужим секретом не принимается: описание канала им не
+/// расшифровывается, и канал не добавляется.
+#[test]
+fn a_forged_grant_is_refused() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, invite) = closed_channel(&author);
+
+    reader
+        .request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка");
+
+    // Сервер «одобряет» сам: подсовывает ответ, которого автор не давал.
+    {
+        let mut state = server.state.borrow_mut();
+        let reader_account = state.accounts["reader"].0.clone();
+        let reader_device = state.devices[&reader_account].clone();
+        let channel = state.channels.get_mut(&channel_id).expect("канал");
+
+        channel.requests.remove(&reader_account);
+        channel
+            .grants
+            .insert(reader_account, hex::encode([7u8; 93]));
+        channel.subscribers.insert(reader_device, 0);
+    }
+
+    assert!(reader
+        .check_channel_joins(now())
+        .expect("проверка")
+        .is_empty());
+    assert!(reader.channels().expect("каналы").is_empty());
+    assert!(reader.pending_channel_joins().expect("заявки").is_empty());
 }

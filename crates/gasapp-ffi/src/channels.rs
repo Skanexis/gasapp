@@ -11,8 +11,9 @@
 //! ничем не подписанные: интерфейс показывает их как статистику.
 
 use gasapp_core::client::{
-    AttachmentFile, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry, ChannelPreview,
-    ChannelRole, CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
+    AttachmentFile, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry,
+    ChannelJoinRequestInfo, ChannelMember, ChannelPreview, ChannelRole, PendingChannelJoin,
+    CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
 };
 use gasapp_types::Timestamp;
 
@@ -64,6 +65,67 @@ pub struct FfiChannel {
     /// Описание вложения с аватаром — для
     /// [`Messenger::fetch_channel_media`].
     pub avatar: Option<Vec<u8>>,
+    /// Закрытый ли канал: вход по одобренной заявке, записи — только
+    /// участникам.
+    pub closed: bool,
+}
+
+/// Заявка на вход в закрытый канал — для того, кто его ведёт.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChannelJoinRequest {
+    /// Аккаунт заявителя, UUID, — им на заявку отвечают.
+    pub account_id: String,
+    /// Имя заявителя — со слов сервера.
+    pub username: String,
+    /// Заявка подписана ключом известного контакта с таким именем.
+    /// `false` — о заявителе известно только то, что сказал сервер.
+    pub known_contact: bool,
+}
+
+impl From<ChannelJoinRequestInfo> for FfiChannelJoinRequest {
+    fn from(request: ChannelJoinRequestInfo) -> Self {
+        Self {
+            account_id: request.account_id,
+            username: request.username,
+            known_contact: request.known_contact,
+        }
+    }
+}
+
+/// Подписчик либо удалённый из канала — для того, кто его ведёт.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChannelMember {
+    /// Аккаунт, UUID.
+    pub account_id: String,
+    /// Имя — со слов сервера; пусто, если сервер назвал не имя.
+    pub username: String,
+}
+
+impl From<ChannelMember> for FfiChannelMember {
+    fn from(member: ChannelMember) -> Self {
+        Self {
+            account_id: member.account_id,
+            username: member.username,
+        }
+    }
+}
+
+/// Своя заявка в закрытый канал, ждущая ответа.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPendingChannelJoin {
+    /// Канал, UUID.
+    pub channel_id: String,
+    /// Когда заявка подана.
+    pub requested_at_millis: i64,
+}
+
+impl From<PendingChannelJoin> for FfiPendingChannelJoin {
+    fn from(join: PendingChannelJoin) -> Self {
+        Self {
+            channel_id: join.channel_id,
+            requested_at_millis: join.requested_at.as_millis(),
+        }
+    }
 }
 
 impl From<Channel> for FfiChannel {
@@ -87,6 +149,7 @@ impl From<Channel> for FfiChannel {
             muted: channel.muted,
             pinned_seq: channel.pinned_seq,
             avatar: channel.avatar,
+            closed: channel.closed,
         }
     }
 }
@@ -252,6 +315,14 @@ pub struct FfiPendingRegistration {
 #[must_use]
 pub fn is_channel_link(text: String) -> bool {
     gasapp_protocol::channel::ChannelAccess::parse(&text).is_ok()
+}
+
+/// Похожа ли строка на ссылку-приглашение **закрытого** канала: по
+/// такой не входят сразу, а подают заявку.
+#[uniffi::export]
+#[must_use]
+pub fn is_channel_join_link(text: String) -> bool {
+    gasapp_protocol::channel_join::JoinLink::parse(&text).is_ok()
 }
 
 /// Похожа ли строка на заявку на администрирование канала.
@@ -502,10 +573,10 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — сервер недоступен либо канал удалён.
-    pub fn sync_channel(&self, channel_id: String) -> Result<u32, FfiError> {
+    pub fn sync_channel(&self, channel_id: String, now_millis: i64) -> Result<u32, FfiError> {
         let client = self.client()?;
 
-        guard(|| client.sync_channel(&channel_id))
+        guard(|| client.sync_channel(&channel_id, Timestamp::from_millis(now_millis)))
     }
 
     /// Забирает новые записи всех каналов. Сетевой вызов.
@@ -513,10 +584,10 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
-    pub fn sync_channels(&self) -> Result<u32, FfiError> {
+    pub fn sync_channels(&self, now_millis: i64) -> Result<u32, FfiError> {
         let client = self.client()?;
 
-        guard(|| client.sync_channels())
+        guard(|| client.sync_channels(Timestamp::from_millis(now_millis)))
     }
 
     /// Догружает страницу истории канала; возвращает, сколько записей
@@ -525,10 +596,14 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — сервер недоступен.
-    pub fn load_older_channel_posts(&self, channel_id: String) -> Result<u32, FfiError> {
+    pub fn load_older_channel_posts(
+        &self,
+        channel_id: String,
+        now_millis: i64,
+    ) -> Result<u32, FfiError> {
         let client = self.client()?;
 
-        guard(|| client.load_older_channel_posts(&channel_id))
+        guard(|| client.load_older_channel_posts(&channel_id, Timestamp::from_millis(now_millis)))
     }
 
     /// Последние записи канала — без сети, от старых к новым.
@@ -851,7 +926,8 @@ impl Messenger {
     }
 
     /// Скачивает и расшифровывает медиа канала по описанию из записи
-    /// либо аватара. Сетевой вызов, без подписи устройства.
+    /// либо аватара. Сетевой вызов: открытый канал — без подписи
+    /// устройства, закрытый — за подписью, как участник.
     ///
     /// # Errors
     ///
@@ -861,10 +937,282 @@ impl Messenger {
         &self,
         channel_id: String,
         descriptor: Vec<u8>,
+        now_millis: i64,
     ) -> Result<Vec<u8>, FfiError> {
         let client = self.client()?;
 
-        guard(|| client.fetch_channel_media(&channel_id, &descriptor))
+        guard(|| {
+            client.fetch_channel_media(&channel_id, &descriptor, Timestamp::from_millis(now_millis))
+        })
+    }
+
+    /// Делает свой канал закрытым либо снова открытым. Сетевой вызов.
+    ///
+    /// ⚠️ Прежняя ссылка канала несёт ключ чтения, и он не меняется:
+    /// сервер перестаёт отдавать записи посторонним, но не более.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек не владелец канала;
+    /// [`FfiError::InvalidArgument`] — у канала есть публичное `@имя`;
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn set_channel_closed(
+        &self,
+        channel_id: String,
+        closed: bool,
+        now_millis: i64,
+    ) -> Result<FfiChannel, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.set_channel_closed(&channel_id, closed, Timestamp::from_millis(now_millis)))
+            .map(FfiChannel::from)
+            .map_err(malformed_is_invalid)
+    }
+
+    /// Заводит ссылку-приглашение закрытого канала и возвращает её.
+    /// Сетевой вызов. Ключа чтения в ссылке нет: по ней подают заявку.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек канал не ведёт;
+    /// [`FfiError::Core`] — сервер недоступен либо ссылок слишком много.
+    pub fn create_channel_invite(
+        &self,
+        channel_id: String,
+        now_millis: i64,
+    ) -> Result<String, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.create_channel_invite(
+                &channel_id,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Свои действующие ссылки-приглашения канала. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — канала нет на устройстве.
+    pub fn channel_invites(&self, channel_id: String) -> Result<Vec<String>, FfiError> {
+        let client = self.reader()?;
+
+        guard(|| client.channel_invites(&channel_id))
+    }
+
+    /// Отзывает ссылку-приглашение. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек канал не ведёт;
+    /// [`FfiError::InvalidArgument`] — это не ссылка этого канала;
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn revoke_channel_invite(
+        &self,
+        channel_id: String,
+        link: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.revoke_channel_invite(&channel_id, &link, Timestamp::from_millis(now_millis))
+        })
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Подаёт заявку в закрытый канал по ссылке-приглашению. Сетевой
+    /// вызов.
+    ///
+    /// 🔐 Заявка называет серверу аккаунт и канал, а тем, кто ведёт
+    /// канал, — имя аккаунта.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — не ссылка закрытого канала;
+    /// [`FfiError::PremiumRequired`] — аккаунт удалён из этого канала;
+    /// [`FfiError::Core`] — сервер недоступен либо ссылка отозвана.
+    pub fn request_channel_join(&self, link: String, now_millis: i64) -> Result<(), FfiError> {
+        if !is_channel_join_link(link.clone()) {
+            return Err(FfiError::InvalidArgument);
+        }
+
+        let client = self.client()?;
+
+        guard(|| {
+            client.request_channel_join(
+                &link,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Свои заявки, ждущие ответа. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn pending_channel_joins(&self) -> Result<Vec<FfiPendingChannelJoin>, FfiError> {
+        let client = self.reader()?;
+
+        guard(|| client.pending_channel_joins())
+            .map(|joins| joins.into_iter().map(FfiPendingChannelJoin::from).collect())
+    }
+
+    /// Забывает свою заявку на этом устройстве. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор не UUID.
+    pub fn forget_channel_join(&self, channel_id: String) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.forget_channel_join(&channel_id)).map_err(malformed_is_invalid)
+    }
+
+    /// Спрашивает сервер о своих заявках и входит в каналы, куда
+    /// одобрили; возвращает добавленные каналы. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn check_channel_joins(&self, now_millis: i64) -> Result<Vec<FfiChannel>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.check_channel_joins(Timestamp::from_millis(now_millis)))
+            .map(|channels| channels.into_iter().map(FfiChannel::from).collect())
+    }
+
+    /// Заявки в канал, ждущие ответа. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек канал не ведёт;
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn channel_join_requests(
+        &self,
+        channel_id: String,
+        now_millis: i64,
+    ) -> Result<Vec<FfiChannelJoinRequest>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.channel_join_requests(&channel_id, Timestamp::from_millis(now_millis))).map(
+            |requests| {
+                requests
+                    .into_iter()
+                    .map(FfiChannelJoinRequest::from)
+                    .collect()
+            },
+        )
+    }
+
+    /// Одобряет заявку — передаёт заявителю ключ чтения шифротекстом
+    /// под его ключ — либо отклоняет. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек канал не ведёт;
+    /// [`FfiError::Core`] — сервер недоступен, заявки уже нет либо её
+    /// подпись не сходится.
+    pub fn answer_channel_join(
+        &self,
+        channel_id: String,
+        account_id: String,
+        approve: bool,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.answer_channel_join(
+                &channel_id,
+                &account_id,
+                approve,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Подписчики канала — страницей после аккаунта `after`; пустая
+    /// страница — список кончился. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек канал не ведёт;
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn channel_subscribers(
+        &self,
+        channel_id: String,
+        after: Option<String>,
+        now_millis: i64,
+    ) -> Result<Vec<FfiChannelMember>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.channel_subscribers(
+                &channel_id,
+                after.as_deref(),
+                Timestamp::from_millis(now_millis),
+            )
+        })
+        .map(|members| members.into_iter().map(FfiChannelMember::from).collect())
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Удалённые из канала: кому можно вернуть право подать заявку.
+    /// Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек канал не ведёт;
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn channel_banned(
+        &self,
+        channel_id: String,
+        now_millis: i64,
+    ) -> Result<Vec<FfiChannelMember>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.channel_banned(&channel_id, Timestamp::from_millis(now_millis)))
+            .map(|members| members.into_iter().map(FfiChannelMember::from).collect())
+    }
+
+    /// Удаляет подписчика из канала (`restore == false`) либо снимает с
+    /// удалённого запрет на новую заявку (`restore == true`). Сетевой
+    /// вызов.
+    ///
+    /// ⚠️ Ключ чтения удалённый помнит: сервер перестаёт отдавать ему
+    /// записи, но ключ у канала прежний.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек канал не ведёт;
+    /// [`FfiError::InvalidArgument`] — удаляют владельца либо
+    /// администратора; [`FfiError::Core`] — сервер недоступен.
+    pub fn remove_channel_subscriber(
+        &self,
+        channel_id: String,
+        account_id: String,
+        restore: bool,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.remove_channel_subscriber(
+                &channel_id,
+                &account_id,
+                restore,
+                Timestamp::from_millis(now_millis),
+            )
+        })
+        .map_err(malformed_is_invalid)
     }
 
     /// Публичный канал по точному `@имени` — до подписки. Сетевой вызов.
