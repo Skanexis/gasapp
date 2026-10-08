@@ -18,6 +18,10 @@
 //!   подписан аккаунт (ADR-035). Читать канал по ссылке можно и без
 //!   подписки: записи забираются без подписи запроса.
 //!
+//! * **закрытый канал** читают только участники: его записи
+//!   забираются **за подписью** устройства, а входят в него по
+//!   одобренной заявке (`channel_closed`).
+//!
 //! 🔐 Счётчики — подписчики, просмотры, реакции — это слова сервера,
 //! ничем не подписанные. Интерфейс показывает их как статистику,
 //! а не как факт.
@@ -107,6 +111,9 @@ pub struct Channel {
     pub pinned_seq: u64,
     /// Описание вложения с аватаром — для [`Client::fetch_channel_media`].
     pub avatar: Option<Vec<u8>>,
+    /// Закрытый ли канал: вход по одобренной заявке, записи — только
+    /// участникам.
+    pub closed: bool,
 }
 
 /// Вложение записи канала.
@@ -200,7 +207,7 @@ pub enum ChannelRole {
     Owner,
 }
 
-fn role_of(stored: &StoredChannel) -> ChannelRole {
+pub(super) fn role_of(stored: &StoredChannel) -> ChannelRole {
     let Some(key) = stored.signing_key else {
         return ChannelRole::Reader;
     };
@@ -277,7 +284,7 @@ pub struct ChannelPreview {
     pub joined: bool,
 }
 
-fn access_of(stored: &StoredChannel) -> ChannelAccess {
+pub(super) fn access_of(stored: &StoredChannel) -> ChannelAccess {
     ChannelAccess {
         channel_id: stored.channel_id,
         secret: stored.secret,
@@ -285,7 +292,7 @@ fn access_of(stored: &StoredChannel) -> ChannelAccess {
     }
 }
 
-fn parse_id(channel_id: &str) -> Result<ChannelId> {
+pub(super) fn parse_id(channel_id: &str) -> Result<ChannelId> {
     channel::parse_channel_id(channel_id)
 }
 
@@ -355,7 +362,7 @@ fn author_of<'a>(access: &'a ChannelAccess, stored: &StoredChannel) -> Result<Ch
 }
 
 /// Отказ всем, кроме владельца канала.
-fn require_owner(stored: &StoredChannel) -> Result<()> {
+pub(super) fn require_owner(stored: &StoredChannel) -> Result<()> {
     if role_of(stored) == ChannelRole::Owner {
         Ok(())
     } else {
@@ -500,7 +507,7 @@ impl<T: Transport> Client<T> {
         // Записи и подписка — сразу, но их сбой добавлению не мешает:
         // канал уже здесь, остальное доедет при следующей синхронизации.
         let _ = self.ensure_subscribed(&stored, now);
-        let _ = self.sync_stored(&stored, true);
+        let _ = self.sync_stored(&stored, true, now);
 
         self.present(&self.stored_channel(&access.channel_uuid())?)
     }
@@ -559,8 +566,8 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::SessionNotFound`] — канала нет на устройстве
     ///   либо он удалён с сервера;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn sync_channel(&self, channel_id: &str) -> Result<u32> {
-        self.sync_stored(&self.stored_channel(channel_id)?, true)
+    pub fn sync_channel(&self, channel_id: &str, now: Timestamp) -> Result<u32> {
+        self.sync_stored(&self.stored_channel(channel_id)?, true, now)
     }
 
     /// Синхронизирует все каналы; возвращает число новых записей.
@@ -572,11 +579,11 @@ impl<T: Transport> Client<T> {
     /// # Errors
     ///
     /// [`GasAppError::Storage`] — сбой базы.
-    pub fn sync_channels(&self) -> Result<u32> {
+    pub fn sync_channels(&self, now: Timestamp) -> Result<u32> {
         let mut fresh = 0u32;
 
         for stored in self.storage.channels()? {
-            if let Ok(count) = self.sync_stored(&stored, false) {
+            if let Ok(count) = self.sync_stored(&stored, false, now) {
                 fresh = fresh.saturating_add(count);
             }
         }
@@ -584,11 +591,86 @@ impl<T: Transport> Client<T> {
         Ok(fresh)
     }
 
-    fn sync_stored(&self, stored: &StoredChannel, refresh_counters: bool) -> Result<u32> {
-        let access = access_of(stored);
-        let uuid = access.channel_uuid();
+    /// Сведения о канале: открытого — без подписи, закрытого — за
+    /// подписью, как участнику.
+    ///
+    /// Канал, который числится открытым, но без подписи не находится,
+    /// спрашивается ещё раз как закрытый: владелец мог его закрыть, а
+    /// канал из резервной копии признака не несёт.
+    fn feed_info(&self, stored: &StoredChannel, now: Timestamp) -> Result<ChannelResponse> {
+        let uuid = channel::format_uuid(&stored.channel_id);
 
-        let info = self.api.channel_info(&uuid)?;
+        if !stored.closed {
+            match self.api.channel_info(&uuid) {
+                Err(GasAppError::SessionNotFound) => {}
+                other => return other,
+            }
+        }
+
+        let (device_id, identity) = self.own_device()?;
+
+        self.api
+            .member_channel_info(&device_id, &uuid, &DeviceSigner::new(&identity, now))
+    }
+
+    /// Страница ленты — см. [`Self::feed_info`].
+    fn feed_page(
+        &self,
+        stored: &StoredChannel,
+        before_seq: Option<u64>,
+        limit: u32,
+        now: Timestamp,
+    ) -> Result<Vec<ChannelPostResponse>> {
+        let uuid = channel::format_uuid(&stored.channel_id);
+
+        if !stored.closed {
+            return self.api.channel_page(&uuid, before_seq, limit);
+        }
+
+        let (device_id, identity) = self.own_device()?;
+
+        self.api.member_channel_page(
+            &device_id,
+            &uuid,
+            before_seq,
+            limit,
+            &DeviceSigner::new(&identity, now),
+        )
+    }
+
+    /// Изменения после ревизии — см. [`Self::feed_info`].
+    fn feed_changes(
+        &self,
+        stored: &StoredChannel,
+        after_rev: u64,
+        now: Timestamp,
+    ) -> Result<Vec<ChannelPostResponse>> {
+        let uuid = channel::format_uuid(&stored.channel_id);
+
+        if !stored.closed {
+            return self.api.channel_changes(&uuid, after_rev, PAGE);
+        }
+
+        let (device_id, identity) = self.own_device()?;
+
+        self.api.member_channel_changes(
+            &device_id,
+            &uuid,
+            after_rev,
+            PAGE,
+            &DeviceSigner::new(&identity, now),
+        )
+    }
+
+    pub(super) fn sync_stored(
+        &self,
+        stored: &StoredChannel,
+        refresh_counters: bool,
+        now: Timestamp,
+    ) -> Result<u32> {
+        let access = access_of(stored);
+
+        let info = self.feed_info(stored, now)?;
 
         // 🔐 Канал с другим ключом автора — не тот канал.
         if unhex(&info.verify_key)? != stored.verify_key {
@@ -611,7 +693,7 @@ impl<T: Transport> Client<T> {
             // Первая синхронизация: свежая страница ленты, а не вся
             // история с начала. Старое догружается по запросу
             // ([`Client::load_older_channel_posts`]).
-            for item in self.api.channel_page(&uuid, None, PAGE)? {
+            for item in self.feed_page(stored, None, PAGE, now)? {
                 if self.apply_item(stored, &access, &item)? {
                     fresh = fresh.saturating_add(1);
                 }
@@ -622,12 +704,12 @@ impl<T: Transport> Client<T> {
             self.storage
                 .set_channel_last_rev(&stored.channel_id, info.last_rev.min(MAX_COUNTER))?;
         } else {
-            fresh = self.pull_changes(stored, &access, &uuid, info.last_rev)?;
+            fresh = self.pull_changes(stored, &access, info.last_rev, now)?;
 
             if refresh_counters {
                 // Просмотры и реакции ревизию не двигают — их несёт
                 // свежая страница.
-                for item in self.api.channel_page(&uuid, None, COUNTERS_PAGE)? {
+                for item in self.feed_page(stored, None, COUNTERS_PAGE, now)? {
                     self.apply_item(stored, &access, &item)?;
                 }
             }
@@ -651,8 +733,8 @@ impl<T: Transport> Client<T> {
         &self,
         stored: &StoredChannel,
         access: &ChannelAccess,
-        uuid: &str,
         server_rev: u64,
+        now: Timestamp,
     ) -> Result<u32> {
         let mut after = stored.last_rev;
         let mut fresh = 0u32;
@@ -662,7 +744,7 @@ impl<T: Transport> Client<T> {
                 break;
             }
 
-            let page = self.api.channel_changes(uuid, after, PAGE)?;
+            let page = self.feed_changes(stored, after, now)?;
             let full = u32::try_from(page.len()).is_ok_and(|len| len >= PAGE);
 
             for item in &page {
@@ -715,7 +797,16 @@ impl<T: Transport> Client<T> {
             &stored.channel_id,
             handle.as_deref(),
             info.subscribers.min(MAX_COUNTER),
-        )
+        )?;
+
+        // Закрытый ли канал — слова сервера: от них зависит только то,
+        // каким запросом забирать записи.
+        if info.closed != stored.closed {
+            self.storage
+                .set_channel_closed(&stored.channel_id, info.closed)?;
+        }
+
+        Ok(())
     }
 
     /// Проверяет и сохраняет одну запись сервера. Возвращает, новая ли
@@ -804,7 +895,7 @@ impl<T: Transport> Client<T> {
     ///
     /// * [`GasAppError::SessionNotFound`] — канала нет на устройстве;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn load_older_channel_posts(&self, channel_id: &str) -> Result<u32> {
+    pub fn load_older_channel_posts(&self, channel_id: &str, now: Timestamp) -> Result<u32> {
         let stored = self.stored_channel(channel_id)?;
         let access = access_of(&stored);
 
@@ -818,10 +909,7 @@ impl<T: Transport> Client<T> {
 
         let mut added = 0u32;
 
-        for item in self
-            .api
-            .channel_page(&access.channel_uuid(), Some(oldest), PAGE)?
-        {
+        for item in self.feed_page(&stored, Some(oldest), PAGE, now)? {
             // Сервер обязан отдать записи старше границы: всё прочее —
             // не история.
             if item.seq < oldest && self.apply_item(&stored, &access, &item)? {
@@ -1000,8 +1088,7 @@ impl<T: Transport> Client<T> {
             // подписывается заново.
             for _ in 0..PUBLISH_ATTEMPTS {
                 let number = self
-                    .api
-                    .channel_info(&uuid)?
+                    .feed_info(&stored, now)?
                     .last_seq
                     .checked_add(1)
                     .ok_or(GasAppError::Malformed)?;
@@ -1347,6 +1434,7 @@ impl<T: Transport> Client<T> {
                 set_public: true,
                 public_link: handle.as_ref().map(|_| access.to_uri()),
                 handle: handle.clone(),
+                closed: None,
             },
             &DeviceSigner::new(&identity, now),
         )?;
@@ -1416,7 +1504,7 @@ impl<T: Transport> Client<T> {
             .set_channel_post_reaction(&stored.channel_id, seq, emoji.unwrap_or(""))?;
 
         // Свежий счётчик — тем же заходом; его сбой реакции не отменяет.
-        if let Ok(page) = self.api.channel_page(&uuid, Some(seq.saturating_add(1)), 1) {
+        if let Ok(page) = self.feed_page(&stored, Some(seq.saturating_add(1)), 1, now) {
             for item in page.iter().filter(|item| item.seq == seq) {
                 self.apply_item(&stored, &access, item)?;
             }
@@ -1435,17 +1523,41 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::SessionNotFound`] — блоба нет (запись удалена);
     /// * [`GasAppError::Crypto`] — блоб подменён;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn fetch_channel_media(&self, channel_id: &str, descriptor: &[u8]) -> Result<Vec<u8>> {
+    pub fn fetch_channel_media(
+        &self,
+        channel_id: &str,
+        descriptor: &[u8],
+        now: Timestamp,
+    ) -> Result<Vec<u8>> {
         let descriptor = AttachmentDescriptor::from_bytes(descriptor)?;
 
         if descriptor.size > MAX_CHANNEL_MEDIA_BYTES {
             return Err(GasAppError::Malformed);
         }
 
-        let payload = self.api.download_channel_media(
-            &channel::format_uuid(&parse_id(channel_id)?),
-            &descriptor.location,
-        )?;
+        let id = parse_id(channel_id)?;
+        let uuid = channel::format_uuid(&id);
+
+        // Закрытый канал отдаёт медиа только участнику — за подписью.
+        // Канала может не быть на устройстве: так показывается аватар
+        // публичного канала до подписки.
+        let payload = if self
+            .storage
+            .channel(&id)?
+            .is_some_and(|stored| stored.closed)
+        {
+            let (device_id, identity) = self.own_device()?;
+
+            self.api.member_download_channel_media(
+                &device_id,
+                &uuid,
+                &descriptor.location,
+                &DeviceSigner::new(&identity, now),
+            )?
+        } else {
+            self.api
+                .download_channel_media(&uuid, &descriptor.location)?
+        };
 
         open_file(&descriptor, &payload)
     }
@@ -1680,7 +1792,7 @@ impl<T: Transport> Client<T> {
             &DeviceSigner::new(&identity, now),
         )?;
 
-        let last_seq = self.api.channel_info(&uuid)?.last_seq;
+        let last_seq = self.feed_info(&stored, now)?.last_seq;
 
         self.write_meta(&stored, now, rng, |meta| {
             for admin in &mut meta.admins {
@@ -1916,7 +2028,7 @@ impl<T: Transport> Client<T> {
             .ok_or(GasAppError::SessionNotFound)
     }
 
-    fn stored_channel(&self, channel_id: &str) -> Result<StoredChannel> {
+    pub(super) fn stored_channel(&self, channel_id: &str) -> Result<StoredChannel> {
         self.storage
             .channel(&parse_id(channel_id)?)?
             .ok_or(GasAppError::SessionNotFound)
@@ -1934,7 +2046,7 @@ impl<T: Transport> Client<T> {
         Ok((device_id, identity))
     }
 
-    fn present(&self, stored: &StoredChannel) -> Result<Channel> {
+    pub(super) fn present(&self, stored: &StoredChannel) -> Result<Channel> {
         let last = self.storage.channel_posts(&stored.channel_id, 1)?.pop();
         let role = role_of(stored);
 
@@ -1956,12 +2068,13 @@ impl<T: Transport> Client<T> {
             muted: stored.muted,
             pinned_seq: stored.pinned_seq,
             avatar: stored.avatar.clone(),
+            closed: stored.closed,
         })
     }
 }
 
 /// Строка нового канала для базы.
-fn new_stored(
+pub(super) fn new_stored(
     access: &ChannelAccess,
     signing_key: Option<[u8; 32]>,
     meta: &ChannelMeta,
@@ -1987,6 +2100,7 @@ fn new_stored(
         subscribed: false,
         joined_at: now,
         admins: stored_meta(meta).admins,
+        closed: false,
     }
 }
 

@@ -401,7 +401,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 18;
+    const SCHEMA_VERSION: i32 = 19;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -941,6 +941,45 @@ impl Storage {
                             [],
                         )
                         .map_err(storage_error)?;
+                }
+                // 18 → 19: закрытые каналы — признак канала, свои
+                // ссылки-приглашения и заявки, ждущие ответа.
+                19 => {
+                    let present: bool = transaction
+                        .query_row(
+                            "SELECT count(*) > 0 FROM pragma_table_info('channels')
+                              WHERE name = 'closed'",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .map_err(storage_error)?;
+
+                    if !present {
+                        transaction
+                            .execute(
+                                "ALTER TABLE channels ADD COLUMN closed INTEGER NOT NULL DEFAULT 0",
+                                [],
+                            )
+                            .map_err(storage_error)?;
+                    }
+
+                    for statement in [
+                        "CREATE TABLE IF NOT EXISTS channel_invites (
+                             channel_id BLOB NOT NULL,
+                             invite     BLOB NOT NULL,
+                             created_at INTEGER NOT NULL,
+                             PRIMARY KEY (channel_id, invite)
+                         )",
+                        "CREATE TABLE IF NOT EXISTS channel_pending_joins (
+                             channel_id   BLOB PRIMARY KEY,
+                             verify_key   BLOB NOT NULL,
+                             invite       BLOB NOT NULL,
+                             secret       BLOB NOT NULL,
+                             requested_at INTEGER NOT NULL
+                         )",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
+                    }
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.

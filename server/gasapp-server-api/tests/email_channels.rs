@@ -2082,6 +2082,12 @@ async fn a_removed_subscriber_is_locked_out() {
         StatusCode::FORBIDDEN
     );
 
+    // Удалённый виден в списке — оттуда запрет и снимают.
+    let (status, banned) = signed(&state, &owner_key, "GET", &format!("{own}/bans"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(banned.as_array().unwrap().len(), 1);
+    assert_eq!(banned[0]["account_id"], account_id);
+
     let (status, _) = signed(
         &state,
         &owner_key,
@@ -2091,6 +2097,9 @@ async fn a_removed_subscriber_is_locked_out() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, banned) = signed(&state, &owner_key, "GET", &format!("{own}/bans"), None).await;
+    assert_eq!(banned.as_array().unwrap().len(), 0);
     assert_eq!(
         reader(&state, &who, channel_id, "join", again).await,
         StatusCode::NO_CONTENT

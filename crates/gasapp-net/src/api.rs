@@ -412,6 +412,73 @@ pub struct UpdateChannelRequest {
     /// 🔐 С ней сервер может читать канал: это цена публичности.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub public_link: Option<String>,
+    /// Сделать канал закрытым (`true`) либо открытым (`false`); нет —
+    /// не менять.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed: Option<bool>,
+}
+
+/// Ссылка-приглашение закрытого канала: хеш её метки.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelInviteRequest {
+    /// SHA-256 метки из ссылки, hex.
+    pub invite_hash: String,
+}
+
+/// Заявка на вход в закрытый канал.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JoinChannelRequest {
+    /// Метка из ссылки-приглашения, hex.
+    pub invite: String,
+    /// Одноразовый ключ с подписью аккаунта, hex.
+    pub request: String,
+}
+
+/// Состояние заявки.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelJoinStatusResponse {
+    /// `none`, `pending` либо `approved`.
+    pub status: String,
+    /// Ответ на одобренную заявку: зашифрованный секрет чтения, hex.
+    #[serde(default)]
+    pub grant: Option<String>,
+}
+
+/// Заявка глазами того, кто ведёт канал.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelJoinRequestResponse {
+    /// Аккаунт заявителя, UUID.
+    pub account_id: String,
+    /// Его имя — по словам сервера.
+    pub username: String,
+    /// Одноразовый ключ с подписью, hex.
+    pub request: String,
+}
+
+/// Ответ на заявку.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnswerChannelJoinRequest {
+    /// Чья заявка, UUID.
+    pub account_id: String,
+    /// Секрет чтения, зашифрованный под заявку, hex; нет — отклонить.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<String>,
+}
+
+/// Подписчик глазами того, кто ведёт канал.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMemberResponse {
+    /// Аккаунт, UUID.
+    pub account_id: String,
+    /// Имя — по словам сервера.
+    pub username: String,
+}
+
+/// Запрос об одном подписчике: удалить либо снять запрет.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMemberRequest {
+    /// Аккаунт, UUID.
+    pub account_id: String,
 }
 
 /// Запрос публикации записи.
@@ -500,6 +567,9 @@ pub struct ChannelResponse {
     /// Число подписчиков — статистика сервера, ничем не подписана.
     #[serde(default)]
     pub subscribers: u64,
+    /// Закрытый ли канал: вход по заявке, чтение — участникам.
+    #[serde(default)]
+    pub closed: bool,
 }
 
 /// Запись канала.

@@ -68,6 +68,34 @@ pub struct StoredChannel {
     pub joined_at: Timestamp,
     /// Администраторы — из описания канала, подписанного владельцем.
     pub admins: Vec<StoredAdmin>,
+    /// Закрытый ли канал — со слов сервера: записи такого канала
+    /// забираются за подписью, как участником.
+    pub closed: bool,
+}
+
+/// Заявка в закрытый канал, ждущая ответа.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PendingJoin {
+    /// Канал.
+    pub channel_id: [u8; 16],
+    /// Публичный ключ подписи владельца — из ссылки.
+    pub verify_key: [u8; 32],
+    /// Метка приглашения — из ссылки.
+    pub invite: [u8; 16],
+    /// Одноразовый приватный ключ: им расшифровывается ответ.
+    pub secret: [u8; 32],
+    /// Когда заявка подана.
+    pub requested_at: Timestamp,
+}
+
+impl core::fmt::Debug for PendingJoin {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Одноразовый ключ в отладочный вывод не попадает.
+        formatter
+            .debug_struct("PendingJoin")
+            .field("channel_id", &self.channel_id)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Администратор канала, как он назван в описании.
@@ -183,7 +211,7 @@ pub enum PostChange {
 
 const CHANNEL_COLUMNS: &str = "channel_id, secret, verify_key, signing_key, title, description,
      meta_updated_at, pinned_seq, avatar, handle, subscribers, muted, last_seq, last_rev,
-     last_read_seq, seen_sent_seq, subscribed, joined_at, admins";
+     last_read_seq, seen_sent_seq, subscribed, joined_at, admins, closed";
 
 /// Длина одной записи об администраторе: ключ, признак «действует»,
 /// граница.
@@ -247,6 +275,7 @@ fn channel_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<StoredCh
     let subscribed: bool = row.get(16)?;
     let joined: i64 = row.get(17)?;
     let admins: Option<Vec<u8>> = row.get(18)?;
+    let closed: bool = row.get(19)?;
 
     Ok((|| {
         Ok(StoredChannel {
@@ -273,6 +302,7 @@ fn channel_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<StoredCh
                 .map(decode_admins)
                 .transpose()?
                 .unwrap_or_default(),
+            closed,
         })
     })())
 }
@@ -394,7 +424,7 @@ impl Storage {
             .execute(
                 &format!(
                     "INSERT OR IGNORE INTO channels ({CHANNEL_COLUMNS})
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 params![
                     channel.channel_id.as_slice(),
@@ -416,6 +446,7 @@ impl Storage {
                     channel.subscribed,
                     channel.joined_at.as_millis(),
                     encode_admins(&channel.admins),
+                    channel.closed,
                 ],
             )
             .map_err(storage_error)?;
@@ -609,6 +640,149 @@ impl Storage {
         self.channel_update(
             "UPDATE channels SET seen_sent_seq = ?2 WHERE channel_id = ?1 AND seen_sent_seq < ?2",
             params![channel_id.as_slice(), to_sql(seq)?],
+        )
+    }
+
+    /// Запоминает, закрытый ли канал.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn set_channel_closed(&self, channel_id: &[u8; 16], closed: bool) -> Result<()> {
+        self.channel_update(
+            "UPDATE channels SET closed = ?2 WHERE channel_id = ?1",
+            params![channel_id.as_slice(), closed],
+        )
+    }
+
+    /// Запоминает свою ссылку-приглашение закрытого канала.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn add_channel_invite(
+        &self,
+        channel_id: &[u8; 16],
+        invite: &[u8; 16],
+        now: Timestamp,
+    ) -> Result<()> {
+        self.channel_update(
+            "INSERT OR IGNORE INTO channel_invites (channel_id, invite, created_at)
+             VALUES (?1, ?2, ?3)",
+            params![channel_id.as_slice(), invite.as_slice(), now.as_millis()],
+        )
+    }
+
+    /// Забывает отозванную ссылку-приглашение.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn remove_channel_invite(&self, channel_id: &[u8; 16], invite: &[u8; 16]) -> Result<()> {
+        self.channel_update(
+            "DELETE FROM channel_invites WHERE channel_id = ?1 AND invite = ?2",
+            params![channel_id.as_slice(), invite.as_slice()],
+        )
+    }
+
+    /// Свои действующие ссылки-приглашения канала, от новых к старым.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы либо испорченная строка.
+    pub fn channel_invites(&self, channel_id: &[u8; 16]) -> Result<Vec<[u8; 16]>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT invite FROM channel_invites
+                  WHERE channel_id = ? ORDER BY created_at DESC, invite",
+            )
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map(params![channel_id.as_slice()], |row| {
+                row.get::<_, Vec<u8>>(0)
+            })
+            .map_err(storage_error)?;
+
+        rows.map(|row| {
+            row.map_err(storage_error)?
+                .try_into()
+                .map_err(|_| GasAppError::Storage)
+        })
+        .collect()
+    }
+
+    /// Сохраняет заявку в закрытый канал; повторная заменяет прежнюю.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn put_pending_join(&self, join: &PendingJoin) -> Result<()> {
+        self.channel_update(
+            "INSERT OR REPLACE INTO channel_pending_joins
+                 (channel_id, verify_key, invite, secret, requested_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                join.channel_id.as_slice(),
+                join.verify_key.as_slice(),
+                join.invite.as_slice(),
+                join.secret.as_slice(),
+                join.requested_at.as_millis()
+            ],
+        )
+    }
+
+    /// Заявки, ждущие ответа, от новых к старым.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы либо испорченная строка.
+    pub fn pending_joins(&self) -> Result<Vec<PendingJoin>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT channel_id, verify_key, invite, secret, requested_at
+                   FROM channel_pending_joins ORDER BY requested_at DESC, channel_id",
+            )
+            .map_err(storage_error)?;
+
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .map_err(storage_error)?;
+
+        rows.map(|row| {
+            let (channel_id, verify_key, invite, secret, requested_at) =
+                row.map_err(storage_error)?;
+
+            Ok(PendingJoin {
+                channel_id: channel_id.try_into().map_err(|_| GasAppError::Storage)?,
+                verify_key: key_from_blob(verify_key)?,
+                invite: invite.try_into().map_err(|_| GasAppError::Storage)?,
+                secret: key_from_blob(secret)?,
+                requested_at: Timestamp::from_millis(requested_at),
+            })
+        })
+        .collect()
+    }
+
+    /// Убирает заявку: она одобрена, отклонена либо отозвана.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn remove_pending_join(&self, channel_id: &[u8; 16]) -> Result<()> {
+        self.channel_update(
+            "DELETE FROM channel_pending_joins WHERE channel_id = ?1",
+            params![channel_id.as_slice()],
         )
     }
 
@@ -1010,6 +1184,12 @@ impl Storage {
             .map_err(storage_error)?;
         transaction
             .execute(
+                "DELETE FROM channel_invites WHERE channel_id = ?",
+                params![channel_id.as_slice()],
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
                 "DELETE FROM channels WHERE channel_id = ?",
                 params![channel_id.as_slice()],
             )
@@ -1168,6 +1348,7 @@ mod tests {
             subscribed: false,
             joined_at: Timestamp::from_millis(1_000),
             admins: Vec::new(),
+            closed: false,
         }
     }
 
@@ -1195,6 +1376,49 @@ mod tests {
             my_reaction: String::new(),
             attachments: Vec::new(),
         }
+    }
+
+    #[test]
+    fn closed_flag_invites_and_pending_joins_are_kept() {
+        let (storage, _dir) = open_temp();
+        let id = [0x61; 16];
+        storage.insert_channel(&channel(0x61, true)).unwrap();
+
+        assert!(!storage.channel(&id).unwrap().unwrap().closed);
+        storage.set_channel_closed(&id, true).unwrap();
+        assert!(storage.channel(&id).unwrap().unwrap().closed);
+
+        storage
+            .add_channel_invite(&id, &[1; 16], Timestamp::from_millis(10))
+            .unwrap();
+        storage
+            .add_channel_invite(&id, &[2; 16], Timestamp::from_millis(20))
+            .unwrap();
+        assert_eq!(
+            storage.channel_invites(&id).unwrap(),
+            vec![[2; 16], [1; 16]]
+        );
+
+        storage.remove_channel_invite(&id, &[2; 16]).unwrap();
+        assert_eq!(storage.channel_invites(&id).unwrap(), vec![[1; 16]]);
+
+        let join = PendingJoin {
+            channel_id: [0x62; 16],
+            verify_key: [3; 32],
+            invite: [4; 16],
+            secret: [5; 32],
+            requested_at: Timestamp::from_millis(30),
+        };
+        storage.put_pending_join(&join).unwrap();
+        assert_eq!(storage.pending_joins().unwrap(), vec![join.clone()]);
+        assert!(!format!("{join:?}").contains("secret"));
+
+        storage.remove_pending_join(&join.channel_id).unwrap();
+        assert!(storage.pending_joins().unwrap().is_empty());
+
+        // Вместе с каналом уходят и его ссылки.
+        storage.delete_channel(&id).unwrap();
+        assert!(storage.channel_invites(&id).unwrap().is_empty());
     }
 
     #[test]
