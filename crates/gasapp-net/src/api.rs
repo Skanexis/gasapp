@@ -418,6 +418,53 @@ pub struct UpdateChannelRequest {
     pub closed: Option<bool>,
 }
 
+/// Имя бота: запрос токена под него либо удаление бота.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotNameRequest {
+    /// Имя бота — каноничное и на `bot`.
+    pub username: String,
+}
+
+/// Токен, по которому программа бота зарегистрируется.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotTokenResponse {
+    /// Токен, hex. Сервер отдаёт его один раз.
+    pub token: String,
+    /// Сколько секунд токен действует.
+    #[serde(default)]
+    pub expires_in: i64,
+}
+
+/// Бот глазами владельца.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotResponse {
+    /// Аккаунт бота, UUID.
+    pub account_id: String,
+    /// Имя бота.
+    pub username: String,
+}
+
+/// Регистрация бота его программой — по токену владельца.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterBotRequest {
+    /// Токен от владельца, hex.
+    pub token: String,
+    /// Имя, под которое токен выдан.
+    pub username: String,
+    /// Публичный identity-ключ аккаунта, hex.
+    pub identity_key: String,
+    /// Публичный identity-ключ устройства, hex.
+    pub device_identity_key: String,
+    /// Пост-квантовая половина identity — ключ ML-DSA-65, hex.
+    pub pq_identity_key: String,
+    /// Привязка половин identity друг к другу, hex.
+    pub identity_binding: String,
+    /// Челлендж proof-of-work, hex.
+    pub pow_challenge: String,
+    /// Решение proof-of-work.
+    pub pow_nonce: u64,
+}
+
 /// Ссылка-приглашение закрытого канала: хеш её метки.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelInviteRequest {

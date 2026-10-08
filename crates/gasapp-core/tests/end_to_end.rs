@@ -80,6 +80,10 @@ struct ServerState {
     recovery: HashMap<String, (String, String)>,
     /// Устройство аккаунта.
     devices: HashMap<String, String>,
+    /// Невыкупленные токены ботов: токен → устройство владельца и имя.
+    bot_tokens: HashMap<String, (String, String)>,
+    /// Боты: имя → устройство владельца.
+    bots: HashMap<String, String>,
     /// Опубликованные предключи по устройству.
     bundles: HashMap<String, PublishKeysRequest>,
     /// Identity-ключ устройства.
@@ -601,6 +605,133 @@ fn query_number(query: &str, name: &str) -> Option<u64> {
         .split('&')
         .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
         .and_then(|value| value.parse().ok())
+}
+
+/// Боты поддельного сервера — те же маршруты, что у настоящего
+/// (`gasapp-server-api::bots`).
+fn bot_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> HttpResponse {
+    let path = request.path.as_str();
+    let body = request.body.as_deref().unwrap_or_default();
+
+    if path == "/v1/bots/register" {
+        // Программа бота аккаунта ещё не имеет: запрос не подписан.
+        assert!(!signed, "регистрация бота не может быть подписана");
+
+        let Ok(parsed) = serde_json::from_str::<gasapp_net::api::RegisterBotRequest>(body) else {
+            return plain(400, String::new());
+        };
+
+        // Токен годится один раз и только под своё имя.
+        let Some((owner_device, _)) = state
+            .bot_tokens
+            .get(&parsed.token)
+            .filter(|(_, username)| *username == parsed.username)
+            .cloned()
+        else {
+            return plain(403, String::new());
+        };
+        state.bot_tokens.remove(&parsed.token);
+
+        let account_id = FakeServer::next_uuid(state);
+        let device_id = FakeServer::next_uuid(state);
+
+        state.accounts.insert(
+            parsed.username.clone(),
+            (account_id.clone(), parsed.identity_key.clone()),
+        );
+        state.pq.insert(
+            parsed.identity_key,
+            (parsed.pq_identity_key, parsed.identity_binding),
+        );
+        state.devices.insert(account_id.clone(), device_id.clone());
+        state
+            .device_identity
+            .insert(device_id.clone(), parsed.device_identity_key);
+        state.bots.insert(parsed.username, owner_device);
+
+        return plain(
+            200,
+            serde_json::to_string(&RegisterResponse {
+                account_id,
+                device_id,
+            })
+            .unwrap_or_default(),
+        );
+    }
+
+    let Some(device_id) = path.strip_prefix("/v1/bots/own/") else {
+        return plain(404, String::new());
+    };
+
+    if !signed || !state.device_identity.contains_key(device_id) {
+        return plain(401, String::new());
+    }
+
+    let named =
+        serde_json::from_str::<gasapp_net::api::BotNameRequest>(body).map(|parsed| parsed.username);
+
+    match request.method {
+        Method::Post => {
+            let Ok(username) = named else {
+                return plain(400, String::new());
+            };
+
+            if !state.premium_devices.contains(device_id) {
+                return plain(403, String::new());
+            }
+            if !username.ends_with("bot") {
+                return plain(400, String::new());
+            }
+            if state.accounts.contains_key(&username)
+                || state.bot_tokens.values().any(|(_, held)| *held == username)
+            {
+                return plain(409, String::new());
+            }
+
+            state.counter += 1;
+            let token = format!("{:064x}", state.counter);
+            state
+                .bot_tokens
+                .insert(token.clone(), (device_id.to_owned(), username));
+
+            plain(200, format!(r#"{{"token":"{token}","expires_in":3600}}"#))
+        }
+        Method::Get => {
+            let mut list: Vec<_> = state
+                .bots
+                .iter()
+                .filter(|(_, owner)| owner.as_str() == device_id)
+                .map(|(username, _)| {
+                    serde_json::json!({
+                        "account_id": state.accounts[username].0,
+                        "username": username,
+                    })
+                })
+                .collect();
+            list.sort_by_key(|bot| bot["username"].as_str().map(str::to_owned));
+
+            plain(200, serde_json::Value::Array(list).to_string())
+        }
+        Method::Delete => {
+            let Ok(username) = named else {
+                return plain(400, String::new());
+            };
+
+            if state.bots.get(&username).map(String::as_str) != Some(device_id) {
+                return plain(404, String::new());
+            }
+
+            state.bots.remove(&username);
+            if let Some((account_id, _)) = state.accounts.remove(&username) {
+                if let Some(bot_device) = state.devices.remove(&account_id) {
+                    state.device_identity.remove(&bot_device);
+                }
+            }
+
+            plain(204, String::new())
+        }
+        Method::Put => plain(404, String::new()),
+    }
 }
 
 /// Каналы поддельного сервера — те же маршруты, что у настоящего
@@ -1335,6 +1466,10 @@ impl Transport for FakeServer {
                 } else {
                     (401, String::new())
                 }
+            }
+            // Боты — отдельной функцией (`bot_route`).
+            (_, path) if path.starts_with("/v1/bots/") => {
+                return Ok(bot_route(&mut state, request, signed));
             }
             // Каналы — отдельной функцией (`channel_route`).
             (_, path) if path.starts_with("/v1/channels/") => {
@@ -7852,4 +7987,151 @@ fn a_forged_grant_is_refused() {
         .is_empty());
     assert!(reader.channels().expect("каналы").is_empty());
     assert!(reader.pending_channel_joins().expect("заявки").is_empty());
+}
+
+// ---------------------------------------------------------------------------
+//  Боты
+// ---------------------------------------------------------------------------
+
+/// Владелец с премиумом заводит бота: токен одноразовый, программа
+/// бота регистрируется по нему со своими ключами.
+#[test]
+fn an_owner_creates_and_deletes_a_bot() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, plain) = author_and_reader(&server, &dir);
+
+    // Без премиума и с именем не на `bot` — нельзя.
+    assert!(matches!(
+        plain.create_bot("helper_bot", now()),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        owner.create_bot("helper", now()),
+        Err(GasAppError::InvalidUsername)
+    ));
+
+    let token = owner.create_bot("Helper_Bot", now()).expect("токен");
+    assert!(token.starts_with("gasapp-bot:helper_bot:"));
+    assert!(matches!(
+        owner.create_bot("helper_bot", now()),
+        Err(GasAppError::UsernameTaken)
+    ));
+    assert!(owner.bots(now()).expect("боты").is_empty());
+
+    let bot = Client::new(server.clone(), open_storage(&dir, "bot.db"));
+    let account = bot.register_bot(&token, now(), &mut OsRng).expect("бот");
+    assert_eq!(account.username, "helper_bot");
+    assert_eq!(
+        bot.own_username().expect("имя").as_deref(),
+        Some("helper_bot")
+    );
+    assert_eq!(owner.bots(now()).expect("боты"), ["helper_bot"]);
+
+    // Токен одноразовый; чужая строка — не токен.
+    let second = Client::new(server.clone(), open_storage(&dir, "bot2.db"));
+    assert!(matches!(
+        second.register_bot(&token, now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        second.register_bot("gasapp-bot:helper_bot:zz", now(), &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+
+    // Боту пишут, как любому аккаунту: контакт — по его ссылке.
+    owner
+        .add_contact_from_link(&bot.own_contact_link().expect("ссылка бота"), now())
+        .expect("контакт");
+    owner
+        .send_message("helper_bot", "привет, бот", now(), &mut OsRng)
+        .expect("сообщение боту");
+    let device = bot.own_device_id().expect("устройство").expect("есть");
+    assert_eq!(bot.receive_messages(&device, now()).expect("приём"), 1);
+
+    // Чужого бота не удалить; своего — можно.
+    assert!(matches!(
+        plain.delete_bot("helper_bot", now()),
+        Err(GasAppError::SessionNotFound)
+    ));
+    owner.delete_bot("helper_bot", now()).expect("удаление");
+    assert!(owner.bots(now()).expect("боты").is_empty());
+}
+
+/// 🔐 Бот, назначенный администратором, ведёт закрытый канал: одобряет
+/// заявки (передаёт ключ чтения) и удаляет подписчиков.
+#[test]
+fn a_bot_admin_approves_and_removes_subscribers() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, reader) = author_and_reader(&server, &dir);
+    let (channel_id, invite) = closed_channel(&owner);
+
+    let token = owner.create_bot("gate_bot", now()).expect("токен");
+    let bot = Client::new(server.clone(), open_storage(&dir, "bot.db"));
+    bot.register_bot(&token, now(), &mut OsRng).expect("бот");
+
+    // Бот входит в канал, как все: по заявке, которую одобряет владелец.
+    bot.request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка бота");
+    approve_only_request(&owner, &channel_id);
+    assert_eq!(bot.check_channel_joins(now()).expect("проверка").len(), 1);
+
+    // Подписчик канал не ведёт.
+    assert!(matches!(
+        bot.channel_join_requests(&channel_id, now()),
+        Err(GasAppError::Forbidden)
+    ));
+
+    let request = bot
+        .channel_admin_request(&channel_id, &mut OsRng)
+        .expect("заявка на администрирование");
+    owner
+        .add_channel_admin(&channel_id, &request, "Привратник", now(), &mut OsRng)
+        .expect("назначение");
+    bot.sync_channel(&channel_id, now()).expect("синхронизация");
+    assert!(bot.channel(&channel_id).expect("канал").can_post());
+
+    // Заявку читателя одобряет бот — и читатель входит.
+    reader
+        .request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка");
+    let requests = bot
+        .channel_join_requests(&channel_id, now())
+        .expect("заявки");
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].username, "reader");
+
+    bot.answer_channel_join(
+        &channel_id,
+        &requests[0].account_id,
+        true,
+        now(),
+        &mut OsRng,
+    )
+    .expect("одобрение ботом");
+    assert_eq!(
+        reader.check_channel_joins(now()).expect("проверка").len(),
+        1
+    );
+    assert_eq!(texts(&reader, &channel_id), ["только для своих"]);
+
+    // Бот пишет в канал, и читатель это принимает.
+    post_text(&bot, &channel_id, "от бота");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+    assert_eq!(texts(&reader, &channel_id), ["только для своих", "от бота"]);
+
+    // Бот удаляет подписчика.
+    bot.remove_channel_subscriber(&channel_id, &requests[0].account_id, false, now())
+        .expect("удаление ботом");
+    assert!(matches!(
+        reader.sync_channel(&channel_id, now()),
+        Err(GasAppError::SessionNotFound)
+    ));
+
+    // Удалён бот — канал он больше не ведёт: аккаунта нет.
+    owner.delete_bot("gate_bot", now()).expect("удаление бота");
+    assert!(bot.channel_join_requests(&channel_id, now()).is_err());
 }

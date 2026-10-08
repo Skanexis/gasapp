@@ -946,6 +946,49 @@ impl Messenger {
         })
     }
 
+    /// Берёт у сервера токен под имя будущего бота и возвращает строку
+    /// `gasapp-bot:<имя>:<токен>` — её владелец переносит туда, где будет
+    /// работать программа бота. Сетевой вызов.
+    ///
+    /// 🔐 Строка на устройстве не сохраняется, действует час и годится
+    /// один раз. Ключи бота рождаются у его программы: приложение их не
+    /// видит.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — имя неканоничное либо не на `bot`;
+    /// [`FfiError::PremiumRequired`] — у аккаунта нет премиума;
+    /// [`FfiError::UsernameTaken`] — имя занято;
+    /// [`FfiError::Core`] — сервер недоступен либо ботов слишком много.
+    pub fn create_bot(&self, username: String, now_millis: i64) -> Result<String, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.create_bot(&username, Timestamp::from_millis(now_millis)))
+    }
+
+    /// Имена своих ботов. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn bots(&self, now_millis: i64) -> Result<Vec<String>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.bots(Timestamp::from_millis(now_millis)))
+    }
+
+    /// Удаляет своего бота вместе с его аккаунтом. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — это не имя бота;
+    /// [`FfiError::Core`] — сервер недоступен либо такого бота нет.
+    pub fn delete_bot(&self, username: String, now_millis: i64) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.delete_bot(&username, Timestamp::from_millis(now_millis)))
+    }
+
     /// Делает свой канал закрытым либо снова открытым. Сетевой вызов.
     ///
     /// ⚠️ Прежняя ссылка канала несёт ключ чтения, и он не меняется:
