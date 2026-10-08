@@ -23,9 +23,9 @@
 //! Что ищется: паника, переполнение при вычислении длин, попытка
 //! выделить память по числу из файла и зацикливание на разборе.
 
-use aegis_backup::archive::ArchiveHeader;
-use aegis_backup::bundle::BackupBundle;
-use aegis_backup::{BackupChain, RecoveryKey};
+use gasapp_backup::archive::ArchiveHeader;
+use gasapp_backup::bundle::BackupBundle;
+use gasapp_backup::{BackupChain, RecoveryKey};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

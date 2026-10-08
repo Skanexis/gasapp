@@ -53,14 +53,14 @@ jobs:
 
       - name: build core for the emulator ABI in the pinned container
         run: |
-          docker build -f tools/Dockerfile.android -t aegis-android tools/
-          docker run --rm -v "$PWD":/work -w /work aegis-android \
+          docker build -f tools/Dockerfile.android -t gasapp-android tools/
+          docker run --rm -v "$PWD":/work -w /work gasapp-android \
             tools/build-rust-android.sh --abi x86_64
 
       # 🔐 CODE-2.5 на той библиотеке, что поедет на эмулятор.
       - name: check native hardening
         run: |
-          docker run --rm -v "$PWD":/work -w /work aegis-android \
+          docker run --rm -v "$PWD":/work -w /work gasapp-android \
             bash tools/check-so-hardening.sh
 
       # Аппаратное ускорение: без KVM эмулятор за разумное время
@@ -83,4 +83,4 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: android
-          script: ./gradlew --console=plain :app:connectedFossDebugAndroidTest -PaegisAllowUnreleasable=true
+          script: ./gradlew --console=plain :app:connectedFossDebugAndroidTest -PgasappAllowUnreleasable=true

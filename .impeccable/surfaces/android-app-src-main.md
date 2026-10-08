@@ -13,7 +13,7 @@ Constraints: keep the kit's dark theme; no "hacker" look (no neon terminals, sku
 
 ## Direction contract
 
-THESIS: AEGIS is a security document you carry, not a terminal. The screens borrow the grammar of intaglio security printing (passports, banknotes): fine-line guilloche, deep printing inks, one luminous ink for action. It refuses the category default of near-black plus a single neon cyan.
+THESIS: GasApp is a security document you carry, not a terminal. The screens borrow the grammar of intaglio security printing (passports, banknotes): fine-line guilloche, deep printing inks, one luminous ink for action. It refuses the category default of near-black plus a single neon cyan.
 
 OWN-WORLD: ground of deep ink-navy (not black) in tonal steps; one periwinkle "ink" accent for action and outgoing speech; status inks green / amber / red kept semantic; a fine-line guilloche rosette drawn in code as the brand mark (hairline strokes, low alpha), never as decoration on every surface — on lock, onboarding welcome, empty chat list, security center only. Inter for all text.
 

@@ -17,18 +17,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/profile_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             android:text="@string/profile_title" />
@@ -64,7 +64,7 @@
 
             <TextView
                 android:id="@+id/profile_username"
-                style="@style/AegisText.H2"
+                style="@style/GasAppText.H2"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
@@ -72,7 +72,7 @@
                 tools:text="\@anna_bk" />
 
             <TextView
-                style="@style/AegisText.Caption.Muted"
+                style="@style/GasAppText.Caption.Muted"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xs"
@@ -94,12 +94,12 @@
             </FrameLayout>
 
             <TextView
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_m"
                 android:gravity="center"
                 android:text="@string/profile_qr_hint" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/profile_share"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -107,7 +107,7 @@
                 android:text="@string/profile_share"
                 app:buttonVariant="primary" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/profile_copy"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

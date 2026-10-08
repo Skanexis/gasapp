@@ -17,18 +17,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/screen_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             android:text="@string/new_chat" />
@@ -48,12 +48,12 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_s"
                 android:labelFor="@id/add_contact_username"
                 android:text="@string/onboarding_username_label" />
 
-            <org.aegis.app.components.AegisTextField
+            <org.gasapp.app.components.GasAppTextField
                 android:id="@+id/add_contact_username"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -68,13 +68,13 @@
             <!-- Подсказка, на её место встаёт итог (UI kit, Inputs). -->
             <TextView
                 android:id="@+id/add_contact_status"
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_s"
                 android:accessibilityLiveRegion="polite"
                 android:drawablePadding="6dp"
                 android:text="@string/add_contact_username_helper" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/add_contact_open"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -97,7 +97,7 @@
                     android:background="@color/line" />
 
                 <TextView
-                    style="@style/AegisText.Caption.Muted"
+                    style="@style/GasAppText.Caption.Muted"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="@dimen/space_m"
@@ -111,7 +111,7 @@
                     android:background="@color/line" />
             </LinearLayout>
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/add_contact_scan"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -121,7 +121,7 @@
                 app:buttonVariant="outline" />
 
             <TextView
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_s"
                 android:text="@string/add_contact_scan_helper" />
         </LinearLayout>

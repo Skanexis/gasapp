@@ -12,8 +12,8 @@
 //! Что ищется: паника при разборе — выход за границу буфера,
 //! переполнение счётчика пропущенных ключей, некорректная длина ключа.
 
-use aegis_protocol::{double_ratchet::RatchetState, keys::SessionState};
-use aegis_types::Secret;
+use gasapp_protocol::{double_ratchet::RatchetState, keys::SessionState};
+use gasapp_types::Secret;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

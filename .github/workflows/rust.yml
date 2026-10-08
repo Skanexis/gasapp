@@ -49,7 +49,7 @@ jobs:
 
       # Документация собирается без предупреждений. Неразрешённая ссылка
       # в rustdoc — чаще всего устаревшее утверждение: так нашлось
-      # обещание ошибки `AegisError::NotFound`, которой нет (404 приходит
+      # обещание ошибки `GasAppError::NotFound`, которой нет (404 приходит
       # как `SessionNotFound`), и ссылки на переименованные константы.
       - name: docs build without warnings
         env:
@@ -78,12 +78,12 @@ jobs:
   #
   #  ⚠️ До появления этого джоба серверный код в CI не собирался вовсе —
   #  проверялся только `crates/`. Интеграционные тесты при этом молча
-  #  пропускались без `AEGIS_TEST_DATABASE_URL`, и семь тестов из
+  #  пропускались без `GASAPP_TEST_DATABASE_URL`, и семь тестов из
   #  семнадцати были красными всё время, пока считались зелёными:
   #  подпись в них делалась ed25519, а сервер проверяет XEdDSA.
   #
   #  Поэтому база здесь не «если получится», а условие запуска:
-  #  `AEGIS_REQUIRE_DATABASE` превращает пропуск в падение.
+  #  `GASAPP_REQUIRE_DATABASE` превращает пропуск в падение.
   # ---------------------------------------------------------------------------
   server:
     name: server · clippy · tests (postgres)
@@ -93,22 +93,22 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: aegis
-          POSTGRES_PASSWORD: aegis-dev
-          POSTGRES_DB: aegis
+          POSTGRES_USER: gasapp
+          POSTGRES_PASSWORD: gasapp-dev
+          POSTGRES_DB: gasapp
         ports:
           - 5433:5432
         # Без проверки готовности первый же тест упирается в базу,
         # которая ещё поднимается, и падает «не смог подключиться».
         options: >-
-          --health-cmd "pg_isready -U aegis"
+          --health-cmd "pg_isready -U gasapp"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
 
     env:
-      AEGIS_TEST_DATABASE_URL: postgres://aegis:aegis-dev@localhost:5433/aegis
-      AEGIS_REQUIRE_DATABASE: "1"
+      GASAPP_TEST_DATABASE_URL: postgres://gasapp:gasapp-dev@localhost:5433/gasapp
+      GASAPP_REQUIRE_DATABASE: "1"
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -172,13 +172,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: aegis
-          POSTGRES_PASSWORD: aegis-dev
-          POSTGRES_DB: aegis
+          POSTGRES_USER: gasapp
+          POSTGRES_PASSWORD: gasapp-dev
+          POSTGRES_DB: gasapp
         ports:
           - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U aegis"
+          --health-cmd "pg_isready -U gasapp"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
@@ -200,7 +200,7 @@ jobs:
             server
 
       - name: build the server
-        run: cargo build --manifest-path server/Cargo.toml -p aegis-server-api
+        run: cargo build --manifest-path server/Cargo.toml -p gasapp-server-api
 
       # Сервер поднимается на том же хосте: тестам нужен настоящий
       # разбор HTTP, а не обёртка вокруг роутера.
@@ -208,17 +208,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 🔐 AEGIS_ALLOW_INSECURE обязателен и здесь тоже.
+          # 🔐 GASAPP_ALLOW_INSECURE обязателен и здесь тоже.
           #
           # Сервер отказывается подниматься без TLS и без ключа подписи
           # сертификатов — молчаливый откат к незащищённому режиму
           # запрещён. Тестам защита не нужна, но сказать об этом
           # приходится вслух, и это верно: иначе тот же самый запуск
           # однажды оказался бы боевым.
-          DATABASE_URL=postgres://aegis:aegis-dev@localhost:5433/aegis \
-          AEGIS_BIND=127.0.0.1:8443 \
-          AEGIS_ALLOW_INSECURE=1 \
-            server/target/debug/aegis-server-api > server.log 2>&1 &
+          DATABASE_URL=postgres://gasapp:gasapp-dev@localhost:5433/gasapp \
+          GASAPP_BIND=127.0.0.1:8443 \
+          GASAPP_ALLOW_INSECURE=1 \
+            server/target/debug/gasapp-server-api > server.log 2>&1 &
 
           for _ in $(seq 1 30); do
             if curl -sf -o /dev/null http://127.0.0.1:8443/health; then
@@ -236,12 +236,12 @@ jobs:
       # и джоб будет зелёным, ничего не проверив.
       - name: client against the server
         env:
-          AEGIS_SERVER: http://127.0.0.1:8443
+          GASAPP_SERVER: http://127.0.0.1:8443
         run: |
           set -euo pipefail
 
           output=$(cargo test --manifest-path crates/Cargo.toml \
-            -p aegis-core --test live_server -- --ignored 2>&1 | tee /dev/stderr)
+            -p gasapp-core --test live_server -- --ignored 2>&1 | tee /dev/stderr)
 
           # Проверка проверки: набор из нуля тестов «проходит» всегда.
           if echo "$output" | grep -qE "test result: ok\. 0 passed"; then

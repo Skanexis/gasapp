@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Проверка узлов AEGIS и оповещение при отказе.
+# Проверка узлов GasApp и оповещение при отказе.
 #
 # # Что проверяется
 #
 # Ручка `/health` каждого узла. Она отдаёт состояние процесса:
 # доступна ли база, жив ли слушатель уведомлений. Ничего про
-# пользователей она не знает — см. `aegis-server-api/src/health.rs`.
+# пользователей она не знает — см. `gasapp-server-api/src/health.rs`.
 #
 # # 🔐 Почему оповещение скупое
 #
@@ -29,39 +29,39 @@
 #
 # # Запуск
 #
-#     AEGIS_NODES="10.0.0.1 10.0.0.2 10.0.0.3" ./check-nodes.sh
+#     GASAPP_NODES="10.0.0.1 10.0.0.2 10.0.0.3" ./check-nodes.sh
 #
 # Из cron, раз в минуту:
 #
-#     * * * * * . /etc/aegis/monitor.env && /opt/aegis/check-nodes.sh
+#     * * * * * . /etc/gasapp/monitor.env && /opt/gasapp/check-nodes.sh
 #
-# Обычно его запускает aegis-monitor.sh на балансировщике (роль lb),
+# Обычно его запускает gasapp-monitor.sh на балансировщике (роль lb),
 # отдельная строка cron не нужна.
 
 set -uo pipefail
 
 # Узлы через пробел.
-readonly NODES="${AEGIS_NODES:?укажите AEGIS_NODES}"
+readonly NODES="${GASAPP_NODES:?укажите GASAPP_NODES}"
 
 # Порт узла.
-readonly PORT="${AEGIS_HEALTH_PORT:-8443}"
+readonly PORT="${GASAPP_HEALTH_PORT:-8443}"
 
 # Команда оповещения: получает текст на stdin.
 #
 # По умолчанию — запись в системный журнал. Он локален, и это
 # осознанный выбор по умолчанию: внешний канал требует решения
 # о том, кому доверить сведения об отказах.
-readonly NOTIFY="${AEGIS_NOTIFY_CMD:-logger -t aegis-monitor}"
+readonly NOTIFY="${GASAPP_NOTIFY_CMD:-logger -t gasapp-monitor}"
 
 # 🔐 Центр, которым подписаны сертификаты узлов (pki/internal-ca.sh).
 #
-# С ним узел проверяется по имени aegis-node: ответ «я здоров» от того,
+# С ним узел проверяется по имени gasapp-node: ответ «я здоров» от того,
 # кто встал посреди внутренней сети, не принимается. Без него — прежнее
 # поведение (-k), только чтобы не сломать уже настроенные установки.
-readonly CA="${AEGIS_INTERNAL_CA:-/etc/aegis/pki/ca.pem}"
+readonly CA="${GASAPP_INTERNAL_CA:-/etc/gasapp/pki/ca.pem}"
 
 # Файл состояния: чтобы не слать оповещение каждую минуту.
-readonly STATE_DIR="${AEGIS_MONITOR_STATE:-/var/lib/aegis-monitor}"
+readonly STATE_DIR="${GASAPP_MONITOR_STATE:-/var/lib/gasapp-monitor}"
 
 mkdir -p "$STATE_DIR"
 
@@ -75,7 +75,7 @@ for node in $NODES; do
     state_file="${STATE_DIR}/$(echo "$node" | tr -c 'a-zA-Z0-9' '_')"
 
     # --max-time: зависший узел не должен задерживать проверку
-    # остальных. --resolve: сертификат узла выписан на имя aegis-node,
+    # остальных. --resolve: сертификат узла выписан на имя gasapp-node,
     # а ходим по адресу.
     #
     # Код возврата берётся отдельной проверкой `if`, а не через `$?`
@@ -83,8 +83,8 @@ for node in $NODES; do
     # команды, а не к curl, и недоступный узел определялся бы как
     # «не видит базу» — то есть дежурный искал бы проблему не там.
     if [[ -r "$CA" ]]; then
-        url="https://aegis-node:${PORT}/health"
-        tls=(--cacert "$CA" --resolve "aegis-node:${PORT}:${node}")
+        url="https://gasapp-node:${PORT}/health"
+        tls=(--cacert "$CA" --resolve "gasapp-node:${PORT}:${node}")
     else
         url="https://${node}:${PORT}/health"
         tls=(-k)
@@ -112,7 +112,7 @@ for node in $NODES; do
         # Оповещение о восстановлении: без него дежурный не узнает,
         # что проблема ушла, и будет считать узел мёртвым.
         if [[ "$previous" != "ok" ]]; then
-            echo "AEGIS: узел ${node} восстановился" | $NOTIFY
+            echo "GasApp: узел ${node} восстановился" | $NOTIFY
         fi
 
         continue
@@ -124,7 +124,7 @@ for node in $NODES; do
     # не должен давать шестьдесят одинаковых сообщений — их перестают
     # читать, и следующий настоящий отказ пройдёт незамеченным.
     if [[ "$previous" != "$status" ]]; then
-        echo "AEGIS: узел ${node} — ${status}" | $NOTIFY
+        echo "GasApp: узел ${node} — ${status}" | $NOTIFY
     fi
 done
 
@@ -152,9 +152,9 @@ echo "$cluster_status" > "$CLUSTER_STATE"
 
 if [[ "$cluster_status" != "$cluster_previous" ]]; then
     if [[ "$cluster_status" == "down" ]]; then
-        echo "AEGIS: ВСЕ узлы (${total}) недоступны — сервис не работает" | $NOTIFY
+        echo "GasApp: ВСЕ узлы (${total}) недоступны — сервис не работает" | $NOTIFY
     else
-        echo "AEGIS: сервис восстановился" | $NOTIFY
+        echo "GasApp: сервис восстановился" | $NOTIFY
     fi
 fi
 

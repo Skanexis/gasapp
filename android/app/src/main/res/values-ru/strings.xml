@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <resources>
-    <string name="app_name">AEGIS</string>
+    <string name="app_name">GasApp</string>
 
     <!-- Экран проверки моста FFI (M1). Заменяется реальными экранами в M4. -->
     <string name="ffi_core_version">Версия ядра: %1$s</string>
@@ -42,7 +42,7 @@
 
     <!-- Блокировка -->
     <string name="lock_icon">Заблокировано</string>
-    <string name="lock_title">AEGIS заблокирован</string>
+    <string name="lock_title">GasApp заблокирован</string>
     <string name="lock_subtitle">Введите PIN, чтобы расшифровать переписку</string>
     <string name="pin_hint">PIN</string>
     <string name="pin_error">Не удалось разблокировать</string>
@@ -124,8 +124,8 @@
     <string name="onboarding_username_hint">например, anna_k</string>
     <string name="onboarding_username_label">Имя пользователя</string>
     <string name="onboarding_username_helper">Латинские буквы, цифры и _. По нему вас найдут собеседники.</string>
-    <string name="onboarding_create">Создать аккаунт</string>
-    <string name="onboarding_working">Создаём аккаунт — это займёт несколько секунд…</string>
+    <string name="onboarding_create">Продолжить</string>
+    <string name="onboarding_working">Готовим аккаунт — это займёт несколько секунд…</string>
     <string name="onboarding_error_username">3–32 символа: строчные латинские буквы, цифры и _, начиная с буквы</string>
     <string name="onboarding_error_taken">Это имя уже занято</string>
     <string name="onboarding_direct">Подключаться напрямую, без Tor</string>
@@ -253,7 +253,7 @@
         человек должен до нажатия, а не после: вернуть удалённый
         аккаунт нельзя ни ему, ни оператору сервера.
     -->
-            <string name="lock_biometric_title">Разблокировать AEGIS</string>
+            <string name="lock_biometric_title">Разблокировать GasApp</string>
     <string name="lock_biometric_subtitle">Отпечаток вместо ввода PIN</string>
     <string name="lock_biometric_use_pin">Ввести PIN</string>
     <string name="lock_use_fingerprint">Войти по отпечатку</string>
@@ -411,7 +411,7 @@
     <string name="restore_pick">Выбрать файлы</string>
     <string name="restore_no_files">Файлы не выбраны</string>
     <string name="restore_files_chosen">Выбрано файлов: %1$d</string>
-    <string name="restore_key_hint">AEGIS-XXXX-XXXX-…</string>
+    <string name="restore_key_hint">GASAPP-XXXX-XXXX-…</string>
     <string name="restore_key_empty">Введите ключ из 13 групп</string>
     <string name="restore_key_ok">Ключ выглядит правильно</string>
     <string name="restore_key_invalid">В ключе опечатка</string>
@@ -515,8 +515,8 @@
     <string name="security_check_attestation_software">Ключи защищены только программно</string>
     <string name="security_check_attestation_untrusted">Подтверждение не ведёт к корню Google: эмулятор, несертифицированный телефон или подделка</string>
     <string name="security_check_attestation_failed">Проверить не удалось</string>
-    <string name="security_check_signature">Приложение подписано разработчиками AEGIS</string>
-    <string name="security_check_signature_mismatch">Эта копия подписана чужим ключом. Её могли изменить — установите AEGIS из официального источника</string>
+    <string name="security_check_signature">Приложение подписано разработчиками GasApp</string>
+    <string name="security_check_signature_mismatch">Эта копия подписана чужим ключом. Её могли изменить — установите GasApp из официального источника</string>
     <string name="security_check_signature_unchecked">Не проверяется: это отладочная сборка</string>
     <string name="security_check_pending">Проверяется…</string>
 
@@ -554,7 +554,7 @@
     <string name="network_saved">Сохранено. Новые соединения идут выбранным способом.</string>
     <string name="network_invalid">Адрес или порт указаны неверно. Укажите имя хоста или IP-адрес без схемы и пути; логин и пароль не поддерживаются.</string>
     <string name="network_save_failed">Не удалось сохранить настройку</string>
-    <string name="network_limits">Прокси видит, что вы пользуетесь AEGIS, и когда. Tor скрывает адрес от сервера, но не от входного узла Tor. Через Tor соединение нестабильнее, и уведомления могут приходить с задержкой.</string>
+    <string name="network_limits">Прокси видит, что вы пользуетесь GasApp, и когда. Tor скрывает адрес от сервера, но не от входного узла Tor. Через Tor соединение нестабильнее, и уведомления могут приходить с задержкой.</string>
     <string name="network_unavailable">Настройка сети повреждена — соединения заблокированы, пока вы не выберете способ подключения заново.</string>
     <string name="privacy_section_network">Сеть</string>
     <string name="privacy_network">Подключение</string>
@@ -636,7 +636,7 @@
     <string name="security_event_undecryptable_envelopes_dropped">Входящие, которые нельзя прочитать, удалены (повторы старых или мусор)</string>
     <string name="security_event_kt_self_check_blocked">Журнал ключей сервера доступен, но проверить в нём своё имя не удаётся. Пока не получится, просите собеседников сверять safety number лично</string>
     <string name="scan_title">Сканирование QR-кода</string>
-    <string name="scan_hint_contact">Наведите камеру на QR-код в профиле собеседника в AEGIS</string>
+    <string name="scan_hint_contact">Наведите камеру на QR-код в профиле собеседника в GasApp</string>
     <string name="scan_hint_safety">Наведите камеру на код safety number на экране собеседника</string>
     <string name="scan_denied_title">Нет доступа к камере</string>
     <string name="scan_denied_body">Камера нужна только чтобы прочитать код. Кадры обрабатываются на этом устройстве, не сохраняются и никуда не отправляются.</string>
@@ -646,10 +646,10 @@
     <string name="add_contact_or">или</string>
     <string name="add_contact_scan">Сканировать QR-код</string>
     <string name="add_contact_scan_helper">В коде сам ключ собеседника, мимо сервера, — писать можно сразу.</string>
-    <string name="add_contact_scan_invalid">Это не код контакта AEGIS, либо имя в нём принадлежит другому ключу</string>
-    <string name="profile_username_caption">По этому имени вас найдут в AEGIS</string>
-    <string name="profile_qr_hint">Покажите код собеседнику рядом — он отсканирует его в AEGIS. В коде ваш ключ, поэтому писать можно сразу: это самая надёжная проверка.</string>
-    <string name="profile_share_text">Пишите мне в AEGIS: @%1$s</string>
+    <string name="add_contact_scan_invalid">Это не код контакта GasApp, либо имя в нём принадлежит другому ключу</string>
+    <string name="profile_username_caption">По этому имени вас найдут в GasApp</string>
+    <string name="profile_qr_hint">Покажите код собеседнику рядом — он отсканирует его в GasApp. В коде ваш ключ, поэтому писать можно сразу: это самая надёжная проверка.</string>
+    <string name="profile_share_text">Пишите мне в GasApp: @%1$s</string>
     <string name="safety_scan">Сканировать код собеседника</string>
     <string name="safety_scan_mismatch_title">Коды не совпадают</string>
     <string name="safety_scan_mismatch_body">На экране собеседника другой ключ. Возможно, сервер его подменил, или это не тот человек. Не отмечайте собеседника сверенным и не отправляйте ничего важного, пока не выясните причину.</string>
@@ -660,13 +660,13 @@
     <string name="settings_section_app">Приложение</string>
     <string name="settings_section_data">Данные</string>
     <string name="settings_section_about">О приложении</string>
-    <string name="onboarding_welcome_title">Добро пожаловать в AEGIS</string>
+    <string name="onboarding_welcome_title">Добро пожаловать в GasApp</string>
     <string name="onboarding_feature_e2e">Сообщения шифруются на телефоне. Сервер только передаёт их и прочитать не может.</string>
-    <string name="onboarding_feature_no_phone">Без номера телефона и почты. Аккаунт — это только имя.</string>
+    <string name="onboarding_feature_no_phone">Без номера телефона. Аккаунт — это имя и адрес почты; сервер хранит только хеш адреса.</string>
     <string name="onboarding_feature_tor">Tor встроен: сервер не видит ваш IP-адрес.</string>
     <string name="onboarding_get_started">Создать аккаунт</string>
-    <string name="onboarding_username_title">Выберите имя</string>
-    <string name="onboarding_username_subtitle">По нему вас найдут. Собеседника добавляют по @имени или по QR-коду.</string>
+    <string name="onboarding_username_title">Имя и почта</string>
+    <string name="onboarding_username_subtitle">По имени вас найдут собеседники. Почта нужна только чтобы подтвердить аккаунт: на неё придёт код.</string>
     <string name="onboarding_network_label">Соединение</string>
     <string name="onboarding_next">Продолжить</string>
     <string name="onboarding_pin_title">Придумайте PIN</string>
@@ -704,8 +704,8 @@
     <string name="report_unavailable">Пожаловаться можно, когда собеседник вам что-нибудь напишет.</string>
     <string name="report_failed">Жалобу отправить не удалось. Проверьте связь и попробуйте ещё раз.</string>
     <!-- Пересобранная копия (TamperGuard) -->
-    <string name="tamper_title">Эта копия AEGIS может быть поддельной</string>
-    <string name="tamper_body">Приложение подписано не разработчиками AEGIS. Его могли изменить, чтобы читать вашу переписку или украсть PIN. Удалите его и установите AEGIS только со страницы в официальном магазине или с сайта проекта.</string>
+    <string name="tamper_title">Эта копия GasApp может быть поддельной</string>
+    <string name="tamper_body">Приложение подписано не разработчиками GasApp. Его могли изменить, чтобы читать вашу переписку или украсть PIN. Удалите его и установите GasApp только со страницы в официальном магазине или с сайта проекта.</string>
     <string name="tamper_close">Закрыть приложение</string>
     <string name="tamper_continue">Всё равно продолжить</string>
     <!-- Повторный PIN перед опасными действиями (аудит 2026-10-02, A-3). -->
@@ -726,6 +726,76 @@
     <string name="delivery_failed">Не отправлено</string>
     <string name="onboarding_stage_keys">Ключи шифрования на этом телефоне</string>
     <string name="onboarding_stage_tor">Подключение через Tor</string>
-    <string name="onboarding_stage_register">Регистрация имени на сервере</string>
+    <string name="onboarding_stage_register">Письмо с кодом на вашу почту</string>
     <string name="connection_direct">Прямое соединение: сервер видит ваш IP-адрес</string>
+
+    <!-- Почта при регистрации, премиум и каналы. -->
+    <string name="action_ok">Понятно</string>
+    <string name="action_close">Закрыть</string>
+    <string name="onboarding_email_label">Почта</string>
+    <string name="onboarding_email_hint">you@example.org</string>
+    <string name="onboarding_email_helper">Сюда придёт код подтверждения. Сам адрес сервер не хранит — только его хеш; почтовая служба, которая доставит письмо, адрес видит.</string>
+    <string name="onboarding_error_email">Это не похоже на адрес почты</string>
+    <string name="onboarding_error_email_taken">На этот адрес уже есть аккаунт. Вернуть его можно из резервной копии.</string>
+    <string name="onboarding_error_code_send">Не удалось отправить код. Проверьте соединение; новое письмо можно запросить раз в минуту.</string>
+    <string name="onboarding_code_title">Введите код</string>
+    <string name="onboarding_code_subtitle">Мы отправили шестизначный код на %1$s. Он действует 15 минут.</string>
+    <string name="onboarding_code_label">Код из письма</string>
+    <string name="onboarding_code_hint">000000</string>
+    <string name="onboarding_code_helper">Письма нет? Проверьте «Спам». Можно выйти из приложения за кодом — оно вернёт вас сюда.</string>
+    <string name="onboarding_code_resend">Отправить код ещё раз</string>
+    <string name="onboarding_code_resend_in">Отправить ещё раз через %1$d с</string>
+    <string name="onboarding_code_resent">Новый код отправлен. Прежний больше не действует.</string>
+    <string name="onboarding_code_confirm">Создать аккаунт</string>
+    <string name="onboarding_error_code_length">Код — 6 цифр</string>
+    <string name="onboarding_error_code">Код не подошёл или истёк. После пяти неверных вводов код перестаёт действовать — запросите новый.</string>
+    <string name="nav_channels">Каналы</string>
+    <string name="channels_join">Добавить канал</string>
+    <string name="channels_join_paste">Вставить ссылку</string>
+    <string name="channels_join_scan">Сканировать QR-код</string>
+    <string name="channels_scan_hint">Наведите камеру на QR-код канала</string>
+    <string name="channels_join_action">Добавить</string>
+    <string name="channels_link_hint">gasapp://channel/…</string>
+    <string name="channels_link_help">Канал открывается по ссылке-приглашению. Попросите её у автора.</string>
+    <string name="channels_link_invalid">Это не ссылка на канал</string>
+    <string name="channels_error_unavailable">Канал не открылся: нет связи с сервером либо канал удалён.</string>
+    <string name="channels_error_network">Нет связи с сервером. Повторите попытку.</string>
+    <string name="channels_empty_title">Каналов пока нет</string>
+    <string name="channels_empty">Канал — лента одного автора. Добавьте его по ссылке или QR-коду. Сервер не знает, какие каналы вы читаете.</string>
+    <string name="channels_create">Создать канал</string>
+    <string name="channels_create_action">Создать</string>
+    <string name="channels_create_help">Название и записи сервер хранит зашифрованными. Читать их сможет каждый, у кого есть ссылка на канал.</string>
+    <string name="channel_form_title_label">Название</string>
+    <string name="channel_form_title_hint">например, Gas News</string>
+    <string name="channel_form_description_label">Описание</string>
+    <string name="channel_form_description_hint">О чём канал (необязательно)</string>
+    <string name="channel_form_title_empty">Дайте каналу название</string>
+    <string name="channel_form_invalid">Название — до 64 знаков, описание — до 500.</string>
+    <string name="premium_required_title">Каналы создаёт премиум</string>
+    <string name="premium_required_body">Создавать каналы могут аккаунты с премиумом; читать — все. Премиум выдаёт оператор сервера вручную — передайте ему своё имя: @%1$s</string>
+    <string name="channel_no_posts">Записей пока нет</string>
+    <string name="channel_subtitle_owner">Канал · вы автор</string>
+    <string name="channel_subtitle_reader">Канал</string>
+    <string name="channel_reader_note">Писать здесь может только автор</string>
+    <string name="channel_post_hint">Новая запись</string>
+    <string name="channel_publish">Опубликовать</string>
+    <string name="channel_post_failed">Запись не опубликована: нет связи с сервером. Текст остался в поле.</string>
+    <string name="channel_post_too_long">Запись слишком длинная</string>
+    <string name="channel_empty_title">Записей пока нет</string>
+    <string name="channel_empty_owner">Напишите первую запись и поделитесь ссылкой на канал.</string>
+    <string name="channel_empty_reader">Автор ещё ничего не опубликовал.</string>
+    <string name="channel_share">Ссылка на канал</string>
+    <string name="channel_share_qr">QR-код канала</string>
+    <string name="channel_share_warning">Ссылка — это и есть доступ: кто её получил, читает весь канал, прошлые записи и будущие. Отозвать её у одного читателя нельзя.</string>
+    <string name="channel_share_copy">Скопировать ссылку</string>
+    <string name="channel_share_copied">Ссылка скопирована</string>
+    <string name="channel_more">Действия с каналом</string>
+    <string name="channel_about">О канале</string>
+    <string name="channel_edit">Изменить канал</string>
+    <string name="channel_delete">Удалить канал</string>
+    <string name="channel_delete_title">Удалить канал?</string>
+    <string name="channel_delete_body">Канал и все его записи исчезнут с сервера для всех. У читателей останется то, что они уже загрузили. Отменить это нельзя.</string>
+    <string name="channel_leave">Убрать канал</string>
+    <string name="channel_leave_title">Убрать канал?</string>
+    <string name="channel_leave_body">Канал и его записи исчезнут с этого телефона. Добавить его снова можно по ссылке.</string>
 </resources>

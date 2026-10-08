@@ -3,7 +3,7 @@
 # Google Play — ответы для Play Console
 
 **Редакция:** 2026-09-30. Сборка: flavor `gms`, `applicationId
-org.aegis.app.gms`, targetSdk 36, minSdk 28 (Android 9+).
+org.gasapp.app.gms`, targetSdk 36, minSdk 28 (Android 9+).
 
 Всё ниже сверено с кодом на эту дату. Изменился код — сверить заново:
 форма Data safety, расходящаяся с приложением, — нарушение политики
@@ -105,7 +105,7 @@ Google Play, а не опечатка.
 (ревьюеры Google читают по-английски):
 
 ```text
-AEGIS needs no phone number or email. To create an account:
+GasApp needs no phone number or email. To create an account:
 1. Open the app and tap "Create account".
 2. Choose any free username and a 6-digit PIN.
 3. Wait until "Connecting to Tor" finishes. The app connects through Tor
@@ -113,7 +113,7 @@ AEGIS needs no phone number or email. To create an account:
    on networks that block Tor.
 
 To test messaging, message one of our test accounts: search for the
-username "aegis_review_1" (tap the pencil button, enter the username).
+username "gasapp_review_1" (tap the pencil button, enter the username).
 Or install the app on a second device and register a second account.
 
 Notes:
@@ -125,7 +125,7 @@ Notes:
 ```
 
 ⚠️ До подачи: зарегистрировать на боевом сервере тестовые аккаунты
-`aegis_review_1` (и `_2`), держать на одном из них открытое приложение
+`gasapp_review_1` (и `_2`), держать на одном из них открытое приложение
 на время ревью, чтобы тестовое сообщение получило ответ.
 
 ---

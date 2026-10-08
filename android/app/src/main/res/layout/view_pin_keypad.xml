@@ -16,15 +16,15 @@
     android:layout_height="wrap_content"
     android:columnCount="3">
 
-    <TextView android:id="@+id/key_1" style="@style/AegisKeypadKey" android:text="1" />
-    <TextView android:id="@+id/key_2" style="@style/AegisKeypadKey" android:text="2" />
-    <TextView android:id="@+id/key_3" style="@style/AegisKeypadKey" android:text="3" />
-    <TextView android:id="@+id/key_4" style="@style/AegisKeypadKey" android:text="4" />
-    <TextView android:id="@+id/key_5" style="@style/AegisKeypadKey" android:text="5" />
-    <TextView android:id="@+id/key_6" style="@style/AegisKeypadKey" android:text="6" />
-    <TextView android:id="@+id/key_7" style="@style/AegisKeypadKey" android:text="7" />
-    <TextView android:id="@+id/key_8" style="@style/AegisKeypadKey" android:text="8" />
-    <TextView android:id="@+id/key_9" style="@style/AegisKeypadKey" android:text="9" />
+    <TextView android:id="@+id/key_1" style="@style/GasAppKeypadKey" android:text="1" />
+    <TextView android:id="@+id/key_2" style="@style/GasAppKeypadKey" android:text="2" />
+    <TextView android:id="@+id/key_3" style="@style/GasAppKeypadKey" android:text="3" />
+    <TextView android:id="@+id/key_4" style="@style/GasAppKeypadKey" android:text="4" />
+    <TextView android:id="@+id/key_5" style="@style/GasAppKeypadKey" android:text="5" />
+    <TextView android:id="@+id/key_6" style="@style/GasAppKeypadKey" android:text="6" />
+    <TextView android:id="@+id/key_7" style="@style/GasAppKeypadKey" android:text="7" />
+    <TextView android:id="@+id/key_8" style="@style/GasAppKeypadKey" android:text="8" />
+    <TextView android:id="@+id/key_9" style="@style/GasAppKeypadKey" android:text="9" />
 
     <!--
       Клетка слева от нуля — вход по отпечатку, как в UI kit. Экран входа
@@ -43,7 +43,7 @@
         android:visibility="invisible"
         app:tint="@color/text_muted" />
 
-    <TextView android:id="@+id/key_0" style="@style/AegisKeypadKey" android:text="0" />
+    <TextView android:id="@+id/key_0" style="@style/GasAppKeypadKey" android:text="0" />
 
     <ImageView
         android:id="@+id/key_delete"

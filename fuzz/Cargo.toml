@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
-name = "aegis-fuzz"
+name = "gasapp-fuzz"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -15,15 +15,15 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-aegis-protocol = { path = "../crates/aegis-protocol" }
-aegis-types = { path = "../crates/aegis-types" }
+gasapp-protocol = { path = "../crates/gasapp-protocol" }
+gasapp-types = { path = "../crates/gasapp-types" }
 # Разбор файла резервной копии: заголовок читается до проверки тега,
 # то есть на данных, подконтрольных тому, у кого файл.
-aegis-backup = { path = "../crates/aegis-backup" }
+gasapp-backup = { path = "../crates/gasapp-backup" }
 # Очистка метаданных вложений: разбирает JPEG/PNG/WebP/GIF/MP4/MP3,
 # которые пишет кто угодно.
-aegis-media = { path = "../crates/aegis-media" }
-# Версия совпадает с той, что использует `aegis-protocol`: иначе типы
+gasapp-media = { path = "../crates/gasapp-media" }
+# Версия совпадает с той, что использует `gasapp-protocol`: иначе типы
 # источника случайности окажутся разными и не подойдут по трейтам.
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
 

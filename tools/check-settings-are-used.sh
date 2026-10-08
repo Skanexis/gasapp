@@ -26,7 +26,7 @@
 # так выглядит настройка-пустышка.
 #
 # В Rust — по строке ключа. Часть настроек читает ядро, а не платформа:
-# `presence_sharing` гасит индикаторы набора в `aegis-core`, и через
+# `presence_sharing` гасит индикаторы набора в `gasapp-core`, и через
 # константу Kotlin этого не видно. Поэтому ищется и имя константы,
 # и само строковое значение.
 #
@@ -42,7 +42,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "$ROOT"
 
-SETTINGS_FILE="android/app/src/main/kotlin/org/aegis/app/core/Settings.kt"
+SETTINGS_FILE="android/app/src/main/kotlin/org/gasapp/app/core/Settings.kt"
 
 # Экраны, которые настройку только показывают и сохраняют.
 # Центр безопасности тоже сюда: он перечисляет состояние настроек,
@@ -94,7 +94,7 @@ for pair in "${PAIRS[@]}"; do
   rust_users=$(
     {
       grep -rn "\"$value\"\|'$value'" --include='*.rs' \
-        crates/aegis-storage/src crates/aegis-core/src 2>/dev/null || true
+        crates/gasapp-storage/src crates/gasapp-core/src 2>/dev/null || true
 
       grep -rn "\"$value\"\|'$value'" --include='*.rs' crates 2>/dev/null || true
     } | grep -v "/tests/" || true
@@ -122,7 +122,7 @@ for pair in "${PAIRS[@]}"; do
 
   if [[ -n "$kotlin_users" ]]; then
     where=$(printf '%s\n' "$kotlin_users" | head -1 | cut -d: -f1)
-    echo "  ✅ $name — ${where#android/app/src/main/kotlin/org/aegis/app/}"
+    echo "  ✅ $name — ${where#android/app/src/main/kotlin/org/gasapp/app/}"
   else
     where=$(printf '%s\n' "$rust_users" | head -1 | cut -d: -f1)
     echo "  ✅ $name — ${where} (ядро)"

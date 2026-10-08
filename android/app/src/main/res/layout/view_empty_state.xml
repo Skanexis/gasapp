@@ -25,7 +25,7 @@
 
     <TextView
         android:id="@+id/empty_title"
-        style="@style/AegisText.H4"
+        style="@style/GasAppText.H4"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_m"
@@ -34,14 +34,14 @@
 
     <TextView
         android:id="@+id/empty_body"
-        style="@style/AegisText.Caption.Muted"
+        style="@style/GasAppText.Caption.Muted"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_s"
         android:gravity="center"
         tools:text="Find someone by username to start one." />
 
-    <org.aegis.app.components.AegisButton
+    <org.gasapp.app.components.GasAppButton
         android:id="@+id/empty_action"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

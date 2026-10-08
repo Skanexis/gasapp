@@ -19,18 +19,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/appearance_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:text="@string/settings_appearance" />
     </LinearLayout>
@@ -49,30 +49,30 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:text="@string/appearance_section_theme" />
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/appearance_theme"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
             <TextView
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_m"
                 android:text="@string/appearance_theme_note" />
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/appearance_section_text" />
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/appearance_language"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
             <TextView
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_m"
                 android:text="@string/appearance_language_note" />
 

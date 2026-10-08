@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Тема приложения. Дизайн-система AEGIS тёмная по умолчанию (UI kit),
+  Тема приложения. Дизайн-система GasApp тёмная по умолчанию (UI kit),
   поэтому базой взята DayNight с принудительно тёмной палитрой, а не
   светлая тема со «слоем» поверх.
 -->
@@ -15,7 +15,7 @@
       того, тёмный интерфейс меньше заметен со стороны — мелочь,
       но в пользу того, ради чего мессенджер существует.
     -->
-    <style name="Theme.AEGIS" parent="Theme.MaterialComponents.NoActionBar">
+    <style name="Theme.GasApp" parent="Theme.MaterialComponents.NoActionBar">
         <item name="colorPrimary">@color/accent_base</item>
         <item name="colorPrimaryVariant">@color/accent_pressed</item>
         <item name="colorOnPrimary">@color/accent_on</item>
@@ -60,12 +60,12 @@
           Диалоги: без явного указания AlertDialog берёт светлую тему
           платформы и появляется белым окном поверх тёмного приложения.
         -->
-        <item name="android:alertDialogTheme">@style/AegisDialog</item>
-        <item name="alertDialogTheme">@style/AegisDialog</item>
+        <item name="android:alertDialogTheme">@style/GasAppDialog</item>
+        <item name="alertDialogTheme">@style/GasAppDialog</item>
 
         <!-- Поле ввода: отступы, высота и кегль из UI kit (components.xml). -->
-        <item name="editTextStyle">@style/Widget.Aegis.EditText</item>
-        <item name="android:editTextStyle">@style/Widget.Aegis.EditText</item>
+        <item name="editTextStyle">@style/Widget.GasApp.EditText</item>
+        <item name="android:editTextStyle">@style/Widget.GasApp.EditText</item>
 
         <item name="android:statusBarColor">@color/bg_base</item>
         <item name="android:navigationBarColor">@color/bg_base</item>

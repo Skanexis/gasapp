@@ -16,7 +16,7 @@
     android:orientation="vertical">
 
     <TextView
-        style="@style/AegisLargeTitle"
+        style="@style/GasAppLargeTitle"
         android:text="@string/nav_settings" />
 
     <ScrollView
@@ -130,12 +130,12 @@
             </LinearLayout>
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/settings_section_protection" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/settings_security"
@@ -152,15 +152,15 @@
                 <include
                     android:id="@+id/settings_devices"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/settings_section_app" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/settings_appearance"
@@ -169,7 +169,7 @@
                 <include
                     android:id="@+id/settings_storage"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <!--
               Резервное копирование и хранилище файлов — отдельной
@@ -177,12 +177,12 @@
               про ключи.
             -->
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/settings_section_data" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/settings_recovery"
@@ -191,20 +191,20 @@
                 <include
                     android:id="@+id/settings_vault"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/settings_section_about" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/settings_about"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
         </LinearLayout>
     </ScrollView>

@@ -48,7 +48,7 @@ jobs:
     # `secrets.X != ''` там молча считается ложной, и шаг не выполняется
     # никогда. Через env проверка работает.
     env:
-      HAS_SIGNING_KEY: ${{ secrets.AEGIS_KEYSTORE_BASE64 != '' }}
+      HAS_SIGNING_KEY: ${{ secrets.GASAPP_KEYSTORE_BASE64 != '' }}
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,7 +61,7 @@ jobs:
           fetch-depth: 0
 
       # Версии NDK в Dockerfile и в build.gradle обязаны совпадать:
-      # одним libaegis.so собирается, другим обрезается. Проверка
+      # одним libgasapp.so собирается, другим обрезается. Проверка
       # идёт до сборки — расхождение делает бессмысленным всё
       # остальное в этом workflow.
       - name: NDK pins agree
@@ -84,15 +84,15 @@ jobs:
       # и суммы разошлись бы с эталоном (docs/ops/reproducible-builds.md).
       - name: build core in the pinned container
         run: |
-          docker build -f tools/Dockerfile.android -t aegis-android tools/
-          docker run --rm -v "$PWD":/work -w /work aegis-android \
+          docker build -f tools/Dockerfile.android -t gasapp-android tools/
+          docker run --rm -v "$PWD":/work -w /work gasapp-android \
             tools/build-rust-android.sh
 
       # 🔐 CODE-2.5: полный RELRO, неисполняемый стек, канарейки
       # и FORTIFY в Си-части. llvm-readelf — из NDK того же контейнера.
       - name: check native hardening
         run: |
-          docker run --rm -v "$PWD":/work -w /work aegis-android \
+          docker run --rm -v "$PWD":/work -w /work gasapp-android \
             bash tools/check-so-hardening.sh
 
       # 🔐 Ключ подписи приходит из секретов и живёт только на время job.
@@ -104,24 +104,24 @@ jobs:
       - name: restore signing key
         if: env.HAS_SIGNING_KEY == 'true'
         env:
-          KEYSTORE_BASE64: ${{ secrets.AEGIS_KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.GASAPP_KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/aegis-release.jks"
-          echo "AEGIS_KEYSTORE=$RUNNER_TEMP/aegis-release.jks" >> "$GITHUB_ENV"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/gasapp-release.jks"
+          echo "GASAPP_KEYSTORE=$RUNNER_TEMP/gasapp-release.jks" >> "$GITHUB_ENV"
 
       - name: build and hash
         env:
-          ORG_GRADLE_PROJECT_aegisKeystore: ${{ env.AEGIS_KEYSTORE }}
-          ORG_GRADLE_PROJECT_aegisKeystorePassword: ${{ secrets.AEGIS_KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_aegisKeyAlias: ${{ secrets.AEGIS_KEY_ALIAS }}
-          ORG_GRADLE_PROJECT_aegisKeyPassword: ${{ secrets.AEGIS_KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_gasappKeystore: ${{ env.GASAPP_KEYSTORE }}
+          ORG_GRADLE_PROJECT_gasappKeystorePassword: ${{ secrets.GASAPP_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_gasappKeyAlias: ${{ secrets.GASAPP_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_gasappKeyPassword: ${{ secrets.GASAPP_KEY_PASSWORD }}
         run: bash tools/reproducible-build.sh
 
       # 🔐 Ключ удаляется явно, не дожидаясь уборки раннера.
       # `if: always()` — иначе провал сборки оставил бы его на диске.
       - name: wipe signing key
         if: always()
-        run: rm -f "$RUNNER_TEMP/aegis-release.jks"
+        run: rm -f "$RUNNER_TEMP/gasapp-release.jks"
 
       # 🔴 Google Play не принимает приложения под Android 15+, чьи
       # 64-битные библиотеки не готовы к страницам 16 КБ: на таких
@@ -159,7 +159,7 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: aegis-release
+          name: gasapp-release
           path: |
             android/app/build/outputs/apk/**/*.apk
             android/app/build/outputs/SHA256SUMS.txt
@@ -190,7 +190,7 @@ jobs:
             printf 'Расхождение — это другая ревизия, другое окружение сборки\n'
             printf 'либо подменённый артефакт. Третье разбирается как инцидент.\n\n'
             printf '> ⚠️ Воспроизводимость подтверждена **на одной машине**:\n'
-            printf '> две сборки одной ревизии дают одинаковые `libaegis.so`\n'
+            printf '> две сборки одной ревизии дают одинаковые `libgasapp.so`\n'
             printf '> и одинаковые неподписанные APK (`tools/reproducible-build.sh\n'
             printf '> --twice`). Сборка на второй машине с тем же результатом\n'
             printf '> ещё не проверялась, и до неё воспроизводимость не полная.\n'

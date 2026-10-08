@@ -1,4 +1,4 @@
-# Фаззинг AEGIS
+# Фаззинг GasApp
 
 Шесть таргетов по поверхностям недоверенного входа.
 
@@ -44,11 +44,11 @@ LINK : fatal error LNK1104: cannot open file
 | `parse_safety_number` | ввод safety number | человек: опечатки, обрезки, любой язык |
 | `backup_restore` | архив резервной копии | хранилище копии — чужое |
 | `parse_sealed_sender` | запечатанный конверт | сеть, отправитель не назван |
-| `parse_contact_link` | ссылка `aegis://contact/…` | кто угодно: ссылку присылают |
+| `parse_contact_link` | ссылка `gasapp://contact/…` | кто угодно: ссылку присылают |
 
 Из исходного списка плана `backup_restore` написан, а `deep_link`
 и `qr_payload` покрывает `parse_contact_link`: QR профиля несёт ту же
-ссылку `aegis://contact/…`. ⚠️ До 2026-09 здесь было сказано, что все
+ссылку `gasapp://contact/…`. ⚠️ До 2026-09 здесь было сказано, что все
 три не написаны, `run-all.ps1` запускал шесть таргетов из девяти,
 а разбора содержимого сообщения (`parse_content`) не фаззил никто.
 
@@ -78,7 +78,7 @@ LINK : fatal error LNK1104: cannot open file
 
 **`parse_content`, 2026-09-22, 120 секунд:** 13 097 994 запуска, корпус 107,
 покрытие 397. Крашей и расхождений туда-обратно нет. Запущен в образе
-с явным `--entrypoint /usr/local/cargo/bin/cargo`: образ `aegis-fuzz:latest`
+с явным `--entrypoint /usr/local/cargo/bin/cargo`: образ `gasapp-fuzz:latest`
 на машине разработчика оказался собран не из `fuzz/Dockerfile` (без
 `ENTRYPOINT`), и `run-all.ps1` на нём падает на каждом таргете.
 
@@ -88,7 +88,7 @@ LINK : fatal error LNK1104: cannot open file
 
 ## Прогон на стабильном компиляторе
 
-`crates/aegis-protocol/tests/fuzz_corpus.rs` прогоняет ту же логику
+`crates/gasapp-protocol/tests/fuzz_corpus.rs` прогоняет ту же логику
 детерминированным генератором и идёт в обычном `cargo test`. Это **не
 замена** фаззингу — нет обратной связи по покрытию, — но грубые паники
 ловятся на каждом коммите, а не раз в сутки.
@@ -99,7 +99,7 @@ LINK : fatal error LNK1104: cannot open file
 Воспроизвести:
 
 ```powershell
-docker run --rm -v "${PWD}:/aegis" aegis-fuzz:latest `
+docker run --rm -v "${PWD}:/gasapp" gasapp-fuzz:latest `
     run --fuzz-dir fuzz <таргет> fuzz/artifacts/<таргет>/<файл>
 ```
 

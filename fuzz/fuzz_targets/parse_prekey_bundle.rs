@@ -13,13 +13,13 @@
 //! * паника при разборе ключей неверной длины или некорректной кодировки;
 //! * ветка, в которой bundle с неверной подписью всё же принимается.
 
-use aegis_protocol::{
+use gasapp_protocol::{
     keys::{
         IdentityKey, KemPublicKey, PreKeyBundle, PreKeyId, SignedKemPreKey, SignedPreKey,
     },
     pqxdh,
 };
-use aegis_types::{DeviceId, PublicKeyBytes};
+use gasapp_types::{DeviceId, PublicKeyBytes};
 use libfuzzer_sys::fuzz_target;
 
 /// Считывает 32 байта, дополняя нулями при нехватке входа.

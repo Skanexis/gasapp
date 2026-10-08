@@ -16,7 +16,7 @@
       Базовая кнопка: 48dp, отступы 24, радиус 14, шрифт 600/15.
       Метрики из UI kit (.btn).
     -->
-    <style name="AegisButton">
+    <style name="GasAppButton">
         <item name="android:layout_height">@dimen/button_medium</item>
         <item name="android:minHeight">@dimen/button_medium</item>
         <item name="android:minWidth">0dp</item>
@@ -33,25 +33,25 @@
     </style>
 
     <!-- Основное действие экрана. -->
-    <style name="AegisButton.Primary">
+    <style name="GasAppButton.Primary">
         <item name="android:background">@drawable/bg_btn_primary</item>
         <item name="android:textColor">@color/button_text_on_accent</item>
     </style>
 
     <!-- Второстепенное действие рядом с основным. -->
-    <style name="AegisButton.Secondary">
+    <style name="GasAppButton.Secondary">
         <item name="android:background">@drawable/bg_btn_secondary</item>
         <item name="android:textColor">@color/button_text_default</item>
     </style>
 
     <!-- Действие, равное по весу отказу. -->
-    <style name="AegisButton.Outline">
+    <style name="GasAppButton.Outline">
         <item name="android:background">@drawable/bg_btn_outline</item>
         <item name="android:textColor">@color/button_text_default</item>
     </style>
 
     <!-- Действие в ряду других: заливка только под нажатием. -->
-    <style name="AegisButton.Ghost">
+    <style name="GasAppButton.Ghost">
         <item name="android:background">@drawable/bg_btn_ghost</item>
         <item name="android:textColor">@color/button_text_accent</item>
     </style>
@@ -61,7 +61,7 @@
       Вес 700, а не 600 — на шаг, который нельзя отменить, смотрят
       дольше.
     -->
-    <style name="AegisButton.Danger">
+    <style name="GasAppButton.Danger">
         <item name="android:background">@drawable/bg_btn_danger</item>
         <item name="android:textColor">@color/button_text_on_danger</item>
         <item name="android:fontFamily">@font/inter</item>
@@ -69,7 +69,7 @@
     </style>
 
     <!-- 🔐 Подтверждение проверки: сверка прошла. -->
-    <style name="AegisButton.Ok">
+    <style name="GasAppButton.Ok">
         <item name="android:background">@drawable/bg_btn_ok</item>
         <item name="android:textColor">@color/button_text_on_ok</item>
         <item name="android:fontFamily">@font/inter</item>
@@ -77,7 +77,7 @@
     </style>
 
     <!-- Крупная кнопка: 56dp, отступы 32, кегль 16, радиус 16. -->
-    <style name="AegisButton.Large">
+    <style name="GasAppButton.Large">
         <item name="android:layout_height">@dimen/button_large</item>
         <item name="android:minHeight">@dimen/button_large</item>
         <item name="android:paddingStart">@dimen/space_xl</item>
@@ -86,7 +86,7 @@
     </style>
 
     <!-- Малая кнопка: 40dp, отступы 16, кегль 14, радиус 12. -->
-    <style name="AegisButton.Small">
+    <style name="GasAppButton.Small">
         <item name="android:layout_height">@dimen/button_small</item>
         <item name="android:minHeight">@dimen/button_small</item>
         <item name="android:paddingStart">@dimen/space_m</item>
@@ -100,10 +100,10 @@
       Поле: 48dp, отступы 16, радиус 12, шрифт 400/15.
       Метрики из UI kit (.inp).
     -->
-    <style name="AegisInput">
+    <style name="GasAppInput">
         <item name="android:layout_height">@dimen/input_height</item>
         <item name="android:minHeight">@dimen/input_height</item>
-        <item name="android:background">@drawable/bg_aegis_text_field</item>
+        <item name="android:background">@drawable/bg_gasapp_text_field</item>
         <item name="android:paddingStart">@dimen/space_m</item>
         <item name="android:paddingEnd">@dimen/space_m</item>
         <item name="android:fontFamily">@font/inter</item>
@@ -123,8 +123,8 @@
       сообщения было ниже и крупнее, чем в макете. Отступы, высота,
       кегль и цвета — метрики .inp из UI kit.
     -->
-    <style name="Widget.Aegis.EditText" parent="Widget.AppCompat.EditText">
-        <item name="android:background">@drawable/bg_aegis_text_field</item>
+    <style name="Widget.GasApp.EditText" parent="Widget.AppCompat.EditText">
+        <item name="android:background">@drawable/bg_gasapp_text_field</item>
         <item name="android:minHeight">@dimen/input_height</item>
         <item name="android:paddingStart">@dimen/space_m</item>
         <item name="android:paddingEnd">@dimen/space_m</item>
@@ -139,7 +139,7 @@
     </style>
 
     <!-- Сегмент переключателя (.seg в UI kit): равные доли, выбранный — подложкой. -->
-    <style name="AegisSegment">
+    <style name="GasAppSegment">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">match_parent</item>
         <item name="android:layout_weight">1</item>
@@ -155,7 +155,7 @@
 
     <!-- ============ Карточки ============ -->
 
-    <style name="AegisCard">
+    <style name="GasAppCard">
         <item name="android:background">@drawable/bg_card_rounded</item>
         <item name="android:padding">@dimen/space_m</item>
     </style>
@@ -170,7 +170,7 @@
       сливаются в один длинный список, где непонятно, что к чему
       относится.
     -->
-    <style name="AegisPanel">
+    <style name="GasAppPanel">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:background">@drawable/bg_card_rounded</item>
@@ -182,9 +182,9 @@
     <!--
       Группа строк (UI kit, Settings: grouped list): карточка r16 без
       внутренних отступов — строки дают свои. Обрезку по скруглению
-      и разделители строк ставит класс AegisGroup.
+      и разделители строк ставит класс GasAppGroup.
     -->
-    <style name="AegisGroup">
+    <style name="GasAppGroup">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:background">@drawable/bg_group_card</item>
@@ -195,7 +195,7 @@
       Крупный заголовок корневых экранов (Чаты, Звонки, Контакты,
       Настройки): H1 28/36, как «Security Center» в kit.
     -->
-    <style name="AegisLargeTitle">
+    <style name="GasAppLargeTitle">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:fontFamily">@font/inter</item>
@@ -219,7 +219,7 @@
       Строка обещания на приветствии: значок акцентом слева, текст Body.
       Значок 20dp, как в строках настроек.
     -->
-    <style name="AegisOnboardingFeature">
+    <style name="GasAppOnboardingFeature">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minHeight">52dp</item>
@@ -238,7 +238,7 @@
       Свойство копии с галочкой (UI kit, Authentication: «✓ Stored
       nowhere»): значок статуса слева, текст вторичного цвета.
     -->
-    <style name="AegisRecoveryFact">
+    <style name="GasAppRecoveryFact">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:gravity">center_vertical</item>
@@ -255,7 +255,7 @@
       под ним. Плитки делят ширину поровну — ни одно из двух главных
       действий не выглядит второстепенным.
     -->
-    <style name="AegisActionTile">
+    <style name="GasAppActionTile">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_weight">1</item>
@@ -268,7 +268,7 @@
         <item name="android:padding">@dimen/space_m</item>
     </style>
 
-    <style name="AegisActionTileIcon">
+    <style name="GasAppActionTileIcon">
         <item name="android:layout_width">40dp</item>
         <item name="android:layout_height">40dp</item>
         <item name="android:background">@drawable/bg_avatar</item>
@@ -277,7 +277,7 @@
         <item name="android:tint">@color/accent_base</item>
     </style>
 
-    <style name="AegisActionTileLabel">
+    <style name="GasAppActionTileLabel">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">@dimen/space_s</item>
@@ -291,7 +291,7 @@
       Строка выбора из списка (UI kit, Lists &amp; Selection Controls):
       подпись слева, переключатель-кружок справа, строка 52dp.
     -->
-    <style name="AegisRadioRow">
+    <style name="GasAppRadioRow">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minHeight">52dp</item>
@@ -306,7 +306,7 @@
     </style>
 
     <!-- Панель на карточном фоне: вложенная группа внутри панели. -->
-    <style name="AegisPanel.Deep">
+    <style name="GasAppPanel.Deep">
         <item name="android:background">@drawable/bg_panel_deep</item>
     </style>
 
@@ -317,7 +317,7 @@
       Разрядка обязательна: прописные без неё читаются как сплошной
       блок, и заголовок перестаёт отделять секции друг от друга.
     -->
-    <style name="AegisSectionLabel">
+    <style name="GasAppSectionLabel">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:fontFamily">@font/inter</item>
@@ -331,7 +331,7 @@
     </style>
 
     <!-- Пояснение под заголовком: 13sp вторичного цвета. -->
-    <style name="AegisCaption">
+    <style name="GasAppCaption">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:fontFamily">@font/inter</item>
@@ -349,7 +349,7 @@
       Не только сетка: 64dp вмещает область нажатия в 48dp с полями,
       а промах в списке чатов открывает не ту переписку.
     -->
-    <style name="AegisListRow">
+    <style name="GasAppListRow">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minHeight">@dimen/list_row_min</item>
@@ -373,7 +373,7 @@
       внимания, красная — состоявшуюся проблему. Ставить их «для
       красоты» значит обесценить те, что стоят по делу.
     -->
-    <style name="AegisPill">
+    <style name="GasAppPill">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">24dp</item>
         <item name="android:gravity">center</item>
@@ -386,27 +386,27 @@
         <item name="android:includeFontPadding">false</item>
     </style>
 
-    <style name="AegisPill.Ok">
+    <style name="GasAppPill.Ok">
         <item name="android:background">@drawable/bg_pill_ok</item>
         <item name="android:textColor">@color/status_ok</item>
     </style>
 
-    <style name="AegisPill.Warn">
+    <style name="GasAppPill.Warn">
         <item name="android:background">@drawable/bg_pill_warn</item>
         <item name="android:textColor">@color/status_warn</item>
     </style>
 
-    <style name="AegisPill.Error">
+    <style name="GasAppPill.Error">
         <item name="android:background">@drawable/bg_pill_error</item>
         <item name="android:textColor">@color/status_error</item>
     </style>
 
-    <style name="AegisPill.Accent">
+    <style name="GasAppPill.Accent">
         <item name="android:background">@drawable/bg_pill_accent</item>
         <item name="android:textColor">@color/accent_base</item>
     </style>
 
-    <style name="AegisPill.Neutral">
+    <style name="GasAppPill.Neutral">
         <item name="android:background">@drawable/bg_pill_neutral</item>
         <item name="android:textColor">@color/text_secondary</item>
     </style>
@@ -415,7 +415,7 @@
 
     <!-- Шапка одного цвета с экраном, как в UI kit (.appbar): полоса
          другого цвета делила экран там, где макет его не делит. -->
-    <style name="AegisAppBar">
+    <style name="GasAppAppBar">
         <!-- Кнопка «назад» сдвинута в поле отступа (-12dp): без этого
              её подсветка обрезалась по краю отступа. -->
         <item name="android:clipToPadding">false</item>
@@ -440,7 +440,7 @@
       Размер значка 24dp, но область нажатия 48dp: меньшая цель
       промахивается, а промах здесь открывает не тот экран.
     -->
-    <style name="AegisIconButton">
+    <style name="GasAppIconButton">
         <item name="android:layout_width">@dimen/touch_target</item>
         <item name="android:layout_height">@dimen/touch_target</item>
         <item name="android:padding">@dimen/space_m</item>

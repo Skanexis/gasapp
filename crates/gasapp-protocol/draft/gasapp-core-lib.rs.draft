@@ -1,0 +1,1049 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Фасад GasApp: оркестрация, состояние, поток событий.
+//!
+//! Реализация фасада/оркестрационного слоя, который соединяет:
+//! - Протокол слой (gasapp-protocol)
+//! - Хранилище ключей (gasapp-keystore)
+//! - Локальное хранилище (gasapp-storage)
+//! - Сетевой слой (gasapp-net)
+//! - Медиа слой (gasapp-media)
+//! - Резервное копирование (gasapp-backup)
+//!
+//! Предоставляет FFI интерфейс для UI слоев.
+
+use std::sync::{Arc, Mutex, RwLock};
+use std::collections::{HashMap, HashSet};
+
+use gasapp_types::{
+    AccountId, ChatId, DeviceId, MessageId, Timestamp, Result, GasAppError, Secret,
+};
+use gasapp_protocol::{
+    Fingerprint, ProtocolVersion, SafetyNumber,
+    engine::{Clock, InitialMessage, InitiatedSession, ProtocolEngine},
+    keys::{IdentityKey, IdentityKeyPair, KemPublicKey, PreKeyBundle, PreKeyId, SessionState,
+           SignedPreKey, SignedKemPreKey},
+};
+use gasapp_keystore::{SecureKeyStore, KeyHierarchy};
+use gasapp_storage::Storage;
+use gasapp_types::Secret;
+use uniffi::{self, Callback};
+
+/// Версия крейта, доступная во время выполнения.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Состояние блокировки клиента.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockState {
+    Locked,
+    Unlocked,
+}
+
+/// Основное состояние приложения GasApp.
+//!
+//! Это состояние содержит всю необходимую информацию для работы клиента:
+//! идентификаторы, устройства, сессии, настройки безопасности и т.д.
+//! Оно спроектировано как потокобезопасное для использования из разных
+//! потоков (сетевой поток, UI поток и т.д.).
+#[derive(Debug)]
+pub struct CoreState {
+    /// Текущее состояние блокировки
+    lock_state: RwLock<LockState>,
+
+    /// PIN-код для разблокировки (хранится только в заблокированном состоянии)
+    pin: RwLock<Option<Secret<String>>>,
+
+    /// Идентификатор текущего аккаунта
+    account_id: RwLock<Option<AccountId>>,
+
+    /// Пара identity-ключей текущего устройства
+    identity_key_pair: RwLock<Option<IdentityKeyPair>>,
+
+    /// Локальное время (для тестирования и управления временем)
+    clock: RwLock<Option<Box<dyn Clock + Send + Sync>>>,
+
+    /// Криптографический движок протокола
+    protocol_engine: RwLock<Option<Box<dyn ProtocolEngine>>>,
+
+    /// Хранилище ключей
+    keystore: RwLock<Option<SecureKeyStore>>,
+
+    /// Зашифрованное локальное хранилище
+    storage: RwLock<Option<Storage>>,
+
+    /// Хранилище состояний сессий по chat_id (кешированное из хранилища)
+    sessions: RwLock<HashMap<ChatId, SessionState>>,
+
+    /// Хранилище предварительных ключей bundles по (account_id, device_id)
+    prekey_bundles: RwLock<HashMap<(AccountId, DeviceId), PreKeyBundle>>,
+
+    /// Хранилище одноразовых предварительных ключей, помеченных как использованные
+    used_opks: RwLock<HashSet<(AccountId, DeviceId, u32)>>,
+    /// Хранилище одноразовых пост-квантовых предварительных ключей, помеченных как использованные
+    used_pqopks: RwLock<HashSet<(AccountId, DeviceId, u32)>>,
+
+    /// Известные устройства текущего аккаунта
+    known_devices: RwLock<HashMap<DeviceId, String>>, // device_id -> device_name
+
+    /// Известные контакты (аккаунты) и их identity ключи
+    known_contacts: RwLock<HashMap<AccountId, IdentityKey>>,
+
+    /// Безопасные номера для проверенных контактов
+    safety_numbers: RwLock<HashMap<AccountId, SafetyNumber>>,
+
+    /// Отметки о верификации контактов
+    verified_contacts: RwLock<HashSet<AccountId>>,
+
+    /// Состояния чатов
+    chat_states: RwLock<HashMap<ChatId, ChatState>>,
+
+    /// Последнее время синхронизации с сервером
+    last_sync: RwLock<Option<Timestamp>>,
+
+    /// Флаг, указывающий, что требуется резервное копирование
+    backup_overdue: RwLock<bool>,
+
+    /// Версия протокола, которую использует эта реализация
+    protocol_version: ProtocolVersion,
+}
+
+impl CoreState {
+    /// Создает новое пустое состояние
+    pub fn new() -> Self {
+        Self {
+            lock_state: RwLock::new(LockState::Locked),
+            pin: RwLock::new(None),
+            account_id: RwLock::new(None),
+            identity_key_pair: RwLock::new(None),
+            clock: RwLock::new(None),
+            protocol_engine: RwLock::new(None),
+            keystore: RwLock::new(None),
+            storage: RwLock::new(None),
+            sessions: RwLock::new(HashMap::new()),
+            prekey_bundles: RwLock::new(HashMap::new()),
+            used_opks: RwLock::new(HashSet::new()),
+            used_pqopks: RwLock::new(HashSet::new()),
+            known_devices: RwLock::new(HashMap::new()),
+            known_contacts: RwLock::new(HashMap::new()),
+            safety_numbers: RwLock::new(HashMap::new()),
+            verified_contacts: RwLock::new(HashSet::new()),
+            chat_states: RwLock::new(HashMap::new()),
+            last_sync: RwLock::new(None),
+            backup_overdue: RwLock::new(false),
+            protocol_version: ProtocolVersion::CURRENT,
+        }
+    }
+
+    /// Инициализирует все компоненты хранилища
+    pub fn initialize(&self) -> Result<()> {
+        // Инициализируем генератор времени (по умолчанию системное время)
+        {
+            let mut clock = self.clock.write().unwrap();
+            if clock.is_none() {
+                *clock = Some(Box::new(SystemClock));
+            }
+        }
+
+        // Инициализируем движок протокола (по умолчанию наша реализация)
+        {
+            let mut engine = self.protocol_engine.write().unwrap();
+            if engine.is_none() {
+                *engine = Some(Box::new(GasAppEngine::new()));
+            }
+        }
+
+        // Инициализируем хранилище ключей
+        {
+            let mut keystore = self.keystore.write().unwrap();
+            if keystore.is_none() {
+                *keystore = Some(SecureKeyStore::new(None)); // Начнем с программного fallback
+            }
+        }
+
+        // Инициализируем хранилище (пока без фактического пути - будет установлен при создании аккаунта)
+        // Хранилище будет инициализировано później, когда у нас будет учетная запись и ключ шифрования
+
+        Ok(())
+    }
+
+    /// Проверяет, разблокировано ли приложение
+    pub fn is_unlocked(&self) -> bool {
+        *self.lock_state.read().unwrap() == LockState::Unlocked
+    }
+
+    /// Проверяет, заблокировано ли приложение
+    pub fn is_locked(&self) -> bool {
+        *self.lock_state.read().unwrap() == LockState::Locked
+    }
+
+    /// Устанавливает PIN-код
+    pub fn set_pin(&self, pin: Secret<String>) {
+        *self.pin.write().unwrap() = Some(pin);
+    }
+
+    /// Очищает PIN-код (для безопасности)
+    pub fn clear_pin(&self) {
+        *self.pin.write().unwrap() = None;
+    }
+
+    /// Проверяет PIN-код
+    pub fn check_pin(&self, pin: &str) -> Result<bool> {
+        let stored_pin = self.pin.read().unwrap();
+        match &*stored_pin {
+            Some(stored_pin) => {
+                // В реальной реализации здесь должно быть постоянное время сравнение
+                // через криптографическую хеш-функцию (bcrypt, argon2 и т.д.)
+                // Для прототипа используем обычное сравнение, но в реализации
+                // это должно быть заменено на безопасное сравнение
+                Ok(stored_pin.expose_secret() == pin)
+            }
+            None => Ok(false),
+        }
+    }
+
+    // --- Протокол методы ---
+
+    /// Возвращает ссылку на протокольный движок
+    pub fn protocol_engine(&self) -> Result<Box<dyn ProtocolEngine>> {
+        let engine = self.protocol_engine.read().unwrap();
+        engine.as_ref()
+            .ok_or(GasAppError::Uninitialized)
+            .map(|e| e.clone())
+    }
+
+    /// Возвращает ссылку на хранилище ключей
+    pub fn keystore(&self) -> Result<SecureKeyStore> {
+        let ks = self.keystore.read().unwrap();
+        ks.as_ref()
+            .ok_or(GasAppError::Uninitialized)
+            .map(|k| k.clone())
+    }
+
+    /// Возвращает ссылку на зашифрованное хранилище
+    pub fn storage(&self) -> Result<Storage> {
+        let storage = self.storage.read().unwrap();
+        storage.as_ref()
+            .ok_or(GasAppError::Uninitialized)
+            .map(|s| s.clone())
+    }
+
+    // --- Методы работы с аккаунтом ---
+
+    /// Устанавливает идентификатор аккаунта
+    pub fn set_account_id(&self, account_id: AccountId) {
+        *self.account_id.write().unwrap() = Some(account_id);
+    }
+
+    /// Возвращает идентификатор аккаунта
+    pub fn get_account_id(&self) -> Result<Option<AccountId>> {
+        Ok(*self.account_id.read().unwrap())
+    }
+
+    /// Устанавливает пару identity-ключей
+    pub fn set_identity_key_pair(&self, key_pair: IdentityKeyPair) {
+        *self.identity_key_pair.write().unwrap() = Some(key_pair);
+    }
+
+    /// Возвращает пару identity-ключей
+    pub fn get_identity_key_pair(&self) -> Result<Option<IdentityKeyPair>> {
+        Ok(*self.identity_key_pair.read().unwrap())
+    }
+
+    // --- Методы для работы с сессиями ---
+
+    /// Сохраняет состояние сессии в кеш и хранилище
+    pub fn save_session(&self, chat_id: &ChatId, state: &SessionState) -> Result<()> {
+        // Сохраняем в кеш
+        {
+            let mut sessions = self.sessions.write().unwrap();
+            sessions.insert(*chat_id, state.clone());
+        }
+
+        // Сохраняем в хранилище, если оно инициализировано
+        if let Ok(Some(storage)) = self.storage() {
+            storage.save_session(chat_id, state)?;
+        }
+
+        Ok(())
+    }
+
+    /// Загружает состояние сессии из кеша или хранилища
+    pub fn load_session(&self, chat_id: &ChatId) -> Result<Option<SessionState>> {
+        // Сначала проверяем кеш
+        {
+            let sessions = self.sessions.read().unwrap();
+            if let Some(state) = sessions.get(chat_id) {
+                return Ok(Some(state.clone()));
+            }
+        }
+
+        // Если не найдено в кеше, пробуем хранилище
+        if let Ok(Some(storage)) = self.storage() {
+            let state = storage.load_session(chat_id)?;
+            // Если найдено в хранилище, сохраняем в кеш для быстрого доступа
+            if let Some(state) = &state {
+                let mut sessions = self.sessions.write().unwrap();
+                sessions.insert(*chat_id, state.clone());
+            }
+            return Ok(state);
+        }
+
+        Ok(None)
+    }
+
+    // --- Методы для работы с предварительными ключами ---
+
+    /// Сохраняет предварительный ключ bundle
+    pub fn save_prekey_bundle(&self, account_id: &AccountId, device_id: &DeviceId, bundle: &PreKeyBundle) -> Result<()> {
+        let mut bundles = self.prekey_bundles.write().unwrap();
+        bundles.insert((*account_id, *device_id), bundle.clone());
+        Ok(())
+    }
+
+    /// Загружает предварительный ключ bundle
+    pub fn load_prekey_bundle(&self, account_id: &AccountId, device_id: &DeviceId) -> Result<Option<PreKeyBundle>> {
+        let bundles = self.prekey_bundles.read().unwrap();
+        Ok(bundles.get(&(*account_id, *device_id)).cloned())
+    }
+
+    /// Отмечает одноразовый предварительный ключ как использованный
+    pub fn mark_opk_used(&self, account_id: &AccountId, device_id: &DeviceId, opk_id: u32) -> Result<()> {
+        let mut used_opks = self.used_opks.write().unwrap();
+        used_opks.insert((*account_id, *device_id, opk_id));
+        Ok(())
+    }
+
+    /// Проверяет, использован ли одноразовый предварительный ключ
+    pub fn is_opk_used(&self, account_id: &AccountId, device_id: &DeviceId, opk_id: u32) -> bool {
+        let used_opks = self.used_opks.read().unwrap();
+        used_opks.contains(&(*account_id, *device_id, opk_id))
+    }
+
+    // --- Методы для работы с известными устройствами и контактами ---
+
+    /// Добавляет известное устройство
+    pub fn add_known_device(&self, device_id: DeviceId, device_name: String) -> Result<()> {
+        let mut known_devices = self.known_devices.write().unwrap();
+        known_devices.insert(device_id, device_name);
+        Ok(())
+    }
+
+    /// Получает имя известного устройства
+    pub fn get_known_device_name(&self, device_id: &DeviceId) -> Result<Option<String>> {
+        let known_devices = self.known_devices.read().unwrap();
+        Ok(known_devices.get(device_id).cloned())
+    }
+
+    /// Добавляет известный контакт
+    pub fn add_known_contact(&self, account_id: AccountId, identity_key: IdentityKey) -> Result<()> {
+        let mut known_contacts = self.known_contacts.write().unwrap();
+        known_contacts.insert(account_id, identity_key);
+        Ok(())
+    }
+
+    /// Получает identity ключ известного контакта
+    pub fn get_known_contact_identity(&self, account_id: &AccountId) -> Result<Option<IdentityKey>> {
+        let known_contacts = self.known_contacts.read().unwrap();
+        Ok(known_contacts.get(account_id).cloned())
+    }
+
+    /// Отмечает контакт как верифицированный
+    pub fn mark_contact_verified(&self, account_id: &AccountId, verified: bool) -> Result<()> {
+        let mut verified_contacts = self.verified_contacts.write().unwrap();
+        if verified {
+            verified_contacts.insert(*account_id);
+        } else {
+            verified_contacts.remove(account_id);
+        }
+        Ok(())
+    }
+
+    /// Проверяет, верифицирован ли контакт
+    pub fn is_contact_verified(&self, account_id: &AccountId) -> bool {
+        let verified_contacts = self.verified_contacts.read().unwrap();
+        verified_contacts.contains(account_id)
+    }
+
+    /// Сохраняет безопасный номер для контакта
+    pub fn save_safety_number(&self, account_id: &AccountId, safety_number: &SafetyNumber) -> Result<()> {
+        let mut safety_numbers = self.safety_numbers.write().unwrap();
+        safety_numbers.insert(*account_id, safety_number.clone());
+        Ok(())
+    }
+
+    /// Получает безопасный номер для контакта
+    pub fn get_safety_number(&self, account_id: &AccountId) -> Result<Option<SafetyNumber>> {
+        let safety_numbers = self.safety_numbers.read().unwrap();
+        Ok(safety_numbers.get(account_id).cloned())
+    }
+
+    // --- Методы для работы с состоянием чатов ---
+
+    /// Обновляет состояние чата
+    pub fn update_chat_state(&self, chat_id: &ChatId, state: ChatState) -> Result<()> {
+        let mut chat_states = self.chat_states.write().unwrap();
+        chat_states.insert(*chat_id, state);
+        Ok(())
+    }
+
+    /// Получает состояние чата
+    pub fn get_chat_state(&self, chat_id: &ChatId) -> Result<Option<ChatState>> {
+        let chat_states = self.chat_states.read().unwrap();
+        Ok(chat_states.get(chat_id).cloned())
+    }
+
+    // --- Методы для работы с синхронизацией и резервным копированием ---
+
+    /// Устанавливает время последней синхронизации
+    pub fn set_last_sync(&self, timestamp: Timestamp) -> Result<()> {
+        *self.last_sync.write().unwrap() = Some(timestamp);
+        Ok(())
+    }
+
+    /// Получает время последней синхронизации
+    pub fn get_last_sync(&self) -> Result<Option<Timestamp>> {
+        Ok(*self.last_sync.read().unwrap())
+    }
+
+    /// Устанавливает флаг необходимости резервного копирования
+    pub fn set_backup_overdue(&self, overdue: bool) -> Result<()> {
+        *self.backup_overdue.write().unwrap() = overdue;
+        Ok(())
+    }
+
+    /// Проверяет, необходимо ли резервное копирование
+    pub fn is_backup_overdue(&self) -> Result<bool> {
+        Ok(*self.backup_overdue.read().unwrap())
+    }
+}
+
+// Простая реализация часов, использующая системное время
+struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Timestamp {
+        Timestamp::from_millis(std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64)
+    }
+}
+
+// Реализация движка протокола GasApp (обертываем наш протокольный движок)
+struct GasAppEngine {
+    inner: gasapp_protocol::protocol_engine::GasAppEngine,
+}
+
+impl GasAppEngine {
+    fn new() -> Self {
+        Self {
+            inner: gasapp_protocol::protocol_engine::GasAppEngine::new(),
+        }
+    }
+}
+
+impl ProtocolEngine for GasAppEngine {
+    fn initiate_session(
+        &self,
+        our_identity: &IdentityKeyPair,
+        their_bundle: &PreKeyBundle,
+        rng: &mut dyn CryptoRng,
+    ) -> Result<InitiatedSession> {
+        self.inner.initiate_session(our_identity, their_bundle, rng)
+            .map_err(|e| e.into())
+    }
+
+    fn accept_session(
+        &self,
+        our_identity: &IdentityKeyPair,
+        message: &InitialMessage,
+    ) -> Result<(SessionState, Plaintext)> {
+        self.inner.accept_session(our_identity, message)
+            .map_err(|e| e.into())
+    }
+
+    fn encrypt(&self, session: &mut SessionState, plaintext: &Plaintext) -> Result<Ciphertext> {
+        self.inner.encrypt(session, plaintext)
+            .map_err(|e| e.into())
+    }
+
+    fn decrypt(&self, session: &mut SessionState, ciphertext: &Ciphertext) -> Result<Plaintext> {
+        self.inner.decrypt(session, ciphertext)
+            .map_err(|e| e.into())
+    }
+
+    fn fingerprint(
+        &self,
+        identity: &IdentityKey,
+        identifier: &[u8],
+    ) -> Result<Fingerprint> {
+        self.inner.fingerprint(identity, identifier)
+            .map_err(|e| e.into())
+    }
+
+    fn version(&self) -> ProtocolVersion {
+        self.inner.version()
+    }
+}
+
+impl Default for GasAppEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Типы для FFI интерфейса GasAppClient
+///
+/// Состояние разблокировки клиента
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum UnlockState {
+    Locked,
+    Unlocked,
+}
+
+/// Информация об идентичности
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct IdentityInfo {
+    /// Идентификатор аккаунта
+    pub account_id: AccountId,
+    /// Отпечаток identity-ключа
+    pub identity_fingerprint: Vec<u8>,
+    /// Имя пользователя
+    pub username: String,
+}
+
+/// Отображение информации о ключе восстановления
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct RecoveryKeyDisplay {
+    /// Ключ восстановления в формате для отображения пользователю
+    pub recovery_key: String,
+}
+
+/// Сводка по чату
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ChatSummary {
+    /// Идентификатор чата
+    pub chat_id: ChatId,
+    /// Последнее сообщение в чате
+    pub last_message: Option<MessagePreview>,
+    /// Отметка времени последней активности
+    pub last_activity: Timestamp,
+    /// Количество непрочитанных сообщений
+    pub unread_count: u32,
+    /// Флаг, указывающий, что чат закреплен
+    pub is_pinned: bool,
+}
+
+/// Предварительный просмотр сообщения
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MessagePreview {
+    /// Идентификатор сообщения
+    pub message_id: MessageId,
+    /// Текст сообщения (обрезанный для превью)
+    pub body: String,
+    /// Отметка времени отправки
+    pub timestamp: Timestamp,
+    /// Статус доставки
+    pub status: DeliveryStatus,
+}
+
+/// Сообщение
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Message {
+    /// Идентификатор сообщения
+    pub message_id: MessageId,
+    /// Текст сообщения
+    pub body: String,
+    /// Отметка времени отправки
+    pub timestamp: Timestamp,
+    /// Статус доставки
+    pub status: DeliveryStatus,
+    /// Тип сообщения (обычное, системное и т.д.)
+    pub message_type: MessageType,
+}
+
+/// Тип сообщения
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum MessageType {
+    /// Обычное пользовательское сообщение
+    Regular,
+    /// Системное сообщение (например, о изменении ключа)
+    System,
+    /// Уведомление о начале набора текста
+    TypingIndicator,
+}
+
+/// Черновик вложения
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AttachmentDraft {
+    /// Тип вложения (изображение, видео, документ и т.д.)
+    pub attachment_type: AttachmentType,
+    /// Описание вложения
+    pub description: Option<String>,
+    /// Размер в байтах
+    pub size: u64,
+}
+
+/// Тип вложения
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum AttachmentType {
+    Image,
+    Video,
+    Audio,
+    Document,
+    Contact,
+    Location,
+    Sticker,
+}
+
+/// Статус безопасности
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SecurityStatus {
+    /// Общий балл безопасности (0-10)
+    pub score: u8,
+    /// Флаг, указывающий, что аппаратная защита ключей доступна
+    pub hardware_protection_available: bool,
+    /// Флаг, указывающий, что биометрия настроена
+    pub biometry_enrolled: bool,
+    /// Флаг, указывающий, что экран блокировки настроен
+    pub lock_screen_set: bool,
+    /// Версия ОС
+    pub os_version: String,
+    /// Версия приложения
+    pub app_version: String,
+}
+
+/// Информация о связанном устройстве
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LinkedDevice {
+    /// Идентификатор устройства
+    pub device_id: DeviceId,
+    /// Название устройства
+    pub name: String,
+    /// Флаг, указывающее, что это текущее устройство
+    pub is_current: bool,
+    /// Дата первого подключения
+    pub first_seen: Timestamp,
+    /// Дата последнего подключения
+    pub last_seen: Timestamp,
+}
+
+/// Сессия связывания устройств
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LinkingSession {
+    /// Идентификатор сессии
+    pub session_id: String,
+    /// QR-код для сканирования
+    pub qr_payload: String,
+    /// Время жизни сессии в секундах
+    pub expires_in: u32,
+}
+
+/// Статус резервного копирования
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BackupStatus {
+    /// Флаг, указывающий, что резервное копирование доступно
+    pub available: bool,
+    /// Флаг, указывающий, что требуется резервное копирование
+    pub overdue: bool,
+    /// Дни с последнего успешного резервного копирования
+    pub days_since_last_backup: Option<u32>,
+    /// Размер последней резервной копии в байтах
+    pub last_backup_size: Option<u64>,
+}
+
+/// Пин-код для разблокировки
+#[derive(Debug, Clone)]
+pub struct Pin(Secret<String>);
+
+impl Pin {
+    /// Создает новый пин-код
+    pub fn new(pin: Secret<String>) -> Self {
+        Self(pin)
+    }
+
+    /// Проверяет пин-код
+    pub fn check(&self, input: &str) -> bool {
+        self.0.expose_secret() == input
+    }
+
+    /// Очищает пин-код из памяти
+    pub fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gasapp_types::Secret;
+    use rand_core::OsRng;
+
+    #[test]
+    fn test_core_state_initial_state() {
+        let state = CoreState::new();
+        assert!(state.is_locked());
+        assert!(!state.is_unlocked());
+        assert_eq!(state.get_account_id().unwrap(), None);
+        assert_eq!(state.get_identity_key_pair().unwrap(), None);
+    }
+
+    #[test]
+    fn test_lock_unlock() {
+        let state = CoreState::new();
+        assert!(state.is_locked());
+
+        // Разблокировка
+        *state.lock_state.write().unwrap() = LockState::Unlocked;
+        assert!(state.is_unlocked());
+        assert!(!state.is_locked());
+
+        // Блокировка снова
+        *state.lock_state.write().unwrap() = LockState::Locked;
+        assert!(state.is_locked());
+        assert!(!state.is_unlocked());
+    }
+
+    #[test]
+    fn test_pin_handling() {
+        let state = CoreState::new();
+        assert_eq!(state.check_pin("wrong").unwrap(), false);
+
+        state.set_pin(Secret::new("correct123".to_string()));
+        assert_eq!(state.check_pin("wrong").unwrap(), false);
+        assert_eq!(state.check_pin("correct123").unwrap(), true);
+
+        state.clear_pin();
+        assert_eq!(state.check_pin("correct123").unwrap(), false);
+    }
+
+    #[test]
+    fn test_initialize() {
+        let state = CoreState::new();
+        let result = state.initialize();
+        assert!(result.is_ok());
+
+        // Проверяем, что компоненты инициализированы
+        assert!(state.protocol_engine().is_ok());
+        assert!(state.keystore().is_ok());
+        // Хранилище может быть не инициализировано до установки пути
+    }
+
+    #[test]
+    fn test_account_management() {
+        let state = CoreState::new();
+        state.initialize().unwrap();
+
+        // Изначально нет аккаунта
+        let account_id = state.get_account_id().unwrap();
+        assert!(account_id.is_none());
+
+        // Устанавливаем аккаунт
+        let account_id_to_set = AccountId::generate();
+        state.set_account_id(account_id_to_set);
+
+        // Получаем его
+        let retrieved = state.get_account_id().unwrap().unwrap();
+        assert_eq!(retrieved, account_id_to_set);
+    }
+
+    #[test]
+    fn test_identity_management() {
+        let state = CoreState::new();
+        state.initialize().unwrap();
+
+        // Изначально нет identity ключей
+        let key_pair = state.get_identity_key_pair().unwrap();
+        assert!(key_pair.is_none());
+
+        // Генерируем пару ключей (в реальной реализации это будет сделано через keystore)
+        let identity_key = IdentityKey::new(PublicKeyBytes::new([1u8; 32]));
+        let key_pair = IdentityKeyPair::new(
+            identity_key,
+            Secret::new([2u8; 32]),
+        );
+
+        // Устанавливаем пару ключей
+        state.set_identity_key_pair(key_pair.clone());
+
+        // Получаем её
+        let retrieved = state.get_identity_key_pair().unwrap().unwrap();
+        assert_eq!(retrieved, key_pair);
+    }
+}
+
+// FFI interface methods for GasAppClient
+// These methods export the CoreState functionality to UniFFI-generated bindings
+
+/// Внесение PIN-кода для разблокировки клиента
+#[uniffi::export]
+pub fn unlock(core_state: &uniffi::RwLock<CoreState>, pin: String) -> Result<(), GasAppError> {
+    let mut state = core_state.write().unwrap();
+    state.set_pin(Secret::new(pin));
+    state.lock_state.write().unwrap();
+    *state.lock_state.write().unwrap() = LockState::Unlocked;
+
+    // После разблокировки можно инициализировать хранилище, если есть аккаунт
+    // Это сделаем в отдельном методе инициализации хранилища
+
+    Ok(())
+}
+
+/// Блокировка клиента
+#[uniffi::export]
+pub fn lock(core_state: &uniffi::RwLock<CoreState>) {
+    let mut state = core_state.write().unwrap();
+    state.lock_state.write().unwrap();
+    *state.lock_state.write().unwrap() = LockState::Locked;
+    state.clear_pin();
+    // TODO: Zeroize LSMK когда keystore реализован
+}
+
+/// Получение состояния блокировки клиента
+#[uniffi::export]
+pub fn state(core_state: &uniffi::RwLock<CoreState>) -> UnlockState {
+    let state = core_state.read().unwrap();
+    state.lock_state.read().unwrap().into()
+}
+
+/// Создание новой идентичности
+#[uniffi::export]
+pub fn create_identity(core_state: &uniffi::RwLock<CoreState>, username: String) -> Result<IdentityInfo, GasAppError> {
+    let mut state = core_state.write().unwrap();
+
+    // Генерируем новый account ID
+    let account_id = AccountId::generate();
+
+    // Генерируем новую identity key pair (в реальной реализации будет использоваться keystore)
+    let mut rng = OsRng;
+    let mut identity_key_bytes = [0u8; 32];
+    let mut identity_private_bytes = [0u8; 32];
+    rng.fill_bytes(&mut identity_key_bytes);
+    rng.fill_bytes(&mut identity_private_bytes);
+
+    let identity_key_pair = IdentityKeyPair::new(
+        IdentityKey::new(PublicKeyBytes::from_slice(&identity_key_bytes)
+            .map_err(|_| GasAppError::Crypto)?),
+        Secret::new(identity_private_bytes),
+    );
+
+    state.set_account_id(account_id);
+    state.set_identity_key_pair(identity_key_pair);
+
+    // Генерируем отпечаток identity-ключа для safety number
+    // В реальной реализации это будет сделано через crypro工具
+    let identity_fingerprint = vec![0u8; 30]; // Заглушка
+
+    // Return identity info
+    Ok(IdentityInfo {
+        account_id,
+        identity_fingerprint,
+        username,
+    })
+}
+
+/// Восстановление из ключа восстановления
+#[uniffi::export]
+pub fn restore_from_recovery(core_state: &uniffi::RwLock<CoreState>, recovery_key: String) -> Result<(), GasAppError> {
+    // TODO: Восстановление из бэкапа когда система бэкапа готова
+    // Пока возвращаем неподдерживаемую ошибку
+    Err(GasAppError::UnsupportedProtocolVersion)
+}
+
+/// Генерация ключа восстановления для отображения пользователю
+#[uniffi::export]
+pub fn generate_recovery_key(core_state: &uniffi::RwLock<CoreState>) -> Result<RecoveryKeyDisplay, GasAppError> {
+    // TODO: Генерация ключа восстановления когда система бэкапа готова
+    // Пока возвращаем заглушку
+    Ok(RecoveryKeyDisplay {
+        recovery_key: "PLACEHOLDER_RECOVERY_KEY_NOT_IMPLEMENTED_YET".to_string(),
+    })
+}
+
+/// Получение списка чатов
+#[uniffi::export]
+pub fn list_chats(core_state: &uniffi::RwLock<CoreState>, limit: u32, offset: u32) -> Result<Vec<ChatSummary>, GasAppError> {
+    let state = core_state.read().unwrap();
+
+    // Для прототипа возвращаем пустой список
+    // В реальной реализации будем брать из хранилища
+    Ok(Vec::new())
+}
+
+/// Получение списка сообщений в чате
+#[uniffi::export]
+pub fn list_messages(core_state: &uniffi::RwLock<CoreState>, chat: ChatId, limit: u32, before: Option<MessageId>) -> Result<Vec<Message>, GasAppError> {
+    let state = core_state.read().unwrap();
+
+    // Для прототипа возвращаем пустой список
+    // В реальной реализации будем брать из хранилища
+    Ok(Vec::new())
+}
+
+/// Отправка сообщения
+#[uniffi::export]
+pub fn send_message(core_state: &uniffi::RwLock<CoreState>, chat: ChatId, body: String, att: Vec<AttachmentDraft>) -> Result<MessageId, GasAppError> {
+    let mut state = core_state.write().unwrap();
+
+    // Проверяем, разблокировано ли приложение
+    if !state.is_unlocked() {
+        return Err(GasAppError::Locked);
+    }
+
+    // TODO: Реализовать настоящую отправку сообщения:
+    // 1. Получить или создать сессию для чата
+    // 2. Зашифровать сообщение с использованием движка протокола
+    // 3. Сохранить сообщение в локальное хранилище
+    // 4. Отправить сообщение через сетевой слой
+    // 5. Вернуть ID отправленного сообщения
+
+    // Пока возвращаем неподдерживаемую ошибку
+    Err(GasAppError::UnsupportedProtocolVersion)
+}
+
+/// Установка таймера disappearing messages
+#[uniffi::export]
+pub fn set_disappearing_timer(core_state: &uniffi::RwLock<CoreState>, chat: ChatId, seconds: u32) -> Result<(), GasAppError> {
+    let mut state = core_state.write().unwrap();
+
+    // TODO: Реализовать установку таймера disappearing messages
+    // Для прототипа просто сохраняем в состоянии чата
+    let mut chat_state = state.get_chat_state(&chat).unwrap().unwrap_or_default();
+    chat_state.disappearing_timer = Some(seconds);
+    state.update_chat_state(&chat, chat_state)?;
+
+    Ok(())
+}
+
+/// Получение safety number для проверки контакта
+#[uniffi::export]
+pub fn safety_number(core_state: &uniffi::RwLock<CoreState>, peer: AccountId) -> Result<SafetyNumber, GasAppError> {
+    let state = core_state.read().unwrap();
+
+    // В реальной реализации мы бы:
+    // 1. Получили бы identity key нашего устройства
+    // 2. Получили бы identity key контакта из известных контактов
+    // 3. Вычислили бы safety number между ними
+
+    // Для прототипа возвращаем placeholder
+    if let Some(identity_key_pair) = &state.get_identity_key_pair().unwrap() {
+        // В реальной реализации мы бы посмотрели peer's identity key
+        // и посчитали safety number между нашим и их identity keys
+        // Для теперь возвращаем placeholder
+        Ok(SafetyNumber::new(
+            &Fingerprint::from_bytes([0u8; 30]),  // Placeholder
+            &Fingerprint::from_bytes([0u8; 30]),  // Placeholder
+        ))
+    } else {
+        Err(GasAppError::Locked)
+    }
+}
+
+/// Отметка контакта как верифицированного
+#[uniffi::export]
+pub fn mark_verified(core_state: &uniffi::RwLock<CoreState>, peer: AccountId, verified: bool) -> Result<(), GasAppError> {
+    let mut state = core_state.write().unwrap();
+
+    if verified {
+        state.verified_contacts.write().unwrap().insert(peer);
+    } else {
+        state.verified_contacts.write().unwrap().remove(&peer);
+    }
+
+    Ok(())
+}
+
+/// Получение статуса безопасности для виджета 9/10
+#[uniffi::export]
+pub fn security_status(core_state: &uniffi::RwLock<CoreState>) -> Result<SecurityStatus, GasAppError> {
+    let state = core_state.read().unwrap();
+
+    // TODO: Реализовать реальный расчет статуса безопасности
+    // Пока возвращаем placeholder значения
+    Ok(SecurityStatus {
+        score: 9,  // Placeholder - будет вычислен на основе реального состояния безопасности
+        hardware_protection_available: false,  // Placeholder
+        biometry_enrolled: false,  // Placeholder
+        lock_screen_set: false,  // Placeholder
+        os_version: std::env::consts::OS.to_string(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+    })
+}
+
+/// Получение списка связанных устройств
+#[uniffi::export]
+pub fn linked_devices(core_state: &uniffi::RwLock<CoreState>) -> Result<Vec<LinkedDevice>, GasAppError> {
+    let state = core_state.read().unwrap();
+
+    // Преобразуем известные устройства в вектор LinkedDevice
+    let known_devices = state.known_devices.read().unwrap();
+
+    Ok(known_devices
+        .iter()
+        .map(|(device_id, name)| LinkedDevice {
+            device_id: *device_id,
+            name: name.clone(),
+            is_current: false,  // TODO: Определить текущее устройство
+            first_seen: Timestamp::from_millis(0),  // Placeholder
+            last_seen: Timestamp::from_millis(0),   // Placeholder
+        })
+        .collect::<Vec<_>>()
+    )
+}
+
+/// Отзыв устройства
+#[uniffi::export]
+pub fn revoke_device(core_state: &uniffi::RwLock<CoreState>, device: DeviceId) -> Result<(), GasAppError> {
+    let mut state = core_state.write().unwrap();
+
+    state.known_devices.write().unwrap().remove(&device);
+    // TODO: Также отозвать устройство в keystore когда реализовано
+
+    Ok(())
+}
+
+/// Начало сессии связывания устройств
+#[uniffi::export]
+pub fn start_device_linking(core_state: &uniffi::RwLock<CoreState>) -> Result<LinkingSession, GasAppError> {
+    // TODO: Реализовать когда подсистема связывания устройств готова
+    // Пока возвращаем placeholder
+    Ok(LinkingSession {
+        session_id: "PLACEHOLDER_SESSION_ID".to_string(),
+        qr_payload: "PLACEHOLDER_QR_PAYLOAD".to_string(),
+        expires_in: 300,  // 5 minutes placeholder
+    })
+}
+
+/// Одобрение связывания устройств по QR-коду
+#[uniffi::export]
+pub fn approve_linking(core_state: &uniffi::RwLock<CoreState>, qr_payload: String) -> Result<(), GasAppError> {
+    // TODO: Реализовать когда подсистема связывания устройств готова
+    Err(GasAppError::UnsupportedProtocolVersion)
+}
+
+/// Запуск резервного копирования
+#[uniffi::export]
+pub fn run_backup(core_state: &uniffi::RwLock<CoreState>) -> Result<(), GasAppError> {
+    // TODO: Реализовать когда подсистема бэкапа готова
+    Err(GasAppError::UnsupportedProtocolVersion)
+}
+
+/// Получение статуса резервного копирования
+#[uniffi::export]
+pub fn backup_status(core_state: &uniffi::RwLock<CoreState>) -> Result<BackupStatus, GasAppError> {
+    let state = core_state.read().unwrap();
+
+    Ok(BackupStatus {
+        available: true,  // Placeholder
+        overdue: *state.backup_overdue.read().unwrap(),
+        days_since_last_backup: None,  // Placeholder
+        last_backup_size: None,        // Placeholder
+    })
+}
+
+/// Установка слушателя событий
+#[uniffi::export]
+pub fn set_event_listener(core_state: &uniffi::RwLock<CoreState>, listener: Box<dyn uniffi::Callback<GasAppEvent>>) -> Result<(), GasAppError> {
+    // TODO: Реализовать систему слушателей событий
+    Err(GasAppError::UnsupportedProtocolVersion)
+}

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Нижняя навигация: Chats / Calls / Contacts / Settings.
+  Нижняя навигация: Chats / Channels / Contacts / Settings (Calls скрыта).
 
   Размеры перенесены из UI kit дословно: иконка 21dp, подпись 10sp,
   отступ снизу 16dp под системную полосу жестов.
@@ -24,7 +24,7 @@
 
     <LinearLayout
         android:id="@+id/nav_chats"
-        style="@style/AegisNavItem">
+        style="@style/GasAppNavItem">
 
         <ImageView
             android:layout_width="56dp"
@@ -38,7 +38,7 @@
             app:tint="@color/accent_base" />
 
         <TextView
-            style="@style/AegisNavLabel"
+            style="@style/GasAppNavLabel"
             android:text="@string/nav_chats"
             android:textColor="@color/accent_base" />
     </LinearLayout>
@@ -51,7 +51,7 @@
     -->
     <LinearLayout
         android:id="@+id/nav_calls"
-        style="@style/AegisNavItem"
+        style="@style/GasAppNavItem"
         android:visibility="gone">
 
         <ImageView
@@ -66,13 +66,34 @@
             app:tint="@color/text_tertiary" />
 
         <TextView
-            style="@style/AegisNavLabel"
+            style="@style/GasAppNavLabel"
             android:text="@string/nav_calls" />
+    </LinearLayout>
+
+    <!-- Каналы: ленты, которые человек читает или ведёт. -->
+    <LinearLayout
+        android:id="@+id/nav_channels"
+        style="@style/GasAppNavItem">
+
+        <ImageView
+            android:layout_width="56dp"
+            android:layout_height="30dp"
+            android:paddingStart="17dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="17dp"
+            android:paddingBottom="4dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_channel"
+            app:tint="@color/text_tertiary" />
+
+        <TextView
+            style="@style/GasAppNavLabel"
+            android:text="@string/nav_channels" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/nav_contacts"
-        style="@style/AegisNavItem">
+        style="@style/GasAppNavItem">
 
         <ImageView
             android:layout_width="56dp"
@@ -86,13 +107,13 @@
             app:tint="@color/text_tertiary" />
 
         <TextView
-            style="@style/AegisNavLabel"
+            style="@style/GasAppNavLabel"
             android:text="@string/nav_contacts" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/nav_settings"
-        style="@style/AegisNavItem">
+        style="@style/GasAppNavItem">
 
         <ImageView
             android:layout_width="56dp"
@@ -106,7 +127,7 @@
             app:tint="@color/text_tertiary" />
 
         <TextView
-            style="@style/AegisNavLabel"
+            style="@style/GasAppNavLabel"
             android:text="@string/nav_settings" />
     </LinearLayout>
 

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
 --
--- Админ-центр оператора (`aegis-server-admin`).
+-- Админ-центр оператора (`gasapp-server-admin`).
 --
 -- 🔐 Здесь нет ничего о людях. Журнал действий оператора хранит, ЧТО
 -- сделано и ПОЧЕМУ, но не с кем: имя удалённого аккаунта в нём
@@ -26,7 +26,7 @@ CREATE TABLE admin_actions (
 );
 
 -- Порядковый номер жалобы: по нему уведомление о новых жалобах
--- (`aegis-server-admin watch-reports`) знает, какие уже видело.
+-- (`gasapp-server-admin watch-reports`) знает, какие уже видело.
 -- Номер, а не время: время жалобы огрублено до часа, и по нему не
 -- отличить новую жалобу от старой в том же часе.
 ALTER TABLE sealed_sender_reports ADD COLUMN report_seq BIGSERIAL;

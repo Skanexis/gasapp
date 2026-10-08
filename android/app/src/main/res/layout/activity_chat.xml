@@ -27,7 +27,7 @@
 
         <ImageView
             android:id="@+id/chat_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:padding="12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
@@ -95,7 +95,7 @@
         -->
         <ImageView
             android:id="@+id/chat_menu"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:contentDescription="@string/chat_menu"
             android:src="@drawable/ic_more"
             app:tint="@color/text_secondary" />
@@ -148,7 +148,7 @@
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
-        <org.aegis.app.components.AegisButton
+        <org.gasapp.app.components.GasAppButton
             android:id="@+id/key_change_verify"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -167,7 +167,7 @@
             android:visibility="gone"
             tools:visibility="visible">
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/request_accept"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -176,7 +176,7 @@
                 app:buttonSize="small"
                 app:buttonVariant="primary" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/request_decline"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -266,7 +266,7 @@
             android:src="@drawable/ic_plus"
             app:tint="@color/text_secondary" />
 
-        <org.aegis.app.components.AegisTextField
+        <org.gasapp.app.components.GasAppTextField
             android:id="@+id/message_input"
             android:layout_width="0dp"
             android:layout_height="wrap_content"

@@ -42,7 +42,7 @@ APK одному человеку. Против всех трёх работае
 | Пути в бинарнике | `--remap-path-prefix` | там же |
 
 ⚠️ **Две версии NDK обязаны совпадать.** Контейнер собирает
-`libaegis.so`, Gradle её обрезает (`strip`) — обе операции входят
+`libgasapp.so`, Gradle её обрезает (`strip`) — обе операции входят
 в итоговый артефакт. До M8 они расходились: контейнер брал r27c,
 Gradle требовал 29.0.14206865, к тому же preview-выпуск. Обе сборки
 были успешны и давали разные байты. Теперь совпадение проверяется
@@ -53,8 +53,8 @@ Gradle требовал 29.0.14206865, к тому же preview-выпуск. О
 ```bash
 # 1. Ядро — только в контейнере: на хосте результат зависит от
 #    системного OpenSSL и libc.
-docker build -f tools/Dockerfile.android -t aegis-android tools/
-docker run --rm -v "$PWD":/work -w /work aegis-android \
+docker build -f tools/Dockerfile.android -t gasapp-android tools/
+docker run --rm -v "$PWD":/work -w /work gasapp-android \
     tools/build-rust-android.sh
 
 # 2. APK и суммы.
@@ -136,10 +136,10 @@ tools/reproducible-build.sh --verify SHA256SUMS-release.txt
 4. **Проверено только на одной машине.** `tools/reproducible-build.sh
    --twice` собирает ревизию дважды — со сносом каталога сборки
    Gradle, целевого каталога cargo, самих `jniLibs` и пересборкой
-   ядра — и сверяет суммы. `libaegis.so` под обе ABI и неподписанные
+   ядра — и сверяет суммы. `libgasapp.so` под обе ABI и неподписанные
    APK обоих flavor'ов совпали побайтово.
 
-   Сверх того: суммы `libaegis.so` совпали и с отдельным прогоном
+   Сверх того: суммы `libgasapp.so` совпали и с отдельным прогоном
    пятью часами раньше. То есть результат не зависит ни от времени,
    ни от состояния каталогов, ни от того, в каком запуске он получен.
 
@@ -150,7 +150,7 @@ tools/reproducible-build.sh --verify SHA256SUMS-release.txt
    ⚠️ **Эта проверка была ложно-зелёной дважды, и оба раза
    одинаково.** Сначала она сносила каталоги Gradle и cargo,
    но не `jniLibs`: gradle нативные библиотеки не собирает — берёт
-   готовые, — и суммы `libaegis.so` совпадали сами с собой. После
+   готовые, — и суммы `libgasapp.so` совпадали сами с собой. После
    исправления она стала пересобирать их **только во втором
    проходе**, то есть сравнивала свою сборку с тем, что осталось
    от чужой, и честно сообщила о «невоспроизводимости», которой
@@ -170,10 +170,10 @@ tools/reproducible-build.sh --verify SHA256SUMS-release.txt
 `~/.gradle/gradle.properties` или из переменных окружения CI:
 
 ```
-aegisKeystore=/путь/к/aegis-release.jks
-aegisKeystorePassword=…
-aegisKeyAlias=aegis
-aegisKeyPassword=…
+gasappKeystore=/путь/к/gasapp-release.jks
+gasappKeystorePassword=…
+gasappKeyAlias=gasapp
+gasappKeyPassword=…
 ```
 
 🔐 Ни ключа, ни паролей в репозитории нет; `gitleaks` проверяет это

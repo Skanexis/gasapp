@@ -1,0 +1,127 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "$description": "Design tokens GasApp. Сгенерировано из design/secure-messenger-ui-kit.html — не редактировать вручную.",
+  "color": {
+    "bg": {
+      "base": "#0E1238",
+      "raised": "#141A4A",
+      "card": "#1B2259",
+      "hover": "#252E70"
+    },
+    "line": "#343E85",
+    "text": {
+      "primary": "#F5F6FF",
+      "secondary": "#C2C8F0",
+      "muted": "#A3ABDD",
+      "disabled": "#6670AD"
+    },
+    "accent": {
+      "base": "#FFCB2E",
+      "hover": "#FFDA66",
+      "pressed": "#F0A800",
+      "on": "#2B1600",
+      "dim": "rgba(255,203,46,.14)",
+      "line": "rgba(255,203,46,.40)"
+    },
+    "status": {
+      "success": "#4ADE94",
+      "warning": "#FF9A4D",
+      "error": "#FF7A85",
+      "info": "#7FB8FF",
+      "successDim": "rgba(74,222,148,.13)",
+      "warningDim": "rgba(255,154,77,.13)",
+      "errorDim": "rgba(255,122,133,.13)"
+    }
+  },
+  "radius": {
+    "input": 12,
+    "button": 14,
+    "card": 16,
+    "sheet": 24
+  },
+  "space": [
+    4,
+    8,
+    16,
+    24,
+    32,
+    40,
+    48,
+    64
+  ],
+  "motion": {
+    "fast": 150,
+    "base": 200,
+    "slow": 250,
+    "ease": "cubic-bezier(0, 0, .2, 1)"
+  },
+  "size": {
+    "buttonSmall": 40,
+    "buttonMedium": 48,
+    "buttonLarge": 56,
+    "input": 48,
+    "listRowMin": 64,
+    "listRowMax": 72,
+    "avatar": [
+      40,
+      48,
+      64,
+      88
+    ],
+    "icon": [
+      16,
+      20,
+      24,
+      32
+    ],
+    "touchTarget": 48,
+    "screenMargin": 16
+  },
+  "typography": {
+    "display": {
+      "size": 32,
+      "lineHeight": 40,
+      "weight": 700
+    },
+    "h1": {
+      "size": 28,
+      "lineHeight": 36,
+      "weight": 700
+    },
+    "h2": {
+      "size": 24,
+      "lineHeight": 32,
+      "weight": 600
+    },
+    "h3": {
+      "size": 20,
+      "lineHeight": 28,
+      "weight": 600
+    },
+    "h4": {
+      "size": 17,
+      "lineHeight": 24,
+      "weight": 600
+    },
+    "body": {
+      "size": 15,
+      "lineHeight": 22,
+      "weight": 400
+    },
+    "caption": {
+      "size": 13,
+      "lineHeight": 18,
+      "weight": 400
+    },
+    "button": {
+      "size": 15,
+      "lineHeight": 16,
+      "weight": 600
+    },
+    "label": {
+      "size": 12,
+      "lineHeight": 16,
+      "weight": 600
+    }
+  }
+}

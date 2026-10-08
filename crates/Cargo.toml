@@ -1,17 +1,17 @@
 [workspace]
 resolver = "2"
 members = [
-    "aegis-types",
-    "aegis-proto",
-    "aegis-protocol",
-    "aegis-keystore",
-    "aegis-storage",
-    "aegis-net",
-    "aegis-media",
-    "aegis-backup",
-    "aegis-core",
-    "aegis-ffi",
-    "aegis-tor",
+    "gasapp-types",
+    "gasapp-proto",
+    "gasapp-protocol",
+    "gasapp-keystore",
+    "gasapp-storage",
+    "gasapp-net",
+    "gasapp-media",
+    "gasapp-backup",
+    "gasapp-core",
+    "gasapp-ffi",
+    "gasapp-tor",
 ]
 
 [workspace.dependencies]
@@ -32,33 +32,33 @@ hex = { version = "=0.4" }
 proptest = { version = "=1.0" }
 rusqlite = { version = "=0.37.0" }
 # Local crates (workspace members)
-aegis-types = { path = "aegis-types" }
-aegis-proto = { path = "aegis-proto" }
-aegis-protocol = { path = "aegis-protocol" }
-aegis-keystore = { path = "aegis-keystore" }
-aegis-storage = { path = "aegis-storage" }
-aegis-net = { path = "aegis-net" }
-aegis-media = { path = "aegis-media" }
-aegis-backup = { path = "aegis-backup" }
-aegis-core = { path = "aegis-core" }
-aegis-ffi = { path = "aegis-ffi" }
-aegis-tor = { path = "aegis-tor" }
+gasapp-types = { path = "gasapp-types" }
+gasapp-proto = { path = "gasapp-proto" }
+gasapp-protocol = { path = "gasapp-protocol" }
+gasapp-keystore = { path = "gasapp-keystore" }
+gasapp-storage = { path = "gasapp-storage" }
+gasapp-net = { path = "gasapp-net" }
+gasapp-media = { path = "gasapp-media" }
+gasapp-backup = { path = "gasapp-backup" }
+gasapp-core = { path = "gasapp-core" }
+gasapp-ffi = { path = "gasapp-ffi" }
+gasapp-tor = { path = "gasapp-tor" }
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.97"
 license = "Apache-2.0"
-# Крейты AEGIS — части приложения, а не библиотеки для чужого использования.
+# Крейты GasApp — части приложения, а не библиотеки для чужого использования.
 # На crates.io они не публикуются никогда.
 #
 # Помимо защиты от случайной публикации это делает корректной проверку
 # cargo-deny: её allow-wildcard-paths применяется только к непубликуемым
 # крейтам, потому что crates.io запрещает path-зависимости.
 publish = false
-authors = ["The AEGIS Authors"]
-repository = "https://github.com/aegis-messenger/aegis"
-homepage = "https://aegis.chat"
+authors = ["The GasApp Authors"]
+repository = "https://github.com/gasapp-messenger/gasapp"
+homepage = "https://gasapp.chat"
 
 [workspace.lints]
 # Правила раздела 4.2 плана. Секция была пустой: `clippy.toml` ссылался
@@ -90,7 +90,7 @@ integer_division = "deny"
 # в release».
 #
 # Секции не было вовсе, хотя `tools/build-rust-android.sh` на неё ссылается.
-# То есть libaegis.so уезжала в APK с полной отладочной информацией: имена
+# То есть libgasapp.so уезжала в APK с полной отладочной информацией: имена
 # функций, номера строк и пути к исходникам на машине сборщика. Для
 # реверс-инженера это карта, а абсолютный путь вида `C:\Users\<имя>\...`
 # ещё и выдаёт того, кто собирал.
@@ -117,8 +117,8 @@ codegen-units = 1
 # ⚠️ `panic = "abort"` намеренно НЕ выставлен.
 #
 # Он выглядит уместным для библиотеки за FFI: разворачивание стека через
-# границу языка — неопределённое поведение. Но `aegis-ffi` до границы его
+# границу языка — неопределённое поведение. Но `gasapp-ffi` до границы его
 # и не допускает — каждый вызов обёрнут в `catch_unwind`
-# (`aegis-ffi/src/lib.rs:92`), и паника превращается в ошибку FFI.
+# (`gasapp-ffi/src/lib.rs:92`), и паника превращается в ошибку FFI.
 # С `panic = "abort"` этот перехват перестаёт работать молча, и любая
 # паника в ядре становится падением приложения вместо сообщения об ошибке.

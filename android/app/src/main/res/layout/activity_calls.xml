@@ -32,7 +32,7 @@
         android:paddingBottom="@dimen/space_m">
 
         <TextView
-            style="@style/AegisAppBarTitle.Large"
+            style="@style/GasAppAppBarTitle.Large"
             android:layout_weight="1"
             android:text="@string/nav_calls" />
     </LinearLayout>
@@ -56,12 +56,12 @@
 
         <TextView
             android:id="@+id/calls_filter_all"
-            style="@style/AegisSegment"
+            style="@style/GasAppSegment"
             android:text="@string/calls_filter_all" />
 
         <TextView
             android:id="@+id/calls_filter_missed"
-            style="@style/AegisSegment"
+            style="@style/GasAppSegment"
             android:text="@string/calls_filter_missed" />
     </LinearLayout>
 
@@ -87,7 +87,7 @@
       её читают, закончив просматривать журнал, а не до того.
     -->
     <TextView
-        style="@style/AegisCaption"
+        style="@style/GasAppCaption"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:drawablePadding="@dimen/space_xs"

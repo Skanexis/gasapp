@@ -20,18 +20,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/restore_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:id="@+id/restore_title"
             android:text="@string/restore_title" />
@@ -51,20 +51,20 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisText.Body.Secondary"
+                style="@style/GasAppText.Body.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:id="@+id/restore_intro"
                 android:text="@string/restore_intro" />
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/restore_section_files" />
 
-            <LinearLayout style="@style/AegisPanel">
+            <LinearLayout style="@style/GasAppPanel">
 
-                <org.aegis.app.components.AegisButton
+                <org.gasapp.app.components.GasAppButton
                     android:id="@+id/restore_pick"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -73,7 +73,7 @@
 
                 <TextView
                     android:id="@+id/restore_files"
-                    style="@style/AegisText.Caption.Muted"
+                    style="@style/GasAppText.Caption.Muted"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
@@ -81,15 +81,15 @@
             </LinearLayout>
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/restore_section_key" />
 
-            <LinearLayout style="@style/AegisPanel">
+            <LinearLayout style="@style/GasAppPanel">
 
-                <org.aegis.app.components.AegisTextField
+                <org.gasapp.app.components.GasAppTextField
                     android:id="@+id/restore_key"
-                    style="@style/AegisInput"
+                    style="@style/GasAppInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingTop="12dp"
@@ -113,7 +113,7 @@
                 -->
                 <TextView
                     android:id="@+id/restore_key_state"
-                    style="@style/AegisText.Caption.Muted"
+                    style="@style/GasAppText.Caption.Muted"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
@@ -122,7 +122,7 @@
 
             <TextView
                 android:id="@+id/restore_status"
-                style="@style/AegisText.Caption"
+                style="@style/GasAppText.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
@@ -130,7 +130,7 @@
                 tools:text="Восстановлено 128 записей"
                 tools:visibility="visible" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/restore_confirm"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -140,11 +140,11 @@
                 app:buttonVariant="primary" />
 
             <LinearLayout
-                style="@style/AegisPanel.Deep"
+                style="@style/GasAppPanel.Deep"
                 android:layout_marginTop="@dimen/space_l">
 
                 <TextView
-                    style="@style/AegisText.Caption"
+                    style="@style/GasAppText.Caption"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/restore_note" />

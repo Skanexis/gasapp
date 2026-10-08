@@ -1,8 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Кнопка нового чата: 52dp, скругление 16dp по макету. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@color/accent_base" />
-    <corners android:radius="16dp" />
-</shape>
+<!-- Кнопка нового чата: та же объёмная золотая грань, что у основной кнопки. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+            <item android:top="@dimen/button_edge_pressed">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/accent_edge" />
+                    <corners android:radius="18dp" />
+                </shape>
+            </item>
+            <item android:top="@dimen/button_edge_pressed" android:bottom="1dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/accent_pressed" />
+                    <corners android:radius="18dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <item>
+        <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+            <item android:top="0dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/accent_edge" />
+                    <corners android:radius="18dp" />
+                </shape>
+            </item>
+            <item android:top="0dp" android:bottom="@dimen/button_edge">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/accent_base" />
+                    <corners android:radius="18dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</selector>

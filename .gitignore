@@ -32,7 +32,7 @@ crash-*
 # ⚠️ Дамп ядра — `core` или `core.<pid>`, и правило привязано к корню.
 #
 # Здесь стояло `core.*`, и на Windows оно молча съедало
-# `android/app/src/main/kotlin/org/aegis/app/core/Core.kt`: git
+# `android/app/src/main/kotlin/org/gasapp/app/core/Core.kt`: git
 # на NTFS сравнивает пути без учёта регистра (`core.ignorecase=true`),
 # и `core.*` совпало с `Core.kt`.
 #

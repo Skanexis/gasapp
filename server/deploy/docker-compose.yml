@@ -6,8 +6,8 @@
 #   docker compose -f server/deploy/docker-compose.yml up -d
 #
 # Прогон тестов против него:
-#   AEGIS_TEST_DATABASE_URL=postgres://aegis:aegis-dev@localhost:5433/aegis \
-#       cargo test -p aegis-server-db
+#   GASAPP_TEST_DATABASE_URL=postgres://gasapp:gasapp-dev@localhost:5433/gasapp \
+#       cargo test -p gasapp-server-db
 #
 # Порт 5433, а не 5432: на машине разработчика часто уже стоит локальный
 # Postgres, и конфликт портов проявился бы невнятной ошибкой подключения.
@@ -15,7 +15,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: aegis-postgres
+    container_name: gasapp-postgres
     environment:
       # Пароль разработки. В продакшене секреты приходят из хранилища
       # секретов, а не из compose-файла.
@@ -25,9 +25,9 @@ services:
       # Kubernetes — открытая задача, и указывать на них как
       # на готовые значило обещать несуществующее.
       # Развёртывание, которое есть, описано в РАЗВЁРТЫВАНИЕ.md.
-      POSTGRES_USER: aegis
-      POSTGRES_PASSWORD: aegis-dev
-      POSTGRES_DB: aegis
+      POSTGRES_USER: gasapp
+      POSTGRES_PASSWORD: gasapp-dev
+      POSTGRES_DB: gasapp
     # 🔐 Только петля. Без адреса Docker публикует порт на всех
     # интерфейсах — и в обход брандмауэра хоста (свои правила iptables):
     # база с паролем из этого файла открывалась бы всей сети, в которой
@@ -35,14 +35,14 @@ services:
     ports:
       - "127.0.0.1:5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aegis"]
+      test: ["CMD-SHELL", "pg_isready -U gasapp"]
       interval: 5s
       timeout: 3s
       retries: 10
     volumes:
       # Схема применяется при первом старте пустого тома.
       - ../migrations:/docker-entrypoint-initdb.d:ro
-      - aegis-pgdata:/var/lib/postgresql/data
+      - gasapp-pgdata:/var/lib/postgresql/data
 
 volumes:
-  aegis-pgdata:
+  gasapp-pgdata:

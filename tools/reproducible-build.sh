@@ -39,7 +39,7 @@
 # Полная воспроизводимость на этом не достигается, и объявлять её
 # достигнутой рано. Известные источники расхождений:
 #
-#   * абсолютные пути в libaegis.so. Rust вписывает путь к исходникам
+#   * абсолютные пути в libgasapp.so. Rust вписывает путь к исходникам
 #     в отладочные данные; `strip = "debuginfo"` убирает большую часть,
 #     но `--remap-path-prefix` всё равно нужен — см. ниже;
 #   * сборка вне контейнера. На хосте с другим OpenSSL или другой libc
@@ -52,7 +52,7 @@
 #     на руках, а он есть только у выпускающего.
 #
 # Поэтому скрипт считает суммы неподписанного APK и отдельно — суммы
-# каждой libaegis.so. Второе воспроизводимо уже сейчас; первое
+# каждой libgasapp.so. Второе воспроизводимо уже сейчас; первое
 # остаётся открытым пунктом M8.
 
 set -euo pipefail
@@ -72,10 +72,10 @@ export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --pretty=
 
 # 🔐 Убирает абсолютные пути из бинарника.
 #
-# Без этого в libaegis.so остаётся путь вида /home/<имя>/... или
+# Без этого в libgasapp.so остаётся путь вида /home/<имя>/... или
 # C:/Users/<имя>/... — он и ломает совпадение сумм, и выдаёт того,
 # кто собирал.
-export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$ROOT=/aegis --remap-path-prefix=$HOME/.cargo=/cargo"
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$ROOT=/gasapp --remap-path-prefix=$HOME/.cargo=/cargo"
 
 VERIFY=""
 TWICE=0
@@ -135,16 +135,16 @@ if [[ -n "${ANDROID_NDK_HOME:-}" ]]; then
   bash "$ROOT/tools/build-rust-android.sh" "${ABI_FLAGS_MAIN[@]}"
 elif [[ "$TWICE" -eq 1 ]]; then
   echo "error: для --twice нужен ANDROID_NDK_HOME." >&2
-  echo "  Без пересборки libaegis.so сравнение её сумм бессмысленно:" >&2
+  echo "  Без пересборки libgasapp.so сравнение её сумм бессмысленно:" >&2
   echo "  gradle берёт готовый файл из jniLibs и не трогает его." >&2
   exit 2
 else
   echo "  ⚠️ ANDROID_NDK_HOME не задан: ядро не пересобирается,"
-  echo "     и суммы libaegis.so относятся к тому, что уже лежит"
+  echo "     и суммы libgasapp.so относятся к тому, что уже лежит"
   echo "     в jniLibs, — то есть неизвестно к какой сборке."
 fi
 
-(cd "$ROOT/android" && ./gradlew --no-daemon :app:assembleGmsRelease :app:assembleFossRelease -PaegisAllowUnreleasable=true)
+(cd "$ROOT/android" && ./gradlew --no-daemon :app:assembleGmsRelease :app:assembleFossRelease -PgasappAllowUnreleasable=true)
 
 # --- Подсчёт сумм ------------------------------------------------------------
 
@@ -156,7 +156,7 @@ sums() {
       | sort -z \
       | xargs -0 -r sha256sum
 
-    find "$ROOT/android/app/src/main/jniLibs" -name 'libaegis.so' -print0 \
+    find "$ROOT/android/app/src/main/jniLibs" -name 'libgasapp.so' -print0 \
       | sort -z \
       | xargs -0 -r sha256sum
   } | sed "s#$ROOT/##"
@@ -189,8 +189,8 @@ if [[ "$TWICE" -eq 1 ]]; then
 
   (cd "$ROOT/crates" && cargo clean --release \
     --target aarch64-linux-android --target x86_64-linux-android \
-    -p aegis-ffi -p aegis-core -p aegis-protocol \
-    -p aegis-storage -p aegis-net -p aegis-types >/dev/null 2>&1 || true)
+    -p gasapp-ffi -p gasapp-core -p gasapp-protocol \
+    -p gasapp-storage -p gasapp-net -p gasapp-types >/dev/null 2>&1 || true)
 
   # Те же ABI, что и в первом проходе: сравнивать нужно то же самое,
   # а не подмножество и не надмножество.
@@ -201,13 +201,13 @@ if [[ "$TWICE" -eq 1 ]]; then
     exit 1
   fi
 
-  rm -f "$ROOT"/android/app/src/main/jniLibs/*/libaegis.so
+  rm -f "$ROOT"/android/app/src/main/jniLibs/*/libgasapp.so
 
   echo "  каталоги сборки очищены, пересобираем ядро и APK…"
 
   bash "$ROOT/tools/build-rust-android.sh" "${ABI_FLAGS[@]}"
 
-  (cd "$ROOT/android" && ./gradlew --no-daemon -q :app:assembleGmsRelease :app:assembleFossRelease -PaegisAllowUnreleasable=true)
+  (cd "$ROOT/android" && ./gradlew --no-daemon -q :app:assembleGmsRelease :app:assembleFossRelease -PgasappAllowUnreleasable=true)
 
   SECOND=$(sums)
 
@@ -222,8 +222,8 @@ if [[ "$TWICE" -eq 1 ]]; then
   # 🔐 Проверка проверки: в сравнении обязаны участвовать и APK,
   # и библиотеки. Пустой или укороченный список совпал бы сам
   # с собой и здесь.
-  if [[ "$(printf '%s\n' "$SECOND" | grep -c 'libaegis\.so')" -eq 0 ]]; then
-    echo "error: после пересборки не нашлось ни одной libaegis.so" >&2
+  if [[ "$(printf '%s\n' "$SECOND" | grep -c 'libgasapp\.so')" -eq 0 ]]; then
+    echo "error: после пересборки не нашлось ни одной libgasapp.so" >&2
     exit 1
   fi
 

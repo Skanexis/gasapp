@@ -23,8 +23,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CRATES="$ROOT/crates"
 BUILD="$ROOT/ios/build"
-XCFRAMEWORK="$ROOT/ios/AegisCore.xcframework"
-SWIFT_OUT="$ROOT/ios/AEGIS/Generated"
+XCFRAMEWORK="$ROOT/ios/GasAppCore.xcframework"
+SWIFT_OUT="$ROOT/ios/GasApp/Generated"
 
 DEVICE_TARGET="aarch64-apple-ios"
 SIM_TARGETS=(aarch64-apple-ios-sim x86_64-apple-ios)
@@ -65,7 +65,7 @@ for target in "$DEVICE_TARGET" "${SIM_TARGETS[@]}"; do
   echo "сборка $target"
   # shellcheck disable=SC2086
   cargo build $CARGO_PROFILE_FLAG \
-    --manifest-path "$CRATES/Cargo.toml" -p aegis-ffi --target "$target"
+    --manifest-path "$CRATES/Cargo.toml" -p gasapp-ffi --target "$target"
 done
 
 # --- Объединение симуляторных срезов ----------------------------------------
@@ -73,17 +73,17 @@ done
 rm -rf "$BUILD" "$XCFRAMEWORK"
 mkdir -p "$BUILD/sim" "$BUILD/device"
 
-cp "$CRATES/target/$DEVICE_TARGET/$PROFILE/libaegis.a" "$BUILD/device/libaegis.a"
+cp "$CRATES/target/$DEVICE_TARGET/$PROFILE/libgasapp.a" "$BUILD/device/libgasapp.a"
 
 SIM_INPUTS=()
 for target in "${SIM_TARGETS[@]}"; do
-  SIM_INPUTS+=("$CRATES/target/$target/$PROFILE/libaegis.a")
+  SIM_INPUTS+=("$CRATES/target/$target/$PROFILE/libgasapp.a")
 done
-lipo -create "${SIM_INPUTS[@]}" -output "$BUILD/sim/libaegis.a"
+lipo -create "${SIM_INPUTS[@]}" -output "$BUILD/sim/libgasapp.a"
 
 echo
 echo "срезы симулятора объединены:"
-lipo -info "$BUILD/sim/libaegis.a"
+lipo -info "$BUILD/sim/libgasapp.a"
 
 # --- Генерация биндингов Swift ----------------------------------------------
 #
@@ -95,8 +95,8 @@ echo "генерация биндингов Swift"
 rm -rf "$SWIFT_OUT"
 mkdir -p "$SWIFT_OUT"
 
-cargo run --manifest-path "$CRATES/Cargo.toml" -p aegis-ffi --bin uniffi-bindgen -- \
-  generate --library "$BUILD/device/libaegis.a" \
+cargo run --manifest-path "$CRATES/Cargo.toml" -p gasapp-ffi --bin uniffi-bindgen -- \
+  generate --library "$BUILD/device/libgasapp.a" \
   --language swift --out-dir "$SWIFT_OUT"
 
 # Заголовки уезжают в XCFramework, .swift остаётся в проекте.
@@ -113,8 +113,8 @@ fi
 # --- Сборка XCFramework -----------------------------------------------------
 
 xcodebuild -create-xcframework \
-  -library "$BUILD/device/libaegis.a" -headers "$BUILD/headers" \
-  -library "$BUILD/sim/libaegis.a"    -headers "$BUILD/headers" \
+  -library "$BUILD/device/libgasapp.a" -headers "$BUILD/headers" \
+  -library "$BUILD/sim/libgasapp.a"    -headers "$BUILD/headers" \
   -output "$XCFRAMEWORK"
 
 echo

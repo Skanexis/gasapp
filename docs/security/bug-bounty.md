@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Bug bounty AEGIS
+# Bug bounty GasApp
 
 Пункт M8 «🔐 Bug bounty программа» (раздел 22).
 
@@ -34,12 +34,12 @@ RESILIENCE-3), детект root предупреждает, но не блок�
 
 | Что | Где |
 |---|---|
-| Криптографическое ядро | `crates/aegis-protocol`, `crates/aegis-keystore` |
-| Хранилище и ключи | `crates/aegis-storage`, `crates/aegis-core` |
-| Граница FFI | `crates/aegis-ffi` |
+| Криптографическое ядро | `crates/gasapp-protocol`, `crates/gasapp-keystore` |
+| Хранилище и ключи | `crates/gasapp-storage`, `crates/gasapp-core` |
+| Граница FFI | `crates/gasapp-ffi` |
 | Сервер | `server/` — API, авторизация, ограничители, sealed sender |
 | Клиент Android | `android/` |
-| Разбор внешних входов | конверты, bundle, ссылки `aegis://`, файлы копий |
+| Разбор внешних входов | конверты, bundle, ссылки `gasapp://`, файлы копий |
 | Сборка и цепочка поставок | CI, воспроизводимость, подпись релиза |
 
 ### Вне области
@@ -119,7 +119,7 @@ proof-of-concept стоит вдвое: разница между «здесь �
 
 ## Как сообщить
 
-`security@aegis.chat`. Формат отчёта и сроки реакции — `SECURITY.md`.
+`security@gasapp.chat`. Формат отчёта и сроки реакции — `SECURITY.md`.
 
 ⚠️ PGP-ключа для этого адреса пока нет; он будет опубликован
 до запуска программы.

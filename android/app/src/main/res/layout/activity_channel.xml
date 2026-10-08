@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Канал: лента записей одного автора.
+
+  Автор видит внизу строку ввода; читатель — подпись «пишет только
+  автор». Ссылка-приглашение и действия с каналом — в шапке.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <!-- Шапка: канал, его роль для человека и действия. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_raised"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/space_xs"
+        android:paddingEnd="@dimen/space_xs"
+        android:paddingVertical="@dimen/space_s">
+
+        <ImageView
+            android:id="@+id/channel_back"
+            style="@style/GasAppIconButton"
+            android:contentDescription="@string/back"
+            android:padding="12dp"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <TextView
+            android:id="@+id/channel_avatar"
+            android:layout_width="@dimen/avatar_s"
+            android:layout_height="@dimen/avatar_s"
+            android:background="@drawable/bg_avatar"
+            android:fontFamily="@font/inter"
+            android:gravity="center"
+            android:importantForAccessibility="no"
+            android:includeFontPadding="false"
+            android:textColor="@color/accent_base"
+            android:textFontWeight="600"
+            android:textSize="14sp"
+            tools:text="GN" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/channel_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityHeading="true"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textFontWeight="600"
+                android:textSize="16sp"
+                tools:text="Gas News" />
+
+            <TextView
+                android:id="@+id/channel_subtitle"
+                style="@style/GasAppCaption"
+                android:layout_width="match_parent"
+                android:ellipsize="end"
+                android:maxLines="1"
+                tools:text="Channel · you are the author" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/channel_share"
+            style="@style/GasAppIconButton"
+            android:contentDescription="@string/channel_share"
+            android:padding="12dp"
+            android:src="@drawable/ic_link"
+            app:tint="@color/text_secondary" />
+
+        <ImageView
+            android:id="@+id/channel_more"
+            style="@style/GasAppIconButton"
+            android:contentDescription="@string/channel_more"
+            android:padding="12dp"
+            android:src="@drawable/ic_more"
+            app:tint="@color/text_secondary" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/channel_posts"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingVertical="@dimen/space_s"
+            tools:listitem="@layout/item_channel_post" />
+
+        <include
+            android:id="@+id/channel_empty"
+            layout="@layout/view_empty_state"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- Читателю: писать здесь может только автор. -->
+    <TextView
+        android:id="@+id/channel_reader_note"
+        style="@style/GasAppCaption"
+        android:layout_width="match_parent"
+        android:background="@color/bg_raised"
+        android:gravity="center"
+        android:minHeight="@dimen/touch_target"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingEnd="@dimen/screen_padding"
+        android:text="@string/channel_reader_note"
+        android:visibility="gone" />
+
+    <!-- Автору: строка ввода записи. -->
+    <LinearLayout
+        android:id="@+id/channel_input_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_raised"
+        android:gravity="bottom"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/space_m"
+        android:paddingTop="@dimen/space_s"
+        android:paddingEnd="@dimen/space_s"
+        android:paddingBottom="@dimen/space_s"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <!-- 🔐 saveEnabled="false": черновик не попадает в сохранённое
+             состояние экрана — как и в переписке. -->
+        <org.gasapp.app.components.GasAppTextField
+            android:id="@+id/channel_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_composer_field"
+            android:hint="@string/channel_post_hint"
+            android:importantForAutofill="no"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLength="4000"
+            android:maxLines="6"
+            android:minHeight="44dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:saveEnabled="false"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted" />
+
+        <ImageView
+            android:id="@+id/channel_send"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="@dimen/space_xs"
+            android:background="@drawable/bg_send_button"
+            android:contentDescription="@string/channel_publish"
+            android:padding="13dp"
+            android:src="@drawable/ic_send"
+            app:tint="@color/send_icon" />
+    </LinearLayout>
+
+</LinearLayout>

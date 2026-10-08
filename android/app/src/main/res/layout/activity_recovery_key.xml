@@ -19,18 +19,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/key_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:text="@string/recovery_key_title" />
     </LinearLayout>
@@ -49,7 +49,7 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisText.Body"
+                style="@style/GasAppText.Body"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/recovery_key_explain" />
@@ -61,17 +61,17 @@
               всё равно сверяет написанное с показанным.
             -->
             <LinearLayout
-                style="@style/AegisPanel.Deep"
+                style="@style/GasAppPanel.Deep"
                 android:layout_marginTop="@dimen/space_l">
 
                 <TextView
                     android:id="@+id/key_value"
-                    style="@style/AegisText.Mono"
+                    style="@style/GasAppText.Mono"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:lineSpacingMultiplier="1.4"
                     android:textIsSelectable="false"
-                    tools:text="AEGIS-7F2K-9QMD-X4RT-B81N-KV5C-2WPH-E6JZ-3A5T-M9XN-P2QW-R7YK-4DV6-H8CF" />
+                    tools:text="GASAPP-7F2K-9QMD-X4RT-B81N-KV5C-2WPH-E6JZ-3A5T-M9XN-P2QW-R7YK-4DV6-H8CF" />
             </LinearLayout>
 
             <!--
@@ -79,7 +79,7 @@
               а не под ней: его читают до нажатия.
             -->
             <TextView
-                style="@style/AegisText.Body"
+                style="@style/GasAppText.Body"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_l"
@@ -87,13 +87,13 @@
                 android:textColor="@color/status_warn" />
 
             <TextView
-                style="@style/AegisText.Caption.Muted"
+                style="@style/GasAppText.Caption.Muted"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_s"
                 android:text="@string/recovery_key_no_screenshot" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/key_written"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

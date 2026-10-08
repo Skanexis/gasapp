@@ -38,22 +38,22 @@
 #
 # Из cron, раз в полгода:
 #
-#     0 3 1 1,7 * /opt/aegis/rotate-backup-key.sh
+#     0 3 1 1,7 * /opt/gasapp/rotate-backup-key.sh
 
 set -euo pipefail
 
 # Каталог ключей. Приватные части лежат ТОЛЬКО здесь и только
 # на машине администратора — не на сервере бэкапов.
-readonly KEY_DIR="${AEGIS_BACKUP_KEY_DIR:-/root/aegis-keys}"
+readonly KEY_DIR="${GASAPP_BACKUP_KEY_DIR:-/root/gasapp-keys}"
 
 # Файл с публичной частью, который читает backup.sh.
-readonly RECIPIENT_FILE="${AEGIS_BACKUP_RECIPIENT_FILE:-/etc/aegis/backup-recipient}"
+readonly RECIPIENT_FILE="${GASAPP_BACKUP_RECIPIENT_FILE:-/etc/gasapp/backup-recipient}"
 
 # Сколько дней хранятся копии — из настроек backup.sh.
-readonly KEEP_DAYS="${AEGIS_BACKUP_KEEP:-14}"
+readonly KEEP_DAYS="${GASAPP_BACKUP_KEEP:-14}"
 
 readonly STAMP="$(date -u +%Y%m%d)"
-readonly NEW_KEY="${KEY_DIR}/aegis-backup-${STAMP}.key"
+readonly NEW_KEY="${KEY_DIR}/gasapp-backup-${STAMP}.key"
 # Указатель на текущий ключ.
 #
 # Обычный файл с именем, а не символьная ссылка: ссылки ведут себя
@@ -113,7 +113,7 @@ echo "новый получатель записан в $RECIPIENT_FILE"
 echo
 echo "Дальше:"
 echo "  1. Скопируйте $RECIPIENT_FILE на сервер бэкапов (VPS-4)"
-echo "  2. backup.sh читает этот файл сам, если AEGIS_BACKUP_AGE_RECIPIENT не задан"
+echo "  2. backup.sh читает этот файл сам, если GASAPP_BACKUP_AGE_RECIPIENT не задан"
 echo "  3. 🔐 Приватный ключ ($NEW_KEY) на сервер НЕ копируйте"
 echo
 echo "Ключи, которые можно удалить сегодня:"

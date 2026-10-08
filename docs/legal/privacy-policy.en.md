@@ -1,12 +1,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# AEGIS Privacy Policy
+# GasApp Privacy Policy
 
 **Version:** 2026-10-03. This is a translation of
 [`privacy-policy.md`](privacy-policy.md); if the two differ, the Russian
 text is the reference and the difference is a bug — please report it.
 
-> ⚠️ **AEGIS has not been released and has not had an independent audit.**
+> ⚠️ **GasApp has not been released and has not had an independent audit.**
 > This document describes how the app works today, not a promise about the
 > future. Until there is an audit, everything below is worth exactly as much
 > as your ability to check it against the source code — links to the code
@@ -21,7 +21,7 @@ text is the reference and the difference is a bug — please report it.
 * There is no analytics, advertising or crash reporting in the app.
 * We do not hand data to third parties, because we do not have it.
 
-## What you need to use AEGIS
+## What you need to use GasApp
 
 **A username.** You make it up yourself. It is not tied to a phone
 number, an email address or your real name, and it is not verified.
@@ -117,8 +117,8 @@ The full list of what is stored and for how long is in
 ## Tor, bridges and Tor Project services
 
 The built-in Tor connects to the Tor network — volunteer-run relays that
-AEGIS does not operate. The entry relay (or bridge) sees your IP address,
-but not where the connection goes; the connection then leads to the AEGIS
+GasApp does not operate. The entry relay (or bridge) sees your IP address,
+but not where the connection goes; the connection then leads to the GasApp
 server's onion service, and no exit relay is involved at all when the
 build knows that address.
 
@@ -137,7 +137,7 @@ build knows that address.
   Tor bridges.
 * **Bridges you enter yourself.**
 
-The AEGIS server takes no part in any of this and knows nothing about
+The GasApp server takes no part in any of this and knows nothing about
 bridges.
 
 ## Blocking and reporting
@@ -210,12 +210,12 @@ promising access we must not have.
 
 ## Security limitations
 
-No messenger protects against everything. These are the limits of AEGIS
+No messenger protects against everything. These are the limits of GasApp
 today, so you can decide how to use it.
 
 **A contact found by username.** When you look someone up by username,
 their key comes from the server, and a dishonest server could hand you a
-different one. AEGIS checks it against a public key log: you can write
+different one. GasApp checks it against a public key log: you can write
 once the same key has stood in the log for at least a day, and every
 account checks its own entry every hour, so a swapped key has to be shown
 to everyone and gets noticed. Someone who has not opened the app for more
@@ -344,7 +344,7 @@ plainly.
 
 On the server run by the operator of an instance. For the official
 instance, the hosting location will be stated here before release 1.0.
-AEGIS is distributed under AGPL-3.0, and anyone can run their own
+GasApp is distributed under AGPL-3.0, and anyone can run their own
 instance — its operator's policy then replaces this one.
 
 ## Changes
@@ -355,5 +355,5 @@ notification mechanism you can trust without relying on us.
 
 ## Contact
 
-`privacy@aegis.chat` — questions about data.
-`security@aegis.chat` — vulnerabilities (`SECURITY.md`).
+`privacy@gasapp.chat` — questions about data.
+`security@gasapp.chat` — vulnerabilities (`SECURITY.md`).

@@ -18,18 +18,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/security_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             android:text="@string/security_center_title" />
@@ -72,7 +72,7 @@
                     android:layout_width="176dp"
                     android:layout_height="176dp">
 
-                    <org.aegis.app.components.GuillocheView
+                    <org.gasapp.app.components.GuillocheView
                         android:id="@+id/score_seal"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent" />
@@ -91,7 +91,7 @@
 
                 <TextView
                     android:id="@+id/score_title"
-                    style="@style/AegisText.H3"
+                    style="@style/GasAppText.H3"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_m"
@@ -99,7 +99,7 @@
 
                 <TextView
                     android:id="@+id/score_subtitle"
-                    style="@style/AegisText.Caption"
+                    style="@style/GasAppText.Caption"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
@@ -114,42 +114,42 @@
             -->
             <TextView
                 android:id="@+id/security_attention_label"
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/security_attention_title"
                 android:visibility="gone"
                 tools:visibility="visible" />
 
-            <org.aegis.app.components.AegisGroup
+            <org.gasapp.app.components.GasAppGroup
                 android:id="@+id/security_checks_attention"
-                style="@style/AegisGroup"
+                style="@style/GasAppGroup"
                 android:layout_marginTop="@dimen/space_l"
                 android:visibility="gone"
                 tools:visibility="visible" />
 
             <TextView
                 android:id="@+id/security_passed_label"
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/security_section_passed"
                 android:visibility="gone"
                 tools:visibility="visible" />
 
-            <org.aegis.app.components.AegisGroup
+            <org.gasapp.app.components.GasAppGroup
                 android:id="@+id/security_checks_passed"
-                style="@style/AegisGroup"
+                style="@style/GasAppGroup"
                 android:visibility="gone"
                 tools:visibility="visible" />
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/security_section_details" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include android:id="@+id/security_keys" layout="@layout/item_settings_row" />
 
@@ -158,18 +158,18 @@
                 <include android:id="@+id/security_recovery" layout="@layout/item_settings_row" />
 
                 <include android:id="@+id/security_blocked" layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/security_section_log" />
 
             <!-- Заполняется кодом: последние события журнала безопасности. -->
-            <org.aegis.app.components.AegisGroup
+            <org.gasapp.app.components.GasAppGroup
                 android:id="@+id/security_log"
-                style="@style/AegisGroup" />
+                style="@style/GasAppGroup" />
 
         </LinearLayout>
     </ScrollView>

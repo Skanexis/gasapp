@@ -13,7 +13,7 @@
 
 param(
     [int]$Seconds = 300,
-    [string]$Image = "aegis-fuzz:latest"
+    [string]$Image = "gasapp-fuzz:latest"
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,7 +47,7 @@ foreach ($target in $targets) {
     Write-Host ""
     Write-Host "=== $target ($Seconds c) ===" -ForegroundColor Cyan
 
-    docker run --rm -v "${repo}:/aegis" $Image `
+    docker run --rm -v "${repo}:/gasapp" $Image `
         run --fuzz-dir fuzz $target -- `
         "-max_total_time=$Seconds" -rss_limit_mb=4096
 

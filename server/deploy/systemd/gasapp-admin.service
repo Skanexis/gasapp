@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Админ-центр оператора: /etc/systemd/system/gasapp-admin.service
+#
+# Ставится на машину базы (VPS-4): там связь с базой — unix-сокет,
+# и ни база, ни админ-центр не выходят в сеть. Слушает только петлю
+# (127.0.0.1:8480; другой адрес — отказ запуска). Оператор приходит
+# туннелем SSH:
+#
+#     ssh -N -L 8480:127.0.0.1:8480 admin@vps4
+#     # → http://127.0.0.1:8480 в браузере на своей машине
+#
+# Песочница та же, что у узла; сеть — только петля.
+
+[Unit]
+Description=GasApp admin center (loopback only)
+After=network-online.target postgresql.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=gasapp-admin
+Group=gasapp-admin
+ExecStart=/usr/local/bin/gasapp-server-admin serve
+Restart=on-failure
+RestartSec=2
+# Журнал — без цветовых кодов терминала.
+Environment=NO_COLOR=1
+
+EnvironmentFile=-/etc/gasapp/admin.env
+LoadCredential=database_url:/etc/gasapp/credentials/admin_database_url
+LoadCredential=gasapp_admin_token_sha256:/etc/gasapp/credentials/admin_token_sha256
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+NoExecPaths=/
+ExecPaths=/usr/local/bin/gasapp-server-admin /usr/lib /lib /lib64 /usr/lib64
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateUsers=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+KeyringMode=private
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @debug @cpu-emulation @obsolete
+SystemCallErrorNumber=EPERM
+
+# Unix-сокет базы и петля — больше ничего.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+LimitCORE=0
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

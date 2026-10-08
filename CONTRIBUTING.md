@@ -1,6 +1,6 @@
-# Разработка AEGIS
+# Разработка GasApp
 
-Главный документ проекта — [AEGIS_MASTER_PLAN.md](AEGIS_MASTER_PLAN.md).
+Главный документ проекта — [GASAPP_MASTER_PLAN.md](GASAPP_MASTER_PLAN.md).
 Прочитайте его разделы 4 (принципы безопасности) и 8 (архитектура) до первого
 коммита. Здесь — только то, что нужно ежедневно.
 
@@ -20,7 +20,7 @@
 ```
 
 Исключение ровно одно: платформенная обёртка аппаратного хранилища ключей
-(`ios/AEGIS/Platform/KeyProtection.swift`, `android/.../platform/KeyProtection.kt`).
+(`ios/GasApp/Platform/KeyProtection.swift`, `android/.../platform/KeyProtection.kt`).
 Проверяется скриптом `tools/check-no-crypto-in-ui.sh` в CI.
 
 ### 2. Никакой самодельной криптографии
@@ -57,7 +57,7 @@ Message key уничтожается сразу после использова�
 
 ## Подготовка окружения: OpenSSL
 
-`aegis-storage` собирает SQLCipher из исходников (фича `bundled-sqlcipher`
+`gasapp-storage` собирает SQLCipher из исходников (фича `bundled-sqlcipher`
 у `rusqlite`), а SQLCipher требует OpenSSL. Без указанных ниже переменных
 сборка падает на build-скрипте `libsqlite3-sys` с сообщением
 `Missing environment variable OPENSSL_DIR` — ещё до компиляции наших крейтов.
@@ -115,7 +115,7 @@ chmod +x .githooks/pre-commit
 
 | Требование | Где |
 |---|---|
-| `unsafe` запрещён | Везде, кроме `aegis-ffi`. Enforced через `unsafe_code = "forbid"` |
+| `unsafe` запрещён | Везде, кроме `gasapp-ffi`. Enforced через `unsafe_code = "forbid"` |
 | `unwrap()`, `expect()`, `panic!()` запрещены | В коде крейтов. В тестах разрешены (`clippy.toml`) |
 | Версии крипто-зависимостей пинуются точно | `crates/Cargo.toml`, формат `=1.2.3` |
 | git-зависимости запрещены | Enforced в `deny.toml` |
@@ -130,14 +130,14 @@ chmod +x .githooks/pre-commit
 ```
 
 🔴 Крейт из `server/` **никогда** не должен появиться в графе зависимостей
-`aegis-ffi`. Это ломает возможность публикации в App Store (ADR-006).
+`gasapp-ffi`. Это ломает возможность публикации в App Store (ADR-006).
 
 ---
 
 ## Тестирование
 
 Требования к покрытию по крейтам — раздел 24.2 главного документа.
-Ключевое: `aegis-protocol` и `aegis-keystore` — **95%**.
+Ключевое: `gasapp-protocol` и `gasapp-keystore` — **95%**.
 
 Для криптографического кода одних юнит-тестов недостаточно. Обязательны:
 
@@ -153,7 +153,7 @@ chmod +x .githooks/pre-commit
 
 ## Работа с главным документом
 
-`AEGIS_MASTER_PLAN.md` — не справочник, а рабочая доска.
+`GASAPP_MASTER_PLAN.md` — не справочник, а рабочая доска.
 
 - Закрыли задачу → поставили `[x]` в соответствующем чек-листе.
 - Приняли техническое решение → добавили ADR в раздел 5.
@@ -174,7 +174,7 @@ chmod +x .githooks/pre-commit
 Развёрнутое объяснение, если нужно. Для security-значимых изменений
 обязательно указать, какой пункт модели угроз затронут.
 
-Refs: AEGIS_MASTER_PLAN.md §7.3
+Refs: GASAPP_MASTER_PLAN.md §7.3
 ```
 
 Области: `protocol`, `keystore`, `storage`, `net`, `media`, `backup`, `core`,

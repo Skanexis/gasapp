@@ -97,7 +97,7 @@ def check_paths(text, root):
     missing = []
 
     for quoted in sorted(set(re.findall(r"`([^`\s]+)`", text))):
-        # Схема URI, а не путь: `aegis://…`.
+        # Схема URI, а не путь: `gasapp://…`.
         if "://" in quoted:
             continue
 

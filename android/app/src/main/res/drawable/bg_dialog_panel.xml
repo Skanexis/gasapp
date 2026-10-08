@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Карточка диалога AegisDialog: поверхность card, рамка line, r16.
+  Карточка диалога GasAppDialog: поверхность card, рамка line, r16.
   Без отступа вокруг, в отличие от bg_dialog: ширину окна
-  AegisDialog задаёт сам (не шире 340dp по UI kit).
+  GasAppDialog задаёт сам (не шире 340dp по UI kit).
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">

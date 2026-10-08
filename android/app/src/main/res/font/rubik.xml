@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Rubik — шрифт заголовков и кнопок (DESIGN.md, «Night Camp»).
+  Плотный, скруглённый, с кириллицей; лицензия SIL OFL 1.1
+  (design/fonts/Rubik-OFL.txt). В сборке два начертания, урезанные
+  до латиницы и кириллицы: 700 — кнопки, 900 — заголовки и логотип.
+-->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font
+        android:font="@font/rubik_bold"
+        android:fontStyle="normal"
+        android:fontWeight="700"
+        app:font="@font/rubik_bold"
+        app:fontStyle="normal"
+        app:fontWeight="700" />
+    <font
+        android:font="@font/rubik_black"
+        android:fontStyle="normal"
+        android:fontWeight="900"
+        app:font="@font/rubik_black"
+        app:fontStyle="normal"
+        app:fontWeight="900" />
+</font-family>

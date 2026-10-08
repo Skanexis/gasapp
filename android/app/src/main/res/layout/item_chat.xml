@@ -7,7 +7,7 @@
   🔐 Аватар — буква имени, а не загруженное фото: запрос картинки
   с сервера выдал бы оператору, кто с кем переписывается.
 -->
-<org.aegis.app.components.AegisListRow xmlns:android="http://schemas.android.com/apk/res/android"
+<org.gasapp.app.components.GasAppListRow xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/chat_row"
@@ -135,4 +135,4 @@
             tools:visibility="visible" />
     </LinearLayout>
 
-</org.aegis.app.components.AegisListRow>
+</org.gasapp.app.components.GasAppListRow>

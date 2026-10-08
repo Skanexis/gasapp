@@ -6,7 +6,7 @@
 # Использование:
 #   server/deploy/compute-pin.sh server/deploy/tls/cert.pem
 #   server/deploy/compute-pin.sh --key server/deploy/tls/backup-key.pem
-#   server/deploy/compute-pin.sh --host aegis.chat:443
+#   server/deploy/compute-pin.sh --host gasapp.chat:443
 #
 # # 🔐 Что именно пинится
 #
@@ -49,7 +49,7 @@ if ! command -v openssl > /dev/null 2>&1; then
 fi
 
 # Общий хвост для всех трёх режимов: DER публичного ключа → SHA-256 → base64.
-# Ровно эту величину считает `pin_from_spki` в crates/aegis-net/src/pinning.rs
+# Ровно эту величину считает `pin_from_spki` в crates/gasapp-net/src/pinning.rs
 # и ровно её ожидает `<pin digest="SHA-256">` в network_security_config.
 to_pin() {
   openssl pkey -pubin -outform der \

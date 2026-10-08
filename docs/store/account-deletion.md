@@ -10,11 +10,11 @@
 
 ## English
 
-### Delete your AEGIS account
+### Delete your GasApp account
 
 **In the app** (the only way to delete an account right away):
 
-1. Open AEGIS and unlock it with your PIN.
+1. Open GasApp and unlock it with your PIN.
 2. Go to **Settings → Privacy → Delete account**.
 3. Confirm twice.
 
@@ -39,7 +39,7 @@ tokens and sealed-sender access keys.
 
 ### Lost your phone or uninstalled the app?
 
-An AEGIS account has no email, phone number or password. The only proof
+An GasApp account has no email, phone number or password. The only proof
 that an account is yours is the key on your device, so **we cannot verify
 a deletion request sent any other way** — and we will not delete an
 account on an unverifiable request, because anyone could send one.
@@ -55,11 +55,11 @@ Questions: `privacy@<domain>`.
 
 ## Русский
 
-### Удаление аккаунта AEGIS
+### Удаление аккаунта GasApp
 
 **В приложении** (единственный способ удалить аккаунт сразу):
 
-1. Откройте AEGIS и введите PIN.
+1. Откройте GasApp и введите PIN.
 2. **Настройки → Приватность → Удалить аккаунт.**
 3. Подтвердите дважды.
 
@@ -83,7 +83,7 @@ Questions: `privacy@<domain>`.
 
 ### Телефон потерян или приложение удалено?
 
-У аккаунта AEGIS нет почты, телефона и пароля. Единственное
+У аккаунта GasApp нет почты, телефона и пароля. Единственное
 доказательство, что аккаунт ваш, — ключ на вашем устройстве. Поэтому
 **запрос на удаление, отправленный иначе, мы проверить не можем** — и не
 удаляем аккаунт по непроверяемому запросу: отправить его мог бы кто угодно.

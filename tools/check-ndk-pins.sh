@@ -6,7 +6,7 @@
 # # Почему это важно
 #
 # ADR-020 (воспроизводимые сборки) требует, чтобы одна и та же ревизия
-# давала байт в байт одинаковый APK. В libaegis.so участвуют **оба**
+# давала байт в байт одинаковый APK. В libgasapp.so участвуют **оба**
 # закрепления:
 #
 #   * tools/Dockerfile.android — этим NDK библиотека **собирается**;
@@ -68,7 +68,7 @@ echo "  build.gradle: $gradle_version"
 if [[ "$expected" != "$gradle_version" ]]; then
   echo >&2
   echo "❌ версии NDK разошлись" >&2
-  echo "   контейнер собирает libaegis.so одним NDK, Gradle обрезает её другим —" >&2
+  echo "   контейнер собирает libgasapp.so одним NDK, Gradle обрезает её другим —" >&2
   echo "   APK разработчика и APK из CI перестанут совпадать байт в байт" >&2
   exit 1
 fi

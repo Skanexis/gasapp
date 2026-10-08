@@ -10,8 +10,8 @@
 //!
 //! Что ищется: паника на усечённом, удлинённом или бессмысленном входе.
 
-use aegis_protocol::{double_ratchet::RatchetState, x25519::X25519PrivateKey};
-use aegis_types::{Ciphertext, Timestamp};
+use gasapp_protocol::{double_ratchet::RatchetState, x25519::X25519PrivateKey};
+use gasapp_types::{Ciphertext, Timestamp};
 use libfuzzer_sys::fuzz_target;
 use rand_core::OsRng;
 

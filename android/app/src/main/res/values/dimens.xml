@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Размеры из design/aegis.tokens.json.
+  Размеры из design/gasapp.tokens.json.
 
   Значения продублированы здесь, а не вычисляются: токены — источник
   истины, но Android не читает JSON во время сборки. Расхождение ловится
@@ -33,6 +33,9 @@
     <dimen name="button_small">40dp</dimen>
     <dimen name="button_medium">48dp</dimen>
     <dimen name="button_large">56dp</dimen>
+    <!-- Кромка объёмной кнопки и ход её нажатия. -->
+    <dimen name="button_edge">4dp</dimen>
+    <dimen name="button_edge_pressed">3dp</dimen>
     <dimen name="input_height">48dp</dimen>
     <!-- Диалог: не шире 340dp (UI kit, Dialogs). -->
     <dimen name="dialog_max_width">340dp</dimen>
@@ -94,4 +97,6 @@
     <dimen name="text_button">15sp</dimen>
     <dimen name="text_label">12sp</dimen>
 
+    <!-- QR-код ссылки канала в диалоге. -->
+    <dimen name="channel_qr">208dp</dimen>
 </resources>

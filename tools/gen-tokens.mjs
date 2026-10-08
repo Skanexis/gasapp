@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 //
-// UI kit → design/aegis.tokens.json → Swift / Kotlin / CSS.
+// UI kit → design/gasapp.tokens.json → Swift / Kotlin / CSS.
 //
 // Зачем генерировать, а не переписывать руками:
 // UI kit — источник правды по дизайну (раздел 20 плана). Скопированные
@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const UI_KIT = join(ROOT, "design", "secure-messenger-ui-kit.html");
-const OUT_JSON = join(ROOT, "design", "aegis.tokens.json");
+const OUT_JSON = join(ROOT, "design", "gasapp.tokens.json");
 const OUT_DIR = join(ROOT, "design", "generated");
 
 const checkOnly = process.argv.includes("--check");
@@ -56,7 +56,7 @@ function css(name) {
 const tokens = {
   $schema: "https://design-tokens.github.io/community-group/format/",
   $description:
-    "Design tokens AEGIS. Сгенерировано из design/secure-messenger-ui-kit.html — не редактировать вручную.",
+    "Design tokens GasApp. Сгенерировано из design/secure-messenger-ui-kit.html — не редактировать вручную.",
   color: {
     bg: {
       base: css("bg"),
@@ -179,8 +179,8 @@ function renderSwift() {
     "",
     "import SwiftUI",
     "",
-    "/// Дизайн-токены AEGIS.",
-    "public enum AegisTokens {",
+    "/// Дизайн-токены GasApp.",
+    "public enum GasAppTokens {",
     "",
     "    // MARK: - Colors",
     "",
@@ -246,15 +246,15 @@ function renderKotlin() {
     "// SPDX-License-Identifier: Apache-2.0",
     ...HEADER_NOTE.map((l) => `// ${l}`),
     "",
-    "package org.aegis.ui.theme",
+    "package org.gasapp.ui.theme",
     "",
     "import androidx.compose.ui.graphics.Color",
     "import androidx.compose.ui.text.font.FontWeight",
     "import androidx.compose.ui.unit.dp",
     "import androidx.compose.ui.unit.sp",
     "",
-    "/** Дизайн-токены AEGIS. */",
-    "object AegisTokens {",
+    "/** Дизайн-токены GasApp. */",
+    "object GasAppTokens {",
     "",
     "    object Colors {",
   ];
@@ -323,13 +323,13 @@ function renderCss() {
     ":root {",
   ];
   for (const [path, value] of flatColors()) {
-    lines.push(`  --aegis-${path.join("-")}: ${value};`);
+    lines.push(`  --gasapp-${path.join("-")}: ${value};`);
   }
   for (const [key, value] of Object.entries(tokens.radius)) {
-    lines.push(`  --aegis-radius-${key}: ${value}px;`);
+    lines.push(`  --gasapp-radius-${key}: ${value}px;`);
   }
   for (const value of tokens.space) {
-    lines.push(`  --aegis-space-${value}: ${value}px;`);
+    lines.push(`  --gasapp-space-${value}: ${value}px;`);
   }
   lines.push("}", "");
   return lines.join("\n");
@@ -339,8 +339,8 @@ function renderCss() {
 
 const outputs = [
   [OUT_JSON, `${JSON.stringify(tokens, null, 2)}\n`],
-  [join(OUT_DIR, "AegisTokens.swift"), renderSwift()],
-  [join(OUT_DIR, "AegisTokens.kt"), renderKotlin()],
+  [join(OUT_DIR, "GasAppTokens.swift"), renderSwift()],
+  [join(OUT_DIR, "GasAppTokens.kt"), renderKotlin()],
   [join(OUT_DIR, "tokens.css"), renderCss()],
 ];
 

@@ -4,7 +4,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "AEGIS",
+    name: "GasApp",
     platforms: [
         // 🔐 iOS 17, как требует раздел 19.1 плана.
         //
@@ -22,8 +22,8 @@ let package = Package(
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
-            name: "AEGIS",
-            targets: ["AEGIS"]),
+            name: "GasApp",
+            targets: ["GasApp"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
@@ -33,10 +33,10 @@ let package = Package(
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
         // Targets can also depend on other targets in this package, and on products from packages this package depends on.
         .target(
-            name: "AEGIS",
+            name: "GasApp",
             dependencies: []),
         .testTarget(
-            name: "AEgisSnapshotTests",
-            dependencies: ["AEGIS", .product(name: "SnapshotTesting", package: "swift-snapshot-testing")]),
+            name: "GasAppSnapshotTests",
+            dependencies: ["GasApp", .product(name: "SnapshotTesting", package: "swift-snapshot-testing")]),
     ]
 )

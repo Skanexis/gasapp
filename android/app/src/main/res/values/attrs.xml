@@ -16,7 +16,7 @@
       задаётся в раскладке рядом с текстом кнопки, и видно, какое
       действие какого веса, не открывая values.
     -->
-    <declare-styleable name="AegisButton">
+    <declare-styleable name="GasAppButton">
         <attr name="buttonVariant" format="enum">
             <enum name="primary" value="0" />
             <enum name="secondary" value="1" />
@@ -36,7 +36,26 @@
       Значок в поле ввода (UI kit, Inputs: иконки 20dp приглушённым
       цветом) — например, лупа в поле поиска.
     -->
-    <declare-styleable name="AegisTextField">
+    <declare-styleable name="GasAppTextField">
         <attr name="fieldIcon" format="reference" />
     </declare-styleable>
+
+    <!-- Ночная сцена (components/NightSceneView). -->
+    <declare-styleable name="NightSceneView">
+        <!-- Рисовать луну. -->
+        <attr name="sceneMoon" format="boolean" />
+        <!-- Рисовать ельник и поляну; без них — только небо. -->
+        <attr name="sceneForest" format="boolean" />
+        <!-- Растворять низ сцены в фоне экрана. -->
+        <attr name="sceneFade" format="boolean" />
+        <!-- Скругление углов сцены-карточки. -->
+        <attr name="sceneRadius" format="dimension" />
+    </declare-styleable>
+
+    <!-- Логотип объёмными буквами (components/WordmarkView). -->
+    <declare-styleable name="WordmarkView">
+        <attr name="wordmarkSize" format="dimension" />
+        <attr name="wordmarkText" format="string" />
+    </declare-styleable>
 </resources>
+

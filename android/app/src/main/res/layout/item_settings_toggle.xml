@@ -25,7 +25,7 @@
     android:paddingBottom="12dp">
 
     <!-- Поля и значок — как у item_settings_row: строки обоих видов
-         стоят в одной группе (AegisGroup) и должны совпадать. -->
+         стоят в одной группе (GasAppGroup) и должны совпадать. -->
     <ImageView
         android:id="@+id/toggle_icon"
         android:layout_width="22dp"
@@ -55,7 +55,7 @@
 
         <TextView
             android:id="@+id/toggle_hint"
-            style="@style/AegisCaption"
+            style="@style/GasAppCaption"
             android:layout_marginTop="4dp"
             android:lineSpacingExtra="3sp"
             android:textSize="12sp"

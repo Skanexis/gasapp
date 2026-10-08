@@ -20,18 +20,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/screen_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             android:text="@string/safety_number_title" />
@@ -55,7 +55,7 @@
 
         <TextView
             android:id="@+id/safety_number_peer"
-            style="@style/AegisText.Body.Secondary"
+            style="@style/GasAppText.Body.Secondary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
@@ -97,7 +97,7 @@
             tools:text="38679 09329 07961\n31636 68792 91538\n01705 09531 22053\n70951 53139 67810" />
 
         <TextView
-            style="@style/AegisText.Caption"
+            style="@style/GasAppText.Caption"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_m"
@@ -116,7 +116,7 @@
           цифр само — быстрее и точнее, чем глазами. Совпало — отметка
           ставится; не совпало — предупреждение о возможной подмене.
         -->
-        <org.aegis.app.components.AegisButton
+        <org.gasapp.app.components.GasAppButton
             android:id="@+id/scan_safety_number"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -125,7 +125,7 @@
             android:text="@string/safety_scan"
             app:buttonVariant="primary" />
 
-        <org.aegis.app.components.AegisButton
+        <org.gasapp.app.components.GasAppButton
             android:id="@+id/mark_verified"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -133,7 +133,7 @@
             android:text="@string/mark_verified"
             app:buttonVariant="outline" />
 
-        <org.aegis.app.components.AegisButton
+        <org.gasapp.app.components.GasAppButton
             android:id="@+id/clear_verified"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

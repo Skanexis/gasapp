@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# 🔐 Защита от эксплуатации в собранной libaegis.so (MASVS CODE-2.5).
+# 🔐 Защита от эксплуатации в собранной libgasapp.so (MASVS CODE-2.5).
 #
 # Использование:
 #   tools/check-so-hardening.sh [каталог-или-.so ...]
 #
-# По умолчанию проверяет все android/app/src/main/jniLibs/*/libaegis.so.
+# По умолчанию проверяет все android/app/src/main/jniLibs/*/libgasapp.so.
 # Нужен llvm-readelf: из PATH или из $ANDROID_NDK_HOME.
 #
 # Что проверяется у каждой библиотеки:
@@ -24,7 +24,7 @@
 # # Почему две последние проверки не «умолчание NDK»
 #
 # ⚠️ Строка CODE-2.5 чек-листа до 2026-09 держалась на «умолчаниях NDK
-# для API 28». Проверка показала: в libaegis.so нет ни одного импорта
+# для API 28». Проверка показала: в libgasapp.so нет ни одного импорта
 # __stack_chk_fail и ни одной __*_chk. Крейт cc, которым собираются
 # SQLCipher и OpenSSL, флагов защиты не добавляет, а clang без них
 # канареек не ставит. Флаги теперь задаёт tools/build-rust-android.sh,
@@ -71,14 +71,14 @@ for arg in "$@"; do
   if [[ -d "$arg" ]]; then
     while IFS= read -r -d '' lib; do
       libraries+=("$lib")
-    done < <(find "$arg" -name 'libaegis.so' -print0)
+    done < <(find "$arg" -name 'libgasapp.so' -print0)
   else
     libraries+=("$arg")
   fi
 done
 
 if [[ ${#libraries[@]} -eq 0 ]]; then
-  echo "error: не найдено ни одной libaegis.so — проверять нечего" >&2
+  echo "error: не найдено ни одной libgasapp.so — проверять нечего" >&2
   exit 2
 fi
 

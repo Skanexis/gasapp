@@ -1,40 +1,40 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Onion-адрес сервера AEGIS.
+# Onion-адрес сервера GasApp.
 #
 # Запуск — upstream на onion-вход балансировщика (РАЗВЁРТЫВАНИЕ.md, S-2):
-#   AEGIS_UPSTREAM=10.0.0.1:8444 docker compose -f server/deploy/onion/docker-compose.yml up -d
-#   docker compose -f server/deploy/onion/docker-compose.yml logs onion | grep "AEGIS onion"
+#   GASAPP_UPSTREAM=10.0.0.1:8444 docker compose -f server/deploy/onion/docker-compose.yml up -d
+#   docker compose -f server/deploy/onion/docker-compose.yml logs onion | grep "GasApp onion"
 #
-# Для разработки (сервер на этой же машине, AEGIS_BIND=0.0.0.0:8443):
-#   AEGIS_UPSTREAM=host.docker.internal:8443 docker compose -f server/deploy/onion/docker-compose.yml up -d
+# Для разработки (сервер на этой же машине, GASAPP_BIND=0.0.0.0:8443):
+#   GASAPP_UPSTREAM=host.docker.internal:8443 docker compose -f server/deploy/onion/docker-compose.yml up -d
 #
 # Tor у сервера заблокирован («Stuck at 5% … CONNECTREFUSED») — через
 # мосты snowflake из образа:
-#   AEGIS_TOR_BRIDGES=snowflake AEGIS_UPSTREAM=… docker compose … up -d --build
+#   GASAPP_TOR_BRIDGES=snowflake GASAPP_UPSTREAM=… docker compose … up -d --build
 #
 # Напечатанный адрес вписывается в сборку приложения:
-#   ./gradlew assembleRelease -PaegisServerOnion=<адрес>.onion:443
+#   ./gradlew assembleRelease -PgasappServerOnion=<адрес>.onion:443
 
 services:
   onion:
     build: .
-    container_name: aegis-onion
+    container_name: gasapp-onion
     restart: unless-stopped
     environment:
-      AEGIS_UPSTREAM: ${AEGIS_UPSTREAM:?задайте AEGIS_UPSTREAM}
-      AEGIS_ONION_PORT: ${AEGIS_ONION_PORT:-443}
+      GASAPP_UPSTREAM: ${GASAPP_UPSTREAM:?задайте GASAPP_UPSTREAM}
+      GASAPP_ONION_PORT: ${GASAPP_ONION_PORT:-443}
       # Мосты — где сеть Tor блокируют: строки через «\n»
       # или файл ./bridges/bridges.txt (он не в git).
-      AEGIS_TOR_BRIDGES: ${AEGIS_TOR_BRIDGES:-}
+      GASAPP_TOR_BRIDGES: ${GASAPP_TOR_BRIDGES:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - aegis-onion-keys:/var/lib/tor/aegis
-      - ./bridges:/etc/aegis:ro
+      - gasapp-onion-keys:/var/lib/tor/gasapp
+      - ./bridges:/etc/gasapp:ro
 
 volumes:
   # 🔐 Ключ onion-адреса. Потерять — сменить адрес во всех сборках;
   # утечь — дать другому выдать себя за адрес (TLS и пиннинг при этом
   # по-прежнему не пустят его к трафику).
-  aegis-onion-keys:
+  gasapp-onion-keys:

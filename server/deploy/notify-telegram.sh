@@ -3,10 +3,10 @@
 #
 # Оповещение в Telegram: текст — на stdin.
 #
-#     echo "AEGIS: проверка" | /opt/aegis/notify-telegram.sh
+#     echo "GasApp: проверка" | /opt/gasapp/notify-telegram.sh
 #
-# Подходит в AEGIS_NOTIFY_CMD для check-nodes.sh, aegis-monitor.sh
-# и `aegis-server-admin watch-reports`.
+# Подходит в GASAPP_NOTIFY_CMD для check-nodes.sh, gasapp-monitor.sh
+# и `gasapp-server-admin watch-reports`.
 #
 # # Где токен
 #
@@ -18,9 +18,9 @@
 # Ищется так:
 #
 # 1. `$CREDENTIALS_DIRECTORY/telegram` — учётные данные systemd
-#    (`LoadCredential=telegram:/etc/aegis/credentials/telegram`);
-# 2. `$AEGIS_TELEGRAM_FILE`;
-# 3. `/etc/aegis/credentials/telegram` — при ручном запуске от root.
+#    (`LoadCredential=telegram:/etc/gasapp/credentials/telegram`);
+# 2. `$GASAPP_TELEGRAM_FILE`;
+# 3. `/etc/gasapp/credentials/telegram` — при ручном запуске от root.
 #
 # Файл **читается, а не исполняется** (`source` не используется):
 # строка в нём не должна уметь запустить команду от имени монитора.
@@ -45,10 +45,10 @@ set -uo pipefail
 credential_file() {
     if [[ -n "${CREDENTIALS_DIRECTORY:-}" && -r "${CREDENTIALS_DIRECTORY}/telegram" ]]; then
         echo "${CREDENTIALS_DIRECTORY}/telegram"
-    elif [[ -n "${AEGIS_TELEGRAM_FILE:-}" ]]; then
-        echo "$AEGIS_TELEGRAM_FILE"
+    elif [[ -n "${GASAPP_TELEGRAM_FILE:-}" ]]; then
+        echo "$GASAPP_TELEGRAM_FILE"
     else
-        echo "/etc/aegis/credentials/telegram"
+        echo "/etc/gasapp/credentials/telegram"
     fi
 }
 
@@ -69,7 +69,7 @@ text="[$(hostname -s)] ${text}"
 file="$(credential_file)"
 if [[ ! -r "$file" ]]; then
     # Канал не настроен — оповещение не теряется, а уходит в журнал.
-    logger -t aegis-notify -- "$text"
+    logger -t gasapp-notify -- "$text"
     echo "notify-telegram: нет файла с токеном (${file}) — записано в журнал" >&2
     exit 0
 fi
@@ -81,12 +81,12 @@ chat="$(value_of CHAT_ID "$file")"
 # (Файл всё равно нужен: без него systemd не запустит службу
 # с LoadCredential=telegram.)
 if [[ -z "$token" ]]; then
-    logger -t aegis-notify -- "$text"
+    logger -t gasapp-notify -- "$text"
     exit 0
 fi
 
 if [[ ! "$token" =~ ^[0-9]+:[A-Za-z0-9_-]+$ || ! "$chat" =~ ^-?[0-9]+$ ]]; then
-    logger -t aegis-notify -- "$text"
+    logger -t gasapp-notify -- "$text"
     echo "notify-telegram: TOKEN или CHAT_ID в ${file} неверного вида" >&2
     exit 1
 fi
@@ -108,5 +108,5 @@ for attempt in 1 2 3; do
 done
 
 # Не ушло — в журнал, чтобы оповещение не пропало совсем.
-logger -t aegis-notify -- "не доставлено в Telegram: ${text}"
+logger -t gasapp-notify -- "не доставлено в Telegram: ${text}"
 exit 1

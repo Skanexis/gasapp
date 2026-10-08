@@ -2,7 +2,7 @@
 
 # Админ-центр оператора
 
-**Редакция:** 2026-09-30. Программа — `server/aegis-server-admin`.
+**Редакция:** 2026-09-30. Программа — `server/gasapp-server-admin`.
 
 Админ-центр нужен оператору сервера для трёх дел: разбирать жалобы,
 видеть состояние сервиса и публиковать отчёт о прозрачности. Он устроен
@@ -30,20 +30,20 @@
 
 ```bash
 # 1. Токен оператора — длинный, случайный, хранится у оператора.
-openssl rand -hex 32 > ~/aegis-admin-token        # держать в менеджере паролей
+openssl rand -hex 32 > ~/gasapp-admin-token        # держать в менеджере паролей
 
 # 2. В окружение сервера кладётся только его хеш.
-aegis-server-admin hash-token < ~/aegis-admin-token
-# → 64 шестнадцатеричных знака → AEGIS_ADMIN_TOKEN_SHA256
+gasapp-server-admin hash-token < ~/gasapp-admin-token
+# → 64 шестнадцатеричных знака → GASAPP_ADMIN_TOKEN_SHA256
 
 # 3. Запуск (systemd-юнит или контейнер рядом с базой).
 DATABASE_URL=postgres://… \
-AEGIS_ADMIN_TOKEN_SHA256=<хеш> \
-AEGIS_ADMIN_BIND=127.0.0.1:8480 \
-aegis-server-admin serve
+GASAPP_ADMIN_TOKEN_SHA256=<хеш> \
+GASAPP_ADMIN_BIND=127.0.0.1:8480 \
+gasapp-server-admin serve
 ```
 
-`AEGIS_ADMIN_BIND` принимает только петлю (`127.0.0.1`, `::1`): другой
+`GASAPP_ADMIN_BIND` принимает только петлю (`127.0.0.1`, `::1`): другой
 адрес — отказ запуска.
 
 ## Вход
@@ -78,12 +78,12 @@ onion-адреса сервера, с клиентской авторизаци�
 ## Уведомления о жалобах
 
 ```cron
-*/10 * * * * DATABASE_URL=… AEGIS_NOTIFY_CMD="/opt/aegis/notify-telegram.sh" aegis-server-admin watch-reports
+*/10 * * * * DATABASE_URL=… GASAPP_NOTIFY_CMD="/opt/gasapp/notify-telegram.sh" gasapp-server-admin watch-reports
 ```
 
 В уведомлении — только число новых жалоб: имена оператор смотрит в самом
 админ-центре. Канал уведомлений (Telegram, почта) — чужая служба, и имени
-там быть не должно. `AEGIS_NOTIFY_CMD` — та же команда, что у
+там быть не должно. `GASAPP_NOTIFY_CMD` — та же команда, что у
 `deploy/check-nodes.sh` (текст — на stdin).
 
 ## Порядок работы с жалобами

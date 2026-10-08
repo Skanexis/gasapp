@@ -10,7 +10,7 @@
   не содержит». Варианта release не существовало. То есть релизный APK
   собирался с конфигурацией main, а в ней:
 
-    * самоподписанный `@raw/aegis_local_ca` объявлен доверенным корнем
+    * самоподписанный `@raw/gasapp_local_ca` объявлен доверенным корнем
       для 192.168.1.15 и 10.0.2.2;
     * оба пина сняты с ключа локального тестового сервера.
 
@@ -66,7 +66,7 @@
       проверка цепочки до системного корня.
     -->
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">aegis.chat</domain>
+        <domain includeSubdomains="true">gasapp.chat</domain>
 
         <pin-set expiration="2027-01-01">
             <pin digest="SHA-256">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</pin>

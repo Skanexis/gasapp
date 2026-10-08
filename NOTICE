@@ -1,12 +1,12 @@
-AEGIS — Secure Messenger
-Copyright 2026 The AEGIS Authors
+GasApp — Secure Messenger
+Copyright 2026 The GasApp Authors
 
 ================================================================================
   КАРТА ЛИЦЕНЗИЙ  /  LICENSE MAP
 ================================================================================
 
-Проект использует РАЗДЕЛЬНОЕ лицензирование (см. ADR-006 в AEGIS_MASTER_PLAN.md).
-This project uses SPLIT licensing (see ADR-006 in AEGIS_MASTER_PLAN.md).
+Проект использует РАЗДЕЛЬНОЕ лицензирование (см. ADR-006 в GASAPP_MASTER_PLAN.md).
+This project uses SPLIT licensing (see ADR-006 in GASAPP_MASTER_PLAN.md).
 
   crates/**            Apache License 2.0        → LICENSE-APACHE
   ios/**               Apache License 2.0        → LICENSE-APACHE
@@ -41,11 +41,11 @@ and AGPL prevents hosting a modified closed-source fork.
   КРИТИЧЕСКОЕ ПРАВИЛО  /  CRITICAL RULE
 ================================================================================
 
-  Крейты, используемые И клиентом, И сервером (aegis-types, aegis-proto),
+  Крейты, используемые И клиентом, И сервером (gasapp-types, gasapp-proto),
   ОБЯЗАНЫ быть Apache-2.0. Попадание AGPL-кода в клиентскую сборку делает
   публикацию в App Store юридически невозможной.
 
-  Crates shared by BOTH client and server (aegis-types, aegis-proto) MUST be
+  Crates shared by BOTH client and server (gasapp-types, gasapp-proto) MUST be
   Apache-2.0. AGPL code reaching a client build makes App Store publication
   legally impossible.
 

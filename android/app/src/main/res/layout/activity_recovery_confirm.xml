@@ -19,18 +19,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/confirm_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:text="@string/recovery_confirm_title" />
     </LinearLayout>
@@ -49,23 +49,23 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisText.Body"
+                style="@style/GasAppText.Body"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/recovery_confirm_explain" />
 
             <LinearLayout
-                style="@style/AegisPanel"
+                style="@style/GasAppPanel"
                 android:layout_marginTop="@dimen/space_l">
 
                 <TextView
                     android:id="@+id/confirm_label_first"
-                    style="@style/AegisSectionLabel"
+                    style="@style/GasAppSectionLabel"
                     tools:text="Группа 3" />
 
-                <org.aegis.app.components.AegisTextField
+                <org.gasapp.app.components.GasAppTextField
                     android:id="@+id/confirm_input_first"
-                    style="@style/AegisInput"
+                    style="@style/GasAppInput"
                     android:layout_width="match_parent"
                     android:autofillHints=""
                     android:fontFamily="monospace"
@@ -79,13 +79,13 @@
 
                 <TextView
                     android:id="@+id/confirm_label_second"
-                    style="@style/AegisSectionLabel"
+                    style="@style/GasAppSectionLabel"
                     android:layout_marginTop="@dimen/space_m"
                     tools:text="Группа 7" />
 
-                <org.aegis.app.components.AegisTextField
+                <org.gasapp.app.components.GasAppTextField
                     android:id="@+id/confirm_input_second"
-                    style="@style/AegisInput"
+                    style="@style/GasAppInput"
                     android:layout_width="match_parent"
                     android:autofillHints=""
                     android:fontFamily="monospace"
@@ -99,13 +99,13 @@
 
                 <TextView
                     android:id="@+id/confirm_label_third"
-                    style="@style/AegisSectionLabel"
+                    style="@style/GasAppSectionLabel"
                     android:layout_marginTop="@dimen/space_m"
                     tools:text="Группа 11" />
 
-                <org.aegis.app.components.AegisTextField
+                <org.gasapp.app.components.GasAppTextField
                     android:id="@+id/confirm_input_third"
-                    style="@style/AegisInput"
+                    style="@style/GasAppInput"
                     android:layout_width="match_parent"
                     android:autofillHints=""
                     android:fontFamily="monospace"
@@ -120,7 +120,7 @@
 
             <TextView
                 android:id="@+id/confirm_status"
-                style="@style/AegisText.Caption"
+                style="@style/GasAppText.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
@@ -128,7 +128,7 @@
                 tools:text="Группы не совпали"
                 tools:visibility="visible" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/confirm_submit"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -141,7 +141,7 @@
               должен иметь путь назад, а не терять ключ из-за того, что
               нажал «дальше» слишком рано.
             -->
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/confirm_show_again"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

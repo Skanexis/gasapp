@@ -18,7 +18,7 @@
     android:padding="@dimen/screen_padding">
 
     <!--
-      Шапка как на остальных экранах (AegisAppBar): «назад» и
+      Шапка как на остальных экранах (GasAppAppBar): «назад» и
       заголовок. Отрицательный отступ сверху компенсирует отступ
       экрана, чтобы заголовок стоял на той же высоте.
     -->
@@ -32,20 +32,20 @@
 
         <ImageView
             android:id="@+id/search_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             android:text="@string/search_title" />
     </LinearLayout>
 
-    <org.aegis.app.components.AegisTextField
+    <org.gasapp.app.components.GasAppTextField
         android:id="@+id/search_query"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

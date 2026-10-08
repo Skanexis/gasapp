@@ -15,7 +15,7 @@ type-complexity-threshold = 300
 
 # Слова, которые clippy не должен считать опечатками в doc-комментариях
 doc-valid-idents = [
-    "AEGIS", "PQXDH", "SPQR", "XEdDSA", "SQLCipher", "StrongBox",
+    "GasApp", "PQXDH", "SPQR", "XEdDSA", "SQLCipher", "StrongBox",
     "SecureEnclave", "UniFFI", "WebRTC", "SRTP", "AEAD", "HKDF",
     "ChaCha20", "XChaCha20", "XChaCha", "Poly1305", "Argon2id", "libsignal",
     "DoS", "MITM", "TOFU", "APNs", "GMS",

@@ -80,7 +80,7 @@ Tracking: **No**. App Tracking Transparency не нужен.
 ## 4. Review Notes (вставить как есть, по-английски)
 
 ```text
-AEGIS is an end-to-end encrypted messenger. Accounts need no phone
+GasApp is an end-to-end encrypted messenger. Accounts need no phone
 number or email: a user picks a username and a 6-digit PIN.
 
 HOW TO TEST
@@ -88,7 +88,7 @@ HOW TO TEST
 2. The app connects through Tor by default; the first connection takes
    20-60 seconds.
 3. To test messaging, message our demo account: tap the pencil button
-   and enter the username "aegis_review_1". It is monitored during
+   and enter the username "gasapp_review_1". It is monitored during
    review and will reply.
 Demo account for sign-in on a second device is not possible by design:
 there are no passwords; each device holds its own keys.
@@ -133,7 +133,7 @@ Settings > Privacy > Delete account. Deletion is immediate.
 | **4.7 исполняемый код** | ✅ Не загружается | — |
 | **3.1.1 покупки** | ✅ Нет | — |
 | **Экспорт шифрования** | 🟡 | Уведомление BIS/NSA до публикации (§ 2) |
-| **Уникальное имя** | 🟡 | «AEGIS» занято/конфликтует — см. `listing.md` |
+| **Уникальное имя** | 🟡 | «GasApp» занято/конфликтует — см. `listing.md` |
 
 ---
 

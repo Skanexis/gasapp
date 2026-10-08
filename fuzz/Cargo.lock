@@ -13,76 +13,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aegis-backup"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "argon2",
- "chacha20poly1305",
- "hkdf",
- "rand_core 0.6.4",
- "sha2",
- "thiserror",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-fuzz"
-version = "0.0.0"
-dependencies = [
- "aegis-backup",
- "aegis-media",
- "aegis-protocol",
- "aegis-types",
- "libfuzzer-sys",
- "rand_core 0.6.4",
-]
-
-[[package]]
-name = "aegis-media"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "aes-gcm",
- "chacha20poly1305",
- "rand_core 0.6.4",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "aegis-protocol"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "aes-gcm",
- "curve25519-dalek",
- "ed25519-dalek",
- "hkdf",
- "hmac",
- "ml-dsa",
- "ml-kem",
- "qrcode",
- "rand_core 0.10.1",
- "rand_core 0.6.4",
- "sha2",
- "subtle",
- "thiserror",
- "x25519-dalek",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-types"
-version = "0.1.0"
-dependencies = [
- "subtle",
- "thiserror",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -425,6 +355,76 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "gasapp-backup"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "gasapp-types",
+ "hkdf",
+ "rand_core 0.6.4",
+ "sha2",
+ "thiserror",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-fuzz"
+version = "0.0.0"
+dependencies = [
+ "gasapp-backup",
+ "gasapp-media",
+ "gasapp-protocol",
+ "gasapp-types",
+ "libfuzzer-sys",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "gasapp-media"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "chacha20poly1305",
+ "gasapp-types",
+ "rand_core 0.6.4",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "gasapp-protocol"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "gasapp-types",
+ "hkdf",
+ "hmac",
+ "ml-dsa",
+ "ml-kem",
+ "qrcode",
+ "rand_core 0.10.1",
+ "rand_core 0.6.4",
+ "sha2",
+ "subtle",
+ "thiserror",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-types"
+version = "0.1.0"
+dependencies = [
+ "subtle",
+ "thiserror",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]

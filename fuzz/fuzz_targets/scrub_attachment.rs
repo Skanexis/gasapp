@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_main]
 
-//! Фаззинг очистки метаданных вложений (`aegis_media::scrub`).
+//! Фаззинг очистки метаданных вложений (`gasapp_media::scrub`).
 //!
 //! # Почему этот вход недоверенный
 //!
@@ -15,7 +15,7 @@
 //! Плюс свойство: очищенный файл того же формата очищается повторно
 //! без ошибок и без изменений.
 
-use aegis_media::scrub::{scrub, Format};
+use gasapp_media::scrub::{scrub, Format};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
