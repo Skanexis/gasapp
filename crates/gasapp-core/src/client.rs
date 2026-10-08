@@ -55,6 +55,7 @@ use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
 use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 
 mod blocks;
+mod bots;
 mod channel_closed;
 mod channels;
 mod kt;
@@ -65,6 +66,7 @@ mod sealed;
 mod signup;
 
 pub use blocks::ReportOutcome;
+pub use bots::{bot_username, BOT_SUFFIX, BOT_TOKEN_PREFIX};
 pub use channel_closed::{ChannelJoinRequestInfo, ChannelMember, PendingChannelJoin};
 pub use channels::{
     Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry, ChannelPreview, ChannelReaction,

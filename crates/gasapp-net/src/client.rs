@@ -25,15 +25,16 @@ use gasapp_types::{GasAppError, Result};
 
 use crate::api::{
     AccountDeletedResponse, AccountStatusResponse, AddChannelAdminRequest,
-    AnswerChannelJoinRequest, BundleResponse, CertificateResponse, ChannelInviteRequest,
-    ChannelJoinRequestResponse, ChannelJoinStatusResponse, ChannelMediaResponse,
-    ChannelMemberRequest, ChannelMemberResponse, ChannelPostResponse, ChannelReactRequest,
-    ChannelResponse, ChannelSeenRequest, CreateChannelRequest, DeleteChannelMediaRequest,
-    DiscoveryResponse, EmailChallengeResponse, EmailCodeRequest, EnvelopeResponse,
-    JoinChannelRequest, KtHeadsResponse, KtProofsRequest, KtProofsResponse, PublishKeysRequest,
-    PublishPostRequest, PublishPostResponse, RecoverAccountRequest, RegisterRequest,
-    RegisterResponse, RemoveChannelAdminRequest, ReplacePostRequest, SealedAccessRequest,
-    SealedReportRequest, SealedReportResponse, SealedSendRequest, UpdateChannelRequest,
+    AnswerChannelJoinRequest, BotNameRequest, BotResponse, BotTokenResponse, BundleResponse,
+    CertificateResponse, ChannelInviteRequest, ChannelJoinRequestResponse,
+    ChannelJoinStatusResponse, ChannelMediaResponse, ChannelMemberRequest, ChannelMemberResponse,
+    ChannelPostResponse, ChannelReactRequest, ChannelResponse, ChannelSeenRequest,
+    CreateChannelRequest, DeleteChannelMediaRequest, DiscoveryResponse, EmailChallengeResponse,
+    EmailCodeRequest, EnvelopeResponse, JoinChannelRequest, KtHeadsResponse, KtProofsRequest,
+    KtProofsResponse, PublishKeysRequest, PublishPostRequest, PublishPostResponse,
+    RecoverAccountRequest, RegisterBotRequest, RegisterRequest, RegisterResponse,
+    RemoveChannelAdminRequest, ReplacePostRequest, SealedAccessRequest, SealedReportRequest,
+    SealedReportResponse, SealedSendRequest, UpdateChannelRequest,
 };
 
 /// Метод HTTP.
@@ -993,6 +994,86 @@ impl<T: Transport> ApiClient<T> {
             None,
             signer,
         )
+    }
+
+    /// Просит токен под имя будущего бота. Только с премиумом.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — у аккаунта нет премиума.
+    /// * [`GasAppError::UsernameTaken`] — имя занято.
+    /// * [`GasAppError::Malformed`] — имя не годится боту.
+    /// * [`GasAppError::Network`] — сбой соединения либо у владельца
+    ///   предел ботов.
+    pub fn create_bot(
+        &self,
+        device_id: &str,
+        request: &BotNameRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<BotTokenResponse> {
+        parse(&self.send_signed(
+            Method::Post,
+            format!("/v1/bots/own/{device_id}"),
+            Some(to_json(request)?),
+            signer,
+        )?)
+    }
+
+    /// Боты аккаунта.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn bots(
+        &self,
+        device_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<BotResponse>> {
+        parse(&self.send_signed(
+            Method::Get,
+            format!("/v1/bots/own/{device_id}"),
+            None,
+            signer,
+        )?)
+    }
+
+    /// Удаляет бота аккаунта вместе с его аккаунтом.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — такого бота у аккаунта нет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn delete_bot(
+        &self,
+        device_id: &str,
+        request: &BotNameRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.send_signed(
+            Method::Delete,
+            format!("/v1/bots/own/{device_id}"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Регистрирует бота по токену владельца. Без подписи: аккаунта у
+    /// программы бота ещё нет.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — токен не принят.
+    /// * [`GasAppError::InvalidSignature`] — proof-of-work не принят.
+    /// * [`GasAppError::UsernameTaken`] — имя успели занять.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn register_bot(&self, request: &RegisterBotRequest) -> Result<RegisterResponse> {
+        parse(&self.send(
+            Method::Post,
+            "/v1/bots/register".to_owned(),
+            Some(to_json(request)?),
+        )?)
     }
 
     /// Перепривязывает аккаунт к новой identity (восстановление
