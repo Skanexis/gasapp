@@ -24,12 +24,13 @@
 use gasapp_types::{GasAppError, Result};
 
 use crate::api::{
-    AccountDeletedResponse, AccountStatusResponse, BundleResponse, CertificateResponse,
-    ChannelMediaResponse, ChannelPostResponse, ChannelReactRequest, ChannelResponse,
-    ChannelSeenRequest, ChannelSubscribeRequest, ChannelTokenRequest, CreateChannelRequest,
-    DeleteChannelMediaRequest, DiscoveryResponse, EmailCodeRequest, EnvelopeResponse,
-    KtHeadsResponse, KtProofsRequest, KtProofsResponse, PublishKeysRequest, PublishPostRequest,
-    PublishPostResponse, RecoverAccountRequest, RegisterRequest, RegisterResponse,
+    AccountDeletedResponse, AccountStatusResponse, AddChannelAdminRequest, BundleResponse,
+    CertificateResponse, ChannelMediaResponse, ChannelPostResponse, ChannelReactRequest,
+    ChannelResponse, ChannelSeenRequest, ChannelSubscribeRequest, ChannelTokenRequest,
+    CreateChannelRequest, DeleteChannelMediaRequest, DiscoveryResponse, EmailChallengeResponse,
+    EmailCodeRequest, EnvelopeResponse, IssuePassesRequest, IssuePassesResponse, KtHeadsResponse,
+    KtProofsRequest, KtProofsResponse, PublishKeysRequest, PublishPostRequest, PublishPostResponse,
+    RecoverAccountRequest, RegisterRequest, RegisterResponse, RemoveChannelAdminRequest,
     ReplacePostRequest, SealedAccessRequest, SealedReportRequest, SealedReportResponse,
     SealedSendRequest, UpdateChannelRequest,
 };
@@ -165,6 +166,18 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
+    /// Условия запроса письма: окно времени и цена, которая сейчас
+    /// действует на узле. Без подписи — аккаунта ещё нет.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn email_challenge(&self) -> Result<EmailChallengeResponse> {
+        let response = self.send(Method::Get, "/v1/accounts/email/challenge".to_owned(), None)?;
+
+        parse(&response)
+    }
+
     /// Просит сервер отправить письмо с кодом подтверждения.
     ///
     /// # Errors
@@ -283,11 +296,73 @@ impl<T: Transport> ApiClient<T> {
         Ok(())
     }
 
-    /// Публикует запись в своём канале; возвращает её номер.
+    /// Назначает администратора своего канала: сервер начнёт
+    /// принимать записи от аккаунта этого устройства.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет, он чужой либо
+    ///   такого устройства нет.
+    /// * [`GasAppError::Malformed`] — это устройство самого владельца
+    ///   либо у канала предел администраторов.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn add_channel_admin(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &AddChannelAdminRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+        // Устройство из заявки приходит извне — только UUID.
+        let request = AddChannelAdminRequest {
+            device_id: canonical_uuid(&request.device_id)?,
+            verify_key: request.verify_key.clone(),
+        };
+
+        self.send_signed(
+            Method::Post,
+            format!("/v1/channels/own/{device_id}/{channel_id}/admins"),
+            Some(to_json(&request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Снимает администратора своего канала.
     ///
     /// # Errors
     ///
     /// * [`GasAppError::SessionNotFound`] — канала нет или он чужой.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn remove_channel_admin(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &RemoveChannelAdminRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        self.send_signed(
+            Method::Delete,
+            format!("/v1/channels/own/{device_id}/{channel_id}/admins"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Публикует запись в канале; возвращает её номер.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет либо аккаунт
+    ///   в него не пишет.
+    /// * [`GasAppError::UsernameTaken`] — номер записи занят: в канал
+    ///   только что написал кто-то ещё (`409`). Запись не сохранена.
     /// * [`GasAppError::Network`] — сбой соединения либо слишком частые
     ///   публикации.
     pub fn publish_channel_post(
@@ -519,11 +594,39 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
+    /// Берёт у сервера пропуска: он подписывает замаскированные точки,
+    /// не видя, во что они превратятся.
+    ///
+    /// За подписью устройства: пропуска выдаются аккаунту и в
+    /// ограниченном числе в сутки.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Network`] — сбой соединения либо суточный
+    ///   предел пропусков исчерпан.
+    /// * [`GasAppError::Malformed`] — сервер не принял запрос.
+    pub fn issue_passes(
+        &self,
+        device_id: &str,
+        request: &IssuePassesRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<IssuePassesResponse> {
+        let response = self.send_signed(
+            Method::Post,
+            format!("/v1/passes/issue/{device_id}"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        parse(&response)
+    }
+
     /// Подписывает жетон читателя на канал — **без подписи устройства**.
     ///
     /// # Errors
     ///
-    /// * [`GasAppError::InvalidSignature`] — proof-of-work не принят.
+    /// * [`GasAppError::InvalidSignature`] — пропуск не принят: уже
+    ///   потрачен либо не подходит.
     /// * [`GasAppError::SessionNotFound`] — канала нет.
     /// * [`GasAppError::Network`] — сбой соединения.
     pub fn subscribe_channel(

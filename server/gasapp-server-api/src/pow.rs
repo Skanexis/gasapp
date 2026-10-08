@@ -145,17 +145,68 @@ pub fn first_contact_challenge(destination_device_id: &str, sealed: &[u8]) -> [u
 }
 
 /// Домен-разделитель челленджа запроса кода на почту.
-const EMAIL_CODE_DOMAIN: &[u8] = b"GASAPP_POW_EMAIL_v1";
+const EMAIL_CODE_DOMAIN: &[u8] = b"GASAPP_POW_EMAIL_v2";
 
-/// Челлендж запроса кода подтверждения: хеш каноничного адреса.
+/// Длина окна, к которому привязано решение для письма: десять минут.
+pub const EMAIL_WINDOW_MILLIS: i64 = 10 * 60 * 1000;
+
+/// Номер окна для момента `now_millis`.
+#[must_use]
+pub fn email_window(now_millis: i64) -> u64 {
+    u64::try_from(now_millis.max(0))
+        .unwrap_or(0)
+        .checked_div(EMAIL_WINDOW_MILLIS.unsigned_abs())
+        .unwrap_or(0)
+}
+
+/// На сколько бит дорожает письмо на каждой ступени нагрузки.
+const EMAIL_SURGE_STEP_BITS: u32 = 2;
+
+/// Сколько ступеней у подорожания: четверть, половина, три четверти
+/// бюджета писем узла.
+const EMAIL_SURGE_STEPS: u32 = 3;
+
+/// Сложность письма при нагрузке: `used` писем из `limit` за минуту.
+///
+/// # 🔐 Зачем цена растёт
+///
+/// Узел шлёт ограниченное число писем в минуту — иначе он стал бы
+/// рассыльщиком спама. При постоянной цене этот бюджет дёшево занять:
+/// шестьдесят решений в минуту считает одно ядро, и регистрация
+/// встаёт у всех. Адреса клиента за onion нет, ограничить по нему
+/// нельзя — остаётся цена.
+///
+/// Поэтому она растёт вместе с нагрузкой: на четверти бюджета —
+/// вчетверо, на половине — в шестнадцать раз, на трёх четвертях —
+/// в шестьдесят четыре. Чтобы держать узел занятым, нападающему нужно
+/// платить эту цену за **каждое** письмо, минуту за минутой; человеку
+/// она достаётся один раз. Без нападения цена базовая.
+///
+/// ⚠️ Чего это не даёт: тот, кто готов тратить десятки ядер постоянно,
+/// держит регистрацию дорогой и для честных (минута работы телефона
+/// вместо секунды). Сделать её невозможной он не может.
+#[must_use]
+pub fn email_difficulty(base: u32, used: u32, limit: u32) -> u32 {
+    let quarter = (limit / 4).max(1);
+    let steps = used
+        .checked_div(quarter)
+        .unwrap_or(EMAIL_SURGE_STEPS)
+        .min(EMAIL_SURGE_STEPS);
+
+    base.saturating_add(steps.saturating_mul(EMAIL_SURGE_STEP_BITS))
+        .min(MAX_DIFFICULTY)
+}
+
+/// Челлендж запроса кода подтверждения: адрес и окно времени.
 ///
 /// Письмо стоит работы: без неё сервер рассылал бы коды на любые
-/// адреса даром. Решение привязано к адресу; повторные письма на тот
-/// же адрес ограничивает уже не работа, а счётчик в базе.
+/// адреса даром. Решение привязано к адресу и к десятиминутному окну:
+/// заготовить решения впрок и выложить их разом нельзя — они годятся
+/// только в своём окне и в следующем.
 ///
 /// ⚠️ Продублирован на другой стороне (разные лицензии); эталон — тест.
 #[must_use]
-pub fn email_code_challenge(normalized_email: &str) -> [u8; CHALLENGE_LEN] {
+pub fn email_code_challenge(normalized_email: &str, window: u64) -> [u8; CHALLENGE_LEN] {
     let mut hasher = Sha256::new();
     hasher.update(EMAIL_CODE_DOMAIN);
     hasher.update(
@@ -164,29 +215,7 @@ pub fn email_code_challenge(normalized_email: &str) -> [u8; CHALLENGE_LEN] {
             .to_be_bytes(),
     );
     hasher.update(normalized_email.as_bytes());
-    hasher.finalize().into()
-}
-
-/// Домен-разделитель челленджа подписки на канал.
-const SUBSCRIBE_DOMAIN: &[u8] = b"GASAPP_POW_SUB_v1";
-
-/// Челлендж подписки: канал и жетон подписчика.
-///
-/// Подписка анонимна — подписи устройства нет, — и без цены счётчик
-/// подписчиков накручивался бы циклом. Решение привязано к каналу
-/// и жетону: на другой канал или другой жетон оно не переносится.
-///
-/// ⚠️ Продублирован на другой стороне (разные лицензии); эталон — тест.
-#[must_use]
-pub fn subscribe_challenge(channel_id: &str, token: &[u8]) -> [u8; CHALLENGE_LEN] {
-    let channel = channel_id.to_ascii_lowercase();
-
-    let mut hasher = Sha256::new();
-    hasher.update(SUBSCRIBE_DOMAIN);
-    for field in [channel.as_bytes(), token] {
-        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_be_bytes());
-        hasher.update(field);
-    }
+    hasher.update(window.to_be_bytes());
     hasher.finalize().into()
 }
 
@@ -319,21 +348,26 @@ mod tests {
     /// Эталон посчитан независимой реализацией (Python, hashlib);
     /// тот же вектор у клиента в `gasapp-net::pow`.
     #[test]
-    fn subscribe_challenge_matches_the_reference() {
-        assert_eq!(
-            subscribe_challenge("00000000-0000-0000-0000-000000000001", &[7u8; 32]).get(..8),
-            Some(&[0xe2, 0x63, 0x05, 0x7a, 0x8c, 0x54, 0xb0, 0x0e][..])
-        );
-    }
-
-    /// Эталон посчитан независимой реализацией (Python, hashlib);
-    /// тот же вектор у клиента в `gasapp-net::pow`.
-    #[test]
     fn email_code_challenge_matches_the_reference() {
         assert_eq!(
-            email_code_challenge("alice@example.org").get(..8),
-            Some(&[0x2a, 0xb0, 0x34, 0x10, 0x90, 0x4a, 0xbd, 0xc5][..])
+            email_code_challenge("alice@example.org", 2_933_334).get(..8),
+            Some(&[0x5c, 0xe7, 0xd7, 0xf0, 0x58, 0x8d, 0x60, 0x2f][..])
         );
+        assert_eq!(email_window(1_760_000_400_000), 2_933_334);
+    }
+
+    /// Цена письма растёт ступенями и не выходит за предел.
+    #[test]
+    fn a_letter_gets_dearer_under_load() {
+        assert_eq!(email_difficulty(20, 0, 60), 20);
+        assert_eq!(email_difficulty(20, 14, 60), 20);
+        assert_eq!(email_difficulty(20, 15, 60), 22);
+        assert_eq!(email_difficulty(20, 30, 60), 24);
+        assert_eq!(email_difficulty(20, 45, 60), 26);
+        assert_eq!(email_difficulty(20, 60, 60), 26);
+        // Крошечный бюджет (много узлов) не делит на ноль.
+        assert_eq!(email_difficulty(20, 2, 1), 24);
+        assert_eq!(email_difficulty(MAX_DIFFICULTY, 60, 60), MAX_DIFFICULTY);
     }
 
     /// Эталон посчитан независимой реализацией (Python); тот же у клиента.

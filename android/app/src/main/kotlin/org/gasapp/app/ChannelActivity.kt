@@ -48,13 +48,17 @@ import org.gasapp.app.ui.paintAvatar
 import uniffi.gasapp.FfiAttachmentFile
 import uniffi.gasapp.FfiAttachmentKind
 import uniffi.gasapp.FfiChannel
+import uniffi.gasapp.FfiChannelAdmin
 import uniffi.gasapp.FfiChannelPost
+import uniffi.gasapp.FfiChannelRole
 import uniffi.gasapp.FfiException
 import uniffi.gasapp.canonicalChannelHandle
+import uniffi.gasapp.channelAdminRequestQr
 import uniffi.gasapp.channelLinkQr
 import uniffi.gasapp.channelMediaLimit
 import uniffi.gasapp.channelPostAttachmentLimit
 import uniffi.gasapp.channelReactions
+import uniffi.gasapp.isChannelAdminRequest
 
 /**
  * Канал: лента записей и — для автора — строка ввода.
@@ -300,14 +304,25 @@ class ChannelActivity : AppCompatActivity() {
                 pinned.text.ifEmpty { getString(R.string.channel_post_media_only) }
         }
 
-        findViewById<View>(R.id.channel_input_row).isVisible = found.owned
-        findViewById<View>(R.id.channel_reader_note).isVisible = !found.owned
+        findViewById<View>(R.id.channel_input_row).isVisible = found.canPost
+        findViewById<TextView>(R.id.channel_reader_note).apply {
+            isVisible = !found.canPost
+            // Заявка показана, но владелец её не принял либо уже снял
+            // администратора: писать нельзя, и экран говорит почему.
+            setText(
+                if (found.role == FfiChannelRole.ADMIN_PENDING) {
+                    R.string.channel_admin_pending_note
+                } else {
+                    R.string.channel_reader_note
+                },
+            )
+        }
 
         EmptyState.bind(
             empty,
             icon = R.drawable.ic_channel,
             title = R.string.channel_empty_title,
-            body = if (found.owned) R.string.channel_empty_owner else R.string.channel_empty_reader,
+            body = if (found.canPost) R.string.channel_empty_owner else R.string.channel_empty_reader,
         )
     }
 
@@ -322,7 +337,11 @@ class ChannelActivity : AppCompatActivity() {
             parts += resources.getQuantityString(R.plurals.channel_subscribers, count, count)
         }
 
-        if (found.owned) parts += getString(R.string.channel_role_author)
+        when (found.role) {
+            FfiChannelRole.OWNER -> parts += getString(R.string.channel_role_author)
+            FfiChannelRole.ADMIN -> parts += getString(R.string.channel_role_admin)
+            else -> Unit
+        }
         if (parts.isEmpty()) parts += getString(R.string.channel_subtitle_reader)
 
         return parts.joinToString(getString(R.string.channel_subtitle_separator))
@@ -400,12 +419,18 @@ class ChannelActivity : AppCompatActivity() {
             }
         }
 
-        if (current.owned) {
+        // Править и удалять записи может и администратор; закреп лежит
+        // в описании канала, а его подписывает только владелец.
+        if (current.canPost) {
             sheet.action(getString(R.string.channel_post_edit), R.drawable.ic_edit) { editPost(post) }
+        }
+        if (current.owned) {
             sheet.action(
                 getString(if (post.pinned) R.string.channel_post_unpin else R.string.channel_post_pin),
                 R.drawable.ic_pin,
             ) { pinPost(if (post.pinned) 0 else post.seq) }
+        }
+        if (current.canPost) {
             sheet.action(getString(R.string.channel_post_delete), R.drawable.ic_trash, destructive = true) {
                 confirmDeletePost(post)
             }
@@ -435,7 +460,7 @@ class ChannelActivity : AppCompatActivity() {
         val wanted = emoji.takeIf { it != post.myReaction }
 
         act(R.string.channel_reaction_failed) {
-            Core.messenger().reactToChannelPost(channelId, post.seq.toULong(), wanted)
+            Core.messenger().reactToChannelPost(channelId, post.seq.toULong(), wanted, System.currentTimeMillis())
         }
     }
 
@@ -875,10 +900,15 @@ class ChannelActivity : AppCompatActivity() {
                 getString(if (current.handle == null) R.string.channel_public_make else R.string.channel_public_manage),
                 R.drawable.ic_globe,
             ) { managePublic(current) }
+            sheet.action(getString(R.string.channel_admins), R.drawable.ic_users) { showAdmins() }
             sheet.action(getString(R.string.channel_delete), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = true)
             }
         } else {
+            // Действующему администратору проситься незачем.
+            if (current.role != FfiChannelRole.ADMIN) {
+                sheet.action(getString(R.string.channel_admin_request), R.drawable.ic_key) { showAdminRequest() }
+            }
             sheet.action(getString(R.string.channel_leave), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = false)
             }
@@ -1117,6 +1147,240 @@ class ChannelActivity : AppCompatActivity() {
             .show()
     }
 
+    // --- Администраторы -----------------------------------------------------
+
+    /**
+     * Заявка на администрирование: QR-код и строка, которые читатель
+     * показывает владельцу канала.
+     *
+     * 🔐 Секретов в заявке нет, но она называет владельцу устройство,
+     * а серверу — аккаунт: администратор, в отличие от читателя, серверу
+     * известен. Диалог говорит это до того, как заявку покажут.
+     */
+    private fun showAdminRequest() {
+        lifecycleScope.launch {
+            val request = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().channelAdminRequest(channelId) }.getOrNull()
+            } ?: return@launch
+
+            // Ключ для заявки только что заведён: роль в канале изменилась.
+            load(sync = false)
+
+            val content = LinearLayout(this@ChannelActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
+
+            val side = resources.getDimensionPixelSize(R.dimen.channel_qr)
+            runCatching { channelAdminRequestQr(request) }.getOrNull()?.let { matrix ->
+                content.addView(
+                    ImageView(this@ChannelActivity).apply {
+                        setImageBitmap(QrDrawable.render(matrix, side))
+                        setBackgroundResource(R.drawable.bg_qr_card)
+                        val padding = resources.getDimensionPixelSize(R.dimen.space_s)
+                        setPadding(padding, padding, padding, padding)
+                        contentDescription = getString(R.string.channel_admin_request_qr)
+                    },
+                    LinearLayout.LayoutParams(side, side),
+                )
+            }
+
+            GasAppDialog(this@ChannelActivity)
+                .title(R.string.channel_admin_request)
+                .message(R.string.channel_admin_request_body)
+                .content(content)
+                .secondary(R.string.action_close)
+                .primary(R.string.channel_admin_request_copy) {
+                    SecureClipboard.copySensitive(
+                        this@ChannelActivity,
+                        getString(R.string.channel_admin_request),
+                        request,
+                    )
+                    if (!SecureClipboard.systemConfirmsCopy) {
+                        GasAppToast.show(
+                            this@ChannelActivity,
+                            R.string.channel_admin_request_copied,
+                            GasAppToast.Tone.Success,
+                        )
+                    }
+                }
+                .show()
+        }
+    }
+
+    /** Администраторы канала — для владельца: список, назначение, снятие. */
+    private fun showAdmins() {
+        lifecycleScope.launch {
+            val admins = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().channelAdmins(channelId) }.getOrDefault(emptyList())
+            }
+
+            val sheet = GasAppSheet.on(this@ChannelActivity, R.string.channel_admins)
+
+            sheet.action(getString(R.string.channel_admin_add), R.drawable.ic_plus) { chooseAdminSource() }
+
+            for (admin in admins) {
+                val name = admin.label.ifEmpty { getString(R.string.channel_admin_unnamed, admin.verifyKey.take(KEY_HINT_CHARS)) }
+
+                if (admin.active) {
+                    sheet.action(getString(R.string.channel_admin_active, name), R.drawable.ic_users) {
+                        confirmRemoveAdmin(admin, name)
+                    }
+                } else {
+                    // Снятый остаётся в списке: по его ключу читаются
+                    // записи, которые он успел написать.
+                    sheet.action(getString(R.string.channel_admin_removed, name), R.drawable.ic_block) {
+                        GasAppToast.show(
+                            this@ChannelActivity,
+                            R.string.channel_admin_removed_note,
+                            GasAppToast.Tone.Info,
+                        )
+                    }
+                }
+            }
+
+            sheet.show()
+        }
+    }
+
+    private fun chooseAdminSource() {
+        GasAppSheet.on(this, R.string.channel_admin_add)
+            .action(getString(R.string.channel_admin_paste), R.drawable.ic_link) { promptAdmin(request = "") }
+            .action(getString(R.string.channel_admin_scan), R.drawable.ic_qr) {
+                picking = true
+                scanAdmin.launch(
+                    ScanActivity.Request(R.string.channel_admin_scan, R.string.channel_admin_scan_hint),
+                )
+            }
+            .show()
+    }
+
+    private val scanAdmin = registerForActivityResult(ScanActivity.Contract()) { payload ->
+        picking = false
+
+        when {
+            payload == null -> Unit
+            isChannelAdminRequest(payload) -> promptAdmin(request = payload)
+            else -> GasAppToast.show(this, R.string.channel_admin_invalid, GasAppToast.Tone.Error)
+        }
+    }
+
+    /**
+     * Назначение администратора: заявка и имя для себя.
+     *
+     * 🔐 Что получает администратор, сказано до кнопки: писать, править
+     * и удалять записи от имени канала. Имя остаётся на этом телефоне
+     * и в резервной копии — читатели канала его не видят.
+     */
+    private fun promptAdmin(request: String) {
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val code = GasAppTextField(this).apply {
+            hint = getString(R.string.channel_admin_code_hint)
+            setText(request)
+            maxLines = CODE_MAX_LINES
+            typeface = android.graphics.Typeface.MONOSPACE
+            textSize = LINK_TEXT_SP
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val name = GasAppTextField(this).apply {
+            hint = getString(R.string.channel_admin_name_hint)
+            maxLines = 1
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        }
+
+        form.addView(code)
+        form.addView(
+            name,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = resources.getDimensionPixelSize(R.dimen.space_s)
+            },
+        )
+
+        GasAppDialog(this)
+            .title(R.string.channel_admin_add)
+            .message(R.string.channel_admin_add_body)
+            .content(form)
+            .secondary()
+            .primary(R.string.channel_admin_add_action, closeOnClick = false) { dialog ->
+                val entered = code.text?.toString().orEmpty().trim()
+
+                if (!isChannelAdminRequest(entered)) {
+                    code.hasError = true
+                    dialog.showError(R.string.channel_admin_invalid)
+                    return@primary
+                }
+
+                dialog.setBusy(true)
+
+                lifecycleScope.launch {
+                    val added = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Core.messenger().addChannelAdmin(
+                                channelId,
+                                entered,
+                                name.text?.toString().orEmpty(),
+                                System.currentTimeMillis(),
+                            )
+                        }
+                    }
+
+                    dialog.setBusy(false)
+
+                    added
+                        .onSuccess {
+                            dialog.dismiss()
+                            GasAppToast.show(
+                                this@ChannelActivity,
+                                R.string.channel_admin_added,
+                                GasAppToast.Tone.Success,
+                            )
+                        }
+                        .onFailure { failure ->
+                            dialog.showError(
+                                if (failure is FfiException.InvalidArgument) {
+                                    R.string.channel_admin_wrong_channel
+                                } else {
+                                    R.string.channels_error_network
+                                },
+                            )
+                        }
+                }
+            }
+            .show()
+    }
+
+    private fun confirmRemoveAdmin(admin: FfiChannelAdmin, name: String) {
+        GasAppDialog(this)
+            .title(getString(R.string.channel_admin_remove_title, name))
+            .message(R.string.channel_admin_remove_body)
+            .secondary()
+            .primary(R.string.channel_admin_remove, GasAppDialog.Tone.Danger, closeOnClick = false) { dialog ->
+                dialog.setBusy(true)
+
+                lifecycleScope.launch {
+                    val removed = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Core.messenger().removeChannelAdmin(
+                                channelId,
+                                admin.verifyKey,
+                                System.currentTimeMillis(),
+                            )
+                        }
+                    }
+
+                    dialog.setBusy(false)
+
+                    removed
+                        .onSuccess { dialog.dismiss() }
+                        .onFailure { dialog.showError(R.string.channels_error_network) }
+                }
+            }
+            .show()
+    }
+
     /**
      * Подтверждение: автор удаляет канал у всех, читатель — только
      * убирает его у себя.
@@ -1153,6 +1417,14 @@ class ChannelActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Владелец: описание, закреп, аватар, имя, администраторы, удаление. */
+    private val FfiChannel.owned: Boolean
+        get() = role == FfiChannelRole.OWNER
+
+    /** Владелец либо действующий администратор: пишет, правит, удаляет записи. */
+    private val FfiChannel.canPost: Boolean
+        get() = role == FfiChannelRole.OWNER || role == FfiChannelRole.ADMIN
+
     companion object {
         /** Идентификатор канала. */
         const val EXTRA_CHANNEL_ID = "channel_id"
@@ -1169,6 +1441,10 @@ class ChannelActivity : AppCompatActivity() {
         private const val LINK_TEXT_SP = 12f
         private const val LINK_MAX_LINES = 6
         private const val EDIT_MAX_LINES = 10
+        private const val CODE_MAX_LINES = 4
+
+        /** Сколько знаков ключа показать у администратора без имени. */
+        private const val KEY_HINT_CHARS = 8
 
         private const val READ_BUFFER = 64 * 1024
         private const val BYTES_IN_MB = 1024L * 1024L

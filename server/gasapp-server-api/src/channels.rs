@@ -61,13 +61,6 @@ pub const POSTS_PER_MINUTE: u32 = 30;
 /// принимается от одного жетона.
 pub const READER_ACTIONS_PER_MINUTE: u32 = 60;
 
-/// Сложность proof-of-work подписки, в битах.
-///
-/// Подписка анонимна, и без цены счётчик подписчиков накручивался бы
-/// циклом, а таблица жетонов росла бы без предела. 20 бит — около
-/// секунды на телефоне и миллион хешей за каждого «подписчика».
-pub const SUBSCRIBE_DIFFICULTY: u32 = 20;
-
 /// Длина публичного ключа подписи записей.
 const VERIFY_KEY_LEN: usize = 32;
 
@@ -116,6 +109,27 @@ pub struct UpdateChannelRequest {
 pub struct PublishRequest {
     /// Шифротекст записи, hex.
     pub body: String,
+    /// Номер, под которым автор ждёт запись, — он же лежит внутри
+    /// шифротекста. Не совпал со следующим номером канала — `409`,
+    /// и запись не сохраняется.
+    #[serde(default)]
+    pub seq: Option<i64>,
+}
+
+/// Запрос назначения администратора.
+#[derive(Debug, Deserialize)]
+pub struct AddAdminRequest {
+    /// Устройство будущего администратора — из его заявки.
+    pub device_id: Uuid,
+    /// Публичный ключ, которым он подписывает записи, hex.
+    pub verify_key: String,
+}
+
+/// Запрос снятия администратора.
+#[derive(Debug, Deserialize)]
+pub struct RemoveAdminRequest {
+    /// Его публичный ключ подписи, hex.
+    pub verify_key: String,
 }
 
 /// Ответ на публикацию и правку.
@@ -253,8 +267,36 @@ pub struct SearchQuery {
 pub struct SubscribeRequest {
     /// Жетон подписчика, hex.
     pub token: String,
-    /// Решение proof-of-work над [`crate::pow::subscribe_challenge`].
-    pub pow_nonce: u64,
+    /// Зерно пропуска, hex.
+    pub pass_seed: String,
+    /// Код траты пропуска на эту подписку, hex
+    /// (см. [`crate::pass::subscribe_binding`]).
+    pub pass_mac: String,
+}
+
+/// Запрос пропусков: замаскированные точки, hex.
+#[derive(Debug, Deserialize)]
+pub struct IssuePassesRequest {
+    /// Точки на подпись.
+    pub blinded: Vec<String>,
+}
+
+/// Подписанная точка с доказательством.
+#[derive(Debug, Serialize)]
+pub struct SignedPass {
+    /// Подписанная точка, hex.
+    pub point: String,
+    /// Доказательство DLEQ, hex.
+    pub proof: String,
+}
+
+/// Ответ на запрос пропусков.
+#[derive(Debug, Serialize)]
+pub struct IssuePassesResponse {
+    /// Публичный ключ пропусков узла, hex: с ним сверяются доказательства.
+    pub key: String,
+    /// Подписанные точки — в порядке запроса.
+    pub signed: Vec<SignedPass>,
 }
 
 /// Запрос с жетоном подписчика: отписка.
@@ -513,9 +555,70 @@ pub(crate) async fn publish(
     // канала не тратит.
     limit_channel(&state, channel_id)?;
 
-    let (seq, rev) = channels::publish_post(&state.pool, account_id, channel_id, &body).await?;
+    let (seq, rev) =
+        channels::publish_post(&state.pool, account_id, channel_id, &body, request.seq)
+            .await
+            .map_err(|error| match error {
+                // «Номер занят» — не отказ авторизации: автор возьмёт
+                // следующий номер и повторит.
+                RepoError::Conflict => ApiError::Conflict,
+                other => other.into(),
+            })?;
 
     Ok(Json(PublishResponse { seq, rev }))
+}
+
+/// Ключ подписи администратора из hex.
+fn admin_key(hex_text: &str) -> Result<[u8; VERIFY_KEY_LEN], ApiError> {
+    decode_hex(hex_text)?
+        .try_into()
+        .map_err(|_| ApiError::BadRequest)
+}
+
+/// Назначает администратора своего канала.
+///
+/// 🔐 Это право сервера принять запись, а не право записи быть
+/// подлинной: читатели верят списку из описания канала, которое
+/// подписывает владелец (миграция 0020).
+pub(crate) async fn add_admin(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<AddAdminRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let verify_key = admin_key(&request.verify_key)?;
+
+    channels::add_admin(
+        &state.pool,
+        account_id,
+        channel_id,
+        request.device_id,
+        &verify_key,
+    )
+    .await
+    .map_err(|error| match error {
+        // Владелец не назначает администратором себя.
+        RepoError::Conflict => ApiError::BadRequest,
+        other => other.into(),
+    })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Снимает администратора своего канала.
+pub(crate) async fn remove_admin(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<RemoveAdminRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let verify_key = admin_key(&request.verify_key)?;
+
+    channels::remove_admin(&state.pool, account_id, channel_id, &verify_key).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Исправляет или удаляет запись своего канала.
@@ -666,21 +769,89 @@ pub(crate) async fn search(
     ))
 }
 
+/// Выдаёт аккаунту пропуска — подписывает присланные замаскированные
+/// точки.
+///
+/// 🔐 За подписью устройства: сколько пропусков взял аккаунт, сервер
+/// знает и ограничивает. На что они пойдут — не знает: точки
+/// замаскированы, и при трате сервер увидит уже другое (см. `pass`).
+///
+/// Сверх суточного предела — `429`.
+pub(crate) async fn issue_passes(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+    Json(request): Json<IssuePassesRequest>,
+) -> Result<Json<IssuePassesResponse>, ApiError> {
+    use gasapp_server_db::passes;
+
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    if request.blinded.is_empty() || request.blinded.len() > passes::MAX_PASSES_PER_REQUEST {
+        return Err(ApiError::BadRequest);
+    }
+
+    // Сначала разбор и подпись, потом счёт: негодный запрос предел
+    // аккаунта не тратит.
+    let mut signed = Vec::with_capacity(request.blinded.len());
+    for blinded in &request.blinded {
+        let point: [u8; crate::pass::LEN] = decode_hex(blinded)?
+            .try_into()
+            .map_err(|_| ApiError::BadRequest)?;
+        let (point, proof) = state.pass_key.sign(&point).ok_or(ApiError::BadRequest)?;
+
+        signed.push(SignedPass {
+            point: hex::encode(point),
+            proof: hex::encode(proof),
+        });
+    }
+
+    let wanted = i32::try_from(signed.len()).map_err(|_| ApiError::BadRequest)?;
+    passes::reserve(&state.pool, account_id, wanted)
+        .await
+        .map_err(|error| match error {
+            RepoError::QuotaExceeded => ApiError::TooManyRequests,
+            other => other.into(),
+        })?;
+
+    Ok(Json(IssuePassesResponse {
+        key: hex::encode(state.pass_key.public()),
+        signed,
+    }))
+}
+
 /// Подписка: жетон читателя попадает в счётчик подписчиков.
 ///
 /// 🔐 Без подписи устройства: сервер не узнаёт, кто подписался.
-/// Цена — proof-of-work над каналом и жетоном, иначе счётчик
-/// накручивался бы циклом.
+/// Цена — пропуск: одноразовое право, которое сервер выдал какому-то
+/// аккаунту вслепую и теперь не может связать с ним. Без неё счётчик
+/// накручивался бы циклом; с ней — не быстрее, чем аккаунты берут
+/// пропуска.
 pub(crate) async fn subscribe(
     State(state): State<Arc<AppState>>,
     Path(channel_id): Path<Uuid>,
     Json(request): Json<SubscribeRequest>,
 ) -> Result<StatusCode, ApiError> {
     let (token, hash) = token_hash(&request.token)?;
+    let seed: [u8; crate::pass::LEN] = decode_hex(&request.pass_seed)?
+        .try_into()
+        .map_err(|_| ApiError::BadRequest)?;
+    let mac: [u8; crate::pass::LEN] = decode_hex(&request.pass_mac)?
+        .try_into()
+        .map_err(|_| ApiError::BadRequest)?;
 
-    let challenge = crate::pow::subscribe_challenge(&channel_id.to_string(), &token);
-    crate::pow::verify(&challenge, request.pow_nonce, state.subscribe_difficulty)
-        .map_err(|_| ApiError::Unauthorized)?;
+    // Подлинность — до базы: поддельный пропуск не стоит ей запроса.
+    let binding = crate::pass::subscribe_binding(&channel_id.to_string(), &token);
+    if !state.pass_key.accepts(&seed, &binding, &mac) {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Канал — до траты: пропуск не сгорает на канале, которого нет.
+    channels::find_channel(&state.pool, channel_id).await?;
+
+    if !gasapp_server_db::passes::spend(&state.pool, &Sha256::digest(seed).into()).await? {
+        return Err(ApiError::Unauthorized);
+    }
 
     channels::subscribe(&state.pool, channel_id, &hash).await?;
 

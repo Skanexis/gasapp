@@ -28,6 +28,7 @@ pub mod backup;
 pub mod blocks;
 pub mod channels;
 pub mod kt;
+pub mod passes;
 pub mod pq;
 pub mod requests;
 pub mod sealed;
@@ -401,7 +402,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 17;
+    const SCHEMA_VERSION: i32 = 18;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -910,6 +911,41 @@ impl Storage {
                                 )
                                 .map_err(storage_error)?;
                         }
+                    }
+                }
+                // 17 → 18: администраторы каналов — список из описания
+                // канала и имена, которыми владелец их подписал; запас
+                // пропусков для анонимной подписки.
+                18 => {
+                    let present: bool = transaction
+                        .query_row(
+                            "SELECT count(*) > 0 FROM pragma_table_info('channels')
+                              WHERE name = 'admins'",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .map_err(storage_error)?;
+
+                    if !present {
+                        transaction
+                            .execute("ALTER TABLE channels ADD COLUMN admins BLOB", [])
+                            .map_err(storage_error)?;
+                    }
+
+                    for statement in [
+                        "CREATE TABLE IF NOT EXISTS channel_admin_labels (
+                             channel_id BLOB NOT NULL,
+                             verify_key BLOB NOT NULL,
+                             label      TEXT NOT NULL,
+                             PRIMARY KEY (channel_id, verify_key)
+                         )",
+                        // Запас пропусков: зерно и секрет (`passes`).
+                        "CREATE TABLE IF NOT EXISTS passes (
+                             seed   BLOB PRIMARY KEY,
+                             secret BLOB NOT NULL
+                         )",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
                     }
                 }
                 // Будущие миграции добавляются сюда явными ветками.

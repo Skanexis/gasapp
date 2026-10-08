@@ -67,6 +67,74 @@ pub struct StoredChannel {
     pub sub_token: Option<[u8; 32]>,
     /// Когда канал добавлен на это устройство.
     pub joined_at: Timestamp,
+    /// Администраторы — из описания канала, подписанного владельцем.
+    pub admins: Vec<StoredAdmin>,
+}
+
+/// Администратор канала, как он назван в описании.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredAdmin {
+    /// Публичный ключ, которым он подписывает записи.
+    pub verify_key: [u8; 32],
+    /// `None` — действующий; `Some(n)` — снят, ключ годится для записей
+    /// с номером не больше `n`.
+    pub until: Option<u64>,
+}
+
+/// Описание канала, которое принимает хранилище.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredMeta {
+    /// Название.
+    pub title: String,
+    /// Описание.
+    pub description: String,
+    /// Номер закреплённой записи; `0` — закрепа нет.
+    pub pinned_seq: u64,
+    /// Описание вложения с аватаром.
+    pub avatar: Option<Vec<u8>>,
+    /// Администраторы.
+    pub admins: Vec<StoredAdmin>,
+    /// Время описания по часам владельца.
+    pub updated_at: i64,
+}
+
+/// Канал в резервной копии: ключи и то, что нельзя забрать с сервера.
+///
+/// 🔐 Записи в копию не входят — они забираются с сервера заново и
+/// проверяются теми же ключами. Входит то, чего сервер не знает:
+/// секрет чтения и ключ подписи.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ChannelBackupRow {
+    /// Идентификатор канала.
+    pub channel_id: [u8; 16],
+    /// Секрет чтения.
+    pub secret: [u8; 32],
+    /// Публичный ключ подписи владельца.
+    pub verify_key: [u8; 32],
+    /// Свой ключ подписи — владельца либо администратора.
+    pub signing_key: Option<[u8; 32]>,
+    /// Название — чтобы канал был узнаваем до первой синхронизации.
+    pub title: String,
+    /// «Без звука».
+    pub muted: bool,
+    /// Жетон подписчика: с ним восстановленный читатель остаётся тем же
+    /// подписчиком, а не становится вторым.
+    pub sub_token: Option<[u8; 32]>,
+    /// Когда канал был добавлен.
+    pub joined_at: Timestamp,
+    /// Подписи владельца к администраторам: ключ и имя.
+    pub admin_labels: Vec<([u8; 32], String)>,
+}
+
+impl core::fmt::Debug for ChannelBackupRow {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Секрет, ключ подписи и жетон в отладочный вывод не попадают.
+        formatter
+            .debug_struct("ChannelBackupRow")
+            .field("channel_id", &self.channel_id)
+            .field("signs", &self.signing_key.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl core::fmt::Debug for StoredChannel {
@@ -119,7 +187,46 @@ pub enum PostChange {
 
 const CHANNEL_COLUMNS: &str = "channel_id, secret, verify_key, signing_key, title, description,
      meta_updated_at, pinned_seq, avatar, handle, subscribers, muted, last_seq, last_rev,
-     last_read_seq, seen_sent_seq, sub_token, joined_at";
+     last_read_seq, seen_sent_seq, sub_token, joined_at, admins";
+
+/// Длина одной записи об администраторе: ключ, признак «действует»,
+/// граница.
+const ADMIN_ENTRY_LEN: usize = 32 + 1 + 8;
+
+fn encode_admins(admins: &[StoredAdmin]) -> Option<Vec<u8>> {
+    if admins.is_empty() {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(admins.len().saturating_mul(ADMIN_ENTRY_LEN));
+
+    for admin in admins {
+        out.extend_from_slice(&admin.verify_key);
+        out.push(u8::from(admin.until.is_none()));
+        out.extend_from_slice(&admin.until.unwrap_or(0).to_be_bytes());
+    }
+
+    Some(out)
+}
+
+fn decode_admins(blob: &[u8]) -> Result<Vec<StoredAdmin>> {
+    if !blob.len().is_multiple_of(ADMIN_ENTRY_LEN) {
+        return Err(GasAppError::Storage);
+    }
+
+    blob.chunks_exact(ADMIN_ENTRY_LEN)
+        .map(|entry| {
+            let (key, rest) = entry.split_at(32);
+            let (active, until) = rest.split_first().ok_or(GasAppError::Storage)?;
+            let until = u64::from_be_bytes(until.try_into().map_err(|_| GasAppError::Storage)?);
+
+            Ok(StoredAdmin {
+                verify_key: key.try_into().map_err(|_| GasAppError::Storage)?,
+                until: (*active == 0).then_some(until),
+            })
+        })
+        .collect()
+}
 
 const POST_COLUMNS: &str = "seq, revision, text, created_at, edited_at, deleted, views,
      reactions, my_reaction, attachments";
@@ -143,6 +250,7 @@ fn channel_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<StoredCh
     let seen_sent: i64 = row.get(15)?;
     let token: Option<Vec<u8>> = row.get(16)?;
     let joined: i64 = row.get(17)?;
+    let admins: Option<Vec<u8>> = row.get(18)?;
 
     Ok((|| {
         Ok(StoredChannel {
@@ -164,6 +272,11 @@ fn channel_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<StoredCh
             seen_sent_seq: from_sql(seen_sent)?,
             sub_token: token.map(key_from_blob).transpose()?,
             joined_at: Timestamp::from_millis(joined),
+            admins: admins
+                .as_deref()
+                .map(decode_admins)
+                .transpose()?
+                .unwrap_or_default(),
         })
     })())
 }
@@ -285,7 +398,7 @@ impl Storage {
             .execute(
                 &format!(
                     "INSERT OR IGNORE INTO channels ({CHANNEL_COLUMNS})
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 params![
                     channel.channel_id.as_slice(),
@@ -306,6 +419,7 @@ impl Storage {
                     to_sql(channel.seen_sent_seq)?,
                     channel.sub_token.as_ref().map(<[u8; 32]>::as_slice),
                     channel.joined_at.as_millis(),
+                    encode_admins(&channel.admins),
                 ],
             )
             .map_err(storage_error)?;
@@ -364,36 +478,75 @@ impl Storage {
     /// # Errors
     ///
     /// [`GasAppError::Storage`] — сбой базы.
-    pub fn update_channel_meta(
-        &self,
-        channel_id: &[u8; 16],
-        title: &str,
-        description: &str,
-        pinned_seq: u64,
-        avatar: Option<&[u8]>,
-        updated_at: i64,
-    ) -> Result<()> {
+    pub fn update_channel_meta(&self, channel_id: &[u8; 16], meta: &StoredMeta) -> Result<()> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         connection
             .execute(
                 "UPDATE channels
-                    SET title = ?, description = ?, pinned_seq = ?, avatar = ?,
+                    SET title = ?, description = ?, pinned_seq = ?, avatar = ?, admins = ?,
                         meta_updated_at = ?
                   WHERE channel_id = ? AND meta_updated_at < ?",
                 params![
-                    title,
-                    description,
-                    to_sql(pinned_seq)?,
-                    avatar,
-                    updated_at,
+                    meta.title,
+                    meta.description,
+                    to_sql(meta.pinned_seq)?,
+                    meta.avatar,
+                    encode_admins(&meta.admins),
+                    meta.updated_at,
                     channel_id.as_slice(),
-                    updated_at
+                    meta.updated_at
                 ],
             )
             .map_err(storage_error)?;
 
         Ok(())
+    }
+
+    /// Запоминает собственный ключ подписи для канала — когда читатель
+    /// просится в администраторы. Уже имеющийся ключ не заменяется:
+    /// заявка, показанная дважды, называет один и тот же ключ.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn set_channel_signing_key(&self, channel_id: &[u8; 16], key: &[u8; 32]) -> Result<()> {
+        self.channel_update(
+            "UPDATE channels SET signing_key = ?2 WHERE channel_id = ?1 AND signing_key IS NULL",
+            params![channel_id.as_slice(), key.as_slice()],
+        )
+    }
+
+    /// Подписывает администратора именем — для владельца канала.
+    ///
+    /// 🔐 Имя живёт только здесь и в резервной копии: в описание канала,
+    /// которое читают все подписчики, оно не попадает.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn set_channel_admin_label(
+        &self,
+        channel_id: &[u8; 16],
+        verify_key: &[u8; 32],
+        label: &str,
+    ) -> Result<()> {
+        self.channel_update(
+            "INSERT OR REPLACE INTO channel_admin_labels (channel_id, verify_key, label)
+             VALUES (?1, ?2, ?3)",
+            params![channel_id.as_slice(), verify_key.as_slice(), label],
+        )
+    }
+
+    /// Имена, которыми владелец подписал администраторов канала.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn channel_admin_labels(&self, channel_id: &[u8; 16]) -> Result<Vec<([u8; 32], String)>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+
+        read_admin_labels(&connection, channel_id)
     }
 
     /// Запоминает то, что о канале говорит сервер: публичное имя
@@ -859,6 +1012,12 @@ impl Storage {
             .map_err(storage_error)?;
         transaction
             .execute(
+                "DELETE FROM channel_admin_labels WHERE channel_id = ?",
+                params![channel_id.as_slice()],
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
                 "DELETE FROM channels WHERE channel_id = ?",
                 params![channel_id.as_slice()],
             )
@@ -866,6 +1025,125 @@ impl Storage {
 
         transaction.commit().map_err(storage_error)
     }
+}
+
+fn read_admin_labels(
+    connection: &rusqlite::Connection,
+    channel_id: &[u8; 16],
+) -> Result<Vec<([u8; 32], String)>> {
+    let mut statement = connection
+        .prepare(
+            "SELECT verify_key, label FROM channel_admin_labels
+              WHERE channel_id = ? ORDER BY label",
+        )
+        .map_err(storage_error)?;
+
+    let rows = statement
+        .query_map(params![channel_id.as_slice()], |row| {
+            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(storage_error)?;
+
+    rows.map(|row| {
+        let (key, label) = row.map_err(storage_error)?;
+
+        Ok((key_from_blob(key)?, label))
+    })
+    .collect()
+}
+
+/// Каналы для резервной копии — все, целиком: их единицы.
+pub(crate) fn read_channels_for_backup(
+    connection: &rusqlite::Connection,
+) -> Result<Vec<ChannelBackupRow>> {
+    let mut statement = connection
+        .prepare(
+            "SELECT channel_id, secret, verify_key, signing_key, title, muted, sub_token, joined_at
+               FROM channels ORDER BY joined_at, channel_id",
+        )
+        .map_err(storage_error)?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, Option<Vec<u8>>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, bool>(5)?,
+                row.get::<_, Option<Vec<u8>>>(6)?,
+                row.get::<_, i64>(7)?,
+            ))
+        })
+        .map_err(storage_error)?;
+
+    rows.map(|row| {
+        let (id, secret, verify, signing, title, muted, token, joined) =
+            row.map_err(storage_error)?;
+        let channel_id: [u8; 16] = id.try_into().map_err(|_| GasAppError::Storage)?;
+
+        Ok(ChannelBackupRow {
+            admin_labels: read_admin_labels(connection, &channel_id)?,
+            channel_id,
+            secret: key_from_blob(secret)?,
+            verify_key: key_from_blob(verify)?,
+            signing_key: signing.map(key_from_blob).transpose()?,
+            title,
+            muted,
+            sub_token: token.map(key_from_blob).transpose()?,
+            joined_at: Timestamp::from_millis(joined),
+        })
+    })
+    .collect()
+}
+
+/// Возвращает каналы из резервной копии.
+///
+/// Канал, которого на устройстве нет, добавляется пустым — записи
+/// придут с сервера при первой синхронизации (`last_rev = 0`,
+/// `meta_updated_at = 0`: подписанное владельцем описание заменит
+/// название из копии). Канал, который уже есть, не затирается; ему
+/// только возвращается ключ подписи, если своего нет.
+pub(crate) fn write_channels_from_backup(
+    transaction: &rusqlite::Connection,
+    channels: &[ChannelBackupRow],
+) -> Result<usize> {
+    for channel in channels {
+        transaction
+            .execute(
+                "INSERT INTO channels
+                     (channel_id, secret, verify_key, signing_key, title, description,
+                      meta_updated_at, muted, sub_token, joined_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, '', 0, ?6, ?7, ?8)
+                 ON CONFLICT (channel_id) DO UPDATE
+                    SET signing_key = COALESCE(channels.signing_key, excluded.signing_key),
+                        sub_token = COALESCE(channels.sub_token, excluded.sub_token)",
+                params![
+                    channel.channel_id.as_slice(),
+                    channel.secret.as_slice(),
+                    channel.verify_key.as_slice(),
+                    channel.signing_key.as_ref().map(<[u8; 32]>::as_slice),
+                    channel.title,
+                    channel.muted,
+                    channel.sub_token.as_ref().map(<[u8; 32]>::as_slice),
+                    channel.joined_at.as_millis(),
+                ],
+            )
+            .map_err(storage_error)?;
+
+        for (verify_key, label) in &channel.admin_labels {
+            transaction
+                .execute(
+                    "INSERT OR REPLACE INTO channel_admin_labels (channel_id, verify_key, label)
+                     VALUES (?, ?, ?)",
+                    params![channel.channel_id.as_slice(), verify_key.as_slice(), label],
+                )
+                .map_err(storage_error)?;
+        }
+    }
+
+    Ok(channels.len())
 }
 
 #[cfg(test)]
@@ -902,6 +1180,18 @@ mod tests {
             seen_sent_seq: 0,
             sub_token: None,
             joined_at: Timestamp::from_millis(1_000),
+            admins: Vec::new(),
+        }
+    }
+
+    fn described(title: &str, updated_at: i64) -> StoredMeta {
+        StoredMeta {
+            title: title.to_owned(),
+            description: String::new(),
+            pinned_seq: 0,
+            avatar: None,
+            admins: Vec::new(),
+            updated_at,
         }
     }
 
@@ -930,6 +1220,16 @@ mod tests {
             subscribers: 12,
             muted: true,
             sub_token: Some([0x44; 32]),
+            admins: vec![
+                StoredAdmin {
+                    verify_key: [5; 32],
+                    until: None,
+                },
+                StoredAdmin {
+                    verify_key: [6; 32],
+                    until: Some(0),
+                },
+            ],
             ..channel(1, true)
         };
 
@@ -1089,12 +1389,32 @@ mod tests {
         let (storage, _dir) = open_temp();
         storage.insert_channel(&channel(1, false)).unwrap();
 
+        let admin = StoredAdmin {
+            verify_key: [8; 32],
+            until: Some(12),
+        };
         storage
-            .update_channel_meta(&[1; 16], "Новое", "описание", 3, Some(&[9]), 200)
+            .update_channel_meta(
+                &[1; 16],
+                &StoredMeta {
+                    description: "описание".to_owned(),
+                    pinned_seq: 3,
+                    avatar: Some(vec![9]),
+                    admins: vec![admin],
+                    ..described("Новое", 200)
+                },
+            )
             .unwrap();
         storage
-            .update_channel_meta(&[1; 16], "Прежнее", "", 0, None, 150)
+            .update_channel_meta(&[1; 16], &described("Прежнее", 150))
             .unwrap();
+
+        // 🔐 Прежнее описание не возвращает и прежний список
+        // администраторов: снятый не становится действующим снова.
+        assert_eq!(
+            storage.channel(&[1; 16]).unwrap().unwrap().admins,
+            vec![admin]
+        );
 
         let stored = storage.channel(&[1; 16]).unwrap().unwrap();
         assert_eq!(stored.title, "Новое");
@@ -1164,6 +1484,39 @@ mod tests {
             .search_channel_posts(&[1; 16], "", 10)
             .unwrap()
             .is_empty());
+    }
+
+    /// Ключ администратора заводится один раз; имена администраторов
+    /// уходят вместе с каналом.
+    #[test]
+    fn admin_key_and_labels() {
+        let (storage, _dir) = open_temp();
+        storage.insert_channel(&channel(1, false)).unwrap();
+
+        storage
+            .set_channel_signing_key(&[1; 16], &[0x55; 32])
+            .unwrap();
+        storage
+            .set_channel_signing_key(&[1; 16], &[0x66; 32])
+            .unwrap();
+        assert_eq!(
+            storage.channel(&[1; 16]).unwrap().unwrap().signing_key,
+            Some([0x55; 32])
+        );
+
+        storage
+            .set_channel_admin_label(&[1; 16], &[7; 32], "anna")
+            .unwrap();
+        storage
+            .set_channel_admin_label(&[1; 16], &[7; 32], "anna_b")
+            .unwrap();
+        assert_eq!(
+            storage.channel_admin_labels(&[1; 16]).unwrap(),
+            vec![([7; 32], "anna_b".to_owned())]
+        );
+
+        storage.delete_channel(&[1; 16]).unwrap();
+        assert!(storage.channel_admin_labels(&[1; 16]).unwrap().is_empty());
     }
 
     #[test]

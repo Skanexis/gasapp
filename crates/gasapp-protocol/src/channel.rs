@@ -12,10 +12,17 @@
 //! * **Ключ чтения** выводится из секрета канала. Секрет лежит в
 //!   ссылке-приглашении (`gasapp://channel/…`): название, описание
 //!   и записи сервер видит шифротекстом.
-//! * **Ключ подписи** (Ed25519) есть только у автора. Публичная
-//!   половина тоже лежит в ссылке, и читатель проверяет ею каждую
-//!   запись, каждую правку и каждое удаление. Читатели знают ключ
-//!   чтения, но изменить канал от имени автора не могут.
+//! * **Ключ подписи** (Ed25519) есть только у владельца. Публичная
+//!   половина тоже лежит в ссылке, и читатель проверяет ею описание
+//!   канала. Читатели знают ключ чтения, но изменить канал от имени
+//!   автора не могут.
+//! * **Администраторы** подписывают записи своими ключами. Чьи ключи
+//!   годятся, сказано в описании канала, а его подписывает только
+//!   владелец: каждая запись несёт ключ подписавшего, и читатель
+//!   принимает её, если это ключ владельца либо администратора из
+//!   списка. Снятому администратору владелец ставит границу — номер
+//!   последней записи на момент снятия: записи с большим номером под
+//!   его ключом не принимаются.
 //! * **Номер записи** автор кладёт внутрь шифротекста. Сервер нумерует
 //!   записи сам, и читатель сверяет оба номера: переставить записи
 //!   местами или выдать одну за другую сервер не может.
@@ -45,6 +52,10 @@
 //!   переставить — нет.
 //! * **Удалённое остаётся у тех, кто успел загрузить** — как в любом
 //!   канале.
+//! * **Снятый администратор в сговоре с сервером** может переписать
+//!   записи, вышедшие до его снятия: его ключ остаётся годным для их
+//!   номеров, иначе они перестали бы читаться. Новых записей под его
+//!   ключом читатели не примут. Ключ владельца отозвать нельзя вовсе.
 //! * **Пост-квантовой защиты подлинности нет**: подпись автора —
 //!   Ed25519. Конфиденциальность (AES-256-GCM на симметричном ключе)
 //!   от квантового противника не страдает.
@@ -103,8 +114,21 @@ const KIND_POST: u8 = 2;
 /// Вид записи: отметка об удалении публикации.
 const KIND_TOMBSTONE: u8 = 3;
 
-/// Заголовок провода: версия, вид, nonce, подпись.
-const HEADER_LEN: usize = 2 + NONCE_LEN + SIGNATURE_LEN;
+/// Длина публичного ключа подписавшего в заголовке.
+const SIGNER_LEN: usize = 32;
+
+/// Заголовок провода: версия, вид, ключ подписавшего, nonce, подпись.
+const HEADER_LEN: usize = 2 + SIGNER_LEN + NONCE_LEN + SIGNATURE_LEN;
+
+/// Сколько администраторов — действующих и снятых — помнит описание
+/// канала.
+///
+/// Снятые остаются в списке: без них их прежние записи перестали бы
+/// приниматься. Предел держит описание в серверных 16 КБ.
+pub const MAX_ADMINS: usize = 16;
+
+/// Схема и путь заявки на администрирование.
+pub const ADMIN_REQUEST_PREFIX: &str = "gasapp://channel-admin/";
 
 const KEY_INFO: &[u8] = b"GASAPP_CHANNEL_v1_KEY";
 const AAD_DOMAIN: &[u8] = b"GASAPP_CHANNEL_v1_AAD";
@@ -157,6 +181,87 @@ pub struct ChannelMeta {
     pub pinned: u64,
     /// Описание вложения с аватаром канала; пусто — аватара нет.
     pub avatar: Vec<u8>,
+    /// Администраторы: чьи ключи, кроме ключа владельца, подписывают
+    /// записи. Не больше [`MAX_ADMINS`].
+    pub admins: Vec<ChannelAdmin>,
+}
+
+/// Администратор канала в описании, подписанном владельцем.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelAdmin {
+    /// Публичный ключ, которым администратор подписывает записи.
+    pub verify_key: PublicKeyBytes,
+    /// `None` — действующий. `Some(n)` — снят: его ключ годится только
+    /// для записей с номером не больше `n`.
+    pub until: Option<u64>,
+}
+
+impl ChannelAdmin {
+    /// Годится ли ключ этого администратора для записи с таким номером.
+    #[must_use]
+    pub fn covers(&self, number: u64) -> bool {
+        self.until.is_none_or(|until| number <= until)
+    }
+}
+
+/// Заявка на администрирование: то, что будущий администратор
+/// показывает владельцу канала.
+///
+/// В ней нет секретов: публичный ключ, которым он будет подписывать
+/// записи, и устройство, которому сервер разрешит публиковать.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdminRequest {
+    /// Канал, в который просятся.
+    pub channel_id: ChannelId,
+    /// Публичный ключ подписи будущего администратора.
+    pub verify_key: PublicKeyBytes,
+    /// Его устройство — по нему сервер находит аккаунт.
+    pub device_id: [u8; 16],
+}
+
+impl AdminRequest {
+    /// Заявка в виде строки — для QR-кода и копирования.
+    #[must_use]
+    pub fn to_uri(&self) -> String {
+        let mut uri = String::with_capacity(ADMIN_REQUEST_PREFIX.len().saturating_add(120));
+        uri.push_str(ADMIN_REQUEST_PREFIX);
+        push_hex(&mut uri, &self.channel_id);
+        uri.push('.');
+        uri.push_str(&crate::contact_link::encode_base32(
+            self.verify_key.as_bytes(),
+        ));
+        uri.push('.');
+        push_hex(&mut uri, &self.device_id);
+
+        uri
+    }
+
+    /// Разбирает заявку.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Malformed`] — это не заявка на администрирование.
+    pub fn parse(input: &str) -> Result<Self> {
+        let rest = input
+            .trim()
+            .strip_prefix(ADMIN_REQUEST_PREFIX)
+            .ok_or(GasAppError::Malformed)?;
+
+        let mut parts = rest.split('.');
+        let channel = parts.next().ok_or(GasAppError::Malformed)?;
+        let key = parts.next().ok_or(GasAppError::Malformed)?;
+        let device = parts.next().ok_or(GasAppError::Malformed)?;
+
+        if parts.next().is_some() {
+            return Err(GasAppError::Malformed);
+        }
+
+        Ok(Self {
+            channel_id: parse_channel_id(channel)?,
+            verify_key: PublicKeyBytes::new(crate::contact_link::decode_key(key)?),
+            device_id: parse_channel_id(device)?,
+        })
+    }
 }
 
 /// Запись канала.
@@ -283,17 +388,53 @@ impl ChannelAccess {
     /// [`GasAppError::Crypto`] — не тот ключ либо данные изменены;
     /// [`GasAppError::Malformed`] — формат не тот.
     pub fn open_meta(&self, wire: &[u8]) -> Result<ChannelMeta> {
-        let content = self.open(KIND_META, wire)?;
+        // 🔐 Описание — только от владельца: в нём список тех, кому
+        // верить. Администратор, подписавший описание, вписал бы в
+        // администраторы кого угодно.
+        let (content, _) = self.open(KIND_META, wire, &[])?;
         let mut reader = Reader::new(&content);
 
-        let meta = ChannelMeta {
-            updated_at_millis: reader.i64()?,
-            title: text(reader.block16()?)?,
-            description: text(reader.block16()?)?,
-            pinned: reader.u64()?,
-            avatar: reader.block16()?.to_vec(),
-        };
+        let updated_at_millis = reader.i64()?;
+        let title = text(reader.block16()?)?;
+        let description = text(reader.block16()?)?;
+        let pinned = reader.u64()?;
+        let avatar = reader.block16()?.to_vec();
+
+        let count = usize::from(reader.u8()?);
+        if count > MAX_ADMINS {
+            return Err(GasAppError::Malformed);
+        }
+
+        let mut admins = Vec::with_capacity(count);
+        for _ in 0..count {
+            let verify_key = PublicKeyBytes::new(
+                reader
+                    .take(SIGNER_LEN)?
+                    .try_into()
+                    .map_err(|_| GasAppError::Malformed)?,
+            );
+            let active = match reader.u8()? {
+                1 => true,
+                0 => false,
+                _ => return Err(GasAppError::Malformed),
+            };
+            let until = reader.u64()?;
+
+            admins.push(ChannelAdmin {
+                verify_key,
+                until: (!active).then_some(until),
+            });
+        }
         reader.finish()?;
+
+        let meta = ChannelMeta {
+            title,
+            description,
+            updated_at_millis,
+            pinned,
+            avatar,
+            admins,
+        };
 
         validate_meta(&meta.title, &meta.description)?;
 
@@ -313,8 +454,13 @@ impl ChannelAccess {
     /// автора не совпал с номером сервера (запись переставлена);
     /// [`GasAppError::Crypto`] — не тот ключ либо данные изменены;
     /// [`GasAppError::Malformed`] — формат не тот.
-    pub fn open_post(&self, wire: &[u8], server_seq: u64) -> Result<ChannelPost> {
-        let content = self.open(KIND_POST, wire)?;
+    pub fn open_post(
+        &self,
+        wire: &[u8],
+        server_seq: u64,
+        admins: &[ChannelAdmin],
+    ) -> Result<ChannelPost> {
+        let (content, signer) = self.open(KIND_POST, wire, admins)?;
         let mut reader = Reader::new(&content);
 
         let number = reader.u64()?;
@@ -339,8 +485,9 @@ impl ChannelAccess {
         reader.finish()?;
 
         // 🔐 Подпись верна, но запись стоит не на своём месте: сервер
-        // выдал её под чужим номером.
-        if number != server_seq {
+        // выдал её под чужим номером. Либо её подписал администратор,
+        // снятый раньше, чем появился этот номер.
+        if number != server_seq || !self.may_sign(&signer, number, admins) {
             return Err(GasAppError::InvalidSignature);
         }
 
@@ -363,8 +510,13 @@ impl ChannelAccess {
     /// # Errors
     ///
     /// Те же, что у [`ChannelAccess::open_post`].
-    pub fn open_tombstone(&self, wire: &[u8], server_seq: u64) -> Result<ChannelTombstone> {
-        let content = self.open(KIND_TOMBSTONE, wire)?;
+    pub fn open_tombstone(
+        &self,
+        wire: &[u8],
+        server_seq: u64,
+        admins: &[ChannelAdmin],
+    ) -> Result<ChannelTombstone> {
+        let (content, signer) = self.open(KIND_TOMBSTONE, wire, admins)?;
         let mut reader = Reader::new(&content);
 
         let tombstone = ChannelTombstone {
@@ -374,29 +526,59 @@ impl ChannelAccess {
         };
         reader.finish()?;
 
-        // 🔐 Отметка об удалении одной записи не удаляет другую.
-        if tombstone.number != server_seq {
+        // 🔐 Отметка об удалении одной записи не удаляет другую, и
+        // снятый администратор не удаляет записи, вышедшие после него.
+        if tombstone.number != server_seq || !self.may_sign(&signer, tombstone.number, admins) {
             return Err(GasAppError::InvalidSignature);
         }
 
         Ok(tombstone)
     }
 
-    /// Проверяет подпись автора и расшифровывает содержимое.
-    fn open(&self, kind: u8, wire: &[u8]) -> Result<Vec<u8>> {
+    /// Годится ли ключ `signer` для записи с номером `number`: это
+    /// ключ владельца либо администратора, чья граница её покрывает.
+    fn may_sign(&self, signer: &PublicKeyBytes, number: u64, admins: &[ChannelAdmin]) -> bool {
+        *signer == self.verify_key
+            || admins
+                .iter()
+                .any(|admin| admin.verify_key == *signer && admin.covers(number))
+    }
+
+    /// Проверяет подпись и расшифровывает содержимое; возвращает его
+    /// вместе с ключом подписавшего.
+    ///
+    /// Подписавший обязан быть владельцем либо одним из `admins` — без
+    /// оглядки на границу снятия: её сверяет вызывающий, когда узнаёт
+    /// номер записи из расшифрованного.
+    fn open(
+        &self,
+        kind: u8,
+        wire: &[u8],
+        admins: &[ChannelAdmin],
+    ) -> Result<(Vec<u8>, PublicKeyBytes)> {
         let (header, ciphertext) = split(wire, HEADER_LEN)?;
         let (prefix, rest) = split(header, 2)?;
+        let (signer, rest) = split(rest, SIGNER_LEN)?;
         let (nonce, signature) = split(rest, NONCE_LEN)?;
 
         if prefix != [WIRE_VERSION, kind] {
             return Err(GasAppError::Malformed);
         }
 
+        let signer = PublicKeyBytes::new(signer.try_into().map_err(|_| GasAppError::Malformed)?);
+
+        // 🔐 Ключ в записи назвал тот, кто её прислал. Сама по себе
+        // верная подпись под ним ничего не значит: записью считается
+        // только подписанное владельцем либо тем, кого владелец назвал.
+        if signer != self.verify_key && !admins.iter().any(|admin| admin.verify_key == signer) {
+            return Err(GasAppError::InvalidSignature);
+        }
+
         // Подпись — раньше расшифровки: чужой шифротекст до AEAD не доходит.
-        XEdDSAPublicKey::from_bytes(self.verify_key)
+        XEdDSAPublicKey::from_bytes(signer)
             .and_then(|key| {
                 key.verify_strict(
-                    &signed_message(kind, &self.channel_id, nonce, ciphertext),
+                    &signed_message(kind, &self.channel_id, &signer, nonce, ciphertext),
                     signature,
                 )
             })
@@ -410,46 +592,82 @@ impl ChannelAccess {
             &aad(kind, &self.channel_id),
         )?;
 
-        Ok(crate::padding::unpad(&padded)?.to_vec())
+        Ok((crate::padding::unpad(&padded)?.to_vec(), signer))
     }
 }
 
-/// Автор канала: доступ читателя плюс ключ подписи.
+/// Тот, кто пишет в канал, — владелец либо администратор: доступ
+/// читателя плюс свой ключ подписи.
 pub struct ChannelAuthor<'a> {
     access: &'a ChannelAccess,
     signing: XEdDSAPrivateKey,
 }
 
+/// Новая пара подписи для администратора: приватная половина остаётся
+/// на его устройстве, публичная уходит владельцу в заявке.
+pub fn admin_keypair<R: RngCore + CryptoRng>(rng: &mut R) -> (PrivateKeyBytes, PublicKeyBytes) {
+    let signing = XEdDSAPrivateKey::generate(rng);
+
+    (signing.expose_secret(), signing.public_key().as_bytes())
+}
+
+/// Публичная половина сохранённого ключа подписи.
+///
+/// # Errors
+///
+/// [`GasAppError::Crypto`] — это не ключ подписи.
+pub fn verify_key_of(signing_key: PrivateKeyBytes) -> Result<PublicKeyBytes> {
+    Ok(XEdDSAPrivateKey::from_bytes(signing_key)?
+        .public_key()
+        .as_bytes())
+}
+
 impl<'a> ChannelAuthor<'a> {
-    /// Собирает автора из сохранённого ключа подписи.
+    /// Собирает автора из сохранённого ключа подписи — владельца либо
+    /// администратора. Примут ли читатели подписанное этим ключом,
+    /// решает описание канала, а не эта функция.
     ///
     /// # Errors
     ///
-    /// [`GasAppError::Crypto`] — ключ не от этого канала.
+    /// [`GasAppError::Crypto`] — это не ключ подписи.
     pub fn new(access: &'a ChannelAccess, signing_key: PrivateKeyBytes) -> Result<Self> {
-        let signing = XEdDSAPrivateKey::from_bytes(signing_key)?;
+        Ok(Self {
+            access,
+            signing: XEdDSAPrivateKey::from_bytes(signing_key)?,
+        })
+    }
 
-        if signing.public_key().as_bytes() != access.verify_key {
-            return Err(GasAppError::Crypto);
-        }
+    /// Публичный ключ, которым подписывает этот автор.
+    #[must_use]
+    pub fn verify_key(&self) -> PublicKeyBytes {
+        self.signing.public_key().as_bytes()
+    }
 
-        Ok(Self { access, signing })
+    /// Владелец ли это: его ли ключ лежит в ссылке канала.
+    #[must_use]
+    pub fn is_owner(&self) -> bool {
+        self.verify_key() == self.access.verify_key
     }
 
     /// Шифрует и подписывает описание канала.
     ///
     /// # Errors
     ///
-    /// [`GasAppError::Malformed`] — название пустое либо что-то длиннее
-    /// предела; [`GasAppError::Crypto`] — сбой шифрования.
+    /// [`GasAppError::Forbidden`] — описание подписывает только
+    /// владелец; [`GasAppError::Malformed`] — название пустое либо
+    /// что-то длиннее предела; [`GasAppError::Crypto`] — сбой шифрования.
     pub fn seal_meta<R: RngCore + CryptoRng>(
         &self,
         meta: &ChannelMeta,
         rng: &mut R,
     ) -> Result<Vec<u8>> {
+        if !self.is_owner() {
+            return Err(GasAppError::Forbidden);
+        }
+
         validate_meta(&meta.title, &meta.description)?;
 
-        if meta.avatar.len() > MAX_ATTACHMENT_DESCRIPTOR_BYTES {
+        if meta.avatar.len() > MAX_ATTACHMENT_DESCRIPTOR_BYTES || meta.admins.len() > MAX_ADMINS {
             return Err(GasAppError::Malformed);
         }
 
@@ -465,6 +683,12 @@ impl<'a> ChannelAuthor<'a> {
         put_block16(&mut content, meta.description.as_bytes())?;
         content.extend_from_slice(&meta.pinned.to_be_bytes());
         put_block16(&mut content, &meta.avatar)?;
+        content.push(u8::try_from(meta.admins.len()).map_err(|_| GasAppError::Malformed)?);
+        for admin in &meta.admins {
+            content.extend_from_slice(admin.verify_key.as_bytes());
+            content.push(u8::from(admin.until.is_none()));
+            content.extend_from_slice(&admin.until.unwrap_or(0).to_be_bytes());
+        }
 
         self.seal(KIND_META, &content, rng)
     }
@@ -547,9 +771,11 @@ impl<'a> ChannelAuthor<'a> {
             &aad(kind, &self.access.channel_id),
         )?;
 
+        let signer = self.verify_key();
         let signature = self.signing.sign(&signed_message(
             kind,
             &self.access.channel_id,
+            &signer,
             &nonce,
             &ciphertext,
         ));
@@ -557,6 +783,7 @@ impl<'a> ChannelAuthor<'a> {
         let mut wire = Vec::with_capacity(HEADER_LEN.saturating_add(ciphertext.len()));
         wire.push(WIRE_VERSION);
         wire.push(kind);
+        wire.extend_from_slice(signer.as_bytes());
         wire.extend_from_slice(&nonce);
         wire.extend_from_slice(&signature);
         wire.extend_from_slice(&ciphertext);
@@ -652,6 +879,13 @@ pub fn format_uuid(id: &ChannelId) -> String {
     }
 
     out
+}
+
+fn push_hex(out: &mut String, bytes: &[u8]) {
+    for byte in bytes {
+        out.push(hex_digit(byte >> 4));
+        out.push(hex_digit(byte & 0x0f));
+    }
 }
 
 fn hex_digit(nibble: u8) -> char {
@@ -786,17 +1020,25 @@ fn aad(kind: u8, channel_id: &ChannelId) -> Vec<u8> {
     aad
 }
 
-/// То, что подписывает автор: домен, вид, канал, nonce и шифротекст.
-fn signed_message(kind: u8, channel_id: &ChannelId, nonce: &[u8], ciphertext: &[u8]) -> Vec<u8> {
+/// То, что подписывает автор: домен, вид, канал, ключ подписавшего,
+/// nonce и шифротекст.
+fn signed_message(
+    kind: u8,
+    channel_id: &ChannelId,
+    signer: &PublicKeyBytes,
+    nonce: &[u8],
+    ciphertext: &[u8],
+) -> Vec<u8> {
     let mut message = Vec::with_capacity(
         SIGNATURE_DOMAIN
             .len()
-            .saturating_add(1 + CHANNEL_ID_LEN + NONCE_LEN)
+            .saturating_add(1 + CHANNEL_ID_LEN + SIGNER_LEN + NONCE_LEN)
             .saturating_add(ciphertext.len()),
     );
     message.extend_from_slice(SIGNATURE_DOMAIN);
     message.push(kind);
     message.extend_from_slice(channel_id);
+    message.extend_from_slice(signer.as_bytes());
     message.extend_from_slice(nonce);
     message.extend_from_slice(ciphertext);
 
@@ -828,6 +1070,7 @@ mod tests {
             updated_at_millis: 1_700_000_000_000,
             pinned: 0,
             avatar: Vec::new(),
+            admins: Vec::new(),
         }
     }
 
@@ -841,7 +1084,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            channel.access.open_post(&wire, 7).unwrap(),
+            channel.access.open_post(&wire, 7, &[]).unwrap(),
             post(7, "привет, канал")
         );
     }
@@ -861,7 +1104,7 @@ mod tests {
         };
         let wire = author.seal_post(&photo, &mut OsRng).unwrap();
 
-        assert_eq!(channel.access.open_post(&wire, 2).unwrap(), photo);
+        assert_eq!(channel.access.open_post(&wire, 2, &[]).unwrap(), photo);
     }
 
     #[test]
@@ -891,7 +1134,10 @@ mod tests {
 
         let wire = author.seal_tombstone(&tombstone, &mut OsRng).unwrap();
 
-        assert_eq!(channel.access.open_tombstone(&wire, 4).unwrap(), tombstone);
+        assert_eq!(
+            channel.access.open_tombstone(&wire, 4, &[]).unwrap(),
+            tombstone
+        );
     }
 
     /// 🔐 Отметка об удалении одной записи не удаляет другую, и запись
@@ -913,11 +1159,11 @@ mod tests {
         let live = author.seal_post(&post(5, "живая"), &mut OsRng).unwrap();
 
         assert!(matches!(
-            channel.access.open_tombstone(&wire, 5),
+            channel.access.open_tombstone(&wire, 5, &[]),
             Err(GasAppError::InvalidSignature)
         ));
-        assert!(channel.access.open_tombstone(&live, 5).is_err());
-        assert!(channel.access.open_post(&wire, 4).is_err());
+        assert!(channel.access.open_tombstone(&live, 5, &[]).is_err());
+        assert!(channel.access.open_post(&wire, 4, &[]).is_err());
     }
 
     /// 🔐 Читатель знает ключ чтения, но удалить запись за автора не может.
@@ -942,7 +1188,7 @@ mod tests {
             .unwrap();
 
         assert!(matches!(
-            channel.access.open_tombstone(&forged, 1),
+            channel.access.open_tombstone(&forged, 1, &[]),
             Err(GasAppError::InvalidSignature)
         ));
     }
@@ -998,10 +1244,10 @@ mod tests {
             .unwrap();
 
         assert!(matches!(
-            channel.access.open_post(&forged, 1),
+            channel.access.open_post(&forged, 1, &[]),
             Err(GasAppError::InvalidSignature)
         ));
-        assert!(channel.access.open_post(&genuine, 1).is_ok());
+        assert!(channel.access.open_post(&genuine, 1, &[]).is_ok());
     }
 
     /// 🔐 Сервер не переставит записи: номер автора сверяется с номером
@@ -1013,7 +1259,7 @@ mod tests {
         let wire = author.seal_post(&post(3, "третья"), &mut OsRng).unwrap();
 
         assert!(matches!(
-            channel.access.open_post(&wire, 4),
+            channel.access.open_post(&wire, 4, &[]),
             Err(GasAppError::InvalidSignature)
         ));
     }
@@ -1028,7 +1274,7 @@ mod tests {
         let last = wire.len() - 1;
         wire[last] ^= 0x01;
 
-        assert!(channel.access.open_post(&wire, 1).is_err());
+        assert!(channel.access.open_post(&wire, 1, &[]).is_err());
     }
 
     /// Запись одного канала не читается в другом, описание — как запись.
@@ -1041,9 +1287,9 @@ mod tests {
         let wire = author.seal_post(&post(1, "текст"), &mut OsRng).unwrap();
         let described = author.seal_meta(&meta("Канал"), &mut OsRng).unwrap();
 
-        assert!(second.access.open_post(&wire, 1).is_err());
+        assert!(second.access.open_post(&wire, 1, &[]).is_err());
         assert!(first.access.open_meta(&wire).is_err());
-        assert!(first.access.open_post(&described, 1).is_err());
+        assert!(first.access.open_post(&described, 1, &[]).is_err());
     }
 
     /// Сервер не узнаёт длину записи: короткая и чуть более длинная
@@ -1076,7 +1322,7 @@ mod tests {
         let wire = author.seal_post(&largest, &mut OsRng).unwrap();
 
         assert!(wire.len() <= 65_536, "{}", wire.len());
-        assert_eq!(channel.access.open_post(&wire, 1).unwrap(), largest);
+        assert_eq!(channel.access.open_post(&wire, 1, &[]).unwrap(), largest);
 
         assert!(author
             .seal_post(&post(1, &"a".repeat(MAX_POST_BYTES + 1)), &mut OsRng)
@@ -1101,13 +1347,184 @@ mod tests {
         assert!(author.seal_post(&crowded, &mut OsRng).is_err());
     }
 
-    /// Ключ подписи от другого канала не принимается.
+    /// Чужой ключ подписи собрать автора даёт, но читатели подписанное
+    /// им не принимают: такого ключа нет ни у владельца, ни в списке.
     #[test]
-    fn a_foreign_signing_key_is_refused() {
+    fn a_foreign_signing_key_signs_nothing_readers_accept() {
         let first = create(&mut OsRng);
         let second = create(&mut OsRng);
+        let stranger = ChannelAuthor::new(&first.access, second.signing_key).unwrap();
 
-        assert!(ChannelAuthor::new(&first.access, second.signing_key).is_err());
+        assert!(!stranger.is_owner());
+        assert!(matches!(
+            stranger.seal_meta(&meta("Чужое"), &mut OsRng),
+            Err(GasAppError::Forbidden)
+        ));
+
+        let wire = stranger.seal_post(&post(1, "чужая"), &mut OsRng).unwrap();
+        assert!(matches!(
+            first.access.open_post(&wire, 1, &[]),
+            Err(GasAppError::InvalidSignature)
+        ));
+    }
+
+    fn admin_of(access: &ChannelAccess) -> (ChannelAuthor<'_>, ChannelAdmin) {
+        let (signing_key, verify_key) = admin_keypair(&mut OsRng);
+
+        (
+            ChannelAuthor::new(access, signing_key).unwrap(),
+            ChannelAdmin {
+                verify_key,
+                until: None,
+            },
+        )
+    }
+
+    /// Администратор из списка владельца пишет, правит и удаляет.
+    #[test]
+    fn a_listed_admin_posts_and_deletes() {
+        let channel = create(&mut OsRng);
+        let (admin, entry) = admin_of(&channel.access);
+
+        let wire = admin.seal_post(&post(4, "от админа"), &mut OsRng).unwrap();
+        let mark = admin
+            .seal_tombstone(
+                &ChannelTombstone {
+                    number: 4,
+                    revision: 1,
+                    deleted_at_millis: 0,
+                },
+                &mut OsRng,
+            )
+            .unwrap();
+
+        assert_eq!(
+            channel.access.open_post(&wire, 4, &[entry]).unwrap().text,
+            "от админа"
+        );
+        assert!(channel.access.open_tombstone(&mark, 4, &[entry]).is_ok());
+
+        // Без списка — никто.
+        assert!(matches!(
+            channel.access.open_post(&wire, 4, &[]),
+            Err(GasAppError::InvalidSignature)
+        ));
+        assert!(channel.access.open_tombstone(&mark, 4, &[]).is_err());
+    }
+
+    /// 🔐 Снятый администратор: прежние записи читаются, новые — нет.
+    #[test]
+    fn a_removed_admin_cannot_sign_later_posts() {
+        let channel = create(&mut OsRng);
+        let (admin, entry) = admin_of(&channel.access);
+        let removed = ChannelAdmin {
+            until: Some(5),
+            ..entry
+        };
+
+        let old = admin.seal_post(&post(5, "до снятия"), &mut OsRng).unwrap();
+        let new = admin.seal_post(&post(6, "после"), &mut OsRng).unwrap();
+        let mark = admin
+            .seal_tombstone(
+                &ChannelTombstone {
+                    number: 6,
+                    revision: 1,
+                    deleted_at_millis: 0,
+                },
+                &mut OsRng,
+            )
+            .unwrap();
+
+        assert!(channel.access.open_post(&old, 5, &[removed]).is_ok());
+        assert!(matches!(
+            channel.access.open_post(&new, 6, &[removed]),
+            Err(GasAppError::InvalidSignature)
+        ));
+        assert!(matches!(
+            channel.access.open_tombstone(&mark, 6, &[removed]),
+            Err(GasAppError::InvalidSignature)
+        ));
+    }
+
+    /// 🔐 Описание подписывает только владелец: администратор не
+    /// впишет в список сам себя или кого-то ещё.
+    #[test]
+    fn only_the_owner_signs_the_admin_list() {
+        let channel = create(&mut OsRng);
+        let owner = ChannelAuthor::new(&channel.access, channel.signing_key).unwrap();
+        let (admin, entry) = admin_of(&channel.access);
+
+        let listed = ChannelMeta {
+            admins: vec![
+                entry,
+                ChannelAdmin {
+                    verify_key: PublicKeyBytes::new([7; 32]),
+                    until: Some(42),
+                },
+            ],
+            ..meta("Канал")
+        };
+        let wire = owner.seal_meta(&listed, &mut OsRng).unwrap();
+        assert_eq!(channel.access.open_meta(&wire).unwrap(), listed);
+
+        assert!(matches!(
+            admin.seal_meta(&listed, &mut OsRng),
+            Err(GasAppError::Forbidden)
+        ));
+
+        let crowded = ChannelMeta {
+            admins: vec![entry; MAX_ADMINS + 1],
+            ..meta("Канал")
+        };
+        assert!(owner.seal_meta(&crowded, &mut OsRng).is_err());
+    }
+
+    /// Самое большое описание укладывается в серверный предел 16 КБ.
+    #[test]
+    fn the_largest_meta_fits_the_server_limit() {
+        let channel = create(&mut OsRng);
+        let owner = ChannelAuthor::new(&channel.access, channel.signing_key).unwrap();
+
+        let largest = ChannelMeta {
+            title: "я".repeat(MAX_TITLE_CHARS),
+            description: "я".repeat(MAX_DESCRIPTION_CHARS),
+            updated_at_millis: 1,
+            pinned: u64::MAX,
+            avatar: vec![1; MAX_ATTACHMENT_DESCRIPTOR_BYTES],
+            admins: vec![
+                ChannelAdmin {
+                    verify_key: PublicKeyBytes::new([9; 32]),
+                    until: Some(u64::MAX),
+                };
+                MAX_ADMINS
+            ],
+        };
+        let wire = owner.seal_meta(&largest, &mut OsRng).unwrap();
+
+        assert!(wire.len() <= 16_384, "{}", wire.len());
+        assert_eq!(channel.access.open_meta(&wire).unwrap(), largest);
+    }
+
+    #[test]
+    fn an_admin_request_round_trips() {
+        let request = AdminRequest {
+            channel_id: [0xab; 16],
+            verify_key: PublicKeyBytes::new([0x11; 32]),
+            device_id: [0xcd; 16],
+        };
+        let uri = request.to_uri();
+
+        assert!(uri.starts_with(ADMIN_REQUEST_PREFIX));
+        assert_eq!(AdminRequest::parse(&format!(" {uri}\n")).unwrap(), request);
+
+        for bad in [
+            String::new(),
+            uri.replace("channel-admin", "channel"),
+            format!("{uri}.x"),
+            uri.get(..uri.len() - 2).unwrap().to_owned(),
+        ] {
+            assert!(AdminRequest::parse(&bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

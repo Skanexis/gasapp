@@ -136,12 +136,31 @@ struct ServerState {
 
     /// Адреса почты, на которые клиенты просили код.
     email_code_requests: Vec<String>,
+    /// Сколько бит работы стоит письмо сейчас.
+    email_difficulty: u32,
+    /// На сколько бит занизить ближайший ответ о цене: узел
+    /// «нагрузили» между вопросом и решением.
+    email_price_jumps: u32,
     /// Адрес и код, с которыми пришла последняя регистрация.
     last_registration_email: Option<(String, String)>,
     /// Устройства с премиумом — как после решения оператора.
     premium_devices: std::collections::HashSet<String>,
     /// Каналы по идентификатору.
     channels: HashMap<String, FakeChannel>,
+    /// Зёрна потраченных пропусков, hex.
+    spent_passes: std::collections::HashSet<String>,
+    /// Сколько пропусков выдано каждому устройству.
+    passes_issued: HashMap<String, usize>,
+    /// 🔐 Узел подписывает пропуска не тем ключом, который объявляет.
+    marks_passes: bool,
+}
+
+/// Сколько пропусков поддельный сервер выдаёт одному устройству.
+const FAKE_PASSES_PER_DAY: usize = 40;
+
+/// Ключ пропусков поддельного сервера.
+fn pass_issuer() -> gasapp_protocol::pass::Issuer {
+    gasapp_protocol::pass::Issuer::derive(&[0x33; 32])
 }
 
 /// Эпоха журнала ключей поддельного сервера.
@@ -174,10 +193,16 @@ struct FakeServer {
     state: std::rc::Rc<RefCell<ServerState>>,
 }
 
+/// Окно времени, которое называет поддельный сервер.
+const EMAIL_WINDOW: u64 = 2_933_334;
+
 impl FakeServer {
     fn new() -> Self {
         Self {
-            state: std::rc::Rc::new(RefCell::new(ServerState::default())),
+            state: std::rc::Rc::new(RefCell::new(ServerState {
+                email_difficulty: 20,
+                ..ServerState::default()
+            })),
         }
     }
 
@@ -442,6 +467,10 @@ struct FakeChannel {
     media: HashMap<String, Vec<u8>>,
     /// Подписчики: жетон → до какой записи дочитал.
     subscribers: HashMap<String, u64>,
+    /// Администраторы: устройство → ключ подписи, hex.
+    admins: HashMap<String, String>,
+    /// Сколько ближайших публикаций отвергнуть как «номер занят».
+    conflicts: u32,
 }
 
 impl FakeChannel {
@@ -633,16 +662,60 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
         return plain(201, String::new());
     };
 
-    let owned = state
-        .channels
-        .get(&channel_id)
-        .is_some_and(|channel| channel.owner_device == device_id);
+    let Some(channel) = state.channels.get(&channel_id) else {
+        return plain(404, String::new());
+    };
+    let owned = channel.owner_device == device_id;
+    let writes = owned || channel.admins.contains_key(&device_id);
 
-    if !owned {
+    // Записи и файлы — владелец и администраторы; остальное — владелец.
+    let allowed = match tail {
+        Some("posts" | "media") => writes,
+        _ => owned,
+    };
+    if !allowed {
         return plain(404, String::new());
     }
 
     match (&request.method, tail) {
+        (Method::Post, Some("admins")) => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::AddChannelAdminRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+
+            if !state.device_identity.contains_key(&parsed.device_id) {
+                return plain(404, String::new());
+            }
+            if parsed.device_id == device_id {
+                return plain(400, String::new());
+            }
+
+            state
+                .channels
+                .get_mut(&channel_id)
+                .expect("канал есть")
+                .admins
+                .insert(parsed.device_id, parsed.verify_key);
+
+            plain(204, String::new())
+        }
+        (Method::Delete, Some("admins")) => {
+            let Ok(parsed) =
+                serde_json::from_str::<gasapp_net::api::RemoveChannelAdminRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+
+            state
+                .channels
+                .get_mut(&channel_id)
+                .expect("канал есть")
+                .admins
+                .retain(|_, key| *key != parsed.verify_key);
+
+            plain(204, String::new())
+        }
         (Method::Put, None) => {
             let Ok(parsed) = serde_json::from_str::<gasapp_net::api::UpdateChannelRequest>(body)
             else {
@@ -682,6 +755,21 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
                 return plain(400, String::new());
             };
             let channel = state.channels.get_mut(&channel_id).expect("канал есть");
+
+            // Кто-то написал в канал между «узнал номер» и «опубликовал».
+            if channel.conflicts > 0 {
+                channel.conflicts -= 1;
+                channel.push(hex::encode([0x42u8; 600]));
+            }
+
+            // Как настоящий сервер: запись под чужим номером не сохраняется.
+            if parsed
+                .seq
+                .is_some_and(|expected| expected != channel.posts.len() as u64 + 1)
+            {
+                return plain(409, String::new());
+            }
+
             let (seq, rev) = channel.push(parsed.body);
 
             plain(200, format!(r#"{{"seq":{seq},"rev":{rev}}}"#))
@@ -781,11 +869,13 @@ fn channel_feed(
         return json(&posts);
     }
 
-    let Some(channel) = state.channels.get_mut(channel_id) else {
+    if !state.channels.contains_key(channel_id) {
         return plain(404, String::new());
-    };
+    }
 
     if request.method == Method::Get {
+        let channel = state.channels.get_mut(channel_id).expect("канал есть");
+
         return match action.strip_prefix("media/") {
             Some(media_id) => channel.media.get(media_id).map_or_else(
                 || plain(404, String::new()),
@@ -800,6 +890,14 @@ fn channel_feed(
         };
     }
 
+    if action != "subscribe" {
+        return channel_reader_action(
+            state.channels.get_mut(channel_id).expect("канал есть"),
+            action,
+            body,
+        );
+    }
+
     match action {
         "subscribe" => {
             let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelSubscribeRequest>(body)
@@ -807,19 +905,37 @@ fn channel_feed(
                 return plain(400, String::new());
             };
             let token = hex::decode(&parsed.token).unwrap_or_default();
-            let worked = leading_zero_bits(&gasapp_net::pow::hash(
-                &gasapp_net::pow::subscribe_challenge(channel_id, &token),
-                parsed.pow_nonce,
-            )) >= gasapp_net::pow::SUBSCRIBE_DIFFICULTY;
+            let seed: [u8; 32] = hex::decode(&parsed.pass_seed)
+                .unwrap_or_default()
+                .try_into()
+                .unwrap_or([0; 32]);
+            let mac: [u8; 32] = hex::decode(&parsed.pass_mac)
+                .unwrap_or_default()
+                .try_into()
+                .unwrap_or([0; 32]);
 
-            if token.len() != 32 || !worked {
+            // Как настоящий сервер: подписка стоит пропуска — настоящего,
+            // на этот канал и жетон, и ещё не потраченного.
+            let binding = gasapp_protocol::pass::subscribe_binding(channel_id, &token);
+            if token.len() != 32
+                || !pass_issuer().accepts(&seed, &binding, &mac)
+                || !state.spent_passes.insert(parsed.pass_seed)
+            {
                 return plain(401, String::new());
             }
 
+            let channel = state.channels.get_mut(channel_id).expect("канал есть");
             channel.subscribers.entry(parsed.token).or_insert(0);
 
             plain(204, String::new())
         }
+        _ => plain(404, String::new()),
+    }
+}
+
+/// Действия читателя с жетоном: отписка, отметка о прочтении, реакция.
+fn channel_reader_action(channel: &mut FakeChannel, action: &str, body: &str) -> HttpResponse {
+    match action {
         "unsubscribe" => {
             let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelTokenRequest>(body)
             else {
@@ -904,16 +1020,32 @@ impl Transport for FakeServer {
             .any(|(name, _)| name == "x-gasapp-signature");
 
         let (status, body) = match (&request.method, path) {
+            (Method::Get, "/v1/accounts/email/challenge") => {
+                // Цена, названная клиенту, может оказаться ниже той, что
+                // спросят с него через мгновение: узел успели нагрузить.
+                let quoted = state
+                    .email_difficulty
+                    .saturating_sub(state.email_price_jumps);
+                state.email_price_jumps = 0;
+
+                (
+                    200,
+                    format!(r#"{{"difficulty":{quoted},"window":{EMAIL_WINDOW}}}"#),
+                )
+            }
             (Method::Post, "/v1/accounts/email/code") => {
                 let parsed: gasapp_net::api::EmailCodeRequest =
                     serde_json::from_str(request.body.as_deref().unwrap_or_default())
                         .map_err(|_| gasapp_types::GasAppError::Malformed)?;
 
-                // Как настоящий сервер: письмо стоит работы.
-                let challenge = gasapp_net::pow::email_code_challenge(&parsed.email);
+                // Как настоящий сервер: письмо стоит работы — по цене,
+                // которая действует сейчас, и в названном окне времени.
+                let challenge = gasapp_net::pow::email_code_challenge(&parsed.email, parsed.window);
                 let hash = gasapp_net::pow::hash(&challenge, parsed.pow_nonce);
 
-                if leading_zero_bits(&hash) < 20 {
+                if parsed.window != EMAIL_WINDOW
+                    || leading_zero_bits(&hash) < state.email_difficulty
+                {
                     (401, String::new())
                 } else {
                     state.email_code_requests.push(parsed.email);
@@ -932,6 +1064,55 @@ impl Transport for FakeServer {
                     (200, format!(r#"{{"premium":{premium}}}"#))
                 } else {
                     (401, String::new())
+                }
+            }
+            // Пропуска: за подписью устройства, в пределах суточной нормы.
+            (Method::Post, path) if path.starts_with("/v1/passes/issue/") => {
+                let device_id = path.trim_start_matches("/v1/passes/issue/").to_owned();
+                let parsed: gasapp_net::api::IssuePassesRequest =
+                    serde_json::from_str(request.body.as_deref().unwrap_or_default())
+                        .map_err(|_| gasapp_types::GasAppError::Malformed)?;
+                let issued = state.passes_issued.get(&device_id).copied().unwrap_or(0);
+
+                if !signed || !state.device_identity.contains_key(&device_id) {
+                    (401, String::new())
+                } else if issued + parsed.blinded.len() > FAKE_PASSES_PER_DAY {
+                    (429, String::new())
+                } else {
+                    let honest = pass_issuer();
+                    // Нечестный узел подписывает своим, особым ключом.
+                    let issuing = if state.marks_passes {
+                        gasapp_protocol::pass::Issuer::derive(&[0x44; 32])
+                    } else {
+                        pass_issuer()
+                    };
+
+                    let signed_points: Vec<gasapp_net::api::SignedPass> = parsed
+                        .blinded
+                        .iter()
+                        .filter_map(|blinded| {
+                            let point: [u8; 32] = hex::decode(blinded).ok()?.try_into().ok()?;
+                            let (point, proof) = issuing.sign(&point, &mut OsRng).ok()?;
+
+                            Some(gasapp_net::api::SignedPass {
+                                point: hex::encode(point),
+                                proof: hex::encode(proof),
+                            })
+                        })
+                        .collect();
+
+                    state
+                        .passes_issued
+                        .insert(device_id, issued + parsed.blinded.len());
+
+                    (
+                        200,
+                        serde_json::to_string(&gasapp_net::api::IssuePassesResponse {
+                            key: hex::encode(honest.public()),
+                            signed: signed_points,
+                        })
+                        .unwrap_or_default(),
+                    )
                 }
             }
             // Каналы — отдельной функцией (`channel_route`).
@@ -5934,6 +6115,29 @@ fn registration_carries_the_email_and_the_code() {
 //  Премиум и каналы
 // ---------------------------------------------------------------------------
 
+/// Цена письма выросла, пока решалась задача: клиент переспрашивает её
+/// и письмо получает. 🔐 Работу на часы клиент не берёт.
+#[test]
+fn a_dearer_letter_is_asked_for_again() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+
+    // Первый ответ о цене занижен на шесть бит: решение по нему не проходит.
+    server.state.borrow_mut().email_price_jumps = 6;
+    alice
+        .request_email_code("alice@example.org")
+        .expect("письмо со второй попытки");
+    assert_eq!(server.state.borrow().email_code_requests.len(), 1);
+
+    server.state.borrow_mut().email_difficulty = 40;
+    assert!(matches!(
+        alice.request_email_code("bob@example.org"),
+        Err(GasAppError::Network)
+    ));
+    assert_eq!(server.state.borrow().email_code_requests.len(), 1);
+}
+
 /// Автор с премиумом и читатель, оба зарегистрированы.
 fn author_and_reader(
     server: &FakeServer,
@@ -6024,7 +6228,7 @@ fn a_channel_needs_premium() {
         .expect("канал");
 
     assert_eq!(channel.title, "Новости");
-    assert!(channel.owned);
+    assert!(channel.owned());
     assert_eq!(alice.channels().expect("список"), vec![channel]);
 }
 
@@ -6047,7 +6251,7 @@ fn a_reader_follows_a_channel_by_link() {
 
     assert_eq!(joined.title, "Gas News");
     assert_eq!(joined.description, "Объявления.");
-    assert!(!joined.owned);
+    assert!(!joined.owned());
     assert_eq!(joined.unread, 1);
     assert_eq!(joined.last_post.as_deref(), Some("первая запись"));
 
@@ -6646,7 +6850,7 @@ fn subscribers_views_and_reactions() {
     assert_eq!(server.state.borrow().requests.len(), before);
 
     let reacted = reader
-        .react_to_channel_post(&channel_id, seq, Some("🔥"), &mut OsRng)
+        .react_to_channel_post(&channel_id, seq, Some("🔥"), now(), &mut OsRng)
         .expect("реакция");
     assert_eq!(reacted.my_reaction.as_deref(), Some("🔥"));
     assert_eq!(reacted.views, 1);
@@ -6655,7 +6859,7 @@ fn subscribers_views_and_reactions() {
     assert_eq!(reacted.reactions[0].count, 1);
 
     author
-        .react_to_channel_post(&channel_id, seq, Some("👍"), &mut OsRng)
+        .react_to_channel_post(&channel_id, seq, Some("👍"), now(), &mut OsRng)
         .expect("реакция автора");
     reader.sync_channel(&channel_id).expect("синхронизация");
     let seen = reader
@@ -6668,16 +6872,16 @@ fn subscribers_views_and_reactions() {
 
     // Смена и снятие.
     reader
-        .react_to_channel_post(&channel_id, seq, Some("👍"), &mut OsRng)
+        .react_to_channel_post(&channel_id, seq, Some("👍"), now(), &mut OsRng)
         .expect("смена");
     let cleared = reader
-        .react_to_channel_post(&channel_id, seq, None, &mut OsRng)
+        .react_to_channel_post(&channel_id, seq, None, now(), &mut OsRng)
         .expect("снятие");
     assert!(cleared.my_reaction.is_none());
     assert_eq!(cleared.reactions.len(), 1);
 
     assert!(matches!(
-        reader.react_to_channel_post(&channel_id, seq, Some("<b>"), &mut OsRng),
+        reader.react_to_channel_post(&channel_id, seq, Some("<b>"), now(), &mut OsRng),
         Err(GasAppError::Malformed)
     ));
 
@@ -6781,6 +6985,347 @@ fn mute_unread_total_and_search() {
         before,
         "поиск по каналу не должен ходить на сервер"
     );
+}
+
+/// Третий участник: ни автор, ни администратор — просто читатель.
+fn bystander(server: &FakeServer, dir: &tempfile::TempDir, link: &str) -> Client<FakeServer> {
+    let client = Client::new(server.clone(), open_storage(dir, "bystander.db"));
+    client
+        .register("bystander", TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("третий");
+    client
+        .join_channel(link, now(), &mut OsRng)
+        .expect("подписка третьего");
+
+    client
+}
+
+/// Устройство из заявки на администрирование — в виде UUID, как его знает сервер.
+fn device_of_request(request: &str) -> String {
+    let hex = request.rsplit('.').next().expect("устройство в заявке");
+
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    )
+}
+
+/// Владелец назначает администратора по заявке; администратор пишет и
+/// правит, читатели это принимают. Описание, закреп и состав
+/// администраторов остаются за владельцем.
+#[test]
+fn an_admin_posts_and_readers_accept_it() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, admin) = author_and_reader(&server, &dir);
+    let (channel_id, link) = followed_channel(&owner, &admin);
+    let reader = bystander(&server, &dir, &link);
+    let first = post_text(&owner, &channel_id, "от владельца");
+
+    // До назначения — читатель: писать нельзя.
+    assert!(!admin.channel(&channel_id).expect("канал").can_post());
+
+    let request = admin
+        .channel_admin_request(&channel_id, &mut OsRng)
+        .expect("заявка");
+    // Заявка, показанная дважды, называет тот же ключ.
+    assert_eq!(
+        admin
+            .channel_admin_request(&channel_id, &mut OsRng)
+            .expect("заявка"),
+        request
+    );
+    let pending = admin.channel(&channel_id).expect("канал");
+    assert!(pending.admin_pending() && !pending.can_post());
+    assert!(matches!(
+        admin.publish_channel_post(&channel_id, "рано", &[], now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+
+    let admins = owner
+        .add_channel_admin(&channel_id, &request, "  Анна  ", now(), &mut OsRng)
+        .expect("назначение");
+    assert_eq!(admins.len(), 1);
+    assert_eq!(admins[0].label, "Анна");
+    assert!(admins[0].active);
+
+    admin.sync_channel(&channel_id).expect("синхронизация");
+    let appointed = admin.channel(&channel_id).expect("канал");
+    assert!(appointed.can_post() && !appointed.owned() && !appointed.admin_pending());
+
+    let second = post_text(&admin, &channel_id, "от администратора");
+    admin
+        .edit_channel_post(
+            &channel_id,
+            first,
+            "исправил администратор",
+            now(),
+            &mut OsRng,
+        )
+        .expect("правка чужой записи");
+
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(
+        texts(&reader, &channel_id),
+        vec!["исправил администратор", "от администратора"]
+    );
+    owner.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(texts(&owner, &channel_id).len(), 2);
+
+    // 🔐 Администратор — не владелец.
+    assert!(matches!(
+        admin.update_channel(&channel_id, "Моё", "", now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        admin.pin_channel_post(&channel_id, second, now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        admin.set_channel_handle(&channel_id, Some("mine"), now()),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        admin.add_channel_admin(&channel_id, &request, "я", now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    // Уходя, администратор канал не удаляет.
+    admin.leave_channel(&channel_id, now()).expect("уход");
+    assert!(server.state.borrow().channels.contains_key(&channel_id));
+}
+
+/// 🔐 Сервер не назначает администраторов: запись, подписанная ключом,
+/// которого нет в описании владельца, читателями не принимается.
+#[test]
+fn the_server_cannot_appoint_an_admin() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, impostor) = author_and_reader(&server, &dir);
+    let (channel_id, link) = followed_channel(&owner, &impostor);
+    let reader = bystander(&server, &dir, &link);
+    post_text(&owner, &channel_id, "настоящая");
+
+    // Владелец назначает, затем снимает: у бывшего администратора
+    // остаётся ключ, а у сервера — желание ему помочь.
+    let request = impostor
+        .channel_admin_request(&channel_id, &mut OsRng)
+        .expect("заявка");
+    owner
+        .add_channel_admin(&channel_id, &request, "временный", now(), &mut OsRng)
+        .expect("назначение");
+    impostor.sync_channel(&channel_id).expect("синхронизация");
+    let before = post_text(&impostor, &channel_id, "до снятия");
+
+    let admins = owner
+        .remove_channel_admin(
+            &channel_id,
+            &owner.channel_admins(&channel_id).expect("список")[0].verify_key,
+            now(),
+            &mut OsRng,
+        )
+        .expect("снятие");
+    assert!(!admins[0].active);
+
+    // Честный сервер бывшему администратору отказывает.
+    assert!(matches!(
+        impostor.publish_channel_post(&channel_id, "после снятия", &[], now(), &mut OsRng),
+        Err(GasAppError::SessionNotFound)
+    ));
+
+    // Нечестный — пускает его обратно сам, без владельца.
+    let impostor_device = device_of_request(&request);
+    server.tamper_channel(&channel_id, |stored| {
+        stored.admins.insert(impostor_device, "ignored".to_owned());
+    });
+    impostor
+        .publish_channel_post(&channel_id, "подделка", &[], now(), &mut OsRng)
+        .expect("сервер принял");
+
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(texts(&reader, &channel_id), vec!["настоящая", "до снятия"]);
+    assert!(reader
+        .channel_post(&channel_id, before)
+        .expect("запись")
+        .is_some());
+
+    // Сам снятый узнаёт о снятии при синхронизации и больше не пишет.
+    impostor.sync_channel(&channel_id).expect("синхронизация");
+    let removed = impostor.channel(&channel_id).expect("канал");
+    assert!(!removed.can_post() && removed.admin_pending());
+}
+
+/// В канал пишут двое: номер заняли между «узнал» и «опубликовал» —
+/// запись выходит под следующим, а не теряется и не засоряет ленту.
+#[test]
+fn a_taken_post_number_is_retried() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&owner, &reader);
+
+    server.tamper_channel(&channel_id, |stored| stored.conflicts = 2);
+    let seq = post_text(&owner, &channel_id, "дошла");
+
+    // Две чужие записи заняли номера 1 и 2.
+    assert_eq!(seq, 3);
+    assert_eq!(server.channel(&channel_id).posts.len(), 3);
+
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(texts(&reader, &channel_id), vec!["дошла"]);
+}
+
+/// Заявка в другой канал и собственная заявка владельца не принимаются.
+#[test]
+fn an_admin_request_is_bound_to_its_channel() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&owner, &reader);
+    let other = owner
+        .create_channel("Другой", "", now(), &mut OsRng)
+        .expect("второй канал");
+
+    let request = reader
+        .channel_admin_request(&channel_id, &mut OsRng)
+        .expect("заявка");
+
+    assert!(matches!(
+        owner.add_channel_admin(&other.channel_id, &request, "", now(), &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+    assert!(matches!(
+        owner.add_channel_admin(
+            &channel_id,
+            "gasapp://channel-admin/zz",
+            "",
+            now(),
+            &mut OsRng
+        ),
+        Err(GasAppError::Malformed)
+    ));
+    assert!(matches!(
+        owner.channel_admin_request(&channel_id, &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+    assert!(server.channel(&channel_id).admins.is_empty());
+    assert!(owner
+        .channel_admins(&channel_id)
+        .expect("список")
+        .is_empty());
+}
+
+/// 🔐 Подписка стоит пропуска, и пропуска берутся пачкой заранее:
+/// сервер выдаёт их аккаунту, а при трате не знает, чей это пропуск.
+#[test]
+fn a_subscription_spends_a_blind_pass() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, reader) = author_and_reader(&server, &dir);
+
+    // Запас берётся заранее и один раз: второй вызов до сервера не идёт.
+    assert_eq!(
+        reader.refill_passes(now(), &mut OsRng).expect("пропуска"),
+        8
+    );
+    let before = server.state.borrow().requests.len();
+    assert_eq!(
+        reader.refill_passes(now(), &mut OsRng).expect("пропуска"),
+        0
+    );
+    assert_eq!(server.state.borrow().requests.len(), before);
+
+    let (channel_id, _) = followed_channel(&owner, &reader);
+    assert_eq!(server.channel(&channel_id).subscribers.len(), 2);
+    assert_eq!(server.state.borrow().spent_passes.len(), 2);
+
+    // Подписка читателя взяла пропуск из запаса, а не новый у сервера.
+    let reader_issues = server
+        .state
+        .borrow()
+        .requests
+        .iter()
+        .filter(|(path, headers)| path.starts_with("/v1/passes/issue/") && !headers.is_empty())
+        .count();
+    assert_eq!(reader_issues, 2, "по одной выдаче на каждого из двоих");
+
+    // 🔐 Трата — без подписи устройства, и зерно пропуска сервер при
+    // выдаче не видел: в запросах выдачи его нет.
+    let headers = server
+        .last_request(&format!("/v1/channels/feed/{channel_id}/subscribe"))
+        .expect("подписка");
+    assert!(headers.is_empty(), "подписка подписана: {headers:?}");
+}
+
+/// 🔐 Узел, подписавший пропуска не тем ключом, который объявил, —
+/// пытается пометить устройство: пачка отбрасывается целиком,
+/// и подписка с такими пропусками не оформляется.
+#[test]
+fn passes_signed_with_a_marking_key_are_refused() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, reader) = author_and_reader(&server, &dir);
+    let channel = owner
+        .create_channel("Канал", "", now(), &mut OsRng)
+        .expect("канал");
+    let link = owner.channel_link(&channel.channel_id).expect("ссылка");
+
+    server.state.borrow_mut().marks_passes = true;
+
+    assert!(matches!(
+        reader.refill_passes(now(), &mut OsRng),
+        Err(GasAppError::InvalidSignature)
+    ));
+
+    // Канал добавляется и читается — подписка на сервере просто не
+    // оформляется: счётчик не знает об этом читателе.
+    reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("канал добавлен");
+    assert_eq!(server.channel(&channel.channel_id).subscribers.len(), 1);
+}
+
+/// Пропуска кончились — подписка не оформляется, но канал читается.
+#[test]
+fn without_passes_a_channel_is_still_readable() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, reader) = author_and_reader(&server, &dir);
+    let channel = owner
+        .create_channel("Канал", "", now(), &mut OsRng)
+        .expect("канал");
+    let seq = post_text(&owner, &channel.channel_id, "запись");
+    let link = owner.channel_link(&channel.channel_id).expect("ссылка");
+
+    // Суточная норма устройства читателя уже выбрана.
+    let devices: Vec<String> = server
+        .state
+        .borrow()
+        .device_identity
+        .keys()
+        .cloned()
+        .collect();
+    for device in devices {
+        server
+            .state
+            .borrow_mut()
+            .passes_issued
+            .insert(device, FAKE_PASSES_PER_DAY);
+    }
+
+    reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("канал добавлен");
+    assert_eq!(texts(&reader, &channel.channel_id), vec!["запись"]);
+
+    // Реакция требует подписки — без пропуска её нет.
+    assert!(matches!(
+        reader.react_to_channel_post(&channel.channel_id, seq, Some("🔥"), now(), &mut OsRng),
+        Err(GasAppError::Network)
+    ));
 }
 
 /// Читатель уходит — его жетон снимается; автор удаляет — канала нет.

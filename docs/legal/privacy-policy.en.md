@@ -200,6 +200,25 @@ they can be matched by IP address and request timing. When you remove a
 channel from the phone, the app asks the server to erase the token and
 its reactions.
 
+**The pass.** So that subscribers cannot be inflated in a loop, a
+subscription costs a pass — a single-use right the server issues to your
+account (at most forty a day). 🔐 It issues the pass blindly: it signs a
+masked number and, when the pass is spent, cannot tell whom it was
+issued to. The server knows how many passes an account took over the
+last two days; it does not know which channels they went to.
+
+⚠️ What this does not give: if the app had no passes in stock, you take
+a pass and spend it at once, and the two events can be matched by time.
+The app takes passes in advance and in batches so that this does not
+happen.
+
+**Administrators.** A channel owner can appoint administrators, who
+publish, edit and delete posts. 🔐 An administrator is known to the
+server, as the owner is: the server has to know which accounts to
+accept posts from. A reader is still unknown to it. To become an
+administrator you show the owner a request; it contains your device
+identifier.
+
 **Public channels.** An author can give a channel an `@name` so that it
 can be found by search. To do that, the author's app hands the server
 the channel link — and the link contains the read key. 🔐 **The server
@@ -222,6 +241,11 @@ conversation:
   signs them, and the server could show any numbers;
 * deleting a post erases it from the server and, at their next
   synchronisation, from readers' apps. Copies made outside the app stay;
+* the keys of the channels you read and run are part of the backup.
+  Whoever obtains the backup file and the recovery key can read those
+  channels and post to the ones you run;
+* a removed administrator can no longer publish, but acting together
+  with the server could rewrite posts published before the removal;
 * an `@name` belongs to the server: it decides which channel the name
   leads to. If it matters that you reach a particular author's channel,
   compare the link with the author directly;

@@ -23,16 +23,17 @@
 
 use gasapp_media::descriptor::{AttachmentDescriptor, AttachmentKind};
 use gasapp_net::api::{
-    ChannelPostResponse, ChannelReactRequest, ChannelResponse, ChannelSeenRequest,
-    ChannelSubscribeRequest, ChannelTokenRequest, CreateChannelRequest, PublishPostRequest,
-    ReplacePostRequest, UpdateChannelRequest,
+    AddChannelAdminRequest, ChannelPostResponse, ChannelReactRequest, ChannelResponse,
+    ChannelSeenRequest, ChannelSubscribeRequest, ChannelTokenRequest, CreateChannelRequest,
+    PublishPostRequest, RemoveChannelAdminRequest, ReplacePostRequest, UpdateChannelRequest,
 };
 use gasapp_net::client::Transport;
 use gasapp_protocol::channel::{
-    self, ChannelAccess, ChannelAuthor, ChannelId, ChannelMeta, ChannelPost, ChannelTombstone,
+    self, AdminRequest, ChannelAccess, ChannelAdmin, ChannelAuthor, ChannelId, ChannelMeta,
+    ChannelPost, ChannelTombstone,
 };
 use gasapp_protocol::keys::IdentityKeyPair;
-use gasapp_storage::channels::{PostChange, StoredChannel, StoredPost};
+use gasapp_storage::channels::{PostChange, StoredAdmin, StoredChannel, StoredMeta, StoredPost};
 use gasapp_types::{GasAppError, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 
@@ -85,8 +86,8 @@ pub struct Channel {
     pub title: String,
     /// Описание.
     pub description: String,
-    /// Свой ли это канал: можно ли в него писать.
-    pub owned: bool,
+    /// Кто человек в этом канале.
+    pub role: ChannelRole,
     /// Сколько записей ещё не прочитано.
     pub unread: u64,
     /// Текст последней записи — для списка.
@@ -149,6 +150,112 @@ pub struct ChannelEntry {
     /// Вложения.
     pub attachments: Vec<ChannelAttachment>,
 }
+
+/// Администратор канала глазами владельца.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelAdminInfo {
+    /// Публичный ключ подписи, hex, — им администратора снимают.
+    pub verify_key: String,
+    /// Имя, которым владелец его подписал; пусто — не подписал.
+    pub label: String,
+    /// Действующий ли: снятый остаётся в списке, чтобы его прежние
+    /// записи читались.
+    pub active: bool,
+}
+
+impl Channel {
+    /// Владелец ли человек канала: описание, закреп, аватар, имя,
+    /// состав администраторов и удаление канала — только его.
+    #[must_use]
+    pub fn owned(&self) -> bool {
+        self.role == ChannelRole::Owner
+    }
+
+    /// Можно ли писать, править и удалять записи.
+    #[must_use]
+    pub fn can_post(&self) -> bool {
+        matches!(self.role, ChannelRole::Owner | ChannelRole::Admin)
+    }
+
+    /// Заявка на администрирование показана, но ключа человека в
+    /// списке администраторов (пока или уже) нет.
+    #[must_use]
+    pub fn admin_pending(&self) -> bool {
+        self.role == ChannelRole::Pending
+    }
+}
+
+/// Кто человек в канале.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelRole {
+    /// Читает.
+    Reader,
+    /// Завёл ключ и показал заявку, но владелец его не назначил либо
+    /// уже снял.
+    Pending,
+    /// Назначен владельцем: пишет, правит, удаляет записи.
+    Admin,
+    /// Владелец: его ключ лежит в ссылке канала.
+    Owner,
+}
+
+fn role_of(stored: &StoredChannel) -> ChannelRole {
+    let Some(key) = stored.signing_key else {
+        return ChannelRole::Reader;
+    };
+    let Ok(verify_key) = channel::verify_key_of(PrivateKeyBytes::new(key)) else {
+        return ChannelRole::Reader;
+    };
+
+    if *verify_key.as_bytes() == stored.verify_key {
+        ChannelRole::Owner
+    } else if stored
+        .admins
+        .iter()
+        .any(|admin| admin.verify_key == *verify_key.as_bytes() && admin.until.is_none())
+    {
+        ChannelRole::Admin
+    } else {
+        ChannelRole::Pending
+    }
+}
+
+/// Список администраторов в том виде, в каком его проверяет протокол.
+fn admins_of(stored: &StoredChannel) -> Vec<ChannelAdmin> {
+    stored
+        .admins
+        .iter()
+        .map(|admin| ChannelAdmin {
+            verify_key: PublicKeyBytes::new(admin.verify_key),
+            until: admin.until,
+        })
+        .collect()
+}
+
+/// Описание канала в том виде, в каком его хранит база.
+fn stored_meta(meta: &ChannelMeta) -> StoredMeta {
+    StoredMeta {
+        title: meta.title.clone(),
+        description: meta.description.clone(),
+        pinned_seq: meta.pinned,
+        avatar: (!meta.avatar.is_empty()).then(|| meta.avatar.clone()),
+        admins: meta
+            .admins
+            .iter()
+            .map(|admin| StoredAdmin {
+                verify_key: *admin.verify_key.as_bytes(),
+                until: admin.until,
+            })
+            .collect(),
+        updated_at: meta.updated_at_millis,
+    }
+}
+
+/// Предел имени администратора, в знаках.
+const MAX_ADMIN_LABEL_CHARS: usize = 64;
+
+/// Сколько раз публикация берёт следующий номер, если прежний заняли.
+const PUBLISH_ATTEMPTS: u32 = 4;
 
 /// Публичный канал, найденный по имени, — до подписки.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -231,11 +338,28 @@ fn entry_of(post: StoredPost) -> ChannelEntry {
     }
 }
 
-/// Автор канала с ключом подписи из базы.
+/// Тот, кто пишет в канал, с ключом подписи из базы — владелец либо
+/// действующий администратор.
+///
+/// Ключ без права (заявка не принята, администратор снят) автора не
+/// даёт: подписанное им читатели всё равно отвергли бы.
 fn author_of<'a>(access: &'a ChannelAccess, stored: &StoredChannel) -> Result<ChannelAuthor<'a>> {
+    if !matches!(role_of(stored), ChannelRole::Owner | ChannelRole::Admin) {
+        return Err(GasAppError::Forbidden);
+    }
+
     let signing_key = stored.signing_key.ok_or(GasAppError::Forbidden)?;
 
     ChannelAuthor::new(access, PrivateKeyBytes::new(signing_key))
+}
+
+/// Отказ всем, кроме владельца канала.
+fn require_owner(stored: &StoredChannel) -> Result<()> {
+    if role_of(stored) == ChannelRole::Owner {
+        Ok(())
+    } else {
+        Err(GasAppError::Forbidden)
+    }
 }
 
 impl<T: Transport> Client<T> {
@@ -302,6 +426,7 @@ impl<T: Transport> Client<T> {
             updated_at_millis: now.as_millis(),
             pinned: 0,
             avatar: Vec::new(),
+            admins: Vec::new(),
         };
         let sealed_meta =
             ChannelAuthor::new(&created.access, created.signing_key)?.seal_meta(&meta, rng)?;
@@ -333,7 +458,7 @@ impl<T: Transport> Client<T> {
 
         // Автор — тоже подписчик своего канала. Сбой не мешает: жетон
         // оформится при следующей синхронизации.
-        let _ = self.ensure_subscribed(&stored, rng);
+        let _ = self.ensure_subscribed(&stored, now, rng);
 
         self.present(&self.stored_channel(&created.access.channel_uuid())?)
     }
@@ -378,7 +503,7 @@ impl<T: Transport> Client<T> {
 
         // Записи и подписка — сразу, но их сбой добавлению не мешает:
         // канал уже здесь, остальное доедет при следующей синхронизации.
-        let _ = self.ensure_subscribed(&stored, rng);
+        let _ = self.ensure_subscribed(&stored, now, rng);
         let _ = self.sync_stored(&stored, true);
 
         self.present(&self.stored_channel(&access.channel_uuid())?)
@@ -476,6 +601,14 @@ impl<T: Transport> Client<T> {
 
         self.accept_info(stored, &access, &info)?;
 
+        // 🔐 Записи проверяются по списку администраторов из только что
+        // принятого описания, а не по тому, что был до синхронизации:
+        // иначе запись снятого администратора прошла бы по старому списку.
+        let stored = &self
+            .storage
+            .channel(&stored.channel_id)?
+            .ok_or(GasAppError::SessionNotFound)?;
+
         let mut fresh = 0u32;
 
         if stored.last_rev == 0 {
@@ -504,8 +637,8 @@ impl<T: Transport> Client<T> {
             }
         }
 
-        // Свой канал прочитан автором по определению.
-        if stored.signing_key.is_some() {
+        // Канал, который человек ведёт, прочитан им по определению.
+        if matches!(role_of(stored), ChannelRole::Owner | ChannelRole::Admin) {
             let last = self
                 .storage
                 .channel(&stored.channel_id)?
@@ -571,14 +704,8 @@ impl<T: Transport> Client<T> {
         // Описание: принимается только подписанное автором и не старше
         // известного (второе проверяет хранилище).
         if let Ok(meta) = unhex(&info.meta).and_then(|wire| access.open_meta(&wire)) {
-            self.storage.update_channel_meta(
-                &stored.channel_id,
-                &meta.title,
-                &meta.description,
-                meta.pinned,
-                (!meta.avatar.is_empty()).then_some(meta.avatar.as_slice()),
-                meta.updated_at_millis,
-            )?;
+            self.storage
+                .update_channel_meta(&stored.channel_id, &stored_meta(&meta))?;
         }
 
         // 🔐 Имя — со слов сервера, и в интерфейс попадает только
@@ -604,6 +731,7 @@ impl<T: Transport> Client<T> {
         item: &ChannelPostResponse,
     ) -> Result<bool> {
         let id = &stored.channel_id;
+        let admins = admins_of(stored);
 
         // 🔐 Номер, которого не бывает (больше `i64::MAX`), база не
         // сохранит. Такая запись пропускается молча: иначе один мусорный
@@ -621,7 +749,7 @@ impl<T: Transport> Client<T> {
         if item.deleted {
             // 🔐 Слову сервера «удалено» веры нет: запись исчезает
             // только по отметке, подписанной автором.
-            match access.open_tombstone(&body, item.seq) {
+            match access.open_tombstone(&body, item.seq, &admins) {
                 Ok(tombstone) => {
                     self.storage
                         .tombstone_channel_post(id, item.seq, tombstone.revision)?;
@@ -632,7 +760,7 @@ impl<T: Transport> Client<T> {
             return Ok(false);
         }
 
-        let Ok(post) = access.open_post(&body, item.seq) else {
+        let Ok(post) = access.open_post(&body, item.seq, &admins) else {
             // Не от автора или не на своём месте — пропустить, но не
             // запрашивать снова при каждой синхронизации.
             self.storage.skip_channel_seq(id, item.seq)?;
@@ -862,13 +990,6 @@ impl<T: Transport> Client<T> {
             return Err(GasAppError::Malformed);
         }
 
-        let number = self
-            .api
-            .channel_info(&uuid)?
-            .last_seq
-            .checked_add(1)
-            .ok_or(GasAppError::Malformed)?;
-
         let mut attachments = Vec::with_capacity(files.len());
         let published = (|| {
             for file in files {
@@ -878,38 +999,62 @@ impl<T: Transport> Client<T> {
                 );
             }
 
-            let sealed = author.seal_post(
-                &ChannelPost {
-                    number,
-                    revision: 0,
-                    created_at_millis: now.as_millis(),
-                    edited_at_millis: 0,
-                    text: text.to_owned(),
-                    attachments: attachments.clone(),
-                },
-                rng,
-            )?;
+            // Номер записи лежит внутри шифротекста, и сервер принимает
+            // запись только под ним. В канал пишут несколько человек:
+            // если номер успели занять, берётся следующий, и запись
+            // подписывается заново.
+            for _ in 0..PUBLISH_ATTEMPTS {
+                let number = self
+                    .api
+                    .channel_info(&uuid)?
+                    .last_seq
+                    .checked_add(1)
+                    .ok_or(GasAppError::Malformed)?;
 
-            let published = self.api.publish_channel_post(
-                &device_id,
-                &uuid,
-                &PublishPostRequest { body: hex(&sealed) },
-                &DeviceSigner::new(&identity, now),
-            )?;
+                let sealed = author.seal_post(
+                    &ChannelPost {
+                        number,
+                        revision: 0,
+                        created_at_millis: now.as_millis(),
+                        edited_at_millis: 0,
+                        text: text.to_owned(),
+                        attachments: attachments.clone(),
+                    },
+                    rng,
+                )?;
 
-            if published.seq == number {
-                Ok(())
-            } else {
-                Err(GasAppError::InvalidSignature)
+                let outcome = self.api.publish_channel_post(
+                    &device_id,
+                    &uuid,
+                    &PublishPostRequest {
+                        body: hex(&sealed),
+                        seq: Some(number),
+                    },
+                    &DeviceSigner::new(&identity, now),
+                );
+
+                match outcome {
+                    Ok(published) if published.seq == number => return Ok(number),
+                    // Сервер поставил запись не туда, куда просили.
+                    Ok(_) => return Err(GasAppError::InvalidSignature),
+                    // Номер занят (`409`) — ещё раз, со следующим.
+                    Err(GasAppError::UsernameTaken) => {}
+                    Err(error) => return Err(error),
+                }
             }
+
+            Err(GasAppError::Network)
         })();
 
-        if let Err(error) = published {
-            // Запись не вышла — её файлы на сервере никому не нужны.
-            self.drop_channel_media(&uuid, &device_id, &identity, &attachments, now);
+        let number = match published {
+            Ok(number) => number,
+            Err(error) => {
+                // Запись не вышла — её файлы на сервере никому не нужны.
+                self.drop_channel_media(&uuid, &device_id, &identity, &attachments, now);
 
-            return Err(error);
-        }
+                return Err(error);
+            }
+        };
 
         let post = StoredPost {
             seq: number,
@@ -1054,7 +1199,8 @@ impl<T: Transport> Client<T> {
         // мешает: запись уже удалена, а блобы зашифрованы.
         self.drop_channel_media(&uuid, &device_id, &identity, &known.attachments, now);
 
-        if stored.pinned_seq == seq {
+        // Закреп — в описании канала, а его подписывает только владелец.
+        if stored.pinned_seq == seq && role_of(&stored) == ChannelRole::Owner {
             let _ = self.write_meta(&stored, now, rng, |meta| meta.pinned = 0);
         }
 
@@ -1127,7 +1273,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<Channel> {
         let stored = self.stored_channel(channel_id)?;
         // Право — до загрузки: чужому каналу файл не шлётся.
-        stored.signing_key.ok_or(GasAppError::Forbidden)?;
+        require_owner(&stored)?;
 
         let uuid = channel::format_uuid(&stored.channel_id);
         let (device_id, identity) = self.own_device()?;
@@ -1190,7 +1336,7 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
     ) -> Result<Channel> {
         let stored = self.stored_channel(channel_id)?;
-        stored.signing_key.ok_or(GasAppError::Forbidden)?;
+        require_owner(&stored)?;
 
         let access = access_of(&stored);
         let (device_id, identity) = self.own_device()?;
@@ -1247,6 +1393,7 @@ impl<T: Transport> Client<T> {
         channel_id: &str,
         seq: u64,
         emoji: Option<&str>,
+        now: Timestamp,
         rng: &mut R,
     ) -> Result<ChannelEntry> {
         let stored = self.stored_channel(channel_id)?;
@@ -1258,7 +1405,7 @@ impl<T: Transport> Client<T> {
         }
 
         self.live_post(&stored, seq)?;
-        let token = self.ensure_subscribed(&stored, rng)?;
+        let token = self.ensure_subscribed(&stored, now, rng)?;
 
         self.api.react_to_channel_post(
             &uuid,
@@ -1370,6 +1517,210 @@ impl<T: Transport> Client<T> {
         })
     }
 
+    /// Заявка на администрирование — строка, которую читатель канала
+    /// показывает владельцу (QR-кодом или текстом).
+    ///
+    /// При первом вызове заводит ключ подписи для этого канала; при
+    /// следующих называет тот же. В заявке нет секретов: публичный
+    /// ключ и устройство, которому сервер разрешит публиковать.
+    ///
+    /// 🔐 Заявка называет владельцу устройство и, тем самым, серверу —
+    /// аккаунт администратора. Читатель канала серверу неизвестен;
+    /// администратор — известен, как и владелец.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет на устройстве;
+    /// * [`GasAppError::Malformed`] — человек и так владелец канала.
+    pub fn channel_admin_request<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        rng: &mut R,
+    ) -> Result<String> {
+        let stored = self.stored_channel(channel_id)?;
+
+        if role_of(&stored) == ChannelRole::Owner {
+            return Err(GasAppError::Malformed);
+        }
+
+        if stored.signing_key.is_none() {
+            let (signing_key, _) = channel::admin_keypair(rng);
+
+            self.storage
+                .set_channel_signing_key(&stored.channel_id, signing_key.expose_secret())?;
+        }
+
+        // Ключ читается из базы заново: показывается тот, что сохранён.
+        let key = self
+            .stored_channel(channel_id)?
+            .signing_key
+            .ok_or(GasAppError::Storage)?;
+        let (device_id, _) = self.own_device()?;
+
+        Ok(AdminRequest {
+            channel_id: stored.channel_id,
+            verify_key: channel::verify_key_of(PrivateKeyBytes::new(key))?,
+            device_id: parse_id(&device_id)?,
+        }
+        .to_uri())
+    }
+
+    /// Назначает администратора своего канала по его заявке.
+    ///
+    /// Два шага: сервер начинает принимать записи от его аккаунта,
+    /// и в описание канала, подписанное владельцем, вписывается его
+    /// ключ — по нему записи принимают читатели. `label` — имя для
+    /// владельца; в описание канала оно не попадает.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — человек не владелец канала;
+    /// * [`GasAppError::Malformed`] — это не заявка, она в другой
+    ///   канал, список администраторов полон либо владелец назначает
+    ///   себя;
+    /// * [`GasAppError::SessionNotFound`] — устройства из заявки нет;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn add_channel_admin<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        request: &str,
+        label: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Vec<ChannelAdminInfo>> {
+        let stored = self.stored_channel(channel_id)?;
+        require_owner(&stored)?;
+
+        let request = AdminRequest::parse(request)?;
+        let key = *request.verify_key.as_bytes();
+        let known = stored.admins.iter().any(|admin| admin.verify_key == key);
+
+        if request.channel_id != stored.channel_id
+            || key == stored.verify_key
+            || (!known && stored.admins.len() >= channel::MAX_ADMINS)
+        {
+            return Err(GasAppError::Malformed);
+        }
+
+        let (device_id, identity) = self.own_device()?;
+
+        self.api.add_channel_admin(
+            &device_id,
+            &channel::format_uuid(&stored.channel_id),
+            &AddChannelAdminRequest {
+                device_id: channel::format_uuid(&request.device_id),
+                verify_key: hex(&key),
+            },
+            &DeviceSigner::new(&identity, now),
+        )?;
+
+        self.write_meta(&stored, now, rng, |meta| {
+            match meta
+                .admins
+                .iter_mut()
+                .find(|admin| admin.verify_key == request.verify_key)
+            {
+                // Снятого назначают снова: граница убирается.
+                Some(admin) => admin.until = None,
+                None => meta.admins.push(ChannelAdmin {
+                    verify_key: request.verify_key,
+                    until: None,
+                }),
+            }
+        })?;
+
+        let label: String = label.trim().chars().take(MAX_ADMIN_LABEL_CHARS).collect();
+        self.storage
+            .set_channel_admin_label(&stored.channel_id, &key, &label)?;
+
+        self.channel_admins(channel_id)
+    }
+
+    /// Снимает администратора своего канала.
+    ///
+    /// Сервер перестаёт принимать от него записи, а в описании канала
+    /// его ключу ставится граница — номер последней записи на этот
+    /// момент. Прежние его записи читаются; новые под его ключом
+    /// читатели не примут, даже если сервер их отдаст.
+    ///
+    /// ⚠️ Снятый администратор в сговоре с сервером мог бы переписать
+    /// записи, вышедшие до снятия: для их номеров его ключ остаётся
+    /// годным (см. `gasapp_protocol::channel`).
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — человек не владелец канала;
+    /// * [`GasAppError::SessionNotFound`] — такого администратора нет;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn remove_channel_admin<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        verify_key: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Vec<ChannelAdminInfo>> {
+        let stored = self.stored_channel(channel_id)?;
+        require_owner(&stored)?;
+
+        let key: [u8; 32] = unhex(verify_key)?
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?;
+
+        if !stored.admins.iter().any(|admin| admin.verify_key == key) {
+            return Err(GasAppError::SessionNotFound);
+        }
+
+        let uuid = channel::format_uuid(&stored.channel_id);
+        let (device_id, identity) = self.own_device()?;
+
+        // Сначала сервер: с этого момента новых записей от него нет,
+        // и граница ниже не окажется позади его последней записи.
+        self.api.remove_channel_admin(
+            &device_id,
+            &uuid,
+            &RemoveChannelAdminRequest {
+                verify_key: hex(&key),
+            },
+            &DeviceSigner::new(&identity, now),
+        )?;
+
+        let last_seq = self.api.channel_info(&uuid)?.last_seq;
+
+        self.write_meta(&stored, now, rng, |meta| {
+            for admin in &mut meta.admins {
+                if *admin.verify_key.as_bytes() == key && admin.until.is_none() {
+                    admin.until = Some(last_seq);
+                }
+            }
+        })?;
+
+        self.channel_admins(channel_id)
+    }
+
+    /// Администраторы своего канала — действующие и снятые. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — канала нет на устройстве.
+    pub fn channel_admins(&self, channel_id: &str) -> Result<Vec<ChannelAdminInfo>> {
+        let stored = self.stored_channel(channel_id)?;
+        let labels = self.storage.channel_admin_labels(&stored.channel_id)?;
+
+        Ok(stored
+            .admins
+            .iter()
+            .map(|admin| ChannelAdminInfo {
+                verify_key: hex(&admin.verify_key),
+                label: labels
+                    .iter()
+                    .find(|(key, _)| *key == admin.verify_key)
+                    .map(|(_, label)| label.clone())
+                    .unwrap_or_default(),
+                active: admin.until.is_none(),
+            })
+            .collect())
+    }
+
     /// Убирает канал с устройства; свой — удаляет и с сервера.
     ///
     /// Чужой канал перестаёт читаться, а его жетон подписчика снимается
@@ -1385,7 +1736,9 @@ impl<T: Transport> Client<T> {
         let stored = self.stored_channel(channel_id)?;
         let uuid = channel::format_uuid(&stored.channel_id);
 
-        if stored.signing_key.is_some() {
+        // Удаляет канал с сервера только владелец; администратор, уходя,
+        // просто перестаёт его читать.
+        if role_of(&stored) == ChannelRole::Owner {
             let (device_id, identity) = self.own_device()?;
             let removed =
                 self.api
@@ -1410,10 +1763,13 @@ impl<T: Transport> Client<T> {
     /// Жетон подписчика канала; если его нет — оформляет подписку.
     ///
     /// 🔐 Жетон случаен и свой у каждого канала: по нему сервер не
-    /// свяжет подписки одного человека между собой.
+    /// свяжет подписки одного человека между собой. Подписка стоит
+    /// пропуска — анонимного одноразового права (`client::passes`):
+    /// серверу достаются жетон и пропуск, но не аккаунт.
     fn ensure_subscribed<R: RngCore + CryptoRng>(
         &self,
         stored: &StoredChannel,
+        now: Timestamp,
         rng: &mut R,
     ) -> Result<[u8; 32]> {
         if let Some(token) = stored.sub_token {
@@ -1424,19 +1780,27 @@ impl<T: Transport> Client<T> {
         let mut token = [0u8; 32];
         rng.fill_bytes(&mut token);
 
-        let pow_nonce = gasapp_net::pow::solve(
-            &gasapp_net::pow::subscribe_challenge(&uuid, &token),
-            gasapp_net::pow::SUBSCRIBE_DIFFICULTY,
-        )
-        .ok_or(GasAppError::Crypto)?;
+        let pass = self.take_pass(now, rng)?;
+        let binding = gasapp_protocol::pass::subscribe_binding(&uuid, &token);
 
-        self.api.subscribe_channel(
+        let subscribed = self.api.subscribe_channel(
             &uuid,
             &ChannelSubscribeRequest {
                 token: hex(&token),
-                pow_nonce,
+                pass_seed: hex(pass.seed()),
+                pass_mac: hex(&pass.redeem(&binding)),
             },
-        )?;
+        );
+
+        if let Err(error) = subscribed {
+            // Сеть оборвалась — сервер пропуска не видел, он ещё годен.
+            // Любой другой отказ значит, что пропуск потрачен либо негоден.
+            if matches!(error, GasAppError::Network) {
+                self.return_pass(&pass)?;
+            }
+
+            return Err(error);
+        }
 
         self.storage
             .set_channel_sub_token(&stored.channel_id, Some(&token))?;
@@ -1453,6 +1817,10 @@ impl<T: Transport> Client<T> {
         rng: &mut R,
         change: impl FnOnce(&mut ChannelMeta),
     ) -> Result<Channel> {
+        // Описание подписывает только владелец: в нём список тех,
+        // кому верят читатели.
+        require_owner(stored)?;
+
         let access = access_of(stored);
         let author = author_of(&access, stored)?;
         let (device_id, identity) = self.own_device()?;
@@ -1467,6 +1835,7 @@ impl<T: Transport> Client<T> {
                 .max(stored.meta_updated_at.saturating_add(1)),
             pinned: stored.pinned_seq,
             avatar: stored.avatar.clone().unwrap_or_default(),
+            admins: admins_of(stored),
         };
         change(&mut meta);
 
@@ -1482,14 +1851,8 @@ impl<T: Transport> Client<T> {
             &DeviceSigner::new(&identity, now),
         )?;
 
-        self.storage.update_channel_meta(
-            &stored.channel_id,
-            &meta.title,
-            &meta.description,
-            meta.pinned,
-            (!meta.avatar.is_empty()).then_some(meta.avatar.as_slice()),
-            meta.updated_at_millis,
-        )?;
+        self.storage
+            .update_channel_meta(&stored.channel_id, &stored_meta(&meta))?;
 
         self.present(
             &self
@@ -1584,7 +1947,7 @@ impl<T: Transport> Client<T> {
     }
 
     /// Идентификатор своего устройства и ключ для подписи запросов.
-    fn own_device(&self) -> Result<(String, IdentityKeyPair)> {
+    pub(super) fn own_device(&self) -> Result<(String, IdentityKeyPair)> {
         let device_id = self
             .storage
             .load_own_keys()?
@@ -1597,12 +1960,13 @@ impl<T: Transport> Client<T> {
 
     fn present(&self, stored: &StoredChannel) -> Result<Channel> {
         let last = self.storage.channel_posts(&stored.channel_id, 1)?.pop();
+        let role = role_of(stored);
 
         Ok(Channel {
             channel_id: channel::format_uuid(&stored.channel_id),
             title: stored.title.clone(),
             description: stored.description.clone(),
-            owned: stored.signing_key.is_some(),
+            role,
             unread: self
                 .storage
                 .count_channel_posts_after(&stored.channel_id, stored.last_read_seq)?,
@@ -1646,6 +2010,7 @@ fn new_stored(
         seen_sent_seq: 0,
         sub_token: None,
         joined_at: now,
+        admins: stored_meta(meta).admins,
     }
 }
 

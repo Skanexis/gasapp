@@ -205,6 +205,12 @@ impl RateLimiter {
         true
     }
 
+    /// Сколько запросов в минуту разрешено одному ключу.
+    #[must_use]
+    pub const fn limit(&self) -> u32 {
+        self.limit
+    }
+
     /// Сколько запросов ещё разрешено ключу.
     #[must_use]
     pub fn remaining(&self, key: &LimitKey, now_millis: i64) -> u32 {

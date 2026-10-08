@@ -21,7 +21,14 @@ use crate::repo::RepoError;
 pub const MAX_POST_BYTES: usize = 65_536;
 
 /// Предел шифротекста описания канала.
-pub const MAX_META_BYTES: usize = 8_192;
+///
+/// Описание несёт название, текст, аватар и список администраторов;
+/// самое большое дополняется до бакета 8 КБ, и с подписью и тегом
+/// в прежние 8 КБ уже не помещалось.
+pub const MAX_META_BYTES: usize = 16_384;
+
+/// Сколько администраторов может быть у канала одновременно.
+pub const MAX_ADMINS_PER_CHANNEL: i64 = 16;
 
 /// Предел одного медиаблоба канала — 32 МБ.
 pub const MAX_MEDIA_BYTES: usize = 32 * 1024 * 1024;
@@ -381,7 +388,9 @@ pub async fn delete_channel(
 ///
 /// # Errors
 ///
-/// * [`RepoError::NotFound`] — канала нет или он чужой.
+/// * [`RepoError::NotFound`] — канала нет либо аккаунт в него не пишет.
+/// * [`RepoError::Conflict`] — следующий номер записи не тот, которого
+///   ждал автор: в канал только что написал кто-то ещё.
 /// * [`RepoError::QuotaExceeded`] — у канала предел числа записей.
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn publish_post(
@@ -389,12 +398,13 @@ pub async fn publish_post(
     owner_account: Uuid,
     channel_id: Uuid,
     body: &[u8],
+    expected_seq: Option<i64>,
 ) -> Result<(i64, i64), RepoError> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
     let numbers: Option<(i64, i64)> = sqlx::query_as(
         "UPDATE channels SET last_seq = last_seq + 1, last_rev = last_rev + 1
-          WHERE channel_id = $1 AND owner_account = $2
+          WHERE channel_id = $1 AND (owner_account = $2 OR EXISTS (SELECT 1 FROM channel_admins a WHERE a.channel_id = channels.channel_id AND a.account_id = $2))
       RETURNING last_seq, last_rev",
     )
     .bind(channel_id)
@@ -405,6 +415,17 @@ pub async fn publish_post(
     let Some((seq, rev)) = numbers else {
         return Err(RepoError::NotFound);
     };
+
+    // 🔐 Номер записи автор кладёт внутрь шифротекста, и читатели
+    // сверяют его с этим. Когда в канал пишут несколько человек, двое
+    // могут назвать один и тот же следующий номер: второму запись не
+    // сохраняется вовсе — иначе в ленте осталась бы запись, которую
+    // читатели отвергают.
+    if expected_seq.is_some_and(|expected| expected != seq) {
+        tx.rollback().await?;
+
+        return Err(RepoError::Conflict);
+    }
 
     if seq > MAX_POSTS_PER_CHANNEL {
         // Откат: номер на несостоявшуюся запись не тратится.
@@ -449,7 +470,7 @@ pub async fn replace_post(
 
     let rev: Option<i64> = sqlx::query_scalar(
         "UPDATE channels SET last_rev = last_rev + 1
-          WHERE channel_id = $1 AND owner_account = $2
+          WHERE channel_id = $1 AND (owner_account = $2 OR EXISTS (SELECT 1 FROM channel_admins a WHERE a.channel_id = channels.channel_id AND a.account_id = $2))
       RETURNING last_rev",
     )
     .bind(channel_id)
@@ -638,7 +659,7 @@ pub async fn store_media(
 
     // Блокировка строки канала: счёт и вставка видят одно состояние.
     let owned: Option<i32> = sqlx::query_scalar(
-        "SELECT 1 FROM channels WHERE channel_id = $1 AND owner_account = $2 FOR UPDATE",
+        "SELECT 1 FROM channels WHERE channel_id = $1 AND (owner_account = $2 OR EXISTS (SELECT 1 FROM channel_admins a WHERE a.channel_id = channels.channel_id AND a.account_id = $2)) FOR UPDATE",
     )
     .bind(channel_id)
     .bind(owner_account)
@@ -719,7 +740,7 @@ pub async fn delete_media(
     media_id: Uuid,
 ) -> Result<(), RepoError> {
     let owned: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM channels WHERE channel_id = $1 AND owner_account = $2)",
+        "SELECT EXISTS (SELECT 1 FROM channels WHERE channel_id = $1 AND (owner_account = $2 OR EXISTS (SELECT 1 FROM channel_admins a WHERE a.channel_id = channels.channel_id AND a.account_id = $2)))",
     )
     .bind(channel_id)
     .bind(owner_account)
@@ -1024,6 +1045,122 @@ pub async fn react(
     .await?;
 
     tx.commit().await?;
+
+    Ok(())
+}
+
+/// Даёт аккаунту устройства `device_id` право писать в канал.
+///
+/// `verify_key` — ключ, которым администратор подписывает записи.
+/// Серверу он нужен только как имя строки: снимают администратора по
+/// нему. Подписи записей сервер не проверяет — их проверяют читатели
+/// по списку из описания канала, подписанного владельцем.
+///
+/// Повтор для того же аккаунта заменяет ключ.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — канала нет, он чужой либо устройства нет.
+/// * [`RepoError::Conflict`] — устройство принадлежит самому владельцу.
+/// * [`RepoError::QuotaExceeded`] — у канала предел администраторов.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn add_admin(
+    pool: &PgPool,
+    owner_account: Uuid,
+    channel_id: Uuid,
+    device_id: Uuid,
+    verify_key: &[u8; 32],
+) -> Result<(), RepoError> {
+    let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+
+    // Блокировка строки канала: счёт и вставка видят одно состояние.
+    let owned: Option<i32> = sqlx::query_scalar(
+        "SELECT 1 FROM channels WHERE channel_id = $1 AND owner_account = $2 FOR UPDATE",
+    )
+    .bind(channel_id)
+    .bind(owner_account)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let admin_account: Option<Uuid> =
+        sqlx::query_scalar("SELECT account_id FROM devices WHERE device_id = $1")
+            .bind(device_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    let (Some(_), Some(admin_account)) = (owned, admin_account) else {
+        return Err(RepoError::NotFound);
+    };
+
+    if admin_account == owner_account {
+        return Err(RepoError::Conflict);
+    }
+
+    let others: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM channel_admins WHERE channel_id = $1 AND account_id <> $2",
+    )
+    .bind(channel_id)
+    .bind(admin_account)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if others >= MAX_ADMINS_PER_CHANNEL {
+        return Err(RepoError::QuotaExceeded);
+    }
+
+    // Тот же ключ у другого аккаунта канала — прежняя строка уходит:
+    // ключ называет одного администратора.
+    sqlx::query("DELETE FROM channel_admins WHERE channel_id = $1 AND verify_key = $2")
+        .bind(channel_id)
+        .bind(verify_key.as_slice())
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO channel_admins (channel_id, account_id, verify_key) VALUES ($1, $2, $3)
+         ON CONFLICT (channel_id, account_id) DO UPDATE SET verify_key = EXCLUDED.verify_key",
+    )
+    .bind(channel_id)
+    .bind(admin_account)
+    .bind(verify_key.as_slice())
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+/// Отнимает право писать у администратора с ключом `verify_key`.
+/// Отсутствующий администратор — не ошибка: цель достигнута.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — канала нет или он чужой.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn remove_admin(
+    pool: &PgPool,
+    owner_account: Uuid,
+    channel_id: Uuid,
+    verify_key: &[u8; 32],
+) -> Result<(), RepoError> {
+    let owned: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM channels WHERE channel_id = $1 AND owner_account = $2)",
+    )
+    .bind(channel_id)
+    .bind(owner_account)
+    .fetch_one(pool)
+    .await?;
+
+    if !owned {
+        return Err(RepoError::NotFound);
+    }
+
+    sqlx::query("DELETE FROM channel_admins WHERE channel_id = $1 AND verify_key = $2")
+        .bind(channel_id)
+        .bind(verify_key.as_slice())
+        .execute(pool)
+        .await?;
 
     Ok(())
 }

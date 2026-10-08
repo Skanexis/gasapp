@@ -55,7 +55,9 @@ pub async fn purge_once(pool: &PgPool) -> Result<Purged, RepoError> {
         envelopes: repo::purge_expired(pool).await?,
         attachments: repo::purge_expired_attachments(pool).await?,
         accounts: repo::purge_inactive_accounts(pool).await?,
-        email_codes: gasapp_server_db::email::purge_expired_codes(pool).await?,
+        email_codes: gasapp_server_db::email::purge_expired_codes(pool)
+            .await?
+            .saturating_add(gasapp_server_db::passes::purge_old_quota(pool).await?),
     })
 }
 

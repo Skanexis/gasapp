@@ -46,11 +46,21 @@ use gasapp_types::{GasAppError, Result};
 /// Версия формата бандла.
 ///
 /// 2 — добавлен секрет ключа восстановления аккаунта (в конце).
-/// Бандлы версии 1 читаются: секрета в них просто нет.
-const BUNDLE_VERSION: u8 = 2;
+/// 3 — добавлены каналы (в конце).
+/// Бандлы версий 1 и 2 читаются: недостающего в них просто нет.
+const BUNDLE_VERSION: u8 = 3;
 
-/// Прежняя версия: без секрета восстановления аккаунта.
+/// Версия с секретом восстановления аккаунта, но без каналов.
+const BUNDLE_VERSION_2: u8 = 2;
+
+/// Первая версия: без секрета восстановления аккаунта.
 const BUNDLE_VERSION_1: u8 = 1;
+
+/// Длина ключей и секретов канала.
+const CHANNEL_KEY_LEN: usize = 32;
+
+/// Сколько каналов и подписей к администраторам вмещает копия.
+const MAX_CHANNELS: usize = 4_096;
 
 /// Длина секрета ключа восстановления аккаунта.
 pub const ACCOUNT_RECOVERY_LEN: usize = 64;
@@ -225,6 +235,44 @@ pub struct ContactPqRecord {
     pub pq_identity_hash: [u8; 32],
 }
 
+/// Канал в копии: ключи и то, чего нельзя забрать с сервера.
+///
+/// 🔐 `signing_key` — приватный ключ подписи владельца либо
+/// администратора. Он в копии, потому что больше ему быть негде: без
+/// него потеря телефона означала потерю канала навсегда. Копия
+/// зашифрована ключом восстановления; `Debug` ключей не печатает.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ChannelRecord {
+    /// Идентификатор канала.
+    pub channel_id: [u8; ID_LEN],
+    /// Секрет чтения из ссылки-приглашения.
+    pub secret: [u8; CHANNEL_KEY_LEN],
+    /// Публичный ключ подписи владельца.
+    pub verify_key: [u8; CHANNEL_KEY_LEN],
+    /// Свой ключ подписи, если человек ведёт канал.
+    pub signing_key: Option<[u8; CHANNEL_KEY_LEN]>,
+    /// Название — чтобы канал был узнаваем до первой синхронизации.
+    pub title: String,
+    /// «Без звука».
+    pub muted: bool,
+    /// Жетон подписчика.
+    pub sub_token: Option<[u8; CHANNEL_KEY_LEN]>,
+    /// Когда канал был добавлен.
+    pub joined_at_millis: i64,
+    /// Имена, которыми владелец подписал администраторов: ключ и имя.
+    pub admin_labels: Vec<([u8; CHANNEL_KEY_LEN], String)>,
+}
+
+impl core::fmt::Debug for ChannelRecord {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("ChannelRecord")
+            .field("channel_id", &self.channel_id)
+            .field("signs", &self.signing_key.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 /// Настройка в копии.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingRecord {
@@ -276,6 +324,13 @@ pub struct BackupBundle {
 
     /// Хеши пост-квантовых половин контактов (версия 2).
     pub contact_pq_hashes: Vec<ContactPqRecord>,
+
+    /// Каналы (версия 3) — всегда все, а не изменившиеся.
+    ///
+    /// `None` — копию собрала версия, не знавшая каналов: при слиянии
+    /// и восстановлении каналы не трогаются. `Some` — полный набор на
+    /// момент копии: канал, которого в нём нет, человек убрал.
+    pub channels: Option<Vec<ChannelRecord>>,
 }
 
 impl BackupBundle {
@@ -291,6 +346,7 @@ impl BackupBundle {
             .saturating_add(self.attachments.len())
             .saturating_add(self.settings.len())
             .saturating_add(self.tombstones.len())
+            .saturating_add(self.channels.as_ref().map_or(0, Vec::len))
     }
 
     /// Пуст ли бандл по данным.
@@ -401,6 +457,17 @@ impl BackupBundle {
             out.extend_from_slice(&record.pq_identity_hash);
         }
 
+        match &self.channels {
+            None => out.push(ABSENT),
+            Some(channels) => {
+                out.push(PRESENT);
+                write_count(&mut out, channels.len())?;
+                for channel in channels {
+                    write_channel(&mut out, channel)?;
+                }
+            }
+        }
+
         Ok(out)
     }
 
@@ -419,7 +486,10 @@ impl BackupBundle {
 
         let version = cursor.take_u8()?;
 
-        if version != BUNDLE_VERSION && version != BUNDLE_VERSION_1 {
+        if !matches!(
+            version,
+            BUNDLE_VERSION | BUNDLE_VERSION_2 | BUNDLE_VERSION_1
+        ) {
             return Err(GasAppError::Malformed);
         }
 
@@ -514,6 +584,7 @@ impl BackupBundle {
         }
 
         let (account_recovery, contact_pq_hashes) = take_version_two_tail(&mut cursor, version)?;
+        let channels = take_version_three_tail(&mut cursor, version)?;
 
         // 🔐 Хвост — ошибка, а не мусор: он означает, что копию собрала
         // версия, понимающая формат иначе, и молча проигнорировать
@@ -535,6 +606,7 @@ impl BackupBundle {
             tombstones,
             account_recovery,
             contact_pq_hashes,
+            channels,
         };
 
         bundle.validate()?;
@@ -582,6 +654,25 @@ impl BackupBundle {
 
         for setting in &self.settings {
             check_string(&setting.key)?;
+        }
+
+        for channel in self.channels.iter().flatten() {
+            check_string(&channel.title)?;
+
+            if channel.admin_labels.len() > MAX_CHANNELS {
+                return Err(GasAppError::Malformed);
+            }
+            for (_, label) in &channel.admin_labels {
+                check_string(label)?;
+            }
+        }
+
+        if self
+            .channels
+            .as_ref()
+            .is_some_and(|list| list.len() > MAX_CHANNELS)
+        {
+            return Err(GasAppError::Malformed);
         }
 
         Ok(())
@@ -642,7 +733,113 @@ impl BackupBundle {
             increment.contact_pq_hashes,
             |record| record.account_id,
         );
+
+        // Каналы инкремент несёт целиком: его набор заменяет прежний.
+        // Так канал, который человек убрал, не возвращается из старого
+        // звена цепочки. Инкремент прежней версии каналов не знает —
+        // и не трогает.
+        if increment.channels.is_some() {
+            self.channels = increment.channels;
+        }
     }
+}
+
+fn write_optional_key(out: &mut Vec<u8>, key: Option<&[u8; CHANNEL_KEY_LEN]>) {
+    match key {
+        None => out.push(ABSENT),
+        Some(key) => {
+            out.push(PRESENT);
+            out.extend_from_slice(key);
+        }
+    }
+}
+
+fn write_channel(out: &mut Vec<u8>, channel: &ChannelRecord) -> Result<()> {
+    out.extend_from_slice(&channel.channel_id);
+    out.extend_from_slice(&channel.secret);
+    out.extend_from_slice(&channel.verify_key);
+    write_optional_key(out, channel.signing_key.as_ref());
+    write_bytes(out, channel.title.as_bytes())?;
+    out.push(u8::from(channel.muted));
+    write_optional_key(out, channel.sub_token.as_ref());
+    out.extend_from_slice(&channel.joined_at_millis.to_be_bytes());
+
+    write_count(out, channel.admin_labels.len())?;
+    for (key, label) in &channel.admin_labels {
+        out.extend_from_slice(key);
+        write_bytes(out, label.as_bytes())?;
+    }
+
+    Ok(())
+}
+
+fn take_key(cursor: &mut Cursor<'_>) -> Result<[u8; CHANNEL_KEY_LEN]> {
+    cursor
+        .take_exact(CHANNEL_KEY_LEN)?
+        .try_into()
+        .map_err(|_| GasAppError::Malformed)
+}
+
+fn take_optional_key(cursor: &mut Cursor<'_>) -> Result<Option<[u8; CHANNEL_KEY_LEN]>> {
+    if cursor.take_bool()? {
+        Ok(Some(take_key(cursor)?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn take_text(cursor: &mut Cursor<'_>) -> Result<String> {
+    String::from_utf8(cursor.take_bytes()?.to_vec()).map_err(|_| GasAppError::Malformed)
+}
+
+/// Хвост формата версии 3: каналы. У версий 1 и 2 его нет.
+fn take_version_three_tail(
+    cursor: &mut Cursor<'_>,
+    version: u8,
+) -> Result<Option<Vec<ChannelRecord>>> {
+    if version < BUNDLE_VERSION || !cursor.take_bool()? {
+        return Ok(None);
+    }
+
+    let count = cursor.take_count()?;
+    if count > MAX_CHANNELS {
+        return Err(GasAppError::Malformed);
+    }
+
+    let mut channels = Vec::with_capacity(count.min(1024));
+    for _ in 0..count {
+        let channel_id = cursor.take_id()?;
+        let secret = take_key(cursor)?;
+        let verify_key = take_key(cursor)?;
+        let signing_key = take_optional_key(cursor)?;
+        let title = take_text(cursor)?;
+        let muted = cursor.take_bool()?;
+        let sub_token = take_optional_key(cursor)?;
+        let joined_at_millis = cursor.take_i64()?;
+
+        let labels = cursor.take_count()?;
+        if labels > MAX_CHANNELS {
+            return Err(GasAppError::Malformed);
+        }
+        let mut admin_labels = Vec::with_capacity(labels.min(64));
+        for _ in 0..labels {
+            admin_labels.push((take_key(cursor)?, take_text(cursor)?));
+        }
+
+        channels.push(ChannelRecord {
+            channel_id,
+            secret,
+            verify_key,
+            signing_key,
+            title,
+            muted,
+            sub_token,
+            joined_at_millis,
+            admin_labels,
+        });
+    }
+
+    Ok(Some(channels))
 }
 
 /// Хвост формата версии 2: секрет восстановления аккаунта и хеши
@@ -651,7 +848,7 @@ fn take_version_two_tail(
     cursor: &mut Cursor<'_>,
     version: u8,
 ) -> Result<(Option<AccountRecoverySecret>, Vec<ContactPqRecord>)> {
-    if version < BUNDLE_VERSION {
+    if version < BUNDLE_VERSION_2 {
         return Ok((None, Vec::new()));
     }
 
@@ -999,7 +1196,86 @@ mod tests {
                 account_id: [3; ID_LEN],
                 pq_identity_hash: [6; 32],
             }],
+            channels: Some(vec![channel(1), channel(2)]),
         }
+    }
+
+    fn channel(id: u8) -> ChannelRecord {
+        ChannelRecord {
+            channel_id: [id; ID_LEN],
+            secret: [0x21; 32],
+            verify_key: [0x22; 32],
+            signing_key: (id == 1).then_some([0x23; 32]),
+            title: format!("Канал {id}"),
+            muted: id == 2,
+            sub_token: Some([0x24; 32]),
+            joined_at_millis: 1_760_000_000_000,
+            admin_labels: vec![([0x25; 32], "anna".to_owned())],
+        }
+    }
+
+    /// 🔐 Ключ подписи канала в копию входит — и в `Debug` не попадает.
+    #[test]
+    fn channel_keys_are_kept_and_not_printed() {
+        let bundle = populated();
+        let decoded =
+            BackupBundle::from_bytes(&bundle.to_bytes().expect("сериализация")).expect("разбор");
+        let channels = decoded.channels.expect("каналы");
+
+        assert_eq!(channels[0].signing_key, Some([0x23; 32]));
+        assert_eq!(channels[1].signing_key, None);
+
+        let printed = format!("{:?}", channels[0]);
+        assert!(
+            !printed.contains("35, 35"),
+            "ключ подписи в отладочном выводе"
+        );
+        assert!(
+            !printed.contains("33, 33"),
+            "секрет чтения в отладочном выводе"
+        );
+    }
+
+    /// Инкремент несёт каналы целиком: убранный канал не возвращается,
+    /// а инкремент прежней версии каналов не трогает.
+    #[test]
+    fn channels_are_replaced_as_a_whole() {
+        let mut base = populated();
+
+        base.merge(BackupBundle {
+            channels: None,
+            ..BackupBundle::default()
+        });
+        assert_eq!(base.channels.as_ref().map(Vec::len), Some(2));
+
+        base.merge(BackupBundle {
+            channels: Some(vec![channel(2)]),
+            ..BackupBundle::default()
+        });
+        assert_eq!(base.channels, Some(vec![channel(2)]));
+
+        base.merge(BackupBundle {
+            channels: Some(Vec::new()),
+            ..BackupBundle::default()
+        });
+        assert_eq!(base.channels, Some(Vec::new()));
+    }
+
+    /// Бандл версии 2 (без каналов) по-прежнему читается.
+    #[test]
+    fn version_two_bundles_still_parse() {
+        let mut expected = populated();
+        expected.channels = None;
+
+        let mut encoded = expected.to_bytes().expect("сериализация");
+        encoded[0] = BUNDLE_VERSION_2;
+        // Версия 2 кончалась хешами: метки каналов (1 байт) в ней нет.
+        encoded.truncate(encoded.len() - 1);
+
+        assert_eq!(
+            BackupBundle::from_bytes(&encoded).expect("разбор"),
+            expected
+        );
     }
 
     /// Бандл переживает сериализацию без потерь.
@@ -1048,6 +1324,9 @@ mod tests {
             account_recovery: _,
             // Хеши пост-квантовых половин контактов — открытые данные.
             contact_pq_hashes: _,
+            // Ключи каналов — не ratchet state: это долгоживущие ключи
+            // лент, которым негде больше храниться (ADR-033).
+            channels: _,
         } = BackupBundle::default();
     }
 
@@ -1057,12 +1336,13 @@ mod tests {
         let mut expected = populated();
         expected.account_recovery = None;
         expected.contact_pq_hashes.clear();
+        expected.channels = None;
 
         let mut encoded = expected.to_bytes().expect("сериализация");
         encoded[0] = BUNDLE_VERSION_1;
-        // Версия 1 кончалась надгробиями: метки секрета и счётчика
-        // хешей (1 + 4 байта) в ней нет.
-        encoded.truncate(encoded.len() - 5);
+        // Версия 1 кончалась надгробиями: меток секрета, счётчика
+        // хешей и каналов (1 + 4 + 1 байт) в ней нет.
+        encoded.truncate(encoded.len() - 6);
 
         assert_eq!(
             BackupBundle::from_bytes(&encoded).expect("разбор"),
