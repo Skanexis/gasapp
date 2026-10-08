@@ -68,7 +68,7 @@ class ChannelImages(
         scope.launch {
             val bitmap = withContext(Dispatchers.IO) {
                 runCatching {
-                    decode(Core.messenger().fetchChannelMedia(channelId, descriptor))
+                    decode(Core.messenger().fetchChannelMedia(channelId, descriptor, System.currentTimeMillis()))
                 }.getOrNull()
             }
 
