@@ -151,15 +151,18 @@ async fn verify_parts(
     // о чьих данных идёт речь. Идентификатор из заголовка позволил
     // бы подписать своим ключом запрос к чужой очереди.
     //
-    // Путь бывает двух форм — `/…/{device}` и `/…/{device}/{envelope}`,
-    // поэтому сначала пробуется одиночный параметр, затем пара.
+    // Путь бывает трёх форм — `/…/{device}`, `/…/{device}/{второй}`
+    // и `/…/{device}/{канал}/…/{блоб}`, — поэтому пробуется одиночный
+    // параметр, затем пара, затем тройка. Устройство всегда первое.
     // Брать «первый параметр» вслепую нельзя: порядок в кортеже
     // задаётся маршрутом, и молчаливая опора на него сломалась бы
     // при добавлении маршрута с другим порядком.
     let device_id = if let Ok(Path(id)) = Path::<Uuid>::from_request_parts(parts, state).await {
         id
+    } else if let Ok(Path((id, _))) = Path::<(Uuid, Uuid)>::from_request_parts(parts, state).await {
+        id
     } else {
-        let Path((id, _)) = Path::<(Uuid, Uuid)>::from_request_parts(parts, state)
+        let Path((id, _, _)) = Path::<(Uuid, Uuid, Uuid)>::from_request_parts(parts, state)
             .await
             .map_err(|_| ApiError::Unauthorized)?;
 
