@@ -25,11 +25,13 @@ use gasapp_types::{GasAppError, Result};
 
 use crate::api::{
     AccountDeletedResponse, AccountStatusResponse, BundleResponse, CertificateResponse,
-    ChannelPostResponse, ChannelResponse, CreateChannelRequest, DiscoveryResponse,
-    EmailCodeRequest, EnvelopeResponse, KtHeadsResponse, KtProofsRequest, KtProofsResponse,
-    PublishKeysRequest, PublishPostRequest, PublishPostResponse, RecoverAccountRequest,
-    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
-    SealedReportResponse, SealedSendRequest, UpdateChannelMetaRequest,
+    ChannelMediaResponse, ChannelPostResponse, ChannelReactRequest, ChannelResponse,
+    ChannelSeenRequest, ChannelSubscribeRequest, ChannelTokenRequest, CreateChannelRequest,
+    DeleteChannelMediaRequest, DiscoveryResponse, EmailCodeRequest, EnvelopeResponse,
+    KtHeadsResponse, KtProofsRequest, KtProofsResponse, PublishKeysRequest, PublishPostRequest,
+    PublishPostResponse, RecoverAccountRequest, RegisterRequest, RegisterResponse,
+    ReplacePostRequest, SealedAccessRequest, SealedReportRequest, SealedReportResponse,
+    SealedSendRequest, UpdateChannelRequest,
 };
 
 /// Метод HTTP.
@@ -230,17 +232,19 @@ impl<T: Transport> ApiClient<T> {
         Ok(())
     }
 
-    /// Заменяет описание своего канала.
+    /// Меняет свой канал: описание и/или публичность.
     ///
     /// # Errors
     ///
     /// * [`GasAppError::SessionNotFound`] — канала нет или он чужой.
+    /// * [`GasAppError::UsernameTaken`] — публичное имя занято.
+    /// * [`GasAppError::Malformed`] — сервер не принял имя.
     /// * [`GasAppError::Network`] — сбой соединения.
-    pub fn update_channel_meta(
+    pub fn update_channel(
         &self,
         device_id: &str,
         channel_id: &str,
-        request: &UpdateChannelMetaRequest,
+        request: &UpdateChannelRequest,
         signer: &dyn crate::auth::RequestSigner,
     ) -> Result<()> {
         let channel_id = canonical_uuid(channel_id)?;
@@ -305,6 +309,100 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
+    /// Заменяет запись своего канала: правка либо отметка об удалении.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала или записи нет.
+    /// * [`GasAppError::Network`] — сбой соединения либо слишком частые
+    ///   правки.
+    pub fn replace_channel_post(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &ReplacePostRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<PublishPostResponse> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        let response = self.send_signed(
+            Method::Put,
+            format!("/v1/channels/own/{device_id}/{channel_id}/posts"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        parse(&response)
+    }
+
+    /// Загружает зашифрованный медиаблоб своего канала; возвращает его
+    /// адрес.
+    ///
+    /// За подписью устройства: место в канале — только владельцу.
+    /// Блоб уходит сырыми байтами, и подпись покрывает его хеш.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет или он чужой.
+    /// * [`GasAppError::Malformed`] — блоб больше предела либо в канале
+    ///   кончилось место.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn upload_channel_media(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        payload: Vec<u8>,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<String> {
+        let channel_id = canonical_uuid(channel_id)?;
+        let path = format!("/v1/channels/own/{device_id}/{channel_id}/media");
+        let headers =
+            crate::auth::signature_headers(signer, Method::Post.as_str(), &path, &payload)?;
+
+        let response = self.transport.execute(&HttpRequest {
+            method: Method::Post,
+            path,
+            body: None,
+            binary_body: Some(payload),
+            headers,
+            anonymous: false,
+        })?;
+
+        check_status(&response)?;
+
+        let media: ChannelMediaResponse = parse(&response)?;
+
+        canonical_uuid(&media.media_id)
+    }
+
+    /// Удаляет медиаблоб своего канала.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала или блоба нет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn delete_channel_media(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        media_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+        let request = DeleteChannelMediaRequest {
+            media_id: canonical_uuid(media_id)?,
+        };
+
+        self.send_signed(
+            Method::Delete,
+            format!("/v1/channels/own/{device_id}/{channel_id}/media"),
+            Some(to_json(&request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
     /// Канал по идентификатору — **без подписи**: сервер не должен
     /// знать, кто читает канал.
     ///
@@ -320,26 +418,172 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
-    /// Записи канала с номером больше `after` — **без подписи**.
+    /// Изменения канала после ревизии `after_rev`, по возрастанию
+    /// ревизии — новые записи, правки и удаления. **Без подписи.**
     ///
     /// # Errors
     ///
     /// [`GasAppError::Network`] — сбой соединения.
-    pub fn channel_posts(
+    pub fn channel_changes(
         &self,
         channel_id: &str,
-        after: u64,
+        after_rev: u64,
         limit: u32,
     ) -> Result<Vec<ChannelPostResponse>> {
         let channel_id = canonical_uuid(channel_id)?;
 
         let response = self.send(
             Method::Get,
-            format!("/v1/channels/feed/{channel_id}/posts?after={after}&limit={limit}"),
+            format!("/v1/channels/feed/{channel_id}/posts?after_rev={after_rev}&limit={limit}"),
             None,
         )?;
 
         parse(&response)
+    }
+
+    /// Страница ленты от новых к старым: записи с номером меньше
+    /// `before_seq`, а без него — самые свежие. **Без подписи.**
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_page(
+        &self,
+        channel_id: &str,
+        before_seq: Option<u64>,
+        limit: u32,
+    ) -> Result<Vec<ChannelPostResponse>> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        let path = match before_seq {
+            Some(before) => {
+                format!("/v1/channels/feed/{channel_id}/posts?before_seq={before}&limit={limit}")
+            }
+            None => format!("/v1/channels/feed/{channel_id}/posts?limit={limit}"),
+        };
+
+        parse(&self.send(Method::Get, path, None)?)
+    }
+
+    /// Скачивает медиаблоб канала — **без подписи**.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — блоба нет (запись удалена).
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn download_channel_media(&self, channel_id: &str, media_id: &str) -> Result<Vec<u8>> {
+        // 🔐 Адрес блоба приходит из записи канала, то есть от автора:
+        // в путь попадает только UUID (см. `download_attachment`).
+        let channel_id = canonical_uuid(channel_id)?;
+        let media_id = canonical_uuid(media_id)?;
+
+        let response = self.send(
+            Method::Get,
+            format!("/v1/channels/feed/{channel_id}/media/{media_id}"),
+            None,
+        )?;
+
+        Ok(response.binary_body)
+    }
+
+    /// Публичный канал по точному `@имени` — **без подписи**.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — такого канала нет.
+    /// * [`GasAppError::Malformed`] — это не имя канала.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_by_handle(&self, handle: &str) -> Result<ChannelResponse> {
+        let handle = canonical_handle(handle)?;
+
+        let response = self.send(Method::Get, format!("/v1/channels/handle/{handle}"), None)?;
+
+        parse(&response)
+    }
+
+    /// Публичные каналы, чьё `@имя` начинается с `prefix`. **Без
+    /// подписи.** Негодный запрос даёт пустой список, как и на сервере.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn search_channels(&self, prefix: &str) -> Result<Vec<ChannelResponse>> {
+        // 🔐 В строку запроса попадают только знаки имени: всё прочее
+        // было бы способом дописать серверу свои параметры.
+        let Ok(prefix) = canonical_handle_prefix(prefix) else {
+            return Ok(Vec::new());
+        };
+
+        let response = self.send(Method::Get, format!("/v1/channels/search?q={prefix}"), None)?;
+
+        parse(&response)
+    }
+
+    /// Подписывает жетон читателя на канал — **без подписи устройства**.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::InvalidSignature`] — proof-of-work не принят.
+    /// * [`GasAppError::SessionNotFound`] — канала нет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn subscribe_channel(
+        &self,
+        channel_id: &str,
+        request: &ChannelSubscribeRequest,
+    ) -> Result<()> {
+        self.reader_action(channel_id, "subscribe", to_json(request)?)
+    }
+
+    /// Снимает жетон читателя с канала вместе с его реакциями.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn unsubscribe_channel(
+        &self,
+        channel_id: &str,
+        request: &ChannelTokenRequest,
+    ) -> Result<()> {
+        self.reader_action(channel_id, "unsubscribe", to_json(request)?)
+    }
+
+    /// Отмечает, что подписчик дочитал до записи.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения либо слишком частые
+    /// запросы.
+    pub fn mark_channel_seen(&self, channel_id: &str, request: &ChannelSeenRequest) -> Result<()> {
+        self.reader_action(channel_id, "seen", to_json(request)?)
+    }
+
+    /// Ставит, меняет или снимает реакцию подписчика на запись.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Malformed`] — эмодзи не из набора сервера.
+    /// * [`GasAppError::SessionNotFound`] — жетон не подписан либо
+    ///   записи нет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn react_to_channel_post(
+        &self,
+        channel_id: &str,
+        request: &ChannelReactRequest,
+    ) -> Result<()> {
+        self.reader_action(channel_id, "react", to_json(request)?)
+    }
+
+    /// Действие читателя канала — анонимный `POST` с жетоном в теле.
+    fn reader_action(&self, channel_id: &str, action: &str, body: String) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        self.send(
+            Method::Post,
+            format!("/v1/channels/feed/{channel_id}/{action}"),
+            Some(body),
+        )?;
+
+        Ok(())
     }
 
     /// Перепривязывает аккаунт к новой identity (восстановление
@@ -853,6 +1097,43 @@ fn canonical_uuid(raw: &str) -> Result<String> {
     }
 }
 
+/// Публичное имя канала в каноничном виде: без `@`, строчные латинские
+/// буквы, цифры и `_`, с буквы, 3–32 знака.
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — это не имя канала.
+pub fn canonical_handle(raw: &str) -> Result<String> {
+    let handle = canonical_handle_prefix(raw)?;
+
+    if handle.len() >= 3
+        && handle
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+    {
+        Ok(handle)
+    } else {
+        Err(GasAppError::Malformed)
+    }
+}
+
+/// Начало публичного имени — для поиска: те же знаки, от двух.
+fn canonical_handle_prefix(raw: &str) -> Result<String> {
+    let handle = raw.trim().trim_start_matches('@').to_ascii_lowercase();
+
+    let well_formed = (2..=32).contains(&handle.len())
+        && handle
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
+
+    if well_formed {
+        Ok(handle)
+    } else {
+        Err(GasAppError::Malformed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1205,5 +1486,84 @@ mod tests {
         assert_eq!(Method::Post.as_str(), "POST");
         assert_eq!(Method::Put.as_str(), "PUT");
         assert_eq!(Method::Delete.as_str(), "DELETE");
+    }
+
+    /// Загрузка медиа канала подписана и покрывает сырое тело.
+    #[test]
+    fn channel_media_upload_is_signed_over_the_blob() {
+        let transport = FakeTransport::with(
+            200,
+            r#"{"media_id":"6F9619FF-8B86-D011-B42D-00C04FC964FF"}"#,
+        );
+        let client = ApiClient::new(transport);
+
+        let media_id = client
+            .upload_channel_media(
+                "dev",
+                "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+                vec![1, 2, 3],
+                &TestSigner,
+            )
+            .expect("upload");
+
+        assert_eq!(media_id, "6f9619ff-8b86-d011-b42d-00c04fc964ff");
+
+        let request = client.transport.last_request();
+        assert!(!request.anonymous);
+        assert_eq!(request.binary_body.as_deref(), Some(&[1u8, 2, 3][..]));
+        assert_eq!(
+            header(&request, crate::auth::BODY_SHA256_HEADER),
+            crate::auth::to_hex(&crate::auth::body_sha256(&[1, 2, 3]))
+        );
+    }
+
+    /// 🔐 Имя канала и адрес блоба приходят извне: в путь попадает
+    /// только каноничный вид.
+    #[test]
+    fn channel_paths_take_only_canonical_parts() {
+        let client = ApiClient::new(FakeTransport::with(200, "[]"));
+
+        assert!(client.channel_by_handle("../v1/keys").is_err());
+        assert!(client.channel_by_handle("ab").is_err());
+        assert!(client.channel_by_handle("1news").is_err());
+        assert!(client
+            .download_channel_media("6f9619ff-8b86-d011-b42d-00c04fc964ff", "../x")
+            .is_err());
+
+        // Негодный поиск до сети не доходит.
+        assert!(client
+            .search_channels("a&limit=9")
+            .expect("empty")
+            .is_empty());
+        assert!(client.transport.seen.borrow().is_empty());
+
+        client.search_channels(" @Gas_News ").expect("search");
+        assert_eq!(
+            client.transport.last_request().path,
+            "/v1/channels/search?q=gas_news"
+        );
+    }
+
+    #[test]
+    fn reader_actions_are_anonymous() {
+        let client = ApiClient::new(FakeTransport::with(204, ""));
+
+        client
+            .mark_channel_seen(
+                "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+                &ChannelSeenRequest {
+                    token: "ab".repeat(32),
+                    seq: 7,
+                },
+            )
+            .expect("seen");
+
+        let request = client.transport.last_request();
+        assert!(request.anonymous);
+        assert!(request.headers.is_empty());
+        assert_eq!(
+            request.path,
+            "/v1/channels/feed/6f9619ff-8b86-d011-b42d-00c04fc964ff/seen"
+        );
     }
 }

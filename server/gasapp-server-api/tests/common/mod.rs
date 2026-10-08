@@ -186,6 +186,7 @@ pub async fn state() -> Option<std::sync::Arc<gasapp_server_api::routes::AppStat
 
     let mut state = gasapp_server_api::routes::AppState::new(pool, [0x5Au8; 32]);
     state.pow_difficulty = TEST_DIFFICULTY;
+    state.subscribe_difficulty = TEST_DIFFICULTY;
 
     Some(std::sync::Arc::new(state))
 }
@@ -275,6 +276,7 @@ pub async fn state_with_mailer() -> Option<(
     let mailer = std::sync::Arc::new(CapturingMailer::default());
     let mut state = gasapp_server_api::routes::AppState::new(pool, [0x5Au8; 32]);
     state.pow_difficulty = TEST_DIFFICULTY;
+    state.subscribe_difficulty = TEST_DIFFICULTY;
     state.mailer = mailer.clone();
 
     Some((std::sync::Arc::new(state), mailer))

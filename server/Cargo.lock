@@ -660,6 +660,7 @@ dependencies = [
  "axum-server",
  "curve25519-dalek",
  "ed25519-dalek",
+ "futures-util",
  "gasapp-server-api",
  "gasapp-server-db",
  "hex",

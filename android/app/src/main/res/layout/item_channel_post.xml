@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Запись канала: карточка во всю ширину ленты, время — под текстом.
+  Запись канала: карточка во всю ширину ленты.
   Запись — не реплика в разговоре, поэтому это не пузырь с хвостиком,
   а лист: у канала один голос, и сторону различать не нужно.
+
+  Сверху вниз: пометка закрепа, фото и файлы, текст, реакции, строка
+  со счётчиком просмотров, пометкой правки и временем.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/post_card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginStart="@dimen/screen_padding"
@@ -21,21 +26,91 @@
     android:paddingBottom="10dp">
 
     <TextView
+        android:id="@+id/post_pinned"
+        style="@style/GasAppText.Caption.Muted"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:drawablePadding="4dp"
+        android:text="@string/channel_post_pinned"
+        android:textColor="@color/accent_base"
+        android:visibility="gone"
+        app:drawableStartCompat="@drawable/ic_pin_small"
+        app:drawableTint="@color/accent_base"
+        tools:visibility="visible" />
+
+    <!-- Фото и файлы записи: строки добавляет адаптер. -->
+    <LinearLayout
+        android:id="@+id/post_media"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
+    <!--
+      Не textIsSelectable: выделение перехватывало бы долгое нажатие,
+      которым открываются действия над записью. Текст копируется оттуда.
+    -->
+    <TextView
         android:id="@+id/post_text"
         style="@style/GasAppText.Body"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:autoLink="none"
-        android:textIsSelectable="true"
         tools:text="Сегодня в 20:00 — прямой эфир. Ссылка появится здесь же за десять минут до начала." />
 
-    <TextView
-        android:id="@+id/post_time"
-        style="@style/GasAppText.Caption.Muted"
+    <HorizontalScrollView
+        android:id="@+id/post_reactions_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_s"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/post_reactions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="end"
         android:layout_marginTop="6dp"
-        tools:text="7 окт., 19:42" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/post_views"
+            style="@style/GasAppText.Caption.Muted"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="@dimen/space_s"
+            android:drawablePadding="4dp"
+            android:visibility="gone"
+            app:drawableStartCompat="@drawable/ic_eye_small"
+            app:drawableTint="@color/text_muted"
+            tools:text="128"
+            tools:visibility="visible" />
+
+        <TextView
+            android:id="@+id/post_edited"
+            style="@style/GasAppText.Caption.Muted"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="@dimen/space_s"
+            android:text="@string/channel_post_edited"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <TextView
+            android:id="@+id/post_time"
+            style="@style/GasAppText.Caption.Muted"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            tools:text="7 окт., 19:42" />
+    </LinearLayout>
 
 </LinearLayout>

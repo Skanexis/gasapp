@@ -123,6 +123,8 @@ pub struct AppState {
 
     /// Места для одновременных загрузок вложений (см. [`limit_uploads`]).
     pub upload_slots: Arc<tokio::sync::Semaphore>,
+    /// Места для одновременных скачиваний вложений и медиа каналов.
+    pub download_slots: Arc<tokio::sync::Semaphore>,
 
     /// Отправитель писем с кодом подтверждения (см. [`crate::email`]).
     ///
@@ -147,6 +149,10 @@ pub struct AppState {
     pub email_code_limiter: Mutex<RateLimiter>,
     /// Ограничитель публикаций — по каналу.
     pub channel_post_limiter: Mutex<RateLimiter>,
+    /// Ограничитель действий читателя канала — по жетону подписчика.
+    pub channel_reader_limiter: Mutex<RateLimiter>,
+    /// Сложность proof-of-work подписки на канал.
+    pub subscribe_difficulty: u32,
 }
 
 /// Сколько вложений узел принимает одновременно.
@@ -156,6 +162,14 @@ pub struct AppState {
 /// onion-сервис — где нет ни nginx, ни ограничения по адресу — занимал
 /// бы гигабайт памяти узла (аудит 2026-10-02, S-3).
 pub const MAX_CONCURRENT_UPLOADS: usize = 8;
+
+/// Сколько вложений и медиа каналов узел отдаёт одновременно.
+///
+/// 🔐 Скачивание анонимно, а блоб перед отдачей целиком лежит в памяти
+/// (до ста мегабайт). Без предела сотня одновременных запросов заняла
+/// бы десять гигабайт, и узел убило бы ядро. Шестнадцать мест — это
+/// не больше 1,6 ГБ в худшем случае.
+pub const MAX_CONCURRENT_DOWNLOADS: usize = 16;
 
 /// Сколько может длиться одна загрузка вложения.
 ///
@@ -233,6 +247,7 @@ impl AppState {
             push: Arc::new(crate::push::NoPush),
             health: Arc::new(crate::health::HealthState::new()),
             upload_slots: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_UPLOADS)),
+            download_slots: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DOWNLOADS)),
             mailer: Arc::new(crate::email::LogMailer),
             email_key: crate::email::key_from_env().unwrap_or([0u8; 32]),
             fixed_email_code: None,
@@ -244,6 +259,11 @@ impl AppState {
                 crate::channels::POSTS_PER_MINUTE,
                 nodes,
             ))),
+            channel_reader_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                crate::channels::READER_ACTIONS_PER_MINUTE,
+                nodes,
+            ))),
+            subscribe_difficulty: crate::channels::SUBSCRIBE_DIFFICULTY,
         }
     }
 }
@@ -267,6 +287,45 @@ async fn limit_uploads(
     tokio::time::timeout(UPLOAD_DEADLINE, next.run(request))
         .await
         .unwrap_or_else(|_| ApiError::TooManyRequests.into_response())
+}
+
+/// 🔐 Ограничивает одновременные скачивания блобов.
+///
+/// Место держится, пока тело ответа не отдано целиком либо соединение
+/// не оборвано: память занята именно это время, а не время обработчика.
+/// Мест нет — `429`. Медленного читателя обрывает балансировщик
+/// (таймаут отдачи): узел сам срок здесь не считает.
+async fn limit_downloads(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::body::HttpBody as _;
+    use axum::response::IntoResponse as _;
+    use futures_util::StreamExt as _;
+
+    let Ok(slot) = Arc::clone(&state.download_slots).try_acquire_owned() else {
+        return ApiError::TooManyRequests.into_response();
+    };
+
+    let (mut parts, body) = next.run(request).await.into_parts();
+
+    // Длина известна заранее — блоб целиком в памяти; без заголовка
+    // ответ ушёл бы кусками, и клиент не узнал бы размер до конца.
+    if let Some(length) = body.size_hint().exact() {
+        parts.headers.insert(
+            axum::http::header::CONTENT_LENGTH,
+            axum::http::HeaderValue::from(length),
+        );
+    }
+
+    let held = body.into_data_stream().map(move |chunk| {
+        // Место живёт вместе с потоком тела.
+        let _slot = &slot;
+        chunk
+    });
+
+    axum::response::Response::from_parts(parts, axum::body::Body::from_stream(held))
 }
 
 /// Ошибка API в терминах HTTP.
@@ -535,13 +594,9 @@ pub struct VerifyRequest {
     pub signature: String,
 }
 
-/// Собирает маршрутизатор.
-pub fn router(state: Arc<AppState>) -> Router {
+/// Маршруты премиума и каналов (см. `channels`).
+fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()
-        .route("/v1/accounts/register", post(register))
-        // Письмо с кодом подтверждения адреса — шаг перед регистрацией.
-        .route("/v1/accounts/email/code", post(crate::email::request_code))
-        // Премиум и каналы (см. `channels`).
         .route(
             "/v1/accounts/:device_id/status",
             get(crate::channels::account_status),
@@ -549,19 +604,71 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/channels/own/:device_id", post(crate::channels::create))
         .route(
             "/v1/channels/own/:device_id/:channel_id",
-            put(crate::channels::update_meta).delete(crate::channels::delete),
+            put(crate::channels::update).delete(crate::channels::delete),
         )
+        // Запись: POST — новая, PUT — правка или удаление (номер записи
+        // в теле: проверка подписи знает пути с одним и двумя UUID).
         .route(
             "/v1/channels/own/:device_id/:channel_id/posts",
-            post(crate::channels::publish),
+            post(crate::channels::publish).put(crate::channels::replace),
+        )
+        // Медиа канала: шифроблоб сырыми байтами. Предел тела поднят
+        // только здесь. Место загрузки (общее с вложениями) занимает
+        // слой проверки подписи — он читает тело раньше любого слоя
+        // маршрута, и ограничивать после него было бы поздно.
+        .route(
+            "/v1/channels/own/:device_id/:channel_id/media",
+            post(crate::channels::upload_media)
+                .delete(crate::channels::delete_media)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::authz::MAX_CHANNEL_MEDIA_BODY_BYTES,
+                )),
         )
         // 🔐 Чтение — без подписи: сервер не должен знать, кто читает
-        // канал. Таблицы подписчиков нет по той же причине.
+        // канал. Подписчик для него — случайный жетон (миграция 0019).
         .route("/v1/channels/feed/:channel_id", get(crate::channels::info))
         .route(
             "/v1/channels/feed/:channel_id/posts",
             get(crate::channels::posts),
         )
+        .route(
+            "/v1/channels/feed/:channel_id/media/:media_id",
+            get(crate::channels::media).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                limit_downloads,
+            )),
+        )
+        .route(
+            "/v1/channels/feed/:channel_id/subscribe",
+            post(crate::channels::subscribe),
+        )
+        .route(
+            "/v1/channels/feed/:channel_id/unsubscribe",
+            post(crate::channels::unsubscribe),
+        )
+        .route(
+            "/v1/channels/feed/:channel_id/seen",
+            post(crate::channels::seen),
+        )
+        .route(
+            "/v1/channels/feed/:channel_id/react",
+            post(crate::channels::react),
+        )
+        // Публичные каналы: по точному имени и поиском по его началу.
+        .route(
+            "/v1/channels/handle/:handle",
+            get(crate::channels::by_handle),
+        )
+        .route("/v1/channels/search", get(crate::channels::search))
+}
+
+/// Собирает маршрутизатор.
+pub fn router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/v1/accounts/register", post(register))
+        // Письмо с кодом подтверждения адреса — шаг перед регистрацией.
+        .route("/v1/accounts/email/code", post(crate::email::request_code))
+        .merge(channel_routes(&state))
         // 🔐 Перепривязка аккаунта к новой identity — без подписи
         // устройства (старых устройств у человека уже нет): право
         // доказывает подпись ключа восстановления (см. `recovery`).
@@ -654,7 +761,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/v1/attachments/blob/:attachment_id",
-            get(download_attachment),
+            get(download_attachment).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                limit_downloads,
+            )),
         )
         // 🔐 Подписанные запросы — через проверку подписи и тела
         // (`authz::verify_signed_request`). `route_layer`, а не `layer`:
@@ -715,6 +825,29 @@ async fn register(
     )?
     .ok_or(ApiError::BadRequest)?;
 
+    // Ключ восстановления аккаунта: без него имя не пережило бы
+    // переустановку. Необязателен для запроса — клиенты прежних
+    // сборок его не присылают.
+    //
+    // 🔐 Разбирается до записи аккаунта, как и всё остальное в запросе.
+    // Прежде негодный ключ отвергался уже после неё: запрос получал
+    // `400`, а аккаунт оставался — с занятым именем и адресом почты, без
+    // ключа восстановления и без устройства у человека, которое о нём
+    // знало бы. Повторить регистрацию он уже не мог.
+    let recovery = match (&request.recovery_key, &request.recovery_pq_key) {
+        (Some(public), Some(pq_public)) => {
+            let public = decode_hex(public)?;
+            let pq_public = decode_hex(pq_public)?;
+
+            if public.len() != 32 || pq_public.len() != PQ_IDENTITY_KEY_LEN {
+                return Err(ApiError::BadRequest);
+            }
+
+            Some((public, pq_public))
+        }
+        _ => None,
+    };
+
     // 🔐 Адрес почты подтверждён кодом из письма. Проверка — после
     // proof-of-work (перебор кодов стоит работы) и до записи аккаунта.
     // Неверный, истёкший и сгоревший код дают один и тот же `403`.
@@ -738,24 +871,33 @@ async fn register(
     )
     .await?;
 
-    // Код израсходован только теперь: занятое имя его не сжигает.
-    gasapp_server_db::email::consume_code(&state.pool, &email_hash).await?;
+    // 🔐 Аккаунт либо готов целиком, либо его нет. Пост-квантовая
+    // половина и ключ восстановления дописываются отдельными запросами,
+    // и сбой базы между ними прежде оставлял аккаунт без них: имя и
+    // адрес заняты, а писать такому аккаунту нельзя и вернуть его нечем.
+    // Теперь недописанный аккаунт удаляется, и человек повторяет запрос.
+    let completed: Result<(), RepoError> = async {
+        repo::set_pq_identity(&state.pool, account_id, &pq_public, &binding).await?;
 
-    repo::set_pq_identity(&state.pool, account_id, &pq_public, &binding).await?;
-
-    // Ключ восстановления аккаунта: без него имя не пережило бы
-    // переустановку. Необязателен для запроса — клиенты прежних
-    // сборок его не присылают.
-    if let (Some(public), Some(pq_public)) = (&request.recovery_key, &request.recovery_pq_key) {
-        let public = decode_hex(public)?;
-        let pq_public = decode_hex(pq_public)?;
-
-        if public.len() != 32 || pq_public.len() != PQ_IDENTITY_KEY_LEN {
-            return Err(ApiError::BadRequest);
+        if let Some((public, pq_public)) = &recovery {
+            repo::set_recovery_key(&state.pool, account_id, public, pq_public).await?;
         }
 
-        repo::set_recovery_key(&state.pool, account_id, &public, &pq_public).await?;
+        Ok(())
     }
+    .await;
+
+    if let Err(error) = completed {
+        if repo::delete_account(&state.pool, device_id).await.is_err() {
+            tracing::error!("недописанный аккаунт не удалён после сбоя регистрации");
+        }
+
+        return Err(error.into());
+    }
+
+    // Код израсходован только теперь: ни занятое имя, ни сбой выше его
+    // не сжигают.
+    gasapp_server_db::email::consume_code(&state.pool, &email_hash).await?;
 
     Ok(Json(RegisterResponse {
         account_id,

@@ -75,16 +75,41 @@
         android:id="@+id/nav_channels"
         style="@style/GasAppNavItem">
 
-        <ImageView
+        <!-- Значок и поверх него — счётчик непрочитанных записей
+             (без каналов «без звука»). -->
+        <FrameLayout
             android:layout_width="56dp"
-            android:layout_height="30dp"
-            android:paddingStart="17dp"
-            android:paddingTop="4dp"
-            android:paddingEnd="17dp"
-            android:paddingBottom="4dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_channel"
-            app:tint="@color/text_tertiary" />
+            android:layout_height="30dp">
+
+            <ImageView
+                android:layout_width="56dp"
+                android:layout_height="30dp"
+                android:paddingStart="17dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="17dp"
+                android:paddingBottom="4dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_channel"
+                app:tint="@color/text_tertiary" />
+
+            <TextView
+                android:id="@+id/nav_channels_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="16dp"
+                android:layout_gravity="top|end"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_unread_badge"
+                android:fontFamily="@font/inter"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minWidth="16dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:textColor="@color/accent_on"
+                android:textFontWeight="600"
+                android:textSize="11sp"
+                android:visibility="gone" />
+        </FrameLayout>
 
         <TextView
             style="@style/GasAppNavLabel"

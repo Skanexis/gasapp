@@ -80,6 +80,26 @@ const BODY_SHA256_HEADER: &str = "x-gasapp-body-sha256";
 /// руководства по развёртыванию.
 const MAX_SIGNED_BODY_BYTES: usize = 4 * 1024 * 1024;
 
+/// Предел тела загрузки медиа канала: блоб 32 МБ и запас.
+///
+/// Единственный подписанный маршрут с большим телом. Подпись
+/// проверяется **до** чтения тела, и до него же занимается место
+/// загрузки (см. [`verify_signed_request`]): одновременных загрузок —
+/// не больше `MAX_CONCURRENT_UPLOADS`, вместе с вложениями.
+pub const MAX_CHANNEL_MEDIA_BODY_BYTES: usize = 33 * 1024 * 1024;
+
+/// Предел тела подписанного запроса по его пути.
+fn signed_body_limit(method: &axum::http::Method, path: &str) -> usize {
+    if method == axum::http::Method::POST
+        && path.starts_with("/v1/channels/own/")
+        && path.ends_with("/media")
+    {
+        MAX_CHANNEL_MEDIA_BODY_BYTES
+    } else {
+        MAX_SIGNED_BODY_BYTES
+    }
+}
+
 /// Устройство, чья подпись проверена.
 ///
 /// Наличие этого типа в аргументах обработчика означает, что запрос
@@ -210,8 +230,34 @@ pub async fn verify_signed_request(
         Err(error) => return error.into_response(),
     };
 
-    let Ok(bytes) = axum::body::to_bytes(body, MAX_SIGNED_BODY_BYTES).await else {
-        return ApiError::PayloadTooLarge.into_response();
+    let limit = signed_body_limit(&parts.method, parts.uri.path());
+
+    // 🔐 Большое тело (медиа канала) — только с местом загрузки, и место
+    // занимается до чтения тела. Подпись доказывает лишь то, что это
+    // зарегистрированное устройство; владеет ли оно каналом, выяснится
+    // позже, в обработчике. Без места любой аккаунт параллельными
+    // запросами заставил бы узел держать в памяти десятки тел по 33 МБ.
+    // Место держится до конца обработки — блоб всё это время в памяти.
+    let _slot = if limit > MAX_SIGNED_BODY_BYTES {
+        match Arc::clone(&state.upload_slots).try_acquire_owned() {
+            Ok(slot) => Some(slot),
+            Err(_) => return ApiError::TooManyRequests.into_response(),
+        }
+    } else {
+        None
+    };
+
+    // Срок — на чтение тела: медленная загрузка не держит место вечно.
+    let read = tokio::time::timeout(
+        crate::routes::UPLOAD_DEADLINE,
+        axum::body::to_bytes(body, limit),
+    )
+    .await;
+
+    let bytes = match read {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(_)) => return ApiError::PayloadTooLarge.into_response(),
+        Err(_) => return ApiError::TooManyRequests.into_response(),
     };
 
     if Sha256::digest(&bytes).as_slice() != body_sha256.as_slice() {

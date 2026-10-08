@@ -48,6 +48,7 @@ object BottomNav {
      */
     fun bind(activity: Activity, active: Tab) {
         highlight(activity, active)
+        refreshChannelBadge(activity)
 
         for (tab in Tab.entries) {
             if (tab == active) continue
@@ -81,22 +82,53 @@ object BottomNav {
 
             // Иконка и подпись красятся вместе: подсветка только значка
             // читается как случайное различие, а не как «вы здесь».
-            forEachChild(container) { child ->
-                when (child) {
-                    is ImageView -> {
+            fun paint(child: View) {
+                when {
+                    child is ImageView -> {
                         child.setColorFilter(color)
                         // «Пилюля» под значком активной вкладки: видна
                         // с одного взгляда и не держится на одном цвете.
                         child.setBackgroundResource(if (selected) R.drawable.bg_nav_pill else 0)
                     }
-                    is TextView -> child.setTextColor(color)
+                    // Счётчик непрочитанного — не подпись: свой цвет.
+                    child.id == R.id.nav_channels_badge -> Unit
+                    child is TextView -> child.setTextColor(color)
+                    // Значок со счётчиком поверх лежит в рамке.
+                    child is android.widget.FrameLayout -> forEachChild(child, ::paint)
                     else -> Unit
                 }
             }
+
+            forEachChild(container, ::paint)
         }
     }
 
-    private inline fun forEachChild(view: View, action: (View) -> Unit) {
+    /**
+     * Счётчик непрочитанных записей на вкладке каналов.
+     *
+     * Считается по базе, без сети, и без каналов «без звука». До
+     * разблокировки базы читать нечего — счётчик остаётся скрытым.
+     */
+    fun refreshChannelBadge(activity: Activity) {
+        val badge = activity.findViewById<TextView>(R.id.nav_channels_badge) ?: return
+
+        Thread {
+            val unread = runCatching { org.gasapp.app.core.Core.messenger().unreadChannelPosts() }
+                .getOrDefault(0uL)
+
+            activity.runOnUiThread {
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+
+                badge.visibility = if (unread > 0uL) View.VISIBLE else View.GONE
+                badge.text = if (unread > MAX_BADGE) "$MAX_BADGE+" else unread.toString()
+            }
+        }.start()
+    }
+
+    /** Больше этого счётчик на вкладке не показывает. */
+    private const val MAX_BADGE = 99uL
+
+    private fun forEachChild(view: View, action: (View) -> Unit) {
         if (view !is android.view.ViewGroup) {
             action(view)
 

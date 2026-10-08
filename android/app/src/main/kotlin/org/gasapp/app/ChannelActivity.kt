@@ -2,12 +2,17 @@
 
 package org.gasapp.app
 
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.text.InputType
 import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
@@ -20,21 +25,36 @@ import org.gasapp.app.components.GasAppDialog
 import org.gasapp.app.components.GasAppSheet
 import org.gasapp.app.components.GasAppTextField
 import org.gasapp.app.components.GasAppToast
+import org.gasapp.app.core.AttachmentPrep
 import org.gasapp.app.core.Core
+import org.gasapp.app.core.FileNames
+import org.gasapp.app.core.PendingSave
 import org.gasapp.app.core.SecureClipboard
 import org.gasapp.app.core.SecureWindow
 import org.gasapp.app.core.TouchTarget
+import org.gasapp.app.ui.BottomNav
+import org.gasapp.app.ui.ChannelAttachmentRow
+import org.gasapp.app.ui.ChannelAttachmentView
 import org.gasapp.app.ui.ChannelForm
+import org.gasapp.app.ui.ChannelImages
 import org.gasapp.app.ui.ChannelPostAdapter
 import org.gasapp.app.ui.ChannelPostRow
+import org.gasapp.app.ui.ChannelReactionRow
 import org.gasapp.app.ui.EmptyState
 import org.gasapp.app.ui.PostTime
 import org.gasapp.app.ui.QrDrawable
 import org.gasapp.app.ui.initialsOf
 import org.gasapp.app.ui.paintAvatar
+import uniffi.gasapp.FfiAttachmentFile
+import uniffi.gasapp.FfiAttachmentKind
 import uniffi.gasapp.FfiChannel
+import uniffi.gasapp.FfiChannelPost
 import uniffi.gasapp.FfiException
+import uniffi.gasapp.canonicalChannelHandle
 import uniffi.gasapp.channelLinkQr
+import uniffi.gasapp.channelMediaLimit
+import uniffi.gasapp.channelPostAttachmentLimit
+import uniffi.gasapp.channelReactions
 
 /**
  * Канал: лента записей и — для автора — строка ввода.
@@ -43,26 +63,54 @@ import uniffi.gasapp.channelLinkQr
  *
  * * ссылка-приглашение — это и есть доступ: кто её получил, читает
  *   весь канал, прошлое и будущее. Отозвать её у одного читателя нельзя;
- * * записи проверены подписью автора в ядре: сервер их не подделает,
- *   но может не отдать;
- * * время под записью поставил автор — оно едет внутри шифротекста.
+ * * записи, правки и удаления проверены подписью автора в ядре: сервер
+ *   их не подделает и не откатит, но может не отдать;
+ * * время под записью поставил автор — оно едет внутри шифротекста;
+ * * счётчики просмотров, подписчиков и реакций — слова сервера, никем
+ *   не подписанные. Экран показывает их как статистику;
+ * * публичный канал (с `@именем`) сервер прочитать может: автору это
+ *   сказано до того, как он нажмёт «сделать публичным».
  *
  * Криптографии в этом файле нет: ключ канала экран не видит, только
  * готовую ссылку, которой человек делится сам.
  */
+@Suppress("TooManyFunctions", "LargeClass")
 class ChannelActivity : AppCompatActivity() {
 
     private lateinit var channelId: String
     private lateinit var adapter: ChannelPostAdapter
+    private lateinit var images: ChannelImages
     private lateinit var posts: RecyclerView
     private lateinit var empty: View
     private lateinit var input: GasAppTextField
     private lateinit var send: ImageView
+    private lateinit var pendingBox: LinearLayout
 
     private var channel: FfiChannel? = null
 
     /** Идёт публикация: вторую поверх неё не запускаем. */
     private var publishing = false
+
+    /** Сколько последних записей показывает лента; растёт при листании вверх. */
+    private var shown = PAGE
+
+    private var loadingOlder = false
+
+    /** Сервер сказал, что истории старше больше нет. */
+    private var historyDone = false
+
+    /**
+     * Открыт системный диалог (выбор файла, место сохранения). Экран
+     * при этом уходит в фон, но черновик и приложенные файлы должны
+     * дождаться возвращения — иначе приложить файл было бы нельзя.
+     */
+    private var picking = false
+
+    /** Файлы, приложенные к ещё не опубликованной записи. */
+    private val pending = mutableListOf<FfiAttachmentFile>()
+
+    /** Вложение, для которого выбирается место сохранения (см. [PendingSave]). */
+    private val pendingSave = PendingSave<ChannelAttachmentRow>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,10 +130,25 @@ class ChannelActivity : AppCompatActivity() {
         empty = findViewById(R.id.channel_empty)
         input = findViewById(R.id.channel_input)
         send = findViewById(R.id.channel_send)
+        pendingBox = findViewById(R.id.channel_pending)
 
-        adapter = ChannelPostAdapter()
+        images = ChannelImages(lifecycleScope, channelId)
+        adapter = ChannelPostAdapter(
+            onLongPress = ::showPostActions,
+            onReaction = { post, emoji -> react(post, emoji) },
+            onAttachment = ::saveAttachment,
+            loadImage = { attachment, view -> images.into(attachment.descriptor, view) },
+        )
         posts.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
         posts.adapter = adapter
+        posts.addOnScrollListener(
+            object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    // Долистали до верха — подгружаем историю.
+                    if (dy < 0 && !recyclerView.canScrollVertically(-1)) loadOlder()
+                }
+            },
+        )
 
         findViewById<View>(R.id.channel_back).setOnClickListener { finish() }
         findViewById<View>(R.id.channel_share).apply {
@@ -96,6 +159,10 @@ class ChannelActivity : AppCompatActivity() {
             setOnClickListener { showActions() }
             TouchTarget.expand(this)
         }
+        findViewById<View>(R.id.channel_pinned).setOnClickListener {
+            channel?.pinnedSeq?.toLong()?.takeIf { it > 0 }?.let(::scrollToPost)
+        }
+        findViewById<View>(R.id.channel_attach).setOnClickListener { chooseAttachment() }
         send.setOnClickListener { publish() }
     }
 
@@ -108,20 +175,40 @@ class ChannelActivity : AppCompatActivity() {
         load(sync = true)
     }
 
-    /** 🔐 Расшифрованные записи и черновик не переживают ухода с экрана. */
+    /**
+     * 🔐 Расшифрованные записи и картинки не переживают ухода с экрана.
+     * Черновик и приложенные файлы — тоже, кроме одного случая: экран
+     * ушёл в фон, потому что человек сам открыл выбор файла ([picking]).
+     */
     override fun onStop() {
         super.onStop()
         if (!::adapter.isInitialized) return
 
         adapter.clear()
-        input.setText("")
+        images.clear()
+        findViewById<ImageView>(R.id.channel_avatar_image).setImageDrawable(null)
+
+        if (!picking) {
+            input.setText("")
+            pending.clear()
+            renderPending()
+        }
+
+        // Сохранение вложения здесь не отменяется: открытый диалог
+        // выбора места — это и есть этот `onStop` (см. [PendingSave]).
+        pendingSave.onScreenStopped()
     }
+
+    // --- Лента ------------------------------------------------------------
+
+    /** То, что нужно экрану из ядра за один заход. */
+    private class Loaded(val channel: FfiChannel?, val posts: List<FfiChannelPost>, val pinned: FfiChannelPost?)
 
     /**
      * Читает канал и его записи из ядра; с [sync] — сначала забирает
      * новое с сервера. Сбой сети не мешает показать то, что уже есть.
      */
-    private fun load(sync: Boolean) {
+    private fun load(sync: Boolean, then: () -> Unit = {}) {
         lifecycleScope.launch {
             val loaded = withContext(Dispatchers.IO) {
                 runCatching {
@@ -129,17 +216,25 @@ class ChannelActivity : AppCompatActivity() {
 
                     if (sync) runCatching { messenger.syncChannel(channelId) }
 
-                    val found = messenger.channels().firstOrNull { it.channelId == channelId }
-                    val entries = messenger.channelPosts(channelId, POSTS_LIMIT)
+                    val found = runCatching { messenger.channel(channelId) }.getOrNull()
+                    val entries = messenger.channelPosts(channelId, shown.toUInt())
+                    val pinned = found?.pinnedSeq?.takeIf { it > 0uL }?.let {
+                        runCatching { messenger.channelPost(channelId, it) }.getOrNull()
+                    }
 
-                    // Открытая лента прочитана.
-                    if (found != null) runCatching { messenger.markChannelRead(channelId) }
+                    // Открытая лента прочитана. Серверу об этом сообщает
+                    // жетон подписчика, без подписи устройства, — и только
+                    // вместе с синхронизацией, а не при каждой перерисовке.
+                    if (found != null) {
+                        runCatching { messenger.markChannelRead(channelId) }
+                        if (sync) runCatching { messenger.reportChannelSeen(channelId) }
+                    }
 
-                    found to entries
+                    Loaded(found, entries, pinned)
                 }.getOrNull()
-            }
+            } ?: return@launch
 
-            val (found, entries) = loaded ?: return@launch
+            val found = loaded.channel
 
             if (found == null) {
                 // Канала на устройстве нет: его удалили, пока экран был открыт.
@@ -147,36 +242,62 @@ class ChannelActivity : AppCompatActivity() {
                 return@launch
             }
 
-            render(found)
+            render(found, loaded.pinned)
 
             val atEnd = !posts.canScrollVertically(1)
             val before = adapter.lastSeq()
 
-            adapter.submit(
-                entries.map { ChannelPostRow(it.seq.toLong(), it.text, PostTime.full(this@ChannelActivity, it.createdAtMillis)) },
-            )
+            adapter.submit(loaded.posts.map { rowOf(it, found.pinnedSeq) })
 
             // К новой записи лента едет, только если человек и так был внизу.
-            if (entries.isNotEmpty() && (before == null || (atEnd && adapter.lastSeq() != before))) {
-                posts.scrollToPosition(entries.size - 1)
+            if (loaded.posts.isNotEmpty() && (before == null || (atEnd && adapter.lastSeq() != before))) {
+                posts.scrollToPosition(loaded.posts.size - 1)
             }
 
-            val hasPosts = entries.isNotEmpty()
+            val hasPosts = loaded.posts.isNotEmpty()
             posts.isVisible = hasPosts
             empty.isVisible = !hasPosts
+
+            then()
         }
     }
 
-    private fun render(found: FfiChannel) {
+    private fun rowOf(post: FfiChannelPost, pinnedSeq: ULong): ChannelPostRow =
+        ChannelPostRow(
+            seq = post.seq.toLong(),
+            text = post.text,
+            time = PostTime.full(this, post.createdAtMillis),
+            edited = post.editedAtMillis != null,
+            views = post.views.toLong(),
+            reactions = post.reactions.map { ChannelReactionRow(it.emoji, it.count.toLong()) },
+            myReaction = post.myReaction,
+            attachments = post.attachments.map {
+                ChannelAttachmentRow(it.descriptor, it.kind, it.name, it.size.toLong())
+            },
+            pinned = post.seq == pinnedSeq,
+        )
+
+    private fun render(found: FfiChannel, pinned: FfiChannelPost?) {
         channel = found
 
         findViewById<TextView>(R.id.channel_title).text = found.title
-        findViewById<TextView>(R.id.channel_subtitle).setText(
-            if (found.owned) R.string.channel_subtitle_owner else R.string.channel_subtitle_reader,
-        )
+        findViewById<TextView>(R.id.channel_subtitle).text = subtitleOf(found)
         findViewById<TextView>(R.id.channel_avatar).apply {
             text = initialsOf(found.title)
             paintAvatar(this, found.title)
+        }
+        findViewById<ImageView>(R.id.channel_avatar_image).apply {
+            val avatar = found.avatar
+            // Из кода, а не из разметки: атрибут разметки работает с API 31.
+            clipToOutline = true
+            isVisible = avatar != null
+            if (avatar != null) images.into(avatar, this)
+        }
+
+        findViewById<View>(R.id.channel_pinned).isVisible = pinned != null
+        if (pinned != null) {
+            findViewById<TextView>(R.id.channel_pinned_text).text =
+                pinned.text.ifEmpty { getString(R.string.channel_post_media_only) }
         }
 
         findViewById<View>(R.id.channel_input_row).isVisible = found.owned
@@ -190,18 +311,456 @@ class ChannelActivity : AppCompatActivity() {
         )
     }
 
-    /** Публикует запись из строки ввода. */
+    /** Подпись под названием: `@имя`, число подписчиков, роль. */
+    private fun subtitleOf(found: FfiChannel): String {
+        val parts = mutableListOf<String>()
+
+        found.handle?.let { parts += getString(R.string.channel_handle_format, it) }
+
+        if (found.subscribers > 0uL) {
+            val count = found.subscribers.coerceAtMost(Int.MAX_VALUE.toULong()).toInt()
+            parts += resources.getQuantityString(R.plurals.channel_subscribers, count, count)
+        }
+
+        if (found.owned) parts += getString(R.string.channel_role_author)
+        if (parts.isEmpty()) parts += getString(R.string.channel_subtitle_reader)
+
+        return parts.joinToString(getString(R.string.channel_subtitle_separator))
+    }
+
+    /** Листание вверх: сначала то, что есть на устройстве, затем — страница с сервера. */
+    private fun loadOlder() {
+        if (loadingOlder || adapter.itemCount == 0) return
+        // История кончилась, и всё, что есть на устройстве, уже показано.
+        if (historyDone && adapter.itemCount < shown) return
+
+        loadingOlder = true
+
+        lifecycleScope.launch {
+            val showing = adapter.itemCount
+
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val messenger = Core.messenger()
+                    val local = messenger.channelPosts(channelId, (shown + PAGE).toUInt())
+
+                    if (local.size <= showing && !historyDone) {
+                        // 0 — история кончилась; сбой сети концом истории не считается.
+                        val added = runCatching { messenger.loadOlderChannelPosts(channelId) }.getOrNull()
+                        if (added == 0u) historyDone = true
+                    }
+                }
+            }
+
+            shown = (shown + PAGE).coerceAtMost(MAX_SHOWN)
+            load(sync = false) { loadingOlder = false }
+        }
+    }
+
+    /** Показывает запись в ленте; если она выше показанного — догружает с устройства. */
+    private fun scrollToPost(seq: Long) {
+        val position = adapter.positionOf(seq)
+
+        if (position >= 0) {
+            posts.scrollToPosition(position)
+            return
+        }
+
+        if (shown >= MAX_SHOWN) {
+            GasAppToast.show(this, R.string.channel_post_not_loaded, GasAppToast.Tone.Info)
+            return
+        }
+
+        shown = MAX_SHOWN
+        load(sync = false) {
+            val found = adapter.positionOf(seq)
+
+            if (found >= 0) {
+                posts.scrollToPosition(found)
+            } else {
+                GasAppToast.show(this, R.string.channel_post_not_loaded, GasAppToast.Tone.Info)
+            }
+        }
+    }
+
+    // --- Действия над записью ---------------------------------------------
+
+    private fun showPostActions(post: ChannelPostRow) {
+        val current = channel ?: return
+        val sheet = GasAppSheet.on(this)
+
+        sheet.action(getString(R.string.channel_post_react), R.drawable.ic_star) { chooseReaction(post) }
+
+        if (post.text.isNotEmpty()) {
+            sheet.action(getString(R.string.channel_post_copy), R.drawable.ic_copy) {
+                SecureClipboard.copySensitive(this, getString(R.string.channel_post_copy), post.text)
+                if (!SecureClipboard.systemConfirmsCopy) {
+                    GasAppToast.show(this, R.string.channel_post_copied, GasAppToast.Tone.Success)
+                }
+            }
+        }
+
+        if (current.owned) {
+            sheet.action(getString(R.string.channel_post_edit), R.drawable.ic_edit) { editPost(post) }
+            sheet.action(
+                getString(if (post.pinned) R.string.channel_post_unpin else R.string.channel_post_pin),
+                R.drawable.ic_pin,
+            ) { pinPost(if (post.pinned) 0 else post.seq) }
+            sheet.action(getString(R.string.channel_post_delete), R.drawable.ic_trash, destructive = true) {
+                confirmDeletePost(post)
+            }
+        }
+
+        sheet.show()
+    }
+
+    /** Набор реакций закрыт сервером: выбирают из него, а не пишут свою. */
+    private fun chooseReaction(post: ChannelPostRow) {
+        val sheet = GasAppSheet.on(this, R.string.channel_post_react)
+
+        for (emoji in channelReactions()) {
+            val mine = emoji == post.myReaction
+
+            sheet.emoji(
+                emoji,
+                getString(if (mine) R.string.channel_reaction_remove else R.string.channel_reaction_put, emoji),
+            ) { react(post, emoji) }
+        }
+
+        sheet.show()
+    }
+
+    /** Ставит реакцию; повторное нажатие на свою — снимает. */
+    private fun react(post: ChannelPostRow, emoji: String) {
+        val wanted = emoji.takeIf { it != post.myReaction }
+
+        act(R.string.channel_reaction_failed) {
+            Core.messenger().reactToChannelPost(channelId, post.seq.toULong(), wanted)
+        }
+    }
+
+    private fun pinPost(seq: Long) {
+        act(R.string.channels_error_network) {
+            Core.messenger().pinChannelPost(channelId, seq.toULong(), System.currentTimeMillis())
+        }
+    }
+
+    /** Выполняет сетевое действие над каналом и перечитывает ленту. */
+    private fun act(failure: Int, action: () -> Unit) {
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) { runCatching(action) }
+
+            if (done.isSuccess) {
+                load(sync = false)
+            } else {
+                GasAppToast.show(this@ChannelActivity, failure, GasAppToast.Tone.Error)
+            }
+        }
+    }
+
+    private fun editPost(post: ChannelPostRow) {
+        val field = GasAppTextField(this).apply {
+            setText(post.text)
+            setSelection(text?.length ?: 0)
+            maxLines = EDIT_MAX_LINES
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            // 🔐 Как и у строки ввода: текст не попадает в сохранённое состояние.
+            isSaveEnabled = false
+        }
+
+        GasAppDialog(this)
+            .title(R.string.channel_post_edit)
+            .message(R.string.channel_post_edit_note)
+            .content(field)
+            .secondary()
+            .primary(R.string.action_save, closeOnClick = false) { dialog ->
+                val text = field.text?.toString().orEmpty().trim()
+
+                dialog.setBusy(true)
+
+                lifecycleScope.launch {
+                    val edited = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Core.messenger().editChannelPost(
+                                channelId,
+                                post.seq.toULong(),
+                                text,
+                                System.currentTimeMillis(),
+                            )
+                        }
+                    }
+
+                    dialog.setBusy(false)
+
+                    edited
+                        .onSuccess {
+                            dialog.dismiss()
+                            load(sync = false)
+                        }
+                        .onFailure { failure ->
+                            dialog.showError(
+                                if (failure is FfiException.InvalidArgument) {
+                                    R.string.channel_post_invalid
+                                } else {
+                                    R.string.channels_error_network
+                                },
+                            )
+                        }
+                }
+            }
+            .show()
+    }
+
+    private fun confirmDeletePost(post: ChannelPostRow) {
+        GasAppDialog(this)
+            .title(R.string.channel_post_delete_title)
+            .message(R.string.channel_post_delete_body)
+            .secondary()
+            .primary(R.string.channel_post_delete, GasAppDialog.Tone.Danger, closeOnClick = false) { dialog ->
+                dialog.setBusy(true)
+
+                lifecycleScope.launch {
+                    val deleted = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Core.messenger().deleteChannelPost(
+                                channelId,
+                                post.seq.toULong(),
+                                System.currentTimeMillis(),
+                            )
+                        }
+                    }
+
+                    dialog.setBusy(false)
+
+                    deleted
+                        .onSuccess {
+                            dialog.dismiss()
+                            load(sync = false)
+                        }
+                        .onFailure { dialog.showError(R.string.channels_error_network) }
+                }
+            }
+            .show()
+    }
+
+    // --- Сохранение вложения ----------------------------------------------
+
+    /**
+     * Сохраняет файл записи туда, куда укажет человек.
+     *
+     * 🔐 Сначала место, потом скачивание — как в переписке: расшифрованный
+     * файл не лежит в памяти, пока открыт диалог, и не пишется во
+     * временный файл вне зашифрованного хранилища.
+     */
+    private fun saveAttachment(attachment: ChannelAttachmentRow) {
+        pendingSave.begin(attachment)
+        picking = true
+        // 🔐 Имя назвал автор канала — до диалога оно проходит ту же
+        // очистку, что имя от чужого провайдера.
+        saveFile.launch(attachment.name?.let(FileNames::safe) ?: DEFAULT_FILE_NAME)
+    }
+
+    private val saveFile = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        picking = false
+        val attachment = pendingSave.take()
+
+        if (uri == null || attachment == null) return@registerForActivityResult
+
+        GasAppToast.show(this, R.string.attachment_downloading, GasAppToast.Tone.Info)
+
+        lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().fetchChannelMedia(channelId, attachment.descriptor) }.getOrNull()
+            }
+
+            if (bytes == null) {
+                // 🔐 Запертое хранилище не выдаётся за сбой файла: пока
+                // открыт диалог, автоблокировка успевает сработать.
+                if (Core.isUnlocked) {
+                    GasAppToast.show(this@ChannelActivity, R.string.channel_media_failed, GasAppToast.Tone.Error)
+                }
+
+                return@launch
+            }
+
+            val saved = withContext(Dispatchers.IO) {
+                runCatching { contentResolver.openOutputStream(uri)?.use { it.write(bytes) } != null }
+                    .getOrDefault(false)
+            }
+
+            GasAppToast.show(
+                this@ChannelActivity,
+                if (saved) R.string.attachment_saved else R.string.attachment_download_failed,
+                if (saved) GasAppToast.Tone.Success else GasAppToast.Tone.Error,
+            )
+        }
+    }
+
+    // --- Новая запись -----------------------------------------------------
+
+    /** Фото и документы разведены: за ними разные системные диалоги. */
+    private fun chooseAttachment() {
+        if (pending.size >= channelPostAttachmentLimit().toInt()) {
+            GasAppToast.show(this, R.string.channel_attach_limit, GasAppToast.Tone.Warning)
+            return
+        }
+
+        GasAppSheet.on(this, R.string.attach)
+            .action(getString(R.string.attach_photo), R.drawable.ic_image) {
+                picking = true
+                pickMedia.launch(arrayOf("image/*", "video/*"))
+            }
+            .action(getString(R.string.attach_file), R.drawable.ic_file) {
+                picking = true
+                pickDocument.launch(arrayOf("*/*"))
+            }
+            .show()
+    }
+
+    /**
+     * 🔐 `OpenDocument`, а не разрешение на галерею: системный диалог
+     * отдаёт приложению ровно тот файл, который человек указал.
+     */
+    private val pickMedia = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        picking = false
+        uri?.let {
+            // Тип — по MIME, который назвала система, а не по имени файла.
+            val video = contentResolver.getType(it)?.startsWith("video/") == true
+            attach(it, if (video) FfiAttachmentKind.VIDEO else FfiAttachmentKind.IMAGE)
+        }
+    }
+
+    private val pickDocument = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        picking = false
+        uri?.let { attach(it, FfiAttachmentKind.DOCUMENT) }
+    }
+
+    /**
+     * Читает выбранный файл и прикладывает его к будущей записи.
+     *
+     * 🔐 Файл читается в память, а не во временный файл: копия на диске
+     * лежала бы открытой вне зашифрованного хранилища. Метаданные фото
+     * и видео ядро удалит перед шифрованием; у документов они — часть
+     * формата, и человек узнаёт об этом сейчас, до публикации.
+     */
+    private fun attach(uri: Uri, kind: FfiAttachmentKind) {
+        if (!AttachmentPrep.isMediaMime(contentResolver.getType(uri))) {
+            GasAppToast.show(this, R.string.channel_attach_document_metadata, GasAppToast.Tone.Warning)
+        }
+
+        lifecycleScope.launch {
+            val limit = channelMediaLimit().toLong()
+
+            val file = withContext(Dispatchers.IO) {
+                runCatching {
+                    val raw = readLimited(uri, limit) ?: return@runCatching null
+                    if (raw.size > limit) return@runCatching TOO_LARGE
+
+                    // HEIC/AVIF — в JPEG: их метаданные ядро вырезать не может.
+                    val bytes = AttachmentPrep.prepare(raw)
+                    if (bytes.size > limit) return@runCatching TOO_LARGE
+
+                    FfiAttachmentFile(
+                        kind = kind,
+                        bytes = bytes,
+                        name = displayNameOf(uri),
+                        description = null,
+                        durationMillis = null,
+                        waveform = null,
+                    )
+                }.getOrNull()
+            }
+
+            when {
+                file == null ->
+                    GasAppToast.show(this@ChannelActivity, R.string.attach_unreadable, GasAppToast.Tone.Error)
+
+                file === TOO_LARGE ->
+                    GasAppToast.show(
+                        this@ChannelActivity,
+                        getString(R.string.channel_attach_too_large, limit / BYTES_IN_MB),
+                        GasAppToast.Tone.Error,
+                    )
+
+                else -> {
+                    pending.add(file)
+                    renderPending()
+                }
+            }
+        }
+    }
+
+    /** Читает не больше предела плюс байт: гигабайтный файл не читается ради отказа. */
+    private fun readLimited(uri: Uri, limit: Long): ByteArray? =
+        contentResolver.openInputStream(uri)?.use { stream ->
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(READ_BUFFER)
+            var total = 0L
+
+            while (total <= limit) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                out.write(buffer, 0, read)
+                total += read
+            }
+
+            out.toByteArray()
+        }
+
+    /** 🔐 Имя — от чужого провайдера: только через [FileNames.safe]. */
+    private fun displayNameOf(uri: Uri): String? =
+        runCatching {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+
+                if (column >= 0 && cursor.moveToFirst()) cursor.getString(column)?.let(FileNames::safe) else null
+            }
+        }.getOrNull()
+
+    private fun renderPending() {
+        pendingBox.removeAllViews()
+        pendingBox.isVisible = pending.isNotEmpty()
+
+        val inflater = LayoutInflater.from(this)
+
+        for (file in pending.toList()) {
+            val row = inflater.inflate(R.layout.item_channel_attachment, pendingBox, false)
+
+            ChannelAttachmentView.bind(row, file.kind, file.name, file.bytes.size.toLong())
+            row.findViewById<View>(R.id.attachment_remove).apply {
+                isVisible = true
+                setOnClickListener {
+                    pending.remove(file)
+                    renderPending()
+                }
+            }
+
+            pendingBox.addView(row)
+        }
+    }
+
+    /** Публикует запись: текст из строки ввода и приложенные файлы. */
     private fun publish() {
         val text = input.text?.toString().orEmpty().trim()
-        if (text.isEmpty() || publishing) return
+        val files = pending.toList()
+
+        if ((text.isEmpty() && files.isEmpty()) || publishing) return
 
         publishing = true
         send.isEnabled = false
 
+        if (files.isNotEmpty()) {
+            GasAppToast.show(this, R.string.channel_publishing_files, GasAppToast.Tone.Info)
+        }
+
         lifecycleScope.launch {
             val published = withContext(Dispatchers.IO) {
                 runCatching {
-                    Core.messenger().publishChannelPost(channelId, text, System.currentTimeMillis())
+                    Core.messenger().publishChannelPost(channelId, text, files, System.currentTimeMillis())
                 }
             }
 
@@ -210,16 +769,18 @@ class ChannelActivity : AppCompatActivity() {
 
             published
                 .onSuccess {
-                    // Черновик стирается только после успеха: при сбое
-                    // сети набранное остаётся в поле.
+                    // Черновик и файлы стираются только после успеха: при
+                    // сбое сети набранное и приложенное остаются.
                     input.setText("")
+                    pending.clear()
+                    renderPending()
                     load(sync = false)
                 }
                 .onFailure { failure ->
                     GasAppToast.show(
                         this@ChannelActivity,
                         when (failure) {
-                            is FfiException.InvalidArgument -> R.string.channel_post_too_long
+                            is FfiException.InvalidArgument -> R.string.channel_post_invalid
                             is FfiException.PremiumRequired -> R.string.channel_reader_note
                             else -> R.string.channel_post_failed
                         },
@@ -228,6 +789,8 @@ class ChannelActivity : AppCompatActivity() {
                 }
         }
     }
+
+    // --- Ссылка -----------------------------------------------------------
 
     /**
      * Ссылка-приглашение: QR-код и текст для копирования.
@@ -286,19 +849,36 @@ class ChannelActivity : AppCompatActivity() {
             .show()
     }
 
+    // --- Действия с каналом -----------------------------------------------
+
     private fun showActions() {
         val current = channel ?: return
         val sheet = GasAppSheet.on(this, current.title)
 
+        sheet.action(getString(R.string.channel_about), R.drawable.ic_info) { showAbout(current) }
+        sheet.action(getString(R.string.channel_search), R.drawable.ic_search) { promptSearch() }
+        sheet.action(
+            getString(if (current.muted) R.string.channel_unmute else R.string.channel_mute),
+            if (current.muted) R.drawable.ic_bell else R.drawable.ic_bell_off,
+        ) { setMuted(!current.muted) }
+
         if (current.owned) {
             sheet.action(getString(R.string.channel_edit), R.drawable.ic_edit) { edit(current) }
+            sheet.action(getString(R.string.channel_avatar_set), R.drawable.ic_image) {
+                picking = true
+                pickAvatar.launch(arrayOf("image/*"))
+            }
+            if (current.avatar != null) {
+                sheet.action(getString(R.string.channel_avatar_remove), R.drawable.ic_close) { setAvatar(null) }
+            }
+            sheet.action(
+                getString(if (current.handle == null) R.string.channel_public_make else R.string.channel_public_manage),
+                R.drawable.ic_globe,
+            ) { managePublic(current) }
             sheet.action(getString(R.string.channel_delete), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = true)
             }
         } else {
-            if (current.description.isNotEmpty()) {
-                sheet.action(getString(R.string.channel_about), R.drawable.ic_info) { showAbout(current) }
-            }
             sheet.action(getString(R.string.channel_leave), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = false)
             }
@@ -307,12 +887,89 @@ class ChannelActivity : AppCompatActivity() {
         sheet.show()
     }
 
+    /** О канале: описание, имя, подписчики — и чьи это числа. */
     private fun showAbout(current: FfiChannel) {
+        val lines = mutableListOf<String>()
+
+        if (current.description.isNotEmpty()) lines += current.description
+        current.handle?.let { lines += getString(R.string.channel_about_public, it) }
+        if (current.handle == null) lines += getString(R.string.channel_about_private)
+        lines += getString(R.string.channel_about_counters)
+
         GasAppDialog(this)
             .title(current.title)
-            .message(current.description)
+            .message(lines.joinToString("\n\n"))
             .primary(R.string.action_close)
             .show()
+    }
+
+    private fun setMuted(muted: Boolean) {
+        lifecycleScope.launch {
+            val updated = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().setChannelMuted(channelId, muted) }.getOrNull()
+            } ?: return@launch
+
+            channel = updated
+            BottomNav.refreshChannelBadge(this@ChannelActivity)
+            GasAppToast.show(
+                this@ChannelActivity,
+                if (muted) R.string.channel_muted else R.string.channel_unmuted,
+                GasAppToast.Tone.Success,
+            )
+        }
+    }
+
+    /** Поиск по записям — на устройстве: сервер текста записей не знает. */
+    private fun promptSearch() {
+        val field = GasAppTextField(this).apply {
+            hint = getString(R.string.channel_search_hint)
+            maxLines = 1
+            inputType = InputType.TYPE_CLASS_TEXT
+            isSaveEnabled = false
+        }
+
+        GasAppDialog(this)
+            .title(R.string.channel_search)
+            .message(R.string.channel_search_note)
+            .content(field)
+            .secondary()
+            .primary(R.string.channel_search_action, closeOnClick = false) { dialog ->
+                val query = field.text?.toString().orEmpty().trim()
+                if (query.isEmpty()) return@primary
+
+                dialog.setBusy(true)
+
+                lifecycleScope.launch {
+                    val found = withContext(Dispatchers.IO) {
+                        runCatching { Core.messenger().searchChannelPosts(channelId, query, SEARCH_LIMIT) }
+                            .getOrDefault(emptyList())
+                    }
+
+                    dialog.setBusy(false)
+
+                    if (found.isEmpty()) {
+                        dialog.showError(R.string.channel_search_empty)
+                    } else {
+                        dialog.dismiss()
+                        showSearchResults(found)
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showSearchResults(found: List<FfiChannelPost>) {
+        val sheet = GasAppSheet.on(this, R.string.channel_search)
+
+        for (post in found) {
+            val snippet = post.text.replace('\n', ' ').take(SNIPPET_CHARS)
+
+            sheet.action(
+                getString(R.string.channel_search_result, PostTime.short(this, post.createdAtMillis), snippet),
+            ) { scrollToPost(post.seq.toLong()) }
+        }
+
+        sheet.show()
     }
 
     private fun edit(current: FfiChannel) {
@@ -337,7 +994,7 @@ class ChannelActivity : AppCompatActivity() {
                 updated
                     .onSuccess {
                         dialog.dismiss()
-                        render(it)
+                        load(sync = false)
                     }
                     .onFailure { failure ->
                         dialog.showError(
@@ -346,6 +1003,118 @@ class ChannelActivity : AppCompatActivity() {
                     }
             }
         }
+    }
+
+    private val pickAvatar = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        picking = false
+        uri ?: return@registerForActivityResult
+
+        lifecycleScope.launch {
+            val picture = withContext(Dispatchers.IO) {
+                runCatching { readLimited(uri, AVATAR_SOURCE_LIMIT)?.let(AttachmentPrep::avatar) }.getOrNull()
+            }
+
+            if (picture == null) {
+                GasAppToast.show(this@ChannelActivity, R.string.channel_avatar_unreadable, GasAppToast.Tone.Error)
+            } else {
+                setAvatar(picture)
+            }
+        }
+    }
+
+    private fun setAvatar(picture: ByteArray?) {
+        GasAppToast.show(this, R.string.channel_avatar_saving, GasAppToast.Tone.Info)
+
+        act(R.string.channels_error_network) {
+            Core.messenger().setChannelAvatar(channelId, picture, System.currentTimeMillis())
+        }
+    }
+
+    /**
+     * Публичное имя канала.
+     *
+     * 🔐 Предупреждение — до действия: публичному каналу сервер получает
+     * ссылку, а с ней ключ чтения. Это нельзя сказать после.
+     */
+    private fun managePublic(current: FfiChannel) {
+        if (current.handle == null) {
+            promptHandle(initial = "")
+            return
+        }
+
+        GasAppSheet.on(this, getString(R.string.channel_handle_format, current.handle))
+            .action(getString(R.string.channel_public_rename), R.drawable.ic_edit) {
+                promptHandle(initial = current.handle.orEmpty())
+            }
+            .action(getString(R.string.channel_public_close), R.drawable.ic_lock) { confirmMakePrivate() }
+            .show()
+    }
+
+    private fun promptHandle(initial: String) {
+        val field = GasAppTextField(this).apply {
+            hint = getString(R.string.channel_handle_hint)
+            setText(initial)
+            setSelection(text?.length ?: 0)
+            maxLines = 1
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+
+        GasAppDialog(this)
+            .title(R.string.channel_public_make)
+            .message(R.string.channel_public_warning)
+            .content(field)
+            .secondary()
+            .primary(R.string.channel_public_action, closeOnClick = false) { dialog ->
+                // Имя проверяется тем же правилом, что и на сервере.
+                val handle = canonicalChannelHandle(field.text?.toString().orEmpty())
+
+                if (handle == null) {
+                    field.hasError = true
+                    dialog.showError(R.string.channel_handle_invalid)
+                    return@primary
+                }
+
+                dialog.setBusy(true)
+
+                lifecycleScope.launch {
+                    val updated = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Core.messenger().setChannelHandle(channelId, handle, System.currentTimeMillis())
+                        }
+                    }
+
+                    dialog.setBusy(false)
+
+                    updated
+                        .onSuccess {
+                            dialog.dismiss()
+                            load(sync = false)
+                        }
+                        .onFailure { failure ->
+                            dialog.showError(
+                                when (failure) {
+                                    is FfiException.UsernameTaken -> R.string.channel_handle_taken
+                                    is FfiException.InvalidArgument -> R.string.channel_handle_invalid
+                                    else -> R.string.channels_error_network
+                                },
+                            )
+                        }
+                }
+            }
+            .show()
+    }
+
+    private fun confirmMakePrivate() {
+        GasAppDialog(this)
+            .title(R.string.channel_public_close)
+            .message(R.string.channel_public_close_body)
+            .secondary()
+            .primary(R.string.channel_public_close_action) {
+                act(R.string.channels_error_network) {
+                    Core.messenger().setChannelHandle(channelId, null, System.currentTimeMillis())
+                }
+            }
+            .show()
     }
 
     /**
@@ -388,10 +1157,28 @@ class ChannelActivity : AppCompatActivity() {
         /** Идентификатор канала. */
         const val EXTRA_CHANNEL_ID = "channel_id"
 
-        /** Сколько последних записей показывает лента. */
-        private val POSTS_LIMIT = 300u
+        /** Сколько записей добавляет одна страница ленты. */
+        private const val PAGE = 100
+
+        /** Больше этого лента за раз не держит. */
+        private const val MAX_SHOWN = 3_000
+
+        private val SEARCH_LIMIT = 30u
+        private const val SNIPPET_CHARS = 80
 
         private const val LINK_TEXT_SP = 12f
         private const val LINK_MAX_LINES = 6
+        private const val EDIT_MAX_LINES = 10
+
+        private const val READ_BUFFER = 64 * 1024
+        private const val BYTES_IN_MB = 1024L * 1024L
+
+        /** Предел исходной картинки для аватара — до уменьшения. */
+        private const val AVATAR_SOURCE_LIMIT = 20L * BYTES_IN_MB
+
+        private const val DEFAULT_FILE_NAME = "gasapp-file"
+
+        /** Метка «файл больше предела»: сравнивается по ссылке, содержимого не несёт. */
+        private val TOO_LARGE = FfiAttachmentFile(FfiAttachmentKind.DOCUMENT, ByteArray(0), null, null, null, null)
     }
 }

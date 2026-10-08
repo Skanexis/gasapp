@@ -167,6 +167,29 @@ pub fn email_code_challenge(normalized_email: &str) -> [u8; CHALLENGE_LEN] {
     hasher.finalize().into()
 }
 
+/// Домен-разделитель челленджа подписки на канал.
+const SUBSCRIBE_DOMAIN: &[u8] = b"GASAPP_POW_SUB_v1";
+
+/// Челлендж подписки: канал и жетон подписчика.
+///
+/// Подписка анонимна — подписи устройства нет, — и без цены счётчик
+/// подписчиков накручивался бы циклом. Решение привязано к каналу
+/// и жетону: на другой канал или другой жетон оно не переносится.
+///
+/// ⚠️ Продублирован на другой стороне (разные лицензии); эталон — тест.
+#[must_use]
+pub fn subscribe_challenge(channel_id: &str, token: &[u8]) -> [u8; CHALLENGE_LEN] {
+    let channel = channel_id.to_ascii_lowercase();
+
+    let mut hasher = Sha256::new();
+    hasher.update(SUBSCRIBE_DOMAIN);
+    for field in [channel.as_bytes(), token] {
+        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(field);
+    }
+    hasher.finalize().into()
+}
+
 /// Домен-разделитель челленджа анонимной загрузки вложения.
 const UPLOAD_DOMAIN: &[u8] = b"GASAPP_POW_UPLOAD_v1";
 
@@ -292,6 +315,16 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// Эталон посчитан независимой реализацией (Python, hashlib);
+    /// тот же вектор у клиента в `gasapp-net::pow`.
+    #[test]
+    fn subscribe_challenge_matches_the_reference() {
+        assert_eq!(
+            subscribe_challenge("00000000-0000-0000-0000-000000000001", &[7u8; 32]).get(..8),
+            Some(&[0xe2, 0x63, 0x05, 0x7a, 0x8c, 0x54, 0xb0, 0x0e][..])
+        );
+    }
 
     /// Эталон посчитан независимой реализацией (Python, hashlib);
     /// тот же вектор у клиента в `gasapp-net::pow`.

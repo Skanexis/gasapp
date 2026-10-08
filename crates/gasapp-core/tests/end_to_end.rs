@@ -144,16 +144,6 @@ struct ServerState {
     channels: HashMap<String, FakeChannel>,
 }
 
-/// Канал у поддельного сервера: ровно то, что знает настоящий.
-#[derive(Clone, Default)]
-struct FakeChannel {
-    owner_device: String,
-    verify_key: String,
-    meta: String,
-    /// Шифротексты записей, hex; номер записи — место в списке плюс один.
-    posts: Vec<String>,
-}
-
 /// Эпоха журнала ключей поддельного сервера.
 struct KtEpochState {
     epoch: u64,
@@ -426,6 +416,472 @@ impl FakeServer {
     }
 }
 
+/// Запись канала у поддельного сервера.
+#[derive(Clone, Default)]
+struct FakePost {
+    /// Шифротекст либо отметка об удалении, hex.
+    body: String,
+    rev: u64,
+    deleted: bool,
+    /// Реакции: жетон подписчика → эмодзи.
+    reactions: HashMap<String, String>,
+}
+
+/// Канал у поддельного сервера: ровно то, что знает настоящий.
+#[derive(Clone, Default)]
+struct FakeChannel {
+    owner_device: String,
+    verify_key: String,
+    meta: String,
+    /// Записи; номер записи — место в списке плюс один.
+    posts: Vec<FakePost>,
+    last_rev: u64,
+    handle: Option<String>,
+    public_link: Option<String>,
+    /// Медиаблобы по адресу.
+    media: HashMap<String, Vec<u8>>,
+    /// Подписчики: жетон → до какой записи дочитал.
+    subscribers: HashMap<String, u64>,
+}
+
+impl FakeChannel {
+    /// Дописывает запись — как публикация; возвращает номер и ревизию.
+    fn push(&mut self, body: String) -> (u64, u64) {
+        self.last_rev += 1;
+        self.posts.push(FakePost {
+            body,
+            rev: self.last_rev,
+            ..FakePost::default()
+        });
+
+        (self.posts.len() as u64, self.last_rev)
+    }
+
+    fn info(&self, channel_id: &str) -> gasapp_net::api::ChannelResponse {
+        gasapp_net::api::ChannelResponse {
+            channel_id: channel_id.to_owned(),
+            verify_key: self.verify_key.clone(),
+            meta: self.meta.clone(),
+            last_seq: self.posts.len() as u64,
+            last_rev: self.last_rev,
+            handle: self.handle.clone(),
+            public_link: self.public_link.clone(),
+            subscribers: self.subscribers.len() as u64,
+        }
+    }
+
+    fn post(&self, index: usize) -> gasapp_net::api::ChannelPostResponse {
+        let post = &self.posts[index];
+        let seq = index as u64 + 1;
+
+        let mut counts: Vec<(String, u64)> = Vec::new();
+        for emoji in post.reactions.values() {
+            match counts.iter_mut().find(|(known, _)| known == emoji) {
+                Some((_, count)) => *count += 1,
+                None => counts.push((emoji.clone(), 1)),
+            }
+        }
+        counts.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+
+        gasapp_net::api::ChannelPostResponse {
+            seq,
+            rev: post.rev,
+            body: post.body.clone(),
+            deleted: post.deleted,
+            posted_at: 0,
+            views: self
+                .subscribers
+                .values()
+                .filter(|seen| **seen >= seq)
+                .count() as u64,
+            reactions: counts
+                .iter()
+                .map(|(emoji, count)| format!("{emoji}:{count}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        }
+    }
+}
+
+fn plain(status: u16, body: String) -> HttpResponse {
+    HttpResponse {
+        status,
+        body,
+        binary_body: Vec::new(),
+    }
+}
+
+fn json(value: &impl ChannelJson) -> HttpResponse {
+    plain(200, value.to_json())
+}
+
+/// Ответы каналов, которые уходят в JSON: у тестов нет своей
+/// зависимости от `serde`, только от `serde_json`.
+trait ChannelJson {
+    fn to_json(&self) -> String;
+}
+
+impl ChannelJson for gasapp_net::api::ChannelResponse {
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+impl ChannelJson for Vec<gasapp_net::api::ChannelResponse> {
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+impl ChannelJson for Vec<gasapp_net::api::ChannelPostResponse> {
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+/// Место записи в списке по её номеру; несуществующий номер даёт
+/// место за концом списка.
+fn post_index(seq: u64) -> usize {
+    usize::try_from(seq).unwrap_or(0).wrapping_sub(1)
+}
+
+fn query_number(query: &str, name: &str) -> Option<u64> {
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
+        .and_then(|value| value.parse().ok())
+}
+
+/// Каналы поддельного сервера — те же маршруты, что у настоящего
+/// (`gasapp-server-api::channels`).
+fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> HttpResponse {
+    let path = request.path.as_str();
+    let body = request.body.as_deref().unwrap_or_default();
+
+    if let Some(rest) = path.strip_prefix("/v1/channels/feed/") {
+        // 🔐 Читатель серверу неизвестен: ни один его запрос не подписан.
+        assert!(!signed, "запрос читателя канала не должен быть подписан");
+
+        return channel_feed(state, request, rest, body);
+    }
+
+    if let Some(handle) = path.strip_prefix("/v1/channels/handle/") {
+        assert!(!signed, "поиск канала не должен быть подписан");
+
+        return state
+            .channels
+            .iter()
+            .find(|(_, channel)| channel.handle.as_deref() == Some(handle))
+            .map_or_else(
+                || plain(404, String::new()),
+                |(id, channel)| json(&channel.info(id)),
+            );
+    }
+
+    if let Some(prefix) = path.strip_prefix("/v1/channels/search?q=") {
+        assert!(!signed, "поиск канала не должен быть подписан");
+
+        let mut found: Vec<_> = state
+            .channels
+            .iter()
+            .filter(|(_, channel)| {
+                channel
+                    .handle
+                    .as_deref()
+                    .is_some_and(|handle| handle.starts_with(prefix))
+            })
+            .map(|(id, channel)| channel.info(id))
+            .collect();
+        found.sort_by(|left, right| left.handle.cmp(&right.handle));
+
+        return json(&found);
+    }
+
+    let Some(rest) = path.strip_prefix("/v1/channels/own/") else {
+        return plain(404, String::new());
+    };
+
+    let mut parts = rest.split('/');
+    let device_id = parts.next().unwrap_or_default().to_owned();
+    let channel_id = parts.next().map(str::to_owned);
+    let tail = parts.next();
+
+    // Свои каналы — только за подписью устройства.
+    if !signed || !state.device_identity.contains_key(&device_id) {
+        return plain(401, String::new());
+    }
+
+    let Some(channel_id) = channel_id else {
+        let Ok(parsed) = serde_json::from_str::<gasapp_net::api::CreateChannelRequest>(body) else {
+            return plain(400, String::new());
+        };
+
+        if !state.premium_devices.contains(&device_id) {
+            return plain(403, String::new());
+        }
+
+        state.channels.insert(
+            parsed.channel_id,
+            FakeChannel {
+                owner_device: device_id,
+                verify_key: parsed.verify_key,
+                meta: parsed.meta,
+                ..FakeChannel::default()
+            },
+        );
+
+        return plain(201, String::new());
+    };
+
+    let owned = state
+        .channels
+        .get(&channel_id)
+        .is_some_and(|channel| channel.owner_device == device_id);
+
+    if !owned {
+        return plain(404, String::new());
+    }
+
+    match (&request.method, tail) {
+        (Method::Put, None) => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::UpdateChannelRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+
+            if parsed.set_public
+                && parsed.handle.is_some()
+                && state
+                    .channels
+                    .iter()
+                    .any(|(id, channel)| *id != channel_id && channel.handle == parsed.handle)
+            {
+                return plain(409, String::new());
+            }
+
+            let channel = state.channels.get_mut(&channel_id).expect("канал есть");
+
+            if let Some(meta) = parsed.meta {
+                channel.meta = meta;
+            }
+            if parsed.set_public {
+                channel.public_link = parsed.handle.as_ref().and(parsed.public_link);
+                channel.handle = parsed.handle;
+            }
+
+            plain(204, String::new())
+        }
+        (Method::Delete, None) => {
+            state.channels.remove(&channel_id);
+
+            plain(204, String::new())
+        }
+        (Method::Post, Some("posts")) => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::PublishPostRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+            let channel = state.channels.get_mut(&channel_id).expect("канал есть");
+            let (seq, rev) = channel.push(parsed.body);
+
+            plain(200, format!(r#"{{"seq":{seq},"rev":{rev}}}"#))
+        }
+        (Method::Put, Some("posts")) => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ReplacePostRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+            let channel = state.channels.get_mut(&channel_id).expect("канал есть");
+            let index = post_index(parsed.seq);
+
+            // Удалённую запись настоящий сервер тоже не заменяет.
+            if channel.posts.get(index).is_none_or(|post| post.deleted) {
+                return plain(404, String::new());
+            }
+
+            channel.last_rev += 1;
+            let rev = channel.last_rev;
+            let post = &mut channel.posts[index];
+            post.body = parsed.body;
+            post.rev = rev;
+            post.deleted = parsed.deleted;
+            if parsed.deleted {
+                post.reactions.clear();
+            }
+
+            plain(200, format!(r#"{{"seq":{},"rev":{rev}}}"#, parsed.seq))
+        }
+        (Method::Post, Some("media")) => {
+            let blob = request.binary_body.clone().unwrap_or_default();
+
+            if blob.is_empty() {
+                return plain(400, String::new());
+            }
+
+            let media_id = FakeServer::next_uuid(state);
+            state
+                .channels
+                .get_mut(&channel_id)
+                .expect("канал есть")
+                .media
+                .insert(media_id.clone(), blob);
+
+            plain(200, format!(r#"{{"media_id":"{media_id}"}}"#))
+        }
+        (Method::Delete, Some("media")) => {
+            let Ok(parsed) =
+                serde_json::from_str::<gasapp_net::api::DeleteChannelMediaRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+            let channel = state.channels.get_mut(&channel_id).expect("канал есть");
+
+            match channel.media.remove(&parsed.media_id) {
+                Some(_) => plain(204, String::new()),
+                None => plain(404, String::new()),
+            }
+        }
+        _ => plain(404, String::new()),
+    }
+}
+
+/// Маршруты читателя: канал, записи, медиа, подписка, отметки, реакции.
+fn channel_feed(
+    state: &mut ServerState,
+    request: &HttpRequest,
+    rest: &str,
+    body: &str,
+) -> HttpResponse {
+    let (target, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let (channel_id, action) = target.split_once('/').unwrap_or((target, ""));
+
+    if request.method == Method::Get && action == "posts" {
+        // Несуществующий канал даёт пустой список, как на настоящем.
+        let Some(channel) = state.channels.get(channel_id) else {
+            return json(&Vec::<gasapp_net::api::ChannelPostResponse>::new());
+        };
+        let limit = query_number(query, "limit").unwrap_or(100).min(100) as usize;
+        let all = (0..channel.posts.len()).map(|index| channel.post(index));
+
+        let posts: Vec<_> = if let Some(after) = query_number(query, "after_rev") {
+            let mut changed: Vec<_> = all.filter(|post| post.rev > after).collect();
+            changed.sort_by_key(|post| post.rev);
+            changed.truncate(limit);
+            changed
+        } else {
+            let before = query_number(query, "before_seq").unwrap_or(u64::MAX);
+            let mut page: Vec<_> = all
+                .filter(|post| !post.deleted && post.seq < before)
+                .collect();
+            page.reverse();
+            page.truncate(limit);
+            page
+        };
+
+        return json(&posts);
+    }
+
+    let Some(channel) = state.channels.get_mut(channel_id) else {
+        return plain(404, String::new());
+    };
+
+    if request.method == Method::Get {
+        return match action.strip_prefix("media/") {
+            Some(media_id) => channel.media.get(media_id).map_or_else(
+                || plain(404, String::new()),
+                |blob| HttpResponse {
+                    status: 200,
+                    body: String::new(),
+                    binary_body: blob.clone(),
+                },
+            ),
+            None if action.is_empty() => json(&channel.info(channel_id)),
+            None => plain(404, String::new()),
+        };
+    }
+
+    match action {
+        "subscribe" => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelSubscribeRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+            let token = hex::decode(&parsed.token).unwrap_or_default();
+            let worked = leading_zero_bits(&gasapp_net::pow::hash(
+                &gasapp_net::pow::subscribe_challenge(channel_id, &token),
+                parsed.pow_nonce,
+            )) >= gasapp_net::pow::SUBSCRIBE_DIFFICULTY;
+
+            if token.len() != 32 || !worked {
+                return plain(401, String::new());
+            }
+
+            channel.subscribers.entry(parsed.token).or_insert(0);
+
+            plain(204, String::new())
+        }
+        "unsubscribe" => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelTokenRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+
+            channel.subscribers.remove(&parsed.token);
+            for post in &mut channel.posts {
+                post.reactions.remove(&parsed.token);
+            }
+
+            plain(204, String::new())
+        }
+        "seen" => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelSeenRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+
+            match channel.subscribers.get_mut(&parsed.token) {
+                Some(seen) => {
+                    *seen = (*seen).max(parsed.seq);
+                    plain(204, String::new())
+                }
+                None => plain(404, String::new()),
+            }
+        }
+        "react" => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelReactRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+
+            if parsed
+                .emoji
+                .as_deref()
+                .is_some_and(|emoji| !gasapp_core::client::CHANNEL_REACTIONS.contains(&emoji))
+            {
+                return plain(400, String::new());
+            }
+
+            let subscribed = channel.subscribers.contains_key(&parsed.token);
+            let post = channel
+                .posts
+                .get_mut(post_index(parsed.seq))
+                .filter(|post| !post.deleted);
+
+            match (subscribed, post) {
+                (true, Some(post)) => {
+                    match parsed.emoji {
+                        Some(emoji) => post.reactions.insert(parsed.token, emoji),
+                        None => post.reactions.remove(&parsed.token),
+                    };
+                    plain(204, String::new())
+                }
+                _ => plain(404, String::new()),
+            }
+        }
+        _ => plain(404, String::new()),
+    }
+}
+
 impl Transport for FakeServer {
     fn execute(&self, request: &HttpRequest) -> Result<HttpResponse> {
         let mut state = self.state.borrow_mut();
@@ -478,128 +934,9 @@ impl Transport for FakeServer {
                     (401, String::new())
                 }
             }
-            // Чтение канала — без подписи, как на настоящем сервере.
-            (Method::Get, path) if path.starts_with("/v1/channels/feed/") => {
-                let rest = path.trim_start_matches("/v1/channels/feed/");
-                let (target, query) = rest.split_once('?').unwrap_or((rest, ""));
-
-                assert!(!signed, "чтение канала не должно быть подписано");
-
-                if let Some(channel_id) = target.strip_suffix("/posts") {
-                    let after: usize = query
-                        .split('&')
-                        .find_map(|pair| pair.strip_prefix("after="))
-                        .and_then(|value| value.parse().ok())
-                        .unwrap_or(0);
-
-                    let posts: Vec<gasapp_net::api::ChannelPostResponse> = state
-                        .channels
-                        .get(channel_id)
-                        .map(|channel| {
-                            channel
-                                .posts
-                                .iter()
-                                .enumerate()
-                                .skip(after)
-                                .map(|(index, body)| gasapp_net::api::ChannelPostResponse {
-                                    seq: index as u64 + 1,
-                                    body: body.clone(),
-                                    posted_at: 0,
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default();
-
-                    (200, serde_json::to_string(&posts).unwrap_or_default())
-                } else {
-                    match state.channels.get(target) {
-                        Some(channel) => (
-                            200,
-                            serde_json::to_string(&gasapp_net::api::ChannelResponse {
-                                channel_id: target.to_owned(),
-                                verify_key: channel.verify_key.clone(),
-                                meta: channel.meta.clone(),
-                                last_seq: channel.posts.len() as u64,
-                            })
-                            .unwrap_or_default(),
-                        ),
-                        None => (404, String::new()),
-                    }
-                }
-            }
-            // Свои каналы — только за подписью устройства.
-            (_, path) if path.starts_with("/v1/channels/own/") => {
-                let rest = path.trim_start_matches("/v1/channels/own/");
-                let mut parts = rest.split('/');
-                let device_id = parts.next().unwrap_or_default().to_owned();
-                let channel_id = parts.next().map(str::to_owned);
-                let tail = parts.next();
-                let body = request.body.as_deref().unwrap_or_default();
-
-                if !signed || !state.device_identity.contains_key(&device_id) {
-                    (401, String::new())
-                } else {
-                    match (&request.method, channel_id, tail) {
-                        (Method::Post, None, None) => {
-                            let parsed: gasapp_net::api::CreateChannelRequest =
-                                serde_json::from_str(body)
-                                    .map_err(|_| gasapp_types::GasAppError::Malformed)?;
-
-                            if state.premium_devices.contains(&device_id) {
-                                state.channels.insert(
-                                    parsed.channel_id,
-                                    FakeChannel {
-                                        owner_device: device_id,
-                                        verify_key: parsed.verify_key,
-                                        meta: parsed.meta,
-                                        posts: Vec::new(),
-                                    },
-                                );
-                                (201, String::new())
-                            } else {
-                                (403, String::new())
-                            }
-                        }
-                        (method, Some(channel_id), tail) => {
-                            let owned = state
-                                .channels
-                                .get(&channel_id)
-                                .is_some_and(|channel| channel.owner_device == device_id);
-
-                            match (method, tail, owned) {
-                                (Method::Post, Some("posts"), true) => {
-                                    let parsed: gasapp_net::api::PublishPostRequest =
-                                        serde_json::from_str(body)
-                                            .map_err(|_| gasapp_types::GasAppError::Malformed)?;
-                                    let channel =
-                                        state.channels.get_mut(&channel_id).expect("канал есть");
-                                    channel.posts.push(parsed.body);
-
-                                    (200, format!(r#"{{"seq":{}}}"#, channel.posts.len()))
-                                }
-                                (Method::Put, None, true) => {
-                                    let parsed: gasapp_net::api::UpdateChannelMetaRequest =
-                                        serde_json::from_str(body)
-                                            .map_err(|_| gasapp_types::GasAppError::Malformed)?;
-                                    state
-                                        .channels
-                                        .get_mut(&channel_id)
-                                        .expect("канал есть")
-                                        .meta = parsed.meta;
-
-                                    (204, String::new())
-                                }
-                                (Method::Delete, None, true) => {
-                                    state.channels.remove(&channel_id);
-
-                                    (204, String::new())
-                                }
-                                _ => (404, String::new()),
-                            }
-                        }
-                        _ => (404, String::new()),
-                    }
-                }
+            // Каналы — отдельной функцией (`channel_route`).
+            (_, path) if path.starts_with("/v1/channels/") => {
+                return Ok(channel_route(&mut state, request, signed));
             }
             (Method::Post, "/v1/accounts/register") => {
                 let parsed: RegisterRequest =
@@ -5617,6 +5954,49 @@ fn author_and_reader(
     (author, reader)
 }
 
+use gasapp_core::client::AttachmentFile;
+use gasapp_media::descriptor::AttachmentKind;
+
+/// Канал автора и читатель, уже подписанный по ссылке.
+fn followed_channel(author: &Client<FakeServer>, reader: &Client<FakeServer>) -> (String, String) {
+    let channel = author
+        .create_channel("Канал", "", now(), &mut OsRng)
+        .expect("канал");
+    let link = author.channel_link(&channel.channel_id).expect("ссылка");
+    reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("подписка");
+
+    (channel.channel_id, link)
+}
+
+fn post_text(author: &Client<FakeServer>, channel_id: &str, text: &str) -> u64 {
+    author
+        .publish_channel_post(channel_id, text, &[], now(), &mut OsRng)
+        .expect("запись")
+        .seq
+}
+
+fn texts(client: &Client<FakeServer>, channel_id: &str) -> Vec<String> {
+    client
+        .channel_posts(channel_id, 500)
+        .expect("записи")
+        .into_iter()
+        .map(|post| post.text)
+        .collect()
+}
+
+fn document(name: &str, bytes: Vec<u8>) -> AttachmentFile {
+    AttachmentFile {
+        kind: AttachmentKind::Document,
+        bytes,
+        name: Some(name.to_owned()),
+        description: None,
+        duration_millis: None,
+        waveform: None,
+    }
+}
+
 /// Без премиума канал не создаётся, и заготовка на устройстве не остаётся.
 #[test]
 fn a_channel_needs_premium() {
@@ -5658,12 +6038,12 @@ fn a_reader_follows_a_channel_by_link() {
     let channel = author
         .create_channel("Gas News", "Объявления.", now(), &mut OsRng)
         .expect("канал");
-    author
-        .publish_channel_post(&channel.channel_id, "первая запись", now(), &mut OsRng)
-        .expect("запись");
+    post_text(&author, &channel.channel_id, "первая запись");
 
     let link = author.channel_link(&channel.channel_id).expect("ссылка");
-    let joined = reader.join_channel(&link, now()).expect("подписка");
+    let joined = reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("подписка");
 
     assert_eq!(joined.title, "Gas News");
     assert_eq!(joined.description, "Объявления.");
@@ -5671,20 +6051,11 @@ fn a_reader_follows_a_channel_by_link() {
     assert_eq!(joined.unread, 1);
     assert_eq!(joined.last_post.as_deref(), Some("первая запись"));
 
-    author
-        .publish_channel_post(&channel.channel_id, "вторая запись", now(), &mut OsRng)
-        .expect("запись");
+    post_text(&author, &channel.channel_id, "вторая запись");
 
     assert_eq!(reader.sync_channels().expect("синхронизация"), 1);
-
-    let posts = reader
-        .channel_posts(&channel.channel_id, 50)
-        .expect("записи");
     assert_eq!(
-        posts
-            .iter()
-            .map(|post| post.text.as_str())
-            .collect::<Vec<_>>(),
+        texts(&reader, &channel.channel_id),
         vec!["первая запись", "вторая запись"]
     );
 
@@ -5694,11 +6065,14 @@ fn a_reader_follows_a_channel_by_link() {
     assert_eq!(reader.channels().expect("список")[0].unread, 0);
 
     // Повторный переход по ссылке второй канал не заводит.
-    reader.join_channel(&link, now()).expect("та же ссылка");
+    reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("та же ссылка");
     assert_eq!(reader.channels().expect("список").len(), 1);
 }
 
-/// 🔐 Сервер видит шифротекст: ни названия, ни текста записи у него нет.
+/// 🔐 Сервер видит шифротекст: ни названия, ни текста записи, ни файла
+/// у него нет.
 #[test]
 fn the_server_sees_only_ciphertext() {
     let dir = tempfile::tempdir().expect("каталог");
@@ -5708,17 +6082,34 @@ fn the_server_sees_only_ciphertext() {
     let channel = author
         .create_channel("Секретное название", "", now(), &mut OsRng)
         .expect("канал");
+    let file = b"SECRET-FILE-CONTENT ".repeat(40);
     author
-        .publish_channel_post(&channel.channel_id, "секретный текст", now(), &mut OsRng)
+        .publish_channel_post(
+            &channel.channel_id,
+            "секретный текст",
+            &[document("тайна.txt", file.clone())],
+            now(),
+            &mut OsRng,
+        )
         .expect("запись");
 
     let stored = server.channel(&channel.channel_id);
-    let on_server = format!("{}{}", stored.meta, stored.posts.concat());
+    let bodies: String = stored.posts.iter().map(|post| post.body.as_str()).collect();
+    let on_server = format!("{}{bodies}", stored.meta);
 
-    for secret in ["Секретное название", "секретный текст"] {
+    for secret in ["Секретное название", "секретный текст", "тайна.txt"]
+    {
         assert!(
             !on_server.contains(&hex::encode(secret)),
             "«{secret}» лежит на сервере открытым текстом"
+        );
+    }
+
+    assert_eq!(stored.media.len(), 1);
+    for blob in stored.media.values() {
+        assert!(
+            !blob.windows(11).any(|window| window == b"SECRET-FILE"),
+            "файл лежит на сервере открытым"
         );
     }
 
@@ -5731,30 +6122,52 @@ fn the_server_sees_only_ciphertext() {
         .requests
         .iter()
         .all(|(path, _)| !path.contains(secret_part)));
+    assert!(stored.public_link.is_none());
 }
 
-/// 🔐 Читатель не пишет в чужой канал: ключа подписи у него нет.
+/// 🔐 Читатель не ведёт чужой канал: ключа подписи у него нет.
 #[test]
 fn a_reader_cannot_post() {
     let dir = tempfile::tempdir().expect("каталог");
     let server = FakeServer::new();
     let (author, reader) = author_and_reader(&server, &dir);
-
-    let channel = author
-        .create_channel("Канал", "", now(), &mut OsRng)
-        .expect("канал");
-    let link = author.channel_link(&channel.channel_id).expect("ссылка");
-    reader.join_channel(&link, now()).expect("подписка");
+    let (channel_id, _) = followed_channel(&author, &reader);
+    let seq = post_text(&author, &channel_id, "авторская");
+    reader.sync_channel(&channel_id).expect("синхронизация");
 
     assert!(matches!(
-        reader.publish_channel_post(&channel.channel_id, "чужая", now(), &mut OsRng),
+        reader.publish_channel_post(&channel_id, "чужая", &[], now(), &mut OsRng),
         Err(GasAppError::Forbidden)
     ));
     assert!(matches!(
-        reader.update_channel(&channel.channel_id, "Моё", "", now(), &mut OsRng),
+        reader.update_channel(&channel_id, "Моё", "", now(), &mut OsRng),
         Err(GasAppError::Forbidden)
     ));
-    assert!(server.channel(&channel.channel_id).posts.is_empty());
+    assert!(matches!(
+        reader.edit_channel_post(&channel_id, seq, "правка", now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        reader.delete_channel_post(&channel_id, seq, now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        reader.pin_channel_post(&channel_id, seq, now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        reader.set_channel_avatar(&channel_id, Some(&[1, 2, 3]), now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
+    assert!(matches!(
+        reader.set_channel_handle(&channel_id, Some("mine"), now()),
+        Err(GasAppError::Forbidden)
+    ));
+
+    let stored = server.channel(&channel_id);
+    assert_eq!(stored.posts.len(), 1);
+    assert!(stored.media.is_empty());
+    assert!(stored.handle.is_none());
 }
 
 /// 🔐 Запись, которую вписал сам сервер, читатель не принимает; настоящие
@@ -5768,31 +6181,23 @@ fn a_post_forged_by_the_server_is_dropped() {
     let channel = author
         .create_channel("Канал", "", now(), &mut OsRng)
         .expect("канал");
-    author
-        .publish_channel_post(&channel.channel_id, "настоящая", now(), &mut OsRng)
-        .expect("запись");
+    post_text(&author, &channel.channel_id, "настоящая");
     let link = author.channel_link(&channel.channel_id).expect("ссылка");
 
     // Сервер дописывает мусор и повтор первой записи под новым номером.
     server.tamper_channel(&channel.channel_id, |stored| {
-        let genuine = stored.posts[0].clone();
-        stored.posts.push(hex::encode([0x41u8; 600]));
-        stored.posts.push(genuine);
+        let genuine = stored.posts[0].body.clone();
+        stored.push(hex::encode([0x41u8; 600]));
+        stored.push(genuine);
     });
-    author
-        .publish_channel_post(&channel.channel_id, "после подделок", now(), &mut OsRng)
-        .expect("запись");
+    post_text(&author, &channel.channel_id, "после подделок");
 
-    reader.join_channel(&link, now()).expect("подписка");
+    reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("подписка");
 
-    let posts = reader
-        .channel_posts(&channel.channel_id, 50)
-        .expect("записи");
     assert_eq!(
-        posts
-            .iter()
-            .map(|post| post.text.as_str())
-            .collect::<Vec<_>>(),
+        texts(&reader, &channel.channel_id),
         vec!["настоящая", "после подделок"]
     );
     // Отброшенные записи непрочитанными не считаются.
@@ -5819,7 +6224,7 @@ fn a_swapped_author_key_is_refused() {
     });
 
     assert!(matches!(
-        reader.join_channel(&link, now()),
+        reader.join_channel(&link, now(), &mut OsRng),
         Err(GasAppError::InvalidSignature)
     ));
     assert!(reader.channels().expect("список").is_empty());
@@ -5839,7 +6244,9 @@ fn a_renamed_channel_does_not_roll_back() {
     let link = author.channel_link(&channel.channel_id).expect("ссылка");
     let old_meta = server.channel(&channel.channel_id).meta;
 
-    reader.join_channel(&link, now()).expect("подписка");
+    reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("подписка");
 
     let renamed = author
         .update_channel(&channel.channel_id, "Новое", "Описание.", now(), &mut OsRng)
@@ -5857,43 +6264,550 @@ fn a_renamed_channel_does_not_roll_back() {
     assert_eq!(reader.channels().expect("список")[0].title, "Новое");
 }
 
-/// Читатель уходит — сервер ничего не узнаёт; автор удаляет — канала нет.
+/// Запись с файлом: читатель скачивает и расшифровывает то, что
+/// приложил автор; подменённый сервером блоб не открывается.
 #[test]
-fn leaving_and_deleting_a_channel() {
+fn a_post_carries_attachments() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&author, &reader);
+
+    let original: Vec<u8> = (0..150_000u32).map(|index| (index % 251) as u8).collect();
+    let published = author
+        .publish_channel_post(
+            &channel_id,
+            "",
+            &[document("отчёт.pdf", original.clone())],
+            now(),
+            &mut OsRng,
+        )
+        .expect("запись с файлом");
+    assert_eq!(published.attachments.len(), 1);
+
+    assert_eq!(reader.sync_channel(&channel_id).expect("синхронизация"), 1);
+    let received = reader.channel_posts(&channel_id, 10).expect("записи");
+    let attachment = &received[0].attachments[0];
+
+    assert_eq!(attachment.kind, AttachmentKind::Document);
+    assert_eq!(attachment.name.as_deref(), Some("отчёт.pdf"));
+    assert_eq!(attachment.size, original.len() as u64);
+    assert_eq!(
+        reader.channels().expect("список")[0].last_post_attachments,
+        1
+    );
+    assert_eq!(
+        reader
+            .fetch_channel_media(&channel_id, &attachment.descriptor)
+            .expect("файл"),
+        original
+    );
+
+    // 🔐 Скачивание медиа — без подписи: сервер не знает, кто смотрит.
+    let headers = server
+        .last_request(&format!("/v1/channels/feed/{channel_id}/media/"))
+        .expect("скачивание");
+    assert!(
+        headers.is_empty(),
+        "скачивание медиа подписано: {headers:?}"
+    );
+
+    server.tamper_channel(&channel_id, |stored| {
+        for blob in stored.media.values_mut() {
+            blob[100] ^= 0x01;
+        }
+    });
+    assert!(reader
+        .fetch_channel_media(&channel_id, &attachment.descriptor)
+        .is_err());
+
+    // Пустая запись и лишние вложения не уходят — и файлов не оставляют.
+    assert!(matches!(
+        author.publish_channel_post(&channel_id, "  ", &[], now(), &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+    let crowd: Vec<_> = (0..11).map(|_| document("a.txt", vec![1; 10])).collect();
+    assert!(matches!(
+        author.publish_channel_post(&channel_id, "много", &crowd, now(), &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+    assert_eq!(server.channel(&channel_id).media.len(), 1);
+}
+
+/// Правка доходит до читателя с пометкой; 🔐 прежнюю редакцию сервер
+/// вернуть не может.
+#[test]
+fn an_edit_reaches_readers_and_does_not_roll_back() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&author, &reader);
+
+    let seq = post_text(&author, &channel_id, "с ошыбкой");
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    let first_edition = server.channel(&channel_id).posts[0].clone();
+
+    let edited = author
+        .edit_channel_post(&channel_id, seq, "без ошибки", now(), &mut OsRng)
+        .expect("правка");
+    assert_eq!(edited.text, "без ошибки");
+    assert!(edited.edited_at.is_some());
+
+    // Правка — не новая запись: счётчик непрочитанного не растёт.
+    assert_eq!(reader.sync_channel(&channel_id).expect("синхронизация"), 0);
+    let seen = reader.channel_posts(&channel_id, 10).expect("записи");
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].text, "без ошибки");
+    assert!(seen[0].edited_at.is_some());
+
+    // Сервер выдаёт прежний шифротекст как свежее изменение.
+    server.tamper_channel(&channel_id, |stored| {
+        stored.last_rev += 1;
+        stored.posts[0] = FakePost {
+            rev: stored.last_rev,
+            ..first_edition
+        };
+    });
+    reader.sync_channel(&channel_id).expect("синхронизация");
+
+    assert_eq!(texts(&reader, &channel_id), vec!["без ошибки"]);
+
+    // Пустой правка не бывает.
+    assert!(matches!(
+        author.edit_channel_post(&channel_id, seq, " ", now(), &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+}
+
+/// Удаление: запись и её файл исчезают у читателя и с сервера; 🔐 слову
+/// сервера «удалено» без подписи автора читатель не верит, и удалённое
+/// из прежнего шифротекста не возвращается.
+#[test]
+fn a_deletion_needs_the_authors_signature() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&author, &reader);
+
+    let keep = post_text(&author, &channel_id, "остаётся");
+    let doomed = author
+        .publish_channel_post(
+            &channel_id,
+            "уйдёт",
+            &[document("a.txt", vec![3; 500])],
+            now(),
+            &mut OsRng,
+        )
+        .expect("запись")
+        .seq;
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader.mark_channel_read(&channel_id).expect("прочитано");
+    let doomed_body = server.channel(&channel_id).posts[1].clone();
+
+    // Сервер объявляет первую запись удалённой сам — без отметки автора.
+    server.tamper_channel(&channel_id, |stored| {
+        stored.last_rev += 1;
+        stored.posts[0].rev = stored.last_rev;
+        stored.posts[0].deleted = true;
+    });
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(texts(&reader, &channel_id), vec!["остаётся", "уйдёт"]);
+    server.tamper_channel(&channel_id, |stored| stored.posts[0].deleted = false);
+
+    author
+        .pin_channel_post(&channel_id, doomed, now(), &mut OsRng)
+        .expect("закреп");
+    author
+        .delete_channel_post(&channel_id, doomed, now(), &mut OsRng)
+        .expect("удаление");
+
+    assert_eq!(texts(&author, &channel_id), vec!["остаётся"]);
+    assert!(server.channel(&channel_id).media.is_empty());
+    // Закреп удалённой записи снимается вместе с ней.
+    assert_eq!(author.channel(&channel_id).expect("канал").pinned_seq, 0);
+
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(texts(&reader, &channel_id), vec!["остаётся"]);
+    assert!(reader
+        .channel_post(&channel_id, doomed)
+        .expect("запись")
+        .is_none());
+
+    // Сервер возвращает прежний шифротекст удалённой записи.
+    server.tamper_channel(&channel_id, |stored| {
+        stored.last_rev += 1;
+        stored.posts[1] = FakePost {
+            rev: stored.last_rev,
+            ..doomed_body
+        };
+    });
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(texts(&reader, &channel_id), vec!["остаётся"]);
+
+    // Второй раз удалить нечего.
+    assert!(matches!(
+        author.delete_channel_post(&channel_id, doomed, now(), &mut OsRng),
+        Err(GasAppError::SessionNotFound)
+    ));
+    assert!(author
+        .channel_post(&channel_id, keep)
+        .expect("запись")
+        .is_some());
+}
+
+/// Закреп и аватар едут в описании канала, подписанном автором.
+#[test]
+fn pin_and_avatar_travel_in_the_signed_meta() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&author, &reader);
+
+    let seq = post_text(&author, &channel_id, "важное");
+    let picture: Vec<u8> = b"not-a-real-image".repeat(64);
+
+    let pinned = author
+        .pin_channel_post(&channel_id, seq, now(), &mut OsRng)
+        .expect("закреп");
+    assert_eq!(pinned.pinned_seq, seq);
+    author
+        .set_channel_avatar(&channel_id, Some(&picture), now(), &mut OsRng)
+        .expect("аватар");
+
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    let seen = reader.channel(&channel_id).expect("канал");
+    assert_eq!(seen.pinned_seq, seq);
+    assert_eq!(seen.title, "Канал");
+    assert_eq!(
+        reader
+            .fetch_channel_media(&channel_id, &seen.avatar.expect("аватар"))
+            .expect("картинка"),
+        picture
+    );
+
+    // Новый аватар заменяет прежний блоб, а не копит их.
+    author
+        .set_channel_avatar(&channel_id, Some(&[9u8; 300]), now(), &mut OsRng)
+        .expect("новый аватар");
+    assert_eq!(server.channel(&channel_id).media.len(), 1);
+
+    author
+        .set_channel_avatar(&channel_id, None, now(), &mut OsRng)
+        .expect("без аватара");
+    author
+        .pin_channel_post(&channel_id, 0, now(), &mut OsRng)
+        .expect("без закрепа");
+    assert!(server.channel(&channel_id).media.is_empty());
+
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    let cleared = reader.channel(&channel_id).expect("канал");
+    assert_eq!(cleared.pinned_seq, 0);
+    assert!(cleared.avatar.is_none());
+
+    // Закрепить можно только существующую запись.
+    assert!(matches!(
+        author.pin_channel_post(&channel_id, 99, now(), &mut OsRng),
+        Err(GasAppError::SessionNotFound)
+    ));
+}
+
+/// Публичный канал находится по `@имени` и поиском; занятое имя — отказ.
+#[test]
+fn a_public_channel_is_found_by_handle() {
     let dir = tempfile::tempdir().expect("каталог");
     let server = FakeServer::new();
     let (author, reader) = author_and_reader(&server, &dir);
 
     let channel = author
-        .create_channel("Канал", "", now(), &mut OsRng)
+        .create_channel("Gas News", "Объявления.", now(), &mut OsRng)
         .expect("канал");
+    let other = author
+        .create_channel("Второй", "", now(), &mut OsRng)
+        .expect("второй канал");
+    post_text(&author, &channel.channel_id, "привет");
+
+    assert!(matches!(
+        reader.find_public_channel("gas_news"),
+        Err(GasAppError::SessionNotFound)
+    ));
+
+    let public = author
+        .set_channel_handle(&channel.channel_id, Some("@Gas_News"), now())
+        .expect("публичность");
+    assert_eq!(public.handle.as_deref(), Some("gas_news"));
+
+    assert!(matches!(
+        author.set_channel_handle(&other.channel_id, Some("gas_news"), now()),
+        Err(GasAppError::UsernameTaken)
+    ));
+    assert!(matches!(
+        author.set_channel_handle(&other.channel_id, Some("нет"), now()),
+        Err(GasAppError::Malformed)
+    ));
+
+    let found = reader.find_public_channel("@gas_news").expect("канал");
+    assert_eq!(found.title, "Gas News");
+    assert_eq!(found.description, "Объявления.");
+    assert_eq!(found.handle, "gas_news");
+    assert!(!found.joined);
+    // Автор — тоже подписчик своего канала.
+    assert_eq!(found.subscribers, 1);
+
+    let results = reader.search_public_channels("gas").expect("поиск");
+    assert_eq!(results, vec![found.clone()]);
+    assert!(reader
+        .search_public_channels("zzz")
+        .expect("поиск")
+        .is_empty());
+
+    let joined = reader
+        .join_channel(&found.link, now(), &mut OsRng)
+        .expect("подписка");
+    assert_eq!(joined.handle.as_deref(), Some("gas_news"));
+    assert_eq!(texts(&reader, &channel.channel_id), vec!["привет"]);
+    assert!(
+        reader
+            .find_public_channel("gas_news")
+            .expect("канал")
+            .joined
+    );
+
+    // Снова закрытый: по имени больше не находится.
+    author
+        .set_channel_handle(&channel.channel_id, None, now())
+        .expect("закрытие");
+    assert!(matches!(
+        reader.find_public_channel("gas_news"),
+        Err(GasAppError::SessionNotFound)
+    ));
+    reader
+        .sync_channel(&channel.channel_id)
+        .expect("синхронизация");
+    assert!(reader
+        .channel(&channel.channel_id)
+        .expect("канал")
+        .handle
+        .is_none());
+}
+
+/// 🔐 Сервер не покажет под именем описание другого канала: ссылка
+/// обязана вести к тому каналу, который он отдаёт.
+#[test]
+fn a_swapped_public_link_is_refused() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+
+    let honest = author
+        .create_channel("Настоящий", "", now(), &mut OsRng)
+        .expect("канал");
+    let decoy = author
+        .create_channel("Подставной", "", now(), &mut OsRng)
+        .expect("канал");
+    author
+        .set_channel_handle(&honest.channel_id, Some("honest"), now())
+        .expect("публичность");
+
+    let decoy_link = author.channel_link(&decoy.channel_id).expect("ссылка");
+    server.tamper_channel(&honest.channel_id, |stored| {
+        stored.public_link = Some(decoy_link);
+    });
+
+    assert!(matches!(
+        reader.find_public_channel("honest"),
+        Err(GasAppError::InvalidSignature)
+    ));
+    assert!(reader
+        .search_public_channels("hon")
+        .expect("поиск")
+        .is_empty());
+}
+
+/// Подписчики, просмотры и реакции считаются по жетонам; 🔐 ни один
+/// запрос читателя не подписан устройством.
+#[test]
+fn subscribers_views_and_reactions() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&author, &reader);
+
+    let seq = post_text(&author, &channel_id, "запись");
+    author.sync_channel(&channel_id).expect("синхронизация");
+    assert_eq!(author.channel(&channel_id).expect("канал").subscribers, 2);
+
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    reader.mark_channel_read(&channel_id).expect("прочитано");
+    reader.report_channel_seen(&channel_id).expect("отметка");
+
+    // Вторая отметка о том же до сервера не доходит.
+    let before = server.state.borrow().requests.len();
+    reader.report_channel_seen(&channel_id).expect("отметка");
+    assert_eq!(server.state.borrow().requests.len(), before);
+
+    let reacted = reader
+        .react_to_channel_post(&channel_id, seq, Some("🔥"), &mut OsRng)
+        .expect("реакция");
+    assert_eq!(reacted.my_reaction.as_deref(), Some("🔥"));
+    assert_eq!(reacted.views, 1);
+    assert_eq!(reacted.reactions.len(), 1);
+    assert_eq!(reacted.reactions[0].emoji, "🔥");
+    assert_eq!(reacted.reactions[0].count, 1);
+
+    author
+        .react_to_channel_post(&channel_id, seq, Some("👍"), &mut OsRng)
+        .expect("реакция автора");
+    reader.sync_channel(&channel_id).expect("синхронизация");
+    let seen = reader
+        .channel_post(&channel_id, seq)
+        .expect("запись")
+        .expect("есть");
+    assert_eq!(seen.reactions.len(), 2);
+    // Своя реакция переживает синхронизацию.
+    assert_eq!(seen.my_reaction.as_deref(), Some("🔥"));
+
+    // Смена и снятие.
+    reader
+        .react_to_channel_post(&channel_id, seq, Some("👍"), &mut OsRng)
+        .expect("смена");
+    let cleared = reader
+        .react_to_channel_post(&channel_id, seq, None, &mut OsRng)
+        .expect("снятие");
+    assert!(cleared.my_reaction.is_none());
+    assert_eq!(cleared.reactions.len(), 1);
+
+    assert!(matches!(
+        reader.react_to_channel_post(&channel_id, seq, Some("<b>"), &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+
+    for action in ["subscribe", "seen", "react"] {
+        let headers = server
+            .last_request(&format!("/v1/channels/feed/{channel_id}/{action}"))
+            .unwrap_or_else(|| panic!("нет запроса {action}"));
+        assert!(headers.is_empty(), "{action} подписан: {headers:?}");
+    }
+
+    // 🔐 Жетон у каждого свой и с устройством не связан: в базе сервера
+    // два разных жетона, и идентификатора устройства среди них нет.
+    let stored = server.channel(&channel_id);
+    assert_eq!(stored.subscribers.len(), 2);
+}
+
+/// Канал с длинной историей: при подписке приходит свежая страница,
+/// старое догружается по запросу.
+#[test]
+fn older_posts_load_on_demand() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+
+    let channel = author
+        .create_channel("Летопись", "", now(), &mut OsRng)
+        .expect("канал");
+    for number in 1..=105 {
+        post_text(&author, &channel.channel_id, &format!("запись {number}"));
+    }
     let link = author.channel_link(&channel.channel_id).expect("ссылка");
-    reader.join_channel(&link, now()).expect("подписка");
+
+    reader
+        .join_channel(&link, now(), &mut OsRng)
+        .expect("подписка");
+    let fresh = texts(&reader, &channel.channel_id);
+    assert_eq!(fresh.len(), 100);
+    assert_eq!(fresh[0], "запись 6");
+
+    assert_eq!(
+        reader
+            .load_older_channel_posts(&channel.channel_id)
+            .expect("история"),
+        5
+    );
+    assert_eq!(texts(&reader, &channel.channel_id).len(), 105);
+    assert_eq!(
+        reader
+            .load_older_channel_posts(&channel.channel_id)
+            .expect("история"),
+        0
+    );
+
+    let page = reader
+        .channel_posts_before(&channel.channel_id, 6, 3)
+        .expect("страница");
+    assert_eq!(
+        page.iter().map(|post| post.seq).collect::<Vec<_>>(),
+        vec![3, 4, 5]
+    );
+
+    // Новое после подписки приходит изменениями, а не страницей.
+    post_text(&author, &channel.channel_id, "запись 106");
+    assert_eq!(reader.sync_channels().expect("синхронизация"), 1);
+}
+
+/// «Без звука» убирает канал из общего счётчика; поиск по каналу —
+/// локальный.
+#[test]
+fn mute_unread_total_and_search() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, _) = followed_channel(&author, &reader);
+
+    post_text(&author, &channel_id, "скидка на бензин");
+    post_text(&author, &channel_id, "новости недели");
+    reader.sync_channel(&channel_id).expect("синхронизация");
+
+    assert_eq!(reader.unread_channel_posts().expect("счётчик"), 2);
+    // Свой канал автором прочитан.
+    assert_eq!(author.unread_channel_posts().expect("счётчик"), 0);
+
+    assert!(
+        reader
+            .set_channel_muted(&channel_id, true)
+            .expect("без звука")
+            .muted
+    );
+    assert_eq!(reader.unread_channel_posts().expect("счётчик"), 0);
+    assert_eq!(reader.channel(&channel_id).expect("канал").unread, 2);
 
     let before = server.state.borrow().requests.len();
-    reader
-        .leave_channel(&channel.channel_id, now())
-        .expect("отписка");
-
-    assert!(reader.channels().expect("список").is_empty());
+    let found = reader
+        .search_channel_posts(&channel_id, " бензин ", 10)
+        .expect("поиск");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].text, "скидка на бензин");
     assert_eq!(
         server.state.borrow().requests.len(),
         before,
-        "отписка не должна доходить до сервера"
+        "поиск по каналу не должен ходить на сервер"
     );
+}
 
-    author
-        .leave_channel(&channel.channel_id, now())
-        .expect("удаление");
+/// Читатель уходит — его жетон снимается; автор удаляет — канала нет.
+#[test]
+fn leaving_and_deleting_a_channel() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, link) = followed_channel(&author, &reader);
+
+    assert_eq!(server.channel(&channel_id).subscribers.len(), 2);
+
+    reader.leave_channel(&channel_id, now()).expect("отписка");
+
+    assert!(reader.channels().expect("список").is_empty());
+    assert_eq!(server.channel(&channel_id).subscribers.len(), 1);
+    let headers = server
+        .last_request(&format!("/v1/channels/feed/{channel_id}/unsubscribe"))
+        .expect("отписка");
+    assert!(headers.is_empty(), "отписка подписана: {headers:?}");
+
+    author.leave_channel(&channel_id, now()).expect("удаление");
 
     assert!(author.channels().expect("список").is_empty());
-    assert!(!server
-        .state
-        .borrow()
-        .channels
-        .contains_key(&channel.channel_id));
+    assert!(!server.state.borrow().channels.contains_key(&channel_id));
     assert!(matches!(
-        reader.join_channel(&link, now()),
+        reader.join_channel(&link, now(), &mut OsRng),
         Err(GasAppError::SessionNotFound)
     ));
 }

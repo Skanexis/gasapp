@@ -64,7 +64,10 @@ mod sealed;
 mod signup;
 
 pub use blocks::ReportOutcome;
-pub use channels::{Channel, ChannelEntry};
+pub use channels::{
+    Channel, ChannelAttachment, ChannelEntry, ChannelPreview, ChannelReaction, CHANNEL_REACTIONS,
+    MAX_CHANNEL_MEDIA_BYTES,
+};
 use gasapp_protocol::account_recovery::AccountRecoveryKey;
 use gasapp_protocol::pq_identity::PqIdentityKeyPair;
 pub use gasapp_storage::requests::ChatRequest;
@@ -1811,37 +1814,13 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<AttachmentDescriptor> {
-        // 🔐 Метаданные удаляются до шифрования: GPS, модель камеры,
-        // время съёмки, миниатюры, геометка видео (`gasapp_media::scrub`).
-        // Файл известного формата, который не разбирается, не уходит
-        // вовсе — иначе ушёл бы со всеми метаданными.
-        let scrubbed = scrub::scrub(&file.bytes)?;
-
-        let size = u64::try_from(scrubbed.bytes.len()).map_err(|_| GasAppError::Malformed)?;
-
-        if size > MAX_ATTACHMENT_BYTES {
-            return Err(GasAppError::Malformed);
-        }
-
-        // 🔐 Длина дополняется до сетки Padmé: сервер видит длину блоба,
-        // а точная длина узнаваема — по ней видно, что один и тот же
-        // файл получили разные люди. Настоящая длина — в описании.
-        let mut plaintext = scrubbed.bytes;
-        plaintext.resize(attachment::padded_len(plaintext.len())?, 0);
-
-        let key = AttachmentKey::generate(rng);
-
-        // Чанки склеиваются в один блоб: сервер хранит его целиком,
-        // а получатель режет обратно по известному размеру чанка.
-        // Отдельная загрузка каждого чанка означала бы тысячу запросов
-        // на стомегабайтный файл.
-        let mut payload = Vec::new();
-
-        for (index, chunk) in plaintext.chunks(attachment::CHUNK_SIZE).enumerate() {
-            let index = u32::try_from(index).map_err(|_| GasAppError::Malformed)?;
-
-            payload.extend_from_slice(&attachment::seal_chunk(&key, index, chunk)?);
-        }
+        let sealed = seal_file(file, MAX_ATTACHMENT_BYTES, rng)?;
+        let SealedFile {
+            payload,
+            key,
+            size,
+            is_media,
+        } = sealed;
 
         // 🔐 Загрузка анонимна: право на место — работа над этим блобом,
         // а не подпись устройства (см. `ApiClient::upload_attachment`).
@@ -1860,16 +1839,12 @@ impl<T: Transport> Client<T> {
         let descriptor = AttachmentDescriptor {
             kind: file.kind,
             location,
-            key: *key.expose(),
+            key,
             size,
             // 🔐 У фото, видео и звука имя не передаётся: «IMG_20260924_
             // 183005.jpg» — это дата и секунда съёмки, «PXL_…» — модель
             // телефона. Имя документа выбирает человек, и оно остаётся.
-            name: if scrubbed.format.is_media() {
-                None
-            } else {
-                file.name.clone()
-            },
+            name: if is_media { None } else { file.name.clone() },
             description: file.description.clone(),
             duration_millis: file.duration_millis,
             waveform: file.waveform.clone(),
@@ -1912,28 +1887,7 @@ impl<T: Transport> Client<T> {
 
         let payload = self.api.download_attachment(&descriptor.location)?;
 
-        // Длина блоба однозначно следует из размера файла: столько-то
-        // полных чанков плюс остаток, и на каждый — свой тег.
-        let expected = expected_payload_len(descriptor.size)?;
-
-        if payload.len() != expected {
-            return Err(GasAppError::Malformed);
-        }
-
-        let key = AttachmentKey::from_bytes(descriptor.key);
-        let mut plaintext = Vec::new();
-
-        for (index, chunk) in payload.chunks(attachment::ENCRYPTED_CHUNK_SIZE).enumerate() {
-            let index = u32::try_from(index).map_err(|_| GasAppError::Malformed)?;
-
-            plaintext.extend_from_slice(&attachment::open_chunk(&key, index, chunk)?);
-        }
-
-        // Дополнение Padmé отбрасывается: настоящая длина — в описании,
-        // пришедшем внутри зашифрованного сообщения.
-        plaintext.truncate(usize::try_from(descriptor.size).map_err(|_| GasAppError::Malformed)?);
-
-        Ok(plaintext)
+        open_file(descriptor, &payload)
     }
 
     /// Читает булеву настройку приложения.
@@ -3323,6 +3277,98 @@ const MAX_CHATS_TO_PROBE: u32 = 256;
 /// схемы: расхождение означало бы отказ уже после того, как
 /// стомегабайтный файл ушёл по сети.
 const MAX_ATTACHMENT_BYTES: u64 = 100 * 1024 * 1024;
+
+/// Зашифрованный файл, готовый к загрузке.
+pub(crate) struct SealedFile {
+    /// Шифроблоб: чанки подряд.
+    pub(crate) payload: Vec<u8>,
+    /// Ключ расшифровки — уходит в описании вложения.
+    pub(crate) key: [u8; attachment::KEY_LEN],
+    /// Размер открытого файла после очистки метаданных.
+    pub(crate) size: u64,
+    /// Фото, видео или звук: имя такого файла не передаётся.
+    pub(crate) is_media: bool,
+}
+
+/// Очищает файл от метаданных, дополняет и шифрует чанками.
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — файл больше `max_bytes` либо известного
+/// формата, но не разбирается; [`GasAppError::Crypto`] — сбой шифрования.
+pub(crate) fn seal_file<R: RngCore + CryptoRng>(
+    file: &AttachmentFile,
+    max_bytes: u64,
+    rng: &mut R,
+) -> Result<SealedFile> {
+    // 🔐 Метаданные удаляются до шифрования: GPS, модель камеры,
+    // время съёмки, миниатюры, геометка видео (`gasapp_media::scrub`).
+    // Файл известного формата, который не разбирается, не уходит
+    // вовсе — иначе ушёл бы со всеми метаданными.
+    let scrubbed = scrub::scrub(&file.bytes)?;
+
+    let size = u64::try_from(scrubbed.bytes.len()).map_err(|_| GasAppError::Malformed)?;
+
+    if size > max_bytes {
+        return Err(GasAppError::Malformed);
+    }
+
+    // 🔐 Длина дополняется до сетки Padmé: сервер видит длину блоба,
+    // а точная длина узнаваема — по ней видно, что один и тот же
+    // файл получили разные люди. Настоящая длина — в описании.
+    let mut plaintext = scrubbed.bytes;
+    plaintext.resize(attachment::padded_len(plaintext.len())?, 0);
+
+    let key = AttachmentKey::generate(rng);
+
+    // Чанки склеиваются в один блоб: сервер хранит его целиком,
+    // а получатель режет обратно по известному размеру чанка.
+    // Отдельная загрузка каждого чанка означала бы тысячу запросов
+    // на стомегабайтный файл.
+    let mut payload = Vec::new();
+
+    for (index, chunk) in plaintext.chunks(attachment::CHUNK_SIZE).enumerate() {
+        let index = u32::try_from(index).map_err(|_| GasAppError::Malformed)?;
+
+        payload.extend_from_slice(&attachment::seal_chunk(&key, index, chunk)?);
+    }
+
+    Ok(SealedFile {
+        payload,
+        key: *key.expose(),
+        size,
+        is_media: scrubbed.format.is_media(),
+    })
+}
+
+/// Расшифровывает шифроблоб по описанию вложения.
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — длина блоба не сходится с описанием;
+/// [`GasAppError::Crypto`] — блоб подменён либо ключ не тот.
+pub(crate) fn open_file(descriptor: &AttachmentDescriptor, payload: &[u8]) -> Result<Vec<u8>> {
+    // Длина блоба однозначно следует из размера файла: столько-то
+    // полных чанков плюс остаток, и на каждый — свой тег.
+    if payload.len() != expected_payload_len(descriptor.size)? {
+        return Err(GasAppError::Malformed);
+    }
+
+    let key = AttachmentKey::from_bytes(descriptor.key);
+    let mut plaintext = Vec::new();
+
+    for (index, chunk) in payload.chunks(attachment::ENCRYPTED_CHUNK_SIZE).enumerate() {
+        let index = u32::try_from(index).map_err(|_| GasAppError::Malformed)?;
+
+        plaintext.extend_from_slice(&attachment::open_chunk(&key, index, chunk)?);
+    }
+
+    // Дополнение Padmé отбрасывается: настоящая длина — в описании,
+    // пришедшем внутри зашифрованного сообщения.
+    plaintext.truncate(usize::try_from(descriptor.size).map_err(|_| GasAppError::Malformed)?);
+
+    Ok(plaintext)
+}
 
 /// Сколько байт занимает зашифрованный файл заданного размера.
 ///

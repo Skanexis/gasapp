@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <!-- Метка вида: какую картинку канала он ждёт (ui/ChannelImages). -->
+    <item name="channel_image_key" type="id" />
+</resources>

@@ -33,19 +33,35 @@
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
-        <TextView
-            android:id="@+id/channel_avatar"
+        <!-- Аватар: инициалы, а поверх них — картинка, если автор её
+             поставил и она уже скачана и расшифрована. -->
+        <FrameLayout
             android:layout_width="@dimen/avatar_s"
-            android:layout_height="@dimen/avatar_s"
-            android:background="@drawable/bg_avatar"
-            android:fontFamily="@font/inter"
-            android:gravity="center"
-            android:importantForAccessibility="no"
-            android:includeFontPadding="false"
-            android:textColor="@color/accent_base"
-            android:textFontWeight="600"
-            android:textSize="14sp"
-            tools:text="GN" />
+            android:layout_height="@dimen/avatar_s">
+
+            <TextView
+                android:id="@+id/channel_avatar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_avatar"
+                android:fontFamily="@font/inter"
+                android:gravity="center"
+                android:importantForAccessibility="no"
+                android:includeFontPadding="false"
+                android:textColor="@color/accent_base"
+                android:textFontWeight="600"
+                android:textSize="14sp"
+                tools:text="GN" />
+
+            <ImageView
+                android:id="@+id/channel_avatar_image"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_avatar"
+                android:importantForAccessibility="no"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
@@ -94,6 +110,55 @@
             app:tint="@color/text_secondary" />
     </LinearLayout>
 
+    <!-- Закреплённая запись: нажатие ведёт к ней в ленте. -->
+    <LinearLayout
+        android:id="@+id/channel_pinned"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_row_normal"
+        android:gravity="center_vertical"
+        android:minHeight="@dimen/touch_target"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingEnd="@dimen/screen_padding"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_pin"
+            app:tint="@color/accent_base" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingVertical="6dp">
+
+            <TextView
+                style="@style/GasAppText.Caption.Muted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/channel_post_pinned"
+                android:textColor="@color/accent_base" />
+
+            <TextView
+                android:id="@+id/channel_pinned_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                tools:text="Правила канала: без спама, по делу." />
+        </LinearLayout>
+    </LinearLayout>
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -128,6 +193,18 @@
         android:text="@string/channel_reader_note"
         android:visibility="gone" />
 
+    <!-- Автору: файлы, приложенные к ещё не опубликованной записи. -->
+    <LinearLayout
+        android:id="@+id/channel_pending"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_raised"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/space_m"
+        android:paddingTop="@dimen/space_s"
+        android:paddingEnd="@dimen/space_m"
+        android:visibility="gone" />
+
     <!-- Автору: строка ввода записи. -->
     <LinearLayout
         android:id="@+id/channel_input_row"
@@ -136,12 +213,23 @@
         android:background="@color/bg_raised"
         android:gravity="bottom"
         android:orientation="horizontal"
-        android:paddingStart="@dimen/space_m"
+        android:paddingStart="@dimen/space_s"
         android:paddingTop="@dimen/space_s"
         android:paddingEnd="@dimen/space_s"
         android:paddingBottom="@dimen/space_s"
         android:visibility="gone"
         tools:visibility="visible">
+
+        <ImageView
+            android:id="@+id/channel_attach"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="@dimen/space_xs"
+            android:background="@drawable/bg_icon_button"
+            android:contentDescription="@string/attach"
+            android:padding="12dp"
+            android:src="@drawable/ic_plus"
+            app:tint="@color/text_secondary" />
 
         <!-- 🔐 saveEnabled="false": черновик не попадает в сохранённое
              состояние экрана — как и в переписке. -->
@@ -154,7 +242,7 @@
             android:hint="@string/channel_post_hint"
             android:importantForAutofill="no"
             android:inputType="textMultiLine|textCapSentences"
-            android:maxLength="4000"
+            android:maxLength="8000"
             android:maxLines="6"
             android:minHeight="44dp"
             android:paddingTop="10dp"

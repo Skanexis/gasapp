@@ -36,6 +36,9 @@ rand_core.workspace = true
 rand = "0.8"
 subtle.workspace = true
 hex.workspace = true
+# Только `StreamExt::map`: тело ответа держит место скачивания, пока
+# не отдано целиком. Крейт уже в дереве (зависимость axum).
+futures-util = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 tokio-rustls.workspace = true
