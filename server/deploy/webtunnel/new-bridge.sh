@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Поднимает свой мост WebTunnel и печатает строку для сборки AEGIS.
+# Поднимает свой мост WebTunnel и печатает строку для сборки GasApp.
 #
 #   ./new-bridge.sh bridge1.example.com admin@example.com [имя]
 #
@@ -11,7 +11,7 @@ set -euo pipefail
 
 DOMAIN="${1:?домен моста}"
 EMAIL="${2:?почта для Let's Encrypt и контакта моста}"
-NICKNAME="${3:-AegisBridge$(date +%s | tail -c 5)}"
+NICKNAME="${3:-GasAppBridge$(date +%s | tail -c 5)}"
 
 cd "$(dirname "$0")"
 
@@ -33,7 +33,7 @@ echo "Жду, пока мост создаст ключи…"
 for _ in $(seq 1 60); do
   if line="$(docker compose exec -T webtunnel get-bridge-line.sh 2>/dev/null | grep '^webtunnel ')"; then
     echo
-    echo "Строка моста — в android/tor/bridges.txt (или в свой файл для -PaegisBridgesFile):"
+    echo "Строка моста — в android/tor/bridges.txt (или в свой файл для -PgasappBridgesFile):"
     echo
     echo "$line"
     exit 0

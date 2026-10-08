@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Базовое укрепление машины AEGIS (Debian 12 / Ubuntu 22.04+).
+# Базовое укрепление машины GasApp (Debian 12 / Ubuntu 22.04+).
 #
 #     harden-host.sh --role node --admin alice --lb 10.0.0.1
 #     harden-host.sh --role lb   --admin alice --onion 10.0.0.1
@@ -27,8 +27,8 @@
 #  4. Без дампов памяти — ни у одного процесса.
 #  5. Журнал: хранится 14 дней, не копируется в /var/log/syslog.
 #  6. Брандмауэр по роли: снаружи — только то, что нужно этой машине.
-#  7. Пользователи служб: aegis (узел), aegis-admin (админ-центр),
-#     aegis-monitor (монитор, на каждой машине).
+#  7. Пользователи служб: gasapp (узел), gasapp-admin (админ-центр),
+#     gasapp-monitor (монитор, на каждой машине).
 #
 # # 🔐 Чтобы не запереть себя
 #
@@ -72,9 +72,9 @@ put() {
         return
     fi
     install -d -m 755 "$(dirname "$path")"
-    printf '%s\n' "$content" > "${path}.aegis-new"
-    chmod "$mode" "${path}.aegis-new"
-    mv -f "${path}.aegis-new" "$path"
+    printf '%s\n' "$content" > "${path}.gasapp-new"
+    chmod "$mode" "${path}.gasapp-new"
+    mv -f "${path}.gasapp-new" "$path"
 }
 
 # --- Проверки до изменений ----------------------------------------------------
@@ -114,23 +114,23 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
-put /etc/apt/apt.conf.d/52aegis-unattended 644 <<EOF
-// AEGIS: только обновления безопасности, без участия человека.
+put /etc/apt/apt.conf.d/52gasapp-unattended 644 <<EOF
+// GasApp: только обновления безопасности, без участия человека.
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 Unattended-Upgrade::Automatic-Reboot "$( (( auto_reboot )) && echo true || echo false )";
 Unattended-Upgrade::Automatic-Reboot-Time "04:30";
 EOF
 # needrestart: перезапускать службы после обновления библиотек самому,
 # а не спрашивать (спросить некого).
-put /etc/needrestart/conf.d/90-aegis.conf 644 <<'EOF'
+put /etc/needrestart/conf.d/90-gasapp.conf 644 <<'EOF'
 $nrconf{restart} = 'a';
 EOF
 
 # --- 2. SSH -------------------------------------------------------------------
 
 step "SSH"
-put /etc/ssh/sshd_config.d/10-aegis.conf 600 <<EOF
-# AEGIS: вход только по ключу и только для ${admin}.
+put /etc/ssh/sshd_config.d/10-gasapp.conf 600 <<EOF
+# GasApp: вход только по ключу и только для ${admin}.
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -159,12 +159,12 @@ PermitUserEnvironment no
 LogLevel VERBOSE
 EOF
 if (( ! dry )); then
-    sshd -t || { rm -f /etc/ssh/sshd_config.d/10-aegis.conf; die "sshd -t не прошёл — изменения SSH отменены"; }
+    sshd -t || { rm -f /etc/ssh/sshd_config.d/10-gasapp.conf; die "sshd -t не прошёл — изменения SSH отменены"; }
     systemctl reload ssh 2>/dev/null || systemctl reload sshd
 fi
 
-put /etc/fail2ban/jail.d/aegis.local 644 <<'EOF'
-# AEGIS: только sshd. Адреса тех, кто перебирает SSH, — не адреса
+put /etc/fail2ban/jail.d/gasapp.local 644 <<'EOF'
+# GasApp: только sshd. Адреса тех, кто перебирает SSH, — не адреса
 # пользователей мессенджера: эти в журналы не попадают нигде.
 [sshd]
 enabled  = true
@@ -179,8 +179,8 @@ run systemctl restart fail2ban
 # --- 3. Ядро ------------------------------------------------------------------
 
 step "sysctl"
-put /etc/sysctl.d/90-aegis.conf 644 <<'EOF'
-# AEGIS: укрепление ядра.
+put /etc/sysctl.d/90-gasapp.conf 644 <<'EOF'
+# GasApp: укрепление ядра.
 
 # Адреса ядра и его журнал — не для непривилегированных: подсказки
 # для эксплойтов.
@@ -230,16 +230,16 @@ run sysctl --system -q -e > /dev/null     || echo "  ⚠️ часть ключ�
 # --- 4. Дампы памяти ----------------------------------------------------------
 
 step "без дампов памяти"
-put /etc/security/limits.d/90-aegis.conf 644 <<'EOF'
+put /etc/security/limits.d/90-gasapp.conf 644 <<'EOF'
 *    hard    core    0
 root hard    core    0
 EOF
-put /etc/systemd/coredump.conf.d/90-aegis.conf 644 <<'EOF'
+put /etc/systemd/coredump.conf.d/90-gasapp.conf 644 <<'EOF'
 [Coredump]
 Storage=none
 ProcessSizeMax=0
 EOF
-put /etc/systemd/system.conf.d/90-aegis.conf 644 <<'EOF'
+put /etc/systemd/system.conf.d/90-gasapp.conf 644 <<'EOF'
 [Manager]
 DefaultLimitCORE=0
 EOF
@@ -247,8 +247,8 @@ EOF
 # --- 5. Журнал ----------------------------------------------------------------
 
 step "журнал"
-put /etc/systemd/journald.conf.d/90-aegis.conf 644 <<'EOF'
-# AEGIS: журнал — тоже данные, которые изымают вместе с диском.
+put /etc/systemd/journald.conf.d/90-gasapp.conf 644 <<'EOF'
+# GasApp: журнал — тоже данные, которые изымают вместе с диском.
 # Две недели хватает разобрать сбой; дольше — незачем.
 [Journal]
 Storage=persistent
@@ -300,17 +300,17 @@ make_user() {
     id "$1" > /dev/null 2>&1 && return
     run useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1"
 }
-if has_role node; then make_user aegis; fi
-if has_role db; then make_user aegis-admin; fi
+if has_role node; then make_user gasapp; fi
+if has_role db; then make_user gasapp-admin; fi
 # Монитор — на каждой машине; журнал читает через группу.
-make_user aegis-monitor
-run usermod -aG systemd-journal aegis-monitor
+make_user gasapp-monitor
+run usermod -aG systemd-journal gasapp-monitor
 
-run install -d -m 755 -o root -g root /etc/aegis /etc/aegis/pki /opt/aegis
+run install -d -m 755 -o root -g root /etc/gasapp /etc/gasapp/pki /opt/gasapp
 # Секреты: только root. Службы получают их через LoadCredential.
-run install -d -m 700 -o root -g root /etc/aegis/credentials
+run install -d -m 700 -o root -g root /etc/gasapp/credentials
 if has_role db && id postgres > /dev/null 2>&1; then
-    run install -d -m 700 -o postgres -g postgres /var/backups/aegis
+    run install -d -m 700 -o postgres -g postgres /var/backups/gasapp
 fi
 
 step "готово"
@@ -324,5 +324,5 @@ cat <<EOF
   4. пароль не принимается:  ssh -o PubkeyAuthentication=no ${admin}@<адрес>   # → Permission denied
 
 Если что-то не так — в этой сессии:
-  rm /etc/ssh/sshd_config.d/10-aegis.conf && systemctl reload ssh
+  rm /etc/ssh/sshd_config.d/10-gasapp.conf && systemctl reload ssh
 EOF

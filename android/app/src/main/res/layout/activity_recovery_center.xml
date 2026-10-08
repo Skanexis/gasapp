@@ -22,18 +22,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/recovery_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             android:text="@string/recovery_title" />
@@ -76,7 +76,7 @@
 
                 <TextView
                     android:id="@+id/recovery_state_title"
-                    style="@style/AegisText.H3"
+                    style="@style/GasAppText.H3"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_m"
@@ -85,7 +85,7 @@
 
                 <TextView
                     android:id="@+id/recovery_last"
-                    style="@style/AegisText.Caption"
+                    style="@style/GasAppText.Caption"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
@@ -102,16 +102,16 @@
                     android:orientation="vertical">
 
                     <TextView
-                        style="@style/AegisRecoveryFact"
+                        style="@style/GasAppRecoveryFact"
                         android:text="@string/recovery_pill_encrypted" />
 
                     <TextView
-                        style="@style/AegisRecoveryFact"
+                        style="@style/GasAppRecoveryFact"
                         android:layout_marginTop="@dimen/space_s"
                         android:text="@string/recovery_pill_server_cannot" />
                 </LinearLayout>
 
-                <org.aegis.app.components.AegisButton
+                <org.gasapp.app.components.GasAppButton
                     android:id="@+id/recovery_create"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -119,7 +119,7 @@
                     android:text="@string/recovery_create"
                     app:buttonVariant="primary" />
 
-                <org.aegis.app.components.AegisButton
+                <org.gasapp.app.components.GasAppButton
                     android:id="@+id/recovery_backup_now"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -130,7 +130,7 @@
 
                 <TextView
                     android:id="@+id/recovery_status"
-                    style="@style/AegisText.Caption"
+                    style="@style/GasAppText.Caption"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
@@ -142,12 +142,12 @@
             </LinearLayout>
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/recovery_section_actions" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include android:id="@+id/recovery_restore" layout="@layout/item_settings_row" />
 
@@ -156,10 +156,10 @@
                   прежние копии недоступными этим устройством.
                 -->
                 <include android:id="@+id/recovery_new_key" layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <TextView
-                style="@style/AegisText.Body.Secondary"
+                style="@style/GasAppText.Body.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_l"

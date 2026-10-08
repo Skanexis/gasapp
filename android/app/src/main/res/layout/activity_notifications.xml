@@ -16,18 +16,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/notifications_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:text="@string/settings_notifications" />
     </LinearLayout>
@@ -46,9 +46,9 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:text="@string/notifications_section_content" />
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/notifications_preview"
@@ -57,16 +57,16 @@
 <include
                     android:id="@+id/notifications_sender"
                     layout="@layout/item_settings_toggle" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
             <TextView
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_m"
                 android:text="@string/notifications_content_note" />
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/notifications_section_alerts" />
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/notifications_sound"
@@ -75,7 +75,7 @@
 <include
                     android:id="@+id/notifications_vibrate"
                     layout="@layout/item_settings_toggle" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
         </LinearLayout>
     </ScrollView>

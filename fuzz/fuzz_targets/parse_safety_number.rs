@@ -13,7 +13,7 @@
 //! и на многобайтовых символах UTF-8, где длина в байтах не совпадает
 //! с длиной в символах.
 
-use aegis_protocol::SafetyNumber;
+use gasapp_protocol::SafetyNumber;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

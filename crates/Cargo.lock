@@ -19,195 +19,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aegis-backup"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "argon2",
- "chacha20poly1305",
- "hex",
- "hkdf",
- "proptest",
- "rand_core 0.6.4",
- "sha2",
- "thiserror 2.0.20",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-core"
-version = "0.1.0"
-dependencies = [
- "aegis-backup",
- "aegis-keystore",
- "aegis-media",
- "aegis-net",
- "aegis-protocol",
- "aegis-storage",
- "aegis-types",
- "hex",
- "proptest",
- "rand_core 0.6.4",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.20",
- "tracing",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-ffi"
-version = "0.1.0"
-dependencies = [
- "aegis-backup",
- "aegis-core",
- "aegis-keystore",
- "aegis-media",
- "aegis-net",
- "aegis-protocol",
- "aegis-storage",
- "aegis-tor",
- "aegis-types",
- "rand_core 0.6.4",
- "tempfile",
- "thiserror 2.0.20",
- "uniffi",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-keystore"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "argon2",
- "async-trait",
- "chacha20poly1305",
- "hex",
- "hkdf",
- "proptest",
- "rand_core 0.6.4",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-media"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "aes-gcm",
- "chacha20poly1305",
- "hex",
- "proptest",
- "rand_core 0.6.4",
- "sha2",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "aegis-net"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "hex",
- "proptest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tracing",
-]
-
-[[package]]
-name = "aegis-proto"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "hex",
- "proptest",
- "prost",
-]
-
-[[package]]
-name = "aegis-protocol"
-version = "0.1.0"
-dependencies = [
- "aegis-types",
- "aes-gcm",
- "curve25519-dalek",
- "ed25519-dalek",
- "hex",
- "hkdf",
- "hmac",
- "ml-dsa",
- "ml-kem",
- "proptest",
- "qrcode",
- "rand_core 0.10.1",
- "rand_core 0.6.4",
- "sha2",
- "subtle",
- "thiserror 2.0.20",
- "x25519-dalek",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-storage"
-version = "0.1.0"
-dependencies = [
- "aegis-protocol",
- "aegis-types",
- "hex",
- "proptest",
- "rusqlite",
- "tempfile",
- "thiserror 2.0.20",
- "tracing",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "aegis-tor"
-version = "0.1.0"
-dependencies = [
- "arti-client",
- "base64 0.22.1",
- "futures",
- "rand_core 0.6.4",
- "rustls",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-rustls",
- "tor-rtcompat",
- "tracing",
- "tracing-subscriber",
- "webpki-roots",
-]
-
-[[package]]
-name = "aegis-types"
-version = "0.1.0"
-dependencies = [
- "hex",
- "hex-literal",
- "subtle",
- "thiserror 2.0.20",
- "uuid",
- "zeroize",
-]
-
-[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1844,6 +1655,195 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "gasapp-backup"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "gasapp-types",
+ "hex",
+ "hkdf",
+ "proptest",
+ "rand_core 0.6.4",
+ "sha2",
+ "thiserror 2.0.20",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-core"
+version = "0.1.0"
+dependencies = [
+ "gasapp-backup",
+ "gasapp-keystore",
+ "gasapp-media",
+ "gasapp-net",
+ "gasapp-protocol",
+ "gasapp-storage",
+ "gasapp-types",
+ "hex",
+ "proptest",
+ "rand_core 0.6.4",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracing",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-ffi"
+version = "0.1.0"
+dependencies = [
+ "gasapp-backup",
+ "gasapp-core",
+ "gasapp-keystore",
+ "gasapp-media",
+ "gasapp-net",
+ "gasapp-protocol",
+ "gasapp-storage",
+ "gasapp-tor",
+ "gasapp-types",
+ "rand_core 0.6.4",
+ "tempfile",
+ "thiserror 2.0.20",
+ "uniffi",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-keystore"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "async-trait",
+ "chacha20poly1305",
+ "gasapp-types",
+ "hex",
+ "hkdf",
+ "proptest",
+ "rand_core 0.6.4",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-media"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "chacha20poly1305",
+ "gasapp-types",
+ "hex",
+ "proptest",
+ "rand_core 0.6.4",
+ "sha2",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "gasapp-net"
+version = "0.1.0"
+dependencies = [
+ "gasapp-types",
+ "hex",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
+name = "gasapp-proto"
+version = "0.1.0"
+dependencies = [
+ "gasapp-types",
+ "hex",
+ "proptest",
+ "prost",
+]
+
+[[package]]
+name = "gasapp-protocol"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "gasapp-types",
+ "hex",
+ "hkdf",
+ "hmac",
+ "ml-dsa",
+ "ml-kem",
+ "proptest",
+ "qrcode",
+ "rand_core 0.10.1",
+ "rand_core 0.6.4",
+ "sha2",
+ "subtle",
+ "thiserror 2.0.20",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-storage"
+version = "0.1.0"
+dependencies = [
+ "gasapp-protocol",
+ "gasapp-types",
+ "hex",
+ "proptest",
+ "rusqlite",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracing",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "gasapp-tor"
+version = "0.1.0"
+dependencies = [
+ "arti-client",
+ "base64 0.22.1",
+ "futures",
+ "rand_core 0.6.4",
+ "rustls",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-rustls",
+ "tor-rtcompat",
+ "tracing",
+ "tracing-subscriber",
+ "webpki-roots",
+]
+
+[[package]]
+name = "gasapp-types"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "hex-literal",
+ "subtle",
+ "thiserror 2.0.20",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]

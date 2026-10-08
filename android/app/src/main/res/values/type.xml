@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Типографская шкала из design/aegis.tokens.json.
+  Типографская шкала из design/gasapp.tokens.json.
 
   Девять ступеней, каждая с тремя свойствами: кегль, интерлиньяж и вес.
   В макете они заданы вместе, и брать из них только кегль — самая
@@ -24,30 +24,32 @@
 <resources>
 
     <!-- Базовый стиль: всё остальное наследуется от него. -->
-    <style name="AegisText">
+    <style name="GasAppText">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:includeFontPadding">false</item>
     </style>
 
     <!-- Display 32/40/700 -->
-    <style name="AegisText.Display">
-        <item name="android:fontFamily">@font/inter</item>
-        <item name="android:textFontWeight">700</item>
+    <style name="GasAppText.Display">
+        <item name="android:fontFamily">@font/rubik</item>
+        <item name="fontFamily">@font/rubik</item>
+        <item name="android:textFontWeight">900</item>
         <item name="android:textSize">@dimen/text_display</item>
         <item name="android:lineSpacingExtra">8sp</item>
     </style>
 
     <!-- H1 28/36/700 -->
-    <style name="AegisText.H1">
-        <item name="android:fontFamily">@font/inter</item>
-        <item name="android:textFontWeight">700</item>
+    <style name="GasAppText.H1">
+        <item name="android:fontFamily">@font/rubik</item>
+        <item name="fontFamily">@font/rubik</item>
+        <item name="android:textFontWeight">900</item>
         <item name="android:textSize">@dimen/text_h1</item>
         <item name="android:lineSpacingExtra">8sp</item>
     </style>
 
     <!-- H2 24/32/600 -->
-    <style name="AegisText.H2">
+    <style name="GasAppText.H2">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_h2</item>
@@ -55,7 +57,7 @@
     </style>
 
     <!-- H3 20/28/600 -->
-    <style name="AegisText.H3">
+    <style name="GasAppText.H3">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_h3</item>
@@ -63,7 +65,7 @@
     </style>
 
     <!-- H4 17/24/600 -->
-    <style name="AegisText.H4">
+    <style name="GasAppText.H4">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_h4</item>
@@ -71,7 +73,7 @@
     </style>
 
     <!-- Body 15/22/400 -->
-    <style name="AegisText.Body">
+    <style name="GasAppText.Body">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">400</item>
         <item name="android:textSize">@dimen/text_body</item>
@@ -79,12 +81,12 @@
     </style>
 
     <!-- Body вторичного цвета: подписи под заголовками, превью строк. -->
-    <style name="AegisText.Body.Secondary">
+    <style name="GasAppText.Body.Secondary">
         <item name="android:textColor">@color/text_secondary</item>
     </style>
 
     <!-- Caption 13/18/400 -->
-    <style name="AegisText.Caption">
+    <style name="GasAppText.Caption">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">400</item>
         <item name="android:textSize">@dimen/text_caption</item>
@@ -93,12 +95,12 @@
     </style>
 
     <!-- Caption приглушённого цвета: время, счётчики, служебные пометки. -->
-    <style name="AegisText.Caption.Muted">
+    <style name="GasAppText.Caption.Muted">
         <item name="android:textColor">@color/text_muted</item>
     </style>
 
     <!-- Button 15/16/600 -->
-    <style name="AegisText.Button">
+    <style name="GasAppText.Button">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_button</item>
@@ -107,7 +109,7 @@
     </style>
 
     <!-- Label 12/16/600 -->
-    <style name="AegisText.Label">
+    <style name="GasAppText.Label">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_label</item>
@@ -122,7 +124,7 @@
       сливает похожие знаки, а ошибка сверки означает, что пользователь
       считает канал проверенным, когда он не проверен.
     -->
-    <style name="AegisText.Mono">
+    <style name="GasAppText.Mono">
         <item name="android:fontFamily">monospace</item>
         <!--
           🔐 И атрибут AppCompat тоже. Тема задаёт `fontFamily` = Inter,

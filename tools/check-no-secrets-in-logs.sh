@@ -19,11 +19,11 @@
 # # Чего она не заменяет
 #
 # Главная защита — типовая: `Secret<T>` не реализует `Display`, а его
-# `Debug` печатает заглушку (`crates/aegis-types/src/secret.rs`), поэтому
+# `Debug` печатает заглушку (`crates/gasapp-types/src/secret.rs`), поэтому
 # записать секрет в лог нельзя, не сняв его из обёртки намеренно.
 # Свойство закреплено тестами `debug_output_is_redacted`,
-# `debug_output_is_redacted_when_nested` (aegis-types/src/secret.rs)
-# и `error_messages_do_not_leak_detail` (aegis-types/src/lib.rs) —
+# `debug_output_is_redacted_when_nested` (gasapp-types/src/secret.rs)
+# и `error_messages_do_not_leak_detail` (gasapp-types/src/lib.rs) —
 # последний проверяет, что и текст ошибки не намекает на содержимое.
 #
 # Скрипт ниже — второй рубеж, для того что из обёртки уже вынуто.

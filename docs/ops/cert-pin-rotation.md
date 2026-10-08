@@ -24,13 +24,13 @@
 Let's Encrypt, то есть раз в три месяца.
 
 Считает пин `server/deploy/compute-pin.sh`; ту же величину считает
-`pin_from_spki` в `crates/aegis-net/src/pinning.rs` и ожидает
+`pin_from_spki` в `crates/gasapp-net/src/pinning.rs` и ожидает
 `<pin digest="SHA-256">` в `network_security_config.xml`.
 
 ```
 server/deploy/compute-pin.sh server/deploy/tls/cert.pem   # из сертификата
 server/deploy/compute-pin.sh --key path/to/backup-key.pem # из ключа без сертификата
-server/deploy/compute-pin.sh --host aegis.chat:443        # с живого сервера
+server/deploy/compute-pin.sh --host gasapp.chat:443        # с живого сервера
 ```
 
 ## Правило двух пинов
@@ -88,7 +88,7 @@ server/deploy/compute-pin.sh --key backup-key.pem
 ### Релиз N+1 — переключить сервер
 
 1. Развернуть сертификат для `K2` на балансировщике.
-2. Проверить с живого сервера: `compute-pin.sh --host aegis.chat:443`
+2. Проверить с живого сервера: `compute-pin.sh --host gasapp.chat:443`
    обязан дать пин `K2`.
 3. Убедиться, что клиенты релиза N соединяются: у них `K2` уже
    в запасных.
@@ -143,7 +143,7 @@ server/deploy/compute-pin.sh --key backup-key.pem
 - [ ] `expiration` — не раньше чем через 12 месяцев
 - [ ] В конфигурации релиза нет `<certificates src="user" />`
 - [ ] В конфигурации релиза нет доверенных локальных CA
-      (`@raw/aegis_local_ca` живёт только в `src/debug/`)
+      (`@raw/gasapp_local_ca` живёт только в `src/debug/`)
 - [ ] `mitm_proxy_rejected` зелёный
 
 ## Где что лежит
@@ -152,6 +152,6 @@ server/deploy/compute-pin.sh --key backup-key.pem
 |---|---|
 | Политика релиза | `android/app/src/release/res/xml/network_security_config.xml` |
 | Политика отладки | `android/app/src/debug/res/xml/network_security_config.xml` |
-| Логика набора пинов | `crates/aegis-net/src/pinning.rs` |
+| Логика набора пинов | `crates/gasapp-net/src/pinning.rs` |
 | Подсчёт пина | `server/deploy/compute-pin.sh` |
 | Сертификат локального сервера | `server/deploy/tls/cert.pem` |

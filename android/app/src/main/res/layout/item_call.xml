@@ -8,7 +8,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/call_row"
-    style="@style/AegisListRow"
+    style="@style/GasAppListRow"
     android:paddingTop="@dimen/space_s"
     android:paddingBottom="@dimen/space_s">
 
@@ -69,7 +69,7 @@
 
     <ImageView
         android:id="@+id/call_back"
-        style="@style/AegisIconButton"
+        style="@style/GasAppIconButton"
         android:contentDescription="@string/call_back"
         android:src="@drawable/ic_phone"
         app:tint="@color/accent_base" />

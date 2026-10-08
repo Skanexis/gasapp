@@ -31,7 +31,7 @@ sys.stderr.reconfigure(encoding="utf-8")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CRATES = ROOT / "crates"
-LABELS = ROOT / "android/app/src/main/kotlin/org/aegis/app/core/SecurityEvents.kt"
+LABELS = ROOT / "android/app/src/main/kotlin/org/gasapp/app/core/SecurityEvents.kt"
 
 # Защита от пустого сравнения: ноль найденных событий с обеих сторон
 # «совпал» бы, и проверка была бы зелёной, ничего не проверив.

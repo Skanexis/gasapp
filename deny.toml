@@ -73,7 +73,7 @@ exceptions = [
     # конфликтовать с нашими лицензиями.
     { allow = ["Unlicense"], crate = "async_executors" },
     # Корневые сертификаты Mozilla для TLS до мостов WebTunnel
-    # (`aegis-tor/src/webtunnel.rs`). CDLA-Permissive-2.0 — разрешительная
+    # (`gasapp-tor/src/webtunnel.rs`). CDLA-Permissive-2.0 — разрешительная
     # лицензия на данные, без copyleft.
     { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots" },
 ]
@@ -103,14 +103,14 @@ deny = [
     { crate = "openssl-sys", reason = "см. openssl", wrappers = ["libsqlite3-sys", "openssl-src"] },
     { crate = "native-tls", reason = "используем rustls" },
     # ring — только провайдер rustls для TLS до входного узла Tor
-    # (`aegis-tor`): Arti требует, чтобы провайдера выбрало приложение.
+    # (`gasapp-tor`): Arti требует, чтобы провайдера выбрало приложение.
     { crate = "ring", reason = "конфликтует с выбором RustCrypto; двойная реализация примитивов недопустима", wrappers = ["rustls", "rustls-webpki"] },
     { crate = "md-5", reason = "MD5 запрещён (раздел 6.1)" },
     # 🔐 Исключения ниже — точечные (`wrappers`): запрещённый крейт
-    # разрешён ТОЛЬКО как зависимость названных крейтов. Код AEGIS
+    # разрешён ТОЛЬКО как зависимость названных крейтов. Код GasApp
     # по-прежнему не может подключить его напрямую.
     #
-    # Встроенный Tor (Arti, `aegis-tor`, раздел 23.18) — реализация
+    # Встроенный Tor (Arti, `gasapp-tor`, раздел 23.18) — реализация
     # чужого протокола, и его примитивы заданы спецификацией Tor,
     # а не нами: SHA-1 и RSA-1024 — в устаревших идентификаторах узлов,
     # rand — генератор внутри Arti. Наши сообщения эти примитивы

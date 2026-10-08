@@ -28,14 +28,14 @@
             android:paddingBottom="@dimen/space_s">
 
             <TextView
-                style="@style/AegisAppBarTitle.Large"
+                style="@style/GasAppAppBarTitle.Large"
                 android:layout_weight="1"
                 android:text="@string/nav_chats" />
 
-            <!-- Значок 24dp, область нажатия 48dp (AegisIconButton). -->
+            <!-- Значок 24dp, область нажатия 48dp (GasAppIconButton). -->
             <ImageView
                 android:id="@+id/chat_list_search"
-                style="@style/AegisIconButton"
+                style="@style/GasAppIconButton"
                 android:padding="12dp"
                 android:contentDescription="@string/search"
                 android:src="@drawable/ic_search"
@@ -43,7 +43,7 @@
 
             <ImageView
                 android:id="@+id/security_center_badge"
-                style="@style/AegisIconButton"
+                style="@style/GasAppIconButton"
                 android:padding="12dp"
                 android:contentDescription="@string/security_center_description"
                 android:src="@drawable/ic_shield"
@@ -117,13 +117,16 @@
         <ImageView
             android:id="@+id/new_chat_button"
             android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_height="56dp"
             android:layout_gravity="bottom|end"
             android:layout_margin="@dimen/screen_padding"
             android:background="@drawable/bg_fab"
             android:contentDescription="@string/new_chat"
             android:elevation="6dp"
-            android:padding="14dp"
+            android:paddingStart="14dp"
+            android:paddingTop="14dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="18dp"
             android:src="@drawable/ic_edit"
             app:tint="@color/accent_on" />
 

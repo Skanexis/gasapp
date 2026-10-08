@@ -18,18 +18,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/contact_profile_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             android:text="@string/contact_profile_title" />
@@ -87,7 +87,7 @@
 
             <TextView
                 android:id="@+id/contact_profile_name"
-                style="@style/AegisText.H2"
+                style="@style/GasAppText.H2"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
@@ -104,7 +104,7 @@
             -->
             <TextView
                 android:id="@+id/contact_profile_verified"
-                style="@style/AegisPill.Neutral"
+                style="@style/GasAppPill.Neutral"
                 android:layout_height="28dp"
                 android:layout_marginTop="@dimen/space_s"
                 android:textSize="12sp"
@@ -120,15 +120,15 @@
 
                 <LinearLayout
                     android:id="@+id/contact_profile_open_chat"
-                    style="@style/AegisActionTile">
+                    style="@style/GasAppActionTile">
 
                     <ImageView
-                        style="@style/AegisActionTileIcon"
+                        style="@style/GasAppActionTileIcon"
                         android:contentDescription="@null"
                         android:src="@drawable/ic_chat" />
 
                     <TextView
-                        style="@style/AegisActionTileLabel"
+                        style="@style/GasAppActionTileLabel"
                         android:text="@string/contact_profile_message" />
                 </LinearLayout>
 
@@ -138,22 +138,22 @@
 
                 <LinearLayout
                     android:id="@+id/contact_profile_verify"
-                    style="@style/AegisActionTile">
+                    style="@style/GasAppActionTile">
 
                     <ImageView
-                        style="@style/AegisActionTileIcon"
+                        style="@style/GasAppActionTileIcon"
                         android:contentDescription="@null"
                         android:src="@drawable/ic_shield_check" />
 
                     <TextView
-                        style="@style/AegisActionTileLabel"
+                        style="@style/GasAppActionTileLabel"
                         android:text="@string/contact_profile_safety_number" />
                 </LinearLayout>
             </LinearLayout>
 
             <TextView
                 android:id="@+id/contact_profile_hint"
-                style="@style/AegisText.Caption"
+                style="@style/GasAppText.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
@@ -165,7 +165,7 @@
                 app:drawableTint="@color/text_secondary" />
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:paddingStart="@dimen/space_xs"
                 android:text="@string/contact_profile_key" />

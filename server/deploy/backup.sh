@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Резервное копирование базы AEGIS.
+# Резервное копирование базы GasApp.
 #
 # # 🔐 Что копируется и что НЕ копируется
 #
@@ -39,17 +39,17 @@
 #
 # # Запуск
 #
-#     ./backup.sh /var/backups/aegis
+#     ./backup.sh /var/backups/gasapp
 #
 # Из cron, ежедневно:
 #
-#     0 4 * * * /opt/aegis/backup.sh /var/backups/aegis
+#     0 4 * * * /opt/gasapp/backup.sh /var/backups/gasapp
 
 set -euo pipefail
 
 readonly TARGET="${1:?укажите каталог для бэкапов}"
-readonly DB_NAME="${AEGIS_DB_NAME:-aegis}"
-readonly DB_USER="${AEGIS_DB_USER:-aegis}"
+readonly DB_NAME="${GASAPP_DB_NAME:-gasapp}"
+readonly DB_USER="${GASAPP_DB_USER:-gasapp}"
 
 # Ключ шифрования: публичная часть age-ключа получателя.
 #
@@ -63,9 +63,9 @@ readonly DB_USER="${AEGIS_DB_USER:-aegis}"
 # копии продолжали шифроваться прежним ключом — тем, который ротация
 # предлагала со временем удалить. А строка cron ниже переменную
 # не задаёт вовсе.
-readonly RECIPIENT_FILE="${AEGIS_BACKUP_RECIPIENT_FILE:-/etc/aegis/backup-recipient}"
+readonly RECIPIENT_FILE="${GASAPP_BACKUP_RECIPIENT_FILE:-/etc/gasapp/backup-recipient}"
 
-AGE_RECIPIENT="${AEGIS_BACKUP_AGE_RECIPIENT:-}"
+AGE_RECIPIENT="${GASAPP_BACKUP_AGE_RECIPIENT:-}"
 if [[ -z "$AGE_RECIPIENT" && -r "$RECIPIENT_FILE" ]]; then
     AGE_RECIPIENT="$(tr -d '[:space:]' < "$RECIPIENT_FILE")"
 fi
@@ -76,10 +76,10 @@ readonly AGE_RECIPIENT
 # Четырнадцать: две недели покрывают типичный срок обнаружения
 # проблемы. Хранить дольше — значит хранить связку «кто
 # зарегистрирован» дольше, чем нужно для восстановления.
-readonly KEEP="${AEGIS_BACKUP_KEEP:-14}"
+readonly KEEP="${GASAPP_BACKUP_KEEP:-14}"
 
 readonly STAMP="$(date -u +%Y%m%d-%H%M%S)"
-readonly DUMP="${TARGET}/aegis-${STAMP}.sql"
+readonly DUMP="${TARGET}/gasapp-${STAMP}.sql"
 
 mkdir -p "$TARGET"
 
@@ -143,9 +143,9 @@ if [[ -n "$AGE_RECIPIENT" ]]; then
     shred --remove --zero "$DUMP" 2>/dev/null || rm -f "$DUMP"
 
     readonly RESULT="${DUMP}.age"
-elif [[ "${AEGIS_BACKUP_ALLOW_PLAINTEXT:-}" == "1" ]]; then
+elif [[ "${GASAPP_BACKUP_ALLOW_PLAINTEXT:-}" == "1" ]]; then
     # Только явно — для проверки на стенде. Случайно так не выйдет.
-    echo "⚠️  бэкап НЕ зашифрован (AEGIS_BACKUP_ALLOW_PLAINTEXT=1)" >&2
+    echo "⚠️  бэкап НЕ зашифрован (GASAPP_BACKUP_ALLOW_PLAINTEXT=1)" >&2
 
     KEEP_PLAINTEXT=1
     readonly RESULT="$DUMP"
@@ -156,7 +156,7 @@ else
     # из cron никто не читает, — а незашифрованный дамп со связкой
     # «кто зарегистрирован» оставался лежать.
     echo "ОШИБКА: получатель шифрования не задан" >&2
-    echo "  ни AEGIS_BACKUP_AGE_RECIPIENT, ни файла $RECIPIENT_FILE" >&2
+    echo "  ни GASAPP_BACKUP_AGE_RECIPIENT, ни файла $RECIPIENT_FILE" >&2
     shred --remove --zero "$DUMP" 2>/dev/null || rm -f "$DUMP"
 
     exit 1
@@ -168,7 +168,7 @@ echo "готово: ${RESULT}"
 #
 # По времени изменения, а не по имени: имя зависит от часового пояса
 # машины, и при его смене сортировка разъехалась бы.
-find "$TARGET" -maxdepth 1 -name 'aegis-*.sql*' -printf '%T@ %p\n' \
+find "$TARGET" -maxdepth 1 -name 'gasapp-*.sql*' -printf '%T@ %p\n' \
     | sort -rn \
     | tail -n "+$((KEEP + 1))" \
     | cut -d' ' -f2- \

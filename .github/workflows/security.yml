@@ -2,7 +2,7 @@
 #
 # Задача этого workflow — сделать так, чтобы правила не зависели от памяти
 # и внимательности ревьюера. Каждая проверка соответствует конкретному пункту
-# AEGIS_MASTER_PLAN.md.
+# GASAPP_MASTER_PLAN.md.
 
 name: security
 
@@ -174,7 +174,7 @@ jobs:
   #  Каждый исходник лежит в репозитории
   #
   #  Правило `core.*` в .gitignore (для дампов памяти) съедало
-  #  `org/aegis/app/core/Core.kt` — единственное место, где собирается
+  #  `org/gasapp/app/core/Core.kt` — единственное место, где собирается
   #  ключ базы. Файл не попадал в репозиторий ни разу за всю историю:
   #  локально он на месте, а git про игнорируемое молчит.
   # --------------------------------------------------------------------------
@@ -233,11 +233,11 @@ jobs:
       # соберёт APK без jniLibs — классы Java от этого не изменятся.
       - name: assemble foss release
         working-directory: android
-        run: ./gradlew --console=plain -q :app:assembleFossRelease -PaegisAllowUnreleasable=true
+        run: ./gradlew --console=plain -q :app:assembleFossRelease -PgasappAllowUnreleasable=true
 
       - run: bash tools/check-foss-apk.sh
 
-      # Сторонние библиотеки (JNA) — тоже к страницам 16 КБ: libaegis.so
+      # Сторонние библиотеки (JNA) — тоже к страницам 16 КБ: libgasapp.so
       # здесь нет, её выравнивание проверяет релизный workflow.
       - run: python3 tools/check-16kb-pages.py android/app/build/outputs/apk/foss/release/*.apk
 
@@ -275,7 +275,7 @@ jobs:
           ./gradlew --console=plain
           :app:testGmsDebugUnitTest :app:testFossDebugUnitTest
           :app:lintGmsRelease :app:lintFossRelease
-          -PaegisAllowUnreleasable=true
+          -PgasappAllowUnreleasable=true
 
   # --------------------------------------------------------------------------
   #  Перевод не разошёлся с оригиналом
@@ -365,10 +365,10 @@ jobs:
       - run: bash tools/check-no-secrets-in-logs.sh
 
   # --------------------------------------------------------------------------
-  #  unsafe разрешён только в aegis-ffi
+  #  unsafe разрешён только в gasapp-ffi
   # --------------------------------------------------------------------------
   unsafe-boundary:
-    name: unsafe only in aegis-ffi
+    name: unsafe only in gasapp-ffi
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -376,22 +376,22 @@ jobs:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
           persist-credentials: false
-      - name: check unsafe_code lint is forbidden outside aegis-ffi
+      - name: check unsafe_code lint is forbidden outside gasapp-ffi
         run: |
           set -euo pipefail
           violations=0
           for manifest in crates/*/Cargo.toml; do
             crate=$(basename "$(dirname "$manifest")")
-            [ "$crate" = "aegis-ffi" ] && continue
+            [ "$crate" = "gasapp-ffi" ] && continue
             if grep -q 'unsafe_code *= *"allow"' "$manifest"; then
-              echo "::error file=$manifest::crate '$crate' allows unsafe_code; only aegis-ffi may"
+              echo "::error file=$manifest::crate '$crate' allows unsafe_code; only gasapp-ffi may"
               violations=$((violations + 1))
             fi
           done
-          # Ручной unsafe вне aegis-ffi невозможен из-за forbid в workspace,
+          # Ручной unsafe вне gasapp-ffi невозможен из-за forbid в workspace,
           # но проверяем и текстово — на случай локального override.
-          if grep -rn --include='*.rs' 'unsafe *{' crates/ | grep -v '^crates/aegis-ffi/'; then
-            echo "::error::unsafe block found outside aegis-ffi"
+          if grep -rn --include='*.rs' 'unsafe *{' crates/ | grep -v '^crates/gasapp-ffi/'; then
+            echo "::error::unsafe block found outside gasapp-ffi"
             violations=$((violations + 1))
           fi
           exit $violations
@@ -452,7 +452,7 @@ jobs:
         run: |
           set -euo pipefail
           graph=$(cargo tree --manifest-path crates/Cargo.toml --prefix none --no-dedupe 2>/dev/null || true)
-          if echo "$graph" | grep -E '^aegis-server'; then
+          if echo "$graph" | grep -E '^gasapp-server'; then
             echo "::error::a server crate (AGPL-3.0) reached the client dependency graph."
             echo "This makes App Store publication legally impossible. See ADR-006."
             exit 1

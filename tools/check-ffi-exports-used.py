@@ -32,7 +32,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-FFI = ROOT / "crates/aegis-ffi/src"
+FFI = ROOT / "crates/gasapp-ffi/src"
 APP = ROOT / "android/app/src/main/kotlin/org"
 
 # Защита от пустого сравнения: сломанный разбор нашёл бы ноль экспортов,
@@ -48,7 +48,7 @@ ALLOWED: dict[str, str] = {
     "identity_change_alert": (
         "Недостижима по устройству: сравнивает ключи по счёту, а счёт "
         "выводится из ключа. Ждёт решения о смене ключа собеседника "
-        "(AEGIS_MASTER_PLAN.md, «Смена ключа собеседника»)."
+        "(GASAPP_MASTER_PLAN.md, «Смена ключа собеседника»)."
     ),
     "inspect_backup": (
         "Предпросмотр копии до восстановления не сделан; восстановление "

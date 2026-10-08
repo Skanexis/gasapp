@@ -9,21 +9,21 @@
 <resources>
 
     <!-- Поверхности -->
-    <color name="bg_base">#FF0F1629</color>
-    <color name="bg_raised">#FF151D34</color>
-    <color name="bg_card">#FF1B2442</color>
-    <color name="bg_hover">#FF242F52</color>
-    <color name="line">#FF2E3A5C</color>
+    <color name="bg_base">#FF0E1238</color>
+    <color name="bg_raised">#FF141A4A</color>
+    <color name="bg_card">#FF1B2259</color>
+    <color name="bg_hover">#FF252E70</color>
+    <color name="line">#FF343E85</color>
 
     <!-- Текст: четыре ступени контраста, как в макете -->
-    <color name="text_primary">#FFF2F4FC</color>
-    <color name="text_secondary">#FFB4BCD6</color>
-    <color name="text_tertiary">#FF8E99B8</color>
-    <color name="text_quaternary">#FF5A6585</color>
+    <color name="text_primary">#FFF5F6FF</color>
+    <color name="text_secondary">#FFC2C8F0</color>
+    <color name="text_tertiary">#FFA3ABDD</color>
+    <color name="text_quaternary">#FF6670AD</color>
 
     <!-- Акцент -->
     <!--
-      Имена из design/aegis.tokens.json.
+      Имена из design/gasapp.tokens.json.
       
       Палитра в проекте сложилась раньше токенов и назвала те же цвета
       иначе. Синонимы, а не переименование: правка сотни ссылок
@@ -34,12 +34,12 @@
     <color name="text_disabled">@color/text_quaternary</color>
     <color name="status_success">@color/status_ok</color>
     <color name="status_warning">@color/status_warn</color>
-    <color name="accent_line">#668FA5FF</color>
+    <color name="accent_line">#66FFCB2E</color>
 
-    <color name="accent_base">#FF8FA5FF</color>
-    <color name="accent_hover">#FFA8B9FF</color>
-    <color name="accent_pressed">#FF7890F5</color>
-    <color name="accent_on">#FF0A1030</color>
+    <color name="accent_base">#FFFFCB2E</color>
+    <color name="accent_hover">#FFFFDA66</color>
+    <color name="accent_pressed">#FFF0A800</color>
+    <color name="accent_on">#FF2B1600</color>
 
     <!--
       Приглушённый акцент для подложек.
@@ -47,19 +47,20 @@
       Прозрачность, а не сплошной цвет: подложка ложится поверх разных
       поверхностей, и сплошной вариант пришлось бы заводить для каждой.
     -->
-    <color name="accent_dim">#248FA5FF</color>
+    <color name="accent_dim">#24FFCB2E</color>
 
     <!--
       Пузырь исходящего сообщения.
 
-      «Чернила» акцента с тёмным текстом (DESIGN.md, «Ink On Paper»):
-      сторона разговора читается без подписи. Текст на нём — 8:1,
-      метки — 5:1 (bubble_outgoing_text / _meta).
+      Яркий индиго со светлым текстом (DESIGN.md, «Calm Where You Read»):
+      сторона разговора читается без подписи, а золото остаётся
+      краской действий — лента переписки не должна вся гореть жёлтым.
+      Текст на нём — 7.2:1, метки — 5.6:1.
     -->
-    <color name="bubble_outgoing">#FF8FA5FF</color>
+    <color name="bubble_outgoing">#FF3A45B8</color>
     <!-- Текст и метки на «чернилах» исходящего пузыря. -->
-    <color name="bubble_outgoing_text">#FF0A1030</color>
-    <color name="bubble_outgoing_meta">#C00A1030</color>
+    <color name="bubble_outgoing_text">#FFF5F6FF</color>
+    <color name="bubble_outgoing_meta">#FFD5DAFF</color>
 
     <!--
       Состояния.
@@ -69,14 +70,23 @@
       назначению: зелёная галочка у неверифицированного контакта
       обесценила бы верификацию.
     -->
-    <color name="status_ok">#FF3DD598</color>
-    <color name="status_warn">#FFF0B84C</color>
-    <color name="status_error">#FFFF6B78</color>
-    <color name="status_info">#FF8FA5FF</color>
+    <color name="status_ok">#FF4ADE94</color>
+    <color name="status_warn">#FFFF9A4D</color>
+    <color name="status_error">#FFFF7A85</color>
+    <color name="status_info">#FF7FB8FF</color>
 
     <!-- Приглушённые варианты состояний для подложек -->
-    <color name="status_ok_dim">#213DD598</color>
-    <color name="status_warn_dim">#21F0B84C</color>
-    <color name="status_error_dim">#21FF6B78</color>
+    <color name="status_ok_dim">#214ADE94</color>
+    <color name="status_warn_dim">#21FF9A4D</color>
+    <color name="status_error_dim">#21FF7A85</color>
 
+
+    <!--
+      Кромка объёмной кнопки (DESIGN.md, «Night Camp»): нижняя грань
+      золотой кнопки и её нажатое состояние. Не входит в токены UI kit:
+      это деталь одного компонента, а не краска палитры.
+    -->
+    <color name="accent_edge">#FFB86A00</color>
+    <color name="accent_edge_deep">#FF7A2E00</color>
 </resources>
+

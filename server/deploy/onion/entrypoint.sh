@@ -3,32 +3,32 @@
 #
 # Собирает torrc из окружения и запускает tor.
 #
-#   AEGIS_UPSTREAM    — куда вести onion-порт: onion-вход балансировщика
+#   GASAPP_UPSTREAM    — куда вести onion-порт: onion-вход балансировщика
 #                       (`адрес:8444`, РАЗВЁРТЫВАНИЕ.md), не узел API напрямую
 #                       (TLS остаётся сквозным — onion его не заменяет).
-#   AEGIS_ONION_PORT  — порт onion-адреса, по умолчанию 443.
-#   AEGIS_TOR_BRIDGES — там, где сеть Tor блокируют:
+#   GASAPP_ONION_PORT  — порт onion-адреса, по умолчанию 443.
+#   GASAPP_TOR_BRIDGES — там, где сеть Tor блокируют:
 #                       «snowflake» — официальные мосты snowflake из
 #                       образа (добывать ничего не нужно);
 #                       либо строки мостов через «\n», либо файл
-#                       /etc/aegis/bridges.txt (том). Поддерживаются
+#                       /etc/gasapp/bridges.txt (том). Поддерживаются
 #                       obfs4, meek_lite, webtunnel (lyrebird) и snowflake.
 set -eu
 
-: "${AEGIS_UPSTREAM:?задайте AEGIS_UPSTREAM=узел:порт сервера AEGIS}"
-ONION_PORT="${AEGIS_ONION_PORT:-443}"
+: "${GASAPP_UPSTREAM:?задайте GASAPP_UPSTREAM=узел:порт сервера GasApp}"
+ONION_PORT="${GASAPP_ONION_PORT:-443}"
 
-mkdir -p /var/lib/tor/aegis
+mkdir -p /var/lib/tor/gasapp
 chown -R debian-tor:debian-tor /var/lib/tor
-chmod 0700 /var/lib/tor/aegis
+chmod 0700 /var/lib/tor/gasapp
 
-if [ "${AEGIS_TOR_BRIDGES:-}" = snowflake ]; then
-  BRIDGES="$(cat /usr/share/aegis/snowflake-bridges.txt)"
+if [ "${GASAPP_TOR_BRIDGES:-}" = snowflake ]; then
+  BRIDGES="$(cat /usr/share/gasapp/snowflake-bridges.txt)"
 else
-  BRIDGES="$(printf '%b' "${AEGIS_TOR_BRIDGES:-}")"
+  BRIDGES="$(printf '%b' "${GASAPP_TOR_BRIDGES:-}")"
 fi
-if [ -z "$BRIDGES" ] && [ -s /etc/aegis/bridges.txt ]; then
-  BRIDGES="$(cat /etc/aegis/bridges.txt)"
+if [ -z "$BRIDGES" ] && [ -s /etc/gasapp/bridges.txt ]; then
+  BRIDGES="$(cat /etc/gasapp/bridges.txt)"
 fi
 
 {
@@ -37,9 +37,9 @@ fi
   echo "DataDirectory /var/lib/tor"
   echo "Log notice stdout"
   echo
-  echo "HiddenServiceDir /var/lib/tor/aegis"
+  echo "HiddenServiceDir /var/lib/tor/gasapp"
   echo "HiddenServiceVersion 3"
-  echo "HiddenServicePort ${ONION_PORT} ${AEGIS_UPSTREAM}"
+  echo "HiddenServicePort ${ONION_PORT} ${GASAPP_UPSTREAM}"
 
   if [ -n "$BRIDGES" ]; then
     echo
@@ -52,8 +52,8 @@ fi
 } > /etc/tor/torrc
 
 # Адрес печатается, как только tor его создаст: его вписывают в сборку
-# приложения (aegisServerOnion).
-( while [ ! -s /var/lib/tor/aegis/hostname ]; do sleep 1; done
-  echo "AEGIS onion: $(cat /var/lib/tor/aegis/hostname):${ONION_PORT}" ) &
+# приложения (gasappServerOnion).
+( while [ ! -s /var/lib/tor/gasapp/hostname ]; do sleep 1; done
+  echo "GasApp onion: $(cat /var/lib/tor/gasapp/hostname):${ONION_PORT}" ) &
 
 exec su -s /bin/sh debian-tor -c "tor -f /etc/tor/torrc"

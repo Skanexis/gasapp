@@ -11,9 +11,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "aegis-server-admin",
-    "aegis-server-api",
-    "aegis-server-db",
+    "gasapp-server-admin",
+    "gasapp-server-api",
+    "gasapp-server-db",
 ]
 
 [workspace.package]
@@ -22,14 +22,14 @@ edition = "2021"
 rust-version = "1.97"
 license = "AGPL-3.0-only"
 publish = false
-authors = ["The AEGIS Authors"]
-repository = "https://github.com/aegis-messenger/aegis"
+authors = ["The GasApp Authors"]
+repository = "https://github.com/gasapp-messenger/gasapp"
 
 [workspace.dependencies]
-aegis-server-db = { path = "aegis-server-db" }
+gasapp-server-db = { path = "gasapp-server-db" }
 
 # Веб-слой.
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "ws"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "query", "tokio", "ws"] }
 tokio = { version = "1.36", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tower = { version = "0.5", default-features = false }
 # TLS для axum.
@@ -83,6 +83,8 @@ argon2 = "0.5"
 ed25519-dalek = "2.1.1"
 curve25519-dalek = "4.1.3"
 sha2 = "0.10.8"
+# HMAC для хеша адреса почты (миграция 0017): адрес в базе не лежит.
+hmac = "0.12.1"
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 subtle = "2.6.1"
 hex = "0.4"

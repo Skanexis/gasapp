@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@color/accent_pressed" />
-    <corners android:radius="@dimen/radius_button" />
-</shape>
+<!-- Нажатая основная кнопка: грань опущена на высоту кромки. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:top="@dimen/button_edge_pressed">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/accent_edge" />
+            <corners android:radius="@dimen/radius_button" />
+        </shape>
+    </item>
+    <item android:top="@dimen/button_edge_pressed" android:bottom="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/accent_pressed" />
+            <corners android:radius="@dimen/radius_button" />
+        </shape>
+    </item>
+</layer-list>

@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
   Тост по UI kit (Notifications & Toasts): карточка r12 с рамкой,
-  цветная полоса слева, значок тона, текст. Показывает AegisToast.
+  цветная полоса слева, значок тона, текст. Показывает GasAppToast.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -30,7 +30,7 @@
 
     <TextView
         android:id="@+id/toast_text"
-        style="@style/AegisText.Caption"
+        style="@style/GasAppText.Caption"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/space_m"

@@ -1,8 +1,8 @@
 # Snapshot-тесты — временно отключены от сборки
 
 Каталог `debug-snapshot-tests/` содержит написанные, но **ни разу не
-запускавшиеся** snapshot-тесты компонентов (`AegisButton`, `AegisTextField`,
-`AegisListRow`).
+запускавшиеся** snapshot-тесты компонентов (`GasAppButton`, `GasAppTextField`,
+`GasAppListRow`).
 
 ## Почему они не в `src/debug`
 

@@ -13,11 +13,11 @@ on:
   pull_request:
     paths:
       - "fuzz/**"
-      - "crates/aegis-protocol/**"
-      # aegis-backup фаззится таргетом backup_restore. Его тут не было,
+      - "crates/gasapp-protocol/**"
+      # gasapp-backup фаззится таргетом backup_restore. Его тут не было,
       # поэтому правка разбора файла копии не поднимала фаззинг вовсе.
-      - "crates/aegis-backup/**"
-      - "crates/aegis-types/**"
+      - "crates/gasapp-backup/**"
+      - "crates/gasapp-types/**"
   workflow_dispatch:
     inputs:
       duration_seconds:
@@ -78,7 +78,7 @@ jobs:
           # и первая же версия этой проверки молча нашла ноль таргетов
           # с обеих сторон — то есть сошлась сама с собой.
           declared=$(sed -n 's/^name = "\([a-z_]*\)"$/\1/p' fuzz/Cargo.toml \
-            | grep -v '^aegis-fuzz$' | sort -u)
+            | grep -v '^gasapp-fuzz$' | sort -u)
           listed=$(sed -n 's/^ *- \([a-z_]*\)$/\1/p' \
             .github/workflows/fuzz.yml | sort -u)
 

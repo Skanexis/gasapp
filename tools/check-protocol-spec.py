@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Спецификация протокола не разошлась с реализацией.
 
-`docs/protocol/AEGIS-PROTOCOL-v1.md` — документ, по которому чужая
+`docs/protocol/GASAPP-PROTOCOL-v1.md` — документ, по которому чужая
 реализация должна заговорить с нашей, и по которому её будет читать
 аудитор. Расхождение здесь дороже обычной опечатки в документации:
 оно приводит к реализации, которая не совместима, — и обнаружится это
@@ -29,7 +29,7 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-SPEC = os.path.join("docs", "protocol", "AEGIS-PROTOCOL-v1.md")
+SPEC = os.path.join("docs", "protocol", "GASAPP-PROTOCOL-v1.md")
 CRATES = "crates"
 
 errors = []
@@ -71,7 +71,7 @@ def check_labels(spec, code):
     """
     global checked
 
-    labels = sorted(set(re.findall(r'"(AEGIS_[A-Za-z0-9_]+)"', spec)))
+    labels = sorted(set(re.findall(r'"(GASAPP_[A-Za-z0-9_]+)"', spec)))
 
     # 🔐 Без этой проверки сравнение шло бы по пустому списку — та же
     # ловушка, что трижды поймана в разделе 23.5 плана.
@@ -173,7 +173,7 @@ def check_primitives(spec, code):
     мутацией, и записано здесь, а не выдано за проверку, которой нет.
 
     То, где какой уровень применяется, закреплено меткой домена
-    (`AEGIS_PQXDH_v1_X25519_MLKEM1024`): её сверяет [`check_labels`],
+    (`GASAPP_PQXDH_v1_X25519_MLKEM1024`): её сверяет [`check_labels`],
     и вот она к подмене чувствительна.
     """
     global checked

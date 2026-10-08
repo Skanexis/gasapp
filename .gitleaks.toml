@@ -1,10 +1,10 @@
-# Конфигурация gitleaks для AEGIS.
+# Конфигурация gitleaks для GasApp.
 #
 # Помимо стандартного набора правил (облачные токены, ключи API) добавлены
 # правила под специфику этого проекта: ключевой материал, recovery key,
 # приватные ключи протокола.
 
-title = "AEGIS secret scanning"
+title = "GasApp secret scanning"
 
 [extend]
 useDefault = true
@@ -13,35 +13,35 @@ useDefault = true
 #  Recovery key — формат из раздела 12.2: Crockford Base32, 13 групп по 4
 # ----------------------------------------------------------------------------
 [[rules]]
-id = "aegis-recovery-key"
-description = "AEGIS recovery key"
-regex = '''AEGIS-(?i:[0-9A-TV-Z]{4}-){12}[0-9A-TV-Z]{4}'''
-tags = ["aegis", "recovery-key", "critical"]
+id = "gasapp-recovery-key"
+description = "GasApp recovery key"
+regex = '''GasApp-(?i:[0-9A-TV-Z]{4}-){12}[0-9A-TV-Z]{4}'''
+tags = ["gasapp", "recovery-key", "critical"]
 
 # ----------------------------------------------------------------------------
 #  Приватные ключи в любом текстовом виде
 # ----------------------------------------------------------------------------
 [[rules]]
-id = "aegis-private-key-pem"
+id = "gasapp-private-key-pem"
 description = "PEM private key"
 regex = '''-----BEGIN[ A-Z]*PRIVATE KEY-----'''
-tags = ["aegis", "private-key", "critical"]
+tags = ["gasapp", "private-key", "critical"]
 
 # ----------------------------------------------------------------------------
 #  Захардкоженный 256-битный ключ в hex
 #  Ловит попытки положить реальный ключ в код «на время отладки».
 # ----------------------------------------------------------------------------
 [[rules]]
-id = "aegis-hardcoded-key-hex"
+id = "gasapp-hardcoded-key-hex"
 description = "hardcoded 256-bit key material"
 regex = '''(?i)(identity|root|chain|message|master|session|backup|lsmk|kek|dek)[_-]?key\s*[:=]\s*"?(?-i:[0-9a-fA-F]{64})"?'''
-tags = ["aegis", "key-material", "critical"]
+tags = ["gasapp", "key-material", "critical"]
 
 [rules.allowlist]
 # Тестовые векторы содержат ключи по определению — это их назначение.
 paths = [
   '''docs/protocol/test-vectors/.*''',
-  '''crates/aegis-protocol/tests/vectors/.*''',
+  '''crates/gasapp-protocol/tests/vectors/.*''',
 ]
 
 # ----------------------------------------------------------------------------
@@ -53,7 +53,7 @@ description = "пути и значения, ожидаемо содержащи
 paths = [
   '''\.gitleaks\.toml''',
   '''docs/protocol/test-vectors/.*''',
-  '''crates/aegis-protocol/tests/vectors/.*''',
+  '''crates/gasapp-protocol/tests/vectors/.*''',
   # UI kit содержит встроенный шрифт в base64 и демонстрационные
   # значения fingerprint — реальных секретов там нет.
   '''design/secure-messenger-ui-kit\.html''',
@@ -61,7 +61,7 @@ paths = [
 
 regexes = [
   # Демонстрационный recovery key из UI kit
-  '''AEGIS-7F2K-9QMD-X4RT-B81N-KV5C-2WPH-E6JZ''',
+  '''GASAPP-7F2K-9QMD-X4RT-B81N-KV5C-2WPH-E6JZ''',
   # Строки-заглушки
   '''(?i)(example|sample|dummy|placeholder|redacted|your[_-]?key[_-]?here)''',
 ]

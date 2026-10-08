@@ -12,8 +12,8 @@
 //! не должно приводить к панике при последующей расшифровке — например,
 //! из-за вычитания счётчиков с переполнением при подсчёте пропущенных.
 
-use aegis_protocol::{double_ratchet::RatchetState, keys::SessionState};
-use aegis_types::{Ciphertext, Secret, Timestamp};
+use gasapp_protocol::{double_ratchet::RatchetState, keys::SessionState};
+use gasapp_types::{Ciphertext, Secret, Timestamp};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

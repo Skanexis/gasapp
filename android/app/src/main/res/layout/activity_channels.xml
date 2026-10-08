@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Каналы: список каналов, которые человек читает или ведёт.
+
+  🔐 Список существует только на устройстве: сервер подписчиков не
+  знает. Канал добавляют по ссылке или QR-коду; создаёт канал только
+  аккаунт с премиумом (право проверяет сервер).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/screen_padding"
+        android:paddingTop="@dimen/space_m"
+        android:paddingEnd="@dimen/space_xs"
+        android:paddingBottom="@dimen/space_s">
+
+        <TextView
+            style="@style/GasAppAppBarTitle.Large"
+            android:layout_weight="1"
+            android:text="@string/nav_channels" />
+
+        <!-- Значок 24dp, область нажатия 48dp (GasAppIconButton). -->
+        <ImageView
+            android:id="@+id/channels_join"
+            style="@style/GasAppIconButton"
+            android:contentDescription="@string/channels_join"
+            android:padding="12dp"
+            android:src="@drawable/ic_link"
+            app:tint="@color/text_secondary" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- Запас снизу — под кнопку создания: последняя строка не прячется под ней. -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/channel_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingBottom="88dp"
+            tools:listitem="@layout/item_chat" />
+
+        <include
+            android:id="@+id/channel_list_empty"
+            layout="@layout/view_empty_state_seal"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!--
+          Создать канал. Видна всем: без премиума нажатие объясняет,
+          как его получить, — спрятанная кнопка не сказала бы, что
+          такая возможность вообще есть.
+        -->
+        <ImageView
+            android:id="@+id/channels_create"
+            android:layout_width="52dp"
+            android:layout_height="56dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="@dimen/screen_padding"
+            android:background="@drawable/bg_fab"
+            android:contentDescription="@string/channels_create"
+            android:elevation="6dp"
+            android:paddingStart="14dp"
+            android:paddingTop="14dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="18dp"
+            android:src="@drawable/ic_plus"
+            app:tint="@color/accent_on" />
+    </FrameLayout>
+
+    <include layout="@layout/view_bottom_nav" />
+
+</LinearLayout>

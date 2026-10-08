@@ -1,7 +1,7 @@
-# AEGIS UniFFI Binding Generation Guide
+# GasApp UniFFI Binding Generation Guide
 
 ## Overview
-This document explains how to generate UniFFI bindings for the AEGIS project. The bindings allow the Android (Kotlin) and iOS (Swift) applications to call Rust functions in the aegis-ffi crate.
+This document explains how to generate UniFFI bindings for the GasApp project. The bindings allow the Android (Kotlin) and iOS (Swift) applications to call Rust functions in the gasapp-ffi crate.
 
 ## Prerequisites
 
@@ -38,9 +38,9 @@ Options:
 - `--abi`: Specify a single ABI to build (default: all ABIs)
 
 The script will:
-1. Build the aegis-ffi crate for all Android ABIs using cargo-ndk
+1. Build the gasapp-ffi crate for all Android ABIs using cargo-ndk
 2. Generate Kotlin bindings using uniffi-bindgen in library mode
-3. Place bindings in `android/app/src/main/kotlin/uniffi/aegis/`
+3. Place bindings in `android/app/src/main/kotlin/uniffi/gasapp/`
 4. Copy compiled .so libraries to `android/app/src/main/jniLibs/<abi>/`
 
 ### iOS Bindings
@@ -53,24 +53,24 @@ Options:
 - `--debug`: Build debug variant instead of release
 
 The script will:
-1. Build the aegis-ffi crate for iOS device and simulator targets
+1. Build the gasapp-ffi crate for iOS device and simulator targets
 2. Generate Swift bindings using uniffi-bindgen in library mode
 3. Create an XCFramework combining device and simulator slices
-4. Place bindings in `ios/AEGIS/Generated/`
-5. Place XCFramework in `ios/AegisCore.xcframework`
+4. Place bindings in `ios/GasApp/Generated/`
+5. Place XCFramework in `ios/GasAppCore.xcframework`
 
 ## Generated Binding Files
 
 ### Android
 After successful generation, you should see:
 ```
-android/app/src/main/kotlin/uniffi/aegis/
-├── Aegis.kt                    # Main interface to AEGIS functions
-├── AegisErrors.kt              # Error handling
+android/app/src/main/kotlin/uniffi/gasapp/
+├── GasApp.kt                    # Main interface to GasApp functions
+├── GasAppErrors.kt              # Error handling
 �└── uniffi/                     # UniFFI helper classes (auto-generated)
 ```
 
-The main interface (Aegis.kt) will expose functions like:
+The main interface (GasApp.kt) will expose functions like:
 - `fun coreVersion(): String`
 - `fun protocolVersion(): Int`
 - `fun checkProtocolVersion(raw: Int): Result<Int, FfiException>`
@@ -79,18 +79,18 @@ The main interface (Aegis.kt) will expose functions like:
 ### iOS
 After successful generation, you should see:
 ```
-ios/AEGIS/Generated/
-├── Aegis.swift                 # Main interface to AEGIS functions
-├── AegisError.swift            # Error handling
+ios/GasApp/Generated/
+├── GasApp.swift                 # Main interface to GasApp functions
+├── GasAppError.swift            # Error handling
 �└── uniffi/                     # UniFFI helper classes (auto-generated)
 ```
 
 And the XCFramework:
 ```
-ios/AegisCore.xcframework/
+ios/GasAppCore.xcframework/
 ```
 
-The main interface (Aegis.swift) will expose functions like:
+The main interface (GasApp.swift) will expose functions like:
 - `func coreVersion() -> String`
 - `func protocolVersion() -> UInt8`
 - `func checkProtocolVersion(raw: UInt8) -> Result<UInt8, FfiError>`
@@ -100,27 +100,27 @@ The main interface (Aegis.swift) will expose functions like:
 
 ### Android
 Check that the following files exist after generation:
-- `android/app/src/main/kotlin/uniffi/aegis/Aegis.kt`
-- `android/app/src/main/jniLibs/armeabi-v7a/libaegis.so`
-- `android/app/src/main/jniLibs/arm64-v8a/libaegis.so`
-- `android/app/src/main/jniLibs/x86/libaegis.so`
-- `android/app/src/main/jniLibs/x86_64/libaegis.so`
+- `android/app/src/main/kotlin/uniffi/gasapp/GasApp.kt`
+- `android/app/src/main/jniLibs/armeabi-v7a/libgasapp.so`
+- `android/app/src/main/jniLibs/arm64-v8a/libgasapp.so`
+- `android/app/src/main/jniLibs/x86/libgasapp.so`
+- `android/app/src/main/jniLibs/x86_64/libgasapp.so`
 
 ### iOS
 Check that the following exist after generation:
-- `ios/AEGIS/Generated/Aegis.swift`
-- `ios/AegisCore.xcframework/` (containing the framework binary and headers)
+- `ios/GasApp/Generated/GasApp.swift`
+- `ios/GasAppCore.xcframework/` (containing the framework binary and headers)
 
 ## Integration with Applications
 
 ### Android
 Once bindings are generated:
-1. The `uniffi.aegis.Aegis` class can be imported and used in MainActivity.kt
+1. The `uniffi.gasapp.GasApp` class can be imported and used in MainActivity.kt
 2. Functions return Kotlin Result types that need to be handled
 3. Example usage:
    ```kotlin
-   val coreVersion = Aegis.coreVersion()
-   val safetyNumberResult = Aegis.formatSafetyNumber(localData, remoteData)
+   val coreVersion = GasApp.coreVersion()
+   val safetyNumberResult = GasApp.formatSafetyNumber(localData, remoteData)
    safetyNumberResult.fold(
        { error -> /* handle error */ },
        { number -> /* use safety number */ }
@@ -129,13 +129,13 @@ Once bindings are generated:
 
 ### iOS
 Once bindings are generated:
-1. The `AegisCore` module can be imported and used in ContentView.swift
+1. The `GasAppCore` module can be imported and used in ContentView.swift
 2. Functions throw Swift errors that need to be caught
 3. Example usage:
    ```swift
-   let coreVersion = AegisCore.coreVersion()
+   let coreVersion = GasAppCore.coreVersion()
    do {
-       let safetyNumber = try AegisCore.formatSafetyNumber(local: localData, remote: remoteData)
+       let safetyNumber = try GasAppCore.formatSafetyNumber(local: localData, remote: remoteData)
        // use safetyNumber
    } catch {
        // handle error
@@ -158,7 +158,7 @@ Once bindings are generated:
 ## Notes on Binding Regeneration
 
 Bindings must be regenerated whenever:
-1. The FFI interface in `crates/aegis-ffi/src/lib.rs` changes (functions added/removed/modified)
+1. The FFI interface in `crates/gasapp-ffi/src/lib.rs` changes (functions added/removed/modified)
 2. The UniFFI version is changed in Cargo.toml
 3. Major Rust compiler updates that affect ABI compatibility
 
@@ -173,6 +173,6 @@ The UniFFI bindings are generated in "library mode", which means:
 
 ## References
 - UniFFI Documentation: https://github.com/mozilla/uniffi-rs
-- AEGIS FFI Design: See `crates/aegis-ffi/src/lib.rs` comments
+- GasApp FFI Design: See `crates/gasapp-ffi/src/lib.rs` comments
 - Android Build Script: `tools/build-rust-android.sh`
 - iOS Build Script: `tools/build-rust-ios.sh`

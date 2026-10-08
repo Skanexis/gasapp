@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Внутренний удостоверяющий центр AEGIS: сертификаты для связей ВНУТРИ
+# Внутренний удостоверяющий центр GasApp: сертификаты для связей ВНУТРИ
 # кластера — балансировщик → узлы и узлы → база.
 #
 #     internal-ca.sh init                          # один раз
-#     internal-ca.sh server db   aegis-db   10.0.0.4
-#     internal-ca.sh server node1 aegis-node 10.0.0.1
-#     internal-ca.sh client aegis                  # клиент базы (CN = роль)
+#     internal-ca.sh server db   gasapp-db   10.0.0.4
+#     internal-ca.sh server node1 gasapp-node 10.0.0.1
+#     internal-ca.sh client gasapp                  # клиент базы (CN = роль)
 #     internal-ca.sh show node1                    # срок и имена
 #
-# Каталог — $AEGIS_PKI_DIR (по умолчанию /root/aegis-pki).
+# Каталог — $GASAPP_PKI_DIR (по умолчанию /root/gasapp-pki).
 #
 # # 🔐 Зачем свой центр, если сеть внутренняя
 #
@@ -34,12 +34,12 @@
 
 set -euo pipefail
 
-readonly DIR="${AEGIS_PKI_DIR:-/root/aegis-pki}"
+readonly DIR="${GASAPP_PKI_DIR:-/root/gasapp-pki}"
 
 # Срок сертификата машины. Год с небольшим: продление раз в год
 # достаточно редко, чтобы не мешать, и достаточно часто, чтобы
 # украденный ключ не жил вечно. Монитор предупреждает за 30 дней.
-readonly DAYS="${AEGIS_PKI_DAYS:-397}"
+readonly DAYS="${GASAPP_PKI_DAYS:-397}"
 
 # Срок центра: десять лет. Смена центра — замена доверия на всех машинах.
 readonly CA_DAYS=3650
@@ -66,7 +66,7 @@ cmd_init() {
     # рукопожатие быстрое.
     openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "${DIR}/ca.key"
     openssl req -x509 -new -key "${DIR}/ca.key" -sha256 -days "$CA_DAYS" \
-        -subj "/CN=AEGIS internal CA" \
+        -subj "/CN=GasApp internal CA" \
         -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
         -addext "keyUsage=critical,keyCertSign,cRLSign" \
         -out "${DIR}/ca.pem"
@@ -114,7 +114,7 @@ cmd_server() {
     check_name "$name"
     check_name "$dns"
 
-    # Имя — то, которое проверяет клиент: `proxy_ssl_name aegis-node`
+    # Имя — то, которое проверяет клиент: `proxy_ssl_name gasapp-node`
     # у nginx, хост в DATABASE_URL у узла. Адреса — чтобы проверка
     # проходила и по IP.
     local san="DNS:${dns}"

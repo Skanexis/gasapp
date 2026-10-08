@@ -15,18 +15,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/privacy_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:text="@string/settings_privacy" />
     </LinearLayout>
@@ -45,10 +45,10 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:text="@string/privacy_section_contacts" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/privacy_presence"
@@ -57,14 +57,14 @@
 <include
                     android:id="@+id/privacy_last_seen"
                     layout="@layout/item_settings_toggle" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/privacy_section_device" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/privacy_screenshots"
@@ -73,7 +73,7 @@
 <include
                     android:id="@+id/privacy_preview"
                     layout="@layout/item_settings_toggle" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <!--
               🔐 Сеть: IP-адрес — последняя крупная утечка раздела 15.5.
@@ -81,16 +81,16 @@
               пояснений, которые не помещаются в переключатель.
             -->
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/privacy_section_network" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/privacy_network"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <!--
               🔐 Удаление аккаунта (MASVS PRIVACY-3.2).
@@ -100,11 +100,11 @@
               оно не должно.
             -->
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/privacy_section_account" />
 
-            <org.aegis.app.components.AegisGroup style="@style/AegisGroup">
+            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/privacy_autolock"
@@ -125,10 +125,10 @@
                 <include
                     android:id="@+id/privacy_delete_account"
                     layout="@layout/item_settings_row" />
-            </org.aegis.app.components.AegisGroup>
+            </org.gasapp.app.components.GasAppGroup>
 
             <TextView
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_s"
                 android:text="@string/privacy_delete_account_hint" />
 
@@ -142,7 +142,7 @@
               на защите, которой нет.
             -->
             <TextView
-                style="@style/AegisCaption"
+                style="@style/GasAppCaption"
                 android:layout_marginTop="@dimen/space_m"
                 android:text="@string/privacy_limits_note" />
 

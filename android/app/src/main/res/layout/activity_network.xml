@@ -17,18 +17,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/network_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:text="@string/network_title" />
     </LinearLayout>
@@ -47,17 +47,17 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/AegisText.Body.Secondary"
+                style="@style/GasAppText.Body.Secondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/network_intro" />
 
             <TextView
-                style="@style/AegisSectionLabel"
+                style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"
                 android:text="@string/network_section_mode" />
 
-            <LinearLayout style="@style/AegisPanel">
+            <LinearLayout style="@style/GasAppPanel">
 
                 <RadioGroup
                     android:id="@+id/network_mode"
@@ -70,17 +70,17 @@
                     <!-- Встроенный Tor — первым: он по умолчанию. -->
                     <RadioButton
                         android:id="@+id/network_tor"
-                        style="@style/AegisRadioRow"
+                        style="@style/GasAppRadioRow"
                         android:text="@string/network_mode_tor" />
 
                     <RadioButton
                         android:id="@+id/network_direct"
-                        style="@style/AegisRadioRow"
+                        style="@style/GasAppRadioRow"
                         android:text="@string/network_mode_direct" />
 
                     <RadioButton
                         android:id="@+id/network_socks"
-                        style="@style/AegisRadioRow"
+                        style="@style/GasAppRadioRow"
                         android:text="@string/network_mode_socks" />
                 </RadioGroup>
 
@@ -94,14 +94,14 @@
                     tools:visibility="visible">
 
                     <TextView
-                        style="@style/AegisSectionLabel"
+                        style="@style/GasAppSectionLabel"
                         android:layout_marginTop="@dimen/space_m"
                         android:labelFor="@id/network_host"
                         android:text="@string/network_host_label" />
 
-                    <org.aegis.app.components.AegisTextField
+                    <org.gasapp.app.components.GasAppTextField
                         android:id="@+id/network_host"
-                        style="@style/AegisInput"
+                        style="@style/GasAppInput"
                         android:layout_width="match_parent"
                         android:autofillHints=""
                         android:hint="@string/network_host_hint"
@@ -111,14 +111,14 @@
                         android:textColor="@color/text_primary" />
 
                     <TextView
-                        style="@style/AegisSectionLabel"
+                        style="@style/GasAppSectionLabel"
                         android:layout_marginTop="@dimen/space_m"
                         android:labelFor="@id/network_port"
                         android:text="@string/network_port_label" />
 
-                    <org.aegis.app.components.AegisTextField
+                    <org.gasapp.app.components.GasAppTextField
                         android:id="@+id/network_port"
-                        style="@style/AegisInput"
+                        style="@style/GasAppInput"
                         android:layout_width="match_parent"
                         android:autofillHints=""
                         android:hint="@string/network_port_hint"
@@ -133,7 +133,7 @@
             <!-- Что будет при выбранном режиме — меняется вместе с выбором. -->
             <TextView
                 android:id="@+id/network_mode_hint"
-                style="@style/AegisText.Caption.Muted"
+                style="@style/GasAppText.Caption.Muted"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_s"
@@ -152,13 +152,13 @@
                 tools:visibility="visible">
 
                 <TextView
-                    style="@style/AegisSectionLabel"
+                    style="@style/GasAppSectionLabel"
                     android:layout_marginTop="@dimen/space_l"
                     android:text="@string/network_section_bridges" />
 
-                <org.aegis.app.components.AegisTextField
+                <org.gasapp.app.components.GasAppTextField
                     android:id="@+id/network_bridges"
-                    style="@style/AegisInput"
+                    style="@style/GasAppInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
@@ -175,7 +175,7 @@
                     android:textSize="12sp" />
 
                 <TextView
-                    style="@style/AegisText.Caption.Muted"
+                    style="@style/GasAppText.Caption.Muted"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
@@ -185,7 +185,7 @@
             <!-- Ход подключения встроенного Tor; виден, только когда он выбран. -->
             <TextView
                 android:id="@+id/network_tor_status"
-                style="@style/AegisText.Caption"
+                style="@style/GasAppText.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xs"
@@ -195,7 +195,7 @@
 
             <TextView
                 android:id="@+id/network_status"
-                style="@style/AegisText.Caption"
+                style="@style/GasAppText.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
@@ -203,7 +203,7 @@
                 tools:text="@string/network_saved"
                 tools:visibility="visible" />
 
-            <org.aegis.app.components.AegisButton
+            <org.gasapp.app.components.GasAppButton
                 android:id="@+id/network_save"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -212,11 +212,11 @@
                 app:buttonVariant="primary" />
 
             <LinearLayout
-                style="@style/AegisPanel.Deep"
+                style="@style/GasAppPanel.Deep"
                 android:layout_marginTop="@dimen/space_l">
 
                 <TextView
-                    style="@style/AegisText.Caption"
+                    style="@style/GasAppText.Caption"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/network_limits" />

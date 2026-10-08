@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Поля канала в диалоге создания и правки: название и описание. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        style="@style/GasAppSectionLabel"
+        android:labelFor="@id/channel_form_title"
+        android:text="@string/channel_form_title_label" />
+
+    <org.gasapp.app.components.GasAppTextField
+        android:id="@+id/channel_form_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/channel_form_title_hint"
+        android:imeOptions="actionNext"
+        android:importantForAutofill="no"
+        android:inputType="textCapSentences"
+        android:maxLength="64"
+        android:maxLines="1"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_muted"
+        app:fieldIcon="@drawable/ic_channel" />
+
+    <TextView
+        style="@style/GasAppSectionLabel"
+        android:layout_marginTop="@dimen/space_m"
+        android:labelFor="@id/channel_form_description"
+        android:text="@string/channel_form_description_label" />
+
+    <org.gasapp.app.components.GasAppTextField
+        android:id="@+id/channel_form_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="top|start"
+        android:hint="@string/channel_form_description_hint"
+        android:importantForAutofill="no"
+        android:inputType="textMultiLine|textCapSentences"
+        android:maxLength="500"
+        android:maxLines="4"
+        android:minLines="2"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_muted" />
+
+</LinearLayout>

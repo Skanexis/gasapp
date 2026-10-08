@@ -26,13 +26,13 @@
         android:importantForAccessibility="no" />
 
     <LinearLayout
-        style="@style/AegisAppBar"
+        style="@style/GasAppAppBar"
         android:layout_gravity="top"
         android:background="@android:color/transparent">
 
         <ImageView
             android:id="@+id/scan_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
@@ -40,7 +40,7 @@
 
         <TextView
             android:id="@+id/scan_title"
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:accessibilityHeading="true"
             tools:text="Scan QR code" />
@@ -48,7 +48,7 @@
 
     <TextView
         android:id="@+id/scan_hint"
-        style="@style/AegisText.Body"
+        style="@style/GasAppText.Body"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"

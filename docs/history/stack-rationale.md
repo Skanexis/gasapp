@@ -29,7 +29,7 @@
 Rust здесь нужен как отдельный security-critical core:
 
 ```text
-                AEGIS
+                GasApp
                   │
         ┌─────────┴─────────┐
         │                   │
@@ -118,7 +118,7 @@ Signal сейчас описывает:
 
 То есть безопасность получается **гибридной**: атакующему нужно сломать и классическую EC-защиту, и постквантовую составляющую. Signal прямо описывает Triple Ratchet как комбинацию Double Ratchet и Sparse Post-Quantum Ratchet. ([Signal Messenger][2])
 
-Это я бы взял за ориентир для AEGIS.
+Это я бы взял за ориентир для GasApp.
 
 ---
 
@@ -188,7 +188,7 @@ Double Ratchet специально предназначен для постоя
 
 Я бы сделал:
 
-### AEGIS Protocol v1
+### GasApp Protocol v1
 
 ```text
 Identity
@@ -324,7 +324,7 @@ frequency
 * IP;
 * социальный граф.
 
-Поэтому для **AEGIS уровня "максимальная приватность"** я бы отдельно проектировал:
+Поэтому для **GasApp уровня "максимальная приватность"** я бы отдельно проектировал:
 
 ### Metadata minimization
 
@@ -426,7 +426,7 @@ OWASP рекомендует hardware-backed Android Keystore для защит�
 Получается:
 
 ```text
-                  AEGIS Rust Core
+                  GasApp Rust Core
                         │
                  key material
                         │
@@ -907,7 +907,7 @@ Privacy
 
 ```text
 Protocol
-AEGIS Secure Messaging v1
+GasApp Secure Messaging v1
 
 Handshake
 PQXDH
@@ -951,7 +951,7 @@ Key fingerprint
 То есть:
 
 ```text
-                 AEGIS
+                 GasApp
 
        ┌─────────────────────┐
        │   Swift / Kotlin    │
@@ -977,7 +977,7 @@ Key fingerprint
 
 И **не изобретать собственный криптографический протокол**. Я бы начал с актуальной спецификации Signal: PQXDH + современный Double Ratchet/Triple Ratchet дизайн. В спецификации 2025 года уже описаны SPQR и Triple Ratchet, включая гибридную схему, где ключи Double Ratchet и post-quantum ratchet объединяются через KDF. ([Signal Messenger][2])
 
-Если хочешь сделать именно **AEGIS**, следующим шагом я бы уже спроектировал тебе **полную техническую архитектуру v1**: структуру Rust workspace, iOS/Android модули, БД, key hierarchy, PQXDH → Triple Ratchet flow, device linking, zero-knowledge backup, серверные API и конкретную структуру папок проекта — так, чтобы по ней можно было сразу начинать разработку.
+Если хочешь сделать именно **GasApp**, следующим шагом я бы уже спроектировал тебе **полную техническую архитектуру v1**: структуру Rust workspace, iOS/Android модули, БД, key hierarchy, PQXDH → Triple Ratchet flow, device linking, zero-knowledge backup, серверные API и конкретную структуру папок проекта — так, чтобы по ней можно было сразу начинать разработку.
 
 [1]: https://github.com/signalapp/libsignal?utm_source=chatgpt.com "GitHub - signalapp/libsignal: Home to the Signal Protocol as well as other cryptographic primitives which make Signal possible. · GitHub"
 [2]: https://signal.org/docs/specifications/doubleratchet/?utm_source=chatgpt.com "Signal >> Specifications >> The Double Ratchet Algorithm"

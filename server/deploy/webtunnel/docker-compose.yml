@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Свой мост Tor для AEGIS — WebTunnel за обычным HTTPS-сайтом.
+# Свой мост Tor для GasApp — WebTunnel за обычным HTTPS-сайтом.
 #
 # Снаружи — сайт с сертификатом Let's Encrypt; по секретному пути —
 # туннель Tor. Мост частный: в каталог Tor Project не публикуется и
-# раздаётся только в сборках AEGIS (строка — в android/tor/bridges.txt
-# или в файле -PaegisBridgesFile).
+# раздаётся только в сборках GasApp (строка — в android/tor/bridges.txt
+# или в файле -PgasappBridgesFile).
 #
 # Проще всего — скриптом: ./new-bridge.sh домен почта
 # Вручную: заполнить .env (DOMAIN, EMAIL, WT_PATH, NICKNAME) и
@@ -20,14 +20,14 @@ services:
     image: thetorproject/webtunnel-bridge:latest
     restart: unless-stopped
     environment:
-      NICKNAME: ${NICKNAME:-AegisBridge}
+      NICKNAME: ${NICKNAME:-GasAppBridge}
       EMAIL: ${EMAIL:?задайте EMAIL}
       PT_PORT: "15000"
       OR_PORT: "9001"
       WEBTUNNEL_URL: https://${DOMAIN:?задайте DOMAIN}/${WT_PATH:?задайте WT_PATH}
       WEBTUNNEL_ENABLE_ADDITIONAL_VARIABLES: "1"
       # 🔐 Частный мост: Tor Project его не раздаёт, в каталог он не
-      # попадает — его адрес знают только сборки AEGIS.
+      # попадает — его адрес знают только сборки GasApp.
       WEBTUNNELV_PublishServerDescriptor: "0"
       WEBTUNNELV_BridgeDistribution: "none"
     volumes:

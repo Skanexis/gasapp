@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Узел API GasApp: /etc/systemd/system/gasapp-server.service
+#
+# 🔐 Песочница — вторая линия после кода. Если в процессе найдут дыру,
+# он не должен уметь ничего, кроме своей работы: слушать порт, ходить
+# в базу, читать свои секреты. Не писать на диск, не запускать
+# программы, не видеть чужие процессы, не ходить в интернет.
+#
+# Проверить: systemd-analyze security gasapp-server.service
+# (ожидается «OK» с оценкой около 1 из 10; без песочницы — 9,6).
+#
+# 🔐 Секреты — учётными данными systemd, а не в окружении.
+# Файлы /etc/gasapp/credentials/* принадлежат root с правами 600;
+# systemd кладёт их копию в каталог, видимый только этому процессу
+# ($CREDENTIALS_DIRECTORY), и в /proc/<pid>/environ, `systemctl show`
+# и отчёты о падениях они не попадают. Сервер ищет их там сам
+# (gasapp_server_db::runtime::secret): имя файла — имя переменной
+# строчными.
+
+[Unit]
+Description=GasApp API node
+Wants=network-online.target
+After=network-online.target
+# Пять падений за минуту — это не «перезапустить ещё раз», а повод
+# для человека: служба переходит в failed, монитор об этом сообщает.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=gasapp
+Group=gasapp
+ExecStart=/usr/local/bin/gasapp-server-api
+Restart=on-failure
+RestartSec=2
+# Журнал — без цветовых кодов терминала.
+Environment=NO_COLOR=1
+
+# Несекретная настройка: адрес, путь к сертификату, число узлов.
+EnvironmentFile=/etc/gasapp/server.env
+
+# Секреты.
+LoadCredential=database_url:/etc/gasapp/credentials/database_url
+LoadCredential=gasapp_certificate_key:/etc/gasapp/credentials/gasapp_certificate_key
+LoadCredential=tls_key:/etc/gasapp/credentials/node-key.pem
+# Ключ клиентского сертификата для базы (pg_hba: clientcert=verify-full).
+# DATABASE_URL ссылается на него путём:
+#     ...&sslkey=/run/credentials/gasapp-server.service/db_client_key
+LoadCredential=db_client_key:/etc/gasapp/credentials/db-client-key.pem
+# Ключ TLS сервер читает по пути — путь ведёт в каталог учётных данных.
+Environment=GASAPP_TLS_KEY=%d/tls_key
+
+# --- Файловая система ---------------------------------------------------
+# Вся система — только чтение; домашние каталоги, /tmp других служб,
+# устройства и интерфейсы ядра — не видны. Писать узлу некуда и незачем:
+# всё, что переживает запрос, лежит в базе.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+# Чужие процессы невидимы, из /proc — только своё.
+ProtectProc=invisible
+ProcSubset=pid
+# Запускать можно только системные программы, не то, что удалось
+# положить во временный каталог.
+NoExecPaths=/
+ExecPaths=/usr/local/bin/gasapp-server-api /usr/lib /lib /lib64 /usr/lib64
+UMask=0077
+
+# --- Права -----------------------------------------------------------------
+# Порт выше 1024: ни одна привилегия не нужна.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateUsers=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+KeyringMode=private
+LockPersonality=yes
+# Код не пишется в память во время работы: эксплойт не может
+# подложить свой.
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+
+# --- Системные вызовы ------------------------------------------------------
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @debug @cpu-emulation @obsolete
+SystemCallErrorNumber=EPERM
+
+# --- Сеть ------------------------------------------------------------------
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# 🔐 Брандмауэр на уровне процесса: узел говорит только с внутренней
+# сетью (балансировщик, база). Взломанный процесс не выгрузит данные
+# наружу и не скачает инструменты. Внутреннюю сеть уточнить под свою:
+#     systemctl edit gasapp-server   →   [Service]
+#                                       IPAddressAllow=
+#                                       IPAddressAllow=localhost 10.1.0.0/24
+IPAddressDeny=any
+IPAddressAllow=localhost 10.0.0.0/24
+
+# --- Ресурсы ---------------------------------------------------------------
+# 🔐 Без дампов памяти: в памяти процесса — ключ подписи сертификатов
+# и пароль базы, дамп унёс бы их на диск.
+LimitCORE=0
+LimitNOFILE=65536
+TasksMax=4096
+
+[Install]
+WantedBy=multi-user.target

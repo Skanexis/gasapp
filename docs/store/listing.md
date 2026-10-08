@@ -13,27 +13,27 @@
 постквантового храповика в продукте нет (план, раздел «SPQR в продукте
 не работает»). Звонков, голосовых, групп и push нет — так и написано.
 
-## Название — решение 2026-09-30: бренд AEGIS остаётся
+## Название — решение 2026-09-30: бренд GasApp остаётся
 
-**AEGIS** — везде, где его видит человек после установки: подпись под
+**GasApp** — везде, где его видит человек после установки: подпись под
 значком (`app_name`), экраны приложения, сайт, код. В магазине к нему
-добавляется отличающая часть — **«AEGIS: Encrypted Chat»** (RU —
-«AEGIS: шифрованный чат»). Почему не просто «AEGIS» и не «AEGIS Messenger»:
+добавляется отличающая часть — **«GasApp: Encrypted Chat»** (RU —
+«GasApp: шифрованный чат»). Почему не просто «GasApp» и не «GasApp Messenger»:
 
-* в App Store имя должно быть уникальным, а «Aegis» уже занято —
-  Aegis Authenticator, его копии и «Aegis — Password Manager»;
-* **«Aegis Messenger» уже существует** — зашифрованный мессенджер в
-  Google Play (`com.aegisinvestment.messengerios`): то же имя в той же
+* в App Store имя должно быть уникальным, а «GasApp» уже занято —
+  GasApp Authenticator, его копии и «GasApp — Password Manager»;
+* **«GasApp Messenger» уже существует** — зашифрованный мессенджер в
+  Google Play (`com.gasappinvestment.messengerios`): то же имя в той же
   категории — прямая путаница и повод для жалобы;
 * **«Tor» в названии нельзя**: политика товарного знака Tor Project
-  запрещает его в именах продуктов («AEGIS Tor Messenger» отпадает).
+  запрещает его в именах продуктов («GasApp Tor Messenger» отпадает).
 
 Подпись под значком и имя в магазине могут различаться: Apple требует
-лишь, чтобы подпись узнавалась по имени (2.3.8) — «AEGIS» из «AEGIS:
+лишь, чтобы подпись узнавалась по имени (2.3.8) — «GasApp» из «GasApp:
 Encrypted Chat» узнаётся. Имя в магазине локализуется — RU в русской
 витрине, EN в остальных.
 
-Защитить само слово «AEGIS» регистрацией знака вряд ли выйдет: оно
+Защитить само слово «GasApp» регистрацией знака вряд ли выйдет: оно
 общеупотребительное и уже широко занято в классе 9. Реально —
 комбинированный знак (логотип со словом); для подачи в магазины не нужен.
 
@@ -46,13 +46,13 @@ Encrypted Chat» узнаётся. Имя в магазине локализуе
 RU:
 
 ```text
-AEGIS: шифрованный чат
+GasApp: шифрованный чат
 ```
 
 EN:
 
 ```text
-AEGIS: Encrypted Chat
+GasApp: Encrypted Chat
 ```
 
 ### Краткое описание (≤ 80)
@@ -74,7 +74,7 @@ End-to-end encrypted messenger. No phone number. Tor built in.
 RU:
 
 ```text
-AEGIS — мессенджер для личной переписки, в котором сервер не может прочитать ваши сообщения и не знает, кто вы.
+GasApp — мессенджер для личной переписки, в котором сервер не может прочитать ваши сообщения и не знает, кто вы.
 
 БЕЗ НОМЕРА ТЕЛЕФОНА И ПОЧТЫ
 Аккаунт — это имя пользователя, которое вы придумываете сами. Оно не связано с номером телефона, почтой или настоящим именем.
@@ -83,7 +83,7 @@ AEGIS — мессенджер для личной переписки, в кот
 Сообщения и файлы шифруются на вашем телефоне и расшифровываются только у собеседника. Протокол открыт: PQXDH и Double Ratchet. В установление переписки входит ML-KEM, поэтому записанный сегодня трафик не расшифровать и будущим квантовым компьютером.
 
 TOR ВСТРОЕН
-По умолчанию приложение подключается через Tor — сервер не видит ваш IP-адрес. Ставить отдельные программы не нужно. Если Tor у вас блокируют, AEGIS сам подключится через мосты.
+По умолчанию приложение подключается через Tor — сервер не видит ваш IP-адрес. Ставить отдельные программы не нужно. Если Tor у вас блокируют, GasApp сам подключится через мосты.
 
 СЕРВЕР ЗНАЕТ МИНИМУМ
 • отправитель запечатан (sealed sender): сервер не знает, кто кому пишет;
@@ -102,7 +102,7 @@ TOR ВСТРОЕН
 • удаление аккаунта и выгрузка своих данных прямо из приложения.
 
 ЧЕСТНО О СТАТУСЕ
-AEGIS — открытый проект, и он ещё не прошёл независимый аудит безопасности. Не полагайтесь на него там, где на кону жизнь или свобода. Исходный код открыт: каждое утверждение выше можно проверить по нему.
+GasApp — открытый проект, и он ещё не прошёл независимый аудит безопасности. Не полагайтесь на него там, где на кону жизнь или свобода. Исходный код открыт: каждое утверждение выше можно проверить по нему.
 
 Пока нет звонков, голосовых сообщений и групповых чатов. Новые сообщения приходят, пока приложение открыто: push-уведомлений ещё нет.
 ```
@@ -110,7 +110,7 @@ AEGIS — открытый проект, и он ещё не прошёл нез
 EN:
 
 ```text
-AEGIS is a messenger for private conversations: the server cannot read your messages and does not know who you are.
+GasApp is a messenger for private conversations: the server cannot read your messages and does not know who you are.
 
 NO PHONE NUMBER, NO EMAIL
 Your account is a username you choose. It is not tied to a phone number, an email address or your real name.
@@ -119,7 +119,7 @@ END-TO-END ENCRYPTION
 Messages and files are encrypted on your phone and decrypted only on your contact's phone. The protocol is open: PQXDH and Double Ratchet. Starting a conversation includes ML-KEM, so traffic recorded today cannot be decrypted by a future quantum computer.
 
 TOR BUILT IN
-By default the app connects through Tor, so the server does not see your IP address. There is nothing extra to install. If Tor is blocked where you are, AEGIS connects through bridges on its own.
+By default the app connects through Tor, so the server does not see your IP address. There is nothing extra to install. If Tor is blocked where you are, GasApp connects through bridges on its own.
 
 THE SERVER KNOWS AS LITTLE AS POSSIBLE
 • the sender is sealed (sealed sender): the server does not know who writes to whom;
@@ -138,7 +138,7 @@ ALSO
 • delete your account or export your data right in the app.
 
 HONEST STATUS
-AEGIS is an open-source project and has not yet had an independent security audit. Do not rely on it where life or liberty is at stake. The source code is open: every claim above can be checked against it.
+GasApp is an open-source project and has not yet had an independent security audit. Do not rely on it where life or liberty is at stake. The source code is open: every claim above can be checked against it.
 
 Calls, voice messages and group chats are not available yet. New messages arrive while the app is open: there are no push notifications yet.
 ```
@@ -171,13 +171,13 @@ First public beta. Built-in Tor now connects through bridges on its own where To
 RU:
 
 ```text
-AEGIS: шифрованный чат
+GasApp: шифрованный чат
 ```
 
 EN:
 
 ```text
-AEGIS: Encrypted Chat
+GasApp: Encrypted Chat
 ```
 
 ### Подзаголовок (≤ 30)
@@ -243,5 +243,5 @@ encrypted,messenger,private,chat,tor,e2ee,secure,anonymous,privacy,no phone
 | Политика конфиденциальности | `https://<домен>/privacy` — страница из `docs/legal/privacy-policy.md` и `.en.md` | ⚠️ домен и хостинг — решение владельца |
 | Удаление аккаунта (Google Play) | `https://<домен>/delete-account` — страница из `account-deletion.md` | ⚠️ то же |
 | Поддержка (App Store — обязательно) | `https://<домен>/support` или страница проекта | ⚠️ то же |
-| Почта поддержки | `privacy@aegis.chat`, `security@aegis.chat` из политики | ⚠️ ящики должны существовать до подачи |
+| Почта поддержки | `privacy@gasapp.chat`, `security@gasapp.chat` из политики | ⚠️ ящики должны существовать до подачи |
 | Стандарты безопасности детей (Google Play) | `https://<домен>/child-safety` — `child-safety-standards.md` | ⚠️ то же |

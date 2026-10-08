@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Сборка Rust-ядра под Android: libaegis.so для четырёх ABI + биндинги Kotlin.
+# Сборка Rust-ядра под Android: libgasapp.so для четырёх ABI + биндинги Kotlin.
 #
 # Использование:
 #   tools/build-rust-android.sh [--debug] [--abi arm64-v8a]
@@ -80,7 +80,7 @@ done
 # 🔐 Защита Си-части ядра от эксплуатации (MASVS CODE-2.5).
 #
 # SQLCipher и OpenSSL собираются крейтом cc, а он флагов защиты
-# не добавляет: до 2026-09 в libaegis.so не было ни одной канарейки
+# не добавляет: до 2026-09 в libgasapp.so не было ни одной канарейки
 # стека и ни одной проверки _FORTIFY_SOURCE, хотя чек-лист считал их
 # «умолчаниями NDK». Именно Си-код разбирает содержимое базы
 # и выполняет шифрование страниц — там переполнение буфера
@@ -109,7 +109,7 @@ done
   #
   # shellcheck disable=SC2086
   cargo ndk "${TARGET_FLAGS[@]}" -P "$API_LEVEL" -o "$JNI_LIBS" \
-    build $CARGO_PROFILE_FLAG -p aegis-ffi --features vendored-openssl
+    build $CARGO_PROFILE_FLAG -p gasapp-ffi --features vendored-openssl
 )
 
 # --- Генерация биндингов Kotlin ---------------------------------------------
@@ -119,7 +119,7 @@ done
 # потому что компилятор его не проверяет.
 
 REFERENCE_ABI="${ABIS[0]}"
-REFERENCE_LIB="$JNI_LIBS/$REFERENCE_ABI/libaegis.so"
+REFERENCE_LIB="$JNI_LIBS/$REFERENCE_ABI/libgasapp.so"
 
 if [[ ! -f "$REFERENCE_LIB" ]]; then
   echo "error: не найдена собранная библиотека $REFERENCE_LIB" >&2
@@ -143,7 +143,7 @@ mkdir -p "$KOTLIN_OUT"
 (
   cd "$CRATES" || exit 1
 
-  cargo run -p aegis-ffi --bin uniffi-bindgen -- \
+  cargo run -p gasapp-ffi --bin uniffi-bindgen -- \
     generate --library "$REFERENCE_LIB" --language kotlin \
     --out-dir "$KOTLIN_OUT" --no-format
 )
@@ -181,7 +181,7 @@ echo
 echo "результат:"
 failures=0
 for abi in "${ABIS[@]}"; do
-  lib="$JNI_LIBS/$abi/libaegis.so"
+  lib="$JNI_LIBS/$abi/libgasapp.so"
   if [[ ! -f "$lib" ]]; then
     echo "  ✗ $abi — библиотека не собрана"
     failures=$((failures + 1))

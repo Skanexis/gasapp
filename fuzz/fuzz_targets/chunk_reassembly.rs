@@ -15,7 +15,7 @@
 //!   с растущими индексами и чередующимися эпохами;
 //! * рассогласование состояния между эпохами.
 
-use aegis_protocol::spqr::{Chunk, ChunkAssembler, EpochId};
+use gasapp_protocol::spqr::{Chunk, ChunkAssembler, EpochId};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

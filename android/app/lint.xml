@@ -33,7 +33,7 @@
         с остальными следами M1; переводить его незачем.
     -->
     <issue id="SetTextI18n">
-        <ignore path="src/main/kotlin/org/aegis/app/MainActivity.kt" />
+        <ignore path="src/main/kotlin/org/gasapp/app/MainActivity.kt" />
     </issue>
 
     <!--
@@ -45,7 +45,7 @@
         из недавних» (см. `core/PinAttempts.kt`).
     -->
     <issue id="ApplySharedPref">
-        <ignore path="src/main/kotlin/org/aegis/app/core/PinAttempts.kt" />
+        <ignore path="src/main/kotlin/org/gasapp/app/core/PinAttempts.kt" />
     </issue>
 
 </lint>

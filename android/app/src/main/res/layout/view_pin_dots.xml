@@ -12,10 +12,10 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal">
 
-    <View style="@style/AegisPinDot" />
-    <View style="@style/AegisPinDot" />
-    <View style="@style/AegisPinDot" />
-    <View style="@style/AegisPinDot" />
-    <View style="@style/AegisPinDot" />
-    <View style="@style/AegisPinDot" />
+    <View style="@style/GasAppPinDot" />
+    <View style="@style/GasAppPinDot" />
+    <View style="@style/GasAppPinDot" />
+    <View style="@style/GasAppPinDot" />
+    <View style="@style/GasAppPinDot" />
+    <View style="@style/GasAppPinDot" />
 </LinearLayout>

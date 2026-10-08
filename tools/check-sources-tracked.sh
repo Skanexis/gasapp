@@ -9,7 +9,7 @@
 #
 # `.gitignore` содержал `core.*` (правило для дампов памяти), а git
 # на Windows сравнивает пути без учёта регистра. Под это правило попал
-# `android/app/src/main/kotlin/org/aegis/app/core/Core.kt` —
+# `android/app/src/main/kotlin/org/gasapp/app/core/Core.kt` —
 # единственное место, где собирается ключ базы. Файл не попадал
 # в репозиторий **ни разу за всю историю проекта**.
 #

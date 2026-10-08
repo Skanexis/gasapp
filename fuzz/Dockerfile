@@ -23,7 +23,7 @@ RUN apt-get update \
 
 RUN cargo install cargo-fuzz --locked
 
-WORKDIR /aegis
+WORKDIR /gasapp
 
 # Исходники монтируются, а не копируются: прогон идёт по текущему дереву,
 # и корпус, накопленный внутри, остаётся на хосте.

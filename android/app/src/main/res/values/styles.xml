@@ -10,7 +10,7 @@
 <resources>
 
     <!-- Вкладка нижней навигации -->
-    <style name="AegisNavItem">
+    <style name="GasAppNavItem">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_weight">1</item>
@@ -23,7 +23,7 @@
     </style>
 
     <!-- Подпись вкладки: 10sp по макету -->
-    <style name="AegisNavLabel">
+    <style name="GasAppNavLabel">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">4dp</item>
@@ -35,7 +35,7 @@
     </style>
 
     <!-- Заголовок экрана -->
-    <style name="AegisAppBarTitle">
+    <style name="GasAppAppBarTitle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textSize">18sp</item>
@@ -48,8 +48,13 @@
       как в kit у заголовков экранов верхнего уровня. Вложенные экраны
       со стрелкой «назад» остаются с обычным.
     -->
-    <style name="AegisAppBarTitle.Large">
+    <style name="GasAppAppBarTitle.Large">
         <item name="android:textSize">@dimen/text_h1</item>
+        <!-- Заголовок раздела — шрифтом вывески (DESIGN.md, «Night Camp»). -->
+        <item name="android:fontFamily">@font/rubik</item>
+        <item name="fontFamily">@font/rubik</item>
+        <item name="android:textFontWeight">900</item>
+        <item name="android:textStyle">normal</item>
         <item name="android:accessibilityHeading">true</item>
         <!-- Строка 48dp: с кнопками и без заголовок на одной высоте. -->
         <item name="android:minHeight">@dimen/touch_target</item>
@@ -58,7 +63,7 @@
 
 
     <!-- Точка PIN: 14dp, промежуток 14dp по макету -->
-    <style name="AegisPinDot">
+    <style name="GasAppPinDot">
         <item name="android:layout_width">14dp</item>
         <item name="android:layout_height">14dp</item>
         <item name="android:layout_marginStart">7dp</item>
@@ -67,7 +72,7 @@
     </style>
 
     <!-- Клавиша цифровой клавиатуры -->
-    <style name="AegisKeypadKey">
+    <style name="GasAppKeypadKey">
         <item name="android:layout_width">80dp</item>
         <item name="android:layout_height">64dp</item>
         <item name="android:background">@drawable/bg_keypad_key</item>
@@ -86,17 +91,17 @@
       Задаётся явно: без него AlertDialog берёт светлую тему платформы
       и появляется белым окном поверх тёмного приложения.
     -->
-    <style name="AegisDialog" parent="Theme.MaterialComponents.Dialog.Alert">
+    <style name="GasAppDialog" parent="Theme.MaterialComponents.Dialog.Alert">
         <item name="android:background">@color/bg_card</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
         <item name="colorAccent">@color/accent_base</item>
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:windowBackground">@drawable/bg_dialog</item>
-        <item name="buttonBarPositiveButtonStyle">@style/AegisDialogButton</item>
-        <item name="buttonBarNegativeButtonStyle">@style/AegisDialogButton</item>
-        <item name="buttonBarNeutralButtonStyle">@style/AegisDialogButton</item>
-        <item name="android:textAppearanceMedium">@style/AegisText.Body</item>
+        <item name="buttonBarPositiveButtonStyle">@style/GasAppDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/GasAppDialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/GasAppDialogButton</item>
+        <item name="android:textAppearanceMedium">@style/GasAppText.Body</item>
     </style>
 
     <!--
@@ -104,9 +109,9 @@
 
       Текст акцентом и без капитализации — как в остальном приложении.
       Заглавные буквы, которые платформа ставит по умолчанию,
-      выглядят чужеродно рядом с кнопками AEGIS.
+      выглядят чужеродно рядом с кнопками GasApp.
     -->
-    <style name="AegisDialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+    <style name="GasAppDialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textFontWeight">600</item>
         <item name="android:textSize">@dimen/text_button</item>
@@ -115,11 +120,11 @@
     </style>
 
     <!--
-      Окно AegisDialog: без системной рамки и заголовка — карточку
+      Окно GasAppDialog: без системной рамки и заголовка — карточку
       рисует разметка view_dialog. Затемнение фона — как у системного
       диалога.
     -->
-    <style name="AegisDialogWindow" parent="Theme.MaterialComponents.Dialog">
+    <style name="GasAppDialogWindow" parent="Theme.MaterialComponents.Dialog">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>
         <item name="windowNoTitle">true</item>
@@ -128,8 +133,8 @@
         <item name="android:fontFamily">@font/inter</item>
         <item name="colorAccent">@color/accent_base</item>
         <item name="colorPrimary">@color/accent_base</item>
-        <item name="editTextStyle">@style/Widget.Aegis.EditText</item>
-        <item name="android:editTextStyle">@style/Widget.Aegis.EditText</item>
+        <item name="editTextStyle">@style/Widget.GasApp.EditText</item>
+        <item name="android:editTextStyle">@style/Widget.GasApp.EditText</item>
         <item name="android:textColorHint">@color/text_muted</item>
     </style>
 
@@ -139,12 +144,12 @@
       Прозрачный фон и отсутствие анимации окна: панель рисует себя
       сама, а системная рамка добавила бы вокруг неё лишний слой.
     -->
-    <style name="AegisSheetDialog" parent="Theme.MaterialComponents.Dialog">
+    <style name="GasAppSheetDialog" parent="Theme.MaterialComponents.Dialog">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:backgroundDimEnabled">true</item>
-        <item name="android:windowAnimationStyle">@style/AegisSheetAnimation</item>
+        <item name="android:windowAnimationStyle">@style/GasAppSheetAnimation</item>
         <item name="android:fontFamily">@font/inter</item>
     </style>
 
@@ -154,7 +159,7 @@
       200 мс — базовая длительность из токенов. Быстрее выглядит
       рывком, медленнее — задержкой перед действием.
     -->
-    <style name="AegisSheetAnimation">
+    <style name="GasAppSheetAnimation">
         <item name="android:windowEnterAnimation">@anim/sheet_enter</item>
         <item name="android:windowExitAnimation">@anim/sheet_exit</item>
     </style>

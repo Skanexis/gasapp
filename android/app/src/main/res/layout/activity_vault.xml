@@ -19,18 +19,18 @@
     android:background="@color/bg_base"
     android:orientation="vertical">
 
-    <LinearLayout style="@style/AegisAppBar">
+    <LinearLayout style="@style/GasAppAppBar">
 
         <ImageView
             android:id="@+id/vault_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
             app:tint="@color/text_primary" />
 
         <TextView
-            style="@style/AegisAppBarTitle"
+            style="@style/GasAppAppBarTitle"
             android:layout_marginStart="@dimen/space_s"
             android:text="@string/vault_title" />
 
@@ -42,7 +42,7 @@
         <!-- Закрыть vault вручную, не дожидаясь таймаута. -->
         <ImageView
             android:id="@+id/vault_seal"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:contentDescription="@string/vault_seal"
             android:src="@drawable/ic_lock"
             app:tint="@color/text_primary"
@@ -71,18 +71,18 @@
                 android:orientation="vertical">
 
                 <TextView
-                    style="@style/AegisText.Body"
+                    style="@style/GasAppText.Body"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/vault_sealed_explain" />
 
                 <LinearLayout
-                    style="@style/AegisPanel"
+                    style="@style/GasAppPanel"
                     android:layout_marginTop="@dimen/space_l">
 
                     <TextView
                         android:id="@+id/vault_count"
-                        style="@style/AegisText.Body.Secondary"
+                        style="@style/GasAppText.Body.Secondary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         tools:text="В хранилище 3 файла" />
@@ -107,7 +107,7 @@
                             android:layout_marginTop="12dp" />
                     </LinearLayout>
 
-                    <org.aegis.app.components.AegisButton
+                    <org.gasapp.app.components.GasAppButton
                         android:id="@+id/vault_unlock"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -117,7 +117,7 @@
                 </LinearLayout>
 
                 <TextView
-                    style="@style/AegisText.Caption.Muted"
+                    style="@style/GasAppText.Caption.Muted"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_m"
@@ -134,12 +134,12 @@
                 tools:visibility="visible">
 
                 <TextView
-                    style="@style/AegisText.Caption.Muted"
+                    style="@style/GasAppText.Caption.Muted"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/vault_auto_seal" />
 
-                <org.aegis.app.components.AegisButton
+                <org.gasapp.app.components.GasAppButton
                     android:id="@+id/vault_add"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -161,7 +161,7 @@
 
                 <TextView
                     android:id="@+id/vault_empty"
-                    style="@style/AegisText.Caption.Muted"
+                    style="@style/GasAppText.Caption.Muted"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_m"
@@ -172,7 +172,7 @@
 
             <TextView
                 android:id="@+id/vault_status"
-                style="@style/AegisText.Caption"
+                style="@style/GasAppText.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"

@@ -27,7 +27,7 @@
     человек строит поведение на защите, которой нет.
 -->
 <resources>
-    <string name="app_name">AEGIS</string>
+    <string name="app_name">GasApp</string>
 
     <!-- FFI bridge check screen (M1). Replaced by real screens in M4. -->
     <string name="ffi_core_version">Core version: %1$s</string>
@@ -60,7 +60,7 @@
 
     <!-- Lock screen -->
     <string name="lock_icon">Locked</string>
-    <string name="lock_title">AEGIS is locked</string>
+    <string name="lock_title">GasApp is locked</string>
     <string name="lock_subtitle">Enter your PIN to decrypt your messages</string>
     <string name="pin_hint">PIN</string>
     <string name="pin_error">Could not unlock</string>
@@ -140,8 +140,8 @@
     <string name="onboarding_username_hint">e.g. anna_k</string>
     <string name="onboarding_username_label">Username</string>
     <string name="onboarding_username_helper">Latin letters, digits and _. This is how others will find you.</string>
-    <string name="onboarding_create">Create account</string>
-    <string name="onboarding_working">Creating your account — this takes a few seconds…</string>
+    <string name="onboarding_create">Continue</string>
+    <string name="onboarding_working">Setting things up — this takes a few seconds…</string>
     <string name="onboarding_error_username">3–32 characters: lowercase Latin letters, digits and _, starting with a letter</string>
     <string name="onboarding_error_taken">That username is taken</string>
     <string name="onboarding_direct">Connect directly, without Tor</string>
@@ -264,7 +264,7 @@
         человек должен до нажатия, а не после: вернуть удалённый
         аккаунт нельзя ни ему, ни оператору сервера.
     -->
-    <string name="lock_biometric_title">Unlock AEGIS</string>
+    <string name="lock_biometric_title">Unlock GasApp</string>
     <string name="lock_biometric_subtitle">Use your fingerprint instead of typing the PIN</string>
     <string name="lock_biometric_use_pin">Use PIN</string>
     <string name="lock_use_fingerprint">Unlock with fingerprint</string>
@@ -408,7 +408,7 @@
     <string name="restore_pick">Choose files</string>
     <string name="restore_no_files">No files chosen</string>
     <string name="restore_files_chosen">Files chosen: %1$d</string>
-    <string name="restore_key_hint">AEGIS-XXXX-XXXX-…</string>
+    <string name="restore_key_hint">GASAPP-XXXX-XXXX-…</string>
     <string name="restore_key_empty">Enter the key — 13 groups</string>
     <string name="restore_key_ok">The key looks right</string>
     <string name="restore_key_invalid">There is a typo in the key</string>
@@ -493,8 +493,8 @@
     <string name="security_check_attestation_software">The key’s protection is software-only</string>
     <string name="security_check_attestation_untrusted">The confirmation does not come from Google’s root: an emulator, an uncertified phone or a forgery</string>
     <string name="security_check_attestation_failed">Could not check</string>
-    <string name="security_check_signature">App signed by the AEGIS developers</string>
-    <string name="security_check_signature_mismatch">This copy is signed by someone else. It may have been modified — install AEGIS from an official source</string>
+    <string name="security_check_signature">App signed by the GasApp developers</string>
+    <string name="security_check_signature_mismatch">This copy is signed by someone else. It may have been modified — install GasApp from an official source</string>
     <string name="security_check_signature_unchecked">Not checked: this is a development build</string>
     <string name="security_check_pending">Checking…</string>
 
@@ -517,7 +517,7 @@
     <string name="network_saved">Saved. New connections use the method you chose.</string>
     <string name="network_invalid">The address or port is not valid. Enter a hostname or IP address without a scheme or path; usernames and passwords are not supported.</string>
     <string name="network_save_failed">Could not save the setting</string>
-    <string name="network_limits">A proxy can see that you use AEGIS, and when. Tor hides your address from the server, but not from the Tor entry node. Over Tor the connection is less stable, and notifications may arrive late.</string>
+    <string name="network_limits">A proxy can see that you use GasApp, and when. Tor hides your address from the server, but not from the Tor entry node. Over Tor the connection is less stable, and notifications may arrive late.</string>
     <string name="network_unavailable">The network setting is corrupted — connections are blocked until you choose a connection method again.</string>
     <string name="privacy_section_network">Network</string>
     <string name="privacy_network">Connection</string>
@@ -592,7 +592,7 @@
     <string name="security_event_undecryptable_envelopes_dropped">Unreadable incoming messages were discarded (repeats of old ones or junk)</string>
     <string name="security_event_kt_self_check_blocked">The server key log is available, but checking your own name in it keeps failing. Until it succeeds, ask contacts to compare safety numbers in person</string>
     <string name="scan_title">Scan QR code</string>
-    <string name="scan_hint_contact">Point the camera at the QR code in the other person’s AEGIS profile</string>
+    <string name="scan_hint_contact">Point the camera at the QR code in the other person’s GasApp profile</string>
     <string name="scan_hint_safety">Point the camera at the safety number code on the other person’s screen</string>
     <string name="scan_denied_title">No access to the camera</string>
     <string name="scan_denied_body">The camera is needed only to read the code. Frames are processed on this device and are never stored or sent anywhere.</string>
@@ -602,10 +602,10 @@
     <string name="add_contact_or">or</string>
     <string name="add_contact_scan">Scan QR code</string>
     <string name="add_contact_scan_helper">The code carries their key directly, bypassing the server — you can write immediately.</string>
-    <string name="add_contact_scan_invalid">This is not an AEGIS contact code, or the name in it belongs to a different key</string>
-    <string name="profile_username_caption">This is how people find you in AEGIS</string>
-    <string name="profile_qr_hint">Show this code to the person next to you — they scan it in AEGIS. It carries your key, so they can write to you right away: the strongest check.</string>
-    <string name="profile_share_text">Write to me in AEGIS: @%1$s</string>
+    <string name="add_contact_scan_invalid">This is not an GasApp contact code, or the name in it belongs to a different key</string>
+    <string name="profile_username_caption">This is how people find you in GasApp</string>
+    <string name="profile_qr_hint">Show this code to the person next to you — they scan it in GasApp. It carries your key, so they can write to you right away: the strongest check.</string>
+    <string name="profile_share_text">Write to me in GasApp: @%1$s</string>
     <string name="safety_scan">Scan their code</string>
     <string name="safety_scan_mismatch_title">The codes do not match</string>
     <string name="safety_scan_mismatch_body">The other person’s screen shows a different key. The server may have swapped it, or this is not the person you think. Do not mark them as compared and do not send anything important until you find out why.</string>
@@ -616,13 +616,13 @@
     <string name="settings_section_app">App</string>
     <string name="settings_section_data">Data</string>
     <string name="settings_section_about">About</string>
-    <string name="onboarding_welcome_title">Welcome to AEGIS</string>
+    <string name="onboarding_welcome_title">Welcome to GasApp</string>
     <string name="onboarding_feature_e2e">Messages are encrypted on your phone. The server only passes them on and cannot read them.</string>
-    <string name="onboarding_feature_no_phone">No phone number or email. Your account is just a username.</string>
+    <string name="onboarding_feature_no_phone">No phone number. An account is a username and an email address — the server keeps only a hash of the address.</string>
     <string name="onboarding_feature_tor">Tor is built in: the server does not see your IP address.</string>
     <string name="onboarding_get_started">Create account</string>
-    <string name="onboarding_username_title">Choose a username</string>
-    <string name="onboarding_username_subtitle">People will find you by it. Add them by their @username or by scanning a QR code.</string>
+    <string name="onboarding_username_title">Username and email</string>
+    <string name="onboarding_username_subtitle">People will find you by your username. The email is only for confirming the account: we will send a code to it.</string>
     <string name="onboarding_network_label">Connection</string>
     <string name="onboarding_next">Continue</string>
     <string name="onboarding_pin_title">Create a PIN</string>
@@ -660,8 +660,8 @@
     <string name="report_unavailable">You can report once they have sent you a message.</string>
     <string name="report_failed">Could not send the report. Check the connection and try again.</string>
     <!-- Пересобранная копия (TamperGuard) -->
-    <string name="tamper_title">This copy of AEGIS may be fake</string>
-    <string name="tamper_body">This app is not signed by the AEGIS developers. Someone may have modified it to read your messages or steal your PIN. Delete it and install AEGIS only from the official store page or the project site.</string>
+    <string name="tamper_title">This copy of GasApp may be fake</string>
+    <string name="tamper_body">This app is not signed by the GasApp developers. Someone may have modified it to read your messages or steal your PIN. Delete it and install GasApp only from the official store page or the project site.</string>
     <string name="tamper_close">Close the app</string>
     <string name="tamper_continue">Continue anyway</string>
     <!-- Повторный PIN перед опасными действиями (аудит 2026-10-02, A-3). -->
@@ -682,6 +682,76 @@
     <string name="delivery_failed">Not sent</string>
     <string name="onboarding_stage_keys">Encryption keys on this phone</string>
     <string name="onboarding_stage_tor">Connecting through Tor</string>
-    <string name="onboarding_stage_register">Registering your name</string>
+    <string name="onboarding_stage_register">Sending the code to your email</string>
     <string name="connection_direct">Direct connection: the server sees your IP address</string>
+
+    <!-- Почта при регистрации, премиум и каналы. -->
+    <string name="action_ok">OK</string>
+    <string name="action_close">Close</string>
+    <string name="onboarding_email_label">Email</string>
+    <string name="onboarding_email_hint">you@example.org</string>
+    <string name="onboarding_email_helper">We will send a confirmation code here. The server does not store the address itself, only its hash; the mail service that delivers the code does see it.</string>
+    <string name="onboarding_error_email">That does not look like an email address</string>
+    <string name="onboarding_error_email_taken">This email already has an account. To get it back, restore it from a backup.</string>
+    <string name="onboarding_error_code_send">Could not send the code. Check your connection; a new email can be requested once a minute.</string>
+    <string name="onboarding_code_title">Enter the code</string>
+    <string name="onboarding_code_subtitle">We sent a 6-digit code to %1$s. It is valid for 15 minutes.</string>
+    <string name="onboarding_code_label">Code from the email</string>
+    <string name="onboarding_code_hint">000000</string>
+    <string name="onboarding_code_helper">No email? Check the spam folder. You can leave the app to read it — your place here is kept.</string>
+    <string name="onboarding_code_resend">Send the code again</string>
+    <string name="onboarding_code_resend_in">Send again in %1$d s</string>
+    <string name="onboarding_code_resent">A new code is on its way. The previous one no longer works.</string>
+    <string name="onboarding_code_confirm">Create account</string>
+    <string name="onboarding_error_code_length">The code is 6 digits</string>
+    <string name="onboarding_error_code">The code did not match or has expired. After five wrong tries a code stops working — request a new one.</string>
+    <string name="nav_channels">Channels</string>
+    <string name="channels_join">Add a channel</string>
+    <string name="channels_join_paste">Paste a link</string>
+    <string name="channels_join_scan">Scan a QR code</string>
+    <string name="channels_scan_hint">Point the camera at the channel QR code</string>
+    <string name="channels_join_action">Add</string>
+    <string name="channels_link_hint">gasapp://channel/…</string>
+    <string name="channels_link_help">A channel is opened by its invitation link. Ask the author for it.</string>
+    <string name="channels_link_invalid">This is not a channel link</string>
+    <string name="channels_error_unavailable">Could not open the channel: no connection to the server, or the channel was deleted.</string>
+    <string name="channels_error_network">No connection to the server. Try again.</string>
+    <string name="channels_empty_title">No channels yet</string>
+    <string name="channels_empty">A channel is a feed from one author. Add one by its link or QR code. The server does not know which channels you read.</string>
+    <string name="channels_create">Create a channel</string>
+    <string name="channels_create_action">Create</string>
+    <string name="channels_create_help">The server stores the title and the posts encrypted. Anyone who has the channel link can read them.</string>
+    <string name="channel_form_title_label">Title</string>
+    <string name="channel_form_title_hint">e.g. Gas News</string>
+    <string name="channel_form_description_label">Description</string>
+    <string name="channel_form_description_hint">What the channel is about (optional)</string>
+    <string name="channel_form_title_empty">Give the channel a title</string>
+    <string name="channel_form_invalid">Title: up to 64 characters. Description: up to 500.</string>
+    <string name="premium_required_title">Channels are a premium feature</string>
+    <string name="premium_required_body">Only premium accounts can create channels; reading them is open to everyone. Premium is granted by the server operator by hand — send them your username: @%1$s</string>
+    <string name="channel_no_posts">No posts yet</string>
+    <string name="channel_subtitle_owner">Channel · you are the author</string>
+    <string name="channel_subtitle_reader">Channel</string>
+    <string name="channel_reader_note">Only the author can post here</string>
+    <string name="channel_post_hint">New post</string>
+    <string name="channel_publish">Publish</string>
+    <string name="channel_post_failed">The post was not published: no connection to the server. Your text is still here.</string>
+    <string name="channel_post_too_long">The post is too long</string>
+    <string name="channel_empty_title">No posts yet</string>
+    <string name="channel_empty_owner">Write the first post, then share the channel link.</string>
+    <string name="channel_empty_reader">The author has not posted anything yet.</string>
+    <string name="channel_share">Channel link</string>
+    <string name="channel_share_qr">Channel QR code</string>
+    <string name="channel_share_warning">This link is the access itself: whoever gets it reads the whole channel, past and future posts. It cannot be revoked for one reader.</string>
+    <string name="channel_share_copy">Copy the link</string>
+    <string name="channel_share_copied">Link copied</string>
+    <string name="channel_more">Channel actions</string>
+    <string name="channel_about">About the channel</string>
+    <string name="channel_edit">Edit the channel</string>
+    <string name="channel_delete">Delete the channel</string>
+    <string name="channel_delete_title">Delete this channel?</string>
+    <string name="channel_delete_body">The channel and all its posts will be removed from the server for everyone. Readers keep what they have already loaded. This cannot be undone.</string>
+    <string name="channel_leave">Leave the channel</string>
+    <string name="channel_leave_title">Leave this channel?</string>
+    <string name="channel_leave_body">The channel and its posts will be removed from this phone. You can add it again by its link.</string>
 </resources>

@@ -11,12 +11,27 @@
   принадлежит другому приложению, которое на Android может быть
   сторонним и видит каждое нажатие.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_base"
+    android:background="@color/bg_base">
+
+    <!--
+      Ночное небо за запросом PIN (DESIGN.md, «Night Camp»): звёзды и
+      луна в верхней половине, низ растворён в фоне, чтобы клавиатура
+      стояла на ровной поверхности. Декорация: от чтения с экрана скрыта.
+    -->
+    <org.gasapp.app.components.NightSceneView
+        android:layout_width="match_parent"
+        android:layout_height="420dp"
+        app:sceneForest="false"
+        app:sceneMoon="false" />
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="24dp">
@@ -27,8 +42,8 @@
         android:text="@string/lock_title"
         android:textColor="@color/text_primary"
         android:textSize="@dimen/text_h2"
-        android:fontFamily="@font/inter"
-        android:textFontWeight="700" />
+        android:fontFamily="@font/rubik"
+        android:textFontWeight="900" />
 
     <TextView
         android:id="@+id/lock_subtitle"
@@ -42,7 +57,7 @@
         android:textSize="14sp" />
 
     <!--
-      Знак AEGIS — гильоширная розетка, точки PIN на её оси.
+      Знак GasApp — гильоширная розетка, точки PIN на её оси.
       Каждая цифра поворачивает розетку на насечку, верный PIN её
       раскрывает (GuillocheView). Сама розетка для чтения с экрана
       немая: всё, что важно, — в точках и тексте ошибки.
@@ -52,7 +67,7 @@
         android:layout_height="288dp"
         android:layout_marginTop="12dp">
 
-        <org.aegis.app.components.GuillocheView
+        <org.gasapp.app.components.GuillocheView
             android:id="@+id/lock_seal"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
@@ -86,7 +101,7 @@
       «Забыли PIN?» — честный ответ вместо тупика: PIN не сбросить,
       но аккаунт возвращается ключом восстановления.
     -->
-    <org.aegis.app.components.AegisButton
+    <org.gasapp.app.components.GasAppButton
         android:id="@+id/lock_forgot"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -96,3 +111,5 @@
         app:buttonVariant="ghost" />
 
 </LinearLayout>
+
+</FrameLayout>

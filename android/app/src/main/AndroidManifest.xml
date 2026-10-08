@@ -30,7 +30,7 @@
     -->
 
     <application
-        android:name=".AegisApplication"
+        android:name=".GasAppApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="@string/app_name"
@@ -39,7 +39,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:theme="@style/Theme.AEGIS"
+        android:theme="@style/Theme.GasApp"
         android:usesCleartextTraffic="false">
         <!--
           🔐 usesCleartextTraffic="false" — раздел 19.2, MASVS NETWORK-1.
@@ -109,6 +109,20 @@
             android:name=".ContactsActivity"
             android:exported="false" />
 
+        <!--
+          Каналы. Не экспортируются: ссылку канала человек вставляет
+          или сканирует внутри приложения — чужое приложение не может
+          подсунуть её намерением.
+        -->
+        <activity
+            android:name=".ChannelsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ChannelActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".OnboardingActivity"
             android:exported="false" />
@@ -118,7 +132,7 @@
             android:exported="false" />
 
         <!--
-          Не экспортируется. Прежде экран принимал ссылки aegis://contact
+          Не экспортируется. Прежде экран принимал ссылки gasapp://contact
           от любого приложения; ссылок в продукте больше нет — контакт
           добавляется по @имени или встроенным сканером QR, — и открытая
           дверь для чужих намерений убрана вместе с ними.

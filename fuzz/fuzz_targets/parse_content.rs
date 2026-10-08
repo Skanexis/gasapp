@@ -15,7 +15,7 @@
 //! в то же самое. Расхождение значило бы, что писатель и читатель
 //! проверяют разные пределы.
 
-use aegis_protocol::content::Content;
+use gasapp_protocol::content::Content;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

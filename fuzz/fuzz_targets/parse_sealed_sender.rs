@@ -25,11 +25,11 @@
 //! Что ищется: паника на усечённом, удлинённом или бессмысленном входе
 //! и чтение по длине, не сверенной с остатком буфера.
 
-use aegis_protocol::mlkem::MlKem1024PrivateKey;
-use aegis_protocol::padding;
-use aegis_protocol::sealed_sender::{self, SenderCertificate};
-use aegis_protocol::x25519::X25519PrivateKey;
-use aegis_types::PrivateKeyBytes;
+use gasapp_protocol::mlkem::MlKem1024PrivateKey;
+use gasapp_protocol::padding;
+use gasapp_protocol::sealed_sender::{self, SenderCertificate};
+use gasapp_protocol::x25519::X25519PrivateKey;
+use gasapp_types::PrivateKeyBytes;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

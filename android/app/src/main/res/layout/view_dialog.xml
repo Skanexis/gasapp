@@ -3,7 +3,7 @@
 <!--
   Диалог по UI kit (слайд 20): карточка r16, отступы 24, заголовок H4,
   текст вторичного цвета, действия справа. Основное действие — кнопкой
-  с заливкой, отказ — текстом. Собирается AegisDialog.
+  с заливкой, отказ — текстом. Собирается GasAppDialog.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -16,7 +16,7 @@
 
     <TextView
         android:id="@+id/dialog_title"
-        style="@style/AegisText.H4"
+        style="@style/GasAppText.H4"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:accessibilityHeading="true"
@@ -24,7 +24,7 @@
 
     <TextView
         android:id="@+id/dialog_message"
-        style="@style/AegisText.Body.Secondary"
+        style="@style/GasAppText.Body.Secondary"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_s"
@@ -44,7 +44,7 @@
     <!-- Ошибка заменяет подсказку, а не добавляется к ней (UI kit, Inputs). -->
     <TextView
         android:id="@+id/dialog_error"
-        style="@style/AegisText.Caption"
+        style="@style/GasAppText.Caption"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_s"
@@ -65,7 +65,7 @@
         android:gravity="end|center_vertical"
         android:orientation="horizontal">
 
-        <org.aegis.app.components.AegisButton
+        <org.gasapp.app.components.GasAppButton
             android:id="@+id/dialog_secondary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -75,7 +75,7 @@
             tools:text="Cancel"
             tools:visibility="visible" />
 
-        <org.aegis.app.components.AegisButton
+        <org.gasapp.app.components.GasAppButton
             android:id="@+id/dialog_primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

@@ -50,13 +50,13 @@ FORBIDDEN=(
 #
 # Собственный пакет приложения. Если его нет, ищем не там или не то,
 # и все отрицательные ответы ниже ничего не значат.
-EXPECTED='Lorg/aegis/app/'
+EXPECTED='Lorg/gasapp/app/'
 
 # --- Сборка, если APK не передан --------------------------------------------
 
 if [[ -z "$APK" ]]; then
   echo "сборка foss-release…"
-  (cd "$ROOT/android" && ./gradlew --console=plain -q :app:assembleFossRelease -PaegisAllowUnreleasable=true)
+  (cd "$ROOT/android" && ./gradlew --console=plain -q :app:assembleFossRelease -PgasappAllowUnreleasable=true)
 
   # Только release и только этот flavor.
   #

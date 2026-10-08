@@ -1,5 +1,5 @@
 ---
-name: AEGIS
+name: GasApp
 description: Encrypted messenger drawn as an intaglio security document - deep ink-navy ground, one periwinkle ink, a code-drawn guilloche seal.
 colors:
   ink-navy: "#0F1629"
@@ -176,19 +176,19 @@ components:
     height: "64px"
 ---
 
-# Design System: AEGIS
+# Design System: GasApp
 
 ## Overview
 
 **Creative North Star: "The Intaglio Document"**
 
-AEGIS is a security document the person carries, not a terminal. The screens borrow the grammar of intaglio security printing (passports, banknotes): a ground of deep printing inks in tonal steps, fine-line guilloche drawn in hairline strokes, and exactly one luminous ink, periwinkle, reserved for action and for the person's own words. It deliberately refuses the category default of near-black plus a single neon cyan, and refuses the "hacker" register entirely: no terminal green, no glitch, no skulls.
+GasApp is a security document the person carries, not a terminal. The screens borrow the grammar of intaglio security printing (passports, banknotes): a ground of deep printing inks in tonal steps, fine-line guilloche drawn in hairline strokes, and exactly one luminous ink, periwinkle, reserved for action and for the person's own words. It deliberately refuses the category default of near-black plus a single neon cyan, and refuses the "hacker" register entirely: no terminal green, no glitch, no skulls.
 
 The density is that of a calm, conventional Android messenger: 16dp screen margins, 64-72dp list rows, 48dp touch targets, sp type that scales with the system. The document character lives in three places only: the palette (ink-navy ground, never black), the outgoing speech bubble (periwinkle ink with dark text, "ink on paper"), and the guilloche seal, which appears on four surfaces and nowhere else. Everything else is quiet, so waiting on Tor reads as a normal state rather than a failure.
 
 Motion is short, decelerating and functional: the seal turns one notch per PIN digit, opens on a correct PIN, shakes and flashes red on a wrong one; new messages rise 14dp into place. All of it is skipped when the system has animations removed, and none of it may cost frames on a weak phone.
 
-Provenance: this world is a code-led refinement of the incumbent UI-kit world (`design/secure-messenger-ui-kit.html`, `design/aegis.tokens.json`) raised to an own world, "intaglio". The concept-seed roll was waived (no seed key) on the owner's explicit brief "можно даже отклониться чуть от UI kit и сделать что то красивее и эффектнее но без лагов и перегрузки" (allowed to deviate a bit from the kit, more beautiful and striking, without lag or overload), with confirmed constraints: keep the kit's dark theme, no "hacker" look, a new palette allowed, Android screens only. No image generation was used, no comps were produced, and no shipping rasters exist: the launcher icon, backgrounds and the seal are XML vectors or code-drawn.
+Provenance: this world is a code-led refinement of the incumbent UI-kit world (`design/secure-messenger-ui-kit.html`, `design/gasapp.tokens.json`) raised to an own world, "intaglio". The concept-seed roll was waived (no seed key) on the owner's explicit brief "можно даже отклониться чуть от UI kit и сделать что то красивее и эффектнее но без лагов и перегрузки" (allowed to deviate a bit from the kit, more beautiful and striking, without lag or overload), with confirmed constraints: keep the kit's dark theme, no "hacker" look, a new palette allowed, Android screens only. No image generation was used, no comps were produced, and no shipping rasters exist: the launcher icon, backgrounds and the seal are XML vectors or code-drawn.
 
 **Key Characteristics:**
 - Deep ink-navy ground in four tonal steps plus a 1dp hairline; no shadows.
@@ -200,7 +200,7 @@ Provenance: this world is a code-led refinement of the incumbent UI-kit world (`
 
 ## Colors
 
-A night-press palette: blue-violet printing inks on a navy ground, with one luminous periwinkle and three semantic status inks. Tokens are generated from the UI kit into `design/aegis.tokens.json` and mirrored byte-for-byte in `res/values/colors.xml` (enforced by DesignTokensTest).
+A night-press palette: blue-violet printing inks on a navy ground, with one luminous periwinkle and three semantic status inks. Tokens are generated from the UI kit into `design/gasapp.tokens.json` and mirrored byte-for-byte in `res/values/colors.xml` (enforced by DesignTokensTest).
 
 ### Primary
 - **Periwinkle Ink** (#8FA5FF): the single action ink. Primary buttons, the send button, the FAB, filled PIN dots, focused-field strokes, cursor and selection handles, selected tab, inked seal rings, and the fill of the person's own outgoing bubbles. Holds at least 5.6:1 against every surface.

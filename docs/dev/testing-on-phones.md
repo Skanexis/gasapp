@@ -1,6 +1,6 @@
 # Проверка на двух телефонах
 
-APK лежит на рабочем столе: `AEGIS-test.apk` (19 МБ, arm64 + x86_64).
+APK лежит на рабочем столе: `GasApp-test.apk` (19 МБ, arm64 + x86_64).
 
 ## Что нужно
 
@@ -19,13 +19,13 @@ Postgres живёт в WSL, сервер — на Windows.
 wsl -d Ubuntu-24.04 --user root -e service postgresql start
 
 # Сервер (из каталога server/)
-AEGIS_TLS_CERT=deploy/tls/cert.pem \
-AEGIS_TLS_KEY=deploy/tls/key.pem \
-DATABASE_URL=postgres://aegis:aegis-dev@127.0.0.1:5432/aegis \
-cargo run -p aegis-server-api --bin aegis-server-api
+GASAPP_TLS_CERT=deploy/tls/cert.pem \
+GASAPP_TLS_KEY=deploy/tls/key.pem \
+DATABASE_URL=postgres://gasapp:gasapp-dev@127.0.0.1:5432/gasapp \
+cargo run -p gasapp-server-api --bin gasapp-server-api
 ```
 
-В логе должно появиться `сервер AEGIS слушает по TLS`.
+В логе должно появиться `сервер GasApp слушает по TLS`.
 
 Проверка с компьютера:
 
@@ -40,7 +40,7 @@ Windows по умолчанию не пускает входящие соеди�
 от администратора**:
 
 ```powershell
-New-NetFirewallRule -DisplayName "AEGIS server" -Direction Inbound `
+New-NetFirewallRule -DisplayName "GasApp server" -Direction Inbound `
     -LocalPort 8443 -Protocol TCP -Action Allow
 ```
 
@@ -53,7 +53,7 @@ APK на рабочем столе собран под `10.0.2.2` — это а�
 
 ```bash
 cd android
-./gradlew assembleFossDebug -PaegisServerUrl=https://192.168.1.15:8443
+./gradlew assembleFossDebug -PgasappServerUrl=https://192.168.1.15:8443
 ```
 
 Готовый файл: `android/app/build/outputs/apk/foss/debug/app-foss-debug.apk`
@@ -84,14 +84,14 @@ adb install -r app-foss-debug.apk
 
 ```bash
 wsl -d Ubuntu-24.04 --user root -e su postgres -c \
-  "psql -d aegis -c 'SELECT length(ciphertext), encode(substring(ciphertext from 1 for 16), \"hex\") FROM envelopes;'"
+  "psql -d gasapp -c 'SELECT length(ciphertext), encode(substring(ciphertext from 1 for 16), \"hex\") FROM envelopes;'"
 ```
 
 Видно только длину и случайные байты. Поиск текста сообщения по
 полному дампу базы ничего не находит:
 
 ```bash
-wsl -d Ubuntu-24.04 --user root -e su postgres -c "pg_dump aegis" | grep -c "ваш текст"
+wsl -d Ubuntu-24.04 --user root -e su postgres -c "pg_dump gasapp" | grep -c "ваш текст"
 # 0
 ```
 
@@ -115,7 +115,7 @@ openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der \
 Полученную строку вписать **в оба** тега `<pin>` в файле
 `android/app/src/main/res/xml/network_security_config.xml`, а адрес —
 в теги `<domain>`. Затем скопировать `cert.pem` в
-`android/app/src/main/res/raw/aegis_local_ca.crt` и пересобрать APK.
+`android/app/src/main/res/raw/gasapp_local_ca.crt` и пересобрать APK.
 
 ## Что не работает
 
@@ -125,7 +125,7 @@ openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der \
   нет — WebSocket-хаб не написан. Чтобы увидеть новое сообщение, нужно
   открыть переписку.
 - **PIN не защищает хранилище.** Экран блокировки принимает любые шесть
-  цифр: растягивание PIN через Argon2id (`aegis-keystore`) ещё не
+  цифр: растягивание PIN через Argon2id (`gasapp-keystore`) ещё не
   подключено к открытию базы. База зашифрована, но известным ключом —
   то есть защищена от случайного чтения, а не от изъятия устройства.
 - **Список чатов показывает демо-данные.** Lena Novak и остальные —

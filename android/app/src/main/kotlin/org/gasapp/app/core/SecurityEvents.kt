@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package org.gasapp.app.core
+
+import org.gasapp.app.R
+
+/**
+ * 🔐 Подписи событий журнала безопасности.
+ *
+ * # Что здесь чинится
+ *
+ * Журнал безопасности писался — смена ключа собеседника, сверка и её
+ * отзыв, смена ключа сервера sealed sender, восстановление из копии, —
+ * но **прочитать его было негде**. `security_events` был выведен через
+ * FFI и не вызывался ни одним экраном, а комментарии в ядре объясняли
+ * запись тем, что «человек должен иметь возможность увидеть, когда
+ * она случилась».
+ *
+ * # Почему неизвестное событие показывается, а не прячется
+ *
+ * Тип, которого нет в [labels], — событие из версии ядра новее этого
+ * экрана. Спрятать его значило бы скрыть событие безопасности только
+ * потому, что для него не нашлось красивой подписи. Показывается
+ * сырой тип: некрасиво, но честно.
+ *
+ * ⚠️ Состав [labels] сверяется со списком событий, которые пишет ядро
+ * (`tools/check-security-events-labelled.py`): событие без подписи
+ * не должно появиться незаметно.
+ */
+object SecurityEvents {
+
+    /** Подпись для каждого типа события, который пишет ядро. */
+    val labels: Map<String, Int> = mapOf(
+        "contact_identity_changed" to R.string.security_event_contact_identity_changed,
+        "pq_identity_changed" to R.string.security_event_pq_identity_changed,
+        "kt_foreign_key_for_own_name" to R.string.security_event_kt_foreign_key_for_own_name,
+        "kt_log_forked" to R.string.security_event_kt_log_forked,
+        "kt_peer_log_differs" to R.string.security_event_kt_peer_log_differs,
+        "kt_self_check_blocked" to R.string.security_event_kt_self_check_blocked,
+        "undecryptable_envelopes_dropped" to R.string.security_event_undecryptable_envelopes_dropped,
+        "contact_verified" to R.string.security_event_contact_verified,
+        "contact_identity_accepted" to R.string.security_event_contact_identity_accepted,
+        "contact_verification_revoked" to R.string.security_event_contact_verification_revoked,
+        "sealed_sender_server_key_changed" to R.string.security_event_server_key_changed,
+        "sealed_sender_access_rejected" to R.string.security_event_access_rejected,
+        "sealed_sender_certificate_mismatch" to R.string.security_event_certificate_mismatch,
+        "backup_restored" to R.string.security_event_backup_restored,
+        "session_started_without_one_time_key" to R.string.security_event_degraded_session,
+        "initial_envelope_replayed" to R.string.security_event_initial_replayed,
+        "contact_blocked" to R.string.security_event_contact_blocked,
+        "contact_reported" to R.string.security_event_contact_reported,
+    )
+
+    /** Подпись события либо `null`, если тип неизвестен этому экрану. */
+    fun labelFor(type: String): Int? = labels[type]
+}

@@ -14,13 +14,13 @@ Google Play требует такую страницу от приложений
 
 ## English
 
-### AEGIS child safety standards
+### GasApp child safety standards
 
-AEGIS prohibits child sexual abuse and exploitation (CSAE), including child
+GasApp prohibits child sexual abuse and exploitation (CSAE), including child
 sexual abuse material (CSAM), grooming and sextortion. Accounts used for
 this are removed.
 
-**Not for children.** AEGIS is not intended for anyone under 13.
+**Not for children.** GasApp is not intended for anyone under 13.
 
 **What we can and cannot see.** Messages are end-to-end encrypted: the
 server cannot read them, and we cannot scan their content. What we can act
@@ -48,13 +48,13 @@ policy).
 
 ## Русский
 
-### Стандарты безопасности детей в AEGIS
+### Стандарты безопасности детей в GasApp
 
-AEGIS запрещает сексуальное насилие над детьми и их эксплуатацию,
+GasApp запрещает сексуальное насилие над детьми и их эксплуатацию,
 включая материалы сексуального насилия над детьми, груминг и
 вымогательство. Аккаунты, используемые для этого, удаляются.
 
-**Не для детей.** AEGIS не предназначен для лиц младше 13 лет.
+**Не для детей.** GasApp не предназначен для лиц младше 13 лет.
 
 **Что мы видим и чего нет.** Сообщения зашифрованы сквозным шифрованием:
 сервер не может их прочитать, и проверять их содержимое мы не можем.

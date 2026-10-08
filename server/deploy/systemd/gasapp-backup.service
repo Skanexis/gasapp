@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Ежедневная копия базы (VPS-4): /opt/gasapp/backup.sh, шифрование age
+# на публичный ключ — машина, снимающая копию, прочитать её не может.
+#
+# От пользователя postgres: pg_dump идёт через unix-сокет по peer,
+# пароль нигде не лежит. Пишет только в каталог копий.
+#
+# При успехе — отметка времени в /var/lib/gasapp-backup/last-success:
+# по ней монитор узнаёт, что копии снимаются, не имея доступа к ним.
+
+[Unit]
+Description=GasApp: encrypted database backup
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+EnvironmentFile=-/etc/gasapp/backup.env
+Environment=GASAPP_DB_USER=postgres
+ExecStart=/opt/gasapp/backup.sh /var/backups/gasapp
+ExecStartPost=/bin/sh -c 'date -u +%%s > /var/lib/gasapp-backup/last-success'
+StateDirectory=gasapp-backup
+StateDirectoryMode=0755
+Nice=10
+IOSchedulingClass=idle
+
+ProtectSystem=strict
+ReadWritePaths=/var/backups/gasapp
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+LimitCORE=0

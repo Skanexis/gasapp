@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Onion-сервис сервера AEGIS: C tor только с HiddenService, без SOCKS
+# Onion-сервис сервера GasApp: C tor только с HiddenService, без SOCKS
 # и без ретрансляции. Умеет подключаться к сети Tor через мосты — там,
-# где Tor блокируют (см. AEGIS_TOR_BRIDGES в entrypoint.sh).
+# где Tor блокируют (см. GASAPP_TOR_BRIDGES в entrypoint.sh).
 #
-# 🔐 Ключ onion-адреса лежит в томе /var/lib/tor/aegis: кто держит
+# 🔐 Ключ onion-адреса лежит в томе /var/lib/tor/gasapp: кто держит
 # ключ, тот и есть этот адрес. Том копируется в резервную копию
 # вместе с ключами TLS, а не раздаётся.
 #
@@ -33,10 +33,10 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=transports /out/lyrebird /out/snowflake-client /usr/local/bin/
-COPY --from=transports /out/snowflake-bridges.txt /usr/share/aegis/snowflake-bridges.txt
-COPY entrypoint.sh /usr/local/bin/aegis-onion
-RUN chmod 0755 /usr/local/bin/aegis-onion
+COPY --from=transports /out/snowflake-bridges.txt /usr/share/gasapp/snowflake-bridges.txt
+COPY entrypoint.sh /usr/local/bin/gasapp-onion
+RUN chmod 0755 /usr/local/bin/gasapp-onion
 
-VOLUME ["/var/lib/tor/aegis"]
+VOLUME ["/var/lib/tor/gasapp"]
 
-ENTRYPOINT ["/usr/local/bin/aegis-onion"]
+ENTRYPOINT ["/usr/local/bin/gasapp-onion"]

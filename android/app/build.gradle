@@ -6,28 +6,28 @@ plugins {
 /**
  * SHA-256 сертификата подписи релиза в шестнадцатеричном виде.
  *
- * Порядок: явное `aegisSigningCertSha256` (подпись вне этой машины,
- * например в HSM) → сертификат ключа `aegisKeyAlias` из `aegisKeystore`
+ * Порядок: явное `gasappSigningCertSha256` (подпись вне этой машины,
+ * например в HSM) → сертификат ключа `gasappKeyAlias` из `gasappKeystore`
  * → пусто. Пусто означает «проверка подписи выключена», и центр
  * безопасности говорит это вслух.
  */
 def releaseSigningCertSha256() {
-    if (project.hasProperty('aegisSigningCertSha256')) {
-        return project.property('aegisSigningCertSha256').toString()
+    if (project.hasProperty('gasappSigningCertSha256')) {
+        return project.property('gasappSigningCertSha256').toString()
                 .replace(':', '').trim().toLowerCase()
     }
 
-    if (!project.hasProperty('aegisKeystore')) {
+    if (!project.hasProperty('gasappKeystore')) {
         return ''
     }
 
     def store = java.security.KeyStore.getInstance(
-            file(project.property('aegisKeystore')),
-            project.property('aegisKeystorePassword').toString().toCharArray())
-    def cert = store.getCertificate(project.property('aegisKeyAlias').toString())
+            file(project.property('gasappKeystore')),
+            project.property('gasappKeystorePassword').toString().toCharArray())
+    def cert = store.getCertificate(project.property('gasappKeyAlias').toString())
 
     if (cert == null) {
-        throw new GradleException("в aegisKeystore нет ключа aegisKeyAlias")
+        throw new GradleException("в gasappKeystore нет ключа gasappKeyAlias")
     }
 
     return java.security.MessageDigest.getInstance('SHA-256').digest(cert.encoded).encodeHex().toString()
@@ -47,7 +47,7 @@ def releaseAbiSplit = gradle.startParameter.taskNames.any {
 android {
     // Обязателен начиная с AGP 8: пакет, в котором генерируется класс R.
     // Без него конфигурация проекта падает ещё до сборки.
-    namespace = "org.aegis.app"
+    namespace = "org.gasapp.app"
     compileSdk = 36
 
     // 🔐 Версия NDK закреплена — раздел 19.2, пункт «.so не содержит
@@ -56,8 +56,8 @@ android {
     // Без этой строки AGP не находит NDK и молча пропускает задачу
     // `stripReleaseDebugSymbols`, сообщая об этом одной строкой в логе:
     // «Unable to strip the following libraries, packaging them as they
-    // are: libaegis.so, libjnidispatch.so». Сборка при этом успешна.
-    // В APK уезжала libaegis.so с .symtab на 34 тысячи записей —
+    // are: libgasapp.so, libjnidispatch.so». Сборка при этом успешна.
+    // В APK уезжала libgasapp.so с .symtab на 34 тысячи записей —
     // полными именами функций ядра, от `pqxdh_initiate` до
     // `double_ratchet_decrypt`.
     //
@@ -71,7 +71,7 @@ android {
     // результат, а воспроизводимая сборка (M8) требует совпадения APK.
     //
     // ⚠️ Обязана совпадать с NDK_VERSION в tools/Dockerfile.android
-    // (r27c = 27.2.12479018). Там собирается сама libaegis.so, здесь она
+    // (r27c = 27.2.12479018). Там собирается сама libgasapp.so, здесь она
     // обрезается — то есть обе версии участвуют в одном артефакте.
     // Прежде они расходились: контейнер собирал r27c, Gradle требовал
     // 29.0.14206865 (к тому же preview-выпуск). Совпадение проверяет
@@ -79,7 +79,7 @@ android {
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
-        applicationId = "org.aegis.app"
+        applicationId = "org.gasapp.app"
 
         // 🔐 minSdk = 28, как требует раздел 19.2 плана.
         //
@@ -115,16 +115,16 @@ android {
         // не должны иметь возможности случайно указать на один сервер.
         // Значение по умолчанию — локальная сеть для проверки на двух
         // устройствах; релиз обязан переопределить его.
-        buildConfigField "String", "AEGIS_SERVER_URL",
-                "\"${project.findProperty('aegisServerUrl') ?: 'https://10.0.2.2:8443'}\""
+        buildConfigField "String", "GASAPP_SERVER_URL",
+                "\"${project.findProperty('gasappServerUrl') ?: 'https://10.0.2.2:8443'}\""
         // Onion-сервис сервера (`адрес.onion:порт`, см.
         // server/deploy/onion): в режиме Tor соединения к серверу идут
         // туда, без выходного узла. Пусто — через выходной узел.
         //
         // 🔐 Задаётся сборкой, а не сервером: подменить адрес сервер
         // не может, а TLS и пиннинг к домену сервера остаются в силе.
-        buildConfigField "String", "AEGIS_SERVER_ONION",
-                "\"${project.findProperty('aegisServerOnion') ?: ''}\""
+        buildConfigField "String", "GASAPP_SERVER_ONION",
+                "\"${project.findProperty('gasappServerOnion') ?: ''}\""
         // 🔐 Эталон подписи для проверки во время работы (MASVS
         // RESILIENCE-2.1, `core/AppSignature.kt`). Пусто в отладочной
         // сборке: подписывать её нашим ключом никто не будет, и сверять
@@ -137,7 +137,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Четыре ABI — ровно те, под которые `tools/build-rust-android.sh`
-        // собирает libaegis.so.
+        // собирает libgasapp.so.
         //
         // Без фильтра в APK попадало семь: JNA поставляет libjnidispatch.so
         // ещё под mips, mips64 и armeabi — архитектуры, выброшенные из NDK
@@ -205,7 +205,7 @@ android {
     buildFeatures {
         // buildConfig отключён по умолчанию начиная с AGP 8: без явного
         // включения сгенерированный BuildConfig не появляется, и
-        // обращение к AEGIS_SERVER_URL не компилируется.
+        // обращение к GASAPP_SERVER_URL не компилируется.
         buildConfig = true
     }
 
@@ -217,11 +217,11 @@ android {
     // gitleaks проверяет это на каждом PR.
     signingConfigs {
         release {
-            if (project.hasProperty('aegisKeystore')) {
-                storeFile = file(project.property('aegisKeystore'))
-                storePassword = project.property('aegisKeystorePassword')
-                keyAlias = project.property('aegisKeyAlias')
-                keyPassword = project.property('aegisKeyPassword')
+            if (project.hasProperty('gasappKeystore')) {
+                storeFile = file(project.property('gasappKeystore'))
+                storePassword = project.property('gasappKeystorePassword')
+                keyAlias = project.property('gasappKeyAlias')
+                keyPassword = project.property('gasappKeyPassword')
 
                 // v1 (JAR signing) выключена намеренно.
                 //
@@ -274,7 +274,7 @@ android {
             // видна в ревью, умолчание — нет.
             debuggable false
 
-            // 🔐 Не прикладывать таблицу символов libaegis.so к бандлу.
+            // 🔐 Не прикладывать таблицу символов libgasapp.so к бандлу.
             //
             // Обрезает .so в самом APK задача AGP `stripDebugSymbols`
             // (она вызывает strip из NDK и работает в release всегда);
@@ -285,7 +285,7 @@ android {
             // 'NONE', потому что архив символов Play раздаёт в составе
             // отчётов о падениях. Осмысленные трассировки нативных
             // падений — вещь полезная, но в обмен на публикацию карты
-            // libaegis.so, а ядро здесь — то, что защищает переписку.
+            // libgasapp.so, а ядро здесь — то, что защищает переписку.
             ndk {
                 debugSymbolLevel = 'NONE'
             }
@@ -297,7 +297,7 @@ android {
             // Без свойств блок не объявляется вовсе: пустой signingConfig
             // заставил бы AGP подписать релиз отладочным ключом и выдать
             // его за подписанный.
-            if (project.hasProperty('aegisKeystore')) {
+            if (project.hasProperty('gasappKeystore')) {
                 signingConfig signingConfigs.release
             }
 
@@ -324,8 +324,8 @@ android {
             manifest.srcFile 'src/main/AndroidManifest.xml'
             java.srcDirs = ['src/main/java', 'src/main/kotlin']
             res.srcDirs = ['src/main/res']
-            // Встроенные мосты Tor — генерируются задачей aegisBridges.
-            assets.srcDirs = ['src/main/assets', "$buildDir/generated/aegis-bridges"]
+            // Встроенные мосты Tor — генерируются задачей gasappBridges.
+            assets.srcDirs = ['src/main/assets', "$buildDir/generated/gasapp-bridges"]
         }
 
         // Flavor-specific source sets
@@ -442,7 +442,7 @@ dependencies {
     implementation 'androidx.camera:camera-view:1.4.2'
     implementation 'com.google.zxing:core:3.5.3'
 
-    // JNA — обязательна для биндингов UniFFI: сгенерированный aegis.kt
+    // JNA — обязательна для биндингов UniFFI: сгенерированный gasapp.kt
     // обращается к нативной библиотеке через com.sun.jna. Классификатор
     // `@aar` важен: обычный jar не содержит нативных частей JNA под Android,
     // и приложение падало бы при первом вызове ядра.
@@ -503,20 +503,20 @@ dependencies {
 // * ключа подписи нет — APK неподписан.
 //
 // Для проверочной сборки на стенде (R8, запуск на эмуляторе) проверка
-// снимается явно: -PaegisAllowUnreleasable=true. Случайно так не выйдет.
+// снимается явно: -PgasappAllowUnreleasable=true. Случайно так не выйдет.
 gradle.taskGraph.whenReady { graph ->
     def releasing = graph.allTasks.any { task ->
         task.project == project && task.name ==~ /(assemble|bundle|package)\w*Release/
     }
 
-    if (!releasing || project.hasProperty('aegisAllowUnreleasable')) {
+    if (!releasing || project.hasProperty('gasappAllowUnreleasable')) {
         return
     }
 
     def problems = []
 
-    if (!project.hasProperty('aegisServerUrl')) {
-        problems << "не задан aegisServerUrl — релиз указал бы на 10.0.2.2"
+    if (!project.hasProperty('gasappServerUrl')) {
+        problems << "не задан gasappServerUrl — релиз указал бы на 10.0.2.2"
     }
 
     def pins = file('src/release/res/xml/network_security_config.xml').text
@@ -525,14 +525,14 @@ gradle.taskGraph.whenReady { graph ->
         problems << "пины сертификата в release/res/xml/network_security_config.xml — заглушки"
     }
 
-    if (!project.hasProperty('aegisKeystore')) {
-        problems << "не задан aegisKeystore — APK вышел бы неподписанным"
+    if (!project.hasProperty('gasappKeystore')) {
+        problems << "не задан gasappKeystore — APK вышел бы неподписанным"
     }
 
     if (!problems.isEmpty()) {
         throw new GradleException(
             "Релиз не собирается:\n  • " + problems.join("\n  • ") +
-                "\nДля проверочной сборки на стенде: -PaegisAllowUnreleasable=true"
+                "\nДля проверочной сборки на стенде: -PgasappAllowUnreleasable=true"
         )
     }
 }
@@ -542,20 +542,20 @@ gradle.taskGraph.whenReady { graph ->
 // По умолчанию — android/tor/bridges.txt из репозитория. Свои мосты,
 // которые не стоит светить в открытом репозитории (их адреса
 // блокировщики собирали бы оттуда), подставляются при сборке:
-//   ./gradlew assembleRelease -PaegisBridgesFile=/путь/к/bridges.txt
+//   ./gradlew assembleRelease -PgasappBridgesFile=/путь/к/bridges.txt
 // Строки проверяет ядро при запуске Tor; негодная отбрасывается,
 // а не ломает Tor целиком.
-def aegisBridgesSource = file(project.findProperty('aegisBridgesFile') ?: "${rootDir}/tor/bridges.txt")
-def aegisBridgesOut = file("$buildDir/generated/aegis-bridges/tor")
+def gasappBridgesSource = file(project.findProperty('gasappBridgesFile') ?: "${rootDir}/tor/bridges.txt")
+def gasappBridgesOut = file("$buildDir/generated/gasapp-bridges/tor")
 
-tasks.register('aegisBridges') {
-    inputs.file(aegisBridgesSource).optional()
-    outputs.dir(aegisBridgesOut)
+tasks.register('gasappBridges') {
+    inputs.file(gasappBridgesSource).optional()
+    outputs.dir(gasappBridgesOut)
     doLast {
-        aegisBridgesOut.mkdirs()
-        def text = aegisBridgesSource.exists() ? aegisBridgesSource.getText('UTF-8') : ''
-        new File(aegisBridgesOut, 'bridges.txt').setText(text, 'UTF-8')
+        gasappBridgesOut.mkdirs()
+        def text = gasappBridgesSource.exists() ? gasappBridgesSource.getText('UTF-8') : ''
+        new File(gasappBridgesOut, 'bridges.txt').setText(text, 'UTF-8')
     }
 }
 
-preBuild.dependsOn('aegisBridges')
+preBuild.dependsOn('gasappBridges')

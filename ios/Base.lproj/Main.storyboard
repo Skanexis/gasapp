@@ -12,7 +12,7 @@
         <!--View Controller-->
         <scene sceneID="tne-QT-ifu">
             <objects>
-                <viewController id="ejL-ee-0eS" customClass="ViewController" customModule="AEGIS" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController id="ejL-ee-0eS" customClass="ViewController" customModule="GasApp" customModuleProvider="target" sceneMemberID="viewController">
                     <layoutGuides>
                         <viewControllerLayoutGuide type="top" id="y3c-jy-aDJ"/>
                         <viewControllerLayoutGuide type="bottom" id="wfy-db-euE"/>

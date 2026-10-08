@@ -4,8 +4,8 @@
 //!
 //! # ⚠️ Почему это общий файл, а не по копии в каждом наборе
 //!
-//! Было по копии. `aegis-server-api/tests/http.rs` применял четыре
-//! миграции, `client_contract.rs` — одну, `aegis-server-db/tests/
+//! Было по копии. `gasapp-server-api/tests/http.rs` применял четыре
+//! миграции, `client_contract.rs` — одну, `gasapp-server-db/tests/
 //! postgres.rs` — тоже одну, и все три начинали с `DROP TABLE`.
 //!
 //! База при этом одна. Наборы тестов — разные исполняемые файлы,
@@ -14,7 +14,7 @@
 //! в итоге, зависело от того, кто успел последним, — то есть набор
 //! мог оказаться красным или зелёным без единого изменения в коде.
 //!
-//! Заметить это было нечем: без `AEGIS_TEST_DATABASE_URL` все три
+//! Заметить это было нечем: без `GASAPP_TEST_DATABASE_URL` все три
 //! набора молча пропускались, и гонка не разыгрывалась ни разу.
 //!
 //! Подключается через `#[path]`, а не крейтом: крейт с тестовыми
@@ -39,7 +39,7 @@ const BOOTSTRAP_LOCK: i64 = 0x0AE6_1500;
 /// Хранится в базе. Пока он совпадает, схема не пересоздаётся —
 /// значит второй набор тестов не снесёт таблицы из-под первого.
 const SCHEMA_FINGERPRINT: &str =
-    "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013+0014+0015+0016";
+    "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013+0014+0015+0016+0017+0018";
 
 /// Адрес тестовой базы, если он задан.
 ///
@@ -50,17 +50,17 @@ const SCHEMA_FINGERPRINT: &str =
 /// в `http.rs` были красными всё время, пока считались пройденными:
 /// подпись в них делалась не тем алгоритмом, и сервер отвечал `401`.
 ///
-/// Поэтому в CI выставляется `AEGIS_REQUIRE_DATABASE`, и отсутствие
+/// Поэтому в CI выставляется `GASAPP_REQUIRE_DATABASE`, и отсутствие
 /// адреса становится падением, а не тишиной. На машине разработчика
 /// без Postgres тесты по-прежнему пропускаются.
 #[must_use]
 pub fn database_url() -> Option<String> {
-    match std::env::var("AEGIS_TEST_DATABASE_URL") {
+    match std::env::var("GASAPP_TEST_DATABASE_URL") {
         Ok(url) if !url.is_empty() => Some(url),
         _ => {
             assert!(
-                std::env::var("AEGIS_REQUIRE_DATABASE").is_err(),
-                "AEGIS_REQUIRE_DATABASE задан, а AEGIS_TEST_DATABASE_URL — нет: \
+                std::env::var("GASAPP_REQUIRE_DATABASE").is_err(),
+                "GASAPP_REQUIRE_DATABASE задан, а GASAPP_TEST_DATABASE_URL — нет: \
                  интеграционные тесты обязаны выполняться, а не пропускаться"
             );
 
@@ -88,7 +88,7 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
         .expect("блокировка подготовки");
 
     let current: Option<String> =
-        sqlx::query_scalar("SELECT fingerprint FROM aegis_test_schema LIMIT 1")
+        sqlx::query_scalar("SELECT fingerprint FROM gasapp_test_schema LIMIT 1")
             .fetch_optional(&mut *conn)
             .await
             .unwrap_or(None);
@@ -98,7 +98,8 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
         // на пустую базу. Здесь схема готовится к прогону, поэтому
         // прежняя сносится целиком.
         sqlx::raw_sql(
-            "DROP TABLE IF EXISTS aegis_test_schema, admin_actions, admin_state,
+            "DROP TABLE IF EXISTS gasapp_test_schema, channel_posts, channels,
+                 email_codes, admin_actions, admin_state,
                  kt_leaves, kt_epochs, sealed_sender_reports,
                  sealed_sender_access, attachments, push_tokens, envelopes,
                  one_time_prekeys, signed_prekeys, devices, accounts CASCADE",
@@ -127,6 +128,8 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
             include_str!("../migrations/0014_key_transparency.sql"),
             include_str!("../migrations/0015_admin_center.sql"),
             include_str!("../migrations/0016_report_certificates.sql"),
+            include_str!("../migrations/0017_email_registration.sql"),
+            include_str!("../migrations/0018_premium_channels.sql"),
         ] {
             sqlx::raw_sql(migration)
                 .execute(&mut *conn)
@@ -134,12 +137,12 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
                 .expect("миграция применяется");
         }
 
-        sqlx::raw_sql("CREATE TABLE aegis_test_schema (fingerprint TEXT NOT NULL)")
+        sqlx::raw_sql("CREATE TABLE gasapp_test_schema (fingerprint TEXT NOT NULL)")
             .execute(&mut *conn)
             .await
             .expect("метка схемы создаётся");
 
-        sqlx::query("INSERT INTO aegis_test_schema (fingerprint) VALUES ($1)")
+        sqlx::query("INSERT INTO gasapp_test_schema (fingerprint) VALUES ($1)")
             .bind(SCHEMA_FINGERPRINT)
             .execute(&mut *conn)
             .await

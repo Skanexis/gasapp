@@ -25,13 +25,13 @@
     <!-- Шапка шагов: назад и полоска хода. На приветствии скрыта. -->
     <LinearLayout
         android:id="@+id/onboarding_bar"
-        style="@style/AegisAppBar"
+        style="@style/GasAppAppBar"
         android:visibility="gone"
         tools:visibility="visible">
 
         <ImageView
             android:id="@+id/onboarding_back"
-            style="@style/AegisIconButton"
+            style="@style/GasAppIconButton"
             android:layout_marginStart="-12dp"
             android:contentDescription="@string/back"
             android:src="@drawable/ic_back"
@@ -60,11 +60,19 @@
                 android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_step_segment" />
+
+            <View
+                android:id="@+id/onboarding_step_3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_step_segment" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/onboarding_step_label"
-            style="@style/AegisCaption"
+            style="@style/GasAppCaption"
             android:layout_width="wrap_content"
             android:layout_marginEnd="@dimen/space_xs"
             tools:text="1 / 2" />
@@ -89,91 +97,115 @@
                 android:layout_height="wrap_content"
                 android:gravity="center_horizontal"
                 android:orientation="vertical"
-                android:paddingStart="@dimen/space_l"
-                android:paddingTop="@dimen/space_2xl"
-                android:paddingEnd="@dimen/space_l"
                 android:paddingBottom="@dimen/space_l">
 
-                <!-- Знак AEGIS: гильоширная розетка со щитом в окне. -->
-                <FrameLayout
-                    android:layout_width="168dp"
-                    android:layout_height="168dp">
+                <!--
+                  Сцена GasApp во всю ширину: ночная поляна, на ней —
+                  логотип объёмными буквами (DESIGN.md, «Night Camp»).
+                  У страницы нет боковых отступов — они стоят на каждом
+                  блоке ниже сцены.
 
-                    <org.aegis.app.components.GuillocheView
-                        android:id="@+id/onboarding_seal"
+                  Персонаж: поверх сцены стоит слот под картинку владельца
+                  (`@drawable/art_mascot`, см. design/art/README.md). Пока
+                  картинки нет, слот скрыт — OnboardingActivity показывает
+                  его, только если ресурс существует.
+                -->
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="232dp">
+
+                    <org.gasapp.app.components.NightSceneView
                         android:layout_width="match_parent"
                         android:layout_height="match_parent" />
 
                     <ImageView
-                        android:layout_width="44dp"
-                        android:layout_height="44dp"
+                        android:id="@+id/onboarding_mascot"
+                        android:layout_width="wrap_content"
+                        android:layout_height="168dp"
+                        android:layout_gravity="bottom|center_horizontal"
+                        android:layout_marginBottom="@dimen/space_l"
+                        android:adjustViewBounds="true"
+                        android:importantForAccessibility="no"
+                        android:visibility="gone" />
+
+                    <org.gasapp.app.components.WordmarkView
+                        android:id="@+id/onboarding_wordmark"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:contentDescription="@null"
-                        android:src="@drawable/ic_shield"
-                        app:tint="@color/accent_base" />
+                        android:rotation="-4"
+                        app:wordmarkSize="56sp" />
                 </FrameLayout>
 
-                <TextView
-                    style="@style/AegisText.H1"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_l"
-                    android:accessibilityHeading="true"
-                    android:gravity="center"
-                    android:text="@string/onboarding_welcome_title" />
-
-                <TextView
-                    style="@style/AegisText.Body.Secondary"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_s"
-                    android:gravity="center"
-                    android:lineSpacingExtra="4sp"
-                    android:text="@string/onboarding_tagline" />
-
-                <!-- Три обещания — коротко и без жаргона. -->
                 <LinearLayout
-                    style="@style/AegisGroup"
-                    android:layout_marginTop="@dimen/space_l"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingStart="@dimen/space_m"
-                    android:paddingTop="@dimen/space_xs"
-                    android:paddingEnd="@dimen/space_m"
-                    android:paddingBottom="@dimen/space_xs">
-
-                    <TextView
-                        style="@style/AegisOnboardingFeature"
-                        android:drawableStart="@drawable/ic_lock"
-                        android:text="@string/onboarding_feature_e2e" />
-
-                    <TextView
-                        style="@style/AegisOnboardingFeature"
-                        android:drawableStart="@drawable/ic_users"
-                        android:text="@string/onboarding_feature_no_phone" />
-
-                    <TextView
-                        style="@style/AegisOnboardingFeature"
-                        android:drawableStart="@drawable/ic_globe"
-                        android:text="@string/onboarding_feature_tor" />
-                </LinearLayout>
-
-                <!--
-                  🔐 Предупреждение об аудите. Красная рамка и полный кегль:
-                  требование раздела 21 плана.
-                -->
-                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_m"
-                    android:background="@drawable/bg_warning_box"
-                    android:drawablePadding="10dp"
-                    android:fontFamily="@font/inter"
-                    android:padding="14dp"
-                    android:text="@string/onboarding_audit_warning"
-                    android:textColor="@color/status_error"
-                    android:textSize="14sp"
-                    app:drawableStartCompat="@drawable/ic_alert_small"
-                    app:drawableTint="@color/status_error" />
+                    android:orientation="vertical"
+                    android:paddingStart="@dimen/space_l"
+                    android:paddingEnd="@dimen/space_l">
+
+                    <TextView
+                        style="@style/GasAppText.H2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/rubik"
+                        android:gravity="center"
+                        android:text="@string/onboarding_welcome_title"
+                        android:textFontWeight="900" />
+
+                    <TextView
+                        style="@style/GasAppText.Body.Secondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_s"
+                        android:gravity="center"
+                        android:lineSpacingExtra="4sp"
+                        android:text="@string/onboarding_tagline" />
+
+                    <!-- Три обещания — коротко и без жаргона. -->
+                    <LinearLayout
+                        style="@style/GasAppGroup"
+                        android:layout_marginTop="@dimen/space_l"
+                        android:background="@drawable/bg_card_rounded"
+                        android:paddingStart="@dimen/space_m"
+                        android:paddingTop="@dimen/space_xs"
+                        android:paddingEnd="@dimen/space_m"
+                        android:paddingBottom="@dimen/space_xs">
+
+                        <TextView
+                            style="@style/GasAppOnboardingFeature"
+                            android:drawableStart="@drawable/ic_lock"
+                            android:text="@string/onboarding_feature_e2e" />
+
+                        <TextView
+                            style="@style/GasAppOnboardingFeature"
+                            android:drawableStart="@drawable/ic_users"
+                            android:text="@string/onboarding_feature_no_phone" />
+
+                        <TextView
+                            style="@style/GasAppOnboardingFeature"
+                            android:drawableStart="@drawable/ic_globe"
+                            android:text="@string/onboarding_feature_tor" />
+                    </LinearLayout>
+
+                    <!--
+                      🔐 Предупреждение об аудите. Красная рамка и полный кегль:
+                      требование раздела 21 плана.
+                    -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_m"
+                        android:background="@drawable/bg_warning_box"
+                        android:drawablePadding="10dp"
+                        android:fontFamily="@font/inter"
+                        android:padding="14dp"
+                        android:text="@string/onboarding_audit_warning"
+                        android:textColor="@color/status_error"
+                        android:textSize="14sp"
+                        app:drawableStartCompat="@drawable/ic_alert_small"
+                        app:drawableTint="@color/status_error" />
+                </LinearLayout>
             </LinearLayout>
 
             <!-- ============ Шаг 1: имя ============ -->
@@ -189,14 +221,14 @@
                 android:visibility="gone">
 
                 <TextView
-                    style="@style/AegisText.H1"
+                    style="@style/GasAppText.H1"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:accessibilityHeading="true"
                     android:text="@string/onboarding_username_title" />
 
                 <TextView
-                    style="@style/AegisText.Body.Secondary"
+                    style="@style/GasAppText.Body.Secondary"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
@@ -209,12 +241,12 @@
                   на место подсказки, а не добавляется к ней.
                 -->
                 <TextView
-                    style="@style/AegisSectionLabel"
+                    style="@style/GasAppSectionLabel"
                     android:layout_marginTop="@dimen/space_l"
                     android:labelFor="@id/onboarding_username"
                     android:text="@string/onboarding_username_label" />
 
-                <org.aegis.app.components.AegisTextField
+                <org.gasapp.app.components.GasAppTextField
                     android:id="@+id/onboarding_username"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -232,11 +264,45 @@
 
                 <TextView
                     android:id="@+id/onboarding_username_helper"
-                    style="@style/AegisCaption"
+                    style="@style/GasAppCaption"
                     android:layout_marginTop="@dimen/space_s"
                     android:accessibilityLiveRegion="polite"
                     android:drawablePadding="6dp"
                     android:text="@string/onboarding_username_helper" />
+
+                <!--
+                  Адрес почты: на него придёт код подтверждения. Сервер
+                  хранит только хеш адреса — подсказка под полем говорит
+                  это прямо, до того как человек его введёт.
+                -->
+                <TextView
+                    style="@style/GasAppSectionLabel"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:labelFor="@id/onboarding_email"
+                    android:text="@string/onboarding_email_label" />
+
+                <org.gasapp.app.components.GasAppTextField
+                    android:id="@+id/onboarding_email"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:autofillHints="emailAddress"
+                    android:hint="@string/onboarding_email_hint"
+                    android:imeOptions="actionNext"
+                    android:inputType="textEmailAddress"
+                    android:maxLength="254"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="15sp"
+                    app:fieldIcon="@drawable/ic_mail" />
+
+                <TextView
+                    android:id="@+id/onboarding_email_helper"
+                    style="@style/GasAppCaption"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:accessibilityLiveRegion="polite"
+                    android:drawablePadding="6dp"
+                    android:text="@string/onboarding_email_helper" />
 
                 <!--
                   🔐 Tor — по умолчанию (ADR-024). Прямое соединение отдаёт
@@ -256,12 +322,12 @@
                     android:orientation="vertical">
 
                 <TextView
-                    style="@style/AegisSectionLabel"
+                    style="@style/GasAppSectionLabel"
                     android:layout_marginTop="@dimen/space_l"
                     android:text="@string/onboarding_network_label" />
 
                 <LinearLayout
-                    style="@style/AegisGroup"
+                    style="@style/GasAppGroup"
                     android:background="@drawable/bg_card_rounded"
                     android:paddingStart="@dimen/space_m"
                     android:paddingTop="@dimen/space_xs"
@@ -283,7 +349,7 @@
 
                     <TextView
                         android:id="@+id/onboarding_network_hint"
-                        style="@style/AegisCaption"
+                        style="@style/GasAppCaption"
                         android:text="@string/onboarding_network_tor" />
                 </LinearLayout>
                 </LinearLayout>
@@ -304,7 +370,7 @@
 
                 <TextView
                     android:id="@+id/onboarding_pin_title"
-                    style="@style/AegisText.H1"
+                    style="@style/GasAppText.H1"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:accessibilityHeading="true"
@@ -317,7 +383,7 @@
                   на изъятом устройстве.
                 -->
                 <TextView
-                    style="@style/AegisText.Body.Secondary"
+                    style="@style/GasAppText.Body.Secondary"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_s"
@@ -342,7 +408,7 @@
 
                 <TextView
                     android:id="@+id/onboarding_error"
-                    style="@style/AegisCaption"
+                    style="@style/GasAppCaption"
                     android:layout_width="match_parent"
                     android:layout_marginTop="@dimen/space_m"
                     android:accessibilityLiveRegion="assertive"
@@ -356,7 +422,7 @@
                     tools:visibility="visible" />
 
                 <!-- Появляется, когда Tor не подключается: возможно, он заблокирован. -->
-                <org.aegis.app.components.AegisButton
+                <org.gasapp.app.components.GasAppButton
                     android:id="@+id/onboarding_add_bridge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -425,7 +491,7 @@
 
                         <TextView
                             android:id="@+id/onboarding_stage_1_label"
-                            style="@style/AegisCaption"
+                            style="@style/GasAppCaption"
                             android:layout_width="0dp"
                             android:layout_weight="1"
                             android:layout_marginStart="@dimen/space_s"
@@ -471,7 +537,7 @@
 
                         <TextView
                             android:id="@+id/onboarding_stage_2_label"
-                            style="@style/AegisCaption"
+                            style="@style/GasAppCaption"
                             android:layout_width="0dp"
                             android:layout_weight="1"
                             android:layout_marginStart="@dimen/space_s"
@@ -517,7 +583,7 @@
 
                         <TextView
                             android:id="@+id/onboarding_stage_3_label"
-                            style="@style/AegisCaption"
+                            style="@style/GasAppCaption"
                             android:layout_width="0dp"
                             android:layout_weight="1"
                             android:layout_marginStart="@dimen/space_s"
@@ -527,18 +593,94 @@
 
                     <TextView
                         android:id="@+id/onboarding_progress_label"
-                        style="@style/AegisCaption"
+                        style="@style/GasAppCaption"
                         android:layout_width="match_parent"
                         android:layout_marginStart="28dp"
                         android:accessibilityLiveRegion="polite"
                         android:text="@string/onboarding_working" />
                 </LinearLayout>
             </LinearLayout>
+
+            <!-- ============ Шаг 3: код из письма ============ -->
+            <LinearLayout
+                android:id="@+id/onboarding_page_code"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/space_l"
+                android:paddingTop="@dimen/space_s"
+                android:paddingEnd="@dimen/space_l"
+                android:paddingBottom="@dimen/space_l"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/GasAppText.H1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityHeading="true"
+                    android:text="@string/onboarding_code_title" />
+
+                <!-- Куда ушло письмо — адресом, чтобы опечатку было видно. -->
+                <TextView
+                    android:id="@+id/onboarding_code_subtitle"
+                    style="@style/GasAppText.Body.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:lineSpacingExtra="4sp"
+                    tools:text="We sent a 6-digit code to anna@example.org. It is valid for 15 minutes." />
+
+                <TextView
+                    style="@style/GasAppSectionLabel"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:labelFor="@id/onboarding_code"
+                    android:text="@string/onboarding_code_label" />
+
+                <!--
+                  Код — системной клавиатурой: это не секрет устройства,
+                  а одноразовое число из письма, и автоподстановка из
+                  почты/SMS здесь помогает, а не вредит.
+                -->
+                <org.gasapp.app.components.GasAppTextField
+                    android:id="@+id/onboarding_code"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:digits="0123456789"
+                    android:hint="@string/onboarding_code_hint"
+                    android:imeOptions="actionDone"
+                    android:importantForAutofill="no"
+                    android:fontFamily="monospace"
+                    android:inputType="number"
+                    android:letterSpacing="0.3"
+                    android:maxLength="6"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="20sp"
+                    app:fieldIcon="@drawable/ic_key" />
+
+                <TextView
+                    android:id="@+id/onboarding_code_helper"
+                    style="@style/GasAppCaption"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:accessibilityLiveRegion="polite"
+                    android:drawablePadding="6dp"
+                    android:text="@string/onboarding_code_helper" />
+
+                <org.gasapp.app.components.GasAppButton
+                    android:id="@+id/onboarding_resend"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:text="@string/onboarding_code_resend"
+                    app:buttonSize="small"
+                    app:buttonVariant="secondary" />
+            </LinearLayout>
         </FrameLayout>
     </ScrollView>
 
     <!-- Кнопки шага: закреплены внизу, видна та, что относится к шагу. -->
-    <org.aegis.app.components.AegisButton
+    <org.gasapp.app.components.GasAppButton
         android:id="@+id/onboarding_start"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -554,7 +696,7 @@
       за человеком после переустановки. PIN задаётся на следующем шаге —
       им шифруется новая база.
     -->
-    <org.aegis.app.components.AegisButton
+    <org.gasapp.app.components.GasAppButton
         android:id="@+id/onboarding_recover"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -564,7 +706,7 @@
         android:text="@string/onboarding_recover"
         app:buttonVariant="ghost" />
 
-    <org.aegis.app.components.AegisButton
+    <org.gasapp.app.components.GasAppButton
         android:id="@+id/onboarding_next"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -576,7 +718,7 @@
         app:buttonSize="large"
         app:buttonVariant="primary" />
 
-    <org.aegis.app.components.AegisButton
+    <org.gasapp.app.components.GasAppButton
         android:id="@+id/onboarding_create"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -584,6 +726,18 @@
         android:layout_marginTop="@dimen/space_s"
         android:layout_marginEnd="@dimen/space_l"
         android:text="@string/onboarding_create"
+        android:visibility="gone"
+        app:buttonSize="large"
+        app:buttonVariant="primary" />
+
+    <org.gasapp.app.components.GasAppButton
+        android:id="@+id/onboarding_confirm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_l"
+        android:layout_marginTop="@dimen/space_s"
+        android:layout_marginEnd="@dimen/space_l"
+        android:text="@string/onboarding_code_confirm"
         android:visibility="gone"
         app:buttonSize="large"
         app:buttonVariant="primary" />

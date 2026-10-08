@@ -3,69 +3,6 @@
 version = 4
 
 [[package]]
-name = "aegis-server-admin"
-version = "0.1.0"
-dependencies = [
- "aegis-server-db",
- "axum",
- "hex",
- "rand",
- "serde",
- "sha2",
- "sqlx",
- "subtle",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "aegis-server-api"
-version = "0.1.0"
-dependencies = [
- "aegis-server-api",
- "aegis-server-db",
- "axum",
- "axum-server",
- "curve25519-dalek",
- "ed25519-dalek",
- "hex",
- "hyper-util",
- "ml-dsa",
- "rand",
- "rand_core",
- "rcgen",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "subtle",
- "thiserror 2.0.20",
- "tokio",
- "tokio-rustls",
- "tower",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "aegis-server-db"
-version = "0.1.0"
-dependencies = [
- "sha2",
- "sqlx",
- "subtle",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -694,6 +631,70 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "gasapp-server-admin"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "gasapp-server-db",
+ "hex",
+ "rand",
+ "serde",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "gasapp-server-api"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-server",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "gasapp-server-api",
+ "gasapp-server-db",
+ "hex",
+ "hmac",
+ "hyper-util",
+ "ml-dsa",
+ "rand",
+ "rand_core",
+ "rcgen",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "gasapp-server-db"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+ "sqlx",
+ "subtle",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

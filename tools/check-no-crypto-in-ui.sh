@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Правило 1 (AEGIS_MASTER_PLAN.md §4.1): UI не занимается криптографией.
+# Правило 1 (GASAPP_MASTER_PLAN.md §4.1): UI не занимается криптографией.
 #
 # UI-слой вызывает core.sendMessage(chatId, plaintext).
 # UI-слой не вызывает deriveKey(), encryptAES(), updateRatchet().
@@ -72,7 +72,7 @@ FORBIDDEN_ANDROID='javax\.crypto|java\.security\.(KeyPairGenerator|Signature|Mes
 # Тестовые исходники (`src/test`, `src/androidTest`) не сканируются:
 # они не часть интерфейса и не попадают в APK, а заготовки для
 # проверки аттестации без `KeyPairGenerator` и `Signature` не собрать.
-ALLOWED='ios/AEGIS/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/aegis/platform/KeyProtection.kt|android/app/src/main/kotlin/org/aegis/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/aegis/app/core/BiometricUnlock.kt|android/app/src/main/kotlin/org/aegis/app/core/KeyAttestation.kt|android/app/src/main/kotlin/org/aegis/app/core/AppSignature.kt|android/app/src/main/kotlin/org/aegis/app/core/OpenedKey.kt|android/app/src/main/kotlin/org/aegis/app/core/TeeKey.kt|/src/test/|/src/androidTest/'
+ALLOWED='ios/GasApp/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/gasapp/platform/KeyProtection.kt|android/app/src/main/kotlin/org/gasapp/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/gasapp/app/core/BiometricUnlock.kt|android/app/src/main/kotlin/org/gasapp/app/core/KeyAttestation.kt|android/app/src/main/kotlin/org/gasapp/app/core/AppSignature.kt|android/app/src/main/kotlin/org/gasapp/app/core/OpenedKey.kt|android/app/src/main/kotlin/org/gasapp/app/core/TeeKey.kt|/src/test/|/src/androidTest/'
 
 violations=0
 
@@ -90,7 +90,7 @@ scan() {
       echo "  $line"
     done
     echo ""
-    echo "  Вся криптография принадлежит Rust-ядру (crates/aegis-protocol)."
+    echo "  Вся криптография принадлежит Rust-ядру (crates/gasapp-protocol)."
     echo "  Если это платформенная обёртка аппаратного хранилища — добавьте"
     echo "  файл в ALLOWED и обоснуйте это в описании PR."
     violations=$((violations + 1))
