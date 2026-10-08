@@ -24,6 +24,14 @@
 |---|---|---|---|---|
 | Identifiers → **User ID** | Да | Да (это и есть аккаунт) | Нет | App Functionality |
 | Identifiers → **Device ID** | Да | Да | Нет | App Functionality |
+| Contact Info → **Email Address** | **Да** | Да | Нет | App Functionality (создание аккаунта, один адрес — один аккаунт) |
+
+⚠️ **Email Address — с 2026-10-07.** Аккаунт создаётся после
+подтверждения адреса кодом из письма. Сервер хранит не адрес, а его
+хеш, но для Apple это всё равно «собирается» и «связано с
+пользователем»: хеш лежит рядом с аккаунтом и позволяет проверить
+известный адрес. Письмо отправляет почтовая служба — указать её как
+обработчика в политике.
 
 Всё остальное — **не собирается**:
 
@@ -36,7 +44,7 @@
 * **Location** — нет; стране при запросе мостов у Tor Project не
   передаётся.
 * **Diagnostics, Usage Data, Browsing History** — нет ни одного SDK.
-* **Contact Info** (имя, почта, телефон) — не запрашиваются.
+* **Contact Info** — имя и телефон не запрашиваются; почта — см. выше.
 
 Tracking: **No**. App Tracking Transparency не нужен.
 
@@ -80,13 +88,18 @@ Tracking: **No**. App Tracking Transparency не нужен.
 ## 4. Review Notes (вставить как есть, по-английски)
 
 ```text
-GasApp is an end-to-end encrypted messenger. Accounts need no phone
-number or email: a user picks a username and a 6-digit PIN.
+GasApp is an end-to-end encrypted messenger with one-author channels.
+Accounts need no phone number: a user picks a username, confirms an
+email address with a 6-digit code and sets a 6-digit PIN. The email is
+used only to create the account; the server keeps a hash of it.
 
 HOW TO TEST
-1. Tap "Create account", choose any free username and PIN.
+1. Tap "Create account", choose any free username, enter an email
+   address you can read, then choose a PIN.
 2. The app connects through Tor by default; the first connection takes
-   20-60 seconds.
+   20-60 seconds. A 6-digit code is then emailed to you - enter it.
+   You may leave the app to read the email; after you return and enter
+   your PIN, the app comes back to the code screen.
 3. To test messaging, message our demo account: tap the pencil button
    and enter the username "gasapp_review_1". It is monitored during
    review and will reply.

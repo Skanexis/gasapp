@@ -24,6 +24,13 @@
 #     SMTP_PASSWORD=...
 #     MAIL_FROM=no-reply@example.org
 #     MAIL_FROM_NAME=GasApp
+#     SMTP_CACERT=/etc/gasapp/pki/ca.pem
+#
+# `SMTP_USER`/`SMTP_PASSWORD` и `SMTP_CACERT` необязательны. Последний
+# нужен, когда письмо уходит не прямо в почтовую службу, а на свой
+# релей во внутренней сети с сертификатом внутреннего центра — так
+# устроено развёртывание из РАЗВЁРТЫВАНИЕ.md: узлу API запрещена
+# внешняя сеть, и в интернет ходит только релей.
 #
 # Ищется так:
 #
@@ -78,6 +85,7 @@ smtp_user="$(setting SMTP_USER)"
 smtp_password="$(setting SMTP_PASSWORD)"
 mail_from="$(setting MAIL_FROM)"
 mail_from_name="$(setting MAIL_FROM_NAME)"
+smtp_cacert="$(setting SMTP_CACERT)"
 
 [[ -n "$smtp_url" && -n "$mail_from" ]] || fail "в настройках почты нет SMTP_URL или MAIL_FROM"
 
@@ -135,6 +143,9 @@ escape() {
     printf 'mail-rcpt = "%s"\n' "$(escape "$recipient")"
     if [[ -n "$smtp_user" ]]; then
         printf 'user = "%s:%s"\n' "$(escape "$smtp_user")" "$(escape "$smtp_password")"
+    fi
+    if [[ -n "$smtp_cacert" ]]; then
+        printf 'cacert = "%s"\n' "$(escape "$smtp_cacert")"
     fi
     printf 'upload-file = "%s"\n' "$message"
     printf 'max-time = 20\n'
