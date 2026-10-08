@@ -95,17 +95,25 @@ pub fn first_contact_challenge(destination_device_id: &str, sealed: &[u8]) -> [u
 }
 
 /// Домен-разделитель челленджа запроса кода на почту.
-const EMAIL_CODE_DOMAIN: &[u8] = b"GASAPP_POW_EMAIL_v1";
+const EMAIL_CODE_DOMAIN: &[u8] = b"GASAPP_POW_EMAIL_v2";
 
-/// Челлендж запроса кода подтверждения: хеш каноничного адреса.
+/// Наибольшая сложность письма, на которую клиент согласен.
 ///
-/// Письмо стоит работы: без неё сервер рассылал бы коды на любые
-/// адреса даром. Решение привязано к адресу; повторные письма на тот
-/// же адрес ограничивает уже не работа, а счётчик в базе.
+/// Сервер поднимает цену под нагрузкой — до базовой плюс шесть бит.
+/// Требование выше — не нагрузка, а сервер, который хочет занять
+/// телефон работой на часы: клиент отказывается.
+pub const MAX_EMAIL_DIFFICULTY: u32 = 28;
+
+/// Челлендж запроса кода подтверждения: адрес и окно времени.
+///
+/// Письмо стоит работы, и решение привязано к адресу и к
+/// десятиминутному окну, которое называет сервер: заготовить решения
+/// впрок нельзя. Цена растёт с нагрузкой узла — её тоже называет
+/// сервер (`ApiClient::email_challenge`).
 ///
 /// ⚠️ Продублирован на другой стороне (разные лицензии); эталон — тест.
 #[must_use]
-pub fn email_code_challenge(normalized_email: &str) -> [u8; CHALLENGE_LEN] {
+pub fn email_code_challenge(normalized_email: &str, window: u64) -> [u8; CHALLENGE_LEN] {
     let mut hasher = Sha256::new();
     hasher.update(EMAIL_CODE_DOMAIN);
     hasher.update(
@@ -114,31 +122,7 @@ pub fn email_code_challenge(normalized_email: &str) -> [u8; CHALLENGE_LEN] {
             .to_be_bytes(),
     );
     hasher.update(normalized_email.as_bytes());
-    hasher.finalize().into()
-}
-
-/// Домен-разделитель челленджа подписки на канал.
-const SUBSCRIBE_DOMAIN: &[u8] = b"GASAPP_POW_SUB_v1";
-
-/// Сложность подписки на канал, в битах — та же, что требует сервер.
-pub const SUBSCRIBE_DIFFICULTY: u32 = 20;
-
-/// Челлендж подписки: канал и жетон подписчика.
-///
-/// Подписка анонимна, и цена за неё — работа, привязанная к каналу
-/// и жетону.
-///
-/// ⚠️ Продублирован на другой стороне (разные лицензии); эталон — тест.
-#[must_use]
-pub fn subscribe_challenge(channel_id: &str, token: &[u8]) -> [u8; CHALLENGE_LEN] {
-    let channel = channel_id.to_ascii_lowercase();
-
-    let mut hasher = Sha256::new();
-    hasher.update(SUBSCRIBE_DOMAIN);
-    for field in [channel.as_bytes(), token] {
-        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_be_bytes());
-        hasher.update(field);
-    }
+    hasher.update(window.to_be_bytes());
     hasher.finalize().into()
 }
 
@@ -242,24 +226,12 @@ mod tests {
     /// Эталон посчитан независимой реализацией (Python, hashlib);
     /// тот же вектор проверяет сервер.
     #[test]
-    fn subscribe_challenge_matches_the_reference() {
-        assert_eq!(
-            subscribe_challenge("00000000-0000-0000-0000-000000000001", &[7u8; 32])
-                .get(..8)
-                .expect("восемь байт"),
-            [0xe2, 0x63, 0x05, 0x7a, 0x8c, 0x54, 0xb0, 0x0e]
-        );
-    }
-
-    /// Эталон посчитан независимой реализацией (Python, hashlib);
-    /// тот же вектор проверяет сервер.
-    #[test]
     fn email_code_challenge_matches_the_reference() {
         assert_eq!(
-            email_code_challenge("alice@example.org")
+            email_code_challenge("alice@example.org", 2_933_334)
                 .get(..8)
                 .expect("восемь байт"),
-            [0x2a, 0xb0, 0x34, 0x10, 0x90, 0x4a, 0xbd, 0xc5]
+            [0x5c, 0xe7, 0xd7, 0xf0, 0x58, 0x8d, 0x60, 0x2f]
         );
     }
 

@@ -363,6 +363,17 @@ pub struct EmailCodeRequest {
     pub email: String,
     /// Решение proof-of-work над `pow::email_code_challenge`.
     pub pow_nonce: u64,
+    /// Окно времени, для которого найдено решение.
+    pub window: u64,
+}
+
+/// Условия запроса письма с кодом.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailChallengeResponse {
+    /// Сколько ведущих нулевых бит требует узел сейчас.
+    pub difficulty: u32,
+    /// Текущее окно времени.
+    pub window: u64,
 }
 
 /// Состояние своего аккаунта.
@@ -408,6 +419,27 @@ pub struct UpdateChannelRequest {
 pub struct PublishPostRequest {
     /// Шифротекст записи, hex.
     pub body: String,
+    /// Номер, под которым автор ждёт запись, — он же лежит внутри
+    /// шифротекста. Если канал успел уйти вперёд, сервер отвечает
+    /// `409` и запись не сохраняет.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+}
+
+/// Запрос назначения администратора канала.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddChannelAdminRequest {
+    /// Устройство будущего администратора, UUID, — из его заявки.
+    pub device_id: String,
+    /// Публичный ключ, которым он подписывает записи, hex.
+    pub verify_key: String,
+}
+
+/// Запрос снятия администратора канала.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoveChannelAdminRequest {
+    /// Его публичный ключ подписи, hex.
+    pub verify_key: String,
 }
 
 /// Ответ на публикацию и правку.
@@ -499,8 +531,35 @@ pub struct ChannelPostResponse {
 pub struct ChannelSubscribeRequest {
     /// Жетон подписчика, hex.
     pub token: String,
-    /// Решение proof-of-work над `pow::subscribe_challenge`.
-    pub pow_nonce: u64,
+    /// Зерно пропуска, hex.
+    pub pass_seed: String,
+    /// Код траты пропуска на эту подписку, hex.
+    pub pass_mac: String,
+}
+
+/// Запрос пропусков: замаскированные точки на подпись.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssuePassesRequest {
+    /// Точки, hex.
+    pub blinded: Vec<String>,
+}
+
+/// Подписанная точка с доказательством.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedPass {
+    /// Подписанная точка, hex.
+    pub point: String,
+    /// Доказательство, что подписано объявленным ключом, hex.
+    pub proof: String,
+}
+
+/// Ответ на запрос пропусков.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssuePassesResponse {
+    /// Публичный ключ пропусков узла, hex.
+    pub key: String,
+    /// Подписанные точки — в порядке запроса.
+    pub signed: Vec<SignedPass>,
 }
 
 /// Запрос отписки.

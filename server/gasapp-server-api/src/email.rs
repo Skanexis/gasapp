@@ -291,6 +291,45 @@ pub struct CodeRequest {
     pub email: String,
     /// Решение proof-of-work над [`crate::pow::email_code_challenge`].
     pub pow_nonce: u64,
+    /// Окно времени, для которого найдено решение (см. [`challenge`]).
+    pub window: u64,
+}
+
+/// Условия запроса письма: что решать и насколько это сейчас дорого.
+#[derive(Debug, serde::Serialize)]
+pub struct ChallengeResponse {
+    /// Сколько ведущих нулевых бит требует узел прямо сейчас.
+    pub difficulty: u32,
+    /// Текущее окно времени.
+    pub window: u64,
+}
+
+/// Сколько писем узел уже отправил за последнюю минуту.
+fn letters_sent(state: &AppState) -> Result<(crate::rate_limit::LimitKey, u32, u32), ApiError> {
+    // Один ключ на всех: предел общий (см. `CODES_PER_MINUTE`).
+    let key = crate::rate_limit::key_from_addr(&state.limiter_salt, "email-codes");
+    let limiter = state
+        .email_code_limiter
+        .lock()
+        .map_err(|_| ApiError::Internal)?;
+    let limit = limiter.limit();
+    let remaining = limiter.remaining(&key, crate::routes::now_millis());
+
+    Ok((key, limit.saturating_sub(remaining), limit))
+}
+
+/// Отдаёт условия запроса письма — без подписи: аккаунта ещё нет.
+///
+/// Цена растёт с нагрузкой узла (см. [`crate::pow::email_difficulty`]).
+pub(crate) async fn challenge(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ChallengeResponse>, ApiError> {
+    let (_, used, limit) = letters_sent(&state)?;
+
+    Ok(Json(ChallengeResponse {
+        difficulty: crate::pow::email_difficulty(state.pow_difficulty, used, limit),
+        window: crate::pow::email_window(crate::routes::now_millis()),
+    }))
 }
 
 /// Отправляет письмо с кодом подтверждения — шаг перед регистрацией.
@@ -304,21 +343,34 @@ pub struct CodeRequest {
 ///
 /// # Порядок проверок
 ///
-/// Форма адреса → работа → общий предел узла → предел на адрес (в базе)
-/// → отправка. Дешёвое раньше дорогого, и письмо — последним.
+/// Форма адреса → окно → работа по текущей цене → общий предел узла →
+/// предел на адрес (в базе) → отправка. Дешёвое раньше дорогого,
+/// и письмо — последним.
 pub(crate) async fn request_code(
     State(state): State<Arc<AppState>>,
     Json(request): Json<CodeRequest>,
 ) -> Result<StatusCode, ApiError> {
     let email = normalize(&request.email).ok_or(ApiError::BadRequest)?;
 
-    let challenge = crate::pow::email_code_challenge(&email);
-    crate::pow::verify(&challenge, request.pow_nonce, state.pow_difficulty)
-        .map_err(|_| ApiError::Unauthorized)?;
+    // 🔐 Решение годится в своём окне и в следующем: заготовленные
+    // впрок решения нельзя выложить разом через неделю.
+    let now_window = crate::pow::email_window(crate::routes::now_millis());
+    if request.window > now_window || now_window.saturating_sub(request.window) > 1 {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Цена — та, что действует сейчас, а не та, что была, когда клиент
+    // спрашивал: если узел успели нагрузить, клиент спросит ещё раз.
+    let (key, used, limit) = letters_sent(&state)?;
+    let challenge = crate::pow::email_code_challenge(&email, request.window);
+    crate::pow::verify(
+        &challenge,
+        request.pow_nonce,
+        crate::pow::email_difficulty(state.pow_difficulty, used, limit),
+    )
+    .map_err(|_| ApiError::Unauthorized)?;
 
     {
-        // Один ключ на всех: предел общий (см. `CODES_PER_MINUTE`).
-        let key = crate::rate_limit::key_from_addr(&state.limiter_salt, "email-codes");
         let mut limiter = state
             .email_code_limiter
             .lock()

@@ -529,6 +529,22 @@ fn export_to_bundle(export: &BackupExport, now: Timestamp) -> BackupBundle {
                 pq_identity_hash: *hash,
             })
             .collect(),
+        channels: export.channels.as_ref().map(|channels| {
+            channels
+                .iter()
+                .map(|channel| gasapp_backup::bundle::ChannelRecord {
+                    channel_id: channel.channel_id,
+                    secret: channel.secret,
+                    verify_key: channel.verify_key,
+                    signing_key: channel.signing_key,
+                    title: channel.title.clone(),
+                    muted: channel.muted,
+                    sub_token: channel.sub_token,
+                    joined_at_millis: channel.joined_at.as_millis(),
+                    admin_labels: channel.admin_labels.clone(),
+                })
+                .collect()
+        }),
     }
 }
 
@@ -561,6 +577,22 @@ fn bundle_to_export(bundle: &BackupBundle, now: Timestamp) -> BackupExport {
             .iter()
             .map(|record| (uuid_to_account(record.account_id), record.pq_identity_hash))
             .collect(),
+        channels: bundle.channels.as_ref().map(|channels| {
+            channels
+                .iter()
+                .map(|channel| gasapp_storage::channels::ChannelBackupRow {
+                    channel_id: channel.channel_id,
+                    secret: channel.secret,
+                    verify_key: channel.verify_key,
+                    signing_key: channel.signing_key,
+                    title: channel.title.clone(),
+                    muted: channel.muted,
+                    sub_token: channel.sub_token,
+                    joined_at: Timestamp::from_millis(channel.joined_at_millis),
+                    admin_labels: channel.admin_labels.clone(),
+                })
+                .collect()
+        }),
         watermark: now,
     }
 }

@@ -151,8 +151,8 @@ pub struct AppState {
     pub channel_post_limiter: Mutex<RateLimiter>,
     /// Ограничитель действий читателя канала — по жетону подписчика.
     pub channel_reader_limiter: Mutex<RateLimiter>,
-    /// Сложность proof-of-work подписки на канал.
-    pub subscribe_difficulty: u32,
+    /// Ключ, которым узел подписывает пропуска (см. `pass`).
+    pub pass_key: crate::pass::PassKey,
 }
 
 /// Сколько вложений узел принимает одновременно.
@@ -263,7 +263,7 @@ impl AppState {
                 crate::channels::READER_ACTIONS_PER_MINUTE,
                 nodes,
             ))),
-            subscribe_difficulty: crate::channels::SUBSCRIBE_DIFFICULTY,
+            pass_key: crate::pass::PassKey::derive(&certificate_key),
         }
     }
 }
@@ -612,6 +612,16 @@ fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/channels/own/:device_id/:channel_id/posts",
             post(crate::channels::publish).put(crate::channels::replace),
         )
+        // Пропуска: аккаунт берёт их за подписью, тратит анонимно.
+        .route(
+            "/v1/passes/issue/:device_id",
+            post(crate::channels::issue_passes),
+        )
+        // Администраторы канала: назначает и снимает только владелец.
+        .route(
+            "/v1/channels/own/:device_id/:channel_id/admins",
+            post(crate::channels::add_admin).delete(crate::channels::remove_admin),
+        )
         // Медиа канала: шифроблоб сырыми байтами. Предел тела поднят
         // только здесь. Место загрузки (общее с вложениями) занимает
         // слой проверки подписи — он читает тело раньше любого слоя
@@ -668,6 +678,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/accounts/register", post(register))
         // Письмо с кодом подтверждения адреса — шаг перед регистрацией.
         .route("/v1/accounts/email/code", post(crate::email::request_code))
+        // Условия запроса письма: окно времени и текущая цена.
+        .route("/v1/accounts/email/challenge", get(crate::email::challenge))
         .merge(channel_routes(&state))
         // 🔐 Перепривязка аккаунта к новой identity — без подписи
         // устройства (старых устройств у человека уже нет): право

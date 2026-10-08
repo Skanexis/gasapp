@@ -58,6 +58,7 @@ mod blocks;
 mod channels;
 mod kt;
 mod network;
+mod passes;
 mod pq;
 mod requests;
 mod sealed;
@@ -65,8 +66,8 @@ mod signup;
 
 pub use blocks::ReportOutcome;
 pub use channels::{
-    Channel, ChannelAttachment, ChannelEntry, ChannelPreview, ChannelReaction, CHANNEL_REACTIONS,
-    MAX_CHANNEL_MEDIA_BYTES,
+    Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry, ChannelPreview, ChannelReaction,
+    ChannelRole, CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
 };
 use gasapp_protocol::account_recovery::AccountRecoveryKey;
 use gasapp_protocol::pq_identity::PqIdentityKeyPair;
@@ -346,11 +347,36 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::Crypto`] — не удалось подобрать proof-of-work.
     pub fn request_email_code(&self, email: &str) -> Result<()> {
         let email = gasapp_net::email::normalize(email).ok_or(GasAppError::InvalidEmail)?;
-        let challenge = pow::email_code_challenge(&email);
-        let pow_nonce = pow::solve(&challenge, POW_DIFFICULTY).ok_or(GasAppError::Crypto)?;
 
-        self.api
-            .request_email_code(&EmailCodeRequest { email, pow_nonce })
+        // Цена письма растёт с нагрузкой узла, и между «спросил цену»
+        // и «прислал решение» она могла подняться: тогда сервер отвечает
+        // отказом, и цена спрашивается ещё раз.
+        let mut outcome = Err(GasAppError::Network);
+
+        for _ in 0..EMAIL_CODE_ATTEMPTS {
+            let terms = self.api.email_challenge()?;
+
+            // 🔐 Сервер, требующий работы на часы, — не нагрузка, а отказ
+            // под видом задачи: клиент её не берёт.
+            if terms.difficulty > pow::MAX_EMAIL_DIFFICULTY {
+                return Err(GasAppError::Network);
+            }
+
+            let challenge = pow::email_code_challenge(&email, terms.window);
+            let pow_nonce = pow::solve(&challenge, terms.difficulty).ok_or(GasAppError::Crypto)?;
+
+            outcome = self.api.request_email_code(&EmailCodeRequest {
+                email: email.clone(),
+                pow_nonce,
+                window: terms.window,
+            });
+
+            if !matches!(outcome, Err(GasAppError::InvalidSignature)) {
+                break;
+            }
+        }
+
+        outcome
     }
 
     /// Регистрирует новый аккаунт и публикует предключи.
@@ -3270,6 +3296,10 @@ impl<T: Transport> Client<T> {
 
 /// Сколько чатов перебирается при поиске подходящей сессии.
 const MAX_CHATS_TO_PROBE: u32 = 256;
+
+/// Сколько раз запрос письма переспрашивает цену, если она успела
+/// вырасти, пока решалась задача.
+const EMAIL_CODE_ATTEMPTS: u32 = 3;
 
 /// Предел размера вложения в байтах.
 ///

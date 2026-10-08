@@ -125,12 +125,19 @@ fn unique_email() -> String {
 
 /// Просит письмо с кодом так, как это делает клиент.
 async fn request_code(state: &Arc<AppState>, email: &str) -> StatusCode {
-    let challenge = pow::email_code_challenge(email);
+    // Как клиент: сначала условия, затем решение по ним.
+    let (_, terms) = get(state, "/v1/accounts/email/challenge").await;
+    let window = terms["window"].as_u64().unwrap();
+    let difficulty = u32::try_from(terms["difficulty"].as_u64().unwrap()).unwrap();
+    let challenge = pow::email_code_challenge(email, window);
+    let nonce = (0..u64::MAX)
+        .find(|nonce| pow::verify(&challenge, *nonce, difficulty).is_ok())
+        .unwrap();
 
     post(
         state,
         "/v1/accounts/email/code",
-        serde_json::json!({ "email": email, "pow_nonce": solve(&challenge) }),
+        serde_json::json!({ "email": email, "pow_nonce": nonce, "window": window }),
     )
     .await
     .0
@@ -367,7 +374,8 @@ async fn a_second_letter_waits() {
 async fn a_letter_costs_work() {
     let (state, mailer) = require_state!();
     let email = unique_email();
-    let challenge = pow::email_code_challenge(&email);
+    let window = pow::email_window(common::now_millis());
+    let challenge = pow::email_code_challenge(&email, window);
     let wrong = (0..u64::MAX)
         .find(|nonce| pow::verify(&challenge, *nonce, common::TEST_DIFFICULTY).is_err())
         .unwrap();
@@ -375,12 +383,77 @@ async fn a_letter_costs_work() {
     let (status, _) = post(
         &state,
         "/v1/accounts/email/code",
-        serde_json::json!({ "email": email, "pow_nonce": wrong }),
+        serde_json::json!({ "email": email, "pow_nonce": wrong, "window": window }),
     )
     .await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(mailer.letters_to(&email), 0);
+}
+
+/// 🔐 Решение, заготовленное впрок, не годится: оно привязано к окну
+/// времени, и ни прошлое, ни будущее окно не принимается.
+#[tokio::test]
+async fn a_stale_solution_buys_no_letter() {
+    let (state, mailer) = require_state!();
+    let now = pow::email_window(common::now_millis());
+
+    for window in [now - 2, now + 1] {
+        let email = unique_email();
+        let challenge = pow::email_code_challenge(&email, window);
+        let (status, _) = post(
+            &state,
+            "/v1/accounts/email/code",
+            serde_json::json!({ "email": email, "pow_nonce": solve(&challenge), "window": window }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "окно {window}");
+        assert_eq!(mailer.letters_to(&email), 0);
+    }
+}
+
+/// 🔐 Чем больше писем узел отправил за минуту, тем дороже следующее:
+/// решение по вчерашней цене перестаёт приниматься, по новой — проходит.
+#[tokio::test]
+async fn letters_get_dearer_as_the_node_fills_up() {
+    let (state, _mailer) = require_state!();
+
+    let (_, calm) = get(&state, "/v1/accounts/email/challenge").await;
+    assert_eq!(calm["difficulty"], common::TEST_DIFFICULTY);
+
+    // Четверть минутного бюджета писем узла.
+    let budget = gasapp_server_api::email::CODES_PER_MINUTE;
+    for _ in 0..budget / 4 {
+        assert_eq!(
+            request_code(&state, &unique_email()).await,
+            StatusCode::NO_CONTENT
+        );
+    }
+
+    let (_, busy) = get(&state, "/v1/accounts/email/challenge").await;
+    assert_eq!(busy["difficulty"], common::TEST_DIFFICULTY + 2);
+
+    // Решение по прежней цене, которое новой не удовлетворяет.
+    let email = unique_email();
+    let window = pow::email_window(common::now_millis());
+    let challenge = pow::email_code_challenge(&email, window);
+    let cheap = (0..u64::MAX)
+        .find(|nonce| {
+            pow::verify(&challenge, *nonce, common::TEST_DIFFICULTY).is_ok()
+                && pow::verify(&challenge, *nonce, common::TEST_DIFFICULTY + 2).is_err()
+        })
+        .unwrap();
+    let (status, _) = post(
+        &state,
+        "/v1/accounts/email/code",
+        serde_json::json!({ "email": email, "pow_nonce": cheap, "window": window }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Клиент, спросивший цену заново, письмо получает.
+    assert_eq!(request_code(&state, &email).await, StatusCode::NO_CONTENT);
 }
 
 /// 🔐 Адрес в базе не лежит — только его хеш.
@@ -810,18 +883,128 @@ async fn channel_with_posts(state: &Arc<AppState>, count: usize) -> (DeviceKey, 
     (private, device_id, channel_id)
 }
 
+/// Клиентская половина пропуска — то же, что делает приложение
+/// (`gasapp-protocol::pass`): замаскировать, снять маску, посчитать
+/// код траты. Сервер видит только то, что эти функции отдают наружу.
+#[allow(clippy::arithmetic_side_effects)]
+mod pass_client {
+    use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+    use curve25519_dalek::scalar::Scalar;
+    use hmac::{Hmac, Mac as _};
+    use sha2::{Digest as _, Sha256, Sha512};
+
+    /// Заготовка: зерно и маска.
+    pub struct Pending {
+        pub seed: [u8; 32],
+        blind: Scalar,
+    }
+
+    fn point_of(seed: &[u8; 32]) -> RistrettoPoint {
+        let mut hasher = Sha512::new();
+        hasher.update(b"GASAPP_PASS_v1_POINT");
+        hasher.update(seed);
+
+        RistrettoPoint::from_uniform_bytes(&hasher.finalize().into())
+    }
+
+    pub fn prepare(seed: [u8; 32], blind: [u8; 32]) -> (Pending, String) {
+        let mut wide = [0u8; 64];
+        wide[..32].copy_from_slice(&blind);
+        let blind = Scalar::from_bytes_mod_order_wide(&wide);
+        let blinded = (blind * point_of(&seed)).compress();
+
+        (Pending { seed, blind }, hex::encode(blinded.as_bytes()))
+    }
+
+    /// Секрет пропуска по ответу сервера.
+    pub fn finish(pending: &Pending, signed_hex: &str) -> [u8; 32] {
+        let signed: [u8; 32] = hex::decode(signed_hex).unwrap().try_into().unwrap();
+        let point = CompressedRistretto(signed).decompress().unwrap();
+
+        (pending.blind.invert() * point).compress().to_bytes()
+    }
+
+    pub fn mac(secret: &[u8; 32], binding: &[u8]) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret).unwrap();
+        mac.update(b"GASAPP_PASS_v1_REDEEM");
+        mac.update(&Sha256::digest(binding));
+
+        hex::encode(mac.finalize().into_bytes())
+    }
+}
+
+/// Пропуск: зерно и секрет.
+type Pass = ([u8; 32], [u8; 32]);
+
+/// Берёт `count` пропусков для аккаунта — как приложение.
+async fn take_passes(
+    state: &Arc<AppState>,
+    private: &DeviceKey,
+    device_id: Uuid,
+    count: usize,
+) -> (StatusCode, Vec<Pass>) {
+    let pending: Vec<_> = (0..count)
+        .map(|_| pass_client::prepare(key(), key()))
+        .collect();
+    let blinded: Vec<&String> = pending.iter().map(|(_, blinded)| blinded).collect();
+
+    let (status, issued) = signed(
+        state,
+        private,
+        "POST",
+        &format!("/v1/passes/issue/{device_id}"),
+        Some(serde_json::json!({ "blinded": blinded })),
+    )
+    .await;
+
+    if status != StatusCode::OK {
+        return (status, Vec::new());
+    }
+
+    let passes = pending
+        .iter()
+        .zip(issued["signed"].as_array().unwrap())
+        .map(|((pending, _), signed)| {
+            (
+                pending.seed,
+                pass_client::finish(pending, signed["point"].as_str().unwrap()),
+            )
+        })
+        .collect();
+
+    (status, passes)
+}
+
+/// Один пропуск от только что заведённого аккаунта.
+async fn fresh_pass(state: &Arc<AppState>) -> Pass {
+    let private = device_key();
+    let device_id = register(state, &unique_name("reader"), &private).await;
+    let (status, mut passes) = take_passes(state, &private, device_id, 1).await;
+    assert_eq!(status, StatusCode::OK);
+
+    passes.pop().unwrap()
+}
+
+/// Тело запроса подписки жетона `token` с пропуском `pass`.
+fn subscription(channel_id: Uuid, token: &[u8; 32], pass: &Pass) -> serde_json::Value {
+    let binding = gasapp_server_api::pass::subscribe_binding(&channel_id.to_string(), token);
+
+    serde_json::json!({
+        "token": hex::encode(token),
+        "pass_seed": hex::encode(pass.0),
+        "pass_mac": pass_client::mac(&pass.1, &binding),
+    })
+}
+
 /// Подписывает случайный жетон на канал; возвращает жетон в hex.
 async fn subscribe_token(state: &Arc<AppState>, channel_id: Uuid) -> String {
     let token = key();
-    let challenge = pow::subscribe_challenge(&channel_id.to_string(), &token);
-    let nonce = (0u64..1_000_000)
-        .find(|nonce| pow::verify(&challenge, *nonce, state.subscribe_difficulty).is_ok())
-        .expect("решение находится");
+    let pass = fresh_pass(state).await;
 
     let (status, _) = post(
         state,
         &format!("/v1/channels/feed/{channel_id}/subscribe"),
-        serde_json::json!({ "token": hex::encode(token), "pow_nonce": nonce }),
+        subscription(channel_id, &token, &pass),
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -1147,14 +1330,11 @@ async fn subscribers_views_and_reactions_are_counted() {
 
     // Повторная подписка тем же жетоном второго подписчика не даёт.
     let token: [u8; 32] = hex::decode(&first).unwrap().try_into().unwrap();
-    let challenge = pow::subscribe_challenge(&channel_id.to_string(), &token);
-    let nonce = (0u64..1_000_000)
-        .find(|nonce| pow::verify(&challenge, *nonce, state.subscribe_difficulty).is_ok())
-        .unwrap();
+    let again = fresh_pass(&state).await;
     post(
         &state,
         &format!("{feed}/subscribe"),
-        serde_json::json!({ "token": first, "pow_nonce": nonce }),
+        subscription(channel_id, &token, &again),
     )
     .await;
 
@@ -1352,25 +1532,383 @@ async fn reactions_are_a_closed_set_from_subscribers_only() {
     assert_eq!(status, StatusCode::NOT_FOUND, "записи нет");
 }
 
-/// Подписка стоит работы: без решения счётчик не растёт.
+/// 🔐 Подписка стоит пропуска: без него, с поддельным, с чужим
+/// (на другой канал или жетон) и с уже потраченным счётчик не растёт.
 #[tokio::test]
-async fn subscribing_costs_work() {
+async fn subscribing_costs_a_pass() {
     let (state, _mailer) = require_state!();
     let (_private, _device, channel_id) = channel_with_posts(&state, 0).await;
+    let (_other_key, _other_device, other_channel) = channel_with_posts(&state, 0).await;
+    let uri = format!("/v1/channels/feed/{channel_id}/subscribe");
     let token = key();
-    let challenge = pow::subscribe_challenge(&channel_id.to_string(), &token);
-    let wrong = (0..u64::MAX)
-        .find(|nonce| pow::verify(&challenge, *nonce, state.subscribe_difficulty).is_err())
-        .unwrap();
 
-    let (status, _) = post(
-        &state,
-        &format!("/v1/channels/feed/{channel_id}/subscribe"),
-        serde_json::json!({ "token": hex::encode(token), "pow_nonce": wrong }),
-    )
-    .await;
+    // Выдуманный пропуск: секрета `k·H(seed)` у выдумавшего нет.
+    let forged = (key(), key());
+    let (status, _) = post(&state, &uri, subscription(channel_id, &token, &forged)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Настоящий пропуск, но код траты посчитан на другой канал и на
+    // другой жетон: перехвативший запрос не потратит его на своё.
+    let pass = fresh_pass(&state).await;
+    let (status, _) = post(&state, &uri, subscription(other_channel, &token, &pass)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let mut swapped = subscription(channel_id, &token, &pass);
+    swapped["token"] = serde_json::json!(hex::encode(key()));
+    let (status, _) = post(&state, &uri, swapped).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     let (_, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
     assert_eq!(info["subscribers"], 0);
+
+    // Тот же пропуск по назначению проходит — отказы выше его не сожгли.
+    let (status, _) = post(&state, &uri, subscription(channel_id, &token, &pass)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // И второй раз — уже нет: ни на тот же жетон, ни на другой.
+    let (status, _) = post(&state, &uri, subscription(channel_id, &token, &pass)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let another = key();
+    let (status, _) = post(&state, &uri, subscription(channel_id, &another, &pass)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (_, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
+    assert_eq!(info["subscribers"], 1);
+}
+
+/// Пропуск не сгорает на канале, которого нет.
+#[tokio::test]
+async fn a_pass_survives_a_missing_channel() {
+    let (state, _mailer) = require_state!();
+    let (_private, _device, channel_id) = channel_with_posts(&state, 0).await;
+    let pass = fresh_pass(&state).await;
+    let token = key();
+    let missing = Uuid::new_v4();
+
+    let (status, _) = post(
+        &state,
+        &format!("/v1/channels/feed/{missing}/subscribe"),
+        subscription(missing, &token, &pass),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = post(
+        &state,
+        &format!("/v1/channels/feed/{channel_id}/subscribe"),
+        subscription(channel_id, &token, &pass),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+/// 🔐 Пропуска выдаются аккаунту и в ограниченном числе: это и есть
+/// предел накрутки подписчиков. Без подписи устройства их не дают.
+#[tokio::test]
+async fn passes_are_rationed_per_account() {
+    let (state, _mailer) = require_state!();
+    let private = device_key();
+    let device_id = register(&state, &unique_name("greedy"), &private).await;
+    let per_day = usize::try_from(gasapp_server_db::passes::PASSES_PER_DAY).unwrap();
+    let per_request = gasapp_server_db::passes::MAX_PASSES_PER_REQUEST;
+
+    let (status, _) = take_passes(&state, &private, device_id, per_request + 1).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "больше, чем за один запрос"
+    );
+
+    let mut taken = 0;
+    while taken + per_request <= per_day {
+        let (status, passes) = take_passes(&state, &private, device_id, per_request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(passes.len(), per_request);
+        taken += per_request;
+    }
+
+    // Остаток до предела берётся, сверх него — нет; и отказ ничего
+    // не списывает: меньший запрос в пределах всё ещё проходит.
+    let left = per_day - taken;
+    let (status, _) = take_passes(&state, &private, device_id, left + 1).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    if left > 0 {
+        let (status, _) = take_passes(&state, &private, device_id, left).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, _) = take_passes(&state, &private, device_id, 1).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+    // Без подписи устройства — никому.
+    let (status, _) = post(
+        &state,
+        &format!("/v1/passes/issue/{device_id}"),
+        serde_json::json!({ "blinded": [hex::encode(key())] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Мусор вместо точки — отказ, а не подпись.
+    let other = device_key();
+    let other_device = register(&state, &unique_name("junk"), &other).await;
+    let (status, _) = signed(
+        &state,
+        &other,
+        "POST",
+        &format!("/v1/passes/issue/{other_device}"),
+        Some(serde_json::json!({ "blinded": [hex::encode([0xffu8; 32])] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// 🔐 В базе выданное с потраченным не связать: у выдачи — аккаунт
+/// и число, у траты — хеш зерна, которого сервер при выдаче не видел.
+#[tokio::test]
+async fn issuance_and_spending_are_not_linked_in_the_database() {
+    let (state, _mailer) = require_state!();
+    let (_private, _device, channel_id) = channel_with_posts(&state, 0).await;
+    let private = device_key();
+    let device_id = register(&state, &unique_name("quiet"), &private).await;
+    let (_, passes) = take_passes(&state, &private, device_id, 1).await;
+    let pass = passes[0];
+
+    post(
+        &state,
+        &format!("/v1/channels/feed/{channel_id}/subscribe"),
+        subscription(channel_id, &key(), &pass),
+    )
+    .await;
+
+    let spent: Vec<Vec<u8>> = sqlx::query_scalar("SELECT seed_hash FROM spent_passes")
+        .fetch_all(&state.pool)
+        .await
+        .unwrap();
+    assert!(spent.iter().any(|hash| hash.len() == 32));
+    // Само зерно и секрет пропуска в базе не лежат.
+    assert!(spent
+        .iter()
+        .all(|hash| hash.as_slice() != pass.0.as_slice()));
+    assert!(spent
+        .iter()
+        .all(|hash| hash.as_slice() != pass.1.as_slice()));
+
+    let columns: Vec<String> = sqlx::query_scalar(
+        "SELECT column_name::text FROM information_schema.columns
+          WHERE table_name = 'spent_passes' ORDER BY column_name",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(columns, vec!["seed_hash", "spent_on"]);
+}
+
+// ---------------------------------------------------------------------------
+//  Администраторы канала (миграция 0020)
+// ---------------------------------------------------------------------------
+
+/// Администратор, назначенный владельцем, пишет, правит и загружает
+/// файлы; всё остальное в канале остаётся за владельцем.
+#[tokio::test]
+async fn an_admin_writes_but_does_not_own() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = channel_with_posts(&state, 1).await;
+    let admin_key = device_key();
+    let admin_device = register(&state, &unique_name("admin"), &admin_key).await;
+    let admin_posts = format!("/v1/channels/own/{admin_device}/{channel_id}/posts");
+    let verify_key = hex::encode(key());
+
+    // До назначения — чужой.
+    let (status, _) = signed(
+        &state,
+        &admin_key,
+        "POST",
+        &admin_posts,
+        Some(serde_json::json!({ "body": hex::encode(b"early") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let admins = format!("/v1/channels/own/{owner_device}/{channel_id}/admins");
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &admins,
+        Some(serde_json::json!({ "device_id": admin_device, "verify_key": verify_key })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, published) = signed(
+        &state,
+        &admin_key,
+        "POST",
+        &admin_posts,
+        Some(serde_json::json!({ "body": hex::encode(b"from admin"), "seq": 2 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(published["seq"], 2);
+
+    // Правка чужой записи — тоже работа администратора.
+    let (status, _) = signed(
+        &state,
+        &admin_key,
+        "PUT",
+        &admin_posts,
+        Some(serde_json::json!({ "seq": 1, "body": hex::encode(b"fixed") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let media = signed_request(
+        &admin_key,
+        "POST",
+        &format!("/v1/channels/own/{admin_device}/{channel_id}/media"),
+        "application/octet-stream",
+        vec![5u8; 64],
+    );
+    let (status, _) = send(&state, media).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // 🔐 Описание, публичность, состав администраторов и удаление
+    // канала — только владелец.
+    let own = format!("/v1/channels/own/{admin_device}/{channel_id}");
+    for (method, uri, body) in [
+        (
+            "PUT",
+            own.clone(),
+            Some(serde_json::json!({ "meta": hex::encode(b"mine") })),
+        ),
+        (
+            "PUT",
+            own.clone(),
+            Some(serde_json::json!({
+                "set_public": true,
+                "handle": unique_name("grab"),
+                "public_link": link_to(channel_id),
+            })),
+        ),
+        (
+            "POST",
+            format!("{own}/admins"),
+            Some(serde_json::json!({ "device_id": admin_device, "verify_key": verify_key })),
+        ),
+        ("DELETE", own.clone(), None),
+    ] {
+        let (status, _) = signed(&state, &admin_key, method, &uri, body).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method} {uri}");
+    }
+
+    // Снятый администратор снова чужой.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &admins,
+        Some(serde_json::json!({ "verify_key": verify_key })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = signed(
+        &state,
+        &admin_key,
+        "POST",
+        &admin_posts,
+        Some(serde_json::json!({ "body": hex::encode(b"late") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Чужой не назначает администраторов, владелец — не назначает себя
+/// и несуществующее устройство.
+#[tokio::test]
+async fn only_the_owner_appoints_admins() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = channel_with_posts(&state, 0).await;
+    let stranger_key = device_key();
+    let stranger_device = register(&state, &unique_name("stranger"), &stranger_key).await;
+    let body =
+        |device: Uuid| serde_json::json!({ "device_id": device, "verify_key": hex::encode(key()) });
+
+    let (status, _) = signed(
+        &state,
+        &stranger_key,
+        "POST",
+        &format!("/v1/channels/own/{stranger_device}/{channel_id}/admins"),
+        Some(body(stranger_device)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let admins = format!("/v1/channels/own/{owner_device}/{channel_id}/admins");
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &admins,
+        Some(body(owner_device)),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "владелец — не администратор себе"
+    );
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &admins,
+        Some(body(Uuid::new_v4())),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "устройства нет");
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &admins,
+        Some(serde_json::json!({ "device_id": stranger_device, "verify_key": "abcd" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "ключ не той длины");
+}
+
+/// 🔐 Двое назвали один следующий номер: второму запись не сохраняется,
+/// и в ленте не остаётся записи, которую читатели отвергли бы.
+#[tokio::test]
+async fn a_post_with_a_stale_number_is_not_stored() {
+    let (state, _mailer) = require_state!();
+    let (private, device_id, channel_id) = channel_with_posts(&state, 2).await;
+    let posts = format!("/v1/channels/own/{device_id}/{channel_id}/posts");
+
+    let (status, _) = signed(
+        &state,
+        &private,
+        "POST",
+        &posts,
+        Some(serde_json::json!({ "body": hex::encode(b"late"), "seq": 2 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (_, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
+    assert_eq!(info["last_seq"], 2);
+    assert_eq!(info["last_rev"], 2);
+
+    let (status, published) = signed(
+        &state,
+        &private,
+        "POST",
+        &posts,
+        Some(serde_json::json!({ "body": hex::encode(b"in time"), "seq": 3 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(published["seq"], 3);
 }

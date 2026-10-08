@@ -569,10 +569,13 @@ nonce      = 12 random bytes
 padded     = pad(content)                         (buckets of §7, min 512 bytes)
 ciphertext = AES-256-GCM(K_read, nonce, padded,
                          aad = "GASAPP_CHANNEL_v1_AAD" ‖ kind ‖ channel_id)
-signature  = Ed25519.Sign(sk, "GASAPP_CHANNEL_v1_SIG" ‖ kind ‖ channel_id
-                              ‖ nonce ‖ ciphertext)
-wire       = 0x02 ‖ kind ‖ nonce ‖ signature ‖ ciphertext
+signature  = Ed25519.Sign(sk_signer, "GASAPP_CHANNEL_v1_SIG" ‖ kind ‖ channel_id
+                                     ‖ vk_signer ‖ nonce ‖ ciphertext)
+wire       = 0x02 ‖ kind ‖ vk_signer ‖ nonce ‖ signature ‖ ciphertext
 ```
+
+`vk_signer` is the public key of whoever signed the record: the owner
+(`vk` from the link) or an administrator (below).
 
 The leading byte is the wire version. Version 1 (text-only posts, no
 revisions) was never deployed and is not read.
@@ -587,10 +590,11 @@ All integers are big-endian. `block16(x)` is `len(x) (u16) ‖ x`.
   with each edit; `edited_at_millis` is 0 until the first edit.
 * **Deletion mark:** `number (u64) ‖ revision (u32) ‖ deleted_at_millis (i64)`.
 * **Description:** `updated_at_millis (i64) ‖ block16(title) ‖
-  block16(description) ‖ pinned (u64) ‖ block16(avatar)`. Title at most
-  64 characters, description at most 500. `pinned` is the number of the
-  pinned post, 0 for none. `avatar` is an attachment descriptor, empty
-  for none.
+  block16(description) ‖ pinned (u64) ‖ block16(avatar) ‖ count (u8) ‖
+  count × admin`. Title at most 64 characters, description at most 500.
+  `pinned` is the number of the pinned post, 0 for none. `avatar` is an
+  attachment descriptor, empty for none. `admin` is
+  `vk (32) ‖ active (u8: 1 or 0) ‖ until (u64)`; at most 16 entries.
 
 Trailing bytes after the last field are an error.
 
@@ -603,10 +607,38 @@ device, at most 32 MiB) and fetched without authentication
 (`/v1/channels/feed/…/media/…`). The server holds ciphertext and its
 padded length; the key travels inside the encrypted post.
 
-**Reading.** A reader verifies the signature with `vk` **from the link**
-(strict Ed25519 verification) before decrypting, and rejects:
+**Administrators.** The owner may let others write to the channel. A
+would-be administrator generates their own Ed25519 key pair on their
+device and shows the owner a request
+`gasapp://channel-admin/<hex(channel_id)>.<base32(vk_admin)>.<hex(device_id)>`
+(no secrets in it). The owner then
+
+1. tells the server to accept posts from the account of `device_id`, and
+2. adds `vk_admin` to the admin list in the description — which only
+   the owner signs.
+
+An administrator can publish, edit and delete posts and upload media.
+The description (title, pin, avatar, admin list), the public handle and
+the channel's deletion stay with the owner.
+
+To remove an administrator the owner first tells the server to stop
+accepting their posts, then reads the channel's last sequence number `n`
+and marks the entry `active = 0, until = n`. The entry is kept: without
+it the posts that administrator already wrote would stop verifying.
+
+**Reading.** A reader takes the admin list from the newest accepted
+description. A description is accepted only if signed by `vk` **from the
+link**; a post or deletion mark is accepted only if `vk_signer` is `vk`
+or an admin entry that covers the record's number (active, or
+`number ≤ until`). Verification is strict Ed25519 and precedes
+decryption. A reader rejects:
 
 * a channel whose server-side `verify_key` differs from `vk` in the link;
+* a description signed by anyone but the owner — an administrator cannot
+  add administrators;
+* a record signed by a key that is not the owner's and not in the admin
+  list, or by a removed administrator for a number above their `until` —
+  the server cannot appoint administrators or bring a removed one back;
 * a post or deletion mark whose inner `number` differs from the sequence
   number the server served it under — the server cannot reorder posts,
   replay one in another position, or delete one post with another's mark;
@@ -633,18 +665,12 @@ history; older pages are fetched on demand.
 
 **Subscribers, views and reactions.** A reader that joins a channel
 generates a 32-byte random token for that channel and registers it
-(`/v1/channels/feed/…/subscribe`). Registration costs proof-of-work over
-
-```
-SHA-256("GASAPP_POW_SUB_v1" ‖ len ‖ lowercase(channel_uuid) ‖ len ‖ token)
-```
-
-with 20 leading zero bits, `len` being the field length as u64. The
-server stores `SHA-256(token)`. Requests carrying the token — subscribe,
-unsubscribe, "read up to post N", react — are **not** signed by the
-device and are sent on a separate anonymous Tor circuit. A reaction is one
-of eight fixed emoji; free text is refused, otherwise readers could
-write into someone else's channel.
+(`/v1/channels/feed/…/subscribe`). Registration costs one pass (§9.9),
+bound to the channel and the token. The server stores `SHA-256(token)`.
+Requests carrying the token — subscribe, unsubscribe, "read up to post
+N", react — are **not** signed by the device and are sent on a separate
+anonymous Tor circuit. A reaction is one of eight fixed emoji; free text
+is refused, otherwise readers could write into someone else's channel.
 
 Counts of subscribers, views and reactions are server statistics. They
 are not signed by anyone, and clients present them as such.
@@ -658,9 +684,13 @@ link's `channel_id` and `vk` match the channel the server returned and
 that the description opens and verifies under the link's keys.
 
 **What the server does.** It checks that the publishing device signed
-the request (§12.6) and that its account owns the channel; creating a
-channel additionally requires the account's `premium` flag, which the
-operator sets by hand. It does not verify record signatures. Reads
+the request (§12.6) and that its account owns the channel or is one of
+its administrators; creating a channel additionally requires the
+account's `premium` flag, which the operator sets by hand. A publish
+request names the sequence number the author sealed inside the post; if
+the channel has moved on (two authors raced), the server answers `409`
+and stores nothing, and the author seals again under the next number.
+The server does not verify record signatures. Reads
 (`/v1/channels/feed/…`) are unauthenticated.
 
 **What this does not provide.**
@@ -691,9 +721,74 @@ operator sets by hand. It does not verify record signatures. Reads
   AES-256-GCM under a symmetric key and is not affected.
 * **Random nonces under a long-lived key.** Safe while a channel holds
   far fewer than 2³² records; the server caps a channel at 100 000 posts.
-* **Author key is not backed up.** `sk` lives in the author's local
-  database only and is not part of the zero-knowledge backup; losing the
-  device ends the ability to post to that channel.
+* **A removed administrator plus the server.** A removed administrator's
+  key stays valid for numbers up to `until`. Colluding with the server,
+  they could replace posts published before their removal with their own
+  (as a higher revision). They cannot publish under later numbers. The
+  owner's key cannot be revoked at all.
+* **Administrators are known to the server.** A reader is anonymous to
+  it; an administrator's account is listed, as the owner's is.
+* **Channel keys are in the backup.** `secret` and the signing key of
+  an owner or administrator are part of the zero-knowledge backup
+  (bundle version 3): whoever holds the recovery key and a backup file
+  can read and post to those channels. Posts are not backed up — they
+  are fetched again and verified.
+
+### 9.9. Passes
+
+A pass is an anonymous, single-use right issued blindly — the same
+construction as Privacy Pass, over ristretto255. It lets the server
+ration an anonymous action per account without learning which account
+performs it. Passes pay for channel subscriptions (§9.8); without them
+the subscriber count could be inflated in a loop, and proof-of-work only
+slowed that down. Implementation: `crates/gasapp-protocol/src/pass.rs`
+(client), `server/gasapp-server-api/src/pass.rs` (server).
+
+```
+H1(seed)  = ristretto255.from_uniform_bytes(SHA-512("GASAPP_PASS_v1_POINT" ‖ seed))
+k         = SHA-512("GASAPP_PASS_v1_KEY" ‖ node secret) mod ℓ;   K = k·G
+
+client:   seed ← 32 random bytes;  r ← random scalar;  P = r·H1(seed)
+server:   Q = k·P
+          DLEQ proof (c, s):  n ← random;  A = n·G;  B = n·P
+              c = SHA-512("GASAPP_PASS_v1_DLEQ" ‖ G ‖ K ‖ P ‖ Q ‖ A ‖ B) mod ℓ
+              s = n + c·k
+client:   checks c against A' = s·G − c·K, B' = s·P − c·Q;   W = r⁻¹·Q
+spend:    seed, HMAC-SHA-256(W, "GASAPP_PASS_v1_REDEEM" ‖ SHA-256(binding))
+server:   recomputes W = k·H1(seed), checks the MAC, records
+          SHA-256(seed) as spent
+```
+
+For a subscription, `binding` is
+`"GASAPP_PASS_v1_SUBSCRIBE" ‖ len ‖ lowercase(channel_uuid) ‖ len ‖ token`
+(`len` is the field length as u64 big-endian).
+
+Issuance (`POST /v1/passes/issue/{device}`) is signed by the device and
+limited to 40 passes per account per day, at most 16 per request.
+Spending is unsigned and anonymous. The client fetches passes in a batch
+ahead of need, so that issuance and spending do not stand next to each
+other in time. A batch in which any proof fails is discarded whole.
+
+**What this provides.** The server cannot link a spent pass to the
+account it was issued to: it saw `P`, blinded by `r`, and later sees
+`seed`. The DLEQ proof stops it from signing with a per-account key to
+tell accounts apart. A spent pass cannot be spent twice or redirected to
+another channel or token.
+
+**What it does not provide.**
+
+* **Timing.** If the client had no stock, issuance and spending are
+  seconds apart and can be correlated.
+* **One key for everyone is an assumption.** A client checks the key
+  only against what the server showed that client. There is no
+  transparency log for this key.
+* **Not post-quantum.** A quantum adversary who recorded issuance could
+  remove the blinding and learn which account subscribed to which
+  channel. Channel contents are not affected.
+* **A bound, not a proof.** One account still yields up to 40
+  subscriptions a day; an attacker with many accounts inflates the
+  count that many times over. Subscriber counts remain server
+  statistics.
 
 ## 10. Security Considerations
 

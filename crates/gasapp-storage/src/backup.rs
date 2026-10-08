@@ -98,6 +98,12 @@ pub struct BackupExport {
     pub account_recovery: Option<[u8; crate::pq::ACCOUNT_RECOVERY_LEN]>,
     /// Хеши пост-квантовых половин контактов.
     pub contact_pq_hashes: Vec<(AccountId, [u8; crate::pq::PQ_HASH_LEN])>,
+    /// Каналы: ключи чтения и подписи. `None` — копия собрана версией,
+    /// которая каналов не знала; при восстановлении каналы не трогаются.
+    ///
+    /// 🔐 Без этого потеря телефона означала потерю канала: ключ
+    /// подписи владельца существовал в одном экземпляре.
+    pub channels: Option<Vec<crate::channels::ChannelBackupRow>>,
     /// Отметка, которую нужно запомнить после успешной выгрузки.
     pub watermark: Timestamp,
 }
@@ -113,6 +119,7 @@ impl BackupExport {
             .saturating_add(self.attachments.len())
             .saturating_add(self.settings.len())
             .saturating_add(self.tombstones.len())
+            .saturating_add(self.channels.as_ref().map_or(0, Vec::len))
     }
 
     /// Есть ли что выгружать.
@@ -183,6 +190,7 @@ impl Storage {
             tombstones: read_tombstones(&connection, threshold)?,
             account_recovery: read_account_recovery(&connection)?,
             contact_pq_hashes: read_contact_pq_hashes(&connection)?,
+            channels: Some(crate::channels::read_channels_for_backup(&connection)?),
             watermark: now,
         })
     }
@@ -351,6 +359,13 @@ impl Storage {
                     params![hash.as_slice(), account.as_bytes()],
                 )
                 .map_err(storage_error)?;
+        }
+
+        if let Some(channels) = &data.channels {
+            applied = applied.saturating_add(crate::channels::write_channels_from_backup(
+                &transaction,
+                channels,
+            )?);
         }
 
         for (key, value) in &data.settings {
@@ -1454,6 +1469,7 @@ mod tests {
             tombstones: vec![stored.id],
             account_recovery: None,
             contact_pq_hashes: Vec::new(),
+            channels: None,
             watermark: later(1_000),
         };
 
@@ -1541,6 +1557,7 @@ mod tests {
             tombstones: vec![stored.id],
             account_recovery: None,
             contact_pq_hashes: Vec::new(),
+            channels: None,
             watermark: later(1_000),
         };
 
@@ -1726,5 +1743,103 @@ mod tests {
             storage.delete_vault_file(&MessageId::generate()).unwrap(),
             None
         );
+    }
+
+    /// 🔐 Ключ подписи канала переживает копию: без него потеря
+    /// телефона означала бы потерю канала.
+    #[test]
+    fn channel_keys_survive_backup_and_restore() {
+        use crate::channels::{StoredChannel, StoredPost};
+
+        let (source, _source_dir) = open_temp();
+        let owned = StoredChannel {
+            channel_id: [1; 16],
+            secret: [0x11; 32],
+            verify_key: [0x22; 32],
+            signing_key: Some([0x33; 32]),
+            title: "Мой канал".to_owned(),
+            description: "Описание".to_owned(),
+            meta_updated_at: 500,
+            pinned_seq: 0,
+            avatar: None,
+            handle: None,
+            subscribers: 3,
+            muted: true,
+            last_seq: 0,
+            last_rev: 9,
+            last_read_seq: 0,
+            seen_sent_seq: 0,
+            sub_token: Some([0x44; 32]),
+            joined_at: Timestamp::from_millis(1_000),
+            admins: Vec::new(),
+        };
+        let followed = StoredChannel {
+            channel_id: [2; 16],
+            signing_key: None,
+            sub_token: None,
+            muted: false,
+            title: "Чужой".to_owned(),
+            ..owned.clone()
+        };
+        source.insert_channel(&owned).expect("свой канал");
+        source.insert_channel(&followed).expect("чужой канал");
+        source
+            .set_channel_admin_label(&[1; 16], &[7; 32], "anna")
+            .expect("имя администратора");
+        source
+            .upsert_channel_post(
+                &[1; 16],
+                &StoredPost {
+                    seq: 1,
+                    revision: 0,
+                    text: "запись".to_owned(),
+                    created_at: Timestamp::from_millis(2_000),
+                    edited_at: 0,
+                    deleted: false,
+                    views: 0,
+                    reactions: String::new(),
+                    my_reaction: String::new(),
+                    attachments: Vec::new(),
+                },
+            )
+            .expect("запись");
+
+        let export = source
+            .export_for_backup(None, Timestamp::from_millis(3_000))
+            .expect("выгрузка");
+        assert_eq!(export.channels.as_ref().map(Vec::len), Some(2));
+
+        let (target, _target_dir) = open_temp();
+        target.import_from_backup(&export).expect("восстановление");
+
+        let restored = target.channel(&[1; 16]).expect("чтение").expect("канал");
+        assert_eq!(restored.signing_key, Some([0x33; 32]));
+        assert_eq!(restored.secret, [0x11; 32]);
+        assert_eq!(restored.sub_token, Some([0x44; 32]));
+        assert_eq!(restored.title, "Мой канал");
+        assert!(restored.muted);
+        // Записи и описание придут с сервера заново и будут проверены:
+        // в копии их нет, и отметки синхронизации начинаются с нуля.
+        assert_eq!(restored.last_rev, 0);
+        assert_eq!(restored.meta_updated_at, 0);
+        assert!(target
+            .channel_posts(&[1; 16], 10)
+            .expect("записи")
+            .is_empty());
+        assert_eq!(
+            target.channel_admin_labels(&[1; 16]).expect("имена"),
+            vec![([7; 32], "anna".to_owned())]
+        );
+
+        let reader = target.channel(&[2; 16]).expect("чтение").expect("канал");
+        assert_eq!(reader.signing_key, None);
+
+        // Повторное восстановление поверх живого канала ключ не затирает
+        // и прочитанное не сбрасывает.
+        target.mark_channel_read(&[1; 16], 5).expect("прочитано");
+        target.import_from_backup(&export).expect("повтор");
+        let again = target.channel(&[1; 16]).expect("чтение").expect("канал");
+        assert_eq!(again.signing_key, Some([0x33; 32]));
+        assert_eq!(again.last_read_seq, 5);
     }
 }

@@ -11,13 +11,28 @@
 //! ничем не подписанные: интерфейс показывает их как статистику.
 
 use gasapp_core::client::{
-    AttachmentFile, Channel, ChannelAttachment, ChannelEntry, ChannelPreview, CHANNEL_REACTIONS,
-    MAX_CHANNEL_MEDIA_BYTES,
+    AttachmentFile, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry, ChannelPreview,
+    ChannelRole, CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
 };
 use gasapp_types::Timestamp;
 
 use crate::messenger::{FfiAttachmentFile, FfiAttachmentKind, Messenger};
 use crate::{guard, FfiError, FfiQrMatrix};
+
+/// Кто человек в канале.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiChannelRole {
+    /// Читает.
+    Reader,
+    /// Показал владельцу заявку на администрирование, но не назначен
+    /// (либо уже снят): писать не может.
+    AdminPending,
+    /// Назначен владельцем: пишет, правит и удаляет записи.
+    Admin,
+    /// Владелец: кроме записей — описание, закреп, аватар, публичное
+    /// имя, состав администраторов и удаление канала.
+    Owner,
+}
 
 /// Канал для списка и экрана канала.
 #[derive(Debug, Clone, uniffi::Record)]
@@ -28,8 +43,8 @@ pub struct FfiChannel {
     pub title: String,
     /// Описание.
     pub description: String,
-    /// Свой ли это канал: можно ли в него писать.
-    pub owned: bool,
+    /// Кто человек в этом канале.
+    pub role: FfiChannelRole,
     /// Сколько записей не прочитано.
     pub unread: u64,
     /// Текст последней записи.
@@ -57,7 +72,12 @@ impl From<Channel> for FfiChannel {
             channel_id: channel.channel_id,
             title: channel.title,
             description: channel.description,
-            owned: channel.owned,
+            role: match channel.role {
+                ChannelRole::Reader => FfiChannelRole::Reader,
+                ChannelRole::Pending => FfiChannelRole::AdminPending,
+                ChannelRole::Admin => FfiChannelRole::Admin,
+                ChannelRole::Owner => FfiChannelRole::Owner,
+            },
             unread: channel.unread,
             last_post: channel.last_post,
             last_post_at_millis: channel.last_post_at.map(|at| at.as_millis()),
@@ -160,6 +180,28 @@ impl From<ChannelEntry> for FfiChannelPost {
     }
 }
 
+/// Администратор канала глазами владельца.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChannelAdmin {
+    /// Публичный ключ подписи, hex, — им администратора снимают.
+    pub verify_key: String,
+    /// Имя, которым владелец его подписал; пусто — не подписал.
+    pub label: String,
+    /// Действующий ли. Снятый остаётся в списке: по его ключу читаются
+    /// записи, которые он успел написать.
+    pub active: bool,
+}
+
+impl From<ChannelAdminInfo> for FfiChannelAdmin {
+    fn from(admin: ChannelAdminInfo) -> Self {
+        Self {
+            verify_key: admin.verify_key,
+            label: admin.label,
+            active: admin.active,
+        }
+    }
+}
+
 /// Публичный канал, найденный по имени, — до подписки.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiChannelPreview {
@@ -210,6 +252,36 @@ pub struct FfiPendingRegistration {
 #[must_use]
 pub fn is_channel_link(text: String) -> bool {
     gasapp_protocol::channel::ChannelAccess::parse(&text).is_ok()
+}
+
+/// Похожа ли строка на заявку на администрирование канала.
+///
+/// Нужна сканеру QR и полю вставки у владельца канала.
+#[uniffi::export]
+#[must_use]
+pub fn is_channel_admin_request(text: String) -> bool {
+    gasapp_protocol::channel::AdminRequest::parse(&text).is_ok()
+}
+
+/// QR-код заявки на администрирование.
+///
+/// # Errors
+///
+/// [`FfiError::Core`] — строка не заявка либо не помещается в код;
+/// [`FfiError::InvalidArgument`] — матрица не представима.
+#[uniffi::export]
+pub fn channel_admin_request_qr(request: String) -> Result<FfiQrMatrix, FfiError> {
+    let matrix = guard(|| {
+        // В код попадает только настоящая заявка.
+        let parsed = gasapp_protocol::channel::AdminRequest::parse(&request)?;
+
+        gasapp_protocol::qr::encode_text(&parsed.to_uri())
+    })?;
+
+    Ok(FfiQrMatrix {
+        size: u32::try_from(matrix.size).map_err(|_| FfiError::InvalidArgument)?,
+        modules: matrix.modules,
+    })
 }
 
 /// Публичное имя канала в каноничном виде — без `@`, строчными, —
@@ -768,11 +840,18 @@ impl Messenger {
         channel_id: String,
         seq: u64,
         emoji: Option<String>,
+        now_millis: i64,
     ) -> Result<FfiChannelPost, FfiError> {
         let client = self.client()?;
 
         guard(|| {
-            client.react_to_channel_post(&channel_id, seq, emoji.as_deref(), &mut rand_core::OsRng)
+            client.react_to_channel_post(
+                &channel_id,
+                seq,
+                emoji.as_deref(),
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
         })
         .map(FfiChannelPost::from)
         .map_err(malformed_is_invalid)
@@ -825,6 +904,113 @@ impl Messenger {
         Ok(guard(|| client.search_public_channels(&query))?
             .into_iter()
             .map(FfiChannelPreview::from)
+            .collect())
+    }
+
+    /// Пополняет запас пропусков — анонимных одноразовых прав на
+    /// подписку, — если он на исходе. Сетевой вызов, за подписью
+    /// устройства. Возвращает, сколько пропусков добавилось.
+    ///
+    /// Вызывается заранее, при открытии списка каналов: так сервер не
+    /// видит рядом «аккаунт взял пропуск» и «кто-то подписался».
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен, суточный предел исчерпан
+    /// либо сервер подписал пропуска не тем ключом, который объявил.
+    pub fn refill_passes(&self, now_millis: i64) -> Result<u32, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.refill_passes(Timestamp::from_millis(now_millis), &mut rand_core::OsRng))
+    }
+
+    /// Заявка на администрирование канала — строка, которую читатель
+    /// показывает владельцу. Без сети.
+    ///
+    /// 🔐 В заявке нет секретов, но она называет владельцу устройство,
+    /// а серверу — аккаунт будущего администратора.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — человек и так владелец канала;
+    /// [`FfiError::Core`] — канала нет на устройстве.
+    pub fn channel_admin_request(&self, channel_id: String) -> Result<String, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.channel_admin_request(&channel_id, &mut rand_core::OsRng))
+            .map_err(malformed_is_invalid)
+    }
+
+    /// Назначает администратора своего канала по его заявке. Сетевой
+    /// вызов. `label` — имя для владельца; читатели его не видят.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек не владелец канала;
+    /// [`FfiError::InvalidArgument`] — это не заявка, она в другой
+    /// канал либо список администраторов полон;
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn add_channel_admin(
+        &self,
+        channel_id: String,
+        request: String,
+        label: String,
+        now_millis: i64,
+    ) -> Result<Vec<FfiChannelAdmin>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.add_channel_admin(
+                &channel_id,
+                &request,
+                &label,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map(|admins| admins.into_iter().map(FfiChannelAdmin::from).collect())
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Снимает администратора своего канала. Сетевой вызов.
+    ///
+    /// ⚠️ Записи, которые он уже написал, остаются. Новых под его
+    /// ключом читатели не примут.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — человек не владелец канала;
+    /// [`FfiError::Core`] — сервер недоступен либо администратора нет.
+    pub fn remove_channel_admin(
+        &self,
+        channel_id: String,
+        verify_key: String,
+        now_millis: i64,
+    ) -> Result<Vec<FfiChannelAdmin>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.remove_channel_admin(
+                &channel_id,
+                &verify_key,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map(|admins| admins.into_iter().map(FfiChannelAdmin::from).collect())
+    }
+
+    /// Администраторы своего канала — действующие и снятые. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — канала нет на устройстве.
+    pub fn channel_admins(&self, channel_id: String) -> Result<Vec<FfiChannelAdmin>, FfiError> {
+        let client = self.reader()?;
+
+        Ok(guard(|| client.channel_admins(&channel_id))?
+            .into_iter()
+            .map(FfiChannelAdmin::from)
             .collect())
     }
 
