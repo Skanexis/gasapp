@@ -19,6 +19,7 @@ import org.gasapp.app.components.GasAppToast
 import org.gasapp.app.core.Core
 import org.gasapp.app.core.SecureWindow
 import org.gasapp.app.core.TouchTarget
+import org.gasapp.app.ui.BotsPanel
 import org.gasapp.app.ui.BottomNav
 import org.gasapp.app.ui.ChannelForm
 import org.gasapp.app.ui.ChatListAdapter
@@ -30,6 +31,7 @@ import uniffi.gasapp.FfiChannel
 import uniffi.gasapp.FfiChannelPreview
 import uniffi.gasapp.FfiException
 import uniffi.gasapp.canonicalChannelHandle
+import uniffi.gasapp.isChannelJoinLink
 import uniffi.gasapp.isChannelLink
 
 /**
@@ -54,6 +56,12 @@ class ChannelsActivity : AppCompatActivity() {
     private lateinit var adapter: ChatListAdapter
     private lateinit var list: RecyclerView
     private lateinit var empty: View
+
+    /** Названия каналов, заявки в которые одобрили с прошлого показа. */
+    @Volatile
+    private var approved: List<String> = emptyList()
+
+    private val bots by lazy { BotsPanel(this, ::explainPremium) }
 
     private val scan = registerForActivityResult(ScanActivity.Contract()) { payload ->
         if (payload != null) join(payload, dialog = null)
@@ -124,8 +132,15 @@ class ChannelsActivity : AppCompatActivity() {
                 runCatching {
                     val messenger = Core.messenger()
 
+                    val now = System.currentTimeMillis()
+
+                    // Заявки в закрытые каналы: одобренные становятся
+                    // каналами до того, как список покажут.
+                    val joined = runCatching { messenger.checkChannelJoins(now) }.getOrDefault(emptyList())
+                    approved = joined.map { it.title }
+
                     // Сбой сети не мешает показать то, что уже загружено.
-                    runCatching { messenger.syncChannels() }
+                    runCatching { messenger.syncChannels(now) }
                     // Премиум — заодно: кнопка создания узнаёт о нём до нажатия.
                     runCatching { messenger.refreshPremium(System.currentTimeMillis()) }
 
@@ -135,6 +150,15 @@ class ChannelsActivity : AppCompatActivity() {
 
             channels?.let(::render)
             BottomNav.refreshChannelBadge(this@ChannelsActivity)
+
+            for (title in approved) {
+                GasAppToast.show(
+                    this@ChannelsActivity,
+                    getString(R.string.channels_joined_toast, title),
+                    GasAppToast.Tone.Success,
+                )
+            }
+            approved = emptyList()
         }
     }
 
@@ -180,11 +204,86 @@ class ChannelsActivity : AppCompatActivity() {
 
     /** Добавить канал: вставить ссылку или сканировать QR-код. */
     private fun promptJoin() {
-        GasAppSheet.on(this, R.string.channels_join)
-            .action(getString(R.string.channels_find), R.drawable.ic_search) { promptFind() }
-            .action(getString(R.string.channels_join_paste), R.drawable.ic_link) { promptLink() }
-            .action(getString(R.string.channels_join_scan), R.drawable.ic_qr) {
-                scan.launch(ScanActivity.Request(R.string.channels_join_scan, R.string.channels_scan_hint))
+        lifecycleScope.launch {
+            val pending = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().pendingChannelJoins() }.getOrDefault(emptyList())
+            }
+
+            val sheet = GasAppSheet.on(this@ChannelsActivity, R.string.channels_join)
+                .action(getString(R.string.channels_find), R.drawable.ic_search) { promptFind() }
+                .action(getString(R.string.channels_join_paste), R.drawable.ic_link) { promptLink() }
+                .action(getString(R.string.channels_join_scan), R.drawable.ic_qr) {
+                    scan.launch(ScanActivity.Request(R.string.channels_join_scan, R.string.channels_scan_hint))
+                }
+
+            // Заявки в закрытые каналы, на которые ещё не ответили.
+            for (join in pending) {
+                sheet.action(
+                    getString(R.string.channels_pending_row, PostTime.short(this@ChannelsActivity, join.requestedAtMillis)),
+                    R.drawable.ic_clock,
+                ) { confirmForget(join.channelId) }
+            }
+
+            sheet.show()
+        }
+    }
+
+    /** Забыть заявку, на которую не отвечают. */
+    private fun confirmForget(channelId: String) {
+        GasAppDialog(this)
+            .title(R.string.channels_pending_forget_title)
+            .message(R.string.channels_pending_forget_body)
+            .secondary()
+            .primary(R.string.channels_pending_forget_action) {
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { runCatching { Core.messenger().forgetChannelJoin(channelId) } }
+                }
+            }
+            .show()
+    }
+
+    /**
+     * Заявка в закрытый канал.
+     *
+     * 🔐 Что узнают те, кто ведёт канал, и сервер, сказано до отправки.
+     */
+    private fun confirmRequest(link: String, dialog: GasAppDialog.Shown?) {
+        dialog?.dismiss()
+
+        GasAppDialog(this)
+            .title(R.string.channels_join_request_title)
+            .message(R.string.channels_join_request_body)
+            .secondary()
+            .primary(R.string.channels_join_request_action, closeOnClick = false) { confirm ->
+                confirm.setBusy(true)
+
+                lifecycleScope.launch {
+                    val sent = withContext(Dispatchers.IO) {
+                        runCatching { Core.messenger().requestChannelJoin(link, System.currentTimeMillis()) }
+                    }
+
+                    confirm.setBusy(false)
+
+                    sent
+                        .onSuccess {
+                            confirm.dismiss()
+                            GasAppToast.show(
+                                this@ChannelsActivity,
+                                R.string.channels_join_requested,
+                                GasAppToast.Tone.Success,
+                            )
+                        }
+                        .onFailure { failure ->
+                            confirm.showError(
+                                when (failure) {
+                                    // Удалённому из канала сервер отвечает отказом.
+                                    is FfiException.PremiumRequired -> R.string.channels_join_banned
+                                    is FfiException.InvalidArgument -> R.string.channels_link_invalid
+                                    else -> R.string.channels_join_revoked
+                                },
+                            )
+                        }
+                }
             }
             .show()
     }
@@ -210,7 +309,7 @@ class ChannelsActivity : AppCompatActivity() {
             .primary(R.string.channels_join_action, closeOnClick = false) { dialog ->
                 val link = field.text?.toString().orEmpty().trim()
 
-                if (!isChannelLink(link)) {
+                if (!isChannelLink(link) && !isChannelJoinLink(link)) {
                     field.hasError = true
                     dialog.showError(R.string.channels_link_invalid)
                     return@primary
@@ -325,6 +424,12 @@ class ChannelsActivity : AppCompatActivity() {
      * ошибка показывается в нём, набранное не теряется.
      */
     private fun join(link: String, dialog: GasAppDialog.Shown?) {
+        // Ссылка закрытого канала: по ней не входят, а подают заявку.
+        if (isChannelJoinLink(link)) {
+            confirmRequest(link, dialog)
+            return
+        }
+
         if (!isChannelLink(link)) {
             GasAppToast.show(this, R.string.channels_link_invalid, GasAppToast.Tone.Error)
             return
@@ -382,7 +487,16 @@ class ChannelsActivity : AppCompatActivity() {
                 }.getOrDefault(false)
             }
 
-            if (premium) promptCreate() else explainPremium()
+            if (!premium) {
+                explainPremium()
+                return@launch
+            }
+
+            // С премиумом — канал либо бот.
+            GasAppSheet.on(this@ChannelsActivity, R.string.channels_create)
+                .action(getString(R.string.channels_create), R.drawable.ic_channel) { promptCreate() }
+                .action(getString(R.string.bots_title), R.drawable.ic_key) { bots.show() }
+                .show()
         }
     }
 

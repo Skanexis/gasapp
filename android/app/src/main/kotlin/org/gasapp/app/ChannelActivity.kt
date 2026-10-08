@@ -36,6 +36,7 @@ import org.gasapp.app.ui.BottomNav
 import org.gasapp.app.ui.ChannelAttachmentRow
 import org.gasapp.app.ui.ChannelAttachmentView
 import org.gasapp.app.ui.ChannelForm
+import org.gasapp.app.ui.ChannelGate
 import org.gasapp.app.ui.ChannelImages
 import org.gasapp.app.ui.ChannelPostAdapter
 import org.gasapp.app.ui.ChannelPostRow
@@ -115,6 +116,9 @@ class ChannelActivity : AppCompatActivity() {
 
     /** Вложение, для которого выбирается место сохранения (см. [PendingSave]). */
     private val pendingSave = PendingSave<ChannelAttachmentRow>()
+
+    /** Закрытый канал: приглашения, заявки, подписчики. */
+    private val gate by lazy { ChannelGate(this, channelId) { load(sync = true) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -218,7 +222,7 @@ class ChannelActivity : AppCompatActivity() {
                 runCatching {
                     val messenger = Core.messenger()
 
-                    if (sync) runCatching { messenger.syncChannel(channelId) }
+                    if (sync) runCatching { messenger.syncChannel(channelId, System.currentTimeMillis()) }
 
                     val found = runCatching { messenger.channel(channelId) }.getOrNull()
                     val entries = messenger.channelPosts(channelId, shown.toUInt())
@@ -366,7 +370,7 @@ class ChannelActivity : AppCompatActivity() {
 
                     if (local.size <= showing && !historyDone) {
                         // 0 — история кончилась; сбой сети концом истории не считается.
-                        val added = runCatching { messenger.loadOlderChannelPosts(channelId) }.getOrNull()
+                        val added = runCatching { messenger.loadOlderChannelPosts(channelId, System.currentTimeMillis()) }.getOrNull()
                         if (added == 0u) historyDone = true
                     }
                 }
@@ -600,7 +604,9 @@ class ChannelActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.IO) {
-                runCatching { Core.messenger().fetchChannelMedia(channelId, attachment.descriptor) }.getOrNull()
+                runCatching {
+                    Core.messenger().fetchChannelMedia(channelId, attachment.descriptor, System.currentTimeMillis())
+                }.getOrNull()
             }
 
             if (bytes == null) {
@@ -824,6 +830,17 @@ class ChannelActivity : AppCompatActivity() {
      * 🔐 Диалог говорит, что ссылка — это доступ ко всему каналу.
      */
     private fun shareLink() {
+        // 🔐 Ссылкой закрытого канала не делятся: в ней ключ чтения, а
+        // входят в такой канал по заявке — по ссылке-приглашению.
+        channel?.takeIf { it.closed }?.let { current ->
+            if (current.canPost) {
+                gate.showInvites()
+            } else {
+                GasAppToast.show(this, R.string.channel_closed_share_member, GasAppToast.Tone.Info)
+            }
+            return
+        }
+
         val link = runCatching { Core.messenger().channelLink(channelId) }.getOrNull() ?: return
 
         val content = LinearLayout(this).apply {
@@ -888,6 +905,14 @@ class ChannelActivity : AppCompatActivity() {
             if (current.muted) R.drawable.ic_bell else R.drawable.ic_bell_off,
         ) { setMuted(!current.muted) }
 
+        // Закрытый канал ведут владелец и администраторы: приглашения,
+        // заявки и подписчики — у обоих.
+        if (current.closed && current.canPost) {
+            sheet.action(getString(R.string.channel_requests), R.drawable.ic_shield_check) { gate.showRequests() }
+            sheet.action(getString(R.string.channel_invites), R.drawable.ic_link) { gate.showInvites() }
+            sheet.action(getString(R.string.channel_members), R.drawable.ic_users) { gate.showSubscribers() }
+        }
+
         if (current.owned) {
             sheet.action(getString(R.string.channel_edit), R.drawable.ic_edit) { edit(current) }
             sheet.action(getString(R.string.channel_avatar_set), R.drawable.ic_image) {
@@ -901,6 +926,10 @@ class ChannelActivity : AppCompatActivity() {
                 getString(if (current.handle == null) R.string.channel_public_make else R.string.channel_public_manage),
                 R.drawable.ic_globe,
             ) { managePublic(current) }
+            sheet.action(
+                getString(if (current.closed) R.string.channel_open else R.string.channel_close),
+                R.drawable.ic_lock,
+            ) { gate.confirmClosed(current) }
             sheet.action(getString(R.string.channel_admins), R.drawable.ic_users) { showAdmins() }
             sheet.action(getString(R.string.channel_delete), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = true)
@@ -924,7 +953,11 @@ class ChannelActivity : AppCompatActivity() {
 
         if (current.description.isNotEmpty()) lines += current.description
         current.handle?.let { lines += getString(R.string.channel_about_public, it) }
-        if (current.handle == null) lines += getString(R.string.channel_about_private)
+        if (current.closed) {
+            lines += getString(R.string.channel_about_closed)
+        } else if (current.handle == null) {
+            lines += getString(R.string.channel_about_private)
+        }
         lines += getString(R.string.channel_about_counters)
 
         GasAppDialog(this)
