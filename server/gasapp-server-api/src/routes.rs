@@ -709,6 +709,15 @@ fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/accounts/register", post(register))
+        // Боты: токен берёт владелец (за подписью), регистрируется по
+        // нему программа бота (без подписи — аккаунта у неё ещё нет).
+        .route("/v1/bots/register", post(crate::bots::register))
+        .route(
+            "/v1/bots/own/:device_id",
+            get(crate::bots::list)
+                .post(crate::bots::create)
+                .delete(crate::bots::delete),
+        )
         // Письмо с кодом подтверждения адреса — шаг перед регистрацией.
         .route("/v1/accounts/email/code", post(crate::email::request_code))
         // Условия запроса письма: окно времени и текущая цена.
@@ -858,6 +867,12 @@ async fn register(
     // 🔐 Только каноничное имя: иначе «alice» и «аlice» с кириллической
     // «а» были бы разными аккаунтами с одинаковым видом.
     if !gasapp_server_db::is_canonical_username(&request.username) {
+        return Err(ApiError::BadRequest);
+    }
+
+    // 🔐 Имя на `bot` — только у ботов (`/v1/bots/register`): иначе
+    // человек назвался бы ботом, а суффикс ничего бы не значил.
+    if gasapp_server_db::bots::is_bot_username(&request.username) {
         return Err(ApiError::BadRequest);
     }
 
@@ -1246,7 +1261,7 @@ const HYBRID_SIGNATURE_LEN: usize = 3373;
 ///
 /// Прислана наполовину или не той длины — отказ: неполная половина
 /// выглядела бы у клиентов подменой.
-fn decode_pq_identity(
+pub(crate) fn decode_pq_identity(
     public: Option<&str>,
     binding: Option<&str>,
 ) -> Result<Option<(Vec<u8>, Vec<u8>)>, ApiError> {

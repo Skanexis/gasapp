@@ -2277,3 +2277,345 @@ async fn closed_and_public_do_not_mix() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+// ---------------------------------------------------------------------------
+//  Боты (миграция 0022)
+// ---------------------------------------------------------------------------
+
+fn bot_name() -> String {
+    format!("{}bot", unique_name("helper"))
+}
+
+/// Тело регистрации бота его программой.
+fn bot_registration(username: &str, token: &str, private: &DeviceKey) -> serde_json::Value {
+    let identity = key();
+    let device = public_key(private);
+    let challenge = pow::registration_challenge(username, &identity, &device);
+
+    serde_json::json!({
+        "token": token,
+        "username": username,
+        "identity_key": hex::encode(identity),
+        "device_identity_key": hex::encode(device),
+        "pq_identity_key": hex::encode([0x51u8; 1952]),
+        "identity_binding": hex::encode([0x52u8; 3373]),
+        "pow_challenge": hex::encode(challenge),
+        "pow_nonce": solve(&challenge),
+    })
+}
+
+/// Берёт токен под имя и регистрирует по нему бота; возвращает его
+/// ключ и устройство.
+async fn bot_of(
+    state: &Arc<AppState>,
+    owner_key: &DeviceKey,
+    owner_device: Uuid,
+    username: &str,
+) -> Subscriber {
+    let (status, issued) = signed(
+        state,
+        owner_key,
+        "POST",
+        &format!("/v1/bots/own/{owner_device}"),
+        Some(serde_json::json!({ "username": username })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let private = device_key();
+    let (status, body) = post(
+        state,
+        "/v1/bots/register",
+        bot_registration(username, issued["token"].as_str().unwrap(), &private),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "бот не зарегистрирован: {body:?}");
+
+    (
+        private,
+        body["device_id"].as_str().unwrap().parse().unwrap(),
+    )
+}
+
+/// Премиум-владелец заводит бота: токен одноразовый, имя — на `bot`,
+/// бот регистрируется без почты и виден владельцу в списке.
+#[tokio::test]
+async fn a_premium_owner_creates_a_bot() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_device = premium_account(&state, &owner_key).await;
+    let bots = format!("/v1/bots/own/{owner_device}");
+    let username = bot_name();
+
+    let (status, issued) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &bots,
+        Some(serde_json::json!({ "username": username })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let token = issued["token"].as_str().unwrap().to_owned();
+    assert_eq!(token.len(), 64);
+
+    // Под то же имя второй токен не выдаётся.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &bots,
+        Some(serde_json::json!({ "username": username })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // Чужой токен и токен под другое имя не годятся — и настоящий не жгут.
+    let private = device_key();
+    let (status, _) = post(
+        &state,
+        "/v1/bots/register",
+        bot_registration(&username, &hex::encode([9u8; 32]), &private),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _) = post(
+        &state,
+        "/v1/bots/register",
+        bot_registration(&bot_name(), &token, &private),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, registered) = post(
+        &state,
+        "/v1/bots/register",
+        bot_registration(&username, &token, &private),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let bot_device: Uuid = registered["device_id"].as_str().unwrap().parse().unwrap();
+
+    // Токен одноразовый.
+    let (status, _) = post(
+        &state,
+        "/v1/bots/register",
+        bot_registration(&username, &token, &device_key()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, list) = signed(&state, &owner_key, "GET", &bots, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["username"], username);
+
+    // Бот — обычный аккаунт: его запросы за подписью проходят.
+    let (status, own) = signed(
+        &state,
+        &private,
+        "GET",
+        &format!("/v1/accounts/{bot_device}/status"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(own["premium"], false);
+
+    // 🔐 Адреса почты у бота нет — и в базе его нет.
+    let email: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT email_hash FROM accounts WHERE username = $1")
+            .bind(&username)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(email, None);
+}
+
+/// Без премиума бота не завести; имя обязано кончаться на `bot`, а
+/// обычному аккаунту такое имя не дают.
+#[tokio::test]
+async fn bot_names_and_premium_are_enforced() {
+    let (state, _mailer) = require_state!();
+    let plain_key = device_key();
+    let plain_device = register(&state, &unique_name("plain"), &plain_key).await;
+
+    let (status, _) = signed(
+        &state,
+        &plain_key,
+        "POST",
+        &format!("/v1/bots/own/{plain_device}"),
+        Some(serde_json::json!({ "username": bot_name() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let owner_key = device_key();
+    let owner_device = premium_account(&state, &owner_key).await;
+
+    for name in [
+        unique_name("helper"),
+        "bot".to_owned(),
+        "Хелперbot".to_owned(),
+    ] {
+        let (status, _) = signed(
+            &state,
+            &owner_key,
+            "POST",
+            &format!("/v1/bots/own/{owner_device}"),
+            Some(serde_json::json!({ "username": name })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name}");
+    }
+
+    // Человек ботом не называется.
+    let email = common::confirmed_email(&state).await;
+    let (status, _) = post(
+        &state,
+        "/v1/accounts/register",
+        registration(&bot_name(), &device_key(), &email, common::TEST_EMAIL_CODE),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Чужой список ботов не открыть: подпись не того устройства.
+    let (status, _) = signed(
+        &state,
+        &plain_key,
+        "GET",
+        &format!("/v1/bots/own/{owner_device}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// Владелец удаляет бота; удалён владелец — удалены и его боты.
+#[tokio::test]
+async fn bots_are_deleted_by_and_with_their_owner() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_device = premium_account(&state, &owner_key).await;
+    let bots = format!("/v1/bots/own/{owner_device}");
+    let first = bot_name();
+    let second = bot_name();
+
+    let (first_key, first_device) = bot_of(&state, &owner_key, owner_device, &first).await;
+    bot_of(&state, &owner_key, owner_device, &second).await;
+
+    // Чужой бота не удалит.
+    let stranger_key = device_key();
+    let stranger_device = premium_account(&state, &stranger_key).await;
+    let (status, _) = signed(
+        &state,
+        &stranger_key,
+        "DELETE",
+        &format!("/v1/bots/own/{stranger_device}"),
+        Some(serde_json::json!({ "username": first })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &bots,
+        Some(serde_json::json!({ "username": first })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Удалённый бот больше не аккаунт.
+    let (status, _) = signed(
+        &state,
+        &first_key,
+        "GET",
+        &format!("/v1/accounts/{first_device}/status"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (_, list) = signed(&state, &owner_key, "GET", &bots, None).await;
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["username"], second);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &format!("/v1/accounts/{owner_device}"),
+        None,
+    )
+    .await;
+    assert!(status.is_success(), "владелец удалён: {status}");
+
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE username = $1")
+        .bind(&second)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0, "бот пережил владельца");
+}
+
+/// 🔐 Бот, назначенный администратором, ведёт закрытый канал: видит
+/// заявки, одобряет их и удаляет подписчиков.
+#[tokio::test]
+async fn a_bot_admin_moderates_a_closed_channel() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let bot = bot_of(&state, &owner_key, owner_device, &bot_name()).await;
+    let bot_own = format!("/v1/channels/own/{}/{channel_id}", bot.1);
+
+    // До назначения бот в канале никто.
+    let (status, _) = signed(&state, &bot.0, "GET", &format!("{bot_own}/requests"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("/v1/channels/own/{owner_device}/{channel_id}/admins"),
+        Some(serde_json::json!({ "device_id": bot.1, "verify_key": hex::encode(key()) })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (member, _) = applicant(&state, channel_id).await;
+
+    let (status, requests) =
+        signed(&state, &bot.0, "GET", &format!("{bot_own}/requests"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let account_id = requests[0]["account_id"].clone();
+
+    let (status, _) = signed(
+        &state,
+        &bot.0,
+        "POST",
+        &format!("{bot_own}/requests"),
+        Some(serde_json::json!({ "account_id": account_id, "grant": hex::encode(b"grant") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        member_get(&state, &member, channel_id, "posts").await.0,
+        StatusCode::OK
+    );
+
+    let (status, _) = signed(
+        &state,
+        &bot.0,
+        "DELETE",
+        &format!("{bot_own}/subscribers"),
+        Some(serde_json::json!({ "account_id": account_id })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        member_get(&state, &member, channel_id, "posts").await.0,
+        StatusCode::NOT_FOUND
+    );
+}

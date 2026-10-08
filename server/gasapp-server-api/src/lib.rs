@@ -38,6 +38,7 @@
 
 pub mod auth;
 pub mod authz;
+pub mod bots;
 pub mod certificate;
 pub mod channels;
 pub mod config;
