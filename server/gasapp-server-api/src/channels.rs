@@ -99,6 +99,82 @@ pub struct UpdateChannelRequest {
     /// Ссылка-приглашение, которую сервер будет отдавать по имени.
     #[serde(default)]
     pub public_link: Option<String>,
+    /// Сделать канал закрытым (`true`) либо открытым (`false`); нет —
+    /// не менять.
+    #[serde(default)]
+    pub closed: Option<bool>,
+}
+
+/// Ссылка-приглашение закрытого канала: хеш её метки.
+#[derive(Debug, Deserialize)]
+pub struct InviteRequest {
+    /// SHA-256 метки из ссылки, hex. Саму метку сервер видит только
+    /// в заявке — от того, кому ссылку дали.
+    pub invite_hash: String,
+}
+
+/// Заявка на вход в закрытый канал.
+#[derive(Debug, Deserialize)]
+pub struct JoinRequestBody {
+    /// Метка из ссылки-приглашения, hex.
+    pub invite: String,
+    /// Открытый ключ заявителя с подписью его аккаунта, hex. Сервер
+    /// его не разбирает: под него одобривший зашифрует ключ чтения.
+    pub request: String,
+}
+
+/// Состояние заявки.
+#[derive(Debug, Serialize)]
+pub struct JoinStatusResponse {
+    /// `none`, `pending` либо `approved`.
+    pub status: &'static str,
+    /// Ответ на одобренную заявку: зашифрованный ключ чтения, hex.
+    pub grant: Option<String>,
+}
+
+/// Заявка глазами владельца и администраторов.
+#[derive(Debug, Serialize)]
+pub struct JoinRequestResponse {
+    /// Аккаунт заявителя.
+    pub account_id: Uuid,
+    /// Его имя.
+    pub username: String,
+    /// Открытый ключ с подписью, hex.
+    pub request: String,
+}
+
+/// Ответ на заявку.
+#[derive(Debug, Deserialize)]
+pub struct AnswerRequest {
+    /// Чья заявка.
+    pub account_id: Uuid,
+    /// Ключ чтения, зашифрованный под заявку, hex; нет — отклонить.
+    #[serde(default)]
+    pub grant: Option<String>,
+}
+
+/// Подписчик глазами владельца и администраторов.
+#[derive(Debug, Serialize)]
+pub struct MemberResponse {
+    /// Аккаунт.
+    pub account_id: Uuid,
+    /// Имя.
+    pub username: String,
+}
+
+/// Откуда продолжать список подписчиков.
+#[derive(Debug, Deserialize)]
+pub struct MembersQuery {
+    /// Последний аккаунт прошлой страницы.
+    #[serde(default)]
+    pub after: Option<Uuid>,
+}
+
+/// Запрос об одном подписчике: удалить либо снять запрет.
+#[derive(Debug, Deserialize)]
+pub struct MemberRequest {
+    /// Аккаунт.
+    pub account_id: Uuid,
 }
 
 /// Запрос публикации.
@@ -183,6 +259,8 @@ pub struct ChannelResponse {
     pub public_link: Option<String>,
     /// Число подписчиков.
     pub subscribers: i64,
+    /// Закрытый ли канал.
+    pub closed: bool,
 }
 
 impl From<Channel> for ChannelResponse {
@@ -196,6 +274,7 @@ impl From<Channel> for ChannelResponse {
             handle: channel.handle,
             public_link: channel.public_link,
             subscribers: channel.subscribers,
+            closed: channel.closed,
         }
     }
 }
@@ -441,7 +520,26 @@ pub(crate) async fn update(
         channels::update_meta(&state.pool, account_id, channel_id, &meta).await?;
     }
 
+    if let Some(closed) = request.closed {
+        channels::set_closed(&state.pool, account_id, channel_id, closed)
+            .await
+            .map_err(|error| match error {
+                // Канал с публичным именем закрытым не бывает.
+                RepoError::Conflict => ApiError::BadRequest,
+                other => other.into(),
+            })?;
+    }
+
     if request.set_public {
+        // Закрытому каналу имя не дать: по имени раздаётся ссылка с ключом.
+        if request.handle.is_some()
+            && channels::find_channel(&state.pool, channel_id)
+                .await?
+                .closed
+        {
+            return Err(ApiError::BadRequest);
+        }
+
         let public = match (&request.handle, &request.public_link) {
             (None, _) => None,
             (Some(handle), Some(link)) => {
@@ -630,11 +728,38 @@ pub(crate) async fn info(
     State(state): State<Arc<AppState>>,
     Path(channel_id): Path<Uuid>,
 ) -> Result<Json<ChannelResponse>, ApiError> {
-    Ok(Json(
-        channels::find_channel(&state.pool, channel_id)
-            .await?
-            .into(),
-    ))
+    Ok(Json(open_channel(&state, channel_id).await?.into()))
+}
+
+/// Канал, если он открытый. Закрытый для запроса без подписи не
+/// существует: его отдают только участникам (`member_*`).
+async fn open_channel(state: &AppState, channel_id: Uuid) -> Result<Channel, ApiError> {
+    let channel = channels::find_channel(&state.pool, channel_id).await?;
+
+    if channel.closed {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(channel)
+}
+
+/// Записи по параметрам выборки — общая часть открытого и закрытого
+/// чтения.
+async fn select_posts(
+    state: &AppState,
+    channel_id: Uuid,
+    query: &PostsQuery,
+) -> Result<Vec<PostResponse>, ApiError> {
+    let limit = query.limit.unwrap_or(MAX_POSTS_PER_PAGE);
+
+    let posts = match query.after_rev {
+        Some(after) => {
+            channels::changes_since(&state.pool, channel_id, after.max(0), limit).await?
+        }
+        None => channels::page_before(&state.pool, channel_id, query.before_seq, limit).await?,
+    };
+
+    Ok(posts.into_iter().map(PostResponse::from).collect())
 }
 
 /// Записи канала — без подписи. Режимы — см. [`PostsQuery`].
@@ -647,16 +772,12 @@ pub(crate) async fn posts(
     Path(channel_id): Path<Uuid>,
     Query(query): Query<PostsQuery>,
 ) -> Result<Json<Vec<PostResponse>>, ApiError> {
-    let limit = query.limit.unwrap_or(MAX_POSTS_PER_PAGE);
+    // Закрытый канал без подписи неотличим от несуществующего.
+    if open_channel(&state, channel_id).await.is_err() {
+        return Ok(Json(Vec::new()));
+    }
 
-    let posts = match query.after_rev {
-        Some(after) => {
-            channels::changes_since(&state.pool, channel_id, after.max(0), limit).await?
-        }
-        None => channels::page_before(&state.pool, channel_id, query.before_seq, limit).await?,
-    };
-
-    Ok(Json(posts.into_iter().map(PostResponse::from).collect()))
+    Ok(Json(select_posts(&state, channel_id, &query).await?))
 }
 
 /// Медиаблоб канала — без подписи.
@@ -664,6 +785,8 @@ pub(crate) async fn media(
     State(state): State<Arc<AppState>>,
     Path((channel_id, media_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Vec<u8>, ApiError> {
+    open_channel(&state, channel_id).await?;
+
     Ok(channels::fetch_media(&state.pool, channel_id, media_id).await?)
 }
 
@@ -722,7 +845,13 @@ pub(crate) async fn subscribe(
 ) -> Result<StatusCode, ApiError> {
     let (account_id, _) = owner_of(&state, device, device_id).await?;
 
-    channels::subscribe(&state.pool, channel_id, account_id).await?;
+    channels::subscribe(&state.pool, channel_id, account_id)
+        .await
+        .map_err(|error| match error {
+            // В закрытый канал входят по одобренной заявке.
+            RepoError::Conflict => ApiError::Forbidden,
+            other => other.into(),
+        })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -783,6 +912,273 @@ pub(crate) async fn react(
     .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Хеш метки ссылки-приглашения из hex.
+fn invite_hash(hex_text: &str) -> Result<[u8; 32], ApiError> {
+    decode_hex(hex_text)?
+        .try_into()
+        .map_err(|_| ApiError::BadRequest)
+}
+
+/// Заводит ссылку-приглашение закрытого канала.
+pub(crate) async fn add_invite(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<InviteRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    channels::add_invite(
+        &state.pool,
+        account_id,
+        channel_id,
+        &invite_hash(&request.invite_hash)?,
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Отзывает ссылку-приглашение.
+pub(crate) async fn revoke_invite(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<InviteRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    channels::revoke_invite(
+        &state.pool,
+        account_id,
+        channel_id,
+        &invite_hash(&request.invite_hash)?,
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Подаёт заявку на вход в закрытый канал.
+///
+/// Удалённому из канала — `403`; по недействующей ссылке — `404`,
+/// как на несуществующий канал.
+pub(crate) async fn request_join(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<JoinRequestBody>,
+) -> Result<StatusCode, ApiError> {
+    use sha2::{Digest as _, Sha256};
+
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let invite = decode_hex(&request.invite)?;
+    let blob = decode_bounded(&request.request, channels::MAX_JOIN_BLOB_BYTES)?;
+
+    limit_reader(&state, account_id)?;
+
+    channels::request_join(
+        &state.pool,
+        channel_id,
+        account_id,
+        &Sha256::digest(&invite).into(),
+        &blob,
+    )
+    .await
+    .map_err(|error| match error {
+        RepoError::Conflict => ApiError::Forbidden,
+        other => other.into(),
+    })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Что с заявкой: ждёт, одобрена (тогда — ответ с ключом) либо её нет.
+pub(crate) async fn join_status(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<JoinStatusResponse>, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    Ok(Json(
+        match channels::join_status(&state.pool, channel_id, account_id).await? {
+            channels::JoinStatus::None => JoinStatusResponse {
+                status: "none",
+                grant: None,
+            },
+            channels::JoinStatus::Pending => JoinStatusResponse {
+                status: "pending",
+                grant: None,
+            },
+            channels::JoinStatus::Approved(grant) => JoinStatusResponse {
+                status: "approved",
+                grant: Some(hex::encode(grant)),
+            },
+        },
+    ))
+}
+
+/// Заявки, ждущие ответа, — тем, кто ведёт канал.
+pub(crate) async fn list_requests(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Vec<JoinRequestResponse>>, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    Ok(Json(
+        channels::list_requests(&state.pool, account_id, channel_id)
+            .await?
+            .into_iter()
+            .map(|request| JoinRequestResponse {
+                account_id: request.account_id,
+                username: request.username,
+                request: hex::encode(request.request),
+            })
+            .collect(),
+    ))
+}
+
+/// Одобряет заявку (с ключом чтения, зашифрованным под неё) либо
+/// отклоняет.
+///
+/// 🔐 Что лежит в `grant`, сервер не знает и не проверяет: это
+/// шифротекст под ключ заявителя.
+pub(crate) async fn answer_request(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<AnswerRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let grant = request
+        .grant
+        .as_deref()
+        .map(|grant| decode_bounded(grant, channels::MAX_JOIN_BLOB_BYTES))
+        .transpose()?;
+
+    channels::answer_request(
+        &state.pool,
+        account_id,
+        channel_id,
+        request.account_id,
+        grant.as_deref(),
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Подписчики канала — тем, кто его ведёт.
+pub(crate) async fn list_subscribers(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<MembersQuery>,
+) -> Result<Json<Vec<MemberResponse>>, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    Ok(Json(
+        channels::list_subscribers(&state.pool, account_id, channel_id, query.after)
+            .await?
+            .into_iter()
+            .map(|member| MemberResponse {
+                account_id: member.account_id,
+                username: member.username,
+            })
+            .collect(),
+    ))
+}
+
+/// Удаляет подписчика из канала; новую заявку от него сервер не примет.
+pub(crate) async fn remove_subscriber(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<MemberRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    channels::remove_subscriber(&state.pool, account_id, channel_id, request.account_id)
+        .await
+        .map_err(|error| match error {
+            // Того, кто ведёт канал, так не удалить.
+            RepoError::Conflict => ApiError::BadRequest,
+            other => other.into(),
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Снимает запрет: удалённый снова может подать заявку.
+pub(crate) async fn unban(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<MemberRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    channels::unban(&state.pool, account_id, channel_id, request.account_id).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Аккаунт участника канала — либо `404`, как на несуществующий канал.
+async fn member_of(
+    state: &AppState,
+    device: AuthenticatedDevice,
+    device_id: Uuid,
+    channel_id: Uuid,
+) -> Result<Uuid, ApiError> {
+    let (account_id, _) = owner_of(state, device, device_id).await?;
+
+    if channels::is_member(&state.pool, channel_id, account_id).await? {
+        Ok(account_id)
+    } else {
+        Err(ApiError::NotFound)
+    }
+}
+
+/// Канал — участнику, за подписью. Так читается закрытый канал.
+pub(crate) async fn member_info(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ChannelResponse>, ApiError> {
+    member_of(&state, device, device_id, channel_id).await?;
+
+    Ok(Json(
+        channels::find_channel(&state.pool, channel_id)
+            .await?
+            .into(),
+    ))
+}
+
+/// Записи канала — участнику, за подписью.
+pub(crate) async fn member_posts(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<PostsQuery>,
+) -> Result<Json<Vec<PostResponse>>, ApiError> {
+    member_of(&state, device, device_id, channel_id).await?;
+
+    Ok(Json(select_posts(&state, channel_id, &query).await?))
+}
+
+/// Медиаблоб канала — участнику, за подписью.
+pub(crate) async fn member_media(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id, media_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Vec<u8>, ApiError> {
+    member_of(&state, device, device_id, channel_id).await?;
+
+    Ok(channels::fetch_media(&state.pool, channel_id, media_id).await?)
 }
 
 #[cfg(test)]

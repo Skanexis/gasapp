@@ -609,6 +609,45 @@ fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/channels/own/:device_id/:channel_id/posts",
             post(crate::channels::publish).put(crate::channels::replace),
         )
+        // Закрытый канал: приглашения, заявки и участники — для тех,
+        // кто канал ведёт.
+        .route(
+            "/v1/channels/own/:device_id/:channel_id/invites",
+            post(crate::channels::add_invite).delete(crate::channels::revoke_invite),
+        )
+        .route(
+            "/v1/channels/own/:device_id/:channel_id/requests",
+            get(crate::channels::list_requests).post(crate::channels::answer_request),
+        )
+        .route(
+            "/v1/channels/own/:device_id/:channel_id/subscribers",
+            get(crate::channels::list_subscribers).delete(crate::channels::remove_subscriber),
+        )
+        .route(
+            "/v1/channels/own/:device_id/:channel_id/bans",
+            axum::routing::delete(crate::channels::unban),
+        )
+        // Заявка на вход и её состояние — от имени заявителя.
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/join",
+            get(crate::channels::join_status).post(crate::channels::request_join),
+        )
+        // 🔐 Чтение закрытого канала — только участникам, за подписью.
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/info",
+            get(crate::channels::member_info),
+        )
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/posts",
+            get(crate::channels::member_posts),
+        )
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/media/:media_id",
+            get(crate::channels::member_media).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                limit_downloads,
+            )),
+        )
         // Подписчик канала — аккаунт: подписка, отметка «дочитал»
         // и реакция идут за подписью устройства.
         .route(

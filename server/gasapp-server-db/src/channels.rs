@@ -83,8 +83,11 @@ pub struct Channel {
     pub handle: Option<String>,
     /// Ссылка-приглашение публичного канала.
     pub public_link: Option<String>,
-    /// Число подписчиков (жетонов).
+    /// Число подписчиков.
     pub subscribers: i64,
+    /// Закрытый ли канал: вход по одобренной заявке, записи — только
+    /// участникам.
+    pub closed: bool,
 }
 
 /// Запись канала.
@@ -142,13 +145,24 @@ type ChannelRow = (
     Option<String>,
     Option<String>,
     i64,
+    bool,
 );
 
 const CHANNEL_COLUMNS: &str = "c.channel_id, c.verify_key, c.meta, c.last_seq, c.last_rev,
-        c.handle, c.public_link, c.subscribers";
+        c.handle, c.public_link, c.subscribers, c.closed";
 
 fn channel_from_row(row: ChannelRow) -> Channel {
-    let (channel_id, verify_key, meta, last_seq, last_rev, handle, public_link, subscribers) = row;
+    let (
+        channel_id,
+        verify_key,
+        meta,
+        last_seq,
+        last_rev,
+        handle,
+        public_link,
+        subscribers,
+        closed,
+    ) = row;
 
     Channel {
         channel_id,
@@ -159,6 +173,7 @@ fn channel_from_row(row: ChannelRow) -> Channel {
         handle,
         public_link,
         subscribers,
+        closed,
     }
 }
 
@@ -770,19 +785,39 @@ pub async fn delete_media(
 /// # Errors
 ///
 /// * [`RepoError::NotFound`] — канала нет.
+/// * [`RepoError::Conflict`] — канал закрытый: в него входят по заявке.
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn subscribe(pool: &PgPool, channel_id: Uuid, account_id: Uuid) -> Result<(), RepoError> {
     let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
 
     // Блокировка строки канала: вставка и счётчик меняются вместе.
-    let exists: Option<i32> =
-        sqlx::query_scalar("SELECT 1 FROM channels WHERE channel_id = $1 FOR UPDATE")
+    let closed: Option<bool> =
+        sqlx::query_scalar("SELECT closed FROM channels WHERE channel_id = $1 FOR UPDATE")
             .bind(channel_id)
             .fetch_optional(&mut *tx)
             .await?;
 
-    if exists.is_none() {
+    let Some(closed) = closed else {
         return Err(RepoError::NotFound);
+    };
+
+    // 🔐 В закрытый канал подписчиком делает только одобренная заявка
+    // (`answer_request`). Уже подписанному повтор ничего не меняет.
+    if closed {
+        let subscribed: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM channel_subscribers
+                             WHERE channel_id = $1 AND account_id = $2)",
+        )
+        .bind(channel_id)
+        .bind(account_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        return if subscribed {
+            Ok(())
+        } else {
+            Err(RepoError::Conflict)
+        };
     }
 
     let added = sqlx::query(
@@ -1137,6 +1172,581 @@ pub async fn remove_admin(
     sqlx::query("DELETE FROM channel_admins WHERE channel_id = $1 AND verify_key = $2")
         .bind(channel_id)
         .bind(verify_key.as_slice())
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+//  Закрытые каналы: приглашения, заявки, участники (миграция 0021)
+// ---------------------------------------------------------------------------
+
+/// Сколько действующих ссылок-приглашений может быть у канала.
+pub const MAX_INVITES_PER_CHANNEL: i64 = 20;
+
+/// Сколько заявок может ждать ответа в одном канале.
+pub const MAX_PENDING_REQUESTS_PER_CHANNEL: i64 = 1_000;
+
+/// Сколько заявок одного аккаунта может ждать ответа во всех каналах.
+pub const MAX_PENDING_REQUESTS_PER_ACCOUNT: i64 = 50;
+
+/// Предел заявки и ответа на неё, в байтах.
+pub const MAX_JOIN_BLOB_BYTES: usize = 512;
+
+/// Сколько заявок или подписчиков отдаётся за один запрос.
+pub const MAX_MEMBERS_PER_PAGE: i64 = 100;
+
+/// Заявка на вход в закрытый канал.
+#[derive(Debug, Clone)]
+pub struct JoinRequest {
+    /// Аккаунт заявителя.
+    pub account_id: Uuid,
+    /// Его имя — чтобы владельцу было кого одобрять.
+    pub username: String,
+    /// Открытый ключ заявителя с подписью; сервер его не разбирает.
+    pub request: Vec<u8>,
+}
+
+/// Подписчик канала глазами владельца и администраторов.
+#[derive(Debug, Clone)]
+pub struct Member {
+    /// Аккаунт.
+    pub account_id: Uuid,
+    /// Имя.
+    pub username: String,
+}
+
+/// Что с заявкой аккаунта.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JoinStatus {
+    /// Заявки нет: не подавалась, отклонена либо человек удалён.
+    None,
+    /// Ждёт ответа.
+    Pending,
+    /// Одобрена: ответ с зашифрованным ключом чтения.
+    Approved(Vec<u8>),
+}
+
+/// Пишет ли аккаунт в канал: владелец либо администратор.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn writes(pool: &PgPool, channel_id: Uuid, account_id: Uuid) -> Result<bool, RepoError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1 FROM channels c
+              WHERE c.channel_id = $1
+                AND (c.owner_account = $2
+                     OR EXISTS (SELECT 1 FROM channel_admins a
+                                 WHERE a.channel_id = c.channel_id AND a.account_id = $2)))",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Участник ли аккаунт канала: владелец, администратор либо подписчик.
+/// Участникам отдаются записи закрытого канала.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn is_member(
+    pool: &PgPool,
+    channel_id: Uuid,
+    account_id: Uuid,
+) -> Result<bool, RepoError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1 FROM channels c
+              WHERE c.channel_id = $1
+                AND (c.owner_account = $2
+                     OR EXISTS (SELECT 1 FROM channel_admins a
+                                 WHERE a.channel_id = c.channel_id AND a.account_id = $2)
+                     OR EXISTS (SELECT 1 FROM channel_subscribers s
+                                 WHERE s.channel_id = c.channel_id AND s.account_id = $2)))",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Делает свой канал закрытым либо снова открытым.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — канала нет или он чужой.
+/// * [`RepoError::Conflict`] — у канала есть публичное имя: по имени
+///   раздаётся ссылка с ключом, и закрытым такой канал быть не может.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn set_closed(
+    pool: &PgPool,
+    owner_account: Uuid,
+    channel_id: Uuid,
+    closed: bool,
+) -> Result<(), RepoError> {
+    let changed = sqlx::query(
+        "UPDATE channels SET closed = $3
+          WHERE channel_id = $1 AND owner_account = $2 AND (NOT $3 OR handle IS NULL)",
+    )
+    .bind(channel_id)
+    .bind(owner_account)
+    .bind(closed)
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    if changed > 0 {
+        return Ok(());
+    }
+
+    let owned: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM channels WHERE channel_id = $1 AND owner_account = $2)",
+    )
+    .bind(channel_id)
+    .bind(owner_account)
+    .fetch_one(pool)
+    .await?;
+
+    Err(if owned {
+        RepoError::Conflict
+    } else {
+        RepoError::NotFound
+    })
+}
+
+/// Заводит ссылку-приглашение: сервер запоминает хеш её метки.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::QuotaExceeded`] — у канала предел действующих ссылок.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn add_invite(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    invite_hash: &[u8; 32],
+) -> Result<(), RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    let live: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM channel_invites WHERE channel_id = $1 AND NOT revoked",
+    )
+    .bind(channel_id)
+    .fetch_one(pool)
+    .await?;
+
+    if live >= MAX_INVITES_PER_CHANNEL {
+        return Err(RepoError::QuotaExceeded);
+    }
+
+    sqlx::query(
+        "INSERT INTO channel_invites (channel_id, invite_hash) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(channel_id)
+    .bind(invite_hash.as_slice())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Отзывает ссылку-приглашение: новые заявки по ней не принимаются.
+/// Уже поданные заявки остаются.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn revoke_invite(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    invite_hash: &[u8; 32],
+) -> Result<(), RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    sqlx::query(
+        "UPDATE channel_invites SET revoked = true WHERE channel_id = $1 AND invite_hash = $2",
+    )
+    .bind(channel_id)
+    .bind(invite_hash.as_slice())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Подаёт заявку на вход по ссылке-приглашению. Повторная заявка
+/// заменяет прежнюю: ключ в ней мог смениться.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — канала нет, он не закрытый либо ссылка
+///   не действует.
+/// * [`RepoError::Conflict`] — человек удалён из этого канала.
+/// * [`RepoError::QuotaExceeded`] — слишком много заявок ждёт ответа.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn request_join(
+    pool: &PgPool,
+    channel_id: Uuid,
+    account_id: Uuid,
+    invite_hash: &[u8; 32],
+    request: &[u8],
+) -> Result<(), RepoError> {
+    let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+
+    // Блокировка строки канала: счёт заявок и вставка видят одно состояние.
+    let invited: Option<i32> = sqlx::query_scalar(
+        "SELECT 1 FROM channels c
+          WHERE c.channel_id = $1 AND c.closed
+            AND EXISTS (SELECT 1 FROM channel_invites i
+                         WHERE i.channel_id = c.channel_id
+                           AND i.invite_hash = $2 AND NOT i.revoked)
+            FOR UPDATE OF c",
+    )
+    .bind(channel_id)
+    .bind(invite_hash.as_slice())
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if invited.is_none() {
+        return Err(RepoError::NotFound);
+    }
+
+    let banned: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM channel_bans WHERE channel_id = $1 AND account_id = $2)",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if banned {
+        return Err(RepoError::Conflict);
+    }
+
+    let (in_channel, of_account): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM channel_join_requests
+                  WHERE channel_id = $1 AND account_id <> $2),
+                (SELECT count(*) FROM channel_join_requests
+                  WHERE account_id = $2 AND channel_id <> $1)",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if in_channel >= MAX_PENDING_REQUESTS_PER_CHANNEL
+        || of_account >= MAX_PENDING_REQUESTS_PER_ACCOUNT
+    {
+        return Err(RepoError::QuotaExceeded);
+    }
+
+    sqlx::query(
+        "INSERT INTO channel_join_requests (channel_id, account_id, request)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (channel_id, account_id) DO UPDATE SET request = EXCLUDED.request",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .bind(request)
+    .execute(&mut *tx)
+    .await?;
+
+    // Прежний ответ — под прежний ключ заявки: он больше не подходит.
+    sqlx::query("DELETE FROM channel_grants WHERE channel_id = $1 AND account_id = $2")
+        .bind(channel_id)
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+/// Что с заявкой аккаунта в этот канал.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn join_status(
+    pool: &PgPool,
+    channel_id: Uuid,
+    account_id: Uuid,
+) -> Result<JoinStatus, RepoError> {
+    let grant: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT grant_blob FROM channel_grants WHERE channel_id = $1 AND account_id = $2",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(grant) = grant {
+        return Ok(JoinStatus::Approved(grant));
+    }
+
+    let pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM channel_join_requests
+                         WHERE channel_id = $1 AND account_id = $2)",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(if pending {
+        JoinStatus::Pending
+    } else {
+        JoinStatus::None
+    })
+}
+
+/// Заявки, ждущие ответа, — для владельца и администраторов.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn list_requests(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+) -> Result<Vec<JoinRequest>, RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    let rows: Vec<(Uuid, String, Vec<u8>)> = sqlx::query_as(
+        "SELECT r.account_id, a.username, r.request
+           FROM channel_join_requests r
+           JOIN accounts a ON a.account_id = r.account_id
+          WHERE r.channel_id = $1
+          ORDER BY r.requested_at, r.account_id
+          LIMIT $2",
+    )
+    .bind(channel_id)
+    .bind(MAX_MEMBERS_PER_PAGE)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(account_id, username, request)| JoinRequest {
+            account_id,
+            username,
+            request,
+        })
+        .collect())
+}
+
+/// Отвечает на заявку. С `grant` — одобряет: заявитель становится
+/// подписчиком, а `grant` (ключ чтения, зашифрованный под его заявку)
+/// ждёт его на сервере. Без `grant` — отклоняет.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет либо заявки нет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn answer_request(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    account_id: Uuid,
+    grant: Option<&[u8]>,
+) -> Result<(), RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+
+    // Тот же порядок блокировок, что у подписки: сначала канал.
+    sqlx::query("SELECT 1 FROM channels WHERE channel_id = $1 FOR UPDATE")
+        .bind(channel_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+    let answered =
+        sqlx::query("DELETE FROM channel_join_requests WHERE channel_id = $1 AND account_id = $2")
+            .bind(channel_id)
+            .bind(account_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+
+    if answered == 0 {
+        return Err(RepoError::NotFound);
+    }
+
+    if let Some(grant) = grant {
+        sqlx::query(
+            "INSERT INTO channel_grants (channel_id, account_id, grant_blob) VALUES ($1, $2, $3)
+             ON CONFLICT (channel_id, account_id) DO UPDATE SET grant_blob = EXCLUDED.grant_blob",
+        )
+        .bind(channel_id)
+        .bind(account_id)
+        .bind(grant)
+        .execute(&mut *tx)
+        .await?;
+
+        let added = sqlx::query(
+            "INSERT INTO channel_subscribers (channel_id, account_id) VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(channel_id)
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        if added > 0 {
+            sqlx::query("UPDATE channels SET subscribers = subscribers + 1 WHERE channel_id = $1")
+                .bind(channel_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+/// Подписчики канала — для владельца и администраторов; страницами,
+/// после аккаунта `after`.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn list_subscribers(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    after: Option<Uuid>,
+) -> Result<Vec<Member>, RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT s.account_id, a.username
+           FROM channel_subscribers s
+           JOIN accounts a ON a.account_id = s.account_id
+          WHERE s.channel_id = $1 AND ($2::uuid IS NULL OR s.account_id > $2)
+          ORDER BY s.account_id
+          LIMIT $3",
+    )
+    .bind(channel_id)
+    .bind(after)
+    .bind(MAX_MEMBERS_PER_PAGE)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(account_id, username)| Member {
+            account_id,
+            username,
+        })
+        .collect())
+}
+
+/// Удаляет подписчика из канала: подписка, реакции, ответ на заявку
+/// и сама заявка исчезают, а новая заявка от него не принимается.
+///
+/// ⚠️ Ключ чтения он помнит: сервер перестаёт отдавать ему записи, но
+/// сам ключ у канала прежний.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::Conflict`] — удаляют владельца либо администратора:
+///   администратора сначала снимает владелец.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn remove_subscriber(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    account_id: Uuid,
+) -> Result<(), RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    // Тот, кто ведёт канал, — не подписчик, которого можно выставить:
+    // иначе администратор удалил бы владельца.
+    if writes(pool, channel_id, account_id).await? {
+        return Err(RepoError::Conflict);
+    }
+
+    let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+
+    sqlx::query("SELECT 1 FROM channels WHERE channel_id = $1 FOR UPDATE")
+        .bind(channel_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+    for table in [
+        "channel_subscribers",
+        "channel_grants",
+        "channel_join_requests",
+    ] {
+        sqlx::query(&format!(
+            "DELETE FROM {table} WHERE channel_id = $1 AND account_id = $2"
+        ))
+        .bind(channel_id)
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO channel_bans (channel_id, account_id) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+/// Снимает запрет: человек снова может подать заявку.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn unban(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    account_id: Uuid,
+) -> Result<(), RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    sqlx::query("DELETE FROM channel_bans WHERE channel_id = $1 AND account_id = $2")
+        .bind(channel_id)
+        .bind(account_id)
         .execute(pool)
         .await?;
 

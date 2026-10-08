@@ -1747,3 +1747,524 @@ async fn a_post_with_a_stale_number_is_not_stored() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(published["seq"], 3);
 }
+
+// ---------------------------------------------------------------------------
+//  Закрытые каналы (миграция 0021)
+// ---------------------------------------------------------------------------
+
+/// Метка ссылки-приглашения, как её несёт ссылка.
+const INVITE: [u8; 16] = [0x5a; 16];
+
+fn invite_hash(invite: &[u8]) -> String {
+    use sha2::{Digest as _, Sha256};
+
+    hex::encode(Sha256::digest(invite))
+}
+
+/// Закрытый канал с одной записью и одной действующей ссылкой.
+async fn closed_channel(state: &Arc<AppState>) -> (DeviceKey, Uuid, Uuid) {
+    let (owner_key, owner_device, channel_id) = channel_with_posts(state, 1).await;
+    let own = format!("/v1/channels/own/{owner_device}/{channel_id}");
+
+    let (status, _) = signed(
+        state,
+        &owner_key,
+        "PUT",
+        &own,
+        Some(serde_json::json!({ "closed": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = signed(
+        state,
+        &owner_key,
+        "POST",
+        &format!("{own}/invites"),
+        Some(serde_json::json!({ "invite_hash": invite_hash(&INVITE) })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    (owner_key, owner_device, channel_id)
+}
+
+/// Заводит аккаунт и подаёт от него заявку.
+async fn applicant(state: &Arc<AppState>, channel_id: Uuid) -> (Subscriber, String) {
+    let private = device_key();
+    let username = unique_name("applicant");
+    let device_id = register(state, &username, &private).await;
+    let who = (private, device_id);
+
+    assert_eq!(
+        reader(
+            state,
+            &who,
+            channel_id,
+            "join",
+            Some(serde_json::json!({
+                "invite": hex::encode(INVITE),
+                "request": hex::encode(b"ephemeral-key-and-signature"),
+            })),
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+
+    (who, username)
+}
+
+/// Чтение от имени участника.
+async fn member_get(
+    state: &Arc<AppState>,
+    who: &Subscriber,
+    channel_id: Uuid,
+    what: &str,
+) -> (StatusCode, serde_json::Value) {
+    signed(
+        state,
+        &who.0,
+        "GET",
+        &format!("/v1/channels/reader/{}/{channel_id}/{what}", who.1),
+        None,
+    )
+    .await
+}
+
+/// 🔐 Закрытый канал без подписи не существует, подписаться на него
+/// нельзя, а одобренная заявка делает человека участником.
+#[tokio::test]
+async fn a_closed_channel_admits_by_approved_request() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let own = format!("/v1/channels/own/{owner_device}/{channel_id}");
+
+    // Без подписи: канала нет, записей нет.
+    let (status, _) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, posts) = get(&state, &format!("/v1/channels/feed/{channel_id}/posts")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(posts.as_array().unwrap().len(), 0);
+
+    let ((applicant_key, applicant_device), username) = applicant(&state, channel_id).await;
+    let who = (applicant_key, applicant_device);
+
+    // Заявка ждёт: подписаться в обход нельзя, читать — тоже.
+    assert_eq!(
+        reader(&state, &who, channel_id, "subscribe", None).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        member_get(&state, &who, channel_id, "posts").await.0,
+        StatusCode::NOT_FOUND
+    );
+
+    let (status, waiting) = member_get(&state, &who, channel_id, "join").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(waiting["status"], "pending");
+
+    // Владелец видит заявку с именем заявителя.
+    let (status, requests) =
+        signed(&state, &owner_key, "GET", &format!("{own}/requests"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let requests = requests.as_array().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["username"], username);
+    assert_eq!(
+        requests[0]["request"],
+        hex::encode(b"ephemeral-key-and-signature")
+    );
+
+    let account_id = requests[0]["account_id"].clone();
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("{own}/requests"),
+        Some(serde_json::json!({
+            "account_id": account_id,
+            "grant": hex::encode(b"wrapped-read-key"),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Одобренный получает ответ с ключом и читает за подписью.
+    let (_, approved) = member_get(&state, &who, channel_id, "join").await;
+    assert_eq!(approved["status"], "approved");
+    assert_eq!(approved["grant"], hex::encode(b"wrapped-read-key"));
+
+    let (status, info) = member_get(&state, &who, channel_id, "info").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(info["closed"], true);
+    assert_eq!(info["subscribers"], 1);
+
+    let (status, posts) = member_get(&state, &who, channel_id, "posts").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(posts.as_array().unwrap().len(), 1);
+
+    // Заявок больше нет, подписчик в списке есть.
+    let (_, requests) = signed(&state, &owner_key, "GET", &format!("{own}/requests"), None).await;
+    assert_eq!(requests.as_array().unwrap().len(), 0);
+
+    let (status, members) = signed(
+        &state,
+        &owner_key,
+        "GET",
+        &format!("{own}/subscribers"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(members.as_array().unwrap().len(), 1);
+    assert_eq!(members[0]["username"], username);
+}
+
+/// Отклонённая заявка исчезает, и её можно подать снова.
+#[tokio::test]
+async fn a_declined_request_is_gone() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let requests_uri = format!("/v1/channels/own/{owner_device}/{channel_id}/requests");
+    let (who, _) = applicant(&state, channel_id).await;
+
+    let (_, requests) = signed(&state, &owner_key, "GET", &requests_uri, None).await;
+    let account_id = requests[0]["account_id"].clone();
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &requests_uri,
+        Some(serde_json::json!({ "account_id": account_id })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, answer) = member_get(&state, &who, channel_id, "join").await;
+    assert_eq!(answer["status"], "none");
+    assert_eq!(
+        member_get(&state, &who, channel_id, "posts").await.0,
+        StatusCode::NOT_FOUND
+    );
+
+    // Ответить на заявку, которой нет, нельзя.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &requests_uri,
+        Some(serde_json::json!({ "account_id": account_id, "grant": hex::encode(b"late") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Заявка принимается только по действующей ссылке и только в закрытый
+/// канал.
+#[tokio::test]
+async fn a_request_needs_a_live_invite() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let private = device_key();
+    let device_id = register(&state, &unique_name("guest"), &private).await;
+    let who = (private, device_id);
+    let request = |invite: &[u8]| {
+        Some(serde_json::json!({
+            "invite": hex::encode(invite),
+            "request": hex::encode(b"key"),
+        }))
+    };
+
+    assert_eq!(
+        reader(&state, &who, channel_id, "join", request(&[1u8; 16])).await,
+        StatusCode::NOT_FOUND,
+        "чужая метка"
+    );
+
+    // Слишком большая заявка не принимается.
+    assert_eq!(
+        reader(
+            &state,
+            &who,
+            channel_id,
+            "join",
+            Some(serde_json::json!({
+                "invite": hex::encode(INVITE),
+                "request": hex::encode(vec![1u8; 513]),
+            })),
+        )
+        .await,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &format!("/v1/channels/own/{owner_device}/{channel_id}/invites"),
+        Some(serde_json::json!({ "invite_hash": invite_hash(&INVITE) })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    assert_eq!(
+        reader(&state, &who, channel_id, "join", request(&INVITE)).await,
+        StatusCode::NOT_FOUND,
+        "ссылка отозвана"
+    );
+
+    // В открытый канал заявок не подают.
+    let (_, _, open_channel) = channel_with_posts(&state, 0).await;
+    assert_eq!(
+        reader(&state, &who, open_channel, "join", request(&INVITE)).await,
+        StatusCode::NOT_FOUND
+    );
+}
+
+/// 🔐 Удалённый подписчик перестаёт получать записи и не может
+/// вернуться, пока запрет не снят.
+#[tokio::test]
+async fn a_removed_subscriber_is_locked_out() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let own = format!("/v1/channels/own/{owner_device}/{channel_id}");
+    let (who, _) = applicant(&state, channel_id).await;
+
+    let (_, requests) = signed(&state, &owner_key, "GET", &format!("{own}/requests"), None).await;
+    let account_id = requests[0]["account_id"].clone();
+    let member = serde_json::json!({ "account_id": account_id });
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("{own}/requests"),
+        Some(serde_json::json!({ "account_id": account_id, "grant": hex::encode(b"grant") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        member_get(&state, &who, channel_id, "posts").await.0,
+        StatusCode::OK
+    );
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &format!("{own}/subscribers"),
+        Some(member.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    assert_eq!(
+        member_get(&state, &who, channel_id, "posts").await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        member_get(&state, &who, channel_id, "join").await.1["status"],
+        "none",
+        "ответ с ключом удалён вместе с подпиской"
+    );
+
+    let (_, info) = member_get(&state, &(owner_key, owner_device), channel_id, "info").await;
+    assert_eq!(info["subscribers"], 0);
+
+    let again = Some(serde_json::json!({
+        "invite": hex::encode(INVITE),
+        "request": hex::encode(b"key"),
+    }));
+    assert_eq!(
+        reader(&state, &who, channel_id, "join", again.clone()).await,
+        StatusCode::FORBIDDEN
+    );
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &format!("{own}/bans"),
+        Some(member),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        reader(&state, &who, channel_id, "join", again).await,
+        StatusCode::NO_CONTENT
+    );
+}
+
+/// Заявки и подписчиков видит и ведёт администратор; посторонний и
+/// рядовой подписчик — нет.
+#[tokio::test]
+async fn admins_moderate_and_strangers_do_not() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let admin_key = device_key();
+    let admin_device = register(&state, &unique_name("admin"), &admin_key).await;
+    let (member, _) = applicant(&state, channel_id).await;
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("/v1/channels/own/{owner_device}/{channel_id}/admins"),
+        Some(serde_json::json!({ "device_id": admin_device, "verify_key": hex::encode(key()) })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Администратор читает закрытый канал и одобряет заявку.
+    let admin = (admin_key, admin_device);
+    assert_eq!(
+        member_get(&state, &admin, channel_id, "posts").await.0,
+        StatusCode::OK
+    );
+
+    let admin_own = format!("/v1/channels/own/{admin_device}/{channel_id}");
+    let (status, requests) = signed(
+        &state,
+        &admin.0,
+        "GET",
+        &format!("{admin_own}/requests"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let account_id = requests[0]["account_id"].clone();
+
+    let (status, _) = signed(
+        &state,
+        &admin.0,
+        "POST",
+        &format!("{admin_own}/requests"),
+        Some(serde_json::json!({ "account_id": account_id, "grant": hex::encode(b"grant") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Подписчик — не модератор: ни заявок, ни списка, ни удаления.
+    let member_own = format!("/v1/channels/own/{}/{channel_id}", member.1);
+    for (method, what, body) in [
+        ("GET", "requests", None),
+        ("GET", "subscribers", None),
+        (
+            "DELETE",
+            "subscribers",
+            Some(serde_json::json!({ "account_id": account_id })),
+        ),
+        (
+            "POST",
+            "invites",
+            Some(serde_json::json!({ "invite_hash": invite_hash(&[9u8; 16]) })),
+        ),
+    ] {
+        let (status, _) = signed(
+            &state,
+            &member.0,
+            method,
+            &format!("{member_own}/{what}"),
+            body,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method} {what}");
+    }
+
+    // Закрыть либо открыть канал — только владелец.
+    let (status, _) = signed(
+        &state,
+        &admin.0,
+        "PUT",
+        &admin_own,
+        Some(serde_json::json!({ "closed": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Администратор удаляет подписчика.
+    let (status, _) = signed(
+        &state,
+        &admin.0,
+        "DELETE",
+        &format!("{admin_own}/subscribers"),
+        Some(serde_json::json!({ "account_id": account_id })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        member_get(&state, &member, channel_id, "posts").await.0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+/// Закрытый канал не бывает публичным, и наоборот; медиа закрытого
+/// канала отдаётся только участнику.
+#[tokio::test]
+async fn closed_and_public_do_not_mix() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let own = format!("/v1/channels/own/{owner_device}/{channel_id}");
+    let public = serde_json::json!({
+        "set_public": true,
+        "handle": unique_name("shut"),
+        "public_link": link_to(channel_id),
+    });
+
+    let (status, _) = signed(&state, &owner_key, "PUT", &own, Some(public.clone())).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let upload = signed_request(
+        &owner_key,
+        "POST",
+        &format!("{own}/media"),
+        "application/octet-stream",
+        vec![7u8; 64],
+    );
+    let (status, stored) = send(&state, upload).await;
+    assert_eq!(status, StatusCode::OK);
+    let media_id = stored["media_id"].as_str().unwrap().to_owned();
+
+    let (status, _) = get(
+        &state,
+        &format!("/v1/channels/feed/{channel_id}/media/{media_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "GET",
+        &format!("/v1/channels/reader/{owner_device}/{channel_id}/media/{media_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Открытый снова — и имя дать можно, а закрыть с именем нельзя.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "PUT",
+        &own,
+        Some(serde_json::json!({ "closed": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = signed(&state, &owner_key, "PUT", &own, Some(public)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "PUT",
+        &own,
+        Some(serde_json::json!({ "closed": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
