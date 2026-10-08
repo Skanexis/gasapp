@@ -117,6 +117,31 @@ pub fn email_code_challenge(normalized_email: &str) -> [u8; CHALLENGE_LEN] {
     hasher.finalize().into()
 }
 
+/// Домен-разделитель челленджа подписки на канал.
+const SUBSCRIBE_DOMAIN: &[u8] = b"GASAPP_POW_SUB_v1";
+
+/// Сложность подписки на канал, в битах — та же, что требует сервер.
+pub const SUBSCRIBE_DIFFICULTY: u32 = 20;
+
+/// Челлендж подписки: канал и жетон подписчика.
+///
+/// Подписка анонимна, и цена за неё — работа, привязанная к каналу
+/// и жетону.
+///
+/// ⚠️ Продублирован на другой стороне (разные лицензии); эталон — тест.
+#[must_use]
+pub fn subscribe_challenge(channel_id: &str, token: &[u8]) -> [u8; CHALLENGE_LEN] {
+    let channel = channel_id.to_ascii_lowercase();
+
+    let mut hasher = Sha256::new();
+    hasher.update(SUBSCRIBE_DOMAIN);
+    for field in [channel.as_bytes(), token] {
+        hasher.update(u64::try_from(field.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(field);
+    }
+    hasher.finalize().into()
+}
+
 /// Домен-разделитель челленджа анонимной загрузки вложения.
 const UPLOAD_DOMAIN: &[u8] = b"GASAPP_POW_UPLOAD_v1";
 
@@ -213,6 +238,18 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// Эталон посчитан независимой реализацией (Python, hashlib);
+    /// тот же вектор проверяет сервер.
+    #[test]
+    fn subscribe_challenge_matches_the_reference() {
+        assert_eq!(
+            subscribe_challenge("00000000-0000-0000-0000-000000000001", &[7u8; 32])
+                .get(..8)
+                .expect("восемь байт"),
+            [0xe2, 0x63, 0x05, 0x7a, 0x8c, 0x54, 0xb0, 0x0e]
+        );
+    }
 
     /// Эталон посчитан независимой реализацией (Python, hashlib);
     /// тот же вектор проверяет сервер.

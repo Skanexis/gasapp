@@ -76,6 +76,41 @@ object AttachmentPrep {
         }
     }
 
+    /**
+     * Готовит картинку для аватара канала: уменьшает до [AVATAR_SIDE]
+     * по большей стороне и пересобирает в JPEG.
+     *
+     * 🔐 Пересборка заодно отбрасывает всё, что лежало в файле помимо
+     * пикселей: EXIF с координатами, миниатюры, комментарии. Аватар
+     * скачивает каждый читатель канала — он обязан быть маленьким.
+     *
+     * Бросает исключение, если это не картинка.
+     */
+    fun avatar(bytes: ByteArray): ByteArray {
+        val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+
+            val longest = maxOf(info.size.width, info.size.height)
+            if (longest > AVATAR_SIDE) {
+                val scale = AVATAR_SIDE.toFloat() / longest
+                decoder.setTargetSize(
+                    (info.size.width * scale).toInt().coerceAtLeast(1),
+                    (info.size.height * scale).toInt().coerceAtLeast(1),
+                )
+            }
+        }
+
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, AVATAR_QUALITY, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+    }
+
+    private const val AVATAR_SIDE = 512
+
+    private const val AVATAR_QUALITY = 88
+
     private val HEIF_BRANDS = setOf("heic", "heix", "hevc", "heim", "heis", "hevm", "mif1", "msf1", "avif")
 
     private const val JPEG_QUALITY = 92

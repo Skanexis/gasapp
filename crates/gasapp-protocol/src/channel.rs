@@ -4,20 +4,31 @@
 //!
 //! # Модель
 //!
-//! Канал похож на канал в Telegram — автор пишет, остальные читают, —
-//! но сервер GasApp остаётся тем же, чем он был: хранилищем
-//! шифротекста. Отсюда устройство:
+//! Канал похож на канал в Telegram — автор пишет, остальные читают;
+//! записи с текстом и медиа, правка, удаление, закреп. Но сервер GasApp
+//! остаётся тем же, чем он был: хранилищем шифротекста. Отсюда
+//! устройство:
 //!
 //! * **Ключ чтения** выводится из секрета канала. Секрет лежит в
-//!   ссылке-приглашении (`gasapp://channel/…`) и на сервер не попадает:
-//!   название, описание и записи сервер видит шифротекстом.
+//!   ссылке-приглашении (`gasapp://channel/…`): название, описание
+//!   и записи сервер видит шифротекстом.
 //! * **Ключ подписи** (Ed25519) есть только у автора. Публичная
 //!   половина тоже лежит в ссылке, и читатель проверяет ею каждую
-//!   запись. Читатели знают ключ чтения, но записать от имени автора
-//!   не могут: шифротекст без подписи автора отвергается.
+//!   запись, каждую правку и каждое удаление. Читатели знают ключ
+//!   чтения, но изменить канал от имени автора не могут.
 //! * **Номер записи** автор кладёт внутрь шифротекста. Сервер нумерует
 //!   записи сам, и читатель сверяет оба номера: переставить записи
 //!   местами или выдать одну за другую сервер не может.
+//! * **Номер редакции** растёт с каждой правкой. Читатель не принимает
+//!   редакцию старше известной: сервер не вернёт прежний текст.
+//! * **Удаление** — отдельная запись, подписанная автором. Сервер не
+//!   может «удалить» запись у читателей сам: без подписи автора
+//!   отметка не принимается.
+//!
+//! Медиа (фото, файлы, аватар канала) шифруются так же, как вложения
+//! в переписке (`gasapp-media`): случайным ключом, чанками. В записи
+//! лежит описание — адрес блоба, ключ, размер. Сам модуль описаний не
+//! разбирает: для него это непрозрачные байты.
 //!
 //! # 🔐 Чего это НЕ даёт — честно
 //!
@@ -26,11 +37,17 @@
 //!   записи и будущие. Отозвать доступ у одного читателя нельзя;
 //!   утёкшая ссылка — утёкший канал. Прямой секретности и
 //!   восстановления после компрометации здесь нет.
-//! * **Сервер может утаить записи**: не отдать последние или отдать
-//!   не все подряд сверху. Подделать, изменить или переставить — нет.
-//! * **Пост-квантовой защиты нет**: подпись автора — Ed25519.
-//!   Квантовый противник подделает запись. Конфиденциальность
-//!   (AES-256-GCM на симметричном ключе) от него не страдает.
+//! * **Публичный канал сервер читает.** Чтобы канал находился по
+//!   `@имени`, автор отдаёт серверу ссылку. Подлинность записей от
+//!   этого не страдает — ключа подписи у сервера по-прежнему нет.
+//! * **Сервер может утаить записи**: не отдать последние, не отдать
+//!   правку или отметку об удалении. Подделать, изменить или
+//!   переставить — нет.
+//! * **Удалённое остаётся у тех, кто успел загрузить** — как в любом
+//!   канале.
+//! * **Пост-квантовой защиты подлинности нет**: подпись автора —
+//!   Ed25519. Конфиденциальность (AES-256-GCM на симметричном ключе)
+//!   от квантового противника не страдает.
 //!
 //! Канал — для объявлений и публикаций, которые автор готов раздать
 //! всем, у кого есть ссылка. Личное пишут в переписке.
@@ -60,19 +77,31 @@ pub const MAX_DESCRIPTION_CHARS: usize = 500;
 
 /// Предел текста записи, в байтах UTF-8.
 ///
-/// Запись дополняется до бакета (`padding`), и вместе с подписью обязана
-/// уложиться в серверный предел 64 КБ: 16 000 байт текста попадают
-/// в бакет 32 КБ.
+/// Запись дополняется до бакета (`padding`), и вместе с подписью
+/// и описаниями вложений обязана уложиться в серверный предел 64 КБ:
+/// 16 000 байт текста и десять описаний попадают в бакет 32 КБ.
 pub const MAX_POST_BYTES: usize = 16_000;
 
+/// Сколько вложений может нести одна запись.
+pub const MAX_POST_ATTACHMENTS: usize = 10;
+
+/// Предел одного описания вложения, в байтах.
+///
+/// Описание — адрес, ключ, размер, имя (до 255 байт), подпись для
+/// незрячих. Килобайта хватает с запасом; больше — не описание.
+pub const MAX_ATTACHMENT_DESCRIPTOR_BYTES: usize = 1_024;
+
 /// Версия формата записи.
-const WIRE_VERSION: u8 = 1;
+const WIRE_VERSION: u8 = 2;
 
 /// Вид записи: описание канала.
 const KIND_META: u8 = 1;
 
 /// Вид записи: публикация.
 const KIND_POST: u8 = 2;
+
+/// Вид записи: отметка об удалении публикации.
+const KIND_TOMBSTONE: u8 = 3;
 
 /// Заголовок провода: версия, вид, nonce, подпись.
 const HEADER_LEN: usize = 2 + NONCE_LEN + SIGNATURE_LEN;
@@ -124,6 +153,10 @@ pub struct ChannelMeta {
     /// не принимает описание старше уже известного: сервер не подсунет
     /// прежнее название.
     pub updated_at_millis: i64,
+    /// Номер закреплённой записи; `0` — закрепа нет.
+    pub pinned: u64,
+    /// Описание вложения с аватаром канала; пусто — аватара нет.
+    pub avatar: Vec<u8>,
 }
 
 /// Запись канала.
@@ -132,10 +165,28 @@ pub struct ChannelPost {
     /// Номер записи, который назначил автор. Обязан совпасть с номером
     /// сервера — сверяет [`ChannelAccess::open_post`].
     pub number: u64,
+    /// Номер редакции: `0` у только что опубликованной записи, растёт
+    /// с каждой правкой.
+    pub revision: u32,
     /// Время публикации по часам автора, миллисекунды эпохи.
     pub created_at_millis: i64,
-    /// Текст.
+    /// Время последней правки; `0` — запись не правили.
+    pub edited_at_millis: i64,
+    /// Текст. Может быть пустым, если есть вложения.
     pub text: String,
+    /// Описания вложений (`gasapp_media::descriptor`), как есть.
+    pub attachments: Vec<Vec<u8>>,
+}
+
+/// Отметка об удалении записи.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelTombstone {
+    /// Номер удалённой записи.
+    pub number: u64,
+    /// Номер редакции: больше, чем у любой редакции самой записи.
+    pub revision: u32,
+    /// Когда автор удалил запись, миллисекунды эпохи.
+    pub deleted_at_millis: i64,
 }
 
 /// Создаёт канал: идентификатор, секрет чтения и пару подписи.
@@ -233,23 +284,22 @@ impl ChannelAccess {
     /// [`GasAppError::Malformed`] — формат не тот.
     pub fn open_meta(&self, wire: &[u8]) -> Result<ChannelMeta> {
         let content = self.open(KIND_META, wire)?;
-
-        let (stamp, rest) = split(&content, 8)?;
-        let (title_len, rest) = split(rest, 2)?;
-        let title_len = usize::from(u16::from_be_bytes(
-            title_len.try_into().map_err(|_| GasAppError::Malformed)?,
-        ));
-        let (title, description) = split(rest, title_len)?;
+        let mut reader = Reader::new(&content);
 
         let meta = ChannelMeta {
-            title: text(title)?,
-            description: text(description)?,
-            updated_at_millis: i64::from_be_bytes(
-                stamp.try_into().map_err(|_| GasAppError::Malformed)?,
-            ),
+            updated_at_millis: reader.i64()?,
+            title: text(reader.block16()?)?,
+            description: text(reader.block16()?)?,
+            pinned: reader.u64()?,
+            avatar: reader.block16()?.to_vec(),
         };
+        reader.finish()?;
 
         validate_meta(&meta.title, &meta.description)?;
+
+        if meta.avatar.len() > MAX_ATTACHMENT_DESCRIPTOR_BYTES {
+            return Err(GasAppError::Malformed);
+        }
 
         Ok(meta)
     }
@@ -265,25 +315,71 @@ impl ChannelAccess {
     /// [`GasAppError::Malformed`] — формат не тот.
     pub fn open_post(&self, wire: &[u8], server_seq: u64) -> Result<ChannelPost> {
         let content = self.open(KIND_POST, wire)?;
+        let mut reader = Reader::new(&content);
 
-        let (number, rest) = split(&content, 8)?;
-        let (stamp, body) = split(rest, 8)?;
+        let number = reader.u64()?;
+        let revision = reader.u32()?;
+        let created_at_millis = reader.i64()?;
+        let edited_at_millis = reader.i64()?;
+        let body = text(reader.block32()?)?;
 
-        let post = ChannelPost {
-            number: u64::from_be_bytes(number.try_into().map_err(|_| GasAppError::Malformed)?),
-            created_at_millis: i64::from_be_bytes(
-                stamp.try_into().map_err(|_| GasAppError::Malformed)?,
-            ),
-            text: text(body)?,
-        };
+        let count = usize::from(reader.u8()?);
+        if count > MAX_POST_ATTACHMENTS {
+            return Err(GasAppError::Malformed);
+        }
+
+        let mut attachments = Vec::with_capacity(count);
+        for _ in 0..count {
+            let descriptor = reader.block16()?;
+            if descriptor.is_empty() || descriptor.len() > MAX_ATTACHMENT_DESCRIPTOR_BYTES {
+                return Err(GasAppError::Malformed);
+            }
+            attachments.push(descriptor.to_vec());
+        }
+        reader.finish()?;
 
         // 🔐 Подпись верна, но запись стоит не на своём месте: сервер
         // выдал её под чужим номером.
-        if post.number != server_seq {
+        if number != server_seq {
             return Err(GasAppError::InvalidSignature);
         }
 
+        let post = ChannelPost {
+            number,
+            revision,
+            created_at_millis,
+            edited_at_millis,
+            text: body,
+            attachments,
+        };
+        validate_post(&post)?;
+
         Ok(post)
+    }
+
+    /// Расшифровывает и проверяет отметку об удалении записи
+    /// `server_seq`.
+    ///
+    /// # Errors
+    ///
+    /// Те же, что у [`ChannelAccess::open_post`].
+    pub fn open_tombstone(&self, wire: &[u8], server_seq: u64) -> Result<ChannelTombstone> {
+        let content = self.open(KIND_TOMBSTONE, wire)?;
+        let mut reader = Reader::new(&content);
+
+        let tombstone = ChannelTombstone {
+            number: reader.u64()?,
+            revision: reader.u32()?,
+            deleted_at_millis: reader.i64()?,
+        };
+        reader.finish()?;
+
+        // 🔐 Отметка об удалении одной записи не удаляет другую.
+        if tombstone.number != server_seq {
+            return Err(GasAppError::InvalidSignature);
+        }
+
+        Ok(tombstone)
     }
 
     /// Проверяет подпись автора и расшифровывает содержимое.
@@ -353,44 +449,81 @@ impl<'a> ChannelAuthor<'a> {
     ) -> Result<Vec<u8>> {
         validate_meta(&meta.title, &meta.description)?;
 
-        let title = meta.title.as_bytes();
-        let title_len = u16::try_from(title.len()).map_err(|_| GasAppError::Malformed)?;
+        if meta.avatar.len() > MAX_ATTACHMENT_DESCRIPTOR_BYTES {
+            return Err(GasAppError::Malformed);
+        }
 
         let mut content = Vec::with_capacity(
-            title
+            meta.title
                 .len()
                 .saturating_add(meta.description.len())
-                .saturating_add(10),
+                .saturating_add(meta.avatar.len())
+                .saturating_add(32),
         );
         content.extend_from_slice(&meta.updated_at_millis.to_be_bytes());
-        content.extend_from_slice(&title_len.to_be_bytes());
-        content.extend_from_slice(title);
-        content.extend_from_slice(meta.description.as_bytes());
+        put_block16(&mut content, meta.title.as_bytes())?;
+        put_block16(&mut content, meta.description.as_bytes())?;
+        content.extend_from_slice(&meta.pinned.to_be_bytes());
+        put_block16(&mut content, &meta.avatar)?;
 
         self.seal(KIND_META, &content, rng)
     }
 
-    /// Шифрует и подписывает запись.
+    /// Шифрует и подписывает запись — новую или исправленную.
     ///
     /// # Errors
     ///
-    /// [`GasAppError::Malformed`] — текст пустой либо длиннее
-    /// [`MAX_POST_BYTES`]; [`GasAppError::Crypto`] — сбой шифрования.
+    /// [`GasAppError::Malformed`] — запись пуста (ни текста, ни
+    /// вложений) либо что-то длиннее предела;
+    /// [`GasAppError::Crypto`] — сбой шифрования.
     pub fn seal_post<R: RngCore + CryptoRng>(
         &self,
         post: &ChannelPost,
         rng: &mut R,
     ) -> Result<Vec<u8>> {
-        if post.text.trim().is_empty() || post.text.len() > MAX_POST_BYTES {
-            return Err(GasAppError::Malformed);
+        validate_post(post)?;
+
+        let attachments: usize = post.attachments.iter().map(Vec::len).sum();
+        let mut content = Vec::with_capacity(
+            post.text
+                .len()
+                .saturating_add(attachments)
+                .saturating_add(64),
+        );
+        content.extend_from_slice(&post.number.to_be_bytes());
+        content.extend_from_slice(&post.revision.to_be_bytes());
+        content.extend_from_slice(&post.created_at_millis.to_be_bytes());
+        content.extend_from_slice(&post.edited_at_millis.to_be_bytes());
+        content.extend_from_slice(
+            &u32::try_from(post.text.len())
+                .map_err(|_| GasAppError::Malformed)?
+                .to_be_bytes(),
+        );
+        content.extend_from_slice(post.text.as_bytes());
+        content.push(u8::try_from(post.attachments.len()).map_err(|_| GasAppError::Malformed)?);
+        for descriptor in &post.attachments {
+            put_block16(&mut content, descriptor)?;
         }
 
-        let mut content = Vec::with_capacity(post.text.len().saturating_add(16));
-        content.extend_from_slice(&post.number.to_be_bytes());
-        content.extend_from_slice(&post.created_at_millis.to_be_bytes());
-        content.extend_from_slice(post.text.as_bytes());
-
         self.seal(KIND_POST, &content, rng)
+    }
+
+    /// Шифрует и подписывает отметку об удалении записи.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Crypto`] — сбой шифрования.
+    pub fn seal_tombstone<R: RngCore + CryptoRng>(
+        &self,
+        tombstone: &ChannelTombstone,
+        rng: &mut R,
+    ) -> Result<Vec<u8>> {
+        let mut content = Vec::with_capacity(20);
+        content.extend_from_slice(&tombstone.number.to_be_bytes());
+        content.extend_from_slice(&tombstone.revision.to_be_bytes());
+        content.extend_from_slice(&tombstone.deleted_at_millis.to_be_bytes());
+
+        self.seal(KIND_TOMBSTONE, &content, rng)
     }
 
     fn seal<R: RngCore + CryptoRng>(
@@ -450,6 +583,30 @@ pub fn validate_meta(title: &str, description: &str) -> Result<()> {
             .any(|symbol| symbol.is_control() && symbol != '\n');
 
     if title_ok && description_ok {
+        Ok(())
+    } else {
+        Err(GasAppError::Malformed)
+    }
+}
+
+/// Проверяет запись: не пуста и укладывается в пределы.
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — нет ни текста, ни вложений, либо
+/// превышен один из пределов.
+pub fn validate_post(post: &ChannelPost) -> Result<()> {
+    let has_text = !post.text.trim().is_empty();
+
+    let attachments_ok = post.attachments.len() <= MAX_POST_ATTACHMENTS
+        && post.attachments.iter().all(|descriptor| {
+            !descriptor.is_empty() && descriptor.len() <= MAX_ATTACHMENT_DESCRIPTOR_BYTES
+        });
+
+    if (has_text || !post.attachments.is_empty())
+        && post.text.len() <= MAX_POST_BYTES
+        && attachments_ok
+    {
         Ok(())
     } else {
         Err(GasAppError::Malformed)
@@ -527,6 +684,97 @@ fn text(bytes: &[u8]) -> Result<String> {
     String::from_utf8(bytes.to_vec()).map_err(|_| GasAppError::Malformed)
 }
 
+/// Дописывает блок с двухбайтовой длиной впереди.
+fn put_block16(out: &mut Vec<u8>, block: &[u8]) -> Result<()> {
+    out.extend_from_slice(
+        &u16::try_from(block.len())
+            .map_err(|_| GasAppError::Malformed)?
+            .to_be_bytes(),
+    );
+    out.extend_from_slice(block);
+
+    Ok(())
+}
+
+/// Последовательное чтение содержимого записи — без паники на
+/// обрезанных данных.
+struct Reader<'a> {
+    rest: &'a [u8],
+}
+
+impl<'a> Reader<'a> {
+    const fn new(bytes: &'a [u8]) -> Self {
+        Self { rest: bytes }
+    }
+
+    fn take(&mut self, len: usize) -> Result<&'a [u8]> {
+        let (head, tail) = split(self.rest, len)?;
+        self.rest = tail;
+
+        Ok(head)
+    }
+
+    fn u8(&mut self) -> Result<u8> {
+        self.take(1)?.first().copied().ok_or(GasAppError::Malformed)
+    }
+
+    fn u16(&mut self) -> Result<u16> {
+        Ok(u16::from_be_bytes(
+            self.take(2)?
+                .try_into()
+                .map_err(|_| GasAppError::Malformed)?,
+        ))
+    }
+
+    fn u32(&mut self) -> Result<u32> {
+        Ok(u32::from_be_bytes(
+            self.take(4)?
+                .try_into()
+                .map_err(|_| GasAppError::Malformed)?,
+        ))
+    }
+
+    fn u64(&mut self) -> Result<u64> {
+        Ok(u64::from_be_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| GasAppError::Malformed)?,
+        ))
+    }
+
+    fn i64(&mut self) -> Result<i64> {
+        Ok(i64::from_be_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| GasAppError::Malformed)?,
+        ))
+    }
+
+    /// Блок с двухбайтовой длиной впереди.
+    fn block16(&mut self) -> Result<&'a [u8]> {
+        let len = usize::from(self.u16()?);
+
+        self.take(len)
+    }
+
+    /// Блок с четырёхбайтовой длиной впереди.
+    fn block32(&mut self) -> Result<&'a [u8]> {
+        let len = usize::try_from(self.u32()?).map_err(|_| GasAppError::Malformed)?;
+
+        self.take(len)
+    }
+
+    /// Содержимое прочитано целиком: хвоста, который автор не
+    /// описывал, быть не должно.
+    fn finish(self) -> Result<()> {
+        if self.rest.is_empty() {
+            Ok(())
+        } else {
+            Err(GasAppError::Malformed)
+        }
+    }
+}
+
 /// Связанные данные AEAD: вид записи и канал. Описание не расшифруется
 /// как публикация, запись одного канала — как запись другого.
 fn aad(kind: u8, channel_id: &ChannelId) -> Vec<u8> {
@@ -565,8 +813,11 @@ mod tests {
     fn post(number: u64, text: &str) -> ChannelPost {
         ChannelPost {
             number,
+            revision: 0,
             created_at_millis: 1_700_000_000_000,
+            edited_at_millis: 0,
             text: text.to_owned(),
+            attachments: Vec::new(),
         }
     }
 
@@ -575,6 +826,8 @@ mod tests {
             title: title.to_owned(),
             description: "Новости и объявления.\nБез спама.".to_owned(),
             updated_at_millis: 1_700_000_000_000,
+            pinned: 0,
+            avatar: Vec::new(),
         }
     }
 
@@ -593,14 +846,105 @@ mod tests {
         );
     }
 
+    /// Запись с вложениями и без текста — законная запись (фото).
+    #[test]
+    fn a_post_with_attachments_round_trips() {
+        let channel = create(&mut OsRng);
+        let author = ChannelAuthor::new(&channel.access, channel.signing_key).unwrap();
+
+        let photo = ChannelPost {
+            revision: 3,
+            edited_at_millis: 1_700_000_100_000,
+            text: String::new(),
+            attachments: vec![vec![1, 2, 3], vec![9; 400]],
+            ..post(2, "")
+        };
+        let wire = author.seal_post(&photo, &mut OsRng).unwrap();
+
+        assert_eq!(channel.access.open_post(&wire, 2).unwrap(), photo);
+    }
+
     #[test]
     fn meta_round_trips() {
         let channel = create(&mut OsRng);
         let author = ChannelAuthor::new(&channel.access, channel.signing_key).unwrap();
 
-        let wire = author.seal_meta(&meta("Gas News"), &mut OsRng).unwrap();
+        let described = ChannelMeta {
+            pinned: 12,
+            avatar: vec![5; 120],
+            ..meta("Gas News")
+        };
+        let wire = author.seal_meta(&described, &mut OsRng).unwrap();
 
-        assert_eq!(channel.access.open_meta(&wire).unwrap(), meta("Gas News"));
+        assert_eq!(channel.access.open_meta(&wire).unwrap(), described);
+    }
+
+    #[test]
+    fn a_tombstone_round_trips() {
+        let channel = create(&mut OsRng);
+        let author = ChannelAuthor::new(&channel.access, channel.signing_key).unwrap();
+        let tombstone = ChannelTombstone {
+            number: 4,
+            revision: 2,
+            deleted_at_millis: 1_700_000_200_000,
+        };
+
+        let wire = author.seal_tombstone(&tombstone, &mut OsRng).unwrap();
+
+        assert_eq!(channel.access.open_tombstone(&wire, 4).unwrap(), tombstone);
+    }
+
+    /// 🔐 Отметка об удалении одной записи не удаляет другую, и запись
+    /// не выдаётся за отметку.
+    #[test]
+    fn a_tombstone_is_bound_to_its_post() {
+        let channel = create(&mut OsRng);
+        let author = ChannelAuthor::new(&channel.access, channel.signing_key).unwrap();
+        let wire = author
+            .seal_tombstone(
+                &ChannelTombstone {
+                    number: 4,
+                    revision: 1,
+                    deleted_at_millis: 0,
+                },
+                &mut OsRng,
+            )
+            .unwrap();
+        let live = author.seal_post(&post(5, "живая"), &mut OsRng).unwrap();
+
+        assert!(matches!(
+            channel.access.open_tombstone(&wire, 5),
+            Err(GasAppError::InvalidSignature)
+        ));
+        assert!(channel.access.open_tombstone(&live, 5).is_err());
+        assert!(channel.access.open_post(&wire, 4).is_err());
+    }
+
+    /// 🔐 Читатель знает ключ чтения, но удалить запись за автора не может.
+    #[test]
+    fn a_reader_cannot_forge_a_tombstone() {
+        let channel = create(&mut OsRng);
+        let impostor = create(&mut OsRng);
+        let forged_access = ChannelAccess {
+            verify_key: impostor.access.verify_key,
+            ..channel.access.clone()
+        };
+        let impostor_author = ChannelAuthor::new(&forged_access, impostor.signing_key).unwrap();
+        let forged = impostor_author
+            .seal_tombstone(
+                &ChannelTombstone {
+                    number: 1,
+                    revision: 9,
+                    deleted_at_millis: 0,
+                },
+                &mut OsRng,
+            )
+            .unwrap();
+
+        assert!(matches!(
+            channel.access.open_tombstone(&forged, 1),
+            Err(GasAppError::InvalidSignature)
+        ));
     }
 
     #[test]
@@ -717,17 +1061,23 @@ mod tests {
         assert_eq!(short.len(), longer.len());
     }
 
-    /// Самая длинная запись укладывается в серверный предел 64 КБ.
+    /// Самая большая запись — предельный текст и десять предельных
+    /// описаний — укладывается в серверный предел 64 КБ.
     #[test]
-    fn the_longest_post_fits_the_server_limit() {
+    fn the_largest_post_fits_the_server_limit() {
         let channel = create(&mut OsRng);
         let author = ChannelAuthor::new(&channel.access, channel.signing_key).unwrap();
 
-        let wire = author
-            .seal_post(&post(1, &"я".repeat(8_000)), &mut OsRng)
-            .unwrap();
+        let largest = ChannelPost {
+            text: "я".repeat(8_000),
+            attachments: vec![vec![7; MAX_ATTACHMENT_DESCRIPTOR_BYTES]; MAX_POST_ATTACHMENTS],
+            ..post(1, "")
+        };
+        let wire = author.seal_post(&largest, &mut OsRng).unwrap();
 
         assert!(wire.len() <= 65_536, "{}", wire.len());
+        assert_eq!(channel.access.open_post(&wire, 1).unwrap(), largest);
+
         assert!(author
             .seal_post(&post(1, &"a".repeat(MAX_POST_BYTES + 1)), &mut OsRng)
             .is_err());
@@ -743,6 +1093,12 @@ mod tests {
         assert!(author
             .seal_meta(&meta(&"x".repeat(MAX_TITLE_CHARS + 1)), &mut OsRng)
             .is_err());
+
+        let crowded = ChannelPost {
+            attachments: vec![vec![1]; MAX_POST_ATTACHMENTS + 1],
+            ..post(1, "много")
+        };
+        assert!(author.seal_post(&crowded, &mut OsRng).is_err());
     }
 
     /// Ключ подписи от другого канала не принимается.

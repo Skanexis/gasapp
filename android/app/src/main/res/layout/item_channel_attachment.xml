@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Файл в записи канала: значок, имя, размер. Нажатие — сохранить туда,
+  куда укажет человек (как вложение в переписке). Та же строка
+  показывает файл, приложенный к ещё не опубликованной записи, —
+  тогда справа крестик.
+
+  🔐 Имя назвал автор канала: оно показывается, но ничего не решает —
+  ни тип, ни место сохранения.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_s"
+    android:background="@drawable/bg_composer_field"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/touch_target"
+    android:orientation="horizontal"
+    android:paddingStart="12dp"
+    android:paddingTop="@dimen/space_s"
+    android:paddingEnd="12dp"
+    android:paddingBottom="@dimen/space_s">
+
+    <ImageView
+        android:id="@+id/attachment_icon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_file"
+        app:tint="@color/accent_base" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/attachment_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="middle"
+            android:fontFamily="@font/inter"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            tools:text="договор.pdf" />
+
+        <TextView
+            android:id="@+id/attachment_size"
+            style="@style/GasAppText.Caption.Muted"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            tools:text="2,4 МБ" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/attachment_remove"
+        android:layout_width="@dimen/touch_target"
+        android:layout_height="@dimen/touch_target"
+        android:layout_marginEnd="-12dp"
+        android:contentDescription="@string/channel_attachment_remove"
+        android:padding="14dp"
+        android:src="@drawable/ic_close"
+        android:visibility="gone"
+        app:tint="@color/text_secondary" />
+</LinearLayout>

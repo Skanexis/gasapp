@@ -166,30 +166,65 @@ The full list of what is stored and for how long is in
 
 ## Channels
 
-A channel is a feed of posts from one author. Anyone who has the channel
-link can read it; only the author can post.
+A channel is a feed of posts from one author: text, photos and files.
+Anyone who has the channel link can read it; only the author can post,
+edit and delete.
 
 **What the server knows about a channel:** that it exists, which account
-owns it, how many posts it has, their size (to the nearest padding
-bucket) and the hour each was published.
+owns it, how many posts and files it has, their size (to the nearest
+padding step), the hour each post was published, which posts were edited
+and which were deleted.
 
-**What the server does not know:**
+**What the server does not know about a private channel:**
 
-* 🔐 the title, the description and the text of the posts — it stores
-  them as ciphertext. The read key is in the channel link, and the link
-  never reaches the server;
-* 🔐 who reads the channel. There is no subscriber list: posts are
-  fetched without your device's signature, and the list of channels you
-  read is kept only on your phone. Leaving a channel means erasing it
-  from the phone; the server does not learn of it.
+* 🔐 the title, the description, the avatar, the text of the posts and
+  the contents of the files — it stores them as ciphertext. The read key
+  is in the channel link, and the link never reaches the server;
+* 🔐 who reads the channel. Posts are fetched without your device's
+  signature, and the list of channels you read is kept only on your
+  phone.
+
+**The subscriber token.** So that a channel can show subscriber and view
+counts, and so that you can react to a post, the app makes up a random
+token when you add a channel — a separate one for each channel — and
+tells the server. The server stores a hash of the token, the number of
+the post you have read up to, and your reactions. The token is not tied
+to your account or device: requests carrying it are not signed by the
+device and, with the built-in Tor, travel on a separate circuit.
+
+⚠️ A token is a pseudonym, not invisibility: the server sees that one
+reader of the channel, unknown to it, read up to a certain post and
+left a certain reaction. Tokens of the same person in different channels
+cannot be linked from the database; on a direct connection without Tor
+they can be matched by IP address and request timing. When you remove a
+channel from the phone, the app asks the server to erase the token and
+its reactions.
+
+**Public channels.** An author can give a channel an `@name` so that it
+can be found by search. To do that, the author's app hands the server
+the channel link — and the link contains the read key. 🔐 **The server
+can read a public channel**: title, posts and files. The app tells the
+author so before the switch. If the channel is made private again, the
+server stops handing out the link, but what it has already learned is
+not forgotten. Even for a public channel the server cannot forge posts:
+it does not have the author's signing key.
 
 ⚠️ **What channels do not promise.** A channel is not a private
 conversation:
 
 * the link is the access itself. Whoever gets it reads the whole
   channel, past and future posts; it cannot be revoked for one reader;
-* the server can withhold posts (all or the latest), but cannot forge a
-  post or reorder posts — the author signs them;
+* the server can withhold posts (all or the latest), an edit or a
+  deletion mark, but cannot forge a post, reorder posts, bring back the
+  old text after an edit, or "delete" a post from readers on its own —
+  the author signs all of these;
+* subscriber, view and reaction counts are server statistics. Nobody
+  signs them, and the server could show any numbers;
+* deleting a post erases it from the server and, at their next
+  synchronisation, from readers' apps. Copies made outside the app stay;
+* an `@name` belongs to the server: it decides which channel the name
+  leads to. If it matters that you reach a particular author's channel,
+  compare the link with the author directly;
 * 🔐 when you read a channel, the server sees a request for that channel
   and, on a direct connection without Tor, your IP address. With the
   built-in Tor (the default) it sees a Tor exit relay;

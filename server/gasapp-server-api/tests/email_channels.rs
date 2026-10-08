@@ -561,19 +561,32 @@ async fn posts_are_published_by_the_owner_and_read_by_anyone() {
     let (status, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(info["last_seq"], 3);
+    assert_eq!(info["last_rev"], 3);
     assert_eq!(info["verify_key"], hex::encode([0x77u8; 32]));
     assert_eq!(info["meta"], hex::encode(b"encrypted-meta"));
 
+    // Лента — от новых к старым.
     let (status, all) = get(&state, &format!("/v1/channels/feed/{channel_id}/posts")).await;
     assert_eq!(status, StatusCode::OK);
     let all = all.as_array().unwrap();
     assert_eq!(all.len(), 3);
-    assert_eq!(all[0]["body"], hex::encode(b"first"));
-    assert_eq!(all[2]["seq"], 3);
+    assert_eq!(all[0]["body"], hex::encode(b"third"));
+    assert_eq!(all[2]["seq"], 1);
 
+    // История — страницами назад.
+    let (_, older) = get(
+        &state,
+        &format!("/v1/channels/feed/{channel_id}/posts?before_seq=3&limit=1"),
+    )
+    .await;
+    let older = older.as_array().unwrap();
+    assert_eq!(older.len(), 1);
+    assert_eq!(older[0]["body"], hex::encode(b"second"));
+
+    // Изменения — после ревизии, по возрастанию.
     let (_, tail) = get(
         &state,
-        &format!("/v1/channels/feed/{channel_id}/posts?after=2"),
+        &format!("/v1/channels/feed/{channel_id}/posts?after_rev=2"),
     )
     .await;
     let tail = tail.as_array().unwrap();
@@ -760,4 +773,604 @@ async fn deleting_the_account_removes_its_channels() {
 
     let (status, _) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+// ---------------------------------------------------------------------------
+//  Каналы: правка, удаление, медиа, публичность, подписчики, реакции
+// ---------------------------------------------------------------------------
+
+/// Создаёт канал премиум-аккаунта с `count` записями.
+async fn channel_with_posts(state: &Arc<AppState>, count: usize) -> (DeviceKey, Uuid, Uuid) {
+    let private = device_key();
+    let device_id = premium_account(state, &private).await;
+    let channel_id = Uuid::new_v4();
+
+    let (created, _) = signed(
+        state,
+        &private,
+        "POST",
+        &format!("/v1/channels/own/{device_id}"),
+        Some(channel_body(channel_id)),
+    )
+    .await;
+    assert_eq!(created, StatusCode::CREATED);
+
+    for index in 0..count {
+        let (status, _) = signed(
+            state,
+            &private,
+            "POST",
+            &format!("/v1/channels/own/{device_id}/{channel_id}/posts"),
+            Some(serde_json::json!({ "body": hex::encode(format!("post-{index}")) })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    (private, device_id, channel_id)
+}
+
+/// Подписывает случайный жетон на канал; возвращает жетон в hex.
+async fn subscribe_token(state: &Arc<AppState>, channel_id: Uuid) -> String {
+    let token = key();
+    let challenge = pow::subscribe_challenge(&channel_id.to_string(), &token);
+    let nonce = (0u64..1_000_000)
+        .find(|nonce| pow::verify(&challenge, *nonce, state.subscribe_difficulty).is_ok())
+        .expect("решение находится");
+
+    let (status, _) = post(
+        state,
+        &format!("/v1/channels/feed/{channel_id}/subscribe"),
+        serde_json::json!({ "token": hex::encode(token), "pow_nonce": nonce }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    hex::encode(token)
+}
+
+/// Правка и удаление видны читателю как изменения: у каждой свой номер
+/// ревизии, а удалённая запись исчезает из ленты.
+#[tokio::test]
+async fn edits_and_deletions_reach_readers_as_changes() {
+    let (state, _mailer) = require_state!();
+    let (private, device_id, channel_id) = channel_with_posts(&state, 3).await;
+    let posts_uri = format!("/v1/channels/own/{device_id}/{channel_id}/posts");
+
+    let (status, edited) = signed(
+        &state,
+        &private,
+        "PUT",
+        &posts_uri,
+        Some(serde_json::json!({ "seq": 1, "body": hex::encode(b"post-0 edited") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(edited["rev"], 4);
+
+    let (status, removed) = signed(
+        &state,
+        &private,
+        "PUT",
+        &posts_uri,
+        Some(serde_json::json!({ "seq": 2, "body": hex::encode(b"tombstone"), "deleted": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(removed["rev"], 5);
+
+    // Читатель, остановившийся на ревизии 3, получает оба изменения.
+    let (_, changes) = get(
+        &state,
+        &format!("/v1/channels/feed/{channel_id}/posts?after_rev=3"),
+    )
+    .await;
+    let changes = changes.as_array().unwrap();
+    assert_eq!(changes.len(), 2);
+    assert_eq!(changes[0]["seq"], 1);
+    assert_eq!(changes[0]["deleted"], false);
+    assert_eq!(changes[0]["body"], hex::encode(b"post-0 edited"));
+    assert_eq!(changes[1]["seq"], 2);
+    assert_eq!(changes[1]["deleted"], true);
+
+    // В ленте удалённой записи нет.
+    let (_, feed) = get(&state, &format!("/v1/channels/feed/{channel_id}/posts")).await;
+    let seqs: Vec<i64> = feed
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|post| post["seq"].as_i64().unwrap())
+        .collect();
+    assert_eq!(seqs, vec![3, 1]);
+
+    // Удаление окончательно: удалённую запись не исправить.
+    let (status, _) = signed(
+        &state,
+        &private,
+        "PUT",
+        &posts_uri,
+        Some(serde_json::json!({ "seq": 2, "body": hex::encode(b"undelete") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Несостоявшаяся правка номер ревизии не тратит.
+    let (_, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
+    assert_eq!(info["last_rev"], 5);
+    assert_eq!(info["last_seq"], 3);
+}
+
+/// 🔐 Чужой аккаунт запись не правит и не удаляет.
+#[tokio::test]
+async fn a_stranger_cannot_edit_posts() {
+    let (state, _mailer) = require_state!();
+    let (_owner_key, _owner, channel_id) = channel_with_posts(&state, 1).await;
+    let stranger_key = device_key();
+    let stranger = premium_account(&state, &stranger_key).await;
+
+    let (status, _) = signed(
+        &state,
+        &stranger_key,
+        "PUT",
+        &format!("/v1/channels/own/{stranger}/{channel_id}/posts"),
+        Some(serde_json::json!({ "seq": 1, "body": hex::encode(b"defaced"), "deleted": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (_, feed) = get(&state, &format!("/v1/channels/feed/{channel_id}/posts")).await;
+    assert_eq!(feed[0]["body"], hex::encode(b"post-0"));
+}
+
+/// Медиа: загружает владелец, скачивает любой, удаляет владелец.
+#[tokio::test]
+async fn media_round_trips() {
+    let (state, _mailer) = require_state!();
+    let (private, device_id, channel_id) = channel_with_posts(&state, 0).await;
+    let uri = format!("/v1/channels/own/{device_id}/{channel_id}/media");
+    let blob = vec![0xABu8; 300_000];
+
+    let request = signed_request(
+        &private,
+        "POST",
+        &uri,
+        "application/octet-stream",
+        blob.clone(),
+    );
+    let (status, uploaded) = send(&state, request).await;
+    assert_eq!(status, StatusCode::OK);
+    let media_id = uploaded["media_id"].as_str().unwrap().to_owned();
+
+    // Скачивание — без подписи.
+    let router = gasapp_server_api::router(Arc::clone(&state));
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/channels/feed/{channel_id}/media/{media_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(bytes.as_ref(), blob.as_slice());
+
+    // Чужой — даже с премиумом — в канал не загружает.
+    let stranger_key = device_key();
+    let stranger = premium_account(&state, &stranger_key).await;
+    let foreign = signed_request(
+        &stranger_key,
+        "POST",
+        &format!("/v1/channels/own/{stranger}/{channel_id}/media"),
+        "application/octet-stream",
+        vec![1, 2, 3],
+    );
+    assert_eq!(send(&state, foreign).await.0, StatusCode::NOT_FOUND);
+
+    // Без подписи загрузки нет.
+    let unsigned = Request::builder()
+        .method("POST")
+        .uri(&uri)
+        .body(Body::from(vec![1u8, 2, 3]))
+        .unwrap();
+    assert_eq!(send(&state, unsigned).await.0, StatusCode::UNAUTHORIZED);
+
+    let (status, _) = signed(
+        &state,
+        &private,
+        "DELETE",
+        &uri,
+        Some(serde_json::json!({ "media_id": media_id })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = get(
+        &state,
+        &format!("/v1/channels/feed/{channel_id}/media/{media_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Ссылка-приглашение канала по форме — какой её ждёт сервер.
+fn link_to(channel_id: Uuid) -> String {
+    format!(
+        "gasapp://channel/{}.ABCDEFGH234567.ZYXWVUTS765432",
+        channel_id.simple()
+    )
+}
+
+/// Публичный канал находится по имени и поиском; закрытый — нет.
+#[tokio::test]
+async fn a_public_channel_is_found_by_handle() {
+    let (state, _mailer) = require_state!();
+    let (private, device_id, channel_id) = channel_with_posts(&state, 0).await;
+    let (_other_key, _other, hidden) = channel_with_posts(&state, 0).await;
+    let handle = unique_name("gasnews");
+    let own = format!("/v1/channels/own/{device_id}/{channel_id}");
+    let link = link_to(channel_id);
+
+    // 🔐 Под своим именем владелец не раздаст ссылку на чужой канал
+    // и не раздаст не-ссылку.
+    for foreign in [link_to(hidden), "https://example.org/".to_owned()] {
+        let (status, _) = signed(
+            &state,
+            &private,
+            "PUT",
+            &own,
+            Some(serde_json::json!({
+                "set_public": true,
+                "handle": handle,
+                "public_link": foreign,
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{foreign}");
+    }
+
+    let (status, _) = signed(
+        &state,
+        &private,
+        "PUT",
+        &own,
+        Some(serde_json::json!({
+            "set_public": true,
+            "handle": handle,
+            "public_link": link,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, found) = get(&state, &format!("/v1/channels/handle/{handle}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(found["channel_id"], channel_id.to_string());
+    assert_eq!(found["public_link"], link);
+
+    let prefix = &handle[..handle.len() - 4];
+    let (_, results) = get(&state, &format!("/v1/channels/search?q={prefix}")).await;
+    let ids: Vec<&str> = results
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|channel| channel["channel_id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&channel_id.to_string().as_str()));
+    assert!(!ids.contains(&hidden.to_string().as_str()));
+
+    // 🔐 У закрытого канала ссылки на сервере нет.
+    let (_, closed) = get(&state, &format!("/v1/channels/feed/{hidden}")).await;
+    assert!(closed["public_link"].is_null());
+    assert!(closed["handle"].is_null());
+
+    // Снова закрытый: по имени больше не находится.
+    let (status, _) = signed(
+        &state,
+        &private,
+        "PUT",
+        &own,
+        Some(serde_json::json!({ "set_public": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = get(&state, &format!("/v1/channels/handle/{handle}")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Занятое имя канала второму каналу не достаётся; негодное — не принимается.
+#[tokio::test]
+async fn a_taken_or_malformed_handle_is_refused() {
+    let (state, _mailer) = require_state!();
+    let (first_key, first_device, first) = channel_with_posts(&state, 0).await;
+    let (second_key, second_device, second) = channel_with_posts(&state, 0).await;
+    let handle = unique_name("taken");
+    let body = |name: &str, channel: Uuid| serde_json::json!({ "set_public": true, "handle": name, "public_link": link_to(channel) });
+
+    let (status, _) = signed(
+        &state,
+        &first_key,
+        "PUT",
+        &format!("/v1/channels/own/{first_device}/{first}"),
+        Some(body(&handle, first)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let second_uri = format!("/v1/channels/own/{second_device}/{second}");
+    let (status, _) = signed(
+        &state,
+        &second_key,
+        "PUT",
+        &second_uri,
+        Some(body(&handle, second)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    for bad in ["Ab", "with space", "UPPER_case", "кириллица"] {
+        let (status, _) = signed(
+            &state,
+            &second_key,
+            "PUT",
+            &second_uri,
+            Some(body(bad, second)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    // Имя без ссылки: по имени было бы нечего отдать.
+    let (status, _) = signed(
+        &state,
+        &second_key,
+        "PUT",
+        &second_uri,
+        Some(serde_json::json!({ "set_public": true, "handle": unique_name("nolink") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Подписчики, просмотры и реакции считаются по жетонам.
+#[tokio::test]
+async fn subscribers_views_and_reactions_are_counted() {
+    let (state, _mailer) = require_state!();
+    let (_private, _device, channel_id) = channel_with_posts(&state, 3).await;
+    let feed = format!("/v1/channels/feed/{channel_id}");
+
+    let first = subscribe_token(&state, channel_id).await;
+    let second = subscribe_token(&state, channel_id).await;
+
+    // Повторная подписка тем же жетоном второго подписчика не даёт.
+    let token: [u8; 32] = hex::decode(&first).unwrap().try_into().unwrap();
+    let challenge = pow::subscribe_challenge(&channel_id.to_string(), &token);
+    let nonce = (0u64..1_000_000)
+        .find(|nonce| pow::verify(&challenge, *nonce, state.subscribe_difficulty).is_ok())
+        .unwrap();
+    post(
+        &state,
+        &format!("{feed}/subscribe"),
+        serde_json::json!({ "token": first, "pow_nonce": nonce }),
+    )
+    .await;
+
+    let (_, info) = get(&state, &feed).await;
+    assert_eq!(info["subscribers"], 2);
+
+    // Первый дочитал до второй записи, второй — до третьей.
+    for (token, seq) in [(&first, 2), (&second, 3)] {
+        let (status, _) = post(
+            &state,
+            &format!("{feed}/seen"),
+            serde_json::json!({ "token": token, "seq": seq }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+    // Отметка назад не двигается, а «дочитал до сотой» обрезается.
+    post(
+        &state,
+        &format!("{feed}/seen"),
+        serde_json::json!({ "token": first, "seq": 1 }),
+    )
+    .await;
+    post(
+        &state,
+        &format!("{feed}/seen"),
+        serde_json::json!({ "token": second, "seq": 100 }),
+    )
+    .await;
+
+    for (token, emoji) in [(&first, "🔥"), (&second, "🔥")] {
+        let (status, _) = post(
+            &state,
+            &format!("{feed}/react"),
+            serde_json::json!({ "token": token, "seq": 2, "emoji": emoji }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+    // Смена реакции — не вторая реакция.
+    post(
+        &state,
+        &format!("{feed}/react"),
+        serde_json::json!({ "token": second, "seq": 2, "emoji": "👍" }),
+    )
+    .await;
+
+    let (_, posts) = get(&state, &format!("{feed}/posts")).await;
+    let posts = posts.as_array().unwrap();
+    // Лента от новых к старым: третья, вторая, первая.
+    assert_eq!(posts[0]["views"], 1);
+    assert_eq!(posts[1]["views"], 2);
+    assert_eq!(posts[2]["views"], 2);
+    assert_eq!(posts[1]["reactions"], "👍:1,🔥:1");
+    assert_eq!(posts[0]["reactions"], "");
+
+    // Снятие реакции и отписка.
+    post(
+        &state,
+        &format!("{feed}/react"),
+        serde_json::json!({ "token": first, "seq": 2 }),
+    )
+    .await;
+    let (status, _) = post(
+        &state,
+        &format!("{feed}/unsubscribe"),
+        serde_json::json!({ "token": second }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, info) = get(&state, &feed).await;
+    assert_eq!(info["subscribers"], 1);
+    let (_, posts) = get(&state, &format!("{feed}/posts")).await;
+    // Реакция отписавшегося ушла вместе с ним.
+    assert_eq!(posts[1]["reactions"], "");
+    // А просмотр остаётся: запись, которую видели, видели.
+    assert_eq!(posts[0]["views"], 1);
+
+    // Счётчики сходятся с таблицами, из которых выросли.
+    let reactions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM channel_reactions WHERE channel_id = $1")
+            .bind(channel_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    let counted: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(sum(n), 0)::bigint FROM channel_reaction_counts WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(reactions, 0);
+    assert_eq!(counted, 0);
+}
+
+/// 🔐 Повтор одной и той же отметки и той же реакции счётчики не
+/// накручивает: считается жетон, а не запрос.
+#[tokio::test]
+async fn repeating_a_request_does_not_inflate_counters() {
+    let (state, _mailer) = require_state!();
+    let (_private, _device, channel_id) = channel_with_posts(&state, 2).await;
+    let feed = format!("/v1/channels/feed/{channel_id}");
+    let token = subscribe_token(&state, channel_id).await;
+
+    for _ in 0..5 {
+        post(
+            &state,
+            &format!("{feed}/seen"),
+            serde_json::json!({ "token": token, "seq": 2 }),
+        )
+        .await;
+        post(
+            &state,
+            &format!("{feed}/react"),
+            serde_json::json!({ "token": token, "seq": 1, "emoji": "🎉" }),
+        )
+        .await;
+    }
+
+    let (_, posts) = get(&state, &format!("{feed}/posts")).await;
+    assert_eq!(posts[0]["views"], 1);
+    assert_eq!(posts[1]["views"], 1);
+    assert_eq!(posts[1]["reactions"], "🎉:1");
+
+    let (_, info) = get(&state, &feed).await;
+    assert_eq!(info["subscribers"], 1);
+}
+
+/// 🔐 Негодный ключ восстановления отвергается до записи аккаунта:
+/// имя и адрес остаются свободными, и человек может повторить.
+#[tokio::test]
+async fn a_malformed_recovery_key_leaves_no_half_made_account() {
+    let (state, _mailer) = require_state!();
+    let username = unique_name("halfmade");
+    let email = common::confirmed_email(&state).await;
+    let private = device_key();
+
+    let mut broken = registration(&username, &private, &email, common::TEST_EMAIL_CODE);
+    broken["recovery_key"] = serde_json::json!(hex::encode([7u8; 5]));
+    broken["recovery_pq_key"] = serde_json::json!(hex::encode([8u8; 1952]));
+
+    let (status, _) = post(&state, "/v1/accounts/register", broken).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let taken: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE username = $1")
+        .bind(&username)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(taken, 0, "аккаунт создан наполовину");
+
+    // Тот же код, то же имя — теперь с исправным запросом.
+    let (status, _) = post(
+        &state,
+        "/v1/accounts/register",
+        registration(&username, &private, &email, common::TEST_EMAIL_CODE),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// 🔐 Реакция — только из закрытого набора и только от подписчика:
+/// иначе читатели писали бы в чужой канал что угодно.
+#[tokio::test]
+async fn reactions_are_a_closed_set_from_subscribers_only() {
+    let (state, _mailer) = require_state!();
+    let (_private, _device, channel_id) = channel_with_posts(&state, 1).await;
+    let feed = format!("/v1/channels/feed/{channel_id}");
+    let token = subscribe_token(&state, channel_id).await;
+
+    let (status, _) = post(
+        &state,
+        &format!("{feed}/react"),
+        serde_json::json!({ "token": token, "seq": 1, "emoji": "купи слона" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = post(
+        &state,
+        &format!("{feed}/react"),
+        serde_json::json!({ "token": hex::encode(key()), "seq": 1, "emoji": "👍" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "жетон без подписки");
+
+    let (status, _) = post(
+        &state,
+        &format!("{feed}/react"),
+        serde_json::json!({ "token": token, "seq": 9, "emoji": "👍" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "записи нет");
+}
+
+/// Подписка стоит работы: без решения счётчик не растёт.
+#[tokio::test]
+async fn subscribing_costs_work() {
+    let (state, _mailer) = require_state!();
+    let (_private, _device, channel_id) = channel_with_posts(&state, 0).await;
+    let token = key();
+    let challenge = pow::subscribe_challenge(&channel_id.to_string(), &token);
+    let wrong = (0..u64::MAX)
+        .find(|nonce| pow::verify(&challenge, *nonce, state.subscribe_difficulty).is_err())
+        .unwrap();
+
+    let (status, _) = post(
+        &state,
+        &format!("/v1/channels/feed/{channel_id}/subscribe"),
+        serde_json::json!({ "token": hex::encode(token), "pow_nonce": wrong }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (_, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
+    assert_eq!(info["subscribers"], 0);
 }

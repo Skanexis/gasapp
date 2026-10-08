@@ -401,7 +401,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 16;
+    const SCHEMA_VERSION: i32 = 17;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -869,6 +869,47 @@ impl Storage {
                          )",
                     ] {
                         transaction.execute(statement, []).map_err(storage_error)?;
+                    }
+                }
+                // 16 → 17: каналы уровня Telegram — правка и удаление записей,
+                // вложения, закреп, аватар, публичное имя, жетон подписчика,
+                // счётчики и реакции (`channels`).
+                17 => {
+                    // Столбец добавляется, только если его нет: повтор
+                    // миграции на базе, где он уже есть, не должен её ронять.
+                    for (table, column, definition) in [
+                        ("channels", "pinned_seq", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channels", "avatar", "BLOB"),
+                        ("channels", "handle", "TEXT"),
+                        ("channels", "subscribers", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channels", "muted", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channels", "last_rev", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channels", "seen_sent_seq", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channels", "sub_token", "BLOB"),
+                        ("channel_posts", "revision", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channel_posts", "edited_at", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channel_posts", "deleted", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channel_posts", "views", "INTEGER NOT NULL DEFAULT 0"),
+                        ("channel_posts", "reactions", "TEXT NOT NULL DEFAULT ''"),
+                        ("channel_posts", "my_reaction", "TEXT NOT NULL DEFAULT ''"),
+                        ("channel_posts", "attachments", "BLOB"),
+                    ] {
+                        let present: bool = transaction
+                            .query_row(
+                                "SELECT count(*) > 0 FROM pragma_table_info(?) WHERE name = ?",
+                                params![table, column],
+                                |row| row.get(0),
+                            )
+                            .map_err(storage_error)?;
+
+                        if !present {
+                            transaction
+                                .execute(
+                                    &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+                                    [],
+                                )
+                                .map_err(storage_error)?;
+                        }
                     }
                 }
                 // Будущие миграции добавляются сюда явными ветками.

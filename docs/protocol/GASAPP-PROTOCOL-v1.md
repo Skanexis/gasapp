@@ -556,11 +556,13 @@ K_read = HKDF-SHA-256(salt = channel_id, ikm = secret,
 
 **Invitation link.** `gasapp://channel/<hex(channel_id)>.<base32(secret)>.<base32(vk)>`
 (RFC 4648 base32 without padding, as in contact links, §9.3). The link is
-the whole reader capability. It never reaches the server: the author
-shows it as a QR code or copies it, and the reader pastes or scans it.
+the whole reader capability. For a private channel it never reaches the
+server: the author shows it as a QR code or copies it, and the reader
+pastes or scans it. A public channel is the exception (below).
 
-**Record format.** Both the channel description (`kind = 1`) and a post
-(`kind = 2`) are sealed the same way:
+**Record format.** Three kinds of record — the channel description
+(`kind = 1`), a post (`kind = 2`) and a deletion mark (`kind = 3`) — are
+sealed the same way:
 
 ```
 nonce      = 12 random bytes
@@ -569,45 +571,126 @@ ciphertext = AES-256-GCM(K_read, nonce, padded,
                          aad = "GASAPP_CHANNEL_v1_AAD" ‖ kind ‖ channel_id)
 signature  = Ed25519.Sign(sk, "GASAPP_CHANNEL_v1_SIG" ‖ kind ‖ channel_id
                               ‖ nonce ‖ ciphertext)
-wire       = 0x01 ‖ kind ‖ nonce ‖ signature ‖ ciphertext
+wire       = 0x02 ‖ kind ‖ nonce ‖ signature ‖ ciphertext
 ```
 
-Content of a post: `number (u64 BE) ‖ created_at_millis (i64 BE) ‖ text (UTF-8)`,
-text at most 16 000 bytes. Content of a description:
-`updated_at_millis (i64 BE) ‖ title_len (u16 BE) ‖ title ‖ description`,
-title at most 64 characters, description at most 500.
+The leading byte is the wire version. Version 1 (text-only posts, no
+revisions) was never deployed and is not read.
+
+All integers are big-endian. `block16(x)` is `len(x) (u16) ‖ x`.
+
+* **Post:** `number (u64) ‖ revision (u32) ‖ created_at_millis (i64) ‖
+  edited_at_millis (i64) ‖ text_len (u32) ‖ text (UTF-8) ‖ count (u8) ‖
+  count × block16(attachment)`. Text is at most 16 000 bytes, there are
+  at most 10 attachments, each at most 1 024 bytes. A post has text, an
+  attachment, or both. `revision` is 0 when published and grows by one
+  with each edit; `edited_at_millis` is 0 until the first edit.
+* **Deletion mark:** `number (u64) ‖ revision (u32) ‖ deleted_at_millis (i64)`.
+* **Description:** `updated_at_millis (i64) ‖ block16(title) ‖
+  block16(description) ‖ pinned (u64) ‖ block16(avatar)`. Title at most
+  64 characters, description at most 500. `pinned` is the number of the
+  pinned post, 0 for none. `avatar` is an attachment descriptor, empty
+  for none.
+
+Trailing bytes after the last field are an error.
+
+**Media.** An attachment is the same descriptor message attachments use: the
+blob's address, a fresh random key and the plaintext size. The file is
+stripped of metadata, padded and encrypted in chunks exactly as a
+message attachment is; only the storage differs. The blob is uploaded
+to the channel (`/v1/channels/own/…/media`, signed by the owner's
+device, at most 32 MiB) and fetched without authentication
+(`/v1/channels/feed/…/media/…`). The server holds ciphertext and its
+padded length; the key travels inside the encrypted post.
 
 **Reading.** A reader verifies the signature with `vk` **from the link**
 (strict Ed25519 verification) before decrypting, and rejects:
 
 * a channel whose server-side `verify_key` differs from `vk` in the link;
-* a post whose inner `number` differs from the sequence number the
-  server served it under — the server cannot reorder posts or replay one
-  in another position;
+* a post or deletion mark whose inner `number` differs from the sequence
+  number the server served it under — the server cannot reorder posts,
+  replay one in another position, or delete one post with another's mark;
+* a post whose `revision` is not greater than the one already stored —
+  the server cannot roll an edit back;
+* any post for a number that already carries an accepted deletion mark —
+  a deleted post does not come back from its old ciphertext;
+* a deletion claimed by the server without a valid deletion mark — the
+  server cannot remove a post from readers on its own;
 * a description whose `updated_at_millis` is not newer than the one
-  already accepted — the server cannot roll a title back.
+  already accepted — the server cannot roll back a title, a pin or an
+  avatar.
 
-A rejected post is skipped, not retried.
+A rejected record is skipped, not retried. A reader keeps a deleted post
+as an empty row carrying the mark's revision, so that the rejection above
+survives restarts.
+
+**Synchronisation.** The server numbers every change to a channel — a
+new post, an edit, a deletion — with a growing revision counter (distinct
+from the per-post `revision` above). A reader remembers the last counter
+value it has seen and asks for changes after it. The first
+synchronisation takes the newest page of posts instead of the whole
+history; older pages are fetched on demand.
+
+**Subscribers, views and reactions.** A reader that joins a channel
+generates a 32-byte random token for that channel and registers it
+(`/v1/channels/feed/…/subscribe`). Registration costs proof-of-work over
+
+```
+SHA-256("GASAPP_POW_SUB_v1" ‖ len ‖ lowercase(channel_uuid) ‖ len ‖ token)
+```
+
+with 20 leading zero bits, `len` being the field length as u64. The
+server stores `SHA-256(token)`. Requests carrying the token — subscribe,
+unsubscribe, "read up to post N", react — are **not** signed by the
+device and are sent on a separate anonymous Tor circuit. A reaction is one
+of eight fixed emoji; free text is refused, otherwise readers could
+write into someone else's channel.
+
+Counts of subscribers, views and reactions are server statistics. They
+are not signed by anyone, and clients present them as such.
+
+**Public channels.** An author may give a channel a public handle
+(`^[a-z][a-z0-9_]{2,31}$`). To make the channel resolvable by that
+handle, the author hands the server the invitation link. The server
+accepts only a link to that very channel and serves it to anyone who
+asks for the handle. A client that resolves a handle checks that the
+link's `channel_id` and `vk` match the channel the server returned and
+that the description opens and verifies under the link's keys.
 
 **What the server does.** It checks that the publishing device signed
 the request (§12.6) and that its account owns the channel; creating a
 channel additionally requires the account's `premium` flag, which the
-operator sets by hand. It does not verify record signatures and cannot:
-it has no `K_read`. Reads (`/v1/channels/feed/…`) are unauthenticated,
-and the server keeps no list of readers.
+operator sets by hand. It does not verify record signatures. Reads
+(`/v1/channels/feed/…`) are unauthenticated.
 
 **What this does not provide.**
 
 * **No forward secrecy and no post-compromise security.** `K_read` is
   static. Whoever obtains the link reads every past and future post; a
   single reader cannot be revoked.
-* **Withholding.** The server can omit the newest posts or stop serving a
-  channel. It cannot forge, alter or reorder posts.
+* **A public channel is readable by the server.** The link the author
+  hands over contains `secret`. Making the channel private again does
+  not take that knowledge back. The server still cannot forge records:
+  it never has `sk`.
+* **A handle is the server's namespace.** Nothing binds a handle to a
+  channel except the server's word; it could answer a handle with a
+  different (internally consistent) channel tomorrow. Readers who need
+  certainty compare the link out of band.
+* **A subscriber token is a pseudonym.** The server sees that one
+  unknown reader of a channel read up to post N and reacted to post M.
+  Tokens of the same person in different channels are unrelated in the
+  database; they can be correlated by network address and timing if the
+  reader does not use Tor.
+* **Withholding.** The server can omit the newest posts, an edit or a
+  deletion mark, or stop serving a channel. It cannot forge, alter or
+  reorder records.
+* **Deletion is not erasure.** Readers who already fetched a post keep
+  it until they synchronise, and copies made outside the app stay.
 * **No post-quantum authenticity.** The author signature is Ed25519
   only; a quantum adversary could forge posts. Confidentiality rests on
   AES-256-GCM under a symmetric key and is not affected.
 * **Random nonces under a long-lived key.** Safe while a channel holds
-  far fewer than 2³² records.
+  far fewer than 2³² records; the server caps a channel at 100 000 posts.
 * **Author key is not backed up.** `sk` lives in the author's local
   database only and is not part of the zero-knowledge backup; losing the
   device ends the ability to post to that channel.

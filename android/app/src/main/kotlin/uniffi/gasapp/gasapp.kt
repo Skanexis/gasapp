@@ -970,6 +970,46 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -987,9 +1027,17 @@ internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_gasapp_checksum_func_can_send_to_contact(
 ): Short
+fun uniffi_gasapp_checksum_func_canonical_channel_handle(
+): Short
 fun uniffi_gasapp_checksum_func_canonical_username(
 ): Short
 fun uniffi_gasapp_checksum_func_channel_link_qr(
+): Short
+fun uniffi_gasapp_checksum_func_channel_media_limit(
+): Short
+fun uniffi_gasapp_checksum_func_channel_post_attachment_limit(
+): Short
+fun uniffi_gasapp_checksum_func_channel_reactions(
 ): Short
 fun uniffi_gasapp_checksum_func_check_protocol_version(
 ): Short
@@ -1063,7 +1111,11 @@ fun uniffi_gasapp_checksum_method_messenger_blocked_chats(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_can_report_chat(
 ): Short
+fun uniffi_gasapp_checksum_method_messenger_channel(
+): Short
 fun uniffi_gasapp_checksum_method_messenger_channel_link(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_channel_post(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_channel_posts(
 ): Short
@@ -1083,11 +1135,15 @@ fun uniffi_gasapp_checksum_method_messenger_decline_chat(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_delete_account(
 ): Short
+fun uniffi_gasapp_checksum_method_messenger_delete_channel_post(
+): Short
 fun uniffi_gasapp_checksum_method_messenger_delete_for_everyone(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_delete_vault_file(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_discover_contact(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_edit_channel_post(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_edit_message(
 ): Short
@@ -1096,6 +1152,10 @@ fun uniffi_gasapp_checksum_method_messenger_establish_vault_verifier(
 fun uniffi_gasapp_checksum_method_messenger_export_data(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_fetch_attachment(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_fetch_channel_media(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_find_public_channel(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_forget_backup_chain(
 ): Short
@@ -1108,6 +1168,8 @@ fun uniffi_gasapp_checksum_method_messenger_is_vault_open(
 fun uniffi_gasapp_checksum_method_messenger_join_channel(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_leave_channel(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_load_older_channel_posts(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_maintain_prekeys(
 ): Short
@@ -1129,6 +1191,8 @@ fun uniffi_gasapp_checksum_method_messenger_own_username(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_pending_registration(
 ): Short
+fun uniffi_gasapp_checksum_method_messenger_pin_channel_post(
+): Short
 fun uniffi_gasapp_checksum_method_messenger_premium_cached(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_presence_sharing_enabled(
@@ -1139,6 +1203,8 @@ fun uniffi_gasapp_checksum_method_messenger_publish_channel_post(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_purge_expired(
 ): Short
+fun uniffi_gasapp_checksum_method_messenger_react_to_channel_post(
+): Short
 fun uniffi_gasapp_checksum_method_messenger_receive_messages(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_recover_account(
@@ -1148,6 +1214,8 @@ fun uniffi_gasapp_checksum_method_messenger_refresh_premium(
 fun uniffi_gasapp_checksum_method_messenger_register(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_rekey_storage(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_report_channel_seen(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_report_chat(
 ): Short
@@ -1163,6 +1231,10 @@ fun uniffi_gasapp_checksum_method_messenger_sealed_sender_enabled(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_search(
 ): Short
+fun uniffi_gasapp_checksum_method_messenger_search_channel_posts(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_search_public_channels(
+): Short
 fun uniffi_gasapp_checksum_method_messenger_security_events(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_security_report(
@@ -1176,6 +1248,12 @@ fun uniffi_gasapp_checksum_method_messenger_send_reaction(
 fun uniffi_gasapp_checksum_method_messenger_send_read_receipt(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_send_typing(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_set_channel_avatar(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_set_channel_handle(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_set_channel_muted(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_set_contact_verified(
 ): Short
@@ -1208,6 +1286,8 @@ fun uniffi_gasapp_checksum_method_messenger_tor_bridges(
 fun uniffi_gasapp_checksum_method_messenger_unblock_chat(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_unlock_vault(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_unread_channel_posts(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_update_channel(
 ): Short
@@ -1297,7 +1377,11 @@ fun uniffi_gasapp_fn_method_messenger_blocked_chats(`ptr`: Pointer,uniffi_out_er
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_can_report_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_gasapp_fn_method_messenger_channel(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_channel_link(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`seq`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_channel_posts(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1317,11 +1401,15 @@ fun uniffi_gasapp_fn_method_messenger_decline_chat(`ptr`: Pointer,`chatId`: Rust
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_delete_account(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_delete_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`seq`: Long,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_gasapp_fn_method_messenger_delete_for_everyone(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_delete_vault_file(`ptr`: Pointer,`fileId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_discover_contact(`ptr`: Pointer,`username`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_edit_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`seq`: Long,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_edit_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`targetMessageId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1330,6 +1418,10 @@ fun uniffi_gasapp_fn_method_messenger_establish_vault_verifier(`ptr`: Pointer,`p
 fun uniffi_gasapp_fn_method_messenger_export_data(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_fetch_attachment(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`descriptor`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_fetch_channel_media(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`descriptor`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_find_public_channel(`ptr`: Pointer,`handle`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_forget_backup_chain(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1343,6 +1435,8 @@ fun uniffi_gasapp_fn_method_messenger_join_channel(`ptr`: Pointer,`link`: RustBu
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_leave_channel(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_gasapp_fn_method_messenger_load_older_channel_posts(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Int
 fun uniffi_gasapp_fn_method_messenger_maintain_prekeys(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_maintain_storage(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1363,16 +1457,20 @@ fun uniffi_gasapp_fn_method_messenger_own_username(`ptr`: Pointer,uniffi_out_err
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_pending_registration(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_pin_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`seq`: Long,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_premium_cached(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_gasapp_fn_method_messenger_presence_sharing_enabled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_gasapp_fn_method_messenger_proxy(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_gasapp_fn_method_messenger_publish_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_gasapp_fn_method_messenger_publish_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`files`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_purge_expired(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Int
+fun uniffi_gasapp_fn_method_messenger_react_to_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`seq`: Long,`emoji`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_receive_messages(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 fun uniffi_gasapp_fn_method_messenger_recover_account(`ptr`: Pointer,`recoveryKey`: RustBuffer.ByValue,`links`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1382,6 +1480,8 @@ fun uniffi_gasapp_fn_method_messenger_refresh_premium(`ptr`: Pointer,`nowMillis`
 fun uniffi_gasapp_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuffer.ByValue,`email`: RustBuffer.ByValue,`emailCode`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_gasapp_fn_method_messenger_report_channel_seen(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_report_chat(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1397,6 +1497,10 @@ fun uniffi_gasapp_fn_method_messenger_sealed_sender_enabled(`ptr`: Pointer,uniff
 ): Byte
 fun uniffi_gasapp_fn_method_messenger_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_search_channel_posts(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_search_public_channels(`ptr`: Pointer,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_security_events(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_security_report(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1411,6 +1515,12 @@ fun uniffi_gasapp_fn_method_messenger_send_read_receipt(`ptr`: Pointer,`peerUser
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_send_typing(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`active`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_gasapp_fn_method_messenger_set_channel_avatar(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`image`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_set_channel_handle(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`handle`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_set_channel_muted(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`muted`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_set_contact_verified(`ptr`: Pointer,`accountId`: RustBuffer.ByValue,`verified`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_set_disappearing_timer(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`seconds`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -1443,6 +1553,8 @@ fun uniffi_gasapp_fn_method_messenger_unblock_chat(`ptr`: Pointer,`chatId`: Rust
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_unlock_vault(`ptr`: Pointer,`pin`: RustBuffer.ByValue,`salt`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_gasapp_fn_method_messenger_unread_channel_posts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Long
 fun uniffi_gasapp_fn_method_messenger_update_channel(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`description`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_vault_file_count(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1451,9 +1563,17 @@ fun uniffi_gasapp_fn_method_messenger_vault_files(`ptr`: Pointer,`limit`: Int,`n
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_func_can_send_to_contact(`identityChanged`: Byte,`wasVerified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_gasapp_fn_func_canonical_channel_handle(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_func_canonical_username(`raw`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_func_channel_link_qr(`uri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_func_channel_media_limit(uniffi_out_err: UniffiRustCallStatus, 
+): Long
+fun uniffi_gasapp_fn_func_channel_post_attachment_limit(uniffi_out_err: UniffiRustCallStatus, 
+): Int
+fun uniffi_gasapp_fn_func_channel_reactions(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_func_check_protocol_version(`raw`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1638,10 +1758,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_func_can_send_to_contact() != 39976.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_func_canonical_channel_handle() != 27601.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_func_canonical_username() != 57081.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_func_channel_link_qr() != 50642.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_func_channel_media_limit() != 29894.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_func_channel_post_attachment_limit() != 64825.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_func_channel_reactions() != 48946.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_func_check_protocol_version() != 58003.toShort()) {
@@ -1752,7 +1884,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_can_report_chat() != 51319.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_channel() != 11724.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_channel_link() != 14720.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_channel_post() != 389.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_channel_posts() != 54006.toShort()) {
@@ -1782,6 +1920,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_delete_account() != 34349.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_delete_channel_post() != 32795.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_delete_for_everyone() != 33010.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1789,6 +1930,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_discover_contact() != 47408.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_edit_channel_post() != 17929.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_edit_message() != 6344.toShort()) {
@@ -1801,6 +1945,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_fetch_attachment() != 27974.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_fetch_channel_media() != 26358.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_find_public_channel() != 21939.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_forget_backup_chain() != 31011.toShort()) {
@@ -1821,13 +1971,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_leave_channel() != 10631.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_load_older_channel_posts() != 6723.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_maintain_prekeys() != 31323.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_maintain_storage() != 33712.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_mark_channel_read() != 10578.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_mark_channel_read() != 54940.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_messages() != 39098.toShort()) {
@@ -1851,6 +2004,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_pending_registration() != 5554.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_pin_channel_post() != 12595.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_premium_cached() != 4522.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1860,10 +2016,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_proxy() != 32233.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_publish_channel_post() != 44914.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_publish_channel_post() != 63012.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_purge_expired() != 55076.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_react_to_channel_post() != 16273.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_receive_messages() != 39169.toShort()) {
@@ -1879,6 +2038,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_rekey_storage() != 2038.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_report_channel_seen() != 62397.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_report_chat() != 12722.toShort()) {
@@ -1902,6 +2064,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_search() != 39448.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_search_channel_posts() != 22177.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_search_public_channels() != 3094.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_security_events() != 44104.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1921,6 +2089,15 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_send_typing() != 24983.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_set_channel_avatar() != 52603.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_set_channel_handle() != 59185.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_set_channel_muted() != 5644.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_set_contact_verified() != 44835.toShort()) {
@@ -1956,7 +2133,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_socket_auth_headers() != 16413.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_sync_channel() != 45507.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_sync_channel() != 60966.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_sync_channels() != 39894.toShort()) {
@@ -1969,6 +2146,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_unlock_vault() != 48431.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_unread_channel_posts() != 22916.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_update_channel() != 49477.toShort()) {
@@ -2887,6 +3067,15 @@ public interface MessengerInterface {
     fun `canReportChat`(`chatId`: kotlin.String): kotlin.Boolean
     
     /**
+     * Один канал — без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — канала нет на устройстве.
+     */
+    fun `channel`(`channelId`: kotlin.String): FfiChannel
+    
+    /**
      * Ссылка-приглашение канала.
      *
      * 🔐 Ссылка и есть доступ: кто её получил, читает весь канал.
@@ -2896,6 +3085,15 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — канала нет на устройстве.
      */
     fun `channelLink`(`channelId`: kotlin.String): kotlin.String
+    
+    /**
+     * Запись по номеру — без сети; удалённой или неизвестной нет.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `channelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong): FfiChannelPost?
     
     /**
      * Последние записи канала — без сети, от старых к новым.
@@ -3004,6 +3202,16 @@ public interface MessengerInterface {
     fun `deleteAccount`(`nowMillis`: kotlin.Long): FfiAccountDeletion
     
     /**
+     * Удаляет запись своего канала и её файлы. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::Core`] — сервер недоступен либо записи нет.
+     */
+    fun `deleteChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `nowMillis`: kotlin.Long)
+    
+    /**
      * Удаляет сообщение у обеих сторон.
      *
      * 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
@@ -3044,6 +3252,18 @@ public interface MessengerInterface {
      * [`FfiError::IdentityChanged`] — сервер называет для имени другой ключ.
      */
     fun `discoverContact`(`username`: kotlin.String, `nowMillis`: kotlin.Long): FfiContact
+    
+    /**
+     * Исправляет текст записи своего канала. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::InvalidArgument`] — запись стала бы пустой либо
+     * слишком длинной; [`FfiError::Core`] — сервер недоступен либо
+     * записи нет.
+     */
+    fun `editChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `text`: kotlin.String, `nowMillis`: kotlin.Long): FfiChannelPost
     
     /**
      * Правит ранее отправленное сообщение.
@@ -3122,6 +3342,27 @@ public interface MessengerInterface {
     fun `fetchAttachment`(`deviceId`: kotlin.String, `descriptor`: kotlin.ByteArray, `nowMillis`: kotlin.Long): kotlin.ByteArray
     
     /**
+     * Скачивает и расшифровывает медиа канала по описанию из записи
+     * либо аватара. Сетевой вызов, без подписи устройства.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен, блоба нет (запись
+     * удалена) либо он подменён.
+     */
+    fun `fetchChannelMedia`(`channelId`: kotlin.String, `descriptor`: kotlin.ByteArray): kotlin.ByteArray
+    
+    /**
+     * Публичный канал по точному `@имени` — до подписки. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — это не имя канала;
+     * [`FfiError::Core`] — такого канала нет либо сервер недоступен.
+     */
+    fun `findPublicChannel`(`handle`: kotlin.String): FfiChannelPreview
+    
+    /**
      * Забывает цепочку копий — при создании нового recovery key.
      *
      * ⚠️ Прежние файлы в облаке остаются читаемыми **старым**
@@ -3184,6 +3425,16 @@ public interface MessengerInterface {
     fun `leaveChannel`(`channelId`: kotlin.String, `nowMillis`: kotlin.Long)
     
     /**
+     * Догружает страницу истории канала; возвращает, сколько записей
+     * добавилось (ноль — история кончилась). Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    fun `loadOlderChannelPosts`(`channelId`: kotlin.String): kotlin.UInt
+    
+    /**
      * 🔐 Пополняет одноразовые предключи и ротирует подписанный.
      *
      * Одноразовый предключ расходуется при каждом первом контакте:
@@ -3223,7 +3474,7 @@ public interface MessengerInterface {
     fun `maintainStorage`(`nowMillis`: kotlin.Long): kotlin.Boolean
     
     /**
-     * Отмечает канал прочитанным.
+     * Отмечает канал прочитанным — без сети.
      *
      * # Errors
      *
@@ -3314,6 +3565,17 @@ public interface MessengerInterface {
     fun `pendingRegistration`(): FfiPendingRegistration?
     
     /**
+     * Закрепляет запись своего канала; `seq == 0` — снимает закреп.
+     * Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::Core`] — сервер недоступен либо записи нет.
+     */
+    fun `pinChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `nowMillis`: kotlin.Long): FfiChannel
+    
+    /**
      * Последний известный ответ о премиуме — без сети.
      *
      * # Errors
@@ -3343,15 +3605,17 @@ public interface MessengerInterface {
     fun `proxy`(): FfiProxy
     
     /**
-     * Публикует запись в своём канале. Сетевой вызов.
+     * Публикует запись в своём канале: текст, вложения или и то и
+     * другое. Сетевой вызов.
      *
      * # Errors
      *
      * [`FfiError::PremiumRequired`] — канал чужой;
-     * [`FfiError::InvalidArgument`] — текст пустой либо слишком длинный;
+     * [`FfiError::InvalidArgument`] — запись пуста, слишком длинна
+     * либо файл больше предела;
      * [`FfiError::Core`] — сервер недоступен.
      */
-    fun `publishChannelPost`(`channelId`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long): FfiChannelPost
+    fun `publishChannelPost`(`channelId`: kotlin.String, `text`: kotlin.String, `files`: List<FfiAttachmentFile>, `nowMillis`: kotlin.Long): FfiChannelPost
     
     /**
      * Удаляет истёкшие сообщения.
@@ -3370,6 +3634,17 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — удаление не удалось.
      */
     fun `purgeExpired`(`nowMillis`: kotlin.Long): kotlin.UInt
+    
+    /**
+     * Ставит, меняет либо (с `None`) снимает свою реакцию на запись.
+     * Сетевой вызов, без подписи устройства.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — эмодзи не из набора;
+     * [`FfiError::Core`] — сервер недоступен либо записи нет.
+     */
+    fun `reactToChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `emoji`: kotlin.String?): FfiChannelPost
     
     /**
      * Забирает входящие сообщения и возвращает их число.
@@ -3441,6 +3716,16 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — ключ не 32 байта либо смена не удалась.
      */
     fun `rekeyStorage`(`newKey`: kotlin.ByteArray)
+    
+    /**
+     * Сообщает серверу, до какой записи канал прочитан: из этого
+     * складываются просмотры. Сетевой вызов, без подписи устройства.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    fun `reportChannelSeen`(`channelId`: kotlin.String)
     
     /**
      * 🔐 Жалуется оператору на собеседника чата. Серверу уходит
@@ -3538,6 +3823,25 @@ public interface MessengerInterface {
     fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<FfiSearchHit>
     
     /**
+     * Ищет подстроку в сохранённых записях канала — без сети; свежие
+     * первыми.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `searchChannelPosts`(`channelId`: kotlin.String, `query`: kotlin.String, `limit`: kotlin.UInt): List<FfiChannelPost>
+    
+    /**
+     * Публичные каналы, чьё `@имя` начинается с `query`. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    fun `searchPublicChannels`(`query`: kotlin.String): List<FfiChannelPreview>
+    
+    /**
      * Читает журнал безопасности.
      *
      * # Errors
@@ -3629,6 +3933,42 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — отправка не удалась.
      */
     fun `sendTyping`(`peerUsername`: kotlin.String, `active`: kotlin.Boolean, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Ставит аватар своего канала; `None` — убирает. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::InvalidArgument`] — файл слишком велик либо не
+     * разбирается; [`FfiError::Core`] — сервер недоступен.
+     */
+    fun `setChannelAvatar`(`channelId`: kotlin.String, `image`: kotlin.ByteArray?, `nowMillis`: kotlin.Long): FfiChannel
+    
+    /**
+     * Делает свой канал публичным под именем `handle` либо, с `None`,
+     * снова закрытым. Сетевой вызов.
+     *
+     * 🔐 Публичному каналу сервер получает ссылку-приглашение и может
+     * его читать. Интерфейс обязан сказать об этом до вызова.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::InvalidArgument`] — это не имя канала;
+     * [`FfiError::UsernameTaken`] — имя занято;
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    fun `setChannelHandle`(`channelId`: kotlin.String, `handle`: kotlin.String?, `nowMillis`: kotlin.Long): FfiChannel
+    
+    /**
+     * Включает либо выключает «без звука» — без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — канала нет на устройстве.
+     */
+    fun `setChannelMuted`(`channelId`: kotlin.String, `muted`: kotlin.Boolean): FfiChannel
     
     /**
      * Отмечает контакт сверенным или снимает отметку.
@@ -3765,7 +4105,8 @@ public interface MessengerInterface {
     fun `socketAuthHeaders`(`deviceId`: kotlin.String, `nowMillis`: kotlin.Long): List<FfiHeader>
     
     /**
-     * Забирает новые записи канала; возвращает их число. Сетевой вызов.
+     * Забирает изменения канала — новые записи, правки, удаления,
+     * счётчики; возвращает число новых записей. Сетевой вызов.
      *
      * # Errors
      *
@@ -3815,6 +4156,16 @@ public interface MessengerInterface {
      * длины либо сбой вывода ключей.
      */
     fun `unlockVault`(`pin`: kotlin.ByteArray, `salt`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Сколько непрочитанных записей во всех каналах, кроме тех, что
+     * «без звука», — для счётчика на вкладке. Без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `unreadChannelPosts`(): kotlin.ULong
     
     /**
      * Меняет название и описание своего канала. Сетевой вызов.
@@ -4118,6 +4469,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Один канал — без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — канала нет на устройстве.
+     */
+    @Throws(FfiException::class)override fun `channel`(`channelId`: kotlin.String): FfiChannel {
+            return FfiConverterTypeFfiChannel.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_channel(
+        it, FfiConverterString.lower(`channelId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Ссылка-приглашение канала.
      *
      * 🔐 Ссылка и есть доступ: кто её получил, читает весь канал.
@@ -4132,6 +4503,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_channel_link(
         it, FfiConverterString.lower(`channelId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Запись по номеру — без сети; удалённой или неизвестной нет.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `channelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong): FfiChannelPost? {
+            return FfiConverterOptionalTypeFfiChannelPost.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_channel_post(
+        it, FfiConverterString.lower(`channelId`),FfiConverterULong.lower(`seq`),_status)
 }
     }
     )
@@ -4344,6 +4735,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Удаляет запись своего канала и её файлы. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::Core`] — сервер недоступен либо записи нет.
+     */
+    @Throws(FfiException::class)override fun `deleteChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_delete_channel_post(
+        it, FfiConverterString.lower(`channelId`),FfiConverterULong.lower(`seq`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Удаляет сообщение у обеих сторон.
      *
      * 🔐 Своё удаляется сразу, не дожидаясь сети: если связи нет,
@@ -4410,6 +4821,29 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_discover_contact(
         it, FfiConverterString.lower(`username`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Исправляет текст записи своего канала. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::InvalidArgument`] — запись стала бы пустой либо
+     * слишком длинной; [`FfiError::Core`] — сервер недоступен либо
+     * записи нет.
+     */
+    @Throws(FfiException::class)override fun `editChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `text`: kotlin.String, `nowMillis`: kotlin.Long): FfiChannelPost {
+            return FfiConverterTypeFfiChannelPost.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_edit_channel_post(
+        it, FfiConverterString.lower(`channelId`),FfiConverterULong.lower(`seq`),FfiConverterString.lower(`text`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -4528,6 +4962,49 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_fetch_attachment(
         it, FfiConverterString.lower(`deviceId`),FfiConverterByteArray.lower(`descriptor`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Скачивает и расшифровывает медиа канала по описанию из записи
+     * либо аватара. Сетевой вызов, без подписи устройства.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен, блоба нет (запись
+     * удалена) либо он подменён.
+     */
+    @Throws(FfiException::class)override fun `fetchChannelMedia`(`channelId`: kotlin.String, `descriptor`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_fetch_channel_media(
+        it, FfiConverterString.lower(`channelId`),FfiConverterByteArray.lower(`descriptor`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Публичный канал по точному `@имени` — до подписки. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — это не имя канала;
+     * [`FfiError::Core`] — такого канала нет либо сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `findPublicChannel`(`handle`: kotlin.String): FfiChannelPreview {
+            return FfiConverterTypeFfiChannelPreview.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_find_public_channel(
+        it, FfiConverterString.lower(`handle`),_status)
 }
     }
     )
@@ -4662,6 +5139,27 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Догружает страницу истории канала; возвращает, сколько записей
+     * добавилось (ноль — история кончилась). Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `loadOlderChannelPosts`(`channelId`: kotlin.String): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_load_older_channel_posts(
+        it, FfiConverterString.lower(`channelId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * 🔐 Пополняет одноразовые предключи и ротирует подписанный.
      *
      * Одноразовый предключ расходуется при каждом первом контакте:
@@ -4723,7 +5221,7 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
-     * Отмечает канал прочитанным.
+     * Отмечает канал прочитанным — без сети.
      *
      * # Errors
      *
@@ -4900,6 +5398,28 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Закрепляет запись своего канала; `seq == 0` — снимает закреп.
+     * Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::Core`] — сервер недоступен либо записи нет.
+     */
+    @Throws(FfiException::class)override fun `pinChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `nowMillis`: kotlin.Long): FfiChannel {
+            return FfiConverterTypeFfiChannel.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_pin_channel_post(
+        it, FfiConverterString.lower(`channelId`),FfiConverterULong.lower(`seq`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Последний известный ответ о премиуме — без сети.
      *
      * # Errors
@@ -4962,20 +5482,22 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
-     * Публикует запись в своём канале. Сетевой вызов.
+     * Публикует запись в своём канале: текст, вложения или и то и
+     * другое. Сетевой вызов.
      *
      * # Errors
      *
      * [`FfiError::PremiumRequired`] — канал чужой;
-     * [`FfiError::InvalidArgument`] — текст пустой либо слишком длинный;
+     * [`FfiError::InvalidArgument`] — запись пуста, слишком длинна
+     * либо файл больше предела;
      * [`FfiError::Core`] — сервер недоступен.
      */
-    @Throws(FfiException::class)override fun `publishChannelPost`(`channelId`: kotlin.String, `text`: kotlin.String, `nowMillis`: kotlin.Long): FfiChannelPost {
+    @Throws(FfiException::class)override fun `publishChannelPost`(`channelId`: kotlin.String, `text`: kotlin.String, `files`: List<FfiAttachmentFile>, `nowMillis`: kotlin.Long): FfiChannelPost {
             return FfiConverterTypeFfiChannelPost.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_publish_channel_post(
-        it, FfiConverterString.lower(`channelId`),FfiConverterString.lower(`text`),FfiConverterLong.lower(`nowMillis`),_status)
+        it, FfiConverterString.lower(`channelId`),FfiConverterString.lower(`text`),FfiConverterSequenceTypeFfiAttachmentFile.lower(`files`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -5005,6 +5527,28 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_purge_expired(
         it, FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Ставит, меняет либо (с `None`) снимает свою реакцию на запись.
+     * Сетевой вызов, без подписи устройства.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — эмодзи не из набора;
+     * [`FfiError::Core`] — сервер недоступен либо записи нет.
+     */
+    @Throws(FfiException::class)override fun `reactToChannelPost`(`channelId`: kotlin.String, `seq`: kotlin.ULong, `emoji`: kotlin.String?): FfiChannelPost {
+            return FfiConverterTypeFfiChannelPost.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_react_to_channel_post(
+        it, FfiConverterString.lower(`channelId`),FfiConverterULong.lower(`seq`),FfiConverterOptionalString.lower(`emoji`),_status)
 }
     }
     )
@@ -5131,6 +5675,26 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_rekey_storage(
         it, FfiConverterByteArray.lower(`newKey`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Сообщает серверу, до какой записи канал прочитан: из этого
+     * складываются просмотры. Сетевой вызов, без подписи устройства.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `reportChannelSeen`(`channelId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_report_channel_seen(
+        it, FfiConverterString.lower(`channelId`),_status)
 }
     }
     
@@ -5308,6 +5872,47 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Ищет подстроку в сохранённых записях канала — без сети; свежие
+     * первыми.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `searchChannelPosts`(`channelId`: kotlin.String, `query`: kotlin.String, `limit`: kotlin.UInt): List<FfiChannelPost> {
+            return FfiConverterSequenceTypeFfiChannelPost.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_search_channel_posts(
+        it, FfiConverterString.lower(`channelId`),FfiConverterString.lower(`query`),FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Публичные каналы, чьё `@имя` начинается с `query`. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `searchPublicChannels`(`query`: kotlin.String): List<FfiChannelPreview> {
+            return FfiConverterSequenceTypeFfiChannelPreview.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_search_public_channels(
+        it, FfiConverterString.lower(`query`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Читает журнал безопасности.
      *
      * # Errors
@@ -5470,6 +6075,75 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 }
     }
     
+    
+
+    
+    /**
+     * Ставит аватар своего канала; `None` — убирает. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::InvalidArgument`] — файл слишком велик либо не
+     * разбирается; [`FfiError::Core`] — сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `setChannelAvatar`(`channelId`: kotlin.String, `image`: kotlin.ByteArray?, `nowMillis`: kotlin.Long): FfiChannel {
+            return FfiConverterTypeFfiChannel.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_set_channel_avatar(
+        it, FfiConverterString.lower(`channelId`),FfiConverterOptionalByteArray.lower(`image`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Делает свой канал публичным под именем `handle` либо, с `None`,
+     * снова закрытым. Сетевой вызов.
+     *
+     * 🔐 Публичному каналу сервер получает ссылку-приглашение и может
+     * его читать. Интерфейс обязан сказать об этом до вызова.
+     *
+     * # Errors
+     *
+     * [`FfiError::PremiumRequired`] — канал чужой;
+     * [`FfiError::InvalidArgument`] — это не имя канала;
+     * [`FfiError::UsernameTaken`] — имя занято;
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `setChannelHandle`(`channelId`: kotlin.String, `handle`: kotlin.String?, `nowMillis`: kotlin.Long): FfiChannel {
+            return FfiConverterTypeFfiChannel.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_set_channel_handle(
+        it, FfiConverterString.lower(`channelId`),FfiConverterOptionalString.lower(`handle`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Включает либо выключает «без звука» — без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — канала нет на устройстве.
+     */
+    @Throws(FfiException::class)override fun `setChannelMuted`(`channelId`: kotlin.String, `muted`: kotlin.Boolean): FfiChannel {
+            return FfiConverterTypeFfiChannel.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_set_channel_muted(
+        it, FfiConverterString.lower(`channelId`),FfiConverterBoolean.lower(`muted`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -5722,7 +6396,8 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
-     * Забирает новые записи канала; возвращает их число. Сетевой вызов.
+     * Забирает изменения канала — новые записи, правки, удаления,
+     * счётчики; возвращает число новых записей. Сетевой вызов.
      *
      * # Errors
      *
@@ -5823,6 +6498,27 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 }
     }
     
+    
+
+    
+    /**
+     * Сколько непрочитанных записей во всех каналах, кроме тех, что
+     * «без звука», — для счётчика на вкладке. Без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `unreadChannelPosts`(): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_unread_channel_posts(
+        it, _status)
+}
+    }
+    )
+    }
     
 
     
@@ -6428,7 +7124,32 @@ data class FfiChannel (
     /**
      * Время последней записи по часам автора.
      */
-    var `lastPostAtMillis`: kotlin.Long?
+    var `lastPostAtMillis`: kotlin.Long?, 
+    /**
+     * Сколько вложений у последней записи.
+     */
+    var `lastPostAttachments`: kotlin.UInt, 
+    /**
+     * Публичное `@имя` — со слов сервера.
+     */
+    var `handle`: kotlin.String?, 
+    /**
+     * Число подписчиков — со слов сервера.
+     */
+    var `subscribers`: kotlin.ULong, 
+    /**
+     * «Без звука».
+     */
+    var `muted`: kotlin.Boolean, 
+    /**
+     * Номер закреплённой записи; `0` — закрепа нет.
+     */
+    var `pinnedSeq`: kotlin.ULong, 
+    /**
+     * Описание вложения с аватаром — для
+     * [`Messenger::fetch_channel_media`].
+     */
+    var `avatar`: kotlin.ByteArray?
 ) {
     
     companion object
@@ -6447,6 +7168,12 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterULong.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalLong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalByteArray.read(buf),
         )
     }
 
@@ -6457,7 +7184,13 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterBoolean.allocationSize(value.`owned`) +
             FfiConverterULong.allocationSize(value.`unread`) +
             FfiConverterOptionalString.allocationSize(value.`lastPost`) +
-            FfiConverterOptionalLong.allocationSize(value.`lastPostAtMillis`)
+            FfiConverterOptionalLong.allocationSize(value.`lastPostAtMillis`) +
+            FfiConverterUInt.allocationSize(value.`lastPostAttachments`) +
+            FfiConverterOptionalString.allocationSize(value.`handle`) +
+            FfiConverterULong.allocationSize(value.`subscribers`) +
+            FfiConverterBoolean.allocationSize(value.`muted`) +
+            FfiConverterULong.allocationSize(value.`pinnedSeq`) +
+            FfiConverterOptionalByteArray.allocationSize(value.`avatar`)
     )
 
     override fun write(value: FfiChannel, buf: ByteBuffer) {
@@ -6468,6 +7201,69 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterULong.write(value.`unread`, buf)
             FfiConverterOptionalString.write(value.`lastPost`, buf)
             FfiConverterOptionalLong.write(value.`lastPostAtMillis`, buf)
+            FfiConverterUInt.write(value.`lastPostAttachments`, buf)
+            FfiConverterOptionalString.write(value.`handle`, buf)
+            FfiConverterULong.write(value.`subscribers`, buf)
+            FfiConverterBoolean.write(value.`muted`, buf)
+            FfiConverterULong.write(value.`pinnedSeq`, buf)
+            FfiConverterOptionalByteArray.write(value.`avatar`, buf)
+    }
+}
+
+
+
+/**
+ * Вложение записи канала.
+ *
+ * 🔐 Имя назвал автор канала: показывать его можно, доверять — нет.
+ */
+data class FfiChannelAttachment (
+    /**
+     * Описание как есть — для [`Messenger::fetch_channel_media`].
+     */
+    var `descriptor`: kotlin.ByteArray, 
+    /**
+     * Тип вложения.
+     */
+    var `kind`: FfiAttachmentKind, 
+    /**
+     * Размер открытого файла в байтах.
+     */
+    var `size`: kotlin.ULong, 
+    /**
+     * Имя файла, если автор его передал.
+     */
+    var `name`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiChannelAttachment: FfiConverterRustBuffer<FfiChannelAttachment> {
+    override fun read(buf: ByteBuffer): FfiChannelAttachment {
+        return FfiChannelAttachment(
+            FfiConverterByteArray.read(buf),
+            FfiConverterTypeFfiAttachmentKind.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiChannelAttachment) = (
+            FfiConverterByteArray.allocationSize(value.`descriptor`) +
+            FfiConverterTypeFfiAttachmentKind.allocationSize(value.`kind`) +
+            FfiConverterULong.allocationSize(value.`size`) +
+            FfiConverterOptionalString.allocationSize(value.`name`)
+    )
+
+    override fun write(value: FfiChannelAttachment, buf: ByteBuffer) {
+            FfiConverterByteArray.write(value.`descriptor`, buf)
+            FfiConverterTypeFfiAttachmentKind.write(value.`kind`, buf)
+            FfiConverterULong.write(value.`size`, buf)
+            FfiConverterOptionalString.write(value.`name`, buf)
     }
 }
 
@@ -6488,7 +7284,27 @@ data class FfiChannelPost (
     /**
      * Время публикации по часам автора.
      */
-    var `createdAtMillis`: kotlin.Long
+    var `createdAtMillis`: kotlin.Long, 
+    /**
+     * Время последней правки, если запись правили.
+     */
+    var `editedAtMillis`: kotlin.Long?, 
+    /**
+     * Просмотры — со слов сервера.
+     */
+    var `views`: kotlin.ULong, 
+    /**
+     * Реакции — со слов сервера.
+     */
+    var `reactions`: List<FfiChannelReaction>, 
+    /**
+     * Своя реакция.
+     */
+    var `myReaction`: kotlin.String?, 
+    /**
+     * Вложения.
+     */
+    var `attachments`: List<FfiChannelAttachment>
 ) {
     
     companion object
@@ -6503,19 +7319,151 @@ public object FfiConverterTypeFfiChannelPost: FfiConverterRustBuffer<FfiChannelP
             FfiConverterULong.read(buf),
             FfiConverterString.read(buf),
             FfiConverterLong.read(buf),
+            FfiConverterOptionalLong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeFfiChannelReaction.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceTypeFfiChannelAttachment.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiChannelPost) = (
             FfiConverterULong.allocationSize(value.`seq`) +
             FfiConverterString.allocationSize(value.`text`) +
-            FfiConverterLong.allocationSize(value.`createdAtMillis`)
+            FfiConverterLong.allocationSize(value.`createdAtMillis`) +
+            FfiConverterOptionalLong.allocationSize(value.`editedAtMillis`) +
+            FfiConverterULong.allocationSize(value.`views`) +
+            FfiConverterSequenceTypeFfiChannelReaction.allocationSize(value.`reactions`) +
+            FfiConverterOptionalString.allocationSize(value.`myReaction`) +
+            FfiConverterSequenceTypeFfiChannelAttachment.allocationSize(value.`attachments`)
     )
 
     override fun write(value: FfiChannelPost, buf: ByteBuffer) {
             FfiConverterULong.write(value.`seq`, buf)
             FfiConverterString.write(value.`text`, buf)
             FfiConverterLong.write(value.`createdAtMillis`, buf)
+            FfiConverterOptionalLong.write(value.`editedAtMillis`, buf)
+            FfiConverterULong.write(value.`views`, buf)
+            FfiConverterSequenceTypeFfiChannelReaction.write(value.`reactions`, buf)
+            FfiConverterOptionalString.write(value.`myReaction`, buf)
+            FfiConverterSequenceTypeFfiChannelAttachment.write(value.`attachments`, buf)
+    }
+}
+
+
+
+/**
+ * Публичный канал, найденный по имени, — до подписки.
+ */
+data class FfiChannelPreview (
+    /**
+     * Ссылка-приглашение: с ней канал добавляется.
+     */
+    var `link`: kotlin.String, 
+    /**
+     * Идентификатор, UUID.
+     */
+    var `channelId`: kotlin.String, 
+    /**
+     * Название — расшифрованное и проверенное подписью автора.
+     */
+    var `title`: kotlin.String, 
+    /**
+     * Описание.
+     */
+    var `description`: kotlin.String, 
+    /**
+     * Публичное имя.
+     */
+    var `handle`: kotlin.String, 
+    /**
+     * Число подписчиков — со слов сервера.
+     */
+    var `subscribers`: kotlin.ULong, 
+    /**
+     * Есть ли канал уже на этом устройстве.
+     */
+    var `joined`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiChannelPreview: FfiConverterRustBuffer<FfiChannelPreview> {
+    override fun read(buf: ByteBuffer): FfiChannelPreview {
+        return FfiChannelPreview(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiChannelPreview) = (
+            FfiConverterString.allocationSize(value.`link`) +
+            FfiConverterString.allocationSize(value.`channelId`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterString.allocationSize(value.`description`) +
+            FfiConverterString.allocationSize(value.`handle`) +
+            FfiConverterULong.allocationSize(value.`subscribers`) +
+            FfiConverterBoolean.allocationSize(value.`joined`)
+    )
+
+    override fun write(value: FfiChannelPreview, buf: ByteBuffer) {
+            FfiConverterString.write(value.`link`, buf)
+            FfiConverterString.write(value.`channelId`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`description`, buf)
+            FfiConverterString.write(value.`handle`, buf)
+            FfiConverterULong.write(value.`subscribers`, buf)
+            FfiConverterBoolean.write(value.`joined`, buf)
+    }
+}
+
+
+
+/**
+ * Реакция со счётчиком.
+ */
+data class FfiChannelReaction (
+    /**
+     * Эмодзи из набора [`channel_reactions`].
+     */
+    var `emoji`: kotlin.String, 
+    /**
+     * Сколько подписчиков её поставили — со слов сервера.
+     */
+    var `count`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiChannelReaction: FfiConverterRustBuffer<FfiChannelReaction> {
+    override fun read(buf: ByteBuffer): FfiChannelReaction {
+        return FfiChannelReaction(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiChannelReaction) = (
+            FfiConverterString.allocationSize(value.`emoji`) +
+            FfiConverterULong.allocationSize(value.`count`)
+    )
+
+    override fun write(value: FfiChannelReaction, buf: ByteBuffer) {
+            FfiConverterString.write(value.`emoji`, buf)
+            FfiConverterULong.write(value.`count`, buf)
     }
 }
 
@@ -8309,6 +9257,38 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeFfiChannelPost: FfiConverterRustBuffer<FfiChannelPost?> {
+    override fun read(buf: ByteBuffer): FfiChannelPost? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFfiChannelPost.read(buf)
+    }
+
+    override fun allocationSize(value: FfiChannelPost?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFfiChannelPost.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FfiChannelPost?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFfiChannelPost.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeFfiPendingRegistration: FfiConverterRustBuffer<FfiPendingRegistration?> {
     override fun read(buf: ByteBuffer): FfiPendingRegistration? {
         if (buf.get().toInt() == 0) {
@@ -8457,6 +9437,34 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiAttachmentFile: FfiConverterRustBuffer<List<FfiAttachmentFile>> {
+    override fun read(buf: ByteBuffer): List<FfiAttachmentFile> {
+        val len = buf.getInt()
+        return List<FfiAttachmentFile>(len) {
+            FfiConverterTypeFfiAttachmentFile.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiAttachmentFile>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiAttachmentFile.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiAttachmentFile>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiAttachmentFile.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiBlockedChat: FfiConverterRustBuffer<List<FfiBlockedChat>> {
     override fun read(buf: ByteBuffer): List<FfiBlockedChat> {
         val len = buf.getInt()
@@ -8513,6 +9521,34 @@ public object FfiConverterSequenceTypeFfiChannel: FfiConverterRustBuffer<List<Ff
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiChannelAttachment: FfiConverterRustBuffer<List<FfiChannelAttachment>> {
+    override fun read(buf: ByteBuffer): List<FfiChannelAttachment> {
+        val len = buf.getInt()
+        return List<FfiChannelAttachment>(len) {
+            FfiConverterTypeFfiChannelAttachment.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiChannelAttachment>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiChannelAttachment.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiChannelAttachment>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiChannelAttachment.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiChannelPost: FfiConverterRustBuffer<List<FfiChannelPost>> {
     override fun read(buf: ByteBuffer): List<FfiChannelPost> {
         val len = buf.getInt()
@@ -8531,6 +9567,62 @@ public object FfiConverterSequenceTypeFfiChannelPost: FfiConverterRustBuffer<Lis
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiChannelPost.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiChannelPreview: FfiConverterRustBuffer<List<FfiChannelPreview>> {
+    override fun read(buf: ByteBuffer): List<FfiChannelPreview> {
+        val len = buf.getInt()
+        return List<FfiChannelPreview>(len) {
+            FfiConverterTypeFfiChannelPreview.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiChannelPreview>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiChannelPreview.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiChannelPreview>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiChannelPreview.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiChannelReaction: FfiConverterRustBuffer<List<FfiChannelReaction>> {
+    override fun read(buf: ByteBuffer): List<FfiChannelReaction> {
+        val len = buf.getInt()
+        return List<FfiChannelReaction>(len) {
+            FfiConverterTypeFfiChannelReaction.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiChannelReaction>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiChannelReaction.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiChannelReaction>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiChannelReaction.write(it, buf)
         }
     }
 }
@@ -8726,6 +9818,21 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     
 
         /**
+         * Публичное имя канала в каноничном виде — без `@`, строчными, —
+         * либо `None`, если строка именем быть не может.
+         *
+         * Интерфейс проверяет имя этим же правилом, что и сервер, а не своим.
+         */ fun `canonicalChannelHandle`(`text`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_func_canonical_channel_handle(
+        FfiConverterString.lower(`text`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Приводит введённое имя пользователя к каноничной форме.
          *
          * 🔐 Одно правило на ядро, сервер и интерфейс: строчные латинские
@@ -8760,6 +9867,42 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_func_channel_link_qr(
         FfiConverterString.lower(`uri`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Предел файла в записи канала, в байтах.
+         */ fun `channelMediaLimit`(): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_func_channel_media_limit(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Сколько вложений может нести одна запись.
+         */ fun `channelPostAttachmentLimit`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_func_channel_post_attachment_limit(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Реакции, которые можно поставить записи. Набор закрыт сервером.
+         */ fun `channelReactions`(): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_func_channel_reactions(
+        _status)
 }
     )
     }

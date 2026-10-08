@@ -150,7 +150,8 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
      * потратит клиент.
      */
     private fun binaryDownload(method: String, path: String): Boolean =
-        method.equals("GET", ignoreCase = true) && path.startsWith("/v1/attachments/")
+        method.equals("GET", ignoreCase = true) &&
+            (path.startsWith("/v1/attachments/") || CHANNEL_MEDIA.matches(path))
 
     @Throws(IOException::class)
     private fun openConnection(method: String, path: String, anonymous: Boolean): HttpURLConnection {
@@ -183,6 +184,13 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
     }
 
     private companion object {
+        /**
+         * Скачивание медиа канала. Шаблон целиком, а не начало пути:
+         * под `/v1/channels/feed/` лежат и текстовые ответы (канал,
+         * записи), и читать их байтами незачем.
+         */
+        val CHANNEL_MEDIA = Regex("^/v1/channels/feed/[0-9a-f-]{36}/media/[0-9a-f-]{36}$")
+
         /**
          * Предел текстового ответа: очередь — до 100 конвертов по 256 КБ
          * в hex, около 51 МБ, с запасом.

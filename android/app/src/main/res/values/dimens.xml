@@ -99,4 +99,8 @@
 
     <!-- QR-код ссылки канала в диалоге. -->
     <dimen name="channel_qr">208dp</dimen>
+    <!-- Запись канала: высота картинки в ленте, пилюля реакции. -->
+    <dimen name="channel_image_height">208dp</dimen>
+    <dimen name="channel_reaction_height">28dp</dimen>
+    <dimen name="channel_reaction_padding">10dp</dimen>
 </resources>

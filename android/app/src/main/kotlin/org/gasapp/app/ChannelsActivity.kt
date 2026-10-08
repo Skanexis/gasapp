@@ -27,7 +27,9 @@ import org.gasapp.app.ui.EmptyState
 import org.gasapp.app.ui.PostTime
 import org.gasapp.app.ui.RowDivider
 import uniffi.gasapp.FfiChannel
+import uniffi.gasapp.FfiChannelPreview
 import uniffi.gasapp.FfiException
+import uniffi.gasapp.canonicalChannelHandle
 import uniffi.gasapp.isChannelLink
 
 /**
@@ -98,6 +100,7 @@ class ChannelsActivity : AppCompatActivity() {
         // как «каналов нет».
         showLocal()
         syncThenShow()
+        BottomNav.refreshChannelBadge(this)
     }
 
     /**
@@ -131,6 +134,7 @@ class ChannelsActivity : AppCompatActivity() {
             }
 
             channels?.let(::render)
+            BottomNav.refreshChannelBadge(this@ChannelsActivity)
         }
     }
 
@@ -140,8 +144,7 @@ class ChannelsActivity : AppCompatActivity() {
                 ChatSummary(
                     chatId = channel.channelId,
                     name = channel.title,
-                    preview = channel.lastPost
-                        ?: channel.description.ifEmpty { getString(R.string.channel_no_posts) },
+                    preview = previewOf(channel),
                     time = channel.lastPostAtMillis?.let { PostTime.short(this, it) }.orEmpty(),
                     verified = false,
                     unread = channel.unread.coerceAtMost(MAX_BADGE).toInt(),
@@ -154,6 +157,20 @@ class ChannelsActivity : AppCompatActivity() {
         empty.visibility = if (hasChannels) View.GONE else View.VISIBLE
     }
 
+    /** Строка под названием: последняя запись, а у записи без текста — что в ней. */
+    private fun previewOf(channel: FfiChannel): String {
+        val text = channel.lastPost
+
+        val last = when {
+            text == null -> channel.description.ifEmpty { getString(R.string.channel_no_posts) }
+            text.isNotEmpty() -> text
+            channel.lastPostAttachments > 0u -> getString(R.string.channel_post_media_only)
+            else -> getString(R.string.channel_no_posts)
+        }
+
+        return if (channel.muted) getString(R.string.channel_preview_muted, last) else last
+    }
+
     private fun openChannel(channel: ChatSummary) {
         startActivity(
             Intent(this, ChannelActivity::class.java)
@@ -164,6 +181,7 @@ class ChannelsActivity : AppCompatActivity() {
     /** Добавить канал: вставить ссылку или сканировать QR-код. */
     private fun promptJoin() {
         GasAppSheet.on(this, R.string.channels_join)
+            .action(getString(R.string.channels_find), R.drawable.ic_search) { promptFind() }
             .action(getString(R.string.channels_join_paste), R.drawable.ic_link) { promptLink() }
             .action(getString(R.string.channels_join_scan), R.drawable.ic_qr) {
                 scan.launch(ScanActivity.Request(R.string.channels_join_scan, R.string.channels_scan_hint))
@@ -200,6 +218,103 @@ class ChannelsActivity : AppCompatActivity() {
 
                 join(link, dialog)
             }
+            .show()
+    }
+
+    /**
+     * Публичный канал по `@имени` или его началу.
+     *
+     * 🔐 Запрос идёт без подписи устройства: сервер не узнаёт, кто ищет.
+     * Что отдать по имени, решает сервер — об этом говорит карточка
+     * канала перед добавлением.
+     */
+    private fun promptFind() {
+        val field = GasAppTextField(this).apply {
+            hint = getString(R.string.channels_find_hint)
+            maxLines = 1
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+
+        GasAppDialog(this)
+            .title(R.string.channels_find)
+            .message(R.string.channels_find_help)
+            .content(field)
+            .secondary()
+            .primary(R.string.channels_find_action, closeOnClick = false) { dialog ->
+                val query = field.text?.toString().orEmpty().trim().removePrefix("@")
+
+                if (query.length < MIN_QUERY) {
+                    field.hasError = true
+                    dialog.showError(R.string.channels_find_invalid)
+                    return@primary
+                }
+
+                dialog.setBusy(true)
+
+                lifecycleScope.launch {
+                    val found = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val messenger = Core.messenger()
+
+                            // Точное имя — первым: поиск по началу отдаёт
+                            // не больше двадцати каналов и мог бы его не вместить.
+                            val exact = canonicalChannelHandle(query)?.let {
+                                runCatching { messenger.findPublicChannel(it) }.getOrNull()
+                            }
+
+                            (listOfNotNull(exact) + messenger.searchPublicChannels(query))
+                                .distinctBy { it.channelId }
+                        }
+                    }
+
+                    dialog.setBusy(false)
+
+                    found
+                        .onSuccess { channels ->
+                            if (channels.isEmpty()) {
+                                dialog.showError(R.string.channels_find_empty)
+                            } else {
+                                dialog.dismiss()
+                                showFound(channels)
+                            }
+                        }
+                        .onFailure { dialog.showError(R.string.channels_error_network) }
+                }
+            }
+            .show()
+    }
+
+    private fun showFound(channels: List<FfiChannelPreview>) {
+        val sheet = GasAppSheet.on(this, R.string.channels_find)
+
+        for (found in channels) {
+            sheet.action(
+                getString(R.string.channels_found_row, found.handle, found.title),
+                R.drawable.ic_channel,
+            ) { showPreview(found) }
+        }
+
+        sheet.show()
+    }
+
+    /** Карточка найденного канала: что это и чего имя не обещает. */
+    private fun showPreview(found: FfiChannelPreview) {
+        val subscribers = found.subscribers.coerceAtMost(Int.MAX_VALUE.toULong()).toInt()
+        val lines = listOfNotNull(
+            found.description.takeIf { it.isNotEmpty() },
+            resources.getQuantityString(R.plurals.channel_subscribers, subscribers, subscribers),
+            getString(R.string.channels_preview_note),
+        )
+
+        GasAppDialog(this)
+            .title(getString(R.string.channels_found_row, found.handle, found.title))
+            .message(lines.joinToString("\n\n"))
+            .secondary()
+            .primary(
+                if (found.joined) R.string.channels_preview_open else R.string.channels_join_action,
+                closeOnClick = false,
+            ) { dialog -> join(found.link, dialog) }
             .show()
     }
 
@@ -328,5 +443,8 @@ class ChannelsActivity : AppCompatActivity() {
 
         /** Кегль ссылки в поле: длинная строка должна помещаться. */
         const val LINK_TEXT_SP = 12f
+
+        /** С двух знаков сервер начинает искать по началу имени. */
+        const val MIN_QUERY = 2
     }
 }

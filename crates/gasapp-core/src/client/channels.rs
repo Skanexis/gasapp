@@ -9,28 +9,72 @@
 //!   проверяет сервер, а премиум выдаёт оператор вручную;
 //! * **читать** может любой, у кого есть ссылка: записи забираются без
 //!   подписи запроса, и сервер не знает, кто читает;
-//! * **подписка** — строка в локальной базе. На сервере её нет.
+//! * **вести** — писать записи с текстом и медиа, править, удалять,
+//!   закреплять, менять название и аватар, дать каналу публичное
+//!   `@имя` — может только автор: у него ключ подписи;
+//! * **подписка** — строка в локальной базе и случайный жетон на
+//!   сервере. По жетону сервер считает подписчиков, просмотры и
+//!   реакции; чей он, сервер не знает: запросы с жетоном идут без
+//!   подписи устройства, отдельной цепочкой Tor.
+//!
+//! 🔐 Счётчики — подписчики, просмотры, реакции — это слова сервера,
+//! ничем не подписанные. Интерфейс показывает их как статистику,
+//! а не как факт.
 
-use gasapp_net::api::{CreateChannelRequest, PublishPostRequest, UpdateChannelMetaRequest};
+use gasapp_media::descriptor::{AttachmentDescriptor, AttachmentKind};
+use gasapp_net::api::{
+    ChannelPostResponse, ChannelReactRequest, ChannelResponse, ChannelSeenRequest,
+    ChannelSubscribeRequest, ChannelTokenRequest, CreateChannelRequest, PublishPostRequest,
+    ReplacePostRequest, UpdateChannelRequest,
+};
 use gasapp_net::client::Transport;
 use gasapp_protocol::channel::{
-    self, ChannelAccess, ChannelAuthor, ChannelId, ChannelMeta, ChannelPost,
+    self, ChannelAccess, ChannelAuthor, ChannelId, ChannelMeta, ChannelPost, ChannelTombstone,
 };
-use gasapp_storage::channels::{StoredChannel, StoredPost};
+use gasapp_protocol::keys::IdentityKeyPair;
+use gasapp_storage::channels::{PostChange, StoredChannel, StoredPost};
 use gasapp_types::{GasAppError, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 
-use super::{hex, unhex, Client, DeviceSigner};
+use super::{hex, open_file, seal_file, unhex, AttachmentFile, Client, DeviceSigner};
 
 /// Сколько записей запрашивается у сервера за один раз.
 const PAGE: u32 = 100;
 
-/// Сколько страниц забирается за одну синхронизацию канала.
+/// Сколько страниц изменений забирается за одну синхронизацию канала.
 ///
 /// Предел нужен, чтобы канал с десятками тысяч записей не превращал
 /// открытие экрана в минуты загрузки через Tor: остальное доедет при
 /// следующей синхронизации.
 const MAX_PAGES_PER_SYNC: u32 = 5;
+
+/// У скольких свежих записей обновляются счётчики при открытии канала.
+const COUNTERS_PAGE: u32 = 50;
+
+/// Предел файла в канале, в байтах открытого содержимого.
+///
+/// Сервер принимает блоб до 32 МБ; дополнение Padmé добавляет до 12 %,
+/// теги чанков — доли процента. 24 МБ укладываются с запасом.
+pub const MAX_CHANNEL_MEDIA_BYTES: u64 = 24 * 1024 * 1024;
+
+/// Предел шифроблоба на сервере.
+const MAX_CHANNEL_BLOB_BYTES: usize = 32 * 1024 * 1024;
+
+/// Предел имени файла в записи канала, в знаках.
+///
+/// Короче, чем в переписке: описание вложения обязано уложиться
+/// в килобайт (`channel::MAX_ATTACHMENT_DESCRIPTOR_BYTES`).
+const MAX_CHANNEL_FILE_NAME_CHARS: usize = 100;
+
+/// Реакции, которые принимает сервер. Набор закрыт: произвольная
+/// строка была бы способом писать в чужой канал.
+pub const CHANNEL_REACTIONS: [&str; 8] = ["👍", "❤️", "🔥", "😂", "😮", "😢", "👏", "🎉"];
+
+/// Наибольшее число от сервера, которое вмещает локальная база.
+const MAX_COUNTER: u64 = i64::MAX.unsigned_abs();
+
+/// Предел строки реакций от сервера: восемь эмодзи со счётчиками.
+const MAX_REACTIONS_TEXT: usize = 256;
 
 /// Канал в том виде, в каком его показывает интерфейс.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +93,40 @@ pub struct Channel {
     pub last_post: Option<String>,
     /// Время последней записи по часам автора.
     pub last_post_at: Option<Timestamp>,
+    /// Сколько вложений у последней записи.
+    pub last_post_attachments: u32,
+    /// Публичное `@имя` — со слов сервера.
+    pub handle: Option<String>,
+    /// Число подписчиков — со слов сервера.
+    pub subscribers: u64,
+    /// «Без звука»: непрочитанное не идёт в общий счётчик.
+    pub muted: bool,
+    /// Номер закреплённой записи; `0` — закрепа нет.
+    pub pinned_seq: u64,
+    /// Описание вложения с аватаром — для [`Client::fetch_channel_media`].
+    pub avatar: Option<Vec<u8>>,
+}
+
+/// Вложение записи канала.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelAttachment {
+    /// Описание как есть — для [`Client::fetch_channel_media`].
+    pub descriptor: Vec<u8>,
+    /// Тип вложения.
+    pub kind: AttachmentKind,
+    /// Размер открытого файла.
+    pub size: u64,
+    /// Имя файла, если автор его передал.
+    pub name: Option<String>,
+}
+
+/// Реакция со счётчиком.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelReaction {
+    /// Эмодзи из [`CHANNEL_REACTIONS`].
+    pub emoji: String,
+    /// Сколько подписчиков её поставили — со слов сервера.
+    pub count: u64,
 }
 
 /// Запись канала для интерфейса.
@@ -60,6 +138,35 @@ pub struct ChannelEntry {
     pub text: String,
     /// Время публикации по часам автора.
     pub created_at: Timestamp,
+    /// Время последней правки, если запись правили.
+    pub edited_at: Option<Timestamp>,
+    /// Просмотры — со слов сервера.
+    pub views: u64,
+    /// Реакции — со слов сервера.
+    pub reactions: Vec<ChannelReaction>,
+    /// Своя реакция.
+    pub my_reaction: Option<String>,
+    /// Вложения.
+    pub attachments: Vec<ChannelAttachment>,
+}
+
+/// Публичный канал, найденный по имени, — до подписки.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelPreview {
+    /// Ссылка-приглашение: с ней канал добавляется.
+    pub link: String,
+    /// Идентификатор, UUID.
+    pub channel_id: String,
+    /// Название — расшифрованное и проверенное подписью автора.
+    pub title: String,
+    /// Описание.
+    pub description: String,
+    /// Публичное имя.
+    pub handle: String,
+    /// Число подписчиков — со слов сервера.
+    pub subscribers: u64,
+    /// Есть ли канал уже на этом устройстве.
+    pub joined: bool,
 }
 
 fn access_of(stored: &StoredChannel) -> ChannelAccess {
@@ -72,6 +179,63 @@ fn access_of(stored: &StoredChannel) -> ChannelAccess {
 
 fn parse_id(channel_id: &str) -> Result<ChannelId> {
     channel::parse_channel_id(channel_id)
+}
+
+/// Разбирает строку реакций сервера `эмодзи:число,…`.
+///
+/// 🔐 Строка приходит от сервера и попадает в интерфейс: принимаются
+/// только эмодзи из закрытого набора, всё прочее отбрасывается.
+fn parse_reactions(text: &str) -> Vec<ChannelReaction> {
+    if text.len() > MAX_REACTIONS_TEXT {
+        return Vec::new();
+    }
+
+    text.split(',')
+        .filter_map(|item| {
+            let (emoji, count) = item.rsplit_once(':')?;
+            let count: u64 = count.parse().ok()?;
+
+            (count > 0 && CHANNEL_REACTIONS.contains(&emoji)).then(|| ChannelReaction {
+                emoji: emoji.to_owned(),
+                count,
+            })
+        })
+        .collect()
+}
+
+fn entry_of(post: StoredPost) -> ChannelEntry {
+    ChannelEntry {
+        seq: post.seq,
+        text: post.text,
+        created_at: post.created_at,
+        edited_at: (post.edited_at != 0).then(|| Timestamp::from_millis(post.edited_at)),
+        views: post.views,
+        reactions: parse_reactions(&post.reactions),
+        my_reaction: (!post.my_reaction.is_empty()).then_some(post.my_reaction),
+        // Описание, которое не разбирается, не показывается: открыть
+        // по нему всё равно нечего.
+        attachments: post
+            .attachments
+            .into_iter()
+            .filter_map(|descriptor| {
+                let parsed = AttachmentDescriptor::from_bytes(&descriptor).ok()?;
+
+                Some(ChannelAttachment {
+                    descriptor,
+                    kind: parsed.kind,
+                    size: parsed.size,
+                    name: parsed.name,
+                })
+            })
+            .collect(),
+    }
+}
+
+/// Автор канала с ключом подписи из базы.
+fn author_of<'a>(access: &'a ChannelAccess, stored: &StoredChannel) -> Result<ChannelAuthor<'a>> {
+    let signing_key = stored.signing_key.ok_or(GasAppError::Forbidden)?;
+
+    ChannelAuthor::new(access, PrivateKeyBytes::new(signing_key))
 }
 
 impl<T: Transport> Client<T> {
@@ -136,22 +300,13 @@ impl<T: Transport> Client<T> {
             title: title.to_owned(),
             description: description.to_owned(),
             updated_at_millis: now.as_millis(),
+            pinned: 0,
+            avatar: Vec::new(),
         };
         let sealed_meta =
             ChannelAuthor::new(&created.access, created.signing_key)?.seal_meta(&meta, rng)?;
 
-        let stored = StoredChannel {
-            channel_id: created.access.channel_id,
-            secret: created.access.secret,
-            verify_key: *created.access.verify_key.as_bytes(),
-            signing_key: Some(signing_key),
-            title: meta.title,
-            description: meta.description,
-            meta_updated_at: meta.updated_at_millis,
-            last_seq: 0,
-            last_read_seq: 0,
-            joined_at: now,
-        };
+        let stored = new_stored(&created.access, Some(signing_key), &meta, now);
         self.storage.insert_channel(&stored)?;
 
         let request = CreateChannelRequest {
@@ -176,7 +331,11 @@ impl<T: Transport> Client<T> {
             return Err(error);
         }
 
-        self.present(&stored)
+        // Автор — тоже подписчик своего канала. Сбой не мешает: жетон
+        // оформится при следующей синхронизации.
+        let _ = self.ensure_subscribed(&stored, rng);
+
+        self.present(&self.stored_channel(&created.access.channel_uuid())?)
     }
 
     /// Добавляет канал по ссылке-приглашению и забирает его записи.
@@ -192,7 +351,12 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::InvalidSignature`] — сервер отдаёт канал с другим
     ///   ключом автора либо описание подписано не автором;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn join_channel(&self, link: &str, now: Timestamp) -> Result<Channel> {
+    pub fn join_channel<R: RngCore + CryptoRng>(
+        &self,
+        link: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Channel> {
         let access = ChannelAccess::parse(link)?;
 
         if let Some(known) = self.storage.channel(&access.channel_id)? {
@@ -209,25 +373,15 @@ impl<T: Transport> Client<T> {
 
         let meta = access.open_meta(&unhex(&info.meta)?)?;
 
-        let stored = StoredChannel {
-            channel_id: access.channel_id,
-            secret: access.secret,
-            verify_key: *access.verify_key.as_bytes(),
-            signing_key: None,
-            title: meta.title,
-            description: meta.description,
-            meta_updated_at: meta.updated_at_millis,
-            last_seq: 0,
-            last_read_seq: 0,
-            joined_at: now,
-        };
+        let stored = new_stored(&access, None, &meta, now);
         self.storage.insert_channel(&stored)?;
 
-        // Записи — сразу, но их сбой подписке не мешает: канал добавлен,
-        // остальное доедет при следующей синхронизации.
-        let _ = self.sync_channel(&access.channel_uuid());
+        // Записи и подписка — сразу, но их сбой добавлению не мешает:
+        // канал уже здесь, остальное доедет при следующей синхронизации.
+        let _ = self.ensure_subscribed(&stored, rng);
+        let _ = self.sync_stored(&stored, true);
 
-        self.present(&stored)
+        self.present(&self.stored_channel(&access.channel_uuid())?)
     }
 
     /// Каналы на этом устройстве — без сети.
@@ -243,6 +397,25 @@ impl<T: Transport> Client<T> {
             .collect()
     }
 
+    /// Один канал — без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — канала нет на устройстве.
+    pub fn channel(&self, channel_id: &str) -> Result<Channel> {
+        self.present(&self.stored_channel(channel_id)?)
+    }
+
+    /// Сколько непрочитанных записей во всех каналах, кроме тех, что
+    /// «без звука».
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn unread_channel_posts(&self) -> Result<u64> {
+        self.storage.count_unread_channel_posts()
+    }
+
     /// Ссылка-приглашение канала — чтобы поделиться им.
     ///
     /// 🔐 Ссылка и есть доступ: кто её получил, читает весь канал.
@@ -254,7 +427,8 @@ impl<T: Transport> Client<T> {
         Ok(access_of(&self.stored_channel(channel_id)?).to_uri())
     }
 
-    /// Забирает новые записи и описание канала с сервера.
+    /// Забирает изменения канала с сервера: новые записи, правки,
+    /// удаления, описание и свежие счётчики.
     ///
     /// Возвращает число новых записей. Запись, не прошедшая проверку
     /// (подпись не автора, чужой номер), пропускается и не сохраняется.
@@ -265,8 +439,32 @@ impl<T: Transport> Client<T> {
     ///   либо он удалён с сервера;
     /// * [`GasAppError::Network`] — сервер недоступен.
     pub fn sync_channel(&self, channel_id: &str) -> Result<u32> {
-        let stored = self.stored_channel(channel_id)?;
-        let access = access_of(&stored);
+        self.sync_stored(&self.stored_channel(channel_id)?, true)
+    }
+
+    /// Синхронизирует все каналы; возвращает число новых записей.
+    ///
+    /// Счётчики здесь не обновляются: это фоновый обход, и лишний
+    /// запрос на каждый канал через Tor в нём ни к чему. Сбой одного
+    /// канала (удалён, сеть оборвалась) остальным не мешает.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn sync_channels(&self) -> Result<u32> {
+        let mut fresh = 0u32;
+
+        for stored in self.storage.channels()? {
+            if let Ok(count) = self.sync_stored(&stored, false) {
+                fresh = fresh.saturating_add(count);
+            }
+        }
+
+        Ok(fresh)
+    }
+
+    fn sync_stored(&self, stored: &StoredChannel, refresh_counters: bool) -> Result<u32> {
+        let access = access_of(stored);
         let uuid = access.channel_uuid();
 
         let info = self.api.channel_info(&uuid)?;
@@ -276,91 +474,238 @@ impl<T: Transport> Client<T> {
             return Err(GasAppError::InvalidSignature);
         }
 
-        // Описание: принимается только подписанное автором и не старше
-        // известного (второе проверяет хранилище).
-        if let Ok(meta) = access.open_meta(&unhex(&info.meta)?) {
-            self.storage.update_channel_meta(
-                &stored.channel_id,
-                &meta.title,
-                &meta.description,
-                meta.updated_at_millis,
-            )?;
+        self.accept_info(stored, &access, &info)?;
+
+        let mut fresh = 0u32;
+
+        if stored.last_rev == 0 {
+            // Первая синхронизация: свежая страница ленты, а не вся
+            // история с начала. Старое догружается по запросу
+            // ([`Client::load_older_channel_posts`]).
+            for item in self.api.channel_page(&uuid, None, PAGE)? {
+                if self.apply_item(stored, &access, &item)? {
+                    fresh = fresh.saturating_add(1);
+                }
+            }
+
+            // Ревизия взята до страницы: изменение, случившееся между
+            // двумя запросами, придёт ещё раз, но не потеряется.
+            self.storage
+                .set_channel_last_rev(&stored.channel_id, info.last_rev.min(MAX_COUNTER))?;
+        } else {
+            fresh = self.pull_changes(stored, &access, &uuid, info.last_rev)?;
+
+            if refresh_counters {
+                // Просмотры и реакции ревизию не двигают — их несёт
+                // свежая страница.
+                for item in self.api.channel_page(&uuid, None, COUNTERS_PAGE)? {
+                    self.apply_item(stored, &access, &item)?;
+                }
+            }
         }
 
-        let mut after = stored.last_seq;
+        // Свой канал прочитан автором по определению.
+        if stored.signing_key.is_some() {
+            let last = self
+                .storage
+                .channel(&stored.channel_id)?
+                .map_or(stored.last_seq, |fresh| fresh.last_seq);
+
+            self.storage.mark_channel_read(&stored.channel_id, last)?;
+        }
+
+        Ok(fresh)
+    }
+
+    /// Забирает изменения после известной ревизии.
+    fn pull_changes(
+        &self,
+        stored: &StoredChannel,
+        access: &ChannelAccess,
+        uuid: &str,
+        server_rev: u64,
+    ) -> Result<u32> {
+        let mut after = stored.last_rev;
         let mut fresh = 0u32;
 
         for _ in 0..MAX_PAGES_PER_SYNC {
-            let page = self.api.channel_posts(&uuid, after, PAGE)?;
-
-            if page.is_empty() {
+            if after >= server_rev {
                 break;
             }
 
+            let page = self.api.channel_changes(uuid, after, PAGE)?;
             let full = u32::try_from(page.len()).is_ok_and(|len| len >= PAGE);
 
-            for item in page {
-                // Номера обязаны расти: сервер, отдающий старое, не
+            for item in &page {
+                // Ревизии обязаны расти: сервер, отдающий старое, не
                 // должен зациклить синхронизацию.
-                if item.seq <= after {
+                if item.rev <= after || item.rev > MAX_COUNTER {
                     return Ok(fresh);
                 }
-                after = item.seq;
+                after = item.rev;
 
-                let opened = unhex(&item.body).and_then(|body| access.open_post(&body, item.seq));
-
-                match opened {
-                    Ok(post) => {
-                        self.storage.insert_channel_post(
-                            &stored.channel_id,
-                            &StoredPost {
-                                seq: item.seq,
-                                text: post.text,
-                                created_at: Timestamp::from_millis(post.created_at_millis),
-                            },
-                        )?;
-                        fresh = fresh.saturating_add(1);
-                    }
-                    // Не от автора или не на своём месте — пропустить,
-                    // но не запрашивать снова при каждой синхронизации.
-                    Err(_) => self
-                        .storage
-                        .skip_channel_seq(&stored.channel_id, item.seq)?,
+                if self.apply_item(stored, access, item)? {
+                    fresh = fresh.saturating_add(1);
                 }
             }
+
+            self.storage
+                .set_channel_last_rev(&stored.channel_id, after)?;
 
             if !full {
                 break;
             }
         }
 
-        // Свой канал прочитан автором по определению.
-        if stored.signing_key.is_some() {
-            self.storage.mark_channel_read(&stored.channel_id, after)?;
-        }
-
         Ok(fresh)
     }
 
-    /// Синхронизирует все каналы; возвращает число новых записей.
-    ///
-    /// Сбой одного канала (удалён, сеть оборвалась) остальным не мешает.
+    /// Принимает то, что сервер говорит о канале: описание (подписанное
+    /// автором), публичное имя и число подписчиков (слова сервера).
+    fn accept_info(
+        &self,
+        stored: &StoredChannel,
+        access: &ChannelAccess,
+        info: &ChannelResponse,
+    ) -> Result<()> {
+        // Описание: принимается только подписанное автором и не старше
+        // известного (второе проверяет хранилище).
+        if let Ok(meta) = unhex(&info.meta).and_then(|wire| access.open_meta(&wire)) {
+            self.storage.update_channel_meta(
+                &stored.channel_id,
+                &meta.title,
+                &meta.description,
+                meta.pinned,
+                (!meta.avatar.is_empty()).then_some(meta.avatar.as_slice()),
+                meta.updated_at_millis,
+            )?;
+        }
+
+        // 🔐 Имя — со слов сервера, и в интерфейс попадает только
+        // каноничное: строчная латиница, цифры, подчёркивание.
+        let handle = info
+            .handle
+            .as_deref()
+            .and_then(|handle| gasapp_net::client::canonical_handle(handle).ok());
+
+        self.storage.set_channel_server_info(
+            &stored.channel_id,
+            handle.as_deref(),
+            info.subscribers.min(MAX_COUNTER),
+        )
+    }
+
+    /// Проверяет и сохраняет одну запись сервера. Возвращает, новая ли
+    /// это запись.
+    fn apply_item(
+        &self,
+        stored: &StoredChannel,
+        access: &ChannelAccess,
+        item: &ChannelPostResponse,
+    ) -> Result<bool> {
+        let id = &stored.channel_id;
+
+        // 🔐 Номер, которого не бывает (больше `i64::MAX`), база не
+        // сохранит. Такая запись пропускается молча: иначе один мусорный
+        // элемент от сервера обрывал бы синхронизацию и не давал дойти
+        // настоящим записям, стоящим за ним.
+        if item.seq > MAX_COUNTER {
+            return Ok(false);
+        }
+
+        let Ok(body) = unhex(&item.body) else {
+            self.storage.skip_channel_seq(id, item.seq)?;
+            return Ok(false);
+        };
+
+        if item.deleted {
+            // 🔐 Слову сервера «удалено» веры нет: запись исчезает
+            // только по отметке, подписанной автором.
+            match access.open_tombstone(&body, item.seq) {
+                Ok(tombstone) => {
+                    self.storage
+                        .tombstone_channel_post(id, item.seq, tombstone.revision)?;
+                }
+                Err(_) => self.storage.skip_channel_seq(id, item.seq)?,
+            }
+
+            return Ok(false);
+        }
+
+        let Ok(post) = access.open_post(&body, item.seq) else {
+            // Не от автора или не на своём месте — пропустить, но не
+            // запрашивать снова при каждой синхронизации.
+            self.storage.skip_channel_seq(id, item.seq)?;
+            return Ok(false);
+        };
+
+        let change = self.storage.upsert_channel_post(
+            id,
+            &StoredPost {
+                seq: item.seq,
+                revision: post.revision,
+                text: post.text,
+                created_at: Timestamp::from_millis(post.created_at_millis),
+                edited_at: post.edited_at_millis,
+                deleted: false,
+                views: 0,
+                reactions: String::new(),
+                my_reaction: String::new(),
+                attachments: post.attachments,
+            },
+        )?;
+
+        let reactions = if item.reactions.len() <= MAX_REACTIONS_TEXT {
+            item.reactions.as_str()
+        } else {
+            ""
+        };
+        // Счётчик сервера обрезается до того, что вмещает база: число
+        // «больше некуда» — не повод оборвать синхронизацию.
+        self.storage.set_channel_post_counters(
+            id,
+            item.seq,
+            item.views.min(MAX_COUNTER),
+            reactions,
+        )?;
+
+        Ok(change == PostChange::Inserted)
+    }
+
+    /// Догружает страницу истории — записи старше самой старой из
+    /// сохранённых. Возвращает, сколько записей добавилось; ноль —
+    /// история кончилась.
     ///
     /// # Errors
     ///
-    /// [`GasAppError::Storage`] — сбой базы.
-    pub fn sync_channels(&self) -> Result<u32> {
-        let mut fresh = 0u32;
+    /// * [`GasAppError::SessionNotFound`] — канала нет на устройстве;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn load_older_channel_posts(&self, channel_id: &str) -> Result<u32> {
+        let stored = self.stored_channel(channel_id)?;
+        let access = access_of(&stored);
 
-        for stored in self.storage.channels()? {
-            let uuid = channel::format_uuid(&stored.channel_id);
+        let Some(oldest) = self.storage.min_channel_seq(&stored.channel_id)? else {
+            return Ok(0);
+        };
 
-            if let Ok(count) = self.sync_channel(&uuid) {
-                fresh = fresh.saturating_add(count);
+        if oldest <= 1 {
+            return Ok(0);
+        }
+
+        let mut added = 0u32;
+
+        for item in self
+            .api
+            .channel_page(&access.channel_uuid(), Some(oldest), PAGE)?
+        {
+            // Сервер обязан отдать записи старше границы: всё прочее —
+            // не история.
+            if item.seq < oldest && self.apply_item(&stored, &access, &item)? {
+                added = added.saturating_add(1);
             }
         }
 
-        Ok(fresh)
+        Ok(added)
     }
 
     /// Последние записи канала — без сети, от старых к новым.
@@ -370,19 +715,68 @@ impl<T: Transport> Client<T> {
     /// [`GasAppError::Malformed`] — идентификатор не UUID;
     /// [`GasAppError::Storage`] — сбой базы.
     pub fn channel_posts(&self, channel_id: &str, limit: u32) -> Result<Vec<ChannelEntry>> {
+        self.channel_posts_before(channel_id, u64::MAX, limit)
+    }
+
+    /// Записи канала старше номера `before_seq` — без сети, от старых
+    /// к новым.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Malformed`] — идентификатор не UUID;
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn channel_posts_before(
+        &self,
+        channel_id: &str,
+        before_seq: u64,
+        limit: u32,
+    ) -> Result<Vec<ChannelEntry>> {
         Ok(self
             .storage
-            .channel_posts(&parse_id(channel_id)?, limit)?
+            .channel_posts_before(&parse_id(channel_id)?, before_seq, limit)?
             .into_iter()
-            .map(|post| ChannelEntry {
-                seq: post.seq,
-                text: post.text,
-                created_at: post.created_at,
-            })
+            .map(entry_of)
             .collect())
     }
 
-    /// Отмечает канал прочитанным до последней сохранённой записи.
+    /// Запись по номеру — без сети. Удалённой или неизвестной нет.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Malformed`] — идентификатор не UUID;
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn channel_post(&self, channel_id: &str, seq: u64) -> Result<Option<ChannelEntry>> {
+        Ok(self
+            .storage
+            .channel_post(&parse_id(channel_id)?, seq)?
+            .filter(|post| !post.deleted)
+            .map(entry_of))
+    }
+
+    /// Ищет подстроку в сохранённых записях канала: свежие — первыми.
+    ///
+    /// Поиск локальный: сервер текста записей не знает.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Malformed`] — идентификатор не UUID;
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn search_channel_posts(
+        &self,
+        channel_id: &str,
+        query: &str,
+        limit: u32,
+    ) -> Result<Vec<ChannelEntry>> {
+        Ok(self
+            .storage
+            .search_channel_posts(&parse_id(channel_id)?, query.trim(), limit)?
+            .into_iter()
+            .map(entry_of)
+            .collect())
+    }
+
+    /// Отмечает канал прочитанным до последней сохранённой записи —
+    /// без сети.
     ///
     /// # Errors
     ///
@@ -394,7 +788,41 @@ impl<T: Transport> Client<T> {
             .mark_channel_read(&stored.channel_id, stored.last_seq)
     }
 
-    /// Публикует запись в своём канале.
+    /// Сообщает серверу, до какой записи канал прочитан: из этих
+    /// отметок складываются просмотры.
+    ///
+    /// 🔐 Отметка идёт с жетоном подписчика, без подписи устройства.
+    /// Без жетона (подписка не оформилась) не отправляется ничего.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет на устройстве;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn report_channel_seen(&self, channel_id: &str) -> Result<()> {
+        let stored = self.stored_channel(channel_id)?;
+
+        let Some(token) = stored.sub_token else {
+            return Ok(());
+        };
+
+        if stored.last_read_seq <= stored.seen_sent_seq {
+            return Ok(());
+        }
+
+        self.api.mark_channel_seen(
+            &channel::format_uuid(&stored.channel_id),
+            &ChannelSeenRequest {
+                token: hex(&token),
+                seq: stored.last_read_seq,
+            },
+        )?;
+
+        self.storage
+            .set_channel_seen_sent(&stored.channel_id, stored.last_read_seq)
+    }
+
+    /// Публикует запись в своём канале: текст, вложения или и то и
+    /// другое.
     ///
     /// Номер записи автор назначает сам — следующий за последним на
     /// сервере — и кладёт внутрь шифротекста: читатели сверяют его
@@ -403,7 +831,8 @@ impl<T: Transport> Client<T> {
     /// # Errors
     ///
     /// * [`GasAppError::Forbidden`] — канал чужой: ключа подписи нет;
-    /// * [`GasAppError::Malformed`] — текст пустой либо слишком длинный;
+    /// * [`GasAppError::Malformed`] — запись пуста, слишком длинна,
+    ///   вложений больше предела либо файл слишком велик;
     /// * [`GasAppError::InvalidSignature`] — сервер поставил запись под
     ///   другим номером (в канал одновременно писали с другого места);
     ///   читатели такую запись не примут;
@@ -412,16 +841,27 @@ impl<T: Transport> Client<T> {
         &self,
         channel_id: &str,
         text: &str,
+        files: &[AttachmentFile],
         now: Timestamp,
         rng: &mut R,
     ) -> Result<ChannelEntry> {
         let stored = self.stored_channel(channel_id)?;
-        let signing_key = stored.signing_key.ok_or(GasAppError::Forbidden)?;
         let access = access_of(&stored);
+        let author = author_of(&access, &stored)?;
         let uuid = access.channel_uuid();
         let (device_id, identity) = self.own_device()?;
 
         let text = text.trim();
+
+        // Проверка до загрузки файлов: пустая или слишком длинная
+        // запись не должна стоить мегабайтов трафика.
+        if files.len() > channel::MAX_POST_ATTACHMENTS
+            || text.len() > channel::MAX_POST_BYTES
+            || (text.is_empty() && files.is_empty())
+        {
+            return Err(GasAppError::Malformed);
+        }
+
         let number = self
             .api
             .channel_info(&uuid)?
@@ -429,41 +869,219 @@ impl<T: Transport> Client<T> {
             .checked_add(1)
             .ok_or(GasAppError::Malformed)?;
 
-        let sealed = ChannelAuthor::new(&access, PrivateKeyBytes::new(signing_key))?.seal_post(
+        let mut attachments = Vec::with_capacity(files.len());
+        let published = (|| {
+            for file in files {
+                attachments.push(
+                    self.upload_channel_media(&uuid, &device_id, &identity, file, now, rng)?
+                        .to_bytes()?,
+                );
+            }
+
+            let sealed = author.seal_post(
+                &ChannelPost {
+                    number,
+                    revision: 0,
+                    created_at_millis: now.as_millis(),
+                    edited_at_millis: 0,
+                    text: text.to_owned(),
+                    attachments: attachments.clone(),
+                },
+                rng,
+            )?;
+
+            let published = self.api.publish_channel_post(
+                &device_id,
+                &uuid,
+                &PublishPostRequest { body: hex(&sealed) },
+                &DeviceSigner::new(&identity, now),
+            )?;
+
+            if published.seq == number {
+                Ok(())
+            } else {
+                Err(GasAppError::InvalidSignature)
+            }
+        })();
+
+        if let Err(error) = published {
+            // Запись не вышла — её файлы на сервере никому не нужны.
+            self.drop_channel_media(&uuid, &device_id, &identity, &attachments, now);
+
+            return Err(error);
+        }
+
+        let post = StoredPost {
+            seq: number,
+            revision: 0,
+            text: text.to_owned(),
+            created_at: now,
+            edited_at: 0,
+            deleted: false,
+            views: 0,
+            reactions: String::new(),
+            my_reaction: String::new(),
+            attachments,
+        };
+        self.storage
+            .upsert_channel_post(&stored.channel_id, &post)?;
+        self.storage.mark_channel_read(&stored.channel_id, number)?;
+
+        Ok(entry_of(post))
+    }
+
+    /// Исправляет текст записи своего канала. Вложения остаются.
+    ///
+    /// Читатели увидят пометку «изменено». Прежний текст остаётся
+    /// у тех, кто успел его загрузить.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — канал чужой;
+    /// * [`GasAppError::SessionNotFound`] — записи нет либо она удалена;
+    /// * [`GasAppError::Malformed`] — запись стала бы пустой либо
+    ///   слишком длинной;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn edit_channel_post<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        seq: u64,
+        text: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<ChannelEntry> {
+        let stored = self.stored_channel(channel_id)?;
+        let access = access_of(&stored);
+        let author = author_of(&access, &stored)?;
+        let (device_id, identity) = self.own_device()?;
+        let known = self.live_post(&stored, seq)?;
+
+        let edited = StoredPost {
+            revision: known
+                .revision
+                .checked_add(1)
+                .ok_or(GasAppError::Malformed)?,
+            text: text.trim().to_owned(),
+            // Время правки обязано быть ненулевым: ноль значит «не
+            // правили».
+            edited_at: now.as_millis().max(1),
+            ..known
+        };
+
+        let sealed = author.seal_post(
             &ChannelPost {
-                number,
-                created_at_millis: now.as_millis(),
-                text: text.to_owned(),
+                number: seq,
+                revision: edited.revision,
+                created_at_millis: edited.created_at.as_millis(),
+                edited_at_millis: edited.edited_at,
+                text: edited.text.clone(),
+                attachments: edited.attachments.clone(),
             },
             rng,
         )?;
 
-        let published = self.api.publish_channel_post(
+        self.api.replace_channel_post(
             &device_id,
-            &uuid,
-            &PublishPostRequest { body: hex(&sealed) },
+            &access.channel_uuid(),
+            &ReplacePostRequest {
+                seq,
+                body: hex(&sealed),
+                deleted: false,
+            },
             &DeviceSigner::new(&identity, now),
         )?;
 
-        if published.seq != number {
-            return Err(GasAppError::InvalidSignature);
+        self.storage
+            .upsert_channel_post(&stored.channel_id, &edited)?;
+
+        self.live_post(&stored, seq).map(entry_of)
+    }
+
+    /// Удаляет запись своего канала — подписанной отметкой, которую
+    /// проверят читатели, — и её файлы с сервера.
+    ///
+    /// ⚠️ У тех, кто запись уже загрузил, она останется до следующей
+    /// синхронизации, а в чужих копиях и снимках экрана — навсегда.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — канал чужой;
+    /// * [`GasAppError::SessionNotFound`] — записи нет либо она уже
+    ///   удалена;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn delete_channel_post<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        seq: u64,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let stored = self.stored_channel(channel_id)?;
+        let access = access_of(&stored);
+        let author = author_of(&access, &stored)?;
+        let uuid = access.channel_uuid();
+        let (device_id, identity) = self.own_device()?;
+        let known = self.live_post(&stored, seq)?;
+
+        let revision = known
+            .revision
+            .checked_add(1)
+            .ok_or(GasAppError::Malformed)?;
+        let sealed = author.seal_tombstone(
+            &ChannelTombstone {
+                number: seq,
+                revision,
+                deleted_at_millis: now.as_millis(),
+            },
+            rng,
+        )?;
+
+        self.api.replace_channel_post(
+            &device_id,
+            &uuid,
+            &ReplacePostRequest {
+                seq,
+                body: hex(&sealed),
+                deleted: true,
+            },
+            &DeviceSigner::new(&identity, now),
+        )?;
+
+        self.storage
+            .tombstone_channel_post(&stored.channel_id, seq, revision)?;
+
+        // Файлы записи и закреп — вслед за ней. Сбой удалению не
+        // мешает: запись уже удалена, а блобы зашифрованы.
+        self.drop_channel_media(&uuid, &device_id, &identity, &known.attachments, now);
+
+        if stored.pinned_seq == seq {
+            let _ = self.write_meta(&stored, now, rng, |meta| meta.pinned = 0);
         }
 
-        self.storage.insert_channel_post(
-            &stored.channel_id,
-            &StoredPost {
-                seq: number,
-                text: text.to_owned(),
-                created_at: now,
-            },
-        )?;
-        self.storage.mark_channel_read(&stored.channel_id, number)?;
+        Ok(())
+    }
 
-        Ok(ChannelEntry {
-            seq: number,
-            text: text.to_owned(),
-            created_at: now,
-        })
+    /// Закрепляет запись своего канала; `seq == 0` — снимает закреп.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — канал чужой;
+    /// * [`GasAppError::SessionNotFound`] — записи нет либо она удалена;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn pin_channel_post<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        seq: u64,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Channel> {
+        let stored = self.stored_channel(channel_id)?;
+
+        if seq != 0 {
+            self.live_post(&stored, seq)?;
+        }
+
+        self.write_meta(&stored, now, rng, |meta| meta.pinned = seq)
     }
 
     /// Меняет название и описание своего канала.
@@ -482,44 +1100,281 @@ impl<T: Transport> Client<T> {
         rng: &mut R,
     ) -> Result<Channel> {
         let stored = self.stored_channel(channel_id)?;
-        let signing_key = stored.signing_key.ok_or(GasAppError::Forbidden)?;
-        let access = access_of(&stored);
+
+        self.write_meta(&stored, now, rng, |meta| {
+            title.trim().clone_into(&mut meta.title);
+            description.trim().clone_into(&mut meta.description);
+        })
+    }
+
+    /// Ставит аватар своего канала; `None` — убирает.
+    ///
+    /// Картинка шифруется и загружается как медиа канала — так же, как
+    /// фото в записи: метаданные снимка удаляются до шифрования.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — канал чужой;
+    /// * [`GasAppError::Malformed`] — файл слишком велик либо не
+    ///   разбирается;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn set_channel_avatar<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        image: Option<&[u8]>,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Channel> {
+        let stored = self.stored_channel(channel_id)?;
+        // Право — до загрузки: чужому каналу файл не шлётся.
+        stored.signing_key.ok_or(GasAppError::Forbidden)?;
+
+        let uuid = channel::format_uuid(&stored.channel_id);
         let (device_id, identity) = self.own_device()?;
 
-        // Время описания обязано расти: читатели не принимают описание
-        // старше известного, а часы телефона могли уйти назад.
-        let meta = ChannelMeta {
-            title: title.trim().to_owned(),
-            description: description.trim().to_owned(),
-            updated_at_millis: now
-                .as_millis()
-                .max(stored.meta_updated_at.saturating_add(1)),
+        let avatar = match image {
+            Some(bytes) => self
+                .upload_channel_media(
+                    &uuid,
+                    &device_id,
+                    &identity,
+                    &AttachmentFile {
+                        kind: AttachmentKind::Image,
+                        bytes: bytes.to_vec(),
+                        name: None,
+                        description: None,
+                        duration_millis: None,
+                        waveform: None,
+                    },
+                    now,
+                    rng,
+                )?
+                .to_bytes()?,
+            None => Vec::new(),
         };
-        let sealed = ChannelAuthor::new(&access, PrivateKeyBytes::new(signing_key))?
-            .seal_meta(&meta, rng)?;
 
-        self.api.update_channel_meta(
+        let written = self.write_meta(&stored, now, rng, |meta| meta.avatar.clone_from(&avatar));
+
+        // Нужен один блоб: при успехе лишний — прежний, при сбое — новый.
+        let stale = match &written {
+            Ok(_) => stored.avatar.clone().unwrap_or_default(),
+            Err(_) => avatar,
+        };
+        if !stale.is_empty() {
+            self.drop_channel_media(&uuid, &device_id, &identity, &[stale], now);
+        }
+
+        written
+    }
+
+    /// Делает свой канал публичным под именем `handle` либо, с `None`,
+    /// снова закрытым.
+    ///
+    /// # 🔐 Цена публичности
+    ///
+    /// Чтобы канал находился по `@имени`, серверу отдаётся
+    /// ссылка-приглашение, а с ней — ключ чтения. Публичный канал
+    /// сервер читает; подделать записи по-прежнему не может. Закрытие
+    /// канала ключ у сервера не отзывает: что он успел узнать, то знает.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Forbidden`] — канал чужой;
+    /// * [`GasAppError::Malformed`] — это не имя канала;
+    /// * [`GasAppError::UsernameTaken`] — имя занято;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn set_channel_handle(
+        &self,
+        channel_id: &str,
+        handle: Option<&str>,
+        now: Timestamp,
+    ) -> Result<Channel> {
+        let stored = self.stored_channel(channel_id)?;
+        stored.signing_key.ok_or(GasAppError::Forbidden)?;
+
+        let access = access_of(&stored);
+        let (device_id, identity) = self.own_device()?;
+        let handle = handle
+            .map(gasapp_net::client::canonical_handle)
+            .transpose()?;
+
+        self.api.update_channel(
             &device_id,
             &access.channel_uuid(),
-            &UpdateChannelMetaRequest { meta: hex(&sealed) },
+            &UpdateChannelRequest {
+                meta: None,
+                set_public: true,
+                public_link: handle.as_ref().map(|_| access.to_uri()),
+                handle: handle.clone(),
+            },
             &DeviceSigner::new(&identity, now),
         )?;
 
-        self.storage.update_channel_meta(
+        self.storage.set_channel_server_info(
             &stored.channel_id,
-            &meta.title,
-            &meta.description,
-            meta.updated_at_millis,
+            handle.as_deref(),
+            stored.subscribers,
         )?;
 
-        self.present(&self.stored_channel(channel_id)?)
+        self.channel(channel_id)
+    }
+
+    /// Включает либо выключает «без звука» — без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — канала нет на устройстве.
+    pub fn set_channel_muted(&self, channel_id: &str, muted: bool) -> Result<Channel> {
+        let stored = self.stored_channel(channel_id)?;
+
+        self.storage.set_channel_muted(&stored.channel_id, muted)?;
+
+        self.channel(channel_id)
+    }
+
+    /// Ставит, меняет либо (с `None`) снимает свою реакцию на запись.
+    ///
+    /// 🔐 Реакция идёт с жетоном подписчика, без подписи устройства:
+    /// сервер видит, что жетон отреагировал, но не чей он.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Malformed`] — эмодзи не из набора;
+    /// * [`GasAppError::SessionNotFound`] — записи нет либо она удалена;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn react_to_channel_post<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        seq: u64,
+        emoji: Option<&str>,
+        rng: &mut R,
+    ) -> Result<ChannelEntry> {
+        let stored = self.stored_channel(channel_id)?;
+        let access = access_of(&stored);
+        let uuid = access.channel_uuid();
+
+        if emoji.is_some_and(|emoji| !CHANNEL_REACTIONS.contains(&emoji)) {
+            return Err(GasAppError::Malformed);
+        }
+
+        self.live_post(&stored, seq)?;
+        let token = self.ensure_subscribed(&stored, rng)?;
+
+        self.api.react_to_channel_post(
+            &uuid,
+            &ChannelReactRequest {
+                token: hex(&token),
+                seq,
+                emoji: emoji.map(str::to_owned),
+            },
+        )?;
+
+        self.storage
+            .set_channel_post_reaction(&stored.channel_id, seq, emoji.unwrap_or(""))?;
+
+        // Свежий счётчик — тем же заходом; его сбой реакции не отменяет.
+        if let Ok(page) = self.api.channel_page(&uuid, Some(seq.saturating_add(1)), 1) {
+            for item in page.iter().filter(|item| item.seq == seq) {
+                self.apply_item(&stored, &access, item)?;
+            }
+        }
+
+        self.live_post(&stored, seq).map(entry_of)
+    }
+
+    /// Скачивает и расшифровывает медиа канала по описанию из записи
+    /// либо из описания канала (аватар).
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Malformed`] — описание не разбирается либо
+    ///   длина блоба с ним не сходится;
+    /// * [`GasAppError::SessionNotFound`] — блоба нет (запись удалена);
+    /// * [`GasAppError::Crypto`] — блоб подменён;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn fetch_channel_media(&self, channel_id: &str, descriptor: &[u8]) -> Result<Vec<u8>> {
+        let descriptor = AttachmentDescriptor::from_bytes(descriptor)?;
+
+        if descriptor.size > MAX_CHANNEL_MEDIA_BYTES {
+            return Err(GasAppError::Malformed);
+        }
+
+        let payload = self.api.download_channel_media(
+            &channel::format_uuid(&parse_id(channel_id)?),
+            &descriptor.location,
+        )?;
+
+        open_file(&descriptor, &payload)
+    }
+
+    /// Публичный канал по точному `@имени` — до подписки.
+    ///
+    /// 🔐 Название и описание расшифровываются ключом из ссылки и
+    /// проверяются подписью автора из неё же. Какую ссылку отдать по
+    /// имени, решает сервер: имя — его пространство, и гарантии, что
+    /// `@имя` ведёт к тому же каналу, что вчера, нет.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Malformed`] — это не имя канала;
+    /// * [`GasAppError::SessionNotFound`] — такого канала нет;
+    /// * [`GasAppError::InvalidSignature`] — ссылка сервера не сходится
+    ///   с каналом, который он отдаёт;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn find_public_channel(&self, handle: &str) -> Result<ChannelPreview> {
+        self.preview_of(&self.api.channel_by_handle(handle)?)
+    }
+
+    /// Публичные каналы, чьё `@имя` начинается с `query`.
+    ///
+    /// Поиск только по имени: названий сервер не знает. Канал, чья
+    /// ссылка не проходит проверку, в выдачу не попадает.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сервер недоступен.
+    pub fn search_public_channels(&self, query: &str) -> Result<Vec<ChannelPreview>> {
+        Ok(self
+            .api
+            .search_channels(query)?
+            .iter()
+            .filter_map(|info| self.preview_of(info).ok())
+            .collect())
+    }
+
+    fn preview_of(&self, info: &ChannelResponse) -> Result<ChannelPreview> {
+        let link = info.public_link.as_deref().ok_or(GasAppError::Malformed)?;
+        let handle = gasapp_net::client::canonical_handle(
+            info.handle.as_deref().ok_or(GasAppError::Malformed)?,
+        )?;
+        let access = ChannelAccess::parse(link)?;
+
+        // 🔐 Ссылка обязана вести к каналу, который отдан: иначе под
+        // одним именем показывалось бы описание другого канала.
+        if access.channel_uuid() != info.channel_id.to_ascii_lowercase()
+            || unhex(&info.verify_key)? != access.verify_key.as_bytes()
+        {
+            return Err(GasAppError::InvalidSignature);
+        }
+
+        let meta = access.open_meta(&unhex(&info.meta)?)?;
+
+        Ok(ChannelPreview {
+            link: access.to_uri(),
+            channel_id: access.channel_uuid(),
+            title: meta.title,
+            description: meta.description,
+            handle,
+            subscribers: info.subscribers,
+            joined: self.storage.channel(&access.channel_id)?.is_some(),
+        })
     }
 
     /// Убирает канал с устройства; свой — удаляет и с сервера.
     ///
-    /// Чужой канал просто перестаёт читаться: сервер о подписке не знал
-    /// и об отписке не узнаёт. Свой удаляется с сервера вместе со всеми
-    /// записями — у читателей останется то, что они уже загрузили.
+    /// Чужой канал перестаёт читаться, а его жетон подписчика снимается
+    /// с сервера вместе с реакциями. Свой удаляется с сервера вместе со
+    /// всеми записями — у читателей останется то, что они уже загрузили.
     ///
     /// # Errors
     ///
@@ -528,23 +1383,198 @@ impl<T: Transport> Client<T> {
     /// ключ подписи от канала, который всё ещё существует.
     pub fn leave_channel(&self, channel_id: &str, now: Timestamp) -> Result<()> {
         let stored = self.stored_channel(channel_id)?;
+        let uuid = channel::format_uuid(&stored.channel_id);
 
         if stored.signing_key.is_some() {
             let (device_id, identity) = self.own_device()?;
-            let removed = self.api.delete_channel(
-                &device_id,
-                &channel::format_uuid(&stored.channel_id),
-                &DeviceSigner::new(&identity, now),
-            );
+            let removed =
+                self.api
+                    .delete_channel(&device_id, &uuid, &DeviceSigner::new(&identity, now));
 
             // «Не найден» — канал уже удалён с сервера: это и есть цель.
             match removed {
                 Ok(()) | Err(GasAppError::SessionNotFound) => {}
                 Err(error) => return Err(error),
             }
+        } else if let Some(token) = stored.sub_token {
+            // Сбой отписки уходу не мешает: жетон случаен и ни с кем
+            // не связан, а канал с устройства исчезает в любом случае.
+            let _ = self
+                .api
+                .unsubscribe_channel(&uuid, &ChannelTokenRequest { token: hex(&token) });
         }
 
         self.storage.delete_channel(&stored.channel_id)
+    }
+
+    /// Жетон подписчика канала; если его нет — оформляет подписку.
+    ///
+    /// 🔐 Жетон случаен и свой у каждого канала: по нему сервер не
+    /// свяжет подписки одного человека между собой.
+    fn ensure_subscribed<R: RngCore + CryptoRng>(
+        &self,
+        stored: &StoredChannel,
+        rng: &mut R,
+    ) -> Result<[u8; 32]> {
+        if let Some(token) = stored.sub_token {
+            return Ok(token);
+        }
+
+        let uuid = channel::format_uuid(&stored.channel_id);
+        let mut token = [0u8; 32];
+        rng.fill_bytes(&mut token);
+
+        let pow_nonce = gasapp_net::pow::solve(
+            &gasapp_net::pow::subscribe_challenge(&uuid, &token),
+            gasapp_net::pow::SUBSCRIBE_DIFFICULTY,
+        )
+        .ok_or(GasAppError::Crypto)?;
+
+        self.api.subscribe_channel(
+            &uuid,
+            &ChannelSubscribeRequest {
+                token: hex(&token),
+                pow_nonce,
+            },
+        )?;
+
+        self.storage
+            .set_channel_sub_token(&stored.channel_id, Some(&token))?;
+
+        Ok(token)
+    }
+
+    /// Собирает новое описание канала из известного, подписывает,
+    /// отдаёт серверу и сохраняет.
+    fn write_meta<R: RngCore + CryptoRng>(
+        &self,
+        stored: &StoredChannel,
+        now: Timestamp,
+        rng: &mut R,
+        change: impl FnOnce(&mut ChannelMeta),
+    ) -> Result<Channel> {
+        let access = access_of(stored);
+        let author = author_of(&access, stored)?;
+        let (device_id, identity) = self.own_device()?;
+
+        // Время описания обязано расти: читатели не принимают описание
+        // старше известного, а часы телефона могли уйти назад.
+        let mut meta = ChannelMeta {
+            title: stored.title.clone(),
+            description: stored.description.clone(),
+            updated_at_millis: now
+                .as_millis()
+                .max(stored.meta_updated_at.saturating_add(1)),
+            pinned: stored.pinned_seq,
+            avatar: stored.avatar.clone().unwrap_or_default(),
+        };
+        change(&mut meta);
+
+        let sealed = author.seal_meta(&meta, rng)?;
+
+        self.api.update_channel(
+            &device_id,
+            &access.channel_uuid(),
+            &UpdateChannelRequest {
+                meta: Some(hex(&sealed)),
+                ..UpdateChannelRequest::default()
+            },
+            &DeviceSigner::new(&identity, now),
+        )?;
+
+        self.storage.update_channel_meta(
+            &stored.channel_id,
+            &meta.title,
+            &meta.description,
+            meta.pinned,
+            (!meta.avatar.is_empty()).then_some(meta.avatar.as_slice()),
+            meta.updated_at_millis,
+        )?;
+
+        self.present(
+            &self
+                .storage
+                .channel(&stored.channel_id)?
+                .ok_or(GasAppError::SessionNotFound)?,
+        )
+    }
+
+    /// Шифрует файл и кладёт его в медиа своего канала.
+    fn upload_channel_media<R: RngCore + CryptoRng>(
+        &self,
+        uuid: &str,
+        device_id: &str,
+        identity: &IdentityKeyPair,
+        file: &AttachmentFile,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<AttachmentDescriptor> {
+        let sealed = seal_file(file, MAX_CHANNEL_MEDIA_BYTES, rng)?;
+
+        if sealed.payload.len() > MAX_CHANNEL_BLOB_BYTES {
+            return Err(GasAppError::Malformed);
+        }
+
+        let location = self.api.upload_channel_media(
+            device_id,
+            uuid,
+            sealed.payload,
+            &DeviceSigner::new(identity, now),
+        )?;
+
+        let descriptor = AttachmentDescriptor {
+            kind: file.kind,
+            location,
+            key: sealed.key,
+            size: sealed.size,
+            // 🔐 У фото, видео и звука имя не передаётся — в нём дата
+            // съёмки и модель телефона (см. `Client::upload_attachment`).
+            name: if sealed.is_media {
+                None
+            } else {
+                file.name
+                    .as_deref()
+                    .map(|name| name.chars().take(MAX_CHANNEL_FILE_NAME_CHARS).collect())
+            },
+            description: None,
+            duration_millis: file.duration_millis,
+            waveform: file.waveform.clone(),
+            preview: None,
+        };
+
+        descriptor.validate()?;
+
+        Ok(descriptor)
+    }
+
+    /// Удаляет с сервера блобы по описаниям вложений — молча: это
+    /// уборка, и её сбой ничего не ломает.
+    fn drop_channel_media(
+        &self,
+        uuid: &str,
+        device_id: &str,
+        identity: &IdentityKeyPair,
+        descriptors: &[Vec<u8>],
+        now: Timestamp,
+    ) {
+        for descriptor in descriptors {
+            if let Ok(parsed) = AttachmentDescriptor::from_bytes(descriptor) {
+                let _ = self.api.delete_channel_media(
+                    device_id,
+                    uuid,
+                    &parsed.location,
+                    &DeviceSigner::new(identity, now),
+                );
+            }
+        }
+    }
+
+    /// Сохранённая и не удалённая запись.
+    fn live_post(&self, stored: &StoredChannel, seq: u64) -> Result<StoredPost> {
+        self.storage
+            .channel_post(&stored.channel_id, seq)?
+            .filter(|post| !post.deleted)
+            .ok_or(GasAppError::SessionNotFound)
     }
 
     fn stored_channel(&self, channel_id: &str) -> Result<StoredChannel> {
@@ -554,7 +1584,7 @@ impl<T: Transport> Client<T> {
     }
 
     /// Идентификатор своего устройства и ключ для подписи запросов.
-    fn own_device(&self) -> Result<(String, gasapp_protocol::keys::IdentityKeyPair)> {
+    fn own_device(&self) -> Result<(String, IdentityKeyPair)> {
         let device_id = self
             .storage
             .load_own_keys()?
@@ -577,10 +1607,73 @@ impl<T: Transport> Client<T> {
                 .storage
                 .count_channel_posts_after(&stored.channel_id, stored.last_read_seq)?,
             last_post_at: last.as_ref().map(|post| post.created_at),
+            last_post_attachments: last
+                .as_ref()
+                .map_or(0, |post| u32::try_from(post.attachments.len()).unwrap_or(0)),
             last_post: last.map(|post| post.text),
+            handle: stored.handle.clone(),
+            subscribers: stored.subscribers,
+            muted: stored.muted,
+            pinned_seq: stored.pinned_seq,
+            avatar: stored.avatar.clone(),
         })
+    }
+}
+
+/// Строка нового канала для базы.
+fn new_stored(
+    access: &ChannelAccess,
+    signing_key: Option<[u8; 32]>,
+    meta: &ChannelMeta,
+    now: Timestamp,
+) -> StoredChannel {
+    StoredChannel {
+        channel_id: access.channel_id,
+        secret: access.secret,
+        verify_key: *access.verify_key.as_bytes(),
+        signing_key,
+        title: meta.title.clone(),
+        description: meta.description.clone(),
+        meta_updated_at: meta.updated_at_millis,
+        pinned_seq: meta.pinned,
+        avatar: (!meta.avatar.is_empty()).then(|| meta.avatar.clone()),
+        handle: None,
+        subscribers: 0,
+        muted: false,
+        last_seq: 0,
+        last_rev: 0,
+        last_read_seq: 0,
+        seen_sent_seq: 0,
+        sub_token: None,
+        joined_at: now,
     }
 }
 
 /// Настройка с последним известным ответом сервера о премиуме.
 const PREMIUM_SETTING: &str = "account.premium";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 🔐 В интерфейс попадают только реакции из закрытого набора.
+    #[test]
+    fn reactions_from_the_server_are_filtered() {
+        let parsed = parse_reactions("🔥:3,👍:1,<b>:9,🔥:x,😂:0,");
+
+        assert_eq!(
+            parsed,
+            vec![
+                ChannelReaction {
+                    emoji: "🔥".to_owned(),
+                    count: 3
+                },
+                ChannelReaction {
+                    emoji: "👍".to_owned(),
+                    count: 1
+                },
+            ]
+        );
+        assert!(parse_reactions(&"🔥:1,".repeat(200)).is_empty());
+    }
+}

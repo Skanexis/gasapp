@@ -3,14 +3,20 @@
 //! Каналы и премиум на границе с платформой.
 //!
 //! Интерфейс не держит ключей каналов и не шифрует: наружу уходят
-//! название, текст записей и ссылка-приглашение. Ссылка — единственное
-//! место, где интерфейс видит секрет канала, и это намеренно: ею
-//! человек делится сам.
+//! название, текст записей, описания вложений и ссылка-приглашение.
+//! Ссылка — единственное место, где интерфейс видит секрет канала,
+//! и это намеренно: ею человек делится сам.
+//!
+//! 🔐 Счётчики — подписчики, просмотры, реакции — это слова сервера,
+//! ничем не подписанные: интерфейс показывает их как статистику.
 
-use gasapp_core::client::{Channel, ChannelEntry};
+use gasapp_core::client::{
+    AttachmentFile, Channel, ChannelAttachment, ChannelEntry, ChannelPreview, CHANNEL_REACTIONS,
+    MAX_CHANNEL_MEDIA_BYTES,
+};
 use gasapp_types::Timestamp;
 
-use crate::messenger::Messenger;
+use crate::messenger::{FfiAttachmentFile, FfiAttachmentKind, Messenger};
 use crate::{guard, FfiError, FfiQrMatrix};
 
 /// Канал для списка и экрана канала.
@@ -30,6 +36,19 @@ pub struct FfiChannel {
     pub last_post: Option<String>,
     /// Время последней записи по часам автора.
     pub last_post_at_millis: Option<i64>,
+    /// Сколько вложений у последней записи.
+    pub last_post_attachments: u32,
+    /// Публичное `@имя` — со слов сервера.
+    pub handle: Option<String>,
+    /// Число подписчиков — со слов сервера.
+    pub subscribers: u64,
+    /// «Без звука».
+    pub muted: bool,
+    /// Номер закреплённой записи; `0` — закрепа нет.
+    pub pinned_seq: u64,
+    /// Описание вложения с аватаром — для
+    /// [`Messenger::fetch_channel_media`].
+    pub avatar: Option<Vec<u8>>,
 }
 
 impl From<Channel> for FfiChannel {
@@ -42,8 +61,56 @@ impl From<Channel> for FfiChannel {
             unread: channel.unread,
             last_post: channel.last_post,
             last_post_at_millis: channel.last_post_at.map(|at| at.as_millis()),
+            last_post_attachments: channel.last_post_attachments,
+            handle: channel.handle,
+            subscribers: channel.subscribers,
+            muted: channel.muted,
+            pinned_seq: channel.pinned_seq,
+            avatar: channel.avatar,
         }
     }
+}
+
+/// Вложение записи канала.
+///
+/// 🔐 Имя назвал автор канала: показывать его можно, доверять — нет.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChannelAttachment {
+    /// Описание как есть — для [`Messenger::fetch_channel_media`].
+    pub descriptor: Vec<u8>,
+    /// Тип вложения.
+    pub kind: FfiAttachmentKind,
+    /// Размер открытого файла в байтах.
+    pub size: u64,
+    /// Имя файла, если автор его передал.
+    pub name: Option<String>,
+}
+
+impl From<ChannelAttachment> for FfiChannelAttachment {
+    fn from(attachment: ChannelAttachment) -> Self {
+        use gasapp_media::descriptor::AttachmentKind;
+
+        Self {
+            descriptor: attachment.descriptor,
+            kind: match attachment.kind {
+                AttachmentKind::Image => FfiAttachmentKind::Image,
+                AttachmentKind::Video => FfiAttachmentKind::Video,
+                AttachmentKind::Voice => FfiAttachmentKind::Voice,
+                AttachmentKind::Document => FfiAttachmentKind::Document,
+            },
+            size: attachment.size,
+            name: attachment.name,
+        }
+    }
+}
+
+/// Реакция со счётчиком.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChannelReaction {
+    /// Эмодзи из набора [`channel_reactions`].
+    pub emoji: String,
+    /// Сколько подписчиков её поставили — со слов сервера.
+    pub count: u64,
 }
 
 /// Запись канала.
@@ -55,6 +122,16 @@ pub struct FfiChannelPost {
     pub text: String,
     /// Время публикации по часам автора.
     pub created_at_millis: i64,
+    /// Время последней правки, если запись правили.
+    pub edited_at_millis: Option<i64>,
+    /// Просмотры — со слов сервера.
+    pub views: u64,
+    /// Реакции — со слов сервера.
+    pub reactions: Vec<FfiChannelReaction>,
+    /// Своя реакция.
+    pub my_reaction: Option<String>,
+    /// Вложения.
+    pub attachments: Vec<FfiChannelAttachment>,
 }
 
 impl From<ChannelEntry> for FfiChannelPost {
@@ -63,6 +140,55 @@ impl From<ChannelEntry> for FfiChannelPost {
             seq: entry.seq,
             text: entry.text,
             created_at_millis: entry.created_at.as_millis(),
+            edited_at_millis: entry.edited_at.map(|at| at.as_millis()),
+            views: entry.views,
+            reactions: entry
+                .reactions
+                .into_iter()
+                .map(|reaction| FfiChannelReaction {
+                    emoji: reaction.emoji,
+                    count: reaction.count,
+                })
+                .collect(),
+            my_reaction: entry.my_reaction,
+            attachments: entry
+                .attachments
+                .into_iter()
+                .map(FfiChannelAttachment::from)
+                .collect(),
+        }
+    }
+}
+
+/// Публичный канал, найденный по имени, — до подписки.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChannelPreview {
+    /// Ссылка-приглашение: с ней канал добавляется.
+    pub link: String,
+    /// Идентификатор, UUID.
+    pub channel_id: String,
+    /// Название — расшифрованное и проверенное подписью автора.
+    pub title: String,
+    /// Описание.
+    pub description: String,
+    /// Публичное имя.
+    pub handle: String,
+    /// Число подписчиков — со слов сервера.
+    pub subscribers: u64,
+    /// Есть ли канал уже на этом устройстве.
+    pub joined: bool,
+}
+
+impl From<ChannelPreview> for FfiChannelPreview {
+    fn from(preview: ChannelPreview) -> Self {
+        Self {
+            link: preview.link,
+            channel_id: preview.channel_id,
+            title: preview.title,
+            description: preview.description,
+            handle: preview.handle,
+            subscribers: preview.subscribers,
+            joined: preview.joined,
         }
     }
 }
@@ -84,6 +210,40 @@ pub struct FfiPendingRegistration {
 #[must_use]
 pub fn is_channel_link(text: String) -> bool {
     gasapp_protocol::channel::ChannelAccess::parse(&text).is_ok()
+}
+
+/// Публичное имя канала в каноничном виде — без `@`, строчными, —
+/// либо `None`, если строка именем быть не может.
+///
+/// Интерфейс проверяет имя этим же правилом, что и сервер, а не своим.
+#[uniffi::export]
+#[must_use]
+pub fn canonical_channel_handle(text: String) -> Option<String> {
+    gasapp_net::client::canonical_handle(&text).ok()
+}
+
+/// Реакции, которые можно поставить записи. Набор закрыт сервером.
+#[uniffi::export]
+#[must_use]
+pub fn channel_reactions() -> Vec<String> {
+    CHANNEL_REACTIONS
+        .iter()
+        .map(|&emoji| emoji.to_owned())
+        .collect()
+}
+
+/// Предел файла в записи канала, в байтах.
+#[uniffi::export]
+#[must_use]
+pub fn channel_media_limit() -> u64 {
+    MAX_CHANNEL_MEDIA_BYTES
+}
+
+/// Сколько вложений может нести одна запись.
+#[uniffi::export]
+#[must_use]
+pub fn channel_post_attachment_limit() -> u32 {
+    u32::try_from(gasapp_protocol::channel::MAX_POST_ATTACHMENTS).unwrap_or(u32::MAX)
 }
 
 /// QR-код ссылки-приглашения канала.
@@ -210,8 +370,14 @@ impl Messenger {
 
         let client = self.client()?;
 
-        guard(|| client.join_channel(&link, Timestamp::from_millis(now_millis)))
-            .map(FfiChannel::from)
+        guard(|| {
+            client.join_channel(
+                &link,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map(FfiChannel::from)
     }
 
     /// Каналы на этом устройстве — без сети.
@@ -228,6 +394,29 @@ impl Messenger {
             .collect())
     }
 
+    /// Один канал — без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — канала нет на устройстве.
+    pub fn channel(&self, channel_id: String) -> Result<FfiChannel, FfiError> {
+        let client = self.reader()?;
+
+        guard(|| client.channel(&channel_id)).map(FfiChannel::from)
+    }
+
+    /// Сколько непрочитанных записей во всех каналах, кроме тех, что
+    /// «без звука», — для счётчика на вкладке. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn unread_channel_posts(&self) -> Result<u64, FfiError> {
+        let client = self.reader()?;
+
+        guard(|| client.unread_channel_posts())
+    }
+
     /// Ссылка-приглашение канала.
     ///
     /// 🔐 Ссылка и есть доступ: кто её получил, читает весь канал.
@@ -241,7 +430,8 @@ impl Messenger {
         guard(|| client.channel_link(&channel_id))
     }
 
-    /// Забирает новые записи канала; возвращает их число. Сетевой вызов.
+    /// Забирает изменения канала — новые записи, правки, удаления,
+    /// счётчики; возвращает число новых записей. Сетевой вызов.
     ///
     /// # Errors
     ///
@@ -263,6 +453,18 @@ impl Messenger {
         guard(|| client.sync_channels())
     }
 
+    /// Догружает страницу истории канала; возвращает, сколько записей
+    /// добавилось (ноль — история кончилась). Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn load_older_channel_posts(&self, channel_id: String) -> Result<u32, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.load_older_channel_posts(&channel_id))
+    }
+
     /// Последние записи канала — без сети, от старых к новым.
     ///
     /// # Errors
@@ -281,7 +483,44 @@ impl Messenger {
             .collect())
     }
 
-    /// Отмечает канал прочитанным.
+    /// Запись по номеру — без сети; удалённой или неизвестной нет.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn channel_post(
+        &self,
+        channel_id: String,
+        seq: u64,
+    ) -> Result<Option<FfiChannelPost>, FfiError> {
+        let client = self.reader()?;
+
+        Ok(guard(|| client.channel_post(&channel_id, seq))?.map(FfiChannelPost::from))
+    }
+
+    /// Ищет подстроку в сохранённых записях канала — без сети; свежие
+    /// первыми.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение хранилища не удалось.
+    pub fn search_channel_posts(
+        &self,
+        channel_id: String,
+        query: String,
+        limit: u32,
+    ) -> Result<Vec<FfiChannelPost>, FfiError> {
+        let client = self.reader()?;
+
+        Ok(
+            guard(|| client.search_channel_posts(&channel_id, &query, limit))?
+                .into_iter()
+                .map(FfiChannelPost::from)
+                .collect(),
+        )
+    }
+
+    /// Отмечает канал прочитанным — без сети.
     ///
     /// # Errors
     ///
@@ -292,24 +531,71 @@ impl Messenger {
         guard(|| client.mark_channel_read(&channel_id))
     }
 
-    /// Публикует запись в своём канале. Сетевой вызов.
+    /// Сообщает серверу, до какой записи канал прочитан: из этого
+    /// складываются просмотры. Сетевой вызов, без подписи устройства.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn report_channel_seen(&self, channel_id: String) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.report_channel_seen(&channel_id))
+    }
+
+    /// Публикует запись в своём канале: текст, вложения или и то и
+    /// другое. Сетевой вызов.
     ///
     /// # Errors
     ///
     /// [`FfiError::PremiumRequired`] — канал чужой;
-    /// [`FfiError::InvalidArgument`] — текст пустой либо слишком длинный;
+    /// [`FfiError::InvalidArgument`] — запись пуста, слишком длинна
+    /// либо файл больше предела;
     /// [`FfiError::Core`] — сервер недоступен.
     pub fn publish_channel_post(
         &self,
         channel_id: String,
+        text: String,
+        files: Vec<FfiAttachmentFile>,
+        now_millis: i64,
+    ) -> Result<FfiChannelPost, FfiError> {
+        let client = self.client()?;
+        let files: Vec<AttachmentFile> = files.into_iter().map(AttachmentFile::from).collect();
+
+        guard(|| {
+            client.publish_channel_post(
+                &channel_id,
+                &text,
+                &files,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map(FfiChannelPost::from)
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Исправляет текст записи своего канала. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — канал чужой;
+    /// [`FfiError::InvalidArgument`] — запись стала бы пустой либо
+    /// слишком длинной; [`FfiError::Core`] — сервер недоступен либо
+    /// записи нет.
+    pub fn edit_channel_post(
+        &self,
+        channel_id: String,
+        seq: u64,
         text: String,
         now_millis: i64,
     ) -> Result<FfiChannelPost, FfiError> {
         let client = self.client()?;
 
         guard(|| {
-            client.publish_channel_post(
+            client.edit_channel_post(
                 &channel_id,
+                seq,
                 &text,
                 Timestamp::from_millis(now_millis),
                 &mut rand_core::OsRng,
@@ -317,6 +603,56 @@ impl Messenger {
         })
         .map(FfiChannelPost::from)
         .map_err(malformed_is_invalid)
+    }
+
+    /// Удаляет запись своего канала и её файлы. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — канал чужой;
+    /// [`FfiError::Core`] — сервер недоступен либо записи нет.
+    pub fn delete_channel_post(
+        &self,
+        channel_id: String,
+        seq: u64,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.delete_channel_post(
+                &channel_id,
+                seq,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Закрепляет запись своего канала; `seq == 0` — снимает закреп.
+    /// Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — канал чужой;
+    /// [`FfiError::Core`] — сервер недоступен либо записи нет.
+    pub fn pin_channel_post(
+        &self,
+        channel_id: String,
+        seq: u64,
+        now_millis: i64,
+    ) -> Result<FfiChannel, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.pin_channel_post(
+                &channel_id,
+                seq,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map(FfiChannel::from)
     }
 
     /// Меняет название и описание своего канала. Сетевой вызов.
@@ -347,6 +683,151 @@ impl Messenger {
         .map_err(malformed_is_invalid)
     }
 
+    /// Ставит аватар своего канала; `None` — убирает. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — канал чужой;
+    /// [`FfiError::InvalidArgument`] — файл слишком велик либо не
+    /// разбирается; [`FfiError::Core`] — сервер недоступен.
+    pub fn set_channel_avatar(
+        &self,
+        channel_id: String,
+        image: Option<Vec<u8>>,
+        now_millis: i64,
+    ) -> Result<FfiChannel, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.set_channel_avatar(
+                &channel_id,
+                image.as_deref(),
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map(FfiChannel::from)
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Делает свой канал публичным под именем `handle` либо, с `None`,
+    /// снова закрытым. Сетевой вызов.
+    ///
+    /// 🔐 Публичному каналу сервер получает ссылку-приглашение и может
+    /// его читать. Интерфейс обязан сказать об этом до вызова.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PremiumRequired`] — канал чужой;
+    /// [`FfiError::InvalidArgument`] — это не имя канала;
+    /// [`FfiError::UsernameTaken`] — имя занято;
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn set_channel_handle(
+        &self,
+        channel_id: String,
+        handle: Option<String>,
+        now_millis: i64,
+    ) -> Result<FfiChannel, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.set_channel_handle(
+                &channel_id,
+                handle.as_deref(),
+                Timestamp::from_millis(now_millis),
+            )
+        })
+        .map(FfiChannel::from)
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Включает либо выключает «без звука» — без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — канала нет на устройстве.
+    pub fn set_channel_muted(
+        &self,
+        channel_id: String,
+        muted: bool,
+    ) -> Result<FfiChannel, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.set_channel_muted(&channel_id, muted)).map(FfiChannel::from)
+    }
+
+    /// Ставит, меняет либо (с `None`) снимает свою реакцию на запись.
+    /// Сетевой вызов, без подписи устройства.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — эмодзи не из набора;
+    /// [`FfiError::Core`] — сервер недоступен либо записи нет.
+    pub fn react_to_channel_post(
+        &self,
+        channel_id: String,
+        seq: u64,
+        emoji: Option<String>,
+    ) -> Result<FfiChannelPost, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.react_to_channel_post(&channel_id, seq, emoji.as_deref(), &mut rand_core::OsRng)
+        })
+        .map(FfiChannelPost::from)
+        .map_err(malformed_is_invalid)
+    }
+
+    /// Скачивает и расшифровывает медиа канала по описанию из записи
+    /// либо аватара. Сетевой вызов, без подписи устройства.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен, блоба нет (запись
+    /// удалена) либо он подменён.
+    pub fn fetch_channel_media(
+        &self,
+        channel_id: String,
+        descriptor: Vec<u8>,
+    ) -> Result<Vec<u8>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| client.fetch_channel_media(&channel_id, &descriptor))
+    }
+
+    /// Публичный канал по точному `@имени` — до подписки. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — это не имя канала;
+    /// [`FfiError::Core`] — такого канала нет либо сервер недоступен.
+    pub fn find_public_channel(&self, handle: String) -> Result<FfiChannelPreview, FfiError> {
+        if canonical_channel_handle(handle.clone()).is_none() {
+            return Err(FfiError::InvalidArgument);
+        }
+
+        let client = self.client()?;
+
+        guard(|| client.find_public_channel(&handle)).map(FfiChannelPreview::from)
+    }
+
+    /// Публичные каналы, чьё `@имя` начинается с `query`. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn search_public_channels(
+        &self,
+        query: String,
+    ) -> Result<Vec<FfiChannelPreview>, FfiError> {
+        let client = self.client()?;
+
+        Ok(guard(|| client.search_public_channels(&query))?
+            .into_iter()
+            .map(FfiChannelPreview::from)
+            .collect())
+    }
+
     /// Убирает канал с устройства; свой — удаляет и с сервера.
     ///
     /// # Errors
@@ -360,8 +841,8 @@ impl Messenger {
     }
 }
 
-/// «Не прошло проверку» для текста, который ввёл человек, — это
-/// неверный ввод, а не сбой ядра: интерфейс показывает правило.
+/// «Не прошло проверку» для того, что ввёл человек, — это неверный
+/// ввод, а не сбой ядра: интерфейс показывает правило.
 fn malformed_is_invalid(error: FfiError) -> FfiError {
     match error {
         FfiError::Core(gasapp_types::GasAppError::Malformed) => FfiError::InvalidArgument,
@@ -391,5 +872,17 @@ mod tests {
 
         assert!(matrix.size > 0);
         assert!(channel_link_qr("gasapp://channel/zz".to_owned()).is_err());
+    }
+
+    #[test]
+    fn handles_are_canonicalised_by_one_rule() {
+        assert_eq!(
+            canonical_channel_handle(" @Gas_News ".to_owned()).as_deref(),
+            Some("gas_news")
+        );
+        assert!(canonical_channel_handle("ab".to_owned()).is_none());
+        assert!(canonical_channel_handle("1abc".to_owned()).is_none());
+        assert!(canonical_channel_handle("новости".to_owned()).is_none());
+        assert_eq!(channel_reactions().len(), 8);
     }
 }

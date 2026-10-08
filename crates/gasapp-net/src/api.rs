@@ -383,11 +383,24 @@ pub struct CreateChannelRequest {
     pub meta: String,
 }
 
-/// Запрос замены описания канала.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateChannelMetaRequest {
-    /// Зашифрованное описание, hex.
-    pub meta: String,
+/// Запрос изменения канала: описание и/или публичность.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateChannelRequest {
+    /// Новое зашифрованное описание, hex. Нет — описание не меняется.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<String>,
+    /// Менять ли публичность. Без флага `handle` и `public_link`
+    /// сервер не читает: так «не трогать» отличается от «закрыть».
+    #[serde(default)]
+    pub set_public: bool,
+    /// Публичное имя; `None` при `set_public` — сделать канал закрытым.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    /// Ссылка-приглашение, которую сервер отдаёт по имени.
+    ///
+    /// 🔐 С ней сервер может читать канал: это цена публичности.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_link: Option<String>,
 }
 
 /// Запрос публикации записи.
@@ -397,11 +410,39 @@ pub struct PublishPostRequest {
     pub body: String,
 }
 
-/// Ответ на публикацию.
+/// Ответ на публикацию и правку.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublishPostResponse {
     /// Номер записи в канале.
     pub seq: u64,
+    /// Номер изменения канала.
+    #[serde(default)]
+    pub rev: u64,
+}
+
+/// Запрос правки или удаления записи.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplacePostRequest {
+    /// Номер записи.
+    pub seq: u64,
+    /// Исправленная запись либо подписанная отметка об удалении, hex.
+    pub body: String,
+    /// Удаление, а не правка.
+    pub deleted: bool,
+}
+
+/// Ответ на загрузку медиа канала.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMediaResponse {
+    /// Адрес блоба в канале, UUID.
+    pub media_id: String,
+}
+
+/// Запрос удаления медиа канала.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteChannelMediaRequest {
+    /// Адрес блоба в канале, UUID.
+    pub media_id: String,
 }
 
 /// Канал глазами читателя.
@@ -415,6 +456,18 @@ pub struct ChannelResponse {
     pub meta: String,
     /// Номер последней записи.
     pub last_seq: u64,
+    /// Номер последнего изменения.
+    #[serde(default)]
+    pub last_rev: u64,
+    /// Публичное имя, если канал публичный.
+    #[serde(default)]
+    pub handle: Option<String>,
+    /// Ссылка-приглашение публичного канала.
+    #[serde(default)]
+    pub public_link: Option<String>,
+    /// Число подписчиков — статистика сервера, ничем не подписана.
+    #[serde(default)]
+    pub subscribers: u64,
 }
 
 /// Запись канала.
@@ -422,8 +475,57 @@ pub struct ChannelResponse {
 pub struct ChannelPostResponse {
     /// Номер записи.
     pub seq: u64,
-    /// Шифротекст, hex.
+    /// Номер изменения.
+    #[serde(default)]
+    pub rev: u64,
+    /// Шифротекст либо отметка об удалении, hex.
     pub body: String,
+    /// Удалена ли запись — по словам сервера; верит читатель только
+    /// подписанной отметке в `body`.
+    #[serde(default)]
+    pub deleted: bool,
     /// Час публикации по часам сервера, миллисекунды эпохи.
     pub posted_at: i64,
+    /// Сколько подписчиков дочитали до записи.
+    #[serde(default)]
+    pub views: u64,
+    /// Реакции: `эмодзи:число,…`.
+    #[serde(default)]
+    pub reactions: String,
+}
+
+/// Запрос подписки на канал.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelSubscribeRequest {
+    /// Жетон подписчика, hex.
+    pub token: String,
+    /// Решение proof-of-work над `pow::subscribe_challenge`.
+    pub pow_nonce: u64,
+}
+
+/// Запрос отписки.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelTokenRequest {
+    /// Жетон подписчика, hex.
+    pub token: String,
+}
+
+/// Отметка «дочитал до записи».
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelSeenRequest {
+    /// Жетон подписчика, hex.
+    pub token: String,
+    /// Номер записи.
+    pub seq: u64,
+}
+
+/// Реакция на запись.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelReactRequest {
+    /// Жетон подписчика, hex.
+    pub token: String,
+    /// Номер записи.
+    pub seq: u64,
+    /// Эмодзи из закрытого набора; `None` — снять реакцию.
+    pub emoji: Option<String>,
 }
