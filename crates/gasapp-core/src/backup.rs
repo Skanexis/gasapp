@@ -539,7 +539,6 @@ fn export_to_bundle(export: &BackupExport, now: Timestamp) -> BackupBundle {
                     signing_key: channel.signing_key,
                     title: channel.title.clone(),
                     muted: channel.muted,
-                    sub_token: channel.sub_token,
                     joined_at_millis: channel.joined_at.as_millis(),
                     admin_labels: channel.admin_labels.clone(),
                 })
@@ -587,7 +586,6 @@ fn bundle_to_export(bundle: &BackupBundle, now: Timestamp) -> BackupExport {
                     signing_key: channel.signing_key,
                     title: channel.title.clone(),
                     muted: channel.muted,
-                    sub_token: channel.sub_token,
                     joined_at: Timestamp::from_millis(channel.joined_at_millis),
                     admin_labels: channel.admin_labels.clone(),
                 })

@@ -12,10 +12,11 @@
 //! * **вести** — писать записи с текстом и медиа, править, удалять,
 //!   закреплять, менять название и аватар, дать каналу публичное
 //!   `@имя` — может только автор: у него ключ подписи;
-//! * **подписка** — строка в локальной базе и случайный жетон на
-//!   сервере. По жетону сервер считает подписчиков, просмотры и
-//!   реакции; чей он, сервер не знает: запросы с жетоном идут без
-//!   подписи устройства, отдельной цепочкой Tor.
+//! * **подписка** — от имени аккаунта, за подписью устройства: один
+//!   аккаунт — один подписчик. Так счётчик подписчиков, просмотры
+//!   и реакции нельзя накрутить; цена — сервер знает, на какие каналы
+//!   подписан аккаунт (ADR-035). Читать канал по ссылке можно и без
+//!   подписки: записи забираются без подписи запроса.
 //!
 //! 🔐 Счётчики — подписчики, просмотры, реакции — это слова сервера,
 //! ничем не подписанные. Интерфейс показывает их как статистику,
@@ -24,8 +25,8 @@
 use gasapp_media::descriptor::{AttachmentDescriptor, AttachmentKind};
 use gasapp_net::api::{
     AddChannelAdminRequest, ChannelPostResponse, ChannelReactRequest, ChannelResponse,
-    ChannelSeenRequest, ChannelSubscribeRequest, ChannelTokenRequest, CreateChannelRequest,
-    PublishPostRequest, RemoveChannelAdminRequest, ReplacePostRequest, UpdateChannelRequest,
+    ChannelSeenRequest, CreateChannelRequest, PublishPostRequest, RemoveChannelAdminRequest,
+    ReplacePostRequest, UpdateChannelRequest,
 };
 use gasapp_net::client::Transport;
 use gasapp_protocol::channel::{
@@ -458,7 +459,7 @@ impl<T: Transport> Client<T> {
 
         // Автор — тоже подписчик своего канала. Сбой не мешает: жетон
         // оформится при следующей синхронизации.
-        let _ = self.ensure_subscribed(&stored, now, rng);
+        let _ = self.ensure_subscribed(&stored, now);
 
         self.present(&self.stored_channel(&created.access.channel_uuid())?)
     }
@@ -476,12 +477,7 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::InvalidSignature`] — сервер отдаёт канал с другим
     ///   ключом автора либо описание подписано не автором;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn join_channel<R: RngCore + CryptoRng>(
-        &self,
-        link: &str,
-        now: Timestamp,
-        rng: &mut R,
-    ) -> Result<Channel> {
+    pub fn join_channel(&self, link: &str, now: Timestamp) -> Result<Channel> {
         let access = ChannelAccess::parse(link)?;
 
         if let Some(known) = self.storage.channel(&access.channel_id)? {
@@ -503,7 +499,7 @@ impl<T: Transport> Client<T> {
 
         // Записи и подписка — сразу, но их сбой добавлению не мешает:
         // канал уже здесь, остальное доедет при следующей синхронизации.
-        let _ = self.ensure_subscribed(&stored, now, rng);
+        let _ = self.ensure_subscribed(&stored, now);
         let _ = self.sync_stored(&stored, true);
 
         self.present(&self.stored_channel(&access.channel_uuid())?)
@@ -926,23 +922,22 @@ impl<T: Transport> Client<T> {
     ///
     /// * [`GasAppError::SessionNotFound`] — канала нет на устройстве;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn report_channel_seen(&self, channel_id: &str) -> Result<()> {
+    pub fn report_channel_seen(&self, channel_id: &str, now: Timestamp) -> Result<()> {
         let stored = self.stored_channel(channel_id)?;
 
-        let Some(token) = stored.sub_token else {
-            return Ok(());
-        };
-
-        if stored.last_read_seq <= stored.seen_sent_seq {
+        if !stored.subscribed || stored.last_read_seq <= stored.seen_sent_seq {
             return Ok(());
         }
 
+        let (device_id, identity) = self.own_device()?;
+
         self.api.mark_channel_seen(
+            &device_id,
             &channel::format_uuid(&stored.channel_id),
             &ChannelSeenRequest {
-                token: hex(&token),
                 seq: stored.last_read_seq,
             },
+            &DeviceSigner::new(&identity, now),
         )?;
 
         self.storage
@@ -1388,13 +1383,12 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::Malformed`] — эмодзи не из набора;
     /// * [`GasAppError::SessionNotFound`] — записи нет либо она удалена;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn react_to_channel_post<R: RngCore + CryptoRng>(
+    pub fn react_to_channel_post(
         &self,
         channel_id: &str,
         seq: u64,
         emoji: Option<&str>,
         now: Timestamp,
-        rng: &mut R,
     ) -> Result<ChannelEntry> {
         let stored = self.stored_channel(channel_id)?;
         let access = access_of(&stored);
@@ -1405,15 +1399,17 @@ impl<T: Transport> Client<T> {
         }
 
         self.live_post(&stored, seq)?;
-        let token = self.ensure_subscribed(&stored, now, rng)?;
+        self.ensure_subscribed(&stored, now)?;
+        let (device_id, identity) = self.own_device()?;
 
         self.api.react_to_channel_post(
+            &device_id,
             &uuid,
             &ChannelReactRequest {
-                token: hex(&token),
                 seq,
                 emoji: emoji.map(str::to_owned),
             },
+            &DeviceSigner::new(&identity, now),
         )?;
 
         self.storage
@@ -1749,63 +1745,43 @@ impl<T: Transport> Client<T> {
                 Ok(()) | Err(GasAppError::SessionNotFound) => {}
                 Err(error) => return Err(error),
             }
-        } else if let Some(token) = stored.sub_token {
-            // Сбой отписки уходу не мешает: жетон случаен и ни с кем
-            // не связан, а канал с устройства исчезает в любом случае.
-            let _ = self
-                .api
-                .unsubscribe_channel(&uuid, &ChannelTokenRequest { token: hex(&token) });
+        } else if stored.subscribed {
+            // Сбой отписки уходу не мешает: канал с устройства исчезает
+            // в любом случае. Подписка на сервере при этом останется,
+            // пока человек не отпишется снова либо не удалит аккаунт.
+            if let Ok((device_id, identity)) = self.own_device() {
+                let _ = self.api.unsubscribe_channel(
+                    &device_id,
+                    &uuid,
+                    &DeviceSigner::new(&identity, now),
+                );
+            }
         }
 
         self.storage.delete_channel(&stored.channel_id)
     }
 
-    /// Жетон подписчика канала; если его нет — оформляет подписку.
+    /// Оформляет подписку аккаунта на канал, если её ещё нет.
     ///
-    /// 🔐 Жетон случаен и свой у каждого канала: по нему сервер не
-    /// свяжет подписки одного человека между собой. Подписка стоит
-    /// пропуска — анонимного одноразового права (`client::passes`):
-    /// серверу достаются жетон и пропуск, но не аккаунт.
-    fn ensure_subscribed<R: RngCore + CryptoRng>(
-        &self,
-        stored: &StoredChannel,
-        now: Timestamp,
-        rng: &mut R,
-    ) -> Result<[u8; 32]> {
-        if let Some(token) = stored.sub_token {
-            return Ok(token);
+    /// 🔐 Подписка — за подписью устройства: один аккаунт — один
+    /// подписчик, и счётчик нельзя накрутить. Цена: сервер знает, на
+    /// какие каналы подписан аккаунт. Сами записи забираются без
+    /// подписи — читать канал по ссылке можно и не подписываясь.
+    fn ensure_subscribed(&self, stored: &StoredChannel, now: Timestamp) -> Result<()> {
+        if stored.subscribed {
+            return Ok(());
         }
 
-        let uuid = channel::format_uuid(&stored.channel_id);
-        let mut token = [0u8; 32];
-        rng.fill_bytes(&mut token);
+        let (device_id, identity) = self.own_device()?;
 
-        let pass = self.take_pass(now, rng)?;
-        let binding = gasapp_protocol::pass::subscribe_binding(&uuid, &token);
-
-        let subscribed = self.api.subscribe_channel(
-            &uuid,
-            &ChannelSubscribeRequest {
-                token: hex(&token),
-                pass_seed: hex(pass.seed()),
-                pass_mac: hex(&pass.redeem(&binding)),
-            },
-        );
-
-        if let Err(error) = subscribed {
-            // Сеть оборвалась — сервер пропуска не видел, он ещё годен.
-            // Любой другой отказ значит, что пропуск потрачен либо негоден.
-            if matches!(error, GasAppError::Network) {
-                self.return_pass(&pass)?;
-            }
-
-            return Err(error);
-        }
+        self.api.subscribe_channel(
+            &device_id,
+            &channel::format_uuid(&stored.channel_id),
+            &DeviceSigner::new(&identity, now),
+        )?;
 
         self.storage
-            .set_channel_sub_token(&stored.channel_id, Some(&token))?;
-
-        Ok(token)
+            .set_channel_subscribed(&stored.channel_id, true)
     }
 
     /// Собирает новое описание канала из известного, подписывает,
@@ -2008,7 +1984,7 @@ fn new_stored(
         last_rev: 0,
         last_read_seq: 0,
         seen_sent_seq: 0,
-        sub_token: None,
+        subscribed: false,
         joined_at: now,
         admins: stored_meta(meta).admins,
     }

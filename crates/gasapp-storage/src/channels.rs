@@ -11,11 +11,10 @@
 //! * `channel_posts` — расшифрованные записи: текст, описания
 //!   вложений, номер редакции, счётчики сервера и своя реакция.
 //!
-//! 🔐 Список каналов существует только здесь. Сервер знает подписчика
-//! как случайный жетон (`sub_token`), отдельный для каждого канала:
-//! по нему считаются подписчики, просмотры и реакции, а чей он —
-//! в базе сервера не записано. База зашифрована (`SQLCipher`), ключ
-//! подписи и жетоны лежат под тем же ключом, что и остальные секреты.
+//! 🔐 Подписчик для сервера — аккаунт: подписка, отметка «дочитал»
+//! и реакция идут за подписью устройства, и сервер знает, на какие
+//! каналы подписан аккаунт. Ключей каналов он не знает: секрет чтения
+//! и ключ подписи лежат только здесь. База зашифрована (`SQLCipher`).
 //!
 //! # Удалённые записи
 //!
@@ -63,8 +62,8 @@ pub struct StoredChannel {
     pub last_read_seq: u64,
     /// До какой записи серверу отправлена отметка о прочтении.
     pub seen_sent_seq: u64,
-    /// Жетон подписчика; `None` — подписка на сервере не оформлена.
-    pub sub_token: Option<[u8; 32]>,
+    /// Оформлена ли подписка аккаунта на сервере.
+    pub subscribed: bool,
     /// Когда канал добавлен на это устройство.
     pub joined_at: Timestamp,
     /// Администраторы — из описания канала, подписанного владельцем.
@@ -117,9 +116,6 @@ pub struct ChannelBackupRow {
     pub title: String,
     /// «Без звука».
     pub muted: bool,
-    /// Жетон подписчика: с ним восстановленный читатель остаётся тем же
-    /// подписчиком, а не становится вторым.
-    pub sub_token: Option<[u8; 32]>,
     /// Когда канал был добавлен.
     pub joined_at: Timestamp,
     /// Подписи владельца к администраторам: ключ и имя.
@@ -187,7 +183,7 @@ pub enum PostChange {
 
 const CHANNEL_COLUMNS: &str = "channel_id, secret, verify_key, signing_key, title, description,
      meta_updated_at, pinned_seq, avatar, handle, subscribers, muted, last_seq, last_rev,
-     last_read_seq, seen_sent_seq, sub_token, joined_at, admins";
+     last_read_seq, seen_sent_seq, subscribed, joined_at, admins";
 
 /// Длина одной записи об администраторе: ключ, признак «действует»,
 /// граница.
@@ -248,7 +244,7 @@ fn channel_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<StoredCh
     let last_rev: i64 = row.get(13)?;
     let last_read: i64 = row.get(14)?;
     let seen_sent: i64 = row.get(15)?;
-    let token: Option<Vec<u8>> = row.get(16)?;
+    let subscribed: bool = row.get(16)?;
     let joined: i64 = row.get(17)?;
     let admins: Option<Vec<u8>> = row.get(18)?;
 
@@ -270,7 +266,7 @@ fn channel_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<StoredCh
             last_rev: from_sql(last_rev)?,
             last_read_seq: from_sql(last_read)?,
             seen_sent_seq: from_sql(seen_sent)?,
-            sub_token: token.map(key_from_blob).transpose()?,
+            subscribed,
             joined_at: Timestamp::from_millis(joined),
             admins: admins
                 .as_deref()
@@ -417,7 +413,7 @@ impl Storage {
                     to_sql(channel.last_rev)?,
                     to_sql(channel.last_read_seq)?,
                     to_sql(channel.seen_sent_seq)?,
-                    channel.sub_token.as_ref().map(<[u8; 32]>::as_slice),
+                    channel.subscribed,
                     channel.joined_at.as_millis(),
                     encode_admins(&channel.admins),
                 ],
@@ -579,19 +575,15 @@ impl Storage {
         )
     }
 
-    /// Запоминает либо стирает жетон подписчика.
+    /// Запоминает, оформлена ли подписка аккаунта на сервере.
     ///
     /// # Errors
     ///
     /// [`GasAppError::Storage`] — сбой базы.
-    pub fn set_channel_sub_token(
-        &self,
-        channel_id: &[u8; 16],
-        token: Option<&[u8; 32]>,
-    ) -> Result<()> {
+    pub fn set_channel_subscribed(&self, channel_id: &[u8; 16], subscribed: bool) -> Result<()> {
         self.channel_update(
-            "UPDATE channels SET sub_token = ?2 WHERE channel_id = ?1",
-            params![channel_id.as_slice(), token.map(<[u8; 32]>::as_slice)],
+            "UPDATE channels SET subscribed = ?2 WHERE channel_id = ?1",
+            params![channel_id.as_slice(), subscribed],
         )
     }
 
@@ -1058,7 +1050,7 @@ pub(crate) fn read_channels_for_backup(
 ) -> Result<Vec<ChannelBackupRow>> {
     let mut statement = connection
         .prepare(
-            "SELECT channel_id, secret, verify_key, signing_key, title, muted, sub_token, joined_at
+            "SELECT channel_id, secret, verify_key, signing_key, title, muted, joined_at
                FROM channels ORDER BY joined_at, channel_id",
         )
         .map_err(storage_error)?;
@@ -1072,15 +1064,13 @@ pub(crate) fn read_channels_for_backup(
                 row.get::<_, Option<Vec<u8>>>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, bool>(5)?,
-                row.get::<_, Option<Vec<u8>>>(6)?,
-                row.get::<_, i64>(7)?,
+                row.get::<_, i64>(6)?,
             ))
         })
         .map_err(storage_error)?;
 
     rows.map(|row| {
-        let (id, secret, verify, signing, title, muted, token, joined) =
-            row.map_err(storage_error)?;
+        let (id, secret, verify, signing, title, muted, joined) = row.map_err(storage_error)?;
         let channel_id: [u8; 16] = id.try_into().map_err(|_| GasAppError::Storage)?;
 
         Ok(ChannelBackupRow {
@@ -1091,7 +1081,6 @@ pub(crate) fn read_channels_for_backup(
             signing_key: signing.map(key_from_blob).transpose()?,
             title,
             muted,
-            sub_token: token.map(key_from_blob).transpose()?,
             joined_at: Timestamp::from_millis(joined),
         })
     })
@@ -1114,11 +1103,10 @@ pub(crate) fn write_channels_from_backup(
             .execute(
                 "INSERT INTO channels
                      (channel_id, secret, verify_key, signing_key, title, description,
-                      meta_updated_at, muted, sub_token, joined_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, '', 0, ?6, ?7, ?8)
+                      meta_updated_at, muted, joined_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, '', 0, ?6, ?7)
                  ON CONFLICT (channel_id) DO UPDATE
-                    SET signing_key = COALESCE(channels.signing_key, excluded.signing_key),
-                        sub_token = COALESCE(channels.sub_token, excluded.sub_token)",
+                    SET signing_key = COALESCE(channels.signing_key, excluded.signing_key)",
                 params![
                     channel.channel_id.as_slice(),
                     channel.secret.as_slice(),
@@ -1126,7 +1114,6 @@ pub(crate) fn write_channels_from_backup(
                     channel.signing_key.as_ref().map(<[u8; 32]>::as_slice),
                     channel.title,
                     channel.muted,
-                    channel.sub_token.as_ref().map(<[u8; 32]>::as_slice),
                     channel.joined_at.as_millis(),
                 ],
             )
@@ -1178,7 +1165,7 @@ mod tests {
             last_rev: 0,
             last_read_seq: 0,
             seen_sent_seq: 0,
-            sub_token: None,
+            subscribed: false,
             joined_at: Timestamp::from_millis(1_000),
             admins: Vec::new(),
         }
@@ -1219,7 +1206,7 @@ mod tests {
             handle: Some("gas_news".to_owned()),
             subscribers: 12,
             muted: true,
-            sub_token: Some([0x44; 32]),
+            subscribed: true,
             admins: vec![
                 StoredAdmin {
                     verify_key: [5; 32],

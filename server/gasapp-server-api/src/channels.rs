@@ -15,10 +15,11 @@
 //! * **публичный канал сервер прочитать может.** Чтобы канал находился
 //!   по `@имени`, автор отдаёт серверу ссылку-приглашение. Это цена
 //!   публичности, и приложение говорит о ней до включения;
-//! * **сервер не знает читателей.** Читатель забирает записи без
-//!   подписи запроса. Подписчик для сервера — случайный жетон, по
-//!   которому считаются подписчики, просмотры и реакции; чей он,
-//!   в базе не записано.
+//! * **читателя сервер не знает, подписчика — знает.** Записи
+//!   забираются без подписи запроса: по ссылке канал читается
+//!   анонимно. Подписка, отметка «дочитал» и реакция — за подписью
+//!   устройства: один аккаунт — один подписчик, иначе счётчик
+//!   накручивался бы циклом (ADR-035).
 //!
 //! # Кто может создать канал
 //!
@@ -47,7 +48,6 @@ use gasapp_server_db::channels::{
 };
 use gasapp_server_db::repo::RepoError;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use crate::authz::AuthenticatedDevice;
@@ -63,9 +63,6 @@ pub const READER_ACTIONS_PER_MINUTE: u32 = 60;
 
 /// Длина публичного ключа подписи записей.
 const VERIFY_KEY_LEN: usize = 32;
-
-/// Длина жетона подписчика.
-const TOKEN_LEN: usize = 32;
 
 /// Состояние аккаунта — то, что приложению нужно знать о себе.
 #[derive(Debug, Serialize)]
@@ -262,55 +259,9 @@ pub struct SearchQuery {
     pub q: String,
 }
 
-/// Запрос подписки.
-#[derive(Debug, Deserialize)]
-pub struct SubscribeRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
-    /// Зерно пропуска, hex.
-    pub pass_seed: String,
-    /// Код траты пропуска на эту подписку, hex
-    /// (см. [`crate::pass::subscribe_binding`]).
-    pub pass_mac: String,
-}
-
-/// Запрос пропусков: замаскированные точки, hex.
-#[derive(Debug, Deserialize)]
-pub struct IssuePassesRequest {
-    /// Точки на подпись.
-    pub blinded: Vec<String>,
-}
-
-/// Подписанная точка с доказательством.
-#[derive(Debug, Serialize)]
-pub struct SignedPass {
-    /// Подписанная точка, hex.
-    pub point: String,
-    /// Доказательство DLEQ, hex.
-    pub proof: String,
-}
-
-/// Ответ на запрос пропусков.
-#[derive(Debug, Serialize)]
-pub struct IssuePassesResponse {
-    /// Публичный ключ пропусков узла, hex: с ним сверяются доказательства.
-    pub key: String,
-    /// Подписанные точки — в порядке запроса.
-    pub signed: Vec<SignedPass>,
-}
-
-/// Запрос с жетоном подписчика: отписка.
-#[derive(Debug, Deserialize)]
-pub struct TokenRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
-}
-
 /// Отметка «дочитал до записи».
 #[derive(Debug, Deserialize)]
 pub struct SeenRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
     /// Номер записи.
     pub seq: i64,
 }
@@ -318,8 +269,6 @@ pub struct SeenRequest {
 /// Реакция на запись.
 #[derive(Debug, Deserialize)]
 pub struct ReactRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
     /// Номер записи.
     pub seq: i64,
     /// Эмодзи из [`REACTIONS`]; `None` — снять реакцию.
@@ -391,15 +340,6 @@ fn is_link_to(link: &str, channel_id: Uuid) -> bool {
         && base32(verify)
 }
 
-/// Хеш жетона подписчика: в базе лежит он, а не сам жетон.
-fn token_hash(token_hex: &str) -> Result<([u8; TOKEN_LEN], [u8; 32]), ApiError> {
-    let token: [u8; TOKEN_LEN] = decode_hex(token_hex)?
-        .try_into()
-        .map_err(|_| ApiError::BadRequest)?;
-
-    Ok((token, Sha256::digest(token).into()))
-}
-
 /// Ограничитель публикаций канала: запись, правка, удаление, медиа.
 fn limit_channel(state: &AppState, channel_id: Uuid) -> Result<(), ApiError> {
     let key = rate_limit::key_from_addr(&state.limiter_salt, &channel_id.to_string());
@@ -415,9 +355,9 @@ fn limit_channel(state: &AppState, channel_id: Uuid) -> Result<(), ApiError> {
     }
 }
 
-/// Ограничитель действий читателя — по жетону.
-fn limit_reader(state: &AppState, hash: &[u8; 32]) -> Result<(), ApiError> {
-    let key = rate_limit::key_from_addr(&state.limiter_salt, &hex::encode(hash));
+/// Ограничитель действий подписчика — по аккаунту.
+fn limit_reader(state: &AppState, account_id: Uuid) -> Result<(), ApiError> {
+    let key = rate_limit::key_from_addr(&state.limiter_salt, &account_id.to_string());
     let mut limiter = state
         .channel_reader_limiter
         .lock()
@@ -769,104 +709,33 @@ pub(crate) async fn search(
     ))
 }
 
-/// Выдаёт аккаунту пропуска — подписывает присланные замаскированные
-/// точки.
+/// Подписывает аккаунт на канал.
 ///
-/// 🔐 За подписью устройства: сколько пропусков взял аккаунт, сервер
-/// знает и ограничивает. На что они пойдут — не знает: точки
-/// замаскированы, и при трате сервер увидит уже другое (см. `pass`).
-///
-/// Сверх суточного предела — `429`.
-pub(crate) async fn issue_passes(
-    State(state): State<Arc<AppState>>,
-    device: AuthenticatedDevice,
-    Path(device_id): Path<Uuid>,
-    Json(request): Json<IssuePassesRequest>,
-) -> Result<Json<IssuePassesResponse>, ApiError> {
-    use gasapp_server_db::passes;
-
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
-
-    if request.blinded.is_empty() || request.blinded.len() > passes::MAX_PASSES_PER_REQUEST {
-        return Err(ApiError::BadRequest);
-    }
-
-    // Сначала разбор и подпись, потом счёт: негодный запрос предел
-    // аккаунта не тратит.
-    let mut signed = Vec::with_capacity(request.blinded.len());
-    for blinded in &request.blinded {
-        let point: [u8; crate::pass::LEN] = decode_hex(blinded)?
-            .try_into()
-            .map_err(|_| ApiError::BadRequest)?;
-        let (point, proof) = state.pass_key.sign(&point).ok_or(ApiError::BadRequest)?;
-
-        signed.push(SignedPass {
-            point: hex::encode(point),
-            proof: hex::encode(proof),
-        });
-    }
-
-    let wanted = i32::try_from(signed.len()).map_err(|_| ApiError::BadRequest)?;
-    passes::reserve(&state.pool, account_id, wanted)
-        .await
-        .map_err(|error| match error {
-            RepoError::QuotaExceeded => ApiError::TooManyRequests,
-            other => other.into(),
-        })?;
-
-    Ok(Json(IssuePassesResponse {
-        key: hex::encode(state.pass_key.public()),
-        signed,
-    }))
-}
-
-/// Подписка: жетон читателя попадает в счётчик подписчиков.
-///
-/// 🔐 Без подписи устройства: сервер не узнаёт, кто подписался.
-/// Цена — пропуск: одноразовое право, которое сервер выдал какому-то
-/// аккаунту вслепую и теперь не может связать с ним. Без неё счётчик
-/// накручивался бы циклом; с ней — не быстрее, чем аккаунты берут
-/// пропуска.
+/// 🔐 За подписью устройства: один аккаунт — один подписчик. Анонимную
+/// подписку нечем было ограничить — счётчик накручивался циклом. Цена:
+/// сервер знает, на какие каналы подписан аккаунт. Читать канал по
+/// ссылке можно и без подписки — тогда сервер не знает ничего.
 pub(crate) async fn subscribe(
     State(state): State<Arc<AppState>>,
-    Path(channel_id): Path<Uuid>,
-    Json(request): Json<SubscribeRequest>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
-    let (token, hash) = token_hash(&request.token)?;
-    let seed: [u8; crate::pass::LEN] = decode_hex(&request.pass_seed)?
-        .try_into()
-        .map_err(|_| ApiError::BadRequest)?;
-    let mac: [u8; crate::pass::LEN] = decode_hex(&request.pass_mac)?
-        .try_into()
-        .map_err(|_| ApiError::BadRequest)?;
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
 
-    // Подлинность — до базы: поддельный пропуск не стоит ей запроса.
-    let binding = crate::pass::subscribe_binding(&channel_id.to_string(), &token);
-    if !state.pass_key.accepts(&seed, &binding, &mac) {
-        return Err(ApiError::Unauthorized);
-    }
-
-    // Канал — до траты: пропуск не сгорает на канале, которого нет.
-    channels::find_channel(&state.pool, channel_id).await?;
-
-    if !gasapp_server_db::passes::spend(&state.pool, &Sha256::digest(seed).into()).await? {
-        return Err(ApiError::Unauthorized);
-    }
-
-    channels::subscribe(&state.pool, channel_id, &hash).await?;
+    channels::subscribe(&state.pool, channel_id, account_id).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Отписка: жетон и его реакции исчезают.
+/// Отписывает аккаунт: подписка и его реакции исчезают.
 pub(crate) async fn unsubscribe(
     State(state): State<Arc<AppState>>,
-    Path(channel_id): Path<Uuid>,
-    Json(request): Json<TokenRequest>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
-    let (_, hash) = token_hash(&request.token)?;
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
 
-    channels::unsubscribe(&state.pool, channel_id, &hash).await?;
+    channels::unsubscribe(&state.pool, channel_id, account_id).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -874,13 +743,14 @@ pub(crate) async fn unsubscribe(
 /// Отметка «дочитал до записи» — из неё складываются просмотры.
 pub(crate) async fn seen(
     State(state): State<Arc<AppState>>,
-    Path(channel_id): Path<Uuid>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<SeenRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (_, hash) = token_hash(&request.token)?;
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
 
-    limit_reader(&state, &hash)?;
-    channels::mark_seen(&state.pool, channel_id, &hash, request.seq.max(0)).await?;
+    limit_reader(&state, account_id)?;
+    channels::mark_seen(&state.pool, channel_id, account_id, request.seq.max(0)).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -888,10 +758,11 @@ pub(crate) async fn seen(
 /// Реакция подписчика на запись: поставить, сменить или снять.
 pub(crate) async fn react(
     State(state): State<Arc<AppState>>,
-    Path(channel_id): Path<Uuid>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<ReactRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (_, hash) = token_hash(&request.token)?;
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
 
     // Набор закрыт: произвольная строка была бы способом писать в
     // чужой канал.
@@ -901,11 +772,11 @@ pub(crate) async fn react(
         }
     }
 
-    limit_reader(&state, &hash)?;
+    limit_reader(&state, account_id)?;
     channels::react(
         &state.pool,
         channel_id,
-        &hash,
+        account_id,
         request.seq,
         request.emoji.as_deref(),
     )

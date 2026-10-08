@@ -58,7 +58,6 @@ mod blocks;
 mod channels;
 mod kt;
 mod network;
-mod passes;
 mod pq;
 mod requests;
 mod sealed;

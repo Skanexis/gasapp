@@ -5,15 +5,14 @@
 --
 -- # 🔐 Что из этого сервер узнаёт нового — и чего по-прежнему не знает
 --
--- * **Кто читает канал — по-прежнему не знает.** Подписчик — это не
---   аккаунт и не устройство, а случайный жетон, который приложение
---   придумало для одного канала и ни с чем не связало. Сервер считает
---   жетоны, а не людей.
--- * **Но жетон — псевдоним.** По нему сервер видит, что один и тот же
---   (неизвестный ему) читатель канала дочитал до такой-то записи и
---   поставил такую-то реакцию. Связать жетоны одного человека в разных
---   каналах по базе нельзя; по времени запросов и сетевому адресу —
---   можно, если человек ходит напрямую, а не через Tor.
+-- * **На какие каналы подписан аккаунт — знает.** Подписка, отметка
+--   «дочитал» и реакция делаются за подписью устройства: один аккаунт —
+--   один подписчик. Иначе подписчиков накручивали бы циклом; анонимную
+--   подписку нечем ограничить (решение владельца, ADR-035). Дамп базы
+--   даёт список подписчиков каждого канала по аккаунтам.
+-- * **Кто просто читает канал — не знает.** Записи и файлы по-прежнему
+--   отдаются без подписи запроса: по ссылке канал читается и без
+--   подписки.
 -- * **Публичный канал сервер читать может.** Чтобы канал находился по
 --   @имени, автор отдаёт серверу ссылку-приглашение — а в ней ключ
 --   чтения. Это осознанная цена публичности: канал, который может
@@ -82,38 +81,40 @@ CREATE TABLE channel_media (
     PRIMARY KEY (channel_id, media_id)
 );
 
--- Подписчики — жетоны, не люди (см. шапку).
+-- Подписчики — аккаунты (см. шапку): один аккаунт — один подписчик.
 --
--- Дамп даёт: сколько у канала подписчиков и до какой записи дочитал
--- каждый жетон. Чей это жетон — в базе не записано нигде.
+-- Дамп даёт: какие аккаунты подписаны на какие каналы и до какой
+-- записи каждый дочитал.
 CREATE TABLE channel_subscribers (
     channel_id UUID NOT NULL REFERENCES channels(channel_id) ON DELETE CASCADE,
-    -- SHA-256 жетона: сам жетон знает только приложение читателя.
-    token_hash BYTEA NOT NULL CHECK (octet_length(token_hash) = 32),
+    account_id UUID NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
     -- До какой записи дочитал: когда отметка идёт вперёд, пройденным
     -- записям засчитывается просмотр (`channel_posts.views`).
     seen_seq   BIGINT NOT NULL DEFAULT 0 CHECK (seen_seq >= 0),
-    PRIMARY KEY (channel_id, token_hash)
+    PRIMARY KEY (channel_id, account_id)
 );
 
--- Реакции: одна на жетон на запись.
+-- «На что подписан аккаунт» — при удалении аккаунта.
+CREATE INDEX channel_subscribers_by_account ON channel_subscribers (account_id);
+
+-- Реакции: одна на подписчика на запись.
 CREATE TABLE channel_reactions (
     channel_id UUID NOT NULL,
     seq        BIGINT NOT NULL,
-    token_hash BYTEA NOT NULL,
+    account_id UUID NOT NULL,
     -- Набор закрыт: произвольная строка здесь была бы каналом, по
     -- которому читатели пишут в чужой канал что угодно.
     emoji      TEXT NOT NULL
         CHECK (emoji IN ('👍', '❤️', '🔥', '😂', '😮', '😢', '👏', '🎉')),
-    PRIMARY KEY (channel_id, seq, token_hash),
+    PRIMARY KEY (channel_id, seq, account_id),
     FOREIGN KEY (channel_id, seq)
         REFERENCES channel_posts(channel_id, seq) ON DELETE CASCADE,
-    FOREIGN KEY (channel_id, token_hash)
-        REFERENCES channel_subscribers(channel_id, token_hash) ON DELETE CASCADE
+    FOREIGN KEY (channel_id, account_id)
+        REFERENCES channel_subscribers(channel_id, account_id) ON DELETE CASCADE
 );
 
--- Отписка снимает реакции жетона: ищутся по нему.
-CREATE INDEX channel_reactions_by_token ON channel_reactions (channel_id, token_hash);
+-- Отписка снимает реакции подписчика: ищутся по нему.
+CREATE INDEX channel_reactions_by_account ON channel_reactions (channel_id, account_id);
 
 -- Счётчики реакций записи — готовыми числами (не больше восьми строк
 -- на запись), по той же причине, что подписчики и просмотры.
@@ -127,3 +128,34 @@ CREATE TABLE channel_reaction_counts (
     FOREIGN KEY (channel_id, seq)
         REFERENCES channel_posts(channel_id, seq) ON DELETE CASCADE
 );
+
+-- Счётчики уменьшаются триггерами, а не кодом сервера.
+--
+-- Подписка и реакция исчезают разными путями: отпиской, снятием
+-- реакции, удалением записи, канала и — каскадом — удалением аккаунта
+-- (самим человеком, оператором, по неактивности). Уменьшать счётчик
+-- в каждом из них вручную значило бы однажды забыть один: готовое
+-- число разошлось бы с таблицей и осталось завышенным навсегда.
+CREATE OR REPLACE FUNCTION channel_subscriber_gone() RETURNS trigger AS $$
+BEGIN
+    UPDATE channels SET subscribers = GREATEST(subscribers - 1, 0)
+     WHERE channel_id = OLD.channel_id;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER channel_subscriber_gone
+    AFTER DELETE ON channel_subscribers
+    FOR EACH ROW EXECUTE FUNCTION channel_subscriber_gone();
+
+CREATE OR REPLACE FUNCTION channel_reaction_gone() RETURNS trigger AS $$
+BEGIN
+    UPDATE channel_reaction_counts SET n = GREATEST(n - 1, 0)
+     WHERE channel_id = OLD.channel_id AND seq = OLD.seq AND emoji = OLD.emoji;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER channel_reaction_gone
+    AFTER DELETE ON channel_reactions
+    FOR EACH ROW EXECUTE FUNCTION channel_reaction_gone();

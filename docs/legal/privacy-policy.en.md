@@ -179,43 +179,25 @@ and which were deleted.
 
 * 🔐 the title, the description, the avatar, the text of the posts and
   the contents of the files — it stores them as ciphertext. The read key
-  is in the channel link, and the link never reaches the server;
-* 🔐 who reads the channel. Posts are fetched without your device's
-  signature, and the list of channels you read is kept only on your
-  phone.
+  is in the channel link, and the link never reaches the server.
 
-**The subscriber token.** So that a channel can show subscriber and view
-counts, and so that you can react to a post, the app makes up a random
-token when you add a channel — a separate one for each channel — and
-tells the server. The server stores a hash of the token, the number of
-the post you have read up to, and your reactions. The token is not tied
-to your account or device: requests carrying it are not signed by the
-device and, with the built-in Tor, travel on a separate circuit.
+**Subscription.** When you add a channel, the app subscribes your
+account to it. 🔐 **The server knows which channels an account follows**,
+which post you have read up to and which reactions you left: the
+subscription, the read mark and the reaction are signed by your device.
+This is so that subscribers, views and reactions cannot be inflated: one
+account is one subscriber. When you remove a channel from the phone, the
+app unsubscribes the account, and the server erases the subscription and
+the reactions.
 
-⚠️ A token is a pseudonym, not invisibility: the server sees that one
-reader of the channel, unknown to it, read up to a certain post and
-left a certain reaction. Tokens of the same person in different channels
-cannot be linked from the database; on a direct connection without Tor
-they can be matched by IP address and request timing. When you remove a
-channel from the phone, the app asks the server to erase the token and
-its reactions.
-
-**The pass.** So that subscribers cannot be inflated in a loop, a
-subscription costs a pass — a single-use right the server issues to your
-account (at most forty a day). 🔐 It issues the pass blindly: it signs a
-masked number and, when the pass is spent, cannot tell whom it was
-issued to. The server knows how many passes an account took over the
-last two days; it does not know which channels they went to.
-
-⚠️ What this does not give: if the app had no passes in stock, you take
-a pass and spend it at once, and the two events can be matched by time.
-The app takes passes in advance and in batches so that this does not
-happen.
+The posts and files themselves are fetched without a signature: the
+server does not see from the request who is reading the feed at a given
+moment (on a direct connection without Tor it sees the IP address).
 
 **Administrators.** A channel owner can appoint administrators, who
 publish, edit and delete posts. 🔐 An administrator is known to the
 server, as the owner is: the server has to know which accounts to
-accept posts from. A reader is still unknown to it. To become an
+accept posts from. To become an
 administrator you show the owner a request; it contains your device
 identifier.
 

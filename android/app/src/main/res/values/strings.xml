@@ -717,7 +717,7 @@
     <string name="channels_error_unavailable">Could not open the channel: no connection to the server, or the channel was deleted.</string>
     <string name="channels_error_network">No connection to the server. Try again.</string>
     <string name="channels_empty_title">No channels yet</string>
-    <string name="channels_empty">A channel is a feed from one author. Add one by its link or QR code. The server does not know which channels you read.</string>
+    <string name="channels_empty">A channel is a feed from one author. Add one by its link, QR code or \@name. The server sees which channels your account follows; it cannot read private channels.</string>
     <string name="channels_create">Create a channel</string>
     <string name="channels_create_action">Create</string>
     <string name="channels_create_help">The server stores the title and the posts encrypted. Anyone who has the channel link can read them.</string>
@@ -858,7 +858,7 @@
     <string name="channel_admin_remove_body">The server stops accepting posts from this administrator, and readers stop accepting anything new signed with their key. Posts already written stay. A removed administrator acting together with the server could still rewrite posts published before the removal.</string>
     <string name="channel_admin_request">Become an administrator</string>
     <string name="channel_admin_request_qr">QR code of the request to administer the channel</string>
-    <string name="channel_admin_request_body">Show this code to the channel owner or send them the text. There are no secrets in it. If the owner accepts, the server will know that your account administers this channel — as a reader you are unknown to it.</string>
+    <string name="channel_admin_request_body">Show this code to the channel owner or send them the text. There are no secrets in it. If the owner accepts, the server will know that your account administers this channel.</string>
     <string name="channel_admin_request_copy">Copy the request</string>
     <string name="channel_admin_request_copied">Request copied</string>
 </resources>

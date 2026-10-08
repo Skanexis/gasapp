@@ -40,7 +40,6 @@ pub mod key_transparency;
 pub mod keys;
 pub mod mlkem;
 pub mod padding;
-pub mod pass;
 pub mod pq_identity;
 pub mod pqxdh;
 pub mod prekeys;

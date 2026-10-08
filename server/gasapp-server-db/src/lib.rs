@@ -22,7 +22,6 @@
 pub mod channels;
 pub mod email;
 pub mod kt;
-pub mod passes;
 pub mod repo;
 pub mod runtime;
 

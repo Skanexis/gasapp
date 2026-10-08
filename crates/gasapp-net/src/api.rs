@@ -526,54 +526,9 @@ pub struct ChannelPostResponse {
     pub reactions: String,
 }
 
-/// Запрос подписки на канал.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelSubscribeRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
-    /// Зерно пропуска, hex.
-    pub pass_seed: String,
-    /// Код траты пропуска на эту подписку, hex.
-    pub pass_mac: String,
-}
-
-/// Запрос пропусков: замаскированные точки на подпись.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IssuePassesRequest {
-    /// Точки, hex.
-    pub blinded: Vec<String>,
-}
-
-/// Подписанная точка с доказательством.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SignedPass {
-    /// Подписанная точка, hex.
-    pub point: String,
-    /// Доказательство, что подписано объявленным ключом, hex.
-    pub proof: String,
-}
-
-/// Ответ на запрос пропусков.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IssuePassesResponse {
-    /// Публичный ключ пропусков узла, hex.
-    pub key: String,
-    /// Подписанные точки — в порядке запроса.
-    pub signed: Vec<SignedPass>,
-}
-
-/// Запрос отписки.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelTokenRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
-}
-
 /// Отметка «дочитал до записи».
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelSeenRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
     /// Номер записи.
     pub seq: u64,
 }
@@ -581,8 +536,6 @@ pub struct ChannelSeenRequest {
 /// Реакция на запись.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelReactRequest {
-    /// Жетон подписчика, hex.
-    pub token: String,
     /// Номер записи.
     pub seq: u64,
     /// Эмодзи из закрытого набора; `None` — снять реакцию.

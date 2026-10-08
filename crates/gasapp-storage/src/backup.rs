@@ -1769,14 +1769,14 @@ mod tests {
             last_rev: 9,
             last_read_seq: 0,
             seen_sent_seq: 0,
-            sub_token: Some([0x44; 32]),
+            subscribed: true,
             joined_at: Timestamp::from_millis(1_000),
             admins: Vec::new(),
         };
         let followed = StoredChannel {
             channel_id: [2; 16],
             signing_key: None,
-            sub_token: None,
+            subscribed: false,
             muted: false,
             title: "Чужой".to_owned(),
             ..owned.clone()
@@ -1815,7 +1815,9 @@ mod tests {
         let restored = target.channel(&[1; 16]).expect("чтение").expect("канал");
         assert_eq!(restored.signing_key, Some([0x33; 32]));
         assert_eq!(restored.secret, [0x11; 32]);
-        assert_eq!(restored.sub_token, Some([0x44; 32]));
+        // Подписку сервер помнит по аккаунту; на устройстве отметка
+        // заводится заново при первой синхронизации.
+        assert!(!restored.subscribed);
         assert_eq!(restored.title, "Мой канал");
         assert!(restored.muted);
         // Записи и описание придут с сервера заново и будут проверены:
