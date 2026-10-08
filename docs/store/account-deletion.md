@@ -23,11 +23,18 @@ messages and attachments were removed.
 
 **Removed from the server:** your username, your identity key, all
 devices of the account, prekeys, undelivered messages, notification
-tokens and sealed-sender access keys.
+tokens and sealed-sender access keys, the hash of your email address,
+and every channel you created together with its posts.
 
-**Removed from your phone:** all messages, contacts, keys and vault files.
+**Removed from your phone:** all messages, contacts, keys, vault files
+and channels.
 
 **What stays:**
+
+* Posts of your channels that readers already downloaded stay on their
+  phones.
+* The mail service that delivered your confirmation code keeps its own
+  record of that email under its own rules; it is not on our server.
 
 * Messages you already sent stay on your contacts' phones — they are
   end-to-end encrypted and out of our reach.
@@ -39,7 +46,9 @@ tokens and sealed-sender access keys.
 
 ### Lost your phone or uninstalled the app?
 
-An GasApp account has no email, phone number or password. The only proof
+A GasApp account has no phone number or password, and the email address
+you registered with cannot be used to sign in: the server keeps only a
+hash of it. The only proof
 that an account is yours is the key on your device, so **we cannot verify
 a deletion request sent any other way** — and we will not delete an
 account on an unverifiable request, because anyone could send one.
@@ -68,11 +77,19 @@ Questions: `privacy@<domain>`.
 
 **С сервера удаляются:** имя пользователя, identity-ключ, все устройства
 аккаунта, предключи, недоставленные сообщения, токены уведомлений и
-ключи доступа sealed sender.
+ключи доступа sealed sender, хеш адреса почты и все созданные вами
+каналы вместе с записями.
 
-**С телефона удаляются:** переписка, контакты, ключи и файлы хранилища.
+**С телефона удаляются:** переписка, контакты, ключи, файлы хранилища
+и каналы.
 
 **Что остаётся:**
+
+* Записи ваших каналов, которые читатели уже загрузили, остаются на
+  их телефонах.
+* У почтовой службы, доставившей письмо с кодом, остаётся её
+  собственная запись об этом письме — по её правилам; на нашем
+  сервере её нет.
 
 * Отправленные сообщения остаются на телефонах собеседников — они
   зашифрованы сквозным шифрованием, и мы до них не дотягиваемся.
@@ -83,8 +100,9 @@ Questions: `privacy@<domain>`.
 
 ### Телефон потерян или приложение удалено?
 
-У аккаунта GasApp нет почты, телефона и пароля. Единственное
-доказательство, что аккаунт ваш, — ключ на вашем устройстве. Поэтому
+У аккаунта GasApp нет телефона и пароля, а по адресу почты, с которым
+вы регистрировались, войти нельзя: сервер хранит только его хеш.
+Единственное доказательство, что аккаунт ваш, — ключ на вашем устройстве. Поэтому
 **запрос на удаление, отправленный иначе, мы проверить не можем** — и не
 удаляем аккаунт по непроверяемому запросу: отправить его мог бы кто угодно.
 

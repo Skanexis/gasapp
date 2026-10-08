@@ -2,7 +2,7 @@
 
 # GasApp Privacy Policy
 
-**Version:** 2026-10-03. This is a translation of
+**Version:** 2026-10-07. This is a translation of
 [`privacy-policy.md`](privacy-policy.md); if the two differ, the Russian
 text is the reference and the difference is a bug — please report it.
 
@@ -16,15 +16,60 @@ text is the reference and the difference is a bug — please report it.
 
 * We collect nothing about you that is not needed to deliver messages.
 * We cannot read your messages.
-* We do not know your phone number and do not ask for an email address.
+* We do not know your phone number.
+* Creating an account requires an email address: a code is sent to it.
+  We do not store the address itself — only a hash of it. The email is
+  sent by a mail service, and that service does see the address.
 * We do not log your IP address.
 * There is no analytics, advertising or crash reporting in the app.
-* We do not hand data to third parties, because we do not have it.
+* The only thing that goes to a third party is your email address and
+  the confirmation code: to the mail service that delivers the email.
+
+> **What changed on 2026-10-07.** Before this version, registration did
+> not ask for an email address and this policy said "we do not ask for
+> an email address". It does now. On the same date the product was
+> renamed from AEGIS to GasApp, and channels were added.
 
 ## What you need to use GasApp
 
 **A username.** You make it up yourself. It is not tied to a phone
-number, an email address or your real name, and it is not verified.
+number or your real name, and it is not verified.
+
+**An email address.** Needed once — to create the account. The app asks
+the server to send a six-digit code to it; the account is created only
+with the correct code, and one address gives one account.
+
+🔐 What happens to the address, step by step, without rounding:
+
+* **The server sees the address** at the moment you request the code and
+  when you enter it. At that moment it knows both the address and the
+  username you chose.
+* **The server stores only a hash of the address** (HMAC-SHA-256 under a
+  key only the operator holds). A database dump without that key does
+  not reveal the address. The hash exists so that a second account
+  cannot be created for the same address.
+* ⚠️ **An operator who holds the key can check whether an address they
+  already know is registered**, and under which username: compute the
+  same hash and compare. They cannot list the addresses of all users —
+  only test a specific one.
+* ⚠️ **The mail service sees the address, the time and the code itself**
+  and keeps them in its logs under its own rules. It is not the GasApp
+  server, and we cannot delete anything from it. Which service is used
+  is the server operator's choice.
+* **The code** lives for 15 minutes and survives five wrong entries; its
+  hash is erased on registration or one hour after it expires.
+* **On the phone** the address sits in the encrypted database only while
+  registration is unfinished, and is erased once the account exists.
+* **We send no email other than the code.** No newsletters, reminders or
+  notifications.
+* 🔐 **Email cannot be used to sign in or to recover the account.** The
+  address does not replace the recovery key: if you lose the phone and
+  the key, the account cannot be brought back by email — and nobody who
+  takes over your mailbox gets your account.
+
+If it matters to you that the account is not linked to your main email,
+use a separate address for it: the link "address ↔ username" is seen by
+the server at registration and by the mail service in the email.
 
 🔐 Registration does **not** require a phone number. This is not a
 convenience but a threat-model decision: a phone number ties the account
@@ -52,6 +97,8 @@ check — it would mean storing a hint for guessing somewhere.
 | The device's public keys | Private keys |
 | That the device is online right now | Whom it talks to |
 | In which month the account was active | On which day and at what time |
+| A hash of the email address the account was created with | The address itself (it is not stored after registration) |
+| Whether the account has premium and which channels it created | What the channels say and who reads them |
 
 🔐 The server **does not know the sender** of any message. The right to
 send is proven with the recipient's access key, not with the sender's
@@ -112,7 +159,47 @@ The full list of what is stored and for how long is in
 * **We do not request access to contacts, the gallery or the microphone
   "just in case".** Files are picked through the system dialog, which gives
   the app exactly the chosen file and nothing else.
-* **We do not hand data to third parties.** There is nothing to hand over.
+* **We do not hand data to third parties — with one exception.** The
+  email with the confirmation code is sent by a mail service, which
+  receives your email address (see "An email address" above). There is
+  nothing else to hand over.
+
+## Channels
+
+A channel is a feed of posts from one author. Anyone who has the channel
+link can read it; only the author can post.
+
+**What the server knows about a channel:** that it exists, which account
+owns it, how many posts it has, their size (to the nearest padding
+bucket) and the hour each was published.
+
+**What the server does not know:**
+
+* 🔐 the title, the description and the text of the posts — it stores
+  them as ciphertext. The read key is in the channel link, and the link
+  never reaches the server;
+* 🔐 who reads the channel. There is no subscriber list: posts are
+  fetched without your device's signature, and the list of channels you
+  read is kept only on your phone. Leaving a channel means erasing it
+  from the phone; the server does not learn of it.
+
+⚠️ **What channels do not promise.** A channel is not a private
+conversation:
+
+* the link is the access itself. Whoever gets it reads the whole
+  channel, past and future posts; it cannot be revoked for one reader;
+* the server can withhold posts (all or the latest), but cannot forge a
+  post or reorder posts — the author signs them;
+* 🔐 when you read a channel, the server sees a request for that channel
+  and, on a direct connection without Tor, your IP address. With the
+  built-in Tor (the default) it sees a Tor exit relay;
+* the channel owner is known to the server: it is the account that
+  created the channel.
+
+**Premium.** Only premium accounts can create channels. Premium is a flag
+on the account that the server operator sets by hand; there is no
+payment in the app and we receive no payment data. The server stores the
+flag itself and nothing about why it was granted.
 
 ## Tor, bridges and Tor Project services
 
@@ -295,9 +382,17 @@ operator, can bring a deleted account back.
 
 Removed from the server: the username, the identity key, all devices of
 the account, signed and one-time prekeys, undelivered envelopes, push
-tokens and sealed-sender access keys.
+tokens and sealed-sender access keys, as well as the hash of the email
+address, the premium flag and every channel you created together with
+its posts. The address is then free: a new account can be created with
+it.
 
-Removed from the device: the message database, the salt, the encrypted
+⚠️ Not removed: posts of your channels that readers have already
+downloaded stay on their phones, and the mail service's log of the code
+email is deleted under that service's rules, not ours.
+
+Removed from the device: the message database (which also holds the
+channels you read and the keys of your own channels), the salt, the encrypted
 hardware secret, the wrapping key in Android Keystore and the history of
 PIN attempts.
 

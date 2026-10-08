@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Ресурсы, которые сборка обязана сохранить, хотя из кода на них нет
+  ссылки по идентификатору.
+
+  `art_mascot` — картинка персонажа от владельца (design/art/README.md).
+  Экран приветствия ищет её по имени (`getIdentifier`), чтобы сборка
+  не ломалась, пока картинки нет. Без этой строки сжатие ресурсов
+  в релизе (`shrinkResources`) выбросило бы картинку как неиспользуемую:
+  в отладочной сборке персонаж был бы, в релизной — нет.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/art_mascot" />

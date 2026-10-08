@@ -39,6 +39,19 @@ Google Play, а не опечатка.
 |---|---|---|---|---|---|
 | Личные данные → **Идентификаторы пользователя** | Да | Нет | Да | Функции приложения, управление аккаунтом, предотвращение мошенничества и безопасность | Имя пользователя хранится на сервере: по нему собеседники находят друг друга; жалоба сообщает оператору, на какой аккаунт пожаловались (`docs/ops/admin-center.md`) |
 | **Идентификаторы устройства и другие** | Да | Нет | Да | Функции приложения | Случайный идентификатор устройства, созданный приложением (не Android ID, не рекламный): по нему сервер доставляет конверты |
+| Личные данные → **Адрес электронной почты** | **Да** | ⚠️ См. ниже | Да | Управление аккаунтом, предотвращение мошенничества и безопасность | С 2026-10-07 аккаунт создаётся только после подтверждения адреса кодом из письма. Сервер получает адрес при регистрации и хранит его хеш (`docs/legal/privacy-policy.md`, «Адрес почты») |
+
+⚠️ **Адрес почты: «передаётся» или нет — решить при заполнении.**
+Письмо с кодом отправляет почтовая служба, и она получает адрес.
+По справке Google передача **поставщику услуг, который обрабатывает
+данные от имени разработчика**, «передачей» (sharing) не считается —
+но только если с этой службой есть соответствующий договор обработки.
+Есть договор — «Передаётся: Нет»; нет — «Да». Сверить формулировку
+справки на момент подачи и назвать службу в политике.
+
+⚠️ **«Данные обрабатываются временно» не отмечать**, хотя сам адрес
+сервер не хранит: хеш адреса хранится до удаления аккаунта, и это
+производное от адреса, по которому известный адрес проверяется.
 
 **Не декларируется** — и почему (сверить формулировки справки Google
 при заполнении):
@@ -105,12 +118,22 @@ Google Play, а не опечатка.
 (ревьюеры Google читают по-английски):
 
 ```text
-GasApp needs no phone number or email. To create an account:
+GasApp needs no phone number. To create an account you need an email
+address that you can read:
 1. Open the app and tap "Create account".
-2. Choose any free username and a 6-digit PIN.
-3. Wait until "Connecting to Tor" finishes. The app connects through Tor
-   by default; the first connection takes 20-60 seconds, up to 2-3 minutes
-   on networks that block Tor.
+2. Choose any free username and enter your email address.
+3. Choose a 6-digit PIN. Wait until "Connecting to Tor" finishes. The app
+   connects through Tor by default; the first connection takes 20-60
+   seconds, up to 2-3 minutes on networks that block Tor.
+4. A 6-digit code is emailed to you (check the spam folder). You may
+   leave the app to read it; when you come back and enter your PIN, the
+   app returns to the code screen. Enter the code.
+
+Channels: the "Channels" tab reads channels by invitation link. Creating
+a channel requires a premium account, which we grant by hand - the test
+account below already has it. To read our test channel, tap the link
+icon on the Channels tab, choose "Paste a link" and paste:
+<PASTE THE TEST CHANNEL LINK HERE BEFORE SUBMITTING>
 
 To test messaging, message one of our test accounts: search for the
 username "gasapp_review_1" (tap the pencil button, enter the username).
@@ -139,8 +162,11 @@ Google требует **и** удаление в приложении, **и** в
 * **Веб-ссылка:** страница из `account-deletion.md`.
 
 ⚠️ **Риск ревью.** Удалить аккаунт с веба нельзя по устройству системы:
-у аккаунта нет почты и телефона, и доказать владение без устройства
-нечем — запрос удаления подписывается ключом устройства. Страница честно
+у аккаунта нет телефона, а от почты сервер хранит только хеш и входа
+по почте нет — доказать владение без устройства нечем, запрос удаления
+подписывается ключом устройства. (Удаление по коду на почту технически
+возможно — хеш позволяет найти аккаунт по адресу, — но не сделано:
+оно превратило бы почтовый ящик в ключ от аккаунта.) Страница честно
 объясняет это и два пути: удаление в приложении и автоматическое удаление
 аккаунта после 12 месяцев без входа. Если ревью этого не примет —
 обсуждать с поддержкой Google, а не добавлять идентификацию, которой

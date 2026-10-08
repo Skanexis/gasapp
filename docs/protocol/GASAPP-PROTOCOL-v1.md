@@ -534,6 +534,84 @@ checking and must show everyone the same tree.
 
 The server keeps leaf history and epochs for 192 epochs.
 
+### 9.8. Channels
+
+A channel is a one-to-many feed: one author posts, anyone holding the
+invitation link reads. It is a separate construction from the pairwise
+session (§4–§8) and gives **weaker** guarantees, listed at the end of
+this section. Implementation: `crates/gasapp-protocol/src/channel.rs`.
+
+**Keys.** The author generates, on the device:
+
+* `channel_id` — 16 random bytes (the server sees it as a UUID);
+* `secret` — 32 random bytes;
+* an Ed25519 signing key pair `(sk, vk)`.
+
+The read key is derived, not stored:
+
+```
+K_read = HKDF-SHA-256(salt = channel_id, ikm = secret,
+                      info = "GASAPP_CHANNEL_v1_KEY", L = 32)
+```
+
+**Invitation link.** `gasapp://channel/<hex(channel_id)>.<base32(secret)>.<base32(vk)>`
+(RFC 4648 base32 without padding, as in contact links, §9.3). The link is
+the whole reader capability. It never reaches the server: the author
+shows it as a QR code or copies it, and the reader pastes or scans it.
+
+**Record format.** Both the channel description (`kind = 1`) and a post
+(`kind = 2`) are sealed the same way:
+
+```
+nonce      = 12 random bytes
+padded     = pad(content)                         (buckets of §7, min 512 bytes)
+ciphertext = AES-256-GCM(K_read, nonce, padded,
+                         aad = "GASAPP_CHANNEL_v1_AAD" ‖ kind ‖ channel_id)
+signature  = Ed25519.Sign(sk, "GASAPP_CHANNEL_v1_SIG" ‖ kind ‖ channel_id
+                              ‖ nonce ‖ ciphertext)
+wire       = 0x01 ‖ kind ‖ nonce ‖ signature ‖ ciphertext
+```
+
+Content of a post: `number (u64 BE) ‖ created_at_millis (i64 BE) ‖ text (UTF-8)`,
+text at most 16 000 bytes. Content of a description:
+`updated_at_millis (i64 BE) ‖ title_len (u16 BE) ‖ title ‖ description`,
+title at most 64 characters, description at most 500.
+
+**Reading.** A reader verifies the signature with `vk` **from the link**
+(strict Ed25519 verification) before decrypting, and rejects:
+
+* a channel whose server-side `verify_key` differs from `vk` in the link;
+* a post whose inner `number` differs from the sequence number the
+  server served it under — the server cannot reorder posts or replay one
+  in another position;
+* a description whose `updated_at_millis` is not newer than the one
+  already accepted — the server cannot roll a title back.
+
+A rejected post is skipped, not retried.
+
+**What the server does.** It checks that the publishing device signed
+the request (§12.6) and that its account owns the channel; creating a
+channel additionally requires the account's `premium` flag, which the
+operator sets by hand. It does not verify record signatures and cannot:
+it has no `K_read`. Reads (`/v1/channels/feed/…`) are unauthenticated,
+and the server keeps no list of readers.
+
+**What this does not provide.**
+
+* **No forward secrecy and no post-compromise security.** `K_read` is
+  static. Whoever obtains the link reads every past and future post; a
+  single reader cannot be revoked.
+* **Withholding.** The server can omit the newest posts or stop serving a
+  channel. It cannot forge, alter or reorder posts.
+* **No post-quantum authenticity.** The author signature is Ed25519
+  only; a quantum adversary could forge posts. Confidentiality rests on
+  AES-256-GCM under a symmetric key and is not affected.
+* **Random nonces under a long-lived key.** Safe while a channel holds
+  far fewer than 2³² records.
+* **Author key is not backed up.** `sk` lives in the author's local
+  database only and is not part of the zero-knowledge backup; losing the
+  device ends the ability to post to that channel.
+
 ## 10. Security Considerations
 
 ### 10.1. Forward Secrecy

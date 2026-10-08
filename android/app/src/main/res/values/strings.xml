@@ -602,7 +602,7 @@
     <string name="add_contact_or">or</string>
     <string name="add_contact_scan">Scan QR code</string>
     <string name="add_contact_scan_helper">The code carries their key directly, bypassing the server — you can write immediately.</string>
-    <string name="add_contact_scan_invalid">This is not an GasApp contact code, or the name in it belongs to a different key</string>
+    <string name="add_contact_scan_invalid">This is not a GasApp contact code, or the name in it belongs to a different key</string>
     <string name="profile_username_caption">This is how people find you in GasApp</string>
     <string name="profile_qr_hint">Show this code to the person next to you — they scan it in GasApp. It carries your key, so they can write to you right away: the strongest check.</string>
     <string name="profile_share_text">Write to me in GasApp: @%1$s</string>

@@ -2,7 +2,7 @@
 
 # Тексты листинга — Google Play и App Store
 
-**Редакция:** 2026-09-30. Каждое поле — в своём блоке: копируется в
+**Редакция:** 2026-10-07. Каждое поле — в своём блоке: копируется в
 консоль магазина как есть. Лимиты проверены скриптом
 (`python tools/check-store-listing.py`), длина указана у поля.
 
@@ -13,29 +13,33 @@
 постквантового храповика в продукте нет (план, раздел «SPQR в продукте
 не работает»). Звонков, голосовых, групп и push нет — так и написано.
 
-## Название — решение 2026-09-30: бренд GasApp остаётся
+## Название — решение 2026-10-07: GasApp
+
+До 2026-10-07 продукт назывался AEGIS (решение 2026-09-30 оставляло
+этот бренд). Владелец переименовал его в **GasApp**.
 
 **GasApp** — везде, где его видит человек после установки: подпись под
 значком (`app_name`), экраны приложения, сайт, код. В магазине к нему
 добавляется отличающая часть — **«GasApp: Encrypted Chat»** (RU —
-«GasApp: шифрованный чат»). Почему не просто «GasApp» и не «GasApp Messenger»:
+«GasApp: шифрованный чат»).
 
-* в App Store имя должно быть уникальным, а «GasApp» уже занято —
-  GasApp Authenticator, его копии и «GasApp — Password Manager»;
-* **«GasApp Messenger» уже существует** — зашифрованный мессенджер в
-  Google Play (`com.gasappinvestment.messengerios`): то же имя в той же
-  категории — прямая путаница и повод для жалобы;
+⚠️ **Имя «GasApp» в магазинах не проверено.** Проверка занятости,
+сделанная 2026-09-30, относилась к прежнему имени и к новому не
+применима. До подачи — проверить заново:
+
+* свободно ли имя в App Store (там оно должно быть уникальным) и нет
+  ли в Google Play приложения с тем же именем в категории «Связь»;
+* нет ли зарегистрированного товарного знака «GasApp» в классах 9 и 38;
+* свободны ли домен и почтовые ящики, названные в политике
+  (`privacy@`, `security@`, `abuse@`).
+
+Что остаётся верным при любом имени:
+
 * **«Tor» в названии нельзя**: политика товарного знака Tor Project
-  запрещает его в именах продуктов («GasApp Tor Messenger» отпадает).
-
-Подпись под значком и имя в магазине могут различаться: Apple требует
-лишь, чтобы подпись узнавалась по имени (2.3.8) — «GasApp» из «GasApp:
-Encrypted Chat» узнаётся. Имя в магазине локализуется — RU в русской
-витрине, EN в остальных.
-
-Защитить само слово «GasApp» регистрацией знака вряд ли выйдет: оно
-общеупотребительное и уже широко занято в классе 9. Реально —
-комбинированный знак (логотип со словом); для подачи в магазины не нужен.
+  запрещает его в именах продуктов;
+* подпись под значком и имя в магазине могут различаться: Apple требует
+  лишь, чтобы подпись узнавалась по имени (2.3.8). Имя в магазине
+  локализуется — RU в русской витрине, EN в остальных.
 
 ---
 
@@ -74,10 +78,10 @@ End-to-end encrypted messenger. No phone number. Tor built in.
 RU:
 
 ```text
-GasApp — мессенджер для личной переписки, в котором сервер не может прочитать ваши сообщения и не знает, кто вы.
+GasApp — мессенджер для личной переписки и каналов, в котором сервер не может прочитать ваши сообщения.
 
-БЕЗ НОМЕРА ТЕЛЕФОНА И ПОЧТЫ
-Аккаунт — это имя пользователя, которое вы придумываете сами. Оно не связано с номером телефона, почтой или настоящим именем.
+БЕЗ НОМЕРА ТЕЛЕФОНА
+Аккаунт — это имя пользователя, которое вы придумываете сами. Оно не связано с номером телефона или настоящим именем. Чтобы создать аккаунт, нужен адрес почты: на него придёт код. Сам адрес сервер не хранит — только его хеш.
 
 СКВОЗНОЕ ШИФРОВАНИЕ
 Сообщения и файлы шифруются на вашем телефоне и расшифровываются только у собеседника. Протокол открыт: PQXDH и Double Ratchet. В установление переписки входит ML-KEM, поэтому записанный сегодня трафик не расшифровать и будущим квантовым компьютером.
@@ -93,6 +97,9 @@ TOR ВСТРОЕН
 
 ПРОВЕРКА СОБЕСЕДНИКА
 Сверьте код безопасности, отсканировав QR-код при встрече. Открытый журнал ключей не даёт серверу незаметно подменить ключ собеседника.
+
+КАНАЛЫ
+Читайте каналы по ссылке или QR-коду. Записи и название канала сервер хранит зашифрованными и не знает, кто их читает. Создавать каналы могут аккаунты с премиумом — его выдаёт оператор сервера. Канал — не личная переписка: его читает каждый, у кого есть ссылка.
 
 И ЕЩЁ
 • исчезающие сообщения;
@@ -110,10 +117,10 @@ GasApp — открытый проект, и он ещё не прошёл не�
 EN:
 
 ```text
-GasApp is a messenger for private conversations: the server cannot read your messages and does not know who you are.
+GasApp is a messenger for private conversations and channels: the server cannot read your messages.
 
-NO PHONE NUMBER, NO EMAIL
-Your account is a username you choose. It is not tied to a phone number, an email address or your real name.
+NO PHONE NUMBER
+Your account is a username you choose. It is not tied to a phone number or your real name. Creating an account requires an email address: a code is sent to it. The server does not store the address itself, only a hash of it.
 
 END-TO-END ENCRYPTION
 Messages and files are encrypted on your phone and decrypted only on your contact's phone. The protocol is open: PQXDH and Double Ratchet. Starting a conversation includes ML-KEM, so traffic recorded today cannot be decrypted by a future quantum computer.
@@ -129,6 +136,9 @@ THE SERVER KNOWS AS LITTLE AS POSSIBLE
 
 VERIFY WHO YOU TALK TO
 Compare safety numbers by scanning each other's QR code in person. A public key log keeps the server from silently swapping your contact's key.
+
+CHANNELS
+Read channels by link or QR code. The server stores a channel's posts and title encrypted and does not know who reads them. Channels can be created by premium accounts, granted by the server operator. A channel is not a private conversation: anyone with the link can read it.
 
 ALSO
 • disappearing messages;

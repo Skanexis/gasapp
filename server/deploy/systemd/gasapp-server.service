@@ -48,8 +48,17 @@ LoadCredential=tls_key:/etc/gasapp/credentials/node-key.pem
 # DATABASE_URL ссылается на него путём:
 #     ...&sslkey=/run/credentials/gasapp-server.service/db_client_key
 LoadCredential=db_client_key:/etc/gasapp/credentials/db-client-key.pem
+# 🔐 Ключ хеширования адресов почты (миграция 0017): в базе лежит не
+# адрес, а HMAC на этом ключе. Один на все узлы; без него узел не
+# запускается.
+LoadCredential=gasapp_email_key:/etc/gasapp/credentials/gasapp_email_key
+# Настройки отправки письма с кодом (deploy/mail/send-code.sh читает
+# их из каталога учётных данных): адрес релея, отправитель, пароль.
+LoadCredential=mail:/etc/gasapp/credentials/mail
 # Ключ TLS сервер читает по пути — путь ведёт в каталог учётных данных.
 Environment=GASAPP_TLS_KEY=%d/tls_key
+# Программа, которой сервер отправляет письмо с кодом подтверждения.
+Environment=GASAPP_EMAIL_CMD=/opt/gasapp/mail/send-code.sh
 
 # --- Файловая система ---------------------------------------------------
 # Вся система — только чтение; домашние каталоги, /tmp других служб,
@@ -73,6 +82,14 @@ ProcSubset=pid
 # положить во временный каталог.
 NoExecPaths=/
 ExecPaths=/usr/local/bin/gasapp-server-api /usr/lib /lib /lib64 /usr/lib64
+# Письмо с кодом подтверждения отправляет внешняя программа
+# (GASAPP_EMAIL_CMD): сценарий и ровно те системные программы, которые
+# он зовёт. Больше узлу запускать нечего — список не расширять.
+#
+# ⚠️ Сеть при этом остаётся внутренней (IPAddressAllow ниже): сценарий
+# ходит не в интернет, а на почтовый релей во внутренней сети — см.
+# РАЗВЁРТЫВАНИЕ.md, «Почта: письмо с кодом».
+ExecPaths=/opt/gasapp/mail/send-code.sh /usr/bin/bash /usr/bin/env /usr/bin/curl /usr/bin/grep /usr/bin/mktemp /usr/bin/date /usr/bin/rm
 UMask=0077
 
 # --- Права -----------------------------------------------------------------
