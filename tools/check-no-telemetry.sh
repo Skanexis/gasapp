@@ -9,7 +9,9 @@
 
 set -euo pipefail
 
-FORBIDDEN='FirebaseAnalytics|Crashlytics|firebase-analytics|firebase-crashlytics|com\.google\.android\.gms\.analytics|GoogleAnalytics|Amplitude|Mixpanel|AppsFlyer|Adjust\.|Braze|Segment|Bugsnag|Sentry|AppCenter|Flurry|Countly|OneSignal|FacebookSDK|AdMob|com\.applovin|UnityAds'
+# Имена SDK ищутся с начала слова: иначе «Segment» находился в обычном
+# `lastSegment`, и проверка краснела на коде, где телеметрии нет.
+FORBIDDEN='(FirebaseAnalytics|Crashlytics|firebase-analytics|firebase-crashlytics|com\.google\.android\.gms\.analytics|GoogleAnalytics|Amplitude|Mixpanel|AppsFlyer|Adjust\.|Braze|Segment|Bugsnag|Sentry|AppCenter|Flurry|Countly|OneSignal|FacebookSDK|AdMob|com\.applovin|UnityAds)'
 
 # foss-flavor Android дополнительно обязан не содержать Google Play Services
 FORBIDDEN_FOSS='com\.google\.android\.gms|com\.google\.firebase'
