@@ -868,6 +868,22 @@ requests the app uses (`crates/gasapp-bot`).
 * The reference bot engine connects directly over TLS, without Tor; the
   server sees the bot machine's address.
 
+**Buttons.** Two message content kinds (§7) carry inline buttons inside
+the pairwise session, so the server sees neither labels nor presses:
+
+* kind `10`, *keyboard*: `target (16) ‖ len (4) ‖ keyboard` — rows of
+  buttons attached to a message the sender wrote earlier (`target` is
+  its identifier). A button is a label (≤ 40 characters) and either
+  callback data (≤ 64 bytes) or an `https://` URL (≤ 512 bytes); at most
+  8 rows of 4. An empty keyboard removes the buttons. The receiver
+  accepts it only for a message of that peer in that chat.
+* kind `11`, *callback*: `target (16) ‖ len (4) ‖ data` — a press. The
+  receiver accepts it only if it itself attached, to that message in
+  that chat, a button carrying exactly this data.
+
+A URL button sends nothing to the author: the app shows the full link
+and opens it only on the user's confirmation.
+
 ## 10. Security Considerations
 
 ### 10.1. Forward Secrecy

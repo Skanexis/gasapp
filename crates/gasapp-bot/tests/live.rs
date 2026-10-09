@@ -271,6 +271,57 @@ fn a_bot_runs_a_closed_channel_over_the_network() {
     let device = owner.own_device_id().expect("устройство").expect("есть");
     assert_eq!(owner.receive_messages(&device, now()).expect("приём"), 1);
 
+    // Кнопки: бот прикладывает их к сообщению, человек нажимает,
+    // нажатие приходит боту событием.
+    let asked = call(
+        &mut runtime,
+        "sendMessage",
+        json!({
+            "to": owner_name,
+            "text": "Одобрить?",
+            "buttons": [[{ "text": "Да", "data": "yes" }, { "text": "Сайт", "url": "https://example.org/" }]],
+        }),
+    );
+    let asked_id = gasapp_types::MessageId::from_uuid(
+        asked["message_id"]
+            .as_str()
+            .expect("id")
+            .parse()
+            .expect("uuid"),
+    );
+    owner.receive_messages(&device, now()).expect("приём");
+    let keyboard = owner
+        .message_keyboard(&asked_id)
+        .expect("кнопки")
+        .expect("есть");
+    assert_eq!(keyboard.rows[0][0].label, "Да");
+    assert_eq!(
+        owner
+            .press_button(&asked_id, 0, 1, now(), &mut OsRng)
+            .expect("ссылка")
+            .as_deref(),
+        Some("https://example.org/")
+    );
+    owner
+        .press_button(&asked_id, 0, 0, now(), &mut OsRng)
+        .expect("нажатие");
+    let events = poll(&mut runtime);
+    let press = event(&events, "callback");
+    assert_eq!(press["data"], "yes");
+    assert_eq!(press["from"], owner_name);
+    assert_eq!(press["message_id"], asked["message_id"]);
+
+    // Негодная клавиатура — отказ, и сообщение не уходит.
+    let refused: Value = serde_json::from_str(&runtime.handle(
+        &json!({ "id": 2, "method": "sendMessage", "params": {
+            "to": owner_name, "text": "x", "buttons": [[{ "text": "js", "url": "javascript:1" }]],
+        }})
+        .to_string(),
+        now(),
+    ))
+    .unwrap();
+    assert_eq!(refused["error"], "bad_request");
+
     // Негодная команда — ответ с ошибкой, а не молчание.
     let answer: Value =
         serde_json::from_str(&runtime.handle(r#"{"id":1,"method":"nope"}"#, now())).unwrap();
@@ -353,5 +404,109 @@ fn cli_round_trip(owner: &Client<HttpTransport>, dir: &tempfile::TempDir) {
     drop(input);
     assert!(run.wait().expect("выход").success());
 
+    http_and_webhook(owner, &data, &bot_name);
+
     owner.delete_bot(&bot_name, now()).expect("удаление бота");
+}
+
+/// Один запрос к движку по HTTP; возвращает код и тело.
+fn http_call(port: u16, request: &str) -> (u16, Value) {
+    use std::io::{Read as _, Write as _};
+
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("движок слушает");
+    stream.write_all(request.as_bytes()).expect("запрос");
+
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).expect("ответ");
+
+    let status = raw
+        .split(' ')
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .expect("код");
+    let body = raw.split("\r\n\r\n").nth(1).unwrap_or_default();
+
+    (status, serde_json::from_str(body).unwrap_or(Value::Null))
+}
+
+/// Режим HTTP: команды запросами за секретом, события — на веб-хук.
+fn http_and_webhook(owner: &Client<HttpTransport>, data: &std::path::Path, bot_name: &str) {
+    use std::io::{Read as _, Write as _};
+    use std::process::{Command, Stdio};
+
+    // Веб-хук — этот тест; порт движку — свободный.
+    let hook = std::net::TcpListener::bind("127.0.0.1:0").expect("веб-хук");
+    let hook_port = hook.local_addr().expect("адрес").port();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|probe| probe.local_addr())
+        .expect("свободный порт")
+        .port();
+
+    let mut run = Command::new(env!("CARGO_BIN_EXE_gasapp-bot"))
+        .arg("run")
+        .arg("--data")
+        .arg(data)
+        .args(["--poll", "2", "--secret", "s3cret"])
+        .args(["--listen", &format!("127.0.0.1:{port}")])
+        .args(["--webhook", &format!("http://127.0.0.1:{hook_port}/hook")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("run запущен");
+
+    // Движок поднимается не мгновенно.
+    let mut ready = false;
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            ready = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(ready, "движок не слушает порт");
+
+    // 🔐 Без секрета командой не управляют.
+    let (status, _) = http_call(port, "POST /getMe HTTP/1.1\r\nContent-Length: 0\r\n\r\n");
+    assert_eq!(status, 401);
+
+    let (status, me) = http_call(
+        port,
+        "POST /getMe HTTP/1.1\r\nAuthorization: Bearer s3cret\r\nContent-Length: 0\r\n\r\n",
+    );
+    assert_eq!(status, 200);
+    assert_eq!(me["result"]["username"], bot_name);
+
+    // Человек пишет боту — событие приходит на веб-хук с секретом.
+    owner
+        .add_contact_from_link(
+            me["result"]["contact_link"].as_str().expect("ссылка"),
+            now(),
+        )
+        .expect("контакт");
+    owner
+        .send_message(bot_name, "на веб-хук", now(), &mut OsRng)
+        .expect("сообщение");
+
+    hook.set_nonblocking(false).expect("режим");
+    let (mut delivery, _) = hook.accept().expect("веб-хук вызван");
+    delivery
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .expect("таймаут");
+    let mut raw = Vec::new();
+    let mut chunk = [0u8; 4096];
+    while !String::from_utf8_lossy(&raw).contains("на веб-хук") {
+        let read = delivery.read(&mut chunk).expect("тело события");
+        assert!(read > 0, "событие оборвалось");
+        raw.extend_from_slice(&chunk[..read]);
+    }
+    let text = String::from_utf8_lossy(&raw).into_owned();
+    assert!(text.starts_with("POST /hook HTTP/1.1"));
+    assert!(text.contains("X-GasApp-Bot-Secret: s3cret"));
+    assert!(text.contains("\"event\":\"message\""));
+    delivery
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        .expect("ответ веб-хука");
+
+    run.kill().expect("остановка");
+    let _ = run.wait();
 }

@@ -27,6 +27,7 @@
 pub mod backup;
 pub mod blocks;
 pub mod channels;
+pub mod keyboards;
 pub mod kt;
 pub mod pq;
 pub mod requests;
@@ -401,7 +402,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 20;
+    const SCHEMA_VERSION: i32 = 21;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1018,6 +1019,27 @@ impl Storage {
                             [],
                         )
                         .map_err(storage_error)?;
+                }
+                // 20 → 21: кнопки под сообщениями и очередь нажатий
+                // (`keyboards`).
+                21 => {
+                    for statement in [
+                        "CREATE TABLE IF NOT EXISTS message_keyboards (
+                             message_id BLOB PRIMARY KEY,
+                             chat_id    BLOB NOT NULL,
+                             outgoing   INTEGER NOT NULL,
+                             keyboard   BLOB NOT NULL
+                         )",
+                        "CREATE TABLE IF NOT EXISTS button_callbacks (
+                             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                             chat_id     BLOB NOT NULL,
+                             message_id  BLOB NOT NULL,
+                             data        BLOB NOT NULL,
+                             received_at INTEGER NOT NULL
+                         )",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
+                    }
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
@@ -2770,6 +2792,17 @@ impl Storage {
     /// событие в журнал безопасности. Хранилище не решает за него,
     /// потому что реакция зависит от того, верифицирован ли контакт.
     ///
+    /// # Что остаётся у известного контакта
+    ///
+    /// 🔐 Имя, чат, отметка «заменён» и подтверждение ключа (ссылкой
+    /// либо журналом ключей) сохраняются, пока ключ тот же. Прежде
+    /// строка заменялась целиком (`INSERT OR REPLACE`), и каждое
+    /// сообщение, открывавшее новую сессию, стирало подтверждение:
+    /// человеку, добавленному по ссылке или QR, нельзя было ответить
+    /// (`PeerUnconfirmed`), а контакт, помеченный заменённым, снова
+    /// становился действующим. Со сменой ключа подтверждения снимаются:
+    /// они относились к прежнему ключу.
+    ///
     /// # Errors
     ///
     /// [`GasAppError::Storage`] — запись не удалась.
@@ -2779,8 +2812,16 @@ impl Storage {
         connection
             .execute(
                 "
-            INSERT OR REPLACE INTO known_contacts (account_id, identity_key)
+            INSERT INTO known_contacts (account_id, identity_key)
             VALUES (?, ?)
+            ON CONFLICT(account_id) DO UPDATE SET
+                confirmed_by_link = CASE WHEN identity_key = excluded.identity_key
+                                         THEN confirmed_by_link ELSE 0 END,
+                confirmed_by_kt   = CASE WHEN identity_key = excluded.identity_key
+                                         THEN confirmed_by_kt ELSE 0 END,
+                pq_identity_hash  = CASE WHEN identity_key = excluded.identity_key
+                                         THEN pq_identity_hash ELSE NULL END,
+                identity_key      = excluded.identity_key
             ",
                 params![account.as_bytes(), identity],
             )

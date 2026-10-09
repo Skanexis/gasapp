@@ -18,6 +18,7 @@ use std::process::ExitCode;
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use gasapp_bot::api::{self, Webhook};
 use gasapp_bot::{HttpTransport, Runtime};
 use gasapp_core::client::Client;
 use gasapp_storage::Storage;
@@ -45,7 +46,16 @@ gasapp-bot — движок бота GasApp
 
   gasapp-bot init --server <https://адрес> --data <каталог> --token <gasapp-bot:имя:токен>
   gasapp-bot run  --data <каталог> [--poll <секунды>]
+                  [--listen <адрес:порт>] [--webhook <адрес>] [--secret <секрет>]
 
+  без --listen   команды — строками JSON со стандартного ввода, ответы и
+                 события — в стандартный вывод
+  --listen       команды по HTTP: POST /<команда>, параметры — JSON в теле;
+                 GET /getUpdates отдаёт накопившиеся события
+  --webhook      события отправляются POST-запросом на этот адрес
+  --secret       требовать Authorization: Bearer <секрет> у команд и слать
+                 его веб-хуку в X-GasApp-Bot-Secret; без него движок
+                 слушает только адрес своей машины
   --allow-http   разрешить открытый HTTP к чужой машине (только для стенда)
 
 Токен берут в приложении: Каналы → Создать → Мои боты → Создать бота.
@@ -59,6 +69,9 @@ struct Options {
     token: Option<String>,
     poll: u64,
     allow_http: bool,
+    listen: Option<String>,
+    webhook: Option<String>,
+    secret: Option<String>,
 }
 
 fn parse_options() -> Option<Options> {
@@ -70,6 +83,9 @@ fn parse_options() -> Option<Options> {
         token: None,
         poll: DEFAULT_POLL_SECS,
         allow_http: false,
+        listen: None,
+        webhook: None,
+        secret: None,
     };
 
     while let Some(flag) = arguments.next() {
@@ -79,6 +95,9 @@ fn parse_options() -> Option<Options> {
             "--token" => options.token = Some(arguments.next()?),
             "--poll" => options.poll = arguments.next()?.parse().ok()?,
             "--allow-http" => options.allow_http = true,
+            "--listen" => options.listen = Some(arguments.next()?),
+            "--webhook" => options.webhook = Some(arguments.next()?),
+            "--secret" => options.secret = Some(arguments.next()?),
             _ => return None,
         }
     }
@@ -209,6 +228,10 @@ fn run(options: &Options) -> Result<(), String> {
         Runtime::new(client).map_err(|_| "бот не зарегистрирован — сначала init".to_owned())?;
     let poll = Duration::from_secs(options.poll.max(MIN_POLL_SECS));
 
+    if options.listen.is_some() || options.webhook.is_some() {
+        return serve(&mut runtime, options, poll);
+    }
+
     // Ввод читается отдельным потоком: движок обязан обходить сервер и
     // тогда, когда программа бота молчит.
     let (lines, commands) = mpsc::channel::<String>();
@@ -255,6 +278,159 @@ fn run(options: &Options) -> Result<(), String> {
             Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
         }
     }
+}
+
+/// Сколько событий ждёт, пока программа бота их не забрала: старые
+/// сверх предела отбрасываются.
+const MAX_QUEUED_EVENTS: usize = 1000;
+
+/// Как часто движок заглядывает в очередь соединений.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(25);
+
+/// Режим HTTP: команды — запросами, события — веб-хуком либо
+/// `GET /getUpdates`.
+///
+/// Движок однопоточный намеренно: ядро одно, и команды к нему идут по
+/// очереди, как и со стандартного ввода.
+fn serve(
+    runtime: &mut Runtime<HttpTransport>,
+    options: &Options,
+    poll: Duration,
+) -> Result<(), String> {
+    let webhook = options
+        .webhook
+        .as_deref()
+        .map(|url| Webhook::new(url, options.secret.clone(), options.allow_http))
+        .transpose()
+        .map_err(|_| "--webhook: это не адрес (нужен https://… либо http:// к своей машине)")?;
+
+    let listener = match &options.listen {
+        Some(address) => {
+            let listener = std::net::TcpListener::bind(address)
+                .map_err(|error| format!("--listen {address}: {error}"))?;
+            let local = listener
+                .local_addr()
+                .map_err(|error| format!("--listen {address}: {error}"))?;
+
+            // 🔐 Кто шлёт команды, тот управляет ботом.
+            if !local.ip().is_loopback() && options.secret.is_none() {
+                return Err(
+                    "--listen не на адресе своей машины требует --secret: иначе ботом управляет \
+                     любой, кто достучится до порта"
+                        .to_owned(),
+                );
+            }
+
+            listener
+                .set_nonblocking(true)
+                .map_err(|error| format!("--listen {address}: {error}"))?;
+            eprintln!("gasapp-bot: команды принимаются на http://{local}");
+
+            Some(listener)
+        }
+        None => None,
+    };
+
+    let mut events: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut next_poll = std::time::Instant::now();
+
+    loop {
+        if let Some(listener) = &listener {
+            while let Ok((mut stream, _)) = listener.accept() {
+                // Принятое соединение читается обычным, блокирующим чтением.
+                let _ = stream.set_nonblocking(false);
+                answer(
+                    runtime,
+                    options,
+                    webhook.is_some(),
+                    &mut events,
+                    &mut stream,
+                );
+            }
+        }
+
+        if std::time::Instant::now() >= next_poll {
+            for event in runtime.poll(now()) {
+                if events.len() >= MAX_QUEUED_EVENTS {
+                    events.pop_front();
+                }
+                events.push_back(event);
+            }
+
+            // Веб-хук: по порядку; не принял — это и следующие события
+            // ждут до следующего обхода.
+            if let Some(webhook) = &webhook {
+                while let Some(event) = events.front() {
+                    if !webhook.deliver(event) {
+                        break;
+                    }
+                    events.pop_front();
+                }
+            }
+
+            next_poll = std::time::Instant::now()
+                .checked_add(poll)
+                .unwrap_or_else(std::time::Instant::now);
+        }
+
+        std::thread::sleep(ACCEPT_PAUSE);
+    }
+}
+
+/// Отвечает на один запрос к движку.
+fn answer(
+    runtime: &mut Runtime<HttpTransport>,
+    options: &Options,
+    has_webhook: bool,
+    events: &mut std::collections::VecDeque<String>,
+    stream: &mut std::net::TcpStream,
+) {
+    const REFUSED: &str = r#"{"ok":false,"error":"bad_request"}"#;
+
+    let Ok(request) = api::read_request(stream) else {
+        api::write_response(stream, 400, REFUSED);
+        return;
+    };
+
+    if let Some(secret) = &options.secret {
+        if !api::secrets_match(secret, request.bearer.as_deref()) {
+            api::write_response(stream, 401, r#"{"ok":false,"error":"forbidden"}"#);
+            return;
+        }
+    }
+
+    // События забирают запросом, только если их не шлёт веб-хук.
+    if request.command == "getUpdates" {
+        if has_webhook {
+            api::write_response(stream, 400, REFUSED);
+            return;
+        }
+
+        let body = format!(
+            r#"{{"ok":true,"result":[{}]}}"#,
+            events.drain(..).collect::<Vec<_>>().join(",")
+        );
+        api::write_response(stream, 200, &body);
+        return;
+    }
+
+    if request.method != "POST" {
+        api::write_response(stream, 400, REFUSED);
+        return;
+    }
+
+    // Тело — параметры команды; пустое — без параметров.
+    let params = if request.body.iter().all(u8::is_ascii_whitespace) {
+        "{}".to_owned()
+    } else {
+        String::from_utf8_lossy(&request.body).into_owned()
+    };
+    let command = format!(
+        r#"{{"id":null,"method":"{}","params":{params}}}"#,
+        request.command
+    );
+
+    api::write_response(stream, 200, &runtime.handle(&command, now()));
 }
 
 fn main() -> ExitCode {

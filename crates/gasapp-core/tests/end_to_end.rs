@@ -8577,3 +8577,105 @@ fn the_owner_can_recover_epoch_keys_from_the_signing_key() {
         peek.channel_key(&id, 1).expect("чтение")
     );
 }
+
+// ---------------------------------------------------------------------------
+//  Кнопки под сообщениями
+// ---------------------------------------------------------------------------
+
+/// Кнопки прикладываются к своему сообщению, показываются собеседнику,
+/// а нажатие возвращается автору — и только с предложенными данными.
+#[test]
+fn buttons_under_a_message_are_shown_and_pressed() {
+    use gasapp_protocol::keyboard::{Button, ButtonAction, Keyboard};
+
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (bot, human) = author_and_reader(&server, &dir);
+    human
+        .add_contact_from_link(&bot.own_contact_link().expect("ссылка"), now())
+        .expect("контакт");
+    bot.add_contact_from_link(&human.own_contact_link().expect("ссылка"), now())
+        .expect("контакт");
+    let bot_device = bot.own_device_id().expect("устройство").expect("есть");
+    let human_device = human.own_device_id().expect("устройство").expect("есть");
+
+    let keyboard = Keyboard {
+        rows: vec![vec![
+            Button {
+                label: "Да".to_owned(),
+                action: ButtonAction::Callback(b"yes".to_vec()),
+            },
+            Button {
+                label: "Сайт".to_owned(),
+                action: ButtonAction::Url("https://example.org/".to_owned()),
+            },
+        ]],
+    };
+
+    let id = bot
+        .send_message("reader", "Выберите", now(), &mut OsRng)
+        .expect("сообщение");
+    bot.send_keyboard("reader", &id, &keyboard, now(), &mut OsRng)
+        .expect("кнопки");
+
+    // Кнопки — не сообщение: в счёт принятых они не идут.
+    assert_eq!(
+        human.receive_messages(&human_device, now()).expect("приём"),
+        1
+    );
+
+    // 🔐 Контакт добавлен по ссылке: входящее сообщение этого не отменяет,
+    // и ответить ему можно.
+    assert!(human.contacts().expect("контакты")[0].key_confirmed);
+    assert_eq!(
+        human.message_keyboard(&id).expect("кнопки"),
+        Some(keyboard.clone())
+    );
+
+    // Чужому сообщению кнопки не приложить.
+    assert!(matches!(
+        human.send_keyboard("author", &id, &keyboard, now(), &mut OsRng),
+        Err(GasAppError::Malformed)
+    ));
+
+    // Кнопка со ссылкой автору ничего не сообщает.
+    let before = server.state.borrow().requests.len();
+    assert_eq!(
+        human
+            .press_button(&id, 0, 1, now(), &mut OsRng)
+            .expect("нажатие")
+            .as_deref(),
+        Some("https://example.org/")
+    );
+    assert_eq!(server.state.borrow().requests.len(), before);
+
+    // Кнопка с данными — нажатие доходит автору, и в переписке его нет.
+    assert_eq!(
+        human
+            .press_button(&id, 0, 0, now(), &mut OsRng)
+            .expect("нажатие"),
+        None
+    );
+    assert_eq!(bot.receive_messages(&bot_device, now()).expect("приём"), 0);
+    let callbacks = bot.take_button_callbacks().expect("нажатия");
+    assert_eq!(callbacks.len(), 1);
+    assert_eq!(callbacks[0].message_id, id);
+    assert_eq!(callbacks[0].data, b"yes");
+    assert!(bot.take_button_callbacks().expect("нажатия").is_empty());
+
+    // Кнопки, которой нет, нажать нельзя.
+    assert!(matches!(
+        human.press_button(&id, 3, 0, now(), &mut OsRng),
+        Err(GasAppError::SessionNotFound)
+    ));
+
+    // Автор убирает кнопки — у собеседника их больше нет.
+    bot.send_keyboard("reader", &id, &Keyboard::default(), now(), &mut OsRng)
+        .expect("убрать");
+    human.receive_messages(&human_device, now()).expect("приём");
+    assert_eq!(human.message_keyboard(&id).expect("кнопки"), None);
+    assert!(matches!(
+        human.press_button(&id, 0, 0, now(), &mut OsRng),
+        Err(GasAppError::SessionNotFound)
+    ));
+}

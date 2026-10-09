@@ -1679,6 +1679,7 @@ version = "0.1.0"
 dependencies = [
  "gasapp-core",
  "gasapp-net",
+ "gasapp-protocol",
  "gasapp-storage",
  "gasapp-types",
  "hex",
@@ -1686,6 +1687,7 @@ dependencies = [
  "rustls",
  "serde_json",
  "tempfile",
+ "uuid",
  "webpki-roots",
  "zeroize",
 ]
