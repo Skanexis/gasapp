@@ -175,7 +175,7 @@ owns it, how many posts and files it has, their size (to the nearest
 padding step), the hour each post was published, which posts were edited
 and which were deleted.
 
-**What the server does not know about a private channel:**
+**What the server does not know about a channel without a public name:**
 
 * 🔐 the title, the description, the avatar, the text of the posts and
   the contents of the files — it stores them as ciphertext. The read key
@@ -205,10 +205,32 @@ identifier.
 can be found by search. To do that, the author's app hands the server
 the channel link — and the link contains the read key. 🔐 **The server
 can read a public channel**: title, posts and files. The app tells the
-author so before the switch. If the channel is made private again, the
+author so before the switch. If the public name is removed, the
 server stops handing out the link, but what it has already learned is
 not forgotten. Even for a public channel the server cannot forge posts:
 it does not have the author's signing key.
+
+**Closed channels.** An owner can make a channel closed: it is then
+joined by request, and the server gives its posts only to members. The
+link of such a channel carries no read key — it is used to send a
+request. 🔐 When you send a request, **the server and whoever runs the
+channel learn your account name**; the server keeps the request until
+it is answered. On approval, the owner or an administrator hands you the
+read key as ciphertext — the server cannot see it. The server knows who
+the members of a closed channel are and who was barred after removal,
+and it tells whoever runs the channel the names of applicants and
+subscribers.
+
+⚠️ Someone removed from a closed channel still remembers the read key:
+the server stops giving them posts, but the channel key does not change.
+
+**Bots.** A premium account can create bots — separate accounts run by
+the owner's program. 🔐 The server stores **which account owns which
+bot** for as long as the bot exists. A bot has no e-mail address. A
+bot's keys are created by its program; neither the server nor the
+owner's app receives them. ⚠️ When you write to a bot, your message is
+read by its program — and by whoever runs it. A name ending in `bot`
+means only that the account was created as a bot.
 
 ⚠️ **What channels do not promise.** A channel is not a private
 conversation:

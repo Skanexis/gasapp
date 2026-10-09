@@ -99,7 +99,7 @@ TOR ВСТРОЕН
 Сверьте код безопасности, отсканировав QR-код при встрече. Открытый журнал ключей не даёт серверу незаметно подменить ключ собеседника.
 
 КАНАЛЫ
-Читайте каналы по ссылке, QR-коду или @имени: записи с фото и файлами, реакции, закреп, поиск. Записи и название закрытого канала сервер хранит зашифрованными; публичный канал с @именем сервер прочитать может. На какие каналы подписан аккаунт, сервер знает. Создавать каналы могут аккаунты с премиумом — его выдаёт оператор сервера. Канал — не личная переписка: его читает каждый, у кого есть ссылка.
+Читайте каналы по ссылке, QR-коду или @имени: записи с фото и файлами, реакции, закреп, поиск. Закрытые каналы — вход по заявке, которую вы одобряете. Записи и название канала без @имени сервер хранит зашифрованными; публичный канал с @именем сервер прочитать может. На какие каналы подписан аккаунт, сервер знает. Создавать каналы могут аккаунты с премиумом — его выдаёт оператор сервера. Канал — не личная переписка: его читает каждый, у кого есть ссылка.
 
 И ЕЩЁ
 • исчезающие сообщения;
@@ -138,7 +138,7 @@ VERIFY WHO YOU TALK TO
 Compare safety numbers by scanning each other's QR code in person. A public key log keeps the server from silently swapping your contact's key.
 
 CHANNELS
-Read channels by link, QR code or @name: posts with photos and files, reactions, pinned posts, search. The server stores a private channel's posts and title encrypted; a public channel with an @name can be read by the server. The server knows which channels an account follows. Channels can be created by premium accounts, granted by the server operator. A channel is not a private conversation: anyone with the link can read it.
+Read channels by link, QR code or @name: posts with photos and files, reactions, pinned posts, search. Closed channels are joined by a request you approve. The server stores the posts and title of a channel without an @name encrypted; a public channel with an @name can be read by the server. The server knows which channels an account follows. Channels can be created by premium accounts, granted by the server operator. A channel is not a private conversation: anyone with the link can read it.
 
 ALSO
 • disappearing messages;

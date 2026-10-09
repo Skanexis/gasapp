@@ -1674,6 +1674,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "gasapp-bot"
+version = "0.1.0"
+dependencies = [
+ "gasapp-core",
+ "gasapp-net",
+ "gasapp-storage",
+ "gasapp-types",
+ "hex",
+ "rand_core 0.6.4",
+ "rustls",
+ "serde_json",
+ "tempfile",
+ "webpki-roots",
+ "zeroize",
+]
+
+[[package]]
 name = "gasapp-core"
 version = "0.1.0"
 dependencies = [

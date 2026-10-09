@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "gasapp-bot"
+description = "Движок бота GasApp: держит ключи бота и выполняет команды его программы"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "gasapp-bot"
+path = "src/main.rs"
+
+[dependencies]
+gasapp-core.workspace = true
+gasapp-net.workspace = true
+gasapp-storage.workspace = true
+gasapp-types.workspace = true
+rand_core.workspace = true
+hex.workspace = true
+zeroize.workspace = true
+serde_json = "1"
+# TLS до сервера GasApp. Те же rustls и корни Mozilla, что уже есть
+# в графе (`gasapp-tor`); криптопровайдер — ring.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+
+[dev-dependencies]
+tempfile = "3"
