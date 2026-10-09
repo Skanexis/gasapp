@@ -694,8 +694,9 @@ account's `premium` flag, which the operator sets by hand. A publish
 request names the sequence number the author sealed inside the post; if
 the channel has moved on (two authors raced), the server answers `409`
 and stores nothing, and the author seals again under the next number.
-The server does not verify record signatures. Reads
-(`/v1/channels/feed/…`) are unauthenticated.
+The server does not verify record signatures. Reads of an open
+channel (`/v1/channels/feed/…`) are unauthenticated; a closed channel
+(§9.9) is served only to its members.
 
 **What this does not provide.**
 
@@ -737,6 +738,97 @@ The server does not verify record signatures. Reads
   (bundle version 3): whoever holds the recovery key and a backup file
   can read and post to those channels. Posts are not backed up — they
   are fetched again and verified.
+
+### 9.9. Closed channels
+
+A channel can be **closed**: it is then joined by an approved request,
+and the server serves its records only to members (the owner, the
+administrators and approved subscribers), on device-signed requests
+(`/v1/channels/reader/<device>/<channel>/{info,posts,media/…}`). A closed
+channel cannot have a public handle. Implementation:
+`crates/gasapp-protocol/src/channel_join.rs`.
+
+**Join link.** `gasapp://channel-join/<hex(channel_id)>.<base32(vk)>.<hex(invite)>`,
+where `invite` is 16 random bytes. The link carries **no** `secret`. The
+server stores `SHA-256(invite)` and accepts a request only with a tag
+whose hash it holds and that has not been revoked.
+
+**Request.** The applicant generates a one-time X25519 key pair
+`(e, E)` and signs `E` with the account identity key (XEdDSA, §3):
+
+```
+request = 0x01 ‖ E (32) ‖ IK (32) ‖ Sig (64)
+Sig     = XEdDSA.Sign(ik, "GASAPP_CHANNEL_v1_JOIN" ‖ channel_id ‖ E)
+```
+
+**Grant.** Whoever runs the channel verifies `Sig`, generates a one-time
+pair `(a, A)` and wraps the channel `secret`:
+
+```
+K     = HKDF-SHA-256(salt = channel_id, ikm = X25519(a, E),
+                     info = "GASAPP_CHANNEL_v1_GRANT" ‖ E ‖ A, L = 32)
+grant = 0x01 ‖ A (32) ‖ nonce (12) ‖
+        AES-256-GCM(K, nonce, secret, aad = "GASAPP_CHANNEL_v1_GRANT_AAD" ‖ channel_id ‖ vk)
+```
+
+The server stores `request` and `grant` as opaque bytes. The applicant
+opens the grant with `e` and accepts the recovered `secret` **only if**
+the channel metadata decrypts under it and verifies against `vk` from
+the link — a grant fabricated by the server fails that check.
+
+**Removal.** Whoever runs the channel can remove a subscriber: the
+server deletes the subscription, the grant and the request, and refuses
+new requests from that account until the ban is lifted.
+
+**What this does not provide.**
+
+* **No rekeying.** A removed subscriber still knows `secret`. The server
+  stops serving them records; the key itself does not change, so any
+  ciphertext they obtain another way remains readable to them.
+* **The server can substitute a request.** `Sig` binds `E` to an
+  identity key, but the approver learns *whose* key that is from the
+  server unless the applicant is a contact whose key they already hold
+  (the app marks such requests). A server that swaps in its own
+  `(E, IK)` under an applicant's name receives `secret` when the request
+  is approved.
+* **The old open link still contains `secret`.** Closing a channel stops
+  the server from serving it to non-members; it does not invalidate
+  links issued while the channel was open.
+* **Membership is known to the server**, as subscription already was
+  (§9.8); it additionally tells whoever runs the channel the account
+  names of applicants and subscribers.
+* Join links are kept only on the device that created them and are not
+  in the backup; the server holds their hashes.
+
+### 9.10. Bots
+
+A bot is an ordinary account — its own identity key, prekeys and
+sessions — that is run by a program instead of a person. It differs in
+two ways: it is created by another account (the owner, which must have
+`premium`), and it has no e-mail address. Its username ends in `bot`;
+the server refuses that suffix to ordinary registrations.
+
+The owner asks the server for a one-time token bound to a bot username
+(valid for one hour, stored as `SHA-256(token)`). The bot program
+registers with that token (`POST /v1/bots/register`), generating all key
+material itself and solving the same proof of work as a normal
+registration. Neither the server nor the owner's app ever holds the
+bot's private keys. Deleting the owner deletes its bots.
+
+The server does nothing on a bot's behalf. Everything a bot does — reply
+to messages, post to a channel it administers, approve join requests,
+remove subscribers — is done by its program through the same signed
+requests the app uses (`crates/gasapp-bot`).
+
+**What this does not provide.**
+
+* The `bot` suffix says only that the account was created as a bot. It
+  says nothing about what its program does or who wrote it.
+* A bot that administers a closed channel holds that channel's `secret`,
+  like any administrator: the machine it runs on becomes part of what
+  the channel trusts.
+* The reference bot engine connects directly over TLS, without Tor; the
+  server sees the bot machine's address.
 
 ## 10. Security Considerations
 

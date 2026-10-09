@@ -12,6 +12,7 @@ members = [
     "gasapp-core",
     "gasapp-ffi",
     "gasapp-tor",
+    "gasapp-bot",
 ]
 
 [workspace.dependencies]
