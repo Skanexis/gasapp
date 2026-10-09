@@ -221,8 +221,12 @@ the members of a closed channel are and who was barred after removal,
 and it tells whoever runs the channel the names of applicants and
 subscribers.
 
-⚠️ Someone removed from a closed channel still remembers the read key:
-the server stops giving them posts, but the channel key does not change.
+🔐 When a subscriber is removed from a closed channel, the channel read
+key changes: only the remaining members receive the new key, and the
+removed person cannot read new posts. ⚠️ What was published before the
+removal, and the channel title and description, they could already
+read — removal does not undo that. The server knows how many times a
+channel's key was changed; it never receives the keys themselves.
 
 **Bots.** A premium account can create bots — separate accounts run by
 the owner's program. 🔐 The server stores **which account owns which

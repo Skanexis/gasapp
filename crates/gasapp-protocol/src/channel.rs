@@ -134,6 +134,54 @@ const KEY_INFO: &[u8] = b"GASAPP_CHANNEL_v1_KEY";
 const AAD_DOMAIN: &[u8] = b"GASAPP_CHANNEL_v1_AAD";
 const SIGNATURE_DOMAIN: &[u8] = b"GASAPP_CHANNEL_v1_SIG";
 
+/// Первый байт записи под ключом эпохи старше нулевой: за ним четыре
+/// байта номера эпохи и сама запись в обычном виде.
+///
+/// Номер эпохи не подписан и не входит в связанные данные: он только
+/// выбирает ключ. Сервер, поставивший другой номер, добьётся одного —
+/// запись не расшифруется.
+pub const EPOCH_WIRE_VERSION: u8 = 3;
+
+/// Помечает запись номером эпохи ключа; нулевая эпоха пометки не несёт.
+#[must_use]
+pub fn with_epoch(epoch: u32, wire: Vec<u8>) -> Vec<u8> {
+    if epoch == 0 {
+        return wire;
+    }
+
+    let mut marked = Vec::with_capacity(wire.len().saturating_add(5));
+    marked.push(EPOCH_WIRE_VERSION);
+    marked.extend_from_slice(&epoch.to_be_bytes());
+    marked.extend_from_slice(&wire);
+
+    marked
+}
+
+/// Номер эпохи ключа, под которым сделана запись, и сама запись.
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — пометка эпохи оборвана либо называет
+/// нулевую эпоху (у той пометки нет).
+pub fn split_epoch(wire: &[u8]) -> Result<(u32, &[u8])> {
+    if wire.first() != Some(&EPOCH_WIRE_VERSION) {
+        return Ok((0, wire));
+    }
+
+    let (head, record) = split(wire, 5)?;
+    let epoch = u32::from_be_bytes(
+        head.get(1..)
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(GasAppError::Malformed)?,
+    );
+
+    if epoch == 0 {
+        return Err(GasAppError::Malformed);
+    }
+
+    Ok((epoch, record))
+}
+
 /// Идентификатор канала — 16 случайных байт (UUID на сервере).
 pub type ChannelId = [u8; CHANNEL_ID_LEN];
 
@@ -1072,6 +1120,22 @@ mod tests {
             avatar: Vec::new(),
             admins: Vec::new(),
         }
+    }
+
+    #[test]
+    fn the_epoch_mark_selects_the_key_and_nothing_else() {
+        let record = vec![WIRE_VERSION, KIND_POST, 9, 9];
+
+        // Нулевая эпоха — запись как была.
+        assert_eq!(with_epoch(0, record.clone()), record);
+        assert_eq!(split_epoch(&record).unwrap(), (0, record.as_slice()));
+
+        let marked = with_epoch(7, record.clone());
+        assert_eq!(marked[0], EPOCH_WIRE_VERSION);
+        assert_eq!(split_epoch(&marked).unwrap(), (7, record.as_slice()));
+
+        assert!(split_epoch(&marked[..4]).is_err());
+        assert!(split_epoch(&[EPOCH_WIRE_VERSION, 0, 0, 0, 0, 1]).is_err());
     }
 
     #[test]

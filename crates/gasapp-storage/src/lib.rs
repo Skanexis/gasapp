@@ -401,7 +401,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 19;
+    const SCHEMA_VERSION: i32 = 20;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -980,6 +980,44 @@ impl Storage {
                     ] {
                         transaction.execute(statement, []).map_err(storage_error)?;
                     }
+                }
+                // 19 → 20: смена ключа закрытого канала — ключи эпох и
+                // ключ доставки, под который приходит ключ новой эпохи.
+                20 => {
+                    for (column, definition) in [
+                        ("delivery_secret", "BLOB"),
+                        ("delivery_sent", "INTEGER NOT NULL DEFAULT 0"),
+                    ] {
+                        let present: bool = transaction
+                            .query_row(
+                                "SELECT count(*) > 0 FROM pragma_table_info('channels')
+                                  WHERE name = ?",
+                                params![column],
+                                |row| row.get(0),
+                            )
+                            .map_err(storage_error)?;
+
+                        if !present {
+                            transaction
+                                .execute(
+                                    &format!("ALTER TABLE channels ADD COLUMN {column} {definition}"),
+                                    [],
+                                )
+                                .map_err(storage_error)?;
+                        }
+                    }
+
+                    transaction
+                        .execute(
+                            "CREATE TABLE IF NOT EXISTS channel_keys (
+                                 channel_id BLOB NOT NULL,
+                                 epoch      INTEGER NOT NULL,
+                                 secret     BLOB NOT NULL,
+                                 PRIMARY KEY (channel_id, epoch)
+                             )",
+                            [],
+                        )
+                        .map_err(storage_error)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.

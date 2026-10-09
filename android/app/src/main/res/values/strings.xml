@@ -863,7 +863,7 @@
     <string name="channel_admin_request_copied">Request copied</string>
     <string name="channel_close">Make closed</string>
     <string name="channel_close_title">Close the channel?</string>
-    <string name="channel_close_body">A closed channel is joined by request: you or an administrator approve each person. The server gives posts only to members; current subscribers stay. The old channel link will not let new people in, but the read key in it is the same — the key does not change.</string>
+    <string name="channel_close_body">A closed channel is joined by request: you or an administrator approve each person. The server gives posts only to members; current subscribers stay. The old channel link will not let new people in. When a subscriber is removed, the channel key changes.</string>
     <string name="channel_close_action">Close</string>
     <string name="channel_close_has_handle">Remove the public name first: by its \@name the server hands out a link with the read key, so such a channel cannot be closed.</string>
     <string name="channel_open">Make open</string>
@@ -896,7 +896,7 @@
     <string name="channel_members_more">Show more</string>
     <string name="channel_member_unnamed">Account %1$s</string>
     <string name="channel_member_remove_title">Remove %1$s from the channel?</string>
-    <string name="channel_member_remove_body">The server will stop giving them posts and will not accept a new request from them. They still remember the read key: whatever they already downloaded stays with them.</string>
+    <string name="channel_member_remove_body">The server will stop giving them posts and will not accept a new request from them, and the channel key will change: they will not read new posts. What was published before the removal they could already read.</string>
     <string name="channel_member_remove">Remove</string>
     <string name="channel_member_removed">Subscriber removed</string>
     <string name="channel_member_is_admin">Whoever runs the channel cannot be removed this way: dismiss them as an administrator first</string>
@@ -934,4 +934,6 @@
     <string name="bots_delete_body">The bot account will disappear: it leaves the channels where it was an administrator, and its program can no longer sign in.</string>
     <string name="bots_delete_action">Delete</string>
     <string name="bots_deleted">Bot deleted</string>
+    <string name="channel_member_removed_rekey_pending">Subscriber removed. The channel key will change as soon as there is a connection</string>
+    <string name="channel_about_rekey_pending">⚠️ A subscriber was removed, but the channel key has not changed yet: there was no connection. It will be retried automatically; until then new posts use the old key.</string>
 </resources>

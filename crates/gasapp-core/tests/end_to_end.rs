@@ -471,6 +471,16 @@ struct FakeChannel {
     grants: HashMap<String, String>,
     /// Удалённые из канала аккаунты.
     bans: std::collections::HashSet<String>,
+    /// Номер действующей эпохи ключа.
+    key_epoch: u32,
+    /// Звенья цепочки ключей: звено эпохи `n` — на месте `n - 1`.
+    epochs: Vec<String>,
+    /// Ключи доставки участников: аккаунт → ключ, hex.
+    member_keys: HashMap<String, String>,
+    /// Под какую эпоху выдан ответ аккаунту.
+    grant_epochs: HashMap<String, u32>,
+    /// Сколько ближайших смен ключа отвергнуть как сбой сети.
+    rekey_failures: u32,
 }
 
 impl FakeChannel {
@@ -497,7 +507,19 @@ impl FakeChannel {
             public_link: self.public_link.clone(),
             subscribers: self.subscribers.len() as u64,
             closed: self.closed,
+            key_epoch: self.key_epoch,
         }
+    }
+
+    /// Сделана ли запись под действующей эпохой ключа.
+    fn current_epoch(&self, body_hex: &str) -> bool {
+        let body = hex::decode(body_hex).unwrap_or_default();
+        let epoch = match body.as_slice() {
+            [3, a, b, c, d, ..] => u32::from_be_bytes([*a, *b, *c, *d]),
+            _ => 0,
+        };
+
+        epoch == self.key_epoch
     }
 
     /// Участник ли устройство: владелец, администратор либо подписчик.
@@ -853,14 +875,19 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
 
     // Записи и файлы — владелец и администраторы; остальное — владелец.
     let allowed = match tail {
-        Some("posts" | "media" | "invites" | "requests" | "subscribers" | "bans") => writes,
+        Some("posts" | "media" | "invites" | "requests" | "subscribers" | "bans" | "keys") => {
+            writes
+        }
         _ => owned,
     };
     if !allowed {
         return plain(404, String::new());
     }
 
-    if matches!(tail, Some("invites" | "requests" | "subscribers" | "bans")) {
+    if matches!(
+        tail,
+        Some("invites" | "requests" | "subscribers" | "bans" | "keys")
+    ) {
         return channel_moderation(state, request, &channel_id, tail.unwrap_or_default());
     }
 
@@ -921,7 +948,11 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
 
             let channel = state.channels.get_mut(&channel_id).expect("канал есть");
 
-            // Закрытый канал публичным не бывает — и наоборот.
+            // Закрытый канал публичным не бывает — и наоборот; канал,
+            // у которого меняли ключ, остаётся закрытым.
+            if parsed.closed == Some(false) && channel.key_epoch > 0 {
+                return plain(400, String::new());
+            }
             if parsed.closed == Some(true) && channel.handle.is_some()
                 || parsed.set_public && parsed.handle.is_some() && channel.closed
             {
@@ -953,6 +984,11 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
             };
             let channel = state.channels.get_mut(&channel_id).expect("канал есть");
 
+            // Запись под ключом, который сменили, не принимается.
+            if !channel.current_epoch(&parsed.body) {
+                return plain(409, String::new());
+            }
+
             // Кто-то написал в канал между «узнал номер» и «опубликовал».
             if channel.conflicts > 0 {
                 channel.conflicts -= 1;
@@ -978,6 +1014,10 @@ fn channel_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -
             };
             let channel = state.channels.get_mut(&channel_id).expect("канал есть");
             let index = post_index(parsed.seq);
+
+            if !channel.current_epoch(&parsed.body) {
+                return plain(409, String::new());
+            }
 
             // Удалённую запись настоящий сервер тоже не заменяет.
             if channel.posts.get(index).is_none_or(|post| post.deleted) {
@@ -1096,7 +1136,9 @@ fn channel_member_route(
     let (action, query) = tail.split_once('?').unwrap_or((tail, ""));
     let body = request.body.as_deref().unwrap_or_default();
 
-    if !matches!(action, "join" | "info" | "posts") && !action.starts_with("media/") {
+    if !matches!(action, "join" | "info" | "posts" | "key" | "epochs")
+        && !action.starts_with("media/")
+    {
         return None;
     }
 
@@ -1146,7 +1188,38 @@ fn channel_member_route(
                 grant,
             })
         }
-        (Method::Get, _) if !channel.member(device_id) => plain(404, String::new()),
+        (_, _) if !channel.member(device_id) => plain(404, String::new()),
+        (Method::Post, "key") => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::ChannelMemberKeyRequest>(body)
+            else {
+                return Some(plain(400, String::new()));
+            };
+
+            if !channel.closed {
+                return Some(plain(404, String::new()));
+            }
+
+            // Сменившийся ключ делает прежний ответ бесполезным.
+            if channel.member_keys.get(&account) != Some(&parsed.member_key) {
+                channel.grants.remove(&account);
+                channel.grant_epochs.remove(&account);
+                channel.member_keys.insert(account, parsed.member_key);
+            }
+
+            plain(204, String::new())
+        }
+        (Method::Get, "epochs") => {
+            let after = usize::try_from(query_number(query, "after").unwrap_or(0)).unwrap_or(0);
+            let list: Vec<_> = channel
+                .epochs
+                .iter()
+                .enumerate()
+                .skip(after)
+                .map(|(index, record)| serde_json::json!({ "epoch": index + 1, "record": record }))
+                .collect();
+
+            plain(200, serde_json::Value::Array(list).to_string())
+        }
         (Method::Get, "info") => json(&channel.info(channel_id)),
         (Method::Get, "posts") => json(&select_posts(channel, query)),
         (Method::Get, media) => media
@@ -1218,11 +1291,20 @@ fn channel_moderation(
             let device = state.devices.get(&parsed.account_id).cloned();
             let channel = state.channels.get_mut(channel_id).expect("канал есть");
 
+            let request = channel.requests.get(&parsed.account_id).cloned();
+
             if channel.requests.remove(&parsed.account_id).is_none() {
                 return plain(404, String::new());
             }
 
             if let (Some(grant), Some(device)) = (parsed.grant, device) {
+                channel
+                    .grant_epochs
+                    .insert(parsed.account_id.clone(), channel.key_epoch);
+                // Ключ из заявки становится ключом доставки.
+                channel
+                    .member_keys
+                    .insert(parsed.account_id.clone(), request.unwrap_or_default());
                 channel.grants.insert(parsed.account_id, grant);
                 channel.subscribers.entry(device).or_insert(0);
             }
@@ -1255,8 +1337,86 @@ fn channel_moderation(
                 post.reactions.remove(&device);
             }
             channel.grants.remove(&account_id);
+            channel.grant_epochs.remove(&account_id);
+            channel.member_keys.remove(&account_id);
             channel.requests.remove(&account_id);
             channel.bans.insert(account_id);
+
+            plain(204, String::new())
+        }
+        (Method::Get, "keys") => {
+            let missing = request.path.contains("missing=true");
+            let after = request
+                .path
+                .split("after=")
+                .nth(1)
+                .unwrap_or_default()
+                .to_owned();
+            let channel = &state.channels[channel_id];
+
+            // Только действующие участники, по аккаунту, страницами по два:
+            // так тест проходит и досылку остальных страниц.
+            let mut list: Vec<_> = channel
+                .member_keys
+                .iter()
+                .filter(|(account, _)| {
+                    state
+                        .devices
+                        .get(*account)
+                        .is_some_and(|device| channel.member(device))
+                })
+                .filter(|(account, _)| account.as_str() > after.as_str())
+                .filter(|(account, _)| {
+                    !missing
+                        || channel
+                            .grant_epochs
+                            .get(*account)
+                            .is_none_or(|epoch| *epoch < channel.key_epoch)
+                })
+                .map(|(account, key)| serde_json::json!({ "account_id": account, "member_key": key }))
+                .collect();
+            list.sort_by_key(|key| key["account_id"].as_str().map(str::to_owned));
+            list.truncate(2);
+
+            plain(200, serde_json::Value::Array(list).to_string())
+        }
+        (Method::Post, "keys") => {
+            let Ok(parsed) = serde_json::from_str::<gasapp_net::api::RekeyChannelRequest>(body)
+            else {
+                return plain(400, String::new());
+            };
+            let channel = state.channels.get_mut(channel_id).expect("канал есть");
+
+            if !channel.closed {
+                return plain(404, String::new());
+            }
+
+            match parsed.record {
+                Some(record) => {
+                    if channel.rekey_failures > 0 {
+                        channel.rekey_failures -= 1;
+                        return plain(503, String::new());
+                    }
+                    if parsed.epoch != channel.key_epoch + 1 {
+                        return plain(409, String::new());
+                    }
+
+                    channel.epochs.push(record);
+                    channel.key_epoch = parsed.epoch;
+                }
+                None if parsed.epoch != channel.key_epoch => return plain(409, String::new()),
+                None => {}
+            }
+
+            for grant in parsed.grants {
+                // Ответ — только участнику с известным ключом доставки.
+                if channel.member_keys.contains_key(&grant.account_id) {
+                    channel
+                        .grant_epochs
+                        .insert(grant.account_id.clone(), parsed.epoch);
+                    channel.grants.insert(grant.account_id, grant.grant);
+                }
+            }
 
             plain(204, String::new())
         }
@@ -7860,7 +8020,7 @@ fn declined_and_removed_readers_are_locked_out() {
     );
 
     author
-        .remove_channel_subscriber(&channel_id, &account_id, false, now())
+        .remove_channel_subscriber(&channel_id, &account_id, false, now(), &mut OsRng)
         .expect("удаление");
     post_text(&author, &channel_id, "после удаления");
 
@@ -7885,7 +8045,7 @@ fn declined_and_removed_readers_are_locked_out() {
     assert!(reader.pending_channel_joins().expect("заявки").is_empty());
 
     author
-        .remove_channel_subscriber(&channel_id, &account_id, true, now())
+        .remove_channel_subscriber(&channel_id, &account_id, true, now(), &mut OsRng)
         .expect("снятие запрета");
     reader
         .request_channel_join(&invite, now(), &mut OsRng)
@@ -8124,8 +8284,14 @@ fn a_bot_admin_approves_and_removes_subscribers() {
     assert_eq!(texts(&reader, &channel_id), ["только для своих", "от бота"]);
 
     // Бот удаляет подписчика.
-    bot.remove_channel_subscriber(&channel_id, &requests[0].account_id, false, now())
-        .expect("удаление ботом");
+    bot.remove_channel_subscriber(
+        &channel_id,
+        &requests[0].account_id,
+        false,
+        now(),
+        &mut OsRng,
+    )
+    .expect("удаление ботом");
     assert!(matches!(
         reader.sync_channel(&channel_id, now()),
         Err(GasAppError::SessionNotFound)
@@ -8134,4 +8300,280 @@ fn a_bot_admin_approves_and_removes_subscribers() {
     // Удалён бот — канал он больше не ведёт: аккаунта нет.
     owner.delete_bot("gate_bot", now()).expect("удаление бота");
     assert!(bot.channel_join_requests(&channel_id, now()).is_err());
+}
+
+// ---------------------------------------------------------------------------
+//  Смена ключа закрытого канала
+// ---------------------------------------------------------------------------
+
+/// Ещё один читатель со своим хранилищем.
+fn extra_reader(server: &FakeServer, dir: &tempfile::TempDir, name: &str) -> Client<FakeServer> {
+    let client = Client::new(server.clone(), open_storage(dir, &format!("{name}.db")));
+    client
+        .register(name, TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("регистрация");
+
+    client
+}
+
+/// Читатель подаёт заявку, автор одобряет, читатель входит.
+fn join_closed(
+    author: &Client<FakeServer>,
+    reader: &Client<FakeServer>,
+    channel_id: &str,
+    invite: &str,
+) -> String {
+    reader
+        .request_channel_join(invite, now(), &mut OsRng)
+        .expect("заявка");
+    let requests = author
+        .channel_join_requests(channel_id, now())
+        .expect("заявки");
+    let account_id = requests[0].account_id.clone();
+    author
+        .answer_channel_join(channel_id, &account_id, true, now(), &mut OsRng)
+        .expect("одобрение");
+    assert_eq!(reader.check_channel_joins(now()).expect("вход").len(), 1);
+
+    account_id
+}
+
+/// Тело записи номер `seq` у поддельного сервера — как его хранит сервер.
+fn stored_body(server: &FakeServer, channel_id: &str, seq: usize) -> Vec<u8> {
+    hex::decode(&server.state.borrow().channels[channel_id].posts[seq - 1].body).expect("hex")
+}
+
+/// 🔐 Удаление подписчика меняет ключ канала: оставшиеся читают новые
+/// записи, а удалённый не расшифрует их, даже получив шифротекст.
+#[test]
+fn removing_a_subscriber_changes_the_channel_key() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, stays) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let third = extra_reader(&server, &dir, "third");
+    let (channel_id, invite) = closed_channel(&author);
+
+    join_closed(&author, &stays, &channel_id, &invite);
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+    join_closed(&author, &third, &channel_id, &invite);
+
+    // Ключ, которым удалённый читал канал.
+    let old_link = author.channel_link(&channel_id).expect("ссылка");
+    let old_access = gasapp_protocol::channel::ChannelAccess::parse(&old_link).expect("доступ");
+
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    assert!(!author.channel(&channel_id).expect("канал").rekey_pending);
+    assert_eq!(server.state.borrow().channels[&channel_id].key_epoch, 1);
+
+    let number = post_text(&author, &channel_id, "после удаления");
+    let seq = usize::try_from(number).expect("номер");
+
+    // Оставшиеся (их больше одной страницы выдачи ключей) читают.
+    for reader in [&stays, &third] {
+        assert_eq!(
+            reader
+                .sync_channel(&channel_id, now())
+                .expect("синхронизация"),
+            1
+        );
+        assert_eq!(
+            texts(reader, &channel_id),
+            ["только для своих", "после удаления"]
+        );
+    }
+
+    // 🔐 Удалённый добыл шифротекст новой записи мимо сервера: прежний
+    // ключ его не открывает, а ответа с новым ему никто не выдал.
+    let body = stored_body(&server, &channel_id, seq);
+    let (epoch, record) = gasapp_protocol::channel::split_epoch(&body).expect("эпоха");
+    assert_eq!(epoch, 1);
+    assert!(old_access.open_post(record, number, &[]).is_err());
+    {
+        let state = server.state.borrow();
+        let channel = &state.channels[&channel_id];
+        assert!(!channel.grants.contains_key(&removed));
+        assert!(!channel.member_keys.contains_key(&removed));
+    }
+
+    // Правка старой записи тоже уходит под новым ключом.
+    author
+        .edit_channel_post(&channel_id, 1, "исправлено", now(), &mut OsRng)
+        .expect("правка");
+    let edited = stored_body(&server, &channel_id, 1);
+    assert_eq!(
+        gasapp_protocol::channel::split_epoch(&edited)
+            .expect("эпоха")
+            .0,
+        1
+    );
+    stays
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+    assert_eq!(texts(&stays, &channel_id), ["исправлено", "после удаления"]);
+
+    // Новый участник получает ключ действующей эпохи и по звену читает
+    // всё — и старое, и новое.
+    let late = extra_reader(&server, &dir, "late");
+    join_closed(&author, &late, &channel_id, &invite);
+    assert_eq!(texts(&late, &channel_id), ["исправлено", "после удаления"]);
+
+    // Канал, у которого меняли ключ, открытым не сделать.
+    assert!(matches!(
+        author.set_channel_closed(&channel_id, false, now()),
+        Err(GasAppError::Malformed)
+    ));
+}
+
+/// Смена ключа не удалась (нет сети) — она остаётся долгом и
+/// выполняется при обслуживании каналов.
+#[test]
+fn a_failed_rekey_is_retried() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let (channel_id, invite) = closed_channel(&author);
+
+    join_closed(&author, &reader, &channel_id, &invite);
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+
+    server
+        .state
+        .borrow_mut()
+        .channels
+        .get_mut(&channel_id)
+        .expect("канал")
+        .rekey_failures = 1;
+
+    // Подписчик удалён, ключ — ещё нет.
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    assert!(author.channel(&channel_id).expect("канал").rekey_pending);
+    assert_eq!(server.state.borrow().channels[&channel_id].key_epoch, 0);
+
+    author
+        .maintain_channel_keys(now(), &mut OsRng)
+        .expect("обслуживание");
+    assert!(!author.channel(&channel_id).expect("канал").rekey_pending);
+    assert_eq!(server.state.borrow().channels[&channel_id].key_epoch, 1);
+
+    post_text(&author, &channel_id, "новым ключом");
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+    assert_eq!(
+        texts(&reader, &channel_id),
+        ["только для своих", "новым ключом"]
+    );
+}
+
+/// Участник, вошедший до закрытия канала, называет ключ доставки при
+/// синхронизации; если он опоздал к смене ключа, ключ ему выдаёт
+/// обслуживание каналов у того, кто ведёт канал.
+#[test]
+fn a_member_without_a_key_gets_it_later() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, early) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+
+    // Открытый канал: ранний читатель входит по обычной ссылке.
+    let (channel_id, _) = followed_channel(&author, &early);
+    post_text(&author, &channel_id, "открытая");
+    early
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+
+    author
+        .set_channel_closed(&channel_id, true, now())
+        .expect("закрыть");
+    let invite = author
+        .create_channel_invite(&channel_id, now(), &mut OsRng)
+        .expect("ссылка");
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+
+    // Ранний читатель о закрытии ещё не знает и ключа доставки не назвал.
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    post_text(&author, &channel_id, "после смены");
+
+    // Он синхронизируется: ключа новой эпохи нет — новое не приходит,
+    // но ключ доставки теперь назван.
+    assert_eq!(
+        early
+            .sync_channel(&channel_id, now())
+            .expect("синхронизация"),
+        0
+    );
+    assert_eq!(texts(&early, &channel_id), ["открытая"]);
+
+    // Тот, кто ведёт канал, выдаёт ключ — и записи доходят.
+    author
+        .maintain_channel_keys(now(), &mut OsRng)
+        .expect("обслуживание");
+    assert_eq!(
+        early
+            .sync_channel(&channel_id, now())
+            .expect("синхронизация"),
+        1
+    );
+    assert_eq!(texts(&early, &channel_id), ["открытая", "после смены"]);
+}
+
+/// 🔐 Владелец, потерявший телефон, возвращает ключи всех эпох по
+/// резервной копии: ключ доставки выводится из ключа подписи канала.
+#[test]
+fn the_owner_can_recover_epoch_keys_from_the_signing_key() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let (channel_id, invite) = closed_channel(&author);
+
+    join_closed(&author, &reader, &channel_id, &invite);
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    post_text(&author, &channel_id, "эпоха один");
+
+    // Всё, что нужно владельцу на новом телефоне, — ключ подписи канала
+    // (он в копии) и то, что лежит на сервере.
+    let id = gasapp_protocol::channel::parse_channel_id(&channel_id).expect("id");
+    let peek = open_storage(&dir, "author.db");
+    let row = peek.channel(&id).expect("чтение").expect("канал");
+    let signing_key = PrivateKeyBytes::new(row.signing_key.expect("ключ подписи"));
+    let derived = gasapp_protocol::channel_join::delivery_secret(&id, &signing_key).expect("вывод");
+
+    // Ключ доставки владельца — выведенный, а не случайный.
+    assert_eq!(
+        peek.channel_delivery(&id).expect("чтение"),
+        Some((*derived.expose_secret(), true))
+    );
+
+    // Ответ владельцу на сервере открывается выведенным ключом и несёт
+    // ключ действующей эпохи.
+    let grant = {
+        let state = server.state.borrow();
+        let owner_account = state.accounts["author"].0.clone();
+
+        hex::decode(&state.channels[&channel_id].grants[&owner_account]).expect("hex")
+    };
+    let (epoch, access) = gasapp_protocol::channel_join::open_grant(
+        &id,
+        &PublicKeyBytes::new(row.verify_key),
+        &derived,
+        &grant,
+    )
+    .expect("ответ открывается");
+    assert_eq!(epoch, 1);
+    assert_eq!(
+        Some(access.secret),
+        peek.channel_key(&id, 1).expect("чтение")
+    );
 }

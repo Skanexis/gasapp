@@ -617,6 +617,55 @@ pub struct ChannelResponse {
     /// Закрытый ли канал: вход по заявке, чтение — участникам.
     #[serde(default)]
     pub closed: bool,
+    /// Номер действующего ключа чтения: растёт с каждой сменой ключа.
+    #[serde(default)]
+    pub key_epoch: u32,
+}
+
+/// Ключ доставки участника закрытого канала.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMemberKeyRequest {
+    /// Открытый ключ за подписью аккаунта, hex.
+    pub member_key: String,
+}
+
+/// Ключ доставки участника — тому, кто ведёт канал.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMemberKeyResponse {
+    /// Аккаунт участника, UUID.
+    pub account_id: String,
+    /// Ключ доставки, hex.
+    pub member_key: String,
+}
+
+/// Ключ эпохи одному участнику.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelEpochGrant {
+    /// Кому, UUID.
+    pub account_id: String,
+    /// Ключ эпохи шифротекстом под ключ доставки участника, hex.
+    pub grant: String,
+}
+
+/// Смена ключа канала либо досылка ключей действующей эпохи.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RekeyChannelRequest {
+    /// Эпоха: следующая — при смене ключа, действующая — при досылке.
+    pub epoch: u32,
+    /// Звено цепочки к новой эпохе, hex; нет — досылка.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<String>,
+    /// Ключи участникам.
+    pub grants: Vec<ChannelEpochGrant>,
+}
+
+/// Звено цепочки ключей.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelEpochResponse {
+    /// Номер эпохи.
+    pub epoch: u32,
+    /// Прежний ключ, зашифрованный новым, за подписью сменившего, hex.
+    pub record: String,
 }
 
 /// Запись канала.

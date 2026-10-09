@@ -786,6 +786,102 @@ impl Storage {
         )
     }
 
+    /// Сохраняет секрет чтения эпохи `epoch` (эпохи старше нулевой:
+    /// секрет нулевой лежит в самой строке канала).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn put_channel_key(
+        &self,
+        channel_id: &[u8; 16],
+        epoch: u32,
+        secret: &[u8; 32],
+    ) -> Result<()> {
+        self.channel_update(
+            "INSERT OR REPLACE INTO channel_keys (channel_id, epoch, secret) VALUES (?1, ?2, ?3)",
+            params![channel_id.as_slice(), epoch, secret.as_slice()],
+        )
+    }
+
+    /// Секрет чтения эпохи `epoch`, если он известен.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы либо испорченная строка.
+    pub fn channel_key(&self, channel_id: &[u8; 16], epoch: u32) -> Result<Option<[u8; 32]>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+
+        connection
+            .query_row(
+                "SELECT secret FROM channel_keys WHERE channel_id = ? AND epoch = ?",
+                params![channel_id.as_slice(), epoch],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(storage_error)?
+            .map(key_from_blob)
+            .transpose()
+    }
+
+    /// Номер самой новой эпохи, ключ которой известен; `0` — ключ у
+    /// канала не меняли либо новых ключей ещё нет.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn channel_key_epoch(&self, channel_id: &[u8; 16]) -> Result<u32> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+
+        connection
+            .query_row(
+                "SELECT COALESCE(max(epoch), 0) FROM channel_keys WHERE channel_id = ?",
+                params![channel_id.as_slice()],
+                |row| row.get(0),
+            )
+            .map_err(storage_error)
+    }
+
+    /// Запоминает секрет ключа доставки и то, назван ли он серверу.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn set_channel_delivery(
+        &self,
+        channel_id: &[u8; 16],
+        secret: &[u8; 32],
+        sent: bool,
+    ) -> Result<()> {
+        self.channel_update(
+            "UPDATE channels SET delivery_secret = ?2, delivery_sent = ?3 WHERE channel_id = ?1",
+            params![channel_id.as_slice(), secret.as_slice(), sent],
+        )
+    }
+
+    /// Секрет ключа доставки и то, назван ли он серверу.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы либо испорченная строка.
+    pub fn channel_delivery(&self, channel_id: &[u8; 16]) -> Result<Option<([u8; 32], bool)>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+
+        let row: Option<(Option<Vec<u8>>, bool)> = connection
+            .query_row(
+                "SELECT delivery_secret, delivery_sent FROM channels WHERE channel_id = ?",
+                params![channel_id.as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(storage_error)?;
+
+        match row {
+            Some((Some(secret), sent)) => Ok(Some((key_from_blob(secret)?, sent))),
+            _ => Ok(None),
+        }
+    }
+
     fn channel_update(&self, sql: &str, params: impl rusqlite::Params) -> Result<()> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
@@ -1184,6 +1280,12 @@ impl Storage {
             .map_err(storage_error)?;
         transaction
             .execute(
+                "DELETE FROM channel_keys WHERE channel_id = ?",
+                params![channel_id.as_slice()],
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
                 "DELETE FROM channel_invites WHERE channel_id = ?",
                 params![channel_id.as_slice()],
             )
@@ -1376,6 +1478,37 @@ mod tests {
             my_reaction: String::new(),
             attachments: Vec::new(),
         }
+    }
+
+    #[test]
+    fn epoch_keys_and_the_delivery_key_are_kept() {
+        let (storage, _dir) = open_temp();
+        let id = [0x71; 16];
+        storage.insert_channel(&channel(0x71, true)).unwrap();
+
+        assert_eq!(storage.channel_key_epoch(&id).unwrap(), 0);
+        assert_eq!(storage.channel_key(&id, 1).unwrap(), None);
+
+        storage.put_channel_key(&id, 1, &[1; 32]).unwrap();
+        storage.put_channel_key(&id, 2, &[2; 32]).unwrap();
+        assert_eq!(storage.channel_key_epoch(&id).unwrap(), 2);
+        assert_eq!(storage.channel_key(&id, 1).unwrap(), Some([1; 32]));
+
+        assert_eq!(storage.channel_delivery(&id).unwrap(), None);
+        storage.set_channel_delivery(&id, &[3; 32], false).unwrap();
+        assert_eq!(
+            storage.channel_delivery(&id).unwrap(),
+            Some(([3; 32], false))
+        );
+        storage.set_channel_delivery(&id, &[3; 32], true).unwrap();
+        assert_eq!(
+            storage.channel_delivery(&id).unwrap(),
+            Some(([3; 32], true))
+        );
+
+        // Вместе с каналом уходят и ключи его эпох.
+        storage.delete_channel(&id).unwrap();
+        assert_eq!(storage.channel_key_epoch(&id).unwrap(), 0);
     }
 
     #[test]

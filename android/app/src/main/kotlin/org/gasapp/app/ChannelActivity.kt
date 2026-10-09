@@ -953,6 +953,7 @@ class ChannelActivity : AppCompatActivity() {
 
         if (current.description.isNotEmpty()) lines += current.description
         current.handle?.let { lines += getString(R.string.channel_about_public, it) }
+        if (current.rekeyPending) lines += getString(R.string.channel_about_rekey_pending)
         if (current.closed) {
             lines += getString(R.string.channel_about_closed)
         } else if (current.handle == null) {

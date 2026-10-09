@@ -28,8 +28,9 @@ import uniffi.gasapp.FfiException
  *   обратно нельзя, поэтому диалог говорит это **до** кнопки и отдельно
  *   отмечает, знаком ли заявитель этому телефону или о нём известно
  *   только со слов сервера.
- * * ⚠️ Удалённый подписчик ключ помнит: сервер перестаёт отдавать ему
- *   записи, но ключ у канала прежний. Это сказано в подтверждении.
+ * * 🔐 Удаление подписчика меняет ключ канала. Чего это не отменяет
+ *   (прочитанного раньше) — сказано в подтверждении; если сменить ключ
+ *   не вышло из-за связи — сказано сразу после.
  *
  * Криптографии здесь нет: экран показывает то, что подготовило ядро.
  *
@@ -246,7 +247,16 @@ class ChannelGate(
                     removed
                         .onSuccess {
                             dialog.dismiss()
-                            toast(R.string.channel_member_removed, GasAppToast.Tone.Success)
+
+                            // 🔐 Ключ канала после удаления меняется. Не
+                            // вышло (нет связи) — человек должен это знать.
+                            val pending = io { Core.messenger().channel(channelId).rekeyPending }
+                                .getOrDefault(false)
+                            if (pending) {
+                                toast(R.string.channel_member_removed_rekey_pending, GasAppToast.Tone.Info)
+                            } else {
+                                toast(R.string.channel_member_removed, GasAppToast.Tone.Success)
+                            }
                             reload()
                         }
                         .onFailure { failure ->

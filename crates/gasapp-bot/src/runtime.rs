@@ -228,6 +228,9 @@ impl<T: Transport> Runtime<T> {
 
     fn poll_channels(&mut self, now: Timestamp, events: &mut Vec<Value>) {
         let _ = self.client.sync_channels(now);
+        // Бот, который ведёт закрытый канал, доводит смену ключа и выдаёт
+        // ключи участникам, у кого их нет.
+        let _ = self.client.maintain_channel_keys(now, &mut OsRng);
 
         for channel in self.client.channels().unwrap_or_default() {
             let id = channel.channel_id.clone();
@@ -498,6 +501,7 @@ impl<T: Transport> Runtime<T> {
                     text(params, "account_id")?,
                     method == "restoreSubscriber",
                     now,
+                    rng,
                 )?;
 
                 Ok(Value::Null)
@@ -548,6 +552,7 @@ fn channel_json(channel: &Channel) -> Value {
             ChannelRole::Owner => "owner",
         },
         "closed": channel.closed,
+        "rekey_pending": channel.rekey_pending,
         "handle": channel.handle,
         "subscribers": channel.subscribers,
         "pinned_seq": channel.pinned_seq,
