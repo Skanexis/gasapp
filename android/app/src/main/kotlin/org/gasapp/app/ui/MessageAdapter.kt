@@ -77,6 +77,9 @@ data class MessageItem(
 
     /** Время сообщения — для группировки и плашки дня. */
     val timestampMillis: Long = 0L,
+
+    /** Ряды кнопок под сообщением; пусто — кнопок нет. */
+    val buttons: List<List<MessageButton>> = emptyList(),
 )
 
 /**
@@ -86,6 +89,18 @@ data class MessageItem(
  * строится по строкам: новое сообщение меняет форму предыдущего пузыря
  * (он перестаёт быть последним в группе), и DiffUtil перерисует его сам.
  */
+/**
+ * Кнопка под сообщением собеседника.
+ *
+ * 🔐 Подпись написал собеседник. Что кнопка отправит и куда ведёт
+ * ссылка, интерфейс до нажатия не знает: это отдаёт ядро.
+ */
+data class MessageButton(
+    val label: String,
+    /** Открывает ссылку, а не отправляет данные автору. */
+    val isLink: Boolean,
+)
+
 data class MessageRow(
     val item: MessageItem,
     /** Предыдущее сообщение — той же стороны и рядом по времени. */
@@ -168,6 +183,9 @@ class MessageAdapter(
 
     /** Подпись дня для плашки: «Сегодня», «Вчера», дата. */
     private val dayLabel: (Long) -> String = { "" },
+
+    /** Нажатие кнопки под сообщением: сообщение, ряд, место в ряду. */
+    private val onButtonClick: ((MessageItem, Int, Int) -> Unit)? = null,
 ) : RecyclerView.Adapter<MessageAdapter.ViewHolder>() {
 
     private val rows = mutableListOf<MessageRow>()
@@ -247,7 +265,7 @@ class MessageAdapter(
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_message, parent, false)
 
-        return ViewHolder(view, onAttachmentClick, onMessageLongClick)
+        return ViewHolder(view, onAttachmentClick, onMessageLongClick, onButtonClick)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -259,6 +277,15 @@ class MessageAdapter(
     private companion object {
         /** Сообщения ближе пяти минут — одна группа. */
         const val GROUP_GAP_MS = 5 * 60 * 1000L
+
+        /** Высота кнопки под сообщением — не меньше области нажатия. */
+        const val BUTTON_MIN_HEIGHT_DP = 48
+
+        /** Промежуток между кнопками и их внутренний отступ. */
+        const val BUTTON_GAP_DP = 6
+
+        /** Кегль подписи кнопки. */
+        const val BUTTON_TEXT_SP = 14f
     }
 
     /** Держатель пузыря сообщения. */
@@ -266,6 +293,7 @@ class MessageAdapter(
         view: View,
         private val onAttachmentClick: ((AttachmentPreview) -> Unit)?,
         private val onMessageLongClick: ((MessageItem) -> Unit)?,
+        private val onButtonClick: ((MessageItem, Int, Int) -> Unit)?,
     ) : RecyclerView.ViewHolder(view) {
         /** Показывает или прячет строку вложения. */
         private fun bindAttachment(attachment: AttachmentPreview?) {
@@ -314,6 +342,71 @@ class MessageAdapter(
         private val editedMark: TextView = view.findViewById(R.id.message_edited)
         private val day: TextView = view.findViewById(R.id.message_day)
 
+        /** Ряды кнопок — последним в пузыре, под текстом и временем. */
+        private val buttons: LinearLayout = LinearLayout(view.context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            bubble.addView(
+                this,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        /**
+         * Кнопки под сообщением.
+         *
+         * Кнопка — строка текста на карточке высотой с палец. У кнопки
+         * со ссылкой подпись заканчивается стрелкой: человек видит до
+         * нажатия, что его уведут из приложения.
+         */
+        private fun bindButtons(message: MessageItem) {
+            buttons.removeAllViews()
+            buttons.visibility = if (message.buttons.isEmpty()) View.GONE else View.VISIBLE
+
+            val context = itemView.context
+            val density = context.resources.displayMetrics.density
+            val gap = (BUTTON_GAP_DP * density).toInt()
+
+            message.buttons.forEachIndexed { rowIndex, row ->
+                val line = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+
+                row.forEachIndexed { columnIndex, button ->
+                    val view = TextView(context).apply {
+                        text = if (button.isLink) "${button.label} ↗" else button.label
+                        gravity = Gravity.CENTER
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        textSize = BUTTON_TEXT_SP
+                        minHeight = (BUTTON_MIN_HEIGHT_DP * density).toInt()
+                        setPadding(gap * 2, gap, gap * 2, gap)
+                        setBackgroundResource(R.drawable.bg_card_rounded)
+                        setTextColor(ContextCompat.getColor(context, R.color.accent_base))
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { onButtonClick?.invoke(message, rowIndex, columnIndex) }
+                    }
+
+                    line.addView(
+                        view,
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            marginStart = if (columnIndex == 0) 0 else gap
+                        },
+                    )
+                }
+
+                buttons.addView(
+                    line,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = gap },
+                )
+            }
+        }
+
         /** Заполняет пузырь данными сообщения. */
         fun bind(row: MessageRow) {
             val message = row.item
@@ -347,6 +440,7 @@ class MessageAdapter(
             text.visibility = if (message.text.isEmpty()) View.GONE else View.VISIBLE
 
             bindAttachment(message.attachment)
+            bindButtons(message)
 
             editedMark.visibility = if (message.edited) View.VISIBLE else View.GONE
 

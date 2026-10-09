@@ -1056,6 +1056,10 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1257,6 +1261,8 @@ fun uniffi_gasapp_checksum_method_messenger_maintain_storage(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_mark_channel_read(
 ): Short
+fun uniffi_gasapp_checksum_method_messenger_message_buttons(
+): Short
 fun uniffi_gasapp_checksum_method_messenger_messages(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_on_background(
@@ -1278,6 +1284,8 @@ fun uniffi_gasapp_checksum_method_messenger_pin_channel_post(
 fun uniffi_gasapp_checksum_method_messenger_premium_cached(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_presence_sharing_enabled(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_press_message_button(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_proxy(
 ): Short
@@ -1563,6 +1571,8 @@ fun uniffi_gasapp_fn_method_messenger_maintain_storage(`ptr`: Pointer,`nowMillis
 ): Byte
 fun uniffi_gasapp_fn_method_messenger_mark_channel_read(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_gasapp_fn_method_messenger_message_buttons(`ptr`: Pointer,`messageIdText`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_messages(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_on_background(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1585,6 +1595,8 @@ fun uniffi_gasapp_fn_method_messenger_premium_cached(`ptr`: Pointer,uniffi_out_e
 ): Byte
 fun uniffi_gasapp_fn_method_messenger_presence_sharing_enabled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_gasapp_fn_method_messenger_press_message_button(`ptr`: Pointer,`messageIdText`: RustBuffer.ByValue,`row`: Int,`column`: Int,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_proxy(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_publish_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`files`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -2172,6 +2184,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_mark_channel_read() != 54940.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_message_buttons() != 21789.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_messages() != 39098.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2205,6 +2220,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_presence_sharing_enabled() != 33169.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_press_message_button() != 65117.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_proxy() != 32233.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2235,7 +2253,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_remove_channel_admin() != 5412.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_remove_channel_subscriber() != 52836.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_remove_channel_subscriber() != 33753.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_report_channel_seen() != 57060.toShort()) {
@@ -3847,6 +3865,16 @@ public interface MessengerInterface {
     fun `markChannelRead`(`channelId`: kotlin.String)
     
     /**
+     * Ряды кнопок под сообщением; пусто — кнопок нет. Без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    fun `messageButtons`(`messageIdText`: kotlin.String): List<List<FfiMessageButton>>
+    
+    /**
      * Возвращает сообщения чата.
      *
      * # Errors
@@ -3965,6 +3993,23 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение не удалось.
      */
     fun `presenceSharingEnabled`(): kotlin.Boolean
+    
+    /**
+     * Нажимает кнопку под сообщением собеседника.
+     *
+     * Кнопка со ссылкой возвращает ссылку и ничего не отправляет:
+     * открыть её или нет, решает человек. Кнопка с данными отправляет
+     * их автору сообщения (сетевой вызов) и возвращает `None`.
+     *
+     * 🔐 Нажатие кнопки с данными сообщает автору, что человек сейчас
+     * у телефона, — как любой ответ.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — кнопки уже нет либо отправка не удалась.
+     */
+    fun `pressMessageButton`(`messageIdText`: kotlin.String, `row`: kotlin.UInt, `column`: kotlin.UInt, `nowMillis`: kotlin.Long): kotlin.String?
     
     /**
      * Текущий режим выхода в сеть.
@@ -4108,8 +4153,9 @@ public interface MessengerInterface {
      * удалённого запрет на новую заявку (`restore == true`). Сетевой
      * вызов.
      *
-     * ⚠️ Ключ чтения удалённый помнит: сервер перестаёт отдавать ему
-     * записи, но ключ у канала прежний.
+     * 🔐 После удаления ключ канала меняется: новые записи удалённый
+     * не прочтёт. То, что вышло до удаления, он читал и читать может.
+     * Нет сети — смена откладывается (`rekey_pending` у канала).
      *
      * # Errors
      *
@@ -5990,6 +6036,27 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Ряды кнопок под сообщением; пусто — кнопок нет. Без сети.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — чтение хранилища не удалось.
+     */
+    @Throws(FfiException::class)override fun `messageButtons`(`messageIdText`: kotlin.String): List<List<FfiMessageButton>> {
+            return FfiConverterSequenceSequenceTypeFfiMessageButton.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_message_buttons(
+        it, FfiConverterString.lower(`messageIdText`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Возвращает сообщения чата.
      *
      * # Errors
@@ -6222,6 +6289,34 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_presence_sharing_enabled(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Нажимает кнопку под сообщением собеседника.
+     *
+     * Кнопка со ссылкой возвращает ссылку и ничего не отправляет:
+     * открыть её или нет, решает человек. Кнопка с данными отправляет
+     * их автору сообщения (сетевой вызов) и возвращает `None`.
+     *
+     * 🔐 Нажатие кнопки с данными сообщает автору, что человек сейчас
+     * у телефона, — как любой ответ.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — идентификатор не разбирается;
+     * [`FfiError::Core`] — кнопки уже нет либо отправка не удалась.
+     */
+    @Throws(FfiException::class)override fun `pressMessageButton`(`messageIdText`: kotlin.String, `row`: kotlin.UInt, `column`: kotlin.UInt, `nowMillis`: kotlin.Long): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_press_message_button(
+        it, FfiConverterString.lower(`messageIdText`),FfiConverterUInt.lower(`row`),FfiConverterUInt.lower(`column`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     )
@@ -6480,8 +6575,9 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      * удалённого запрет на новую заявку (`restore == true`). Сетевой
      * вызов.
      *
-     * ⚠️ Ключ чтения удалённый помнит: сервер перестаёт отдавать ему
-     * записи, но ключ у канала прежний.
+     * 🔐 После удаления ключ канала меняется: новые записи удалённый
+     * не прочтёт. То, что вышло до удаления, он читал и читать может.
+     * Нет сети — смена откладывается (`rekey_pending` у канала).
      *
      * # Errors
      *
@@ -8045,7 +8141,12 @@ data class FfiChannel (
      * Закрытый ли канал: вход по одобренной заявке, записи — только
      * участникам.
      */
-    var `closed`: kotlin.Boolean
+    var `closed`: kotlin.Boolean, 
+    /**
+     * Подписчик удалён, а ключ канала ещё не сменён: не было сети.
+     * Смена повторится сама; до неё новые записи пишутся прежним ключом.
+     */
+    var `rekeyPending`: kotlin.Boolean
 ) {
     
     companion object
@@ -8071,6 +8172,7 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterULong.read(buf),
             FfiConverterOptionalByteArray.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -8088,7 +8190,8 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterBoolean.allocationSize(value.`muted`) +
             FfiConverterULong.allocationSize(value.`pinnedSeq`) +
             FfiConverterOptionalByteArray.allocationSize(value.`avatar`) +
-            FfiConverterBoolean.allocationSize(value.`closed`)
+            FfiConverterBoolean.allocationSize(value.`closed`) +
+            FfiConverterBoolean.allocationSize(value.`rekeyPending`)
     )
 
     override fun write(value: FfiChannel, buf: ByteBuffer) {
@@ -8106,6 +8209,7 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterULong.write(value.`pinnedSeq`, buf)
             FfiConverterOptionalByteArray.write(value.`avatar`, buf)
             FfiConverterBoolean.write(value.`closed`, buf)
+            FfiConverterBoolean.write(value.`rekeyPending`, buf)
     }
 }
 
@@ -8824,6 +8928,49 @@ public object FfiConverterTypeFfiMessage: FfiConverterRustBuffer<FfiMessage> {
             FfiConverterLong.write(value.`timestamp`, buf)
             FfiConverterBoolean.write(value.`outgoing`, buf)
             FfiConverterTypeFfiDeliveryStatus.write(value.`status`, buf)
+    }
+}
+
+
+
+/**
+ * Кнопка под сообщением.
+ *
+ * 🔐 Подпись написал собеседник: показывать можно, доверять — нет.
+ */
+data class FfiMessageButton (
+    /**
+     * Подпись.
+     */
+    var `label`: kotlin.String, 
+    /**
+     * Кнопка открывает ссылку, а не отправляет данные автору.
+     */
+    var `isLink`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMessageButton: FfiConverterRustBuffer<FfiMessageButton> {
+    override fun read(buf: ByteBuffer): FfiMessageButton {
+        return FfiMessageButton(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMessageButton) = (
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterBoolean.allocationSize(value.`isLink`)
+    )
+
+    override fun write(value: FfiMessageButton, buf: ByteBuffer) {
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterBoolean.write(value.`isLink`, buf)
     }
 }
 
@@ -10929,6 +11076,34 @@ public object FfiConverterSequenceTypeFfiMessage: FfiConverterRustBuffer<List<Ff
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiMessageButton: FfiConverterRustBuffer<List<FfiMessageButton>> {
+    override fun read(buf: ByteBuffer): List<FfiMessageButton> {
+        val len = buf.getInt()
+        return List<FfiMessageButton>(len) {
+            FfiConverterTypeFfiMessageButton.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiMessageButton>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiMessageButton.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiMessageButton>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiMessageButton.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiPendingChannelJoin: FfiConverterRustBuffer<List<FfiPendingChannelJoin>> {
     override fun read(buf: ByteBuffer): List<FfiPendingChannelJoin> {
         val len = buf.getInt()
@@ -11031,6 +11206,34 @@ public object FfiConverterSequenceTypeFfiVaultFile: FfiConverterRustBuffer<List<
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiVaultFile.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceSequenceTypeFfiMessageButton: FfiConverterRustBuffer<List<List<FfiMessageButton>>> {
+    override fun read(buf: ByteBuffer): List<List<FfiMessageButton>> {
+        val len = buf.getInt()
+        return List<List<FfiMessageButton>>(len) {
+            FfiConverterSequenceTypeFfiMessageButton.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<List<FfiMessageButton>>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterSequenceTypeFfiMessageButton.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<List<FfiMessageButton>>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterSequenceTypeFfiMessageButton.write(it, buf)
         }
     }
 }

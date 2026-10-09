@@ -35,6 +35,7 @@ import org.gasapp.app.ui.AttachmentKindMark
 import org.gasapp.app.ui.AttachmentPreview
 import org.gasapp.app.ui.DeliveryMark
 import org.gasapp.app.ui.MessageAdapter
+import org.gasapp.app.ui.MessageButton
 import org.gasapp.app.ui.MessageItem
 import org.gasapp.app.ui.initialsOf
 import org.gasapp.app.ui.paintAvatar
@@ -144,6 +145,7 @@ class ChatActivity : AppCompatActivity() {
             onAttachmentClick = ::openAttachment,
             onMessageLongClick = ::showMessageActions,
             dayLabel = ::dayLabel,
+            onButtonClick = ::pressButton,
         )
         findViewById<RecyclerView>(R.id.message_list).apply {
             layoutManager = LinearLayoutManager(context)
@@ -752,7 +754,67 @@ class ChatActivity : AppCompatActivity() {
             // несколько, и когда интерфейс научится их показывать,
             // менять придётся здесь, а не в ядре.
             attachment = descriptors.firstOrNull()?.let(::previewOf),
+            // Кнопки бывают только под сообщениями собеседника (бота).
+            // Читаются здесь же, в фоновом потоке, как описания вложений.
+            buttons = if (outgoing) {
+                emptyList()
+            } else {
+                runCatching { Core.messenger().messageButtons(messageId) }
+                    .getOrDefault(emptyList())
+                    .map { row -> row.map { MessageButton(it.label, it.isLink) } }
+            },
         )
+
+    /**
+     * Нажатие кнопки под сообщением.
+     *
+     * 🔐 Кнопка со ссылкой никуда не ведёт сама: ядро возвращает адрес,
+     * и человек видит его целиком, прежде чем открыть, — подпись на
+     * кнопке написал собеседник, и за ней может стоять что угодно.
+     */
+    private fun pressButton(message: MessageItem, row: Int, column: Int) {
+        lifecycleScope.launch {
+            val pressed = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().pressMessageButton(
+                        message.messageId,
+                        row.toUInt(),
+                        column.toUInt(),
+                        System.currentTimeMillis(),
+                    )
+                }
+            }
+
+            pressed
+                .onSuccess { link ->
+                    if (link == null) {
+                        GasAppToast.show(this@ChatActivity, R.string.message_button_sent, GasAppToast.Tone.Success)
+                    } else {
+                        confirmOpenLink(link)
+                    }
+                }
+                .onFailure {
+                    GasAppToast.show(this@ChatActivity, R.string.message_button_failed, GasAppToast.Tone.Error)
+                }
+        }
+    }
+
+    private fun confirmOpenLink(link: String) {
+        GasAppDialog(this)
+            .title(R.string.message_button_link_title)
+            .message(getString(R.string.message_button_link_body, link))
+            .secondary()
+            .primary(R.string.message_button_link_open) {
+                runCatching {
+                    startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link)),
+                    )
+                }.onFailure {
+                    GasAppToast.show(this, R.string.message_button_failed, GasAppToast.Tone.Error)
+                }
+            }
+            .show()
+    }
 
     /**
      * Разбирает описание вложения для показа.
