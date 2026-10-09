@@ -39,7 +39,7 @@ const BOOTSTRAP_LOCK: i64 = 0x0AE6_1500;
 /// Хранится в базе. Пока он совпадает, схема не пересоздаётся —
 /// значит второй набор тестов не снесёт таблицы из-под первого.
 const SCHEMA_FINGERPRINT: &str =
-    "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013+0014+0015+0016+0017+0018+0019d+0020+0021+0022+0023";
+    "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013+0014+0015+0016+0017+0018+0019d+0020+0021+0022+0023+0024";
 
 /// Адрес тестовой базы, если он задан.
 ///
@@ -122,7 +122,7 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
         // прежняя сносится целиком.
         sqlx::raw_sql(
             "DROP TABLE IF EXISTS gasapp_test_schema, pass_quota, spent_passes, bots, bot_tokens,
-                 channel_member_keys, channel_epochs,
+                 channel_reports, channel_member_keys, channel_epochs,
                  channel_bans,
                  channel_grants, channel_join_requests, channel_invites, channel_admins, channel_reaction_counts, channel_reactions,
                  channel_subscribers, channel_media, channel_posts, channels,
@@ -162,6 +162,7 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
             include_str!("../migrations/0021_closed_channels.sql"),
             include_str!("../migrations/0022_bots.sql"),
             include_str!("../migrations/0023_channel_rekey.sql"),
+            include_str!("../migrations/0024_channel_reports.sql"),
         ] {
             sqlx::raw_sql(migration)
                 .execute(&mut *conn)
