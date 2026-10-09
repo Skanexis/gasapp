@@ -16,8 +16,9 @@
 //! бот, который не отвечает незнакомым, никому не нужен.
 //!
 //! Событие — то, что движок увидел при очередном обходе сервера
-//! ([`Runtime::poll`]): новое сообщение, новая запись канала, заявка в
-//! канал, который бот ведёт, одобрение собственной заявки.
+//! ([`Runtime::poll`]): новое сообщение, нажатие кнопки под сообщением
+//! бота, новая запись канала, заявка в канал, который бот ведёт,
+//! одобрение собственной заявки.
 //!
 //! # 🔐 Чему верит бот
 //!
@@ -33,7 +34,8 @@ use std::collections::{HashMap, HashSet};
 
 use gasapp_core::client::{Channel, ChannelEntry, ChannelMember, ChannelRole, ChatRequest, Client};
 use gasapp_net::client::Transport;
-use gasapp_types::{ChatId, GasAppError, Result, Timestamp};
+use gasapp_protocol::keyboard::{Button, ButtonAction, Keyboard};
+use gasapp_types::{ChatId, GasAppError, MessageId, Result, Timestamp};
 use rand_core::OsRng;
 use serde_json::{json, Map, Value};
 
@@ -209,6 +211,18 @@ impl<T: Transport> Runtime<T> {
                 }));
             }
         }
+
+        // Нажатия кнопок под сообщениями бота. Ядро принимает только
+        // те, чьи данные бот сам предложил.
+        for press in self.client.take_button_callbacks().unwrap_or_default() {
+            events.push(json!({
+                "event": "callback",
+                "chat_id": press.chat_id.to_string(),
+                "from": names.get(&press.chat_id),
+                "message_id": press.message_id.to_string(),
+                "data": String::from_utf8_lossy(&press.data),
+            }));
+        }
     }
 
     fn poll_joins(&mut self, now: Timestamp, events: &mut Vec<Value>) {
@@ -334,10 +348,28 @@ impl<T: Transport> Runtime<T> {
                     .collect(),
             )),
             "sendMessage" => {
-                let id =
-                    client.send_message(text(params, "to")?, text(params, "text")?, now, rng)?;
+                let to = text(params, "to")?;
+                // Кнопки разбираются до отправки: негодная клавиатура —
+                // отказ, а не сообщение без кнопок.
+                let keyboard = params.get("buttons").map(keyboard_of).transpose()?;
+                let id = client.send_message(to, text(params, "text")?, now, rng)?;
+
+                if let Some(keyboard) = keyboard.filter(|keyboard| !keyboard.rows.is_empty()) {
+                    client.send_keyboard(to, &id, &keyboard, now, rng)?;
+                }
 
                 Ok(json!({ "message_id": id.to_string() }))
+            }
+            "setButtons" => {
+                // Пустой список убирает кнопки.
+                let keyboard = keyboard_of(params.get("buttons").ok_or(GasAppError::Malformed)?)?;
+                let id = uuid::Uuid::parse_str(text(params, "message_id")?)
+                    .map(MessageId::from_uuid)
+                    .map_err(|_| GasAppError::Malformed)?;
+
+                client.send_keyboard(text(params, "to")?, &id, &keyboard, now, rng)?;
+
+                Ok(Value::Null)
             }
 
             // --- Каналы: читать ---------------------------------------------
@@ -538,6 +570,42 @@ fn number(params: &Map<String, Value>, name: &str) -> Result<u64> {
         .get(name)
         .and_then(Value::as_u64)
         .ok_or(GasAppError::Malformed)
+}
+
+/// Клавиатура из JSON: список рядов, в ряду — кнопки
+/// `{"text": …, "data": …}` либо `{"text": …, "url": …}`.
+fn keyboard_of(value: &Value) -> Result<Keyboard> {
+    let rows = value
+        .as_array()
+        .ok_or(GasAppError::Malformed)?
+        .iter()
+        .map(|row| {
+            row.as_array()
+                .ok_or(GasAppError::Malformed)?
+                .iter()
+                .map(|button| {
+                    let field = |name: &str| button.get(name).and_then(Value::as_str);
+                    let action = match (field("data"), field("url")) {
+                        (Some(data), None) => ButtonAction::Callback(data.as_bytes().to_vec()),
+                        (None, Some(url)) => ButtonAction::Url(url.to_owned()),
+                        _ => return Err(GasAppError::Malformed),
+                    };
+
+                    Ok(Button {
+                        label: field("text").ok_or(GasAppError::Malformed)?.to_owned(),
+                        action,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let keyboard = Keyboard { rows };
+    // Пределы проверяются сразу: ошибка должна дойти до программы бота
+    // ответом на команду.
+    keyboard.to_bytes()?;
+
+    Ok(keyboard)
 }
 
 fn channel_json(channel: &Channel) -> Value {

@@ -32,6 +32,7 @@ uniffi::setup_scaffolding!();
 
 pub mod backup;
 pub mod channels;
+pub mod keyboards;
 pub mod messenger;
 pub mod network;
 pub mod tor;

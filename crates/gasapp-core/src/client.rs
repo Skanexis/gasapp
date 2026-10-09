@@ -58,6 +58,7 @@ mod blocks;
 mod bots;
 mod channel_closed;
 mod channels;
+mod keyboards;
 mod kt;
 mod network;
 mod pq;
@@ -79,6 +80,7 @@ use gasapp_types::{
     canonical_username, AccountId, ChatId, DeviceId, GasAppError, MessageId, Plaintext,
     PublicKeyBytes, Result, Timestamp,
 };
+pub use keyboards::ButtonCallback;
 pub use kt::{KtSelfCheck, KtVerdict};
 pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 use rand_core::{CryptoRng, RngCore};
@@ -1248,7 +1250,13 @@ impl<T: Transport> Client<T> {
             // Служебное содержимое не считается принятым сообщением:
             // число уходит в интерфейс, и «1 новое сообщение» без
             // сообщения выглядело бы как потерянное.
-            let counts = !matches!(content, Content::AccessKey { .. } | Content::KtHead { .. });
+            let counts = !matches!(
+                content,
+                Content::AccessKey { .. }
+                    | Content::KtHead { .. }
+                    | Content::Keyboard { .. }
+                    | Content::Callback { .. }
+            );
 
             match content {
                 Content::Text { body, id, .. } => {
@@ -1310,6 +1318,21 @@ impl<T: Transport> Client<T> {
                     if self.written_by_peer(&target, &chat_id)? {
                         self.storage.edit_message(&target, &body, now)?;
                     }
+                }
+
+                Content::Keyboard { target, keyboard } => {
+                    // Кнопки — только к сообщению самого собеседника.
+                    let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
+
+                    if self.written_by_peer(&target, &chat_id)? {
+                        self.accept_keyboard(&chat_id, &target, &keyboard)?;
+                    }
+                }
+
+                Content::Callback { target, data } => {
+                    let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
+
+                    self.accept_callback(&chat_id, &target, data, now)?;
                 }
 
                 Content::Delete { target } => {

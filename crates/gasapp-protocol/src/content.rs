@@ -73,6 +73,12 @@ const KIND_ACCESS_KEY: u8 = 8;
 /// Тип: вершина журнала ключей, которую видит отправитель (§9.7).
 const KIND_KT_HEAD: u8 = 9;
 
+/// Тип содержимого: кнопки под сообщением.
+const KIND_KEYBOARD: u8 = 10;
+
+/// Тип содержимого: нажатие кнопки.
+const KIND_CALLBACK: u8 = 11;
+
 /// Длина вершины журнала ключей.
 pub const KT_HEAD_LEN: usize = 32;
 
@@ -183,6 +189,30 @@ pub enum Content {
         /// `false` отправляется при остановке: без него индикатор
         /// висел бы до таймаута, показывая активность, которой нет.
         active: bool,
+    },
+
+    /// Кнопки под ранее отправленным сообщением
+    /// (`crate::keyboard`). Пустая клавиатура убирает кнопки.
+    ///
+    /// Отдельным содержимым, а не полем сообщения: формат текста не
+    /// меняется, а кнопки можно заменить или убрать позже.
+    Keyboard {
+        /// Сообщение отправителя, к которому относятся кнопки.
+        target: [u8; MESSAGE_ID_LEN],
+        /// Клавиатура в закодированном виде. Байты, а не структура:
+        /// разбирает её тот, кто показывает.
+        keyboard: Vec<u8>,
+    },
+
+    /// Нажатие кнопки с данными — автору сообщения с кнопками.
+    ///
+    /// 🔐 В переписке не показывается, но сообщает автору, что человек
+    /// сейчас у телефона, — как любой ответ.
+    Callback {
+        /// Сообщение, под которым нажата кнопка.
+        target: [u8; MESSAGE_ID_LEN],
+        /// Данные нажатой кнопки.
+        data: Vec<u8>,
     },
 
     /// Квитанция о прочтении.
@@ -368,6 +398,24 @@ impl Content {
                 out.extend_from_slice(&epoch.to_be_bytes());
                 out.extend_from_slice(head);
             }
+            Self::Keyboard { target, keyboard } => {
+                if keyboard.len() > crate::keyboard::MAX_KEYBOARD_BYTES {
+                    return Err(GasAppError::Malformed);
+                }
+
+                out.push(KIND_KEYBOARD);
+                out.extend_from_slice(target);
+                write_bytes(&mut out, keyboard)?;
+            }
+            Self::Callback { target, data } => {
+                if data.len() > crate::keyboard::MAX_DATA_BYTES {
+                    return Err(GasAppError::Malformed);
+                }
+
+                out.push(KIND_CALLBACK);
+                out.extend_from_slice(target);
+                write_bytes(&mut out, data)?;
+            }
         }
 
         Ok(out)
@@ -480,6 +528,26 @@ impl Content {
                     .try_into()
                     .map_err(|_| GasAppError::Malformed)?,
             },
+            KIND_KEYBOARD => {
+                let target = reader.take_id()?;
+                let keyboard = reader.take_blob()?;
+
+                if keyboard.len() > crate::keyboard::MAX_KEYBOARD_BYTES {
+                    return Err(GasAppError::Malformed);
+                }
+
+                Self::Keyboard { target, keyboard }
+            }
+            KIND_CALLBACK => {
+                let target = reader.take_id()?;
+                let data = reader.take_blob()?;
+
+                if data.len() > crate::keyboard::MAX_DATA_BYTES {
+                    return Err(GasAppError::Malformed);
+                }
+
+                Self::Callback { target, data }
+            }
             _ => return Err(GasAppError::Malformed),
         };
 
