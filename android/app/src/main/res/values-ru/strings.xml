@@ -915,7 +915,7 @@
     <string name="channel_admin_request_copied">Заявка скопирована</string>
     <string name="channel_close">Сделать закрытым</string>
     <string name="channel_close_title">Закрыть канал?</string>
-    <string name="channel_close_body">В закрытый канал входят по заявке: вы или администратор одобряете каждого. Записи сервер отдаёт только участникам; те, кто уже подписан, остаются. Прежняя ссылка канала новых людей не впустит, но ключ чтения в ней тот же — ключ не меняется.</string>
+    <string name="channel_close_body">В закрытый канал входят по заявке: вы или администратор одобряете каждого. Записи сервер отдаёт только участникам; те, кто уже подписан, остаются. Прежняя ссылка канала новых людей не впустит. При удалении подписчика ключ канала меняется.</string>
     <string name="channel_close_action">Закрыть</string>
     <string name="channel_close_has_handle">Сначала уберите публичное имя: по \@имени сервер отдаёт ссылку с ключом чтения, и закрытым такой канал быть не может.</string>
     <string name="channel_open">Сделать открытым</string>
@@ -948,7 +948,7 @@
     <string name="channel_members_more">Показать ещё</string>
     <string name="channel_member_unnamed">Аккаунт %1$s</string>
     <string name="channel_member_remove_title">Удалить %1$s из канала?</string>
-    <string name="channel_member_remove_body">Сервер перестанет отдавать ему записи и не примет от него новую заявку. Ключ чтения он помнит: то, что он уже загрузил, останется у него.</string>
+    <string name="channel_member_remove_body">Сервер перестанет отдавать ему записи и не примет от него новую заявку, а ключ канала сменится: новые записи он не прочтёт. То, что вышло до удаления, он уже мог прочесть.</string>
     <string name="channel_member_remove">Удалить</string>
     <string name="channel_member_removed">Подписчик удалён</string>
     <string name="channel_member_is_admin">Того, кто ведёт канал, так не удалить: сначала снимите его с администраторов</string>
@@ -986,4 +986,6 @@
     <string name="bots_delete_body">Аккаунт бота исчезнет: он пропадёт из каналов, где был администратором, а его программа больше не сможет войти.</string>
     <string name="bots_delete_action">Удалить</string>
     <string name="bots_deleted">Бот удалён</string>
+    <string name="channel_member_removed_rekey_pending">Подписчик удалён. Ключ канала сменится, как только появится связь</string>
+    <string name="channel_about_rekey_pending">⚠️ Подписчик удалён, но ключ канала ещё не сменён: не было связи. Смена повторится сама; до неё новые записи пишутся прежним ключом.</string>
 </resources>

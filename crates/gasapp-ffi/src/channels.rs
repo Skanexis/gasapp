@@ -68,6 +68,9 @@ pub struct FfiChannel {
     /// Закрытый ли канал: вход по одобренной заявке, записи — только
     /// участникам.
     pub closed: bool,
+    /// Подписчик удалён, а ключ канала ещё не сменён: не было сети.
+    /// Смена повторится сама; до неё новые записи пишутся прежним ключом.
+    pub rekey_pending: bool,
 }
 
 /// Заявка на вход в закрытый канал — для того, кто его ведёт.
@@ -150,6 +153,7 @@ impl From<Channel> for FfiChannel {
             pinned_seq: channel.pinned_seq,
             avatar: channel.avatar,
             closed: channel.closed,
+            rekey_pending: channel.rekey_pending,
         }
     }
 }
@@ -576,7 +580,16 @@ impl Messenger {
     pub fn sync_channel(&self, channel_id: String, now_millis: i64) -> Result<u32, FfiError> {
         let client = self.client()?;
 
-        guard(|| client.sync_channel(&channel_id, Timestamp::from_millis(now_millis)))
+        let now = Timestamp::from_millis(now_millis);
+
+        guard(|| {
+            let fresh = client.sync_channel(&channel_id, now)?;
+            // Заодно — обслуживание закрытых каналов: отложенная смена
+            // ключа и ключи тем, у кого их нет.
+            client.maintain_channel_keys(now, &mut rand_core::OsRng)?;
+
+            Ok(fresh)
+        })
     }
 
     /// Забирает новые записи всех каналов. Сетевой вызов.
@@ -587,7 +600,14 @@ impl Messenger {
     pub fn sync_channels(&self, now_millis: i64) -> Result<u32, FfiError> {
         let client = self.client()?;
 
-        guard(|| client.sync_channels(Timestamp::from_millis(now_millis)))
+        let now = Timestamp::from_millis(now_millis);
+
+        guard(|| {
+            let fresh = client.sync_channels(now)?;
+            client.maintain_channel_keys(now, &mut rand_core::OsRng)?;
+
+            Ok(fresh)
+        })
     }
 
     /// Догружает страницу истории канала; возвращает, сколько записей
@@ -1230,8 +1250,9 @@ impl Messenger {
     /// удалённого запрет на новую заявку (`restore == true`). Сетевой
     /// вызов.
     ///
-    /// ⚠️ Ключ чтения удалённый помнит: сервер перестаёт отдавать ему
-    /// записи, но ключ у канала прежний.
+    /// 🔐 После удаления ключ канала меняется: новые записи удалённый
+    /// не прочтёт. То, что вышло до удаления, он читал и читать может.
+    /// Нет сети — смена откладывается (`rekey_pending` у канала).
     ///
     /// # Errors
     ///
@@ -1253,6 +1274,7 @@ impl Messenger {
                 &account_id,
                 restore,
                 Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
             )
         })
         .map_err(malformed_is_invalid)

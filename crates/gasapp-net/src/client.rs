@@ -26,13 +26,14 @@ use gasapp_types::{GasAppError, Result};
 use crate::api::{
     AccountDeletedResponse, AccountStatusResponse, AddChannelAdminRequest,
     AnswerChannelJoinRequest, BotNameRequest, BotResponse, BotTokenResponse, BundleResponse,
-    CertificateResponse, ChannelInviteRequest, ChannelJoinRequestResponse,
-    ChannelJoinStatusResponse, ChannelMediaResponse, ChannelMemberRequest, ChannelMemberResponse,
-    ChannelPostResponse, ChannelReactRequest, ChannelResponse, ChannelSeenRequest,
-    CreateChannelRequest, DeleteChannelMediaRequest, DiscoveryResponse, EmailChallengeResponse,
-    EmailCodeRequest, EnvelopeResponse, JoinChannelRequest, KtHeadsResponse, KtProofsRequest,
-    KtProofsResponse, PublishKeysRequest, PublishPostRequest, PublishPostResponse,
-    RecoverAccountRequest, RegisterBotRequest, RegisterRequest, RegisterResponse,
+    CertificateResponse, ChannelEpochResponse, ChannelInviteRequest, ChannelJoinRequestResponse,
+    ChannelJoinStatusResponse, ChannelMediaResponse, ChannelMemberKeyRequest,
+    ChannelMemberKeyResponse, ChannelMemberRequest, ChannelMemberResponse, ChannelPostResponse,
+    ChannelReactRequest, ChannelResponse, ChannelSeenRequest, CreateChannelRequest,
+    DeleteChannelMediaRequest, DiscoveryResponse, EmailChallengeResponse, EmailCodeRequest,
+    EnvelopeResponse, JoinChannelRequest, KtHeadsResponse, KtProofsRequest, KtProofsResponse,
+    PublishKeysRequest, PublishPostRequest, PublishPostResponse, RecoverAccountRequest,
+    RegisterBotRequest, RegisterRequest, RegisterResponse, RekeyChannelRequest,
     RemoveChannelAdminRequest, ReplacePostRequest, SealedAccessRequest, SealedReportRequest,
     SealedReportResponse, SealedSendRequest, UpdateChannelRequest,
 };
@@ -1073,6 +1074,106 @@ impl<T: Transport> ApiClient<T> {
             Method::Post,
             "/v1/bots/register".to_owned(),
             Some(to_json(request)?),
+        )?)
+    }
+
+    /// Называет серверу ключ доставки участника закрытого канала: под
+    /// него тот, кто ведёт канал, зашифрует ключ следующей эпохи.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канал открытый либо аккаунт
+    ///   не участник.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn set_channel_member_key(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &ChannelMemberKeyRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.reader_action(
+            device_id,
+            channel_id,
+            "key",
+            Some(to_json(request)?),
+            signer,
+        )
+    }
+
+    /// Ключи доставки участников — страницей после аккаунта `after`;
+    /// с `missing` — только тех, у кого нет ключа действующей эпохи.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_member_keys(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        missing: bool,
+        after: Option<&str>,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<ChannelMemberKeyResponse>> {
+        let channel_id = canonical_uuid(channel_id)?;
+        let mut path = format!("/v1/channels/own/{device_id}/{channel_id}/keys?missing={missing}");
+
+        if let Some(after) = after {
+            path.push_str("&after=");
+            path.push_str(&canonical_uuid(after)?);
+        }
+
+        parse(&self.send_signed(Method::Get, path, None, signer)?)
+    }
+
+    /// Меняет ключ канала (в запросе есть звено) либо досылает ключи
+    /// действующей эпохи.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт в канал не пишет либо
+    ///   канал открытый.
+    /// * [`GasAppError::UsernameTaken`] — эпоха не та (`409`): ключ успел
+    ///   сменить кто-то ещё.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn rekey_channel(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &RekeyChannelRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let channel_id = canonical_uuid(channel_id)?;
+
+        self.send_signed(
+            Method::Post,
+            format!("/v1/channels/own/{device_id}/{channel_id}/keys"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Звенья цепочки ключей с номером больше `after` — участнику.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — аккаунт не участник.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn channel_epochs(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        after: u32,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<Vec<ChannelEpochResponse>> {
+        parse(&self.member_get(
+            device_id,
+            channel_id,
+            &format!("epochs?after={after}"),
+            signer,
         )?)
     }
 

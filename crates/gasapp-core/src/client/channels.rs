@@ -114,6 +114,9 @@ pub struct Channel {
     /// Закрытый ли канал: вход по одобренной заявке, записи — только
     /// участникам.
     pub closed: bool,
+    /// Подписчик удалён, а ключ канала ещё не сменён (не было сети):
+    /// смена повторится сама при следующем обслуживании каналов.
+    pub rekey_pending: bool,
 }
 
 /// Вложение записи канала.
@@ -229,7 +232,7 @@ pub(super) fn role_of(stored: &StoredChannel) -> ChannelRole {
 }
 
 /// Список администраторов в том виде, в каком его проверяет протокол.
-fn admins_of(stored: &StoredChannel) -> Vec<ChannelAdmin> {
+pub(super) fn admins_of(stored: &StoredChannel) -> Vec<ChannelAdmin> {
     stored
         .admins
         .iter()
@@ -687,6 +690,13 @@ impl<T: Transport> Client<T> {
             .channel(&stored.channel_id)?
             .ok_or(GasAppError::SessionNotFound)?;
 
+        // 🔐 У закрытого канала ключ мог смениться: сначала ключ, потом
+        // записи. Пока ключа действующей эпохи нет, новое не забирается —
+        // иначе записи легли бы пропущенными и уже не прочитались.
+        if stored.closed && !self.catch_up_keys(stored, info.key_epoch, now)? {
+            return Ok(0);
+        }
+
         let mut fresh = 0u32;
 
         if stored.last_rev == 0 {
@@ -694,7 +704,7 @@ impl<T: Transport> Client<T> {
             // история с начала. Старое догружается по запросу
             // ([`Client::load_older_channel_posts`]).
             for item in self.feed_page(stored, None, PAGE, now)? {
-                if self.apply_item(stored, &access, &item)? {
+                if self.apply_item(stored, &item)? {
                     fresh = fresh.saturating_add(1);
                 }
             }
@@ -704,13 +714,13 @@ impl<T: Transport> Client<T> {
             self.storage
                 .set_channel_last_rev(&stored.channel_id, info.last_rev.min(MAX_COUNTER))?;
         } else {
-            fresh = self.pull_changes(stored, &access, info.last_rev, now)?;
+            fresh = self.pull_changes(stored, info.last_rev, now)?;
 
             if refresh_counters {
                 // Просмотры и реакции ревизию не двигают — их несёт
                 // свежая страница.
                 for item in self.feed_page(stored, None, COUNTERS_PAGE, now)? {
-                    self.apply_item(stored, &access, &item)?;
+                    self.apply_item(stored, &item)?;
                 }
             }
         }
@@ -729,13 +739,7 @@ impl<T: Transport> Client<T> {
     }
 
     /// Забирает изменения после известной ревизии.
-    fn pull_changes(
-        &self,
-        stored: &StoredChannel,
-        access: &ChannelAccess,
-        server_rev: u64,
-        now: Timestamp,
-    ) -> Result<u32> {
+    fn pull_changes(&self, stored: &StoredChannel, server_rev: u64, now: Timestamp) -> Result<u32> {
         let mut after = stored.last_rev;
         let mut fresh = 0u32;
 
@@ -755,7 +759,7 @@ impl<T: Transport> Client<T> {
                 }
                 after = item.rev;
 
-                if self.apply_item(stored, access, item)? {
+                if self.apply_item(stored, item)? {
                     fresh = fresh.saturating_add(1);
                 }
             }
@@ -809,14 +813,29 @@ impl<T: Transport> Client<T> {
         Ok(())
     }
 
-    /// Проверяет и сохраняет одну запись сервера. Возвращает, новая ли
-    /// это запись.
-    fn apply_item(
+    /// Доступ с секретом эпохи `epoch`; `None` — ключа этой эпохи нет.
+    pub(super) fn epoch_access(
         &self,
         stored: &StoredChannel,
-        access: &ChannelAccess,
-        item: &ChannelPostResponse,
-    ) -> Result<bool> {
+        epoch: u32,
+    ) -> Result<Option<ChannelAccess>> {
+        if epoch == 0 {
+            return Ok(Some(access_of(stored)));
+        }
+
+        Ok(self
+            .storage
+            .channel_key(&stored.channel_id, epoch)?
+            .map(|secret| ChannelAccess {
+                channel_id: stored.channel_id,
+                secret,
+                verify_key: PublicKeyBytes::new(stored.verify_key),
+            }))
+    }
+
+    /// Проверяет и сохраняет одну запись сервера. Возвращает, новая ли
+    /// это запись.
+    fn apply_item(&self, stored: &StoredChannel, item: &ChannelPostResponse) -> Result<bool> {
         let id = &stored.channel_id;
         let admins = admins_of(stored);
 
@@ -833,10 +852,22 @@ impl<T: Transport> Client<T> {
             return Ok(false);
         };
 
+        // 🔐 Запись несёт номер эпохи ключа, под которым сделана. Ключа
+        // этой эпохи может не быть — тогда запись не прочесть, и она
+        // пропускается, как любая, не прошедшая проверку.
+        let keyed = channel::split_epoch(&body)
+            .ok()
+            .and_then(|(epoch, record)| Some((self.epoch_access(stored, epoch).ok()??, record)));
+        let Some((access, body)) = keyed else {
+            self.storage.skip_channel_seq(id, item.seq)?;
+            return Ok(false);
+        };
+        let access = &access;
+
         if item.deleted {
             // 🔐 Слову сервера «удалено» веры нет: запись исчезает
             // только по отметке, подписанной автором.
-            match access.open_tombstone(&body, item.seq, &admins) {
+            match access.open_tombstone(body, item.seq, &admins) {
                 Ok(tombstone) => {
                     self.storage
                         .tombstone_channel_post(id, item.seq, tombstone.revision)?;
@@ -847,7 +878,7 @@ impl<T: Transport> Client<T> {
             return Ok(false);
         }
 
-        let Ok(post) = access.open_post(&body, item.seq, &admins) else {
+        let Ok(post) = access.open_post(body, item.seq, &admins) else {
             // Не от автора или не на своём месте — пропустить, но не
             // запрашивать снова при каждой синхронизации.
             self.storage.skip_channel_seq(id, item.seq)?;
@@ -897,7 +928,6 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::Network`] — сервер недоступен.
     pub fn load_older_channel_posts(&self, channel_id: &str, now: Timestamp) -> Result<u32> {
         let stored = self.stored_channel(channel_id)?;
-        let access = access_of(&stored);
 
         let Some(oldest) = self.storage.min_channel_seq(&stored.channel_id)? else {
             return Ok(0);
@@ -912,7 +942,7 @@ impl<T: Transport> Client<T> {
         for item in self.feed_page(&stored, Some(oldest), PAGE, now)? {
             // Сервер обязан отдать записи старше границы: всё прочее —
             // не история.
-            if item.seq < oldest && self.apply_item(&stored, &access, &item)? {
+            if item.seq < oldest && self.apply_item(&stored, &item)? {
                 added = added.saturating_add(1);
             }
         }
@@ -1057,7 +1087,7 @@ impl<T: Transport> Client<T> {
         rng: &mut R,
     ) -> Result<ChannelEntry> {
         let stored = self.stored_channel(channel_id)?;
-        let access = access_of(&stored);
+        let (epoch, access) = self.writer_access(&stored, now)?;
         let author = author_of(&access, &stored)?;
         let uuid = access.channel_uuid();
         let (device_id, identity) = self.own_device()?;
@@ -1093,17 +1123,20 @@ impl<T: Transport> Client<T> {
                     .checked_add(1)
                     .ok_or(GasAppError::Malformed)?;
 
-                let sealed = author.seal_post(
-                    &ChannelPost {
-                        number,
-                        revision: 0,
-                        created_at_millis: now.as_millis(),
-                        edited_at_millis: 0,
-                        text: text.to_owned(),
-                        attachments: attachments.clone(),
-                    },
-                    rng,
-                )?;
+                let sealed = channel::with_epoch(
+                    epoch,
+                    author.seal_post(
+                        &ChannelPost {
+                            number,
+                            revision: 0,
+                            created_at_millis: now.as_millis(),
+                            edited_at_millis: 0,
+                            text: text.to_owned(),
+                            attachments: attachments.clone(),
+                        },
+                        rng,
+                    )?,
+                );
 
                 let outcome = self.api.publish_channel_post(
                     &device_id,
@@ -1178,7 +1211,7 @@ impl<T: Transport> Client<T> {
         rng: &mut R,
     ) -> Result<ChannelEntry> {
         let stored = self.stored_channel(channel_id)?;
-        let access = access_of(&stored);
+        let (epoch, access) = self.writer_access(&stored, now)?;
         let author = author_of(&access, &stored)?;
         let (device_id, identity) = self.own_device()?;
         let known = self.live_post(&stored, seq)?;
@@ -1195,17 +1228,20 @@ impl<T: Transport> Client<T> {
             ..known
         };
 
-        let sealed = author.seal_post(
-            &ChannelPost {
-                number: seq,
-                revision: edited.revision,
-                created_at_millis: edited.created_at.as_millis(),
-                edited_at_millis: edited.edited_at,
-                text: edited.text.clone(),
-                attachments: edited.attachments.clone(),
-            },
-            rng,
-        )?;
+        let sealed = channel::with_epoch(
+            epoch,
+            author.seal_post(
+                &ChannelPost {
+                    number: seq,
+                    revision: edited.revision,
+                    created_at_millis: edited.created_at.as_millis(),
+                    edited_at_millis: edited.edited_at,
+                    text: edited.text.clone(),
+                    attachments: edited.attachments.clone(),
+                },
+                rng,
+            )?,
+        );
 
         self.api.replace_channel_post(
             &device_id,
@@ -1244,7 +1280,7 @@ impl<T: Transport> Client<T> {
         rng: &mut R,
     ) -> Result<()> {
         let stored = self.stored_channel(channel_id)?;
-        let access = access_of(&stored);
+        let (epoch, access) = self.writer_access(&stored, now)?;
         let author = author_of(&access, &stored)?;
         let uuid = access.channel_uuid();
         let (device_id, identity) = self.own_device()?;
@@ -1254,14 +1290,17 @@ impl<T: Transport> Client<T> {
             .revision
             .checked_add(1)
             .ok_or(GasAppError::Malformed)?;
-        let sealed = author.seal_tombstone(
-            &ChannelTombstone {
-                number: seq,
-                revision,
-                deleted_at_millis: now.as_millis(),
-            },
-            rng,
-        )?;
+        let sealed = channel::with_epoch(
+            epoch,
+            author.seal_tombstone(
+                &ChannelTombstone {
+                    number: seq,
+                    revision,
+                    deleted_at_millis: now.as_millis(),
+                },
+                rng,
+            )?,
+        );
 
         self.api.replace_channel_post(
             &device_id,
@@ -1506,7 +1545,7 @@ impl<T: Transport> Client<T> {
         // Свежий счётчик — тем же заходом; его сбой реакции не отменяет.
         if let Ok(page) = self.feed_page(&stored, Some(seq.saturating_add(1)), 1, now) {
             for item in page.iter().filter(|item| item.seq == seq) {
-                self.apply_item(&stored, &access, item)?;
+                self.apply_item(&stored, item)?;
             }
         }
 
@@ -2069,6 +2108,7 @@ impl<T: Transport> Client<T> {
             pinned_seq: stored.pinned_seq,
             avatar: stored.avatar.clone(),
             closed: stored.closed,
+            rekey_pending: self.channel_rekey_pending(&channel::format_uuid(&stored.channel_id))?,
         })
     }
 }

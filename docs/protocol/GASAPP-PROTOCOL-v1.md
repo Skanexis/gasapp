@@ -776,24 +776,62 @@ opens the grant with `e` and accepts the recovered `secret` **only if**
 the channel metadata decrypts under it and verifies against `vk` from
 the link — a grant fabricated by the server fails that check.
 
-**Removal.** Whoever runs the channel can remove a subscriber: the
-server deletes the subscription, the grant and the request, and refuses
-new requests from that account until the ban is lifted.
+**Removal and key change.** Whoever runs the channel can remove a
+subscriber: the server deletes the subscription, the grant, the request
+and the delivery key, and refuses new requests from that account until
+the ban is lifted. The remover's device then starts a new key **epoch**:
+
+```
+S_n      = 32 fresh random bytes                      (n = previous epoch + 1)
+record_n = 0x01 ‖ n (4) ‖ signer_vk (32) ‖ nonce (12) ‖ Sig (64) ‖
+           AES-256-GCM(HKDF(salt = channel_id, ikm = S_n, info = "GASAPP_CHANNEL_v1_EPOCH"),
+                       nonce, S_{n-1}, aad = "GASAPP_CHANNEL_v1_EPOCH" ‖ channel_id ‖ n)
+Sig      = Ed25519.Sign(sk_signer, "GASAPP_CHANNEL_v1_EPOCH_SIG" ‖ channel_id ‖ n ‖
+                        signer_vk ‖ nonce ‖ ciphertext)
+```
+
+`record_n` is a chain link: a member holding `S_n` recovers `S_{n-1}`
+and so reads the history; nothing leads forward from an old secret. The
+signer must be the owner or an administrator named in the channel
+metadata. `S_n` is handed to every remaining member as a grant (the same
+construction as above, with the plaintext `n (4) ‖ S_n`) sealed to that
+member's **delivery key** — the one-time key of their join request, or,
+for members who never sent one, a key they register on their next
+synchronisation (`E ‖ IK ‖ Sig`, same format as a request). A device that
+runs the channel derives its delivery key from its channel signing key
+(`HKDF(salt = channel_id, ikm = sk, info = "GASAPP_CHANNEL_v1_DELIVERY")`),
+so an owner restored from a backup can open their own grant.
+
+A record sealed under epoch `n > 0` is prefixed `0x03 ‖ n (4)`; the server
+reads only this prefix and refuses (`409`) a record whose epoch is not
+the channel's current one. The prefix is not authenticated — it only
+selects the key. A channel whose key was changed cannot be reopened.
 
 **What this does not provide.**
 
-* **No rekeying.** A removed subscriber still knows `secret`. The server
-  stops serving them records; the key itself does not change, so any
-  ciphertext they obtain another way remains readable to them.
+* **Removal is not retroactive.** Changing the key (below) protects
+  records published after the removal. Everything published before it,
+  and the channel title, description and avatar (which stay under the
+  epoch-0 key), remain readable to the removed subscriber if they obtain
+  the ciphertext.
 * **The server can substitute a request.** `Sig` binds `E` to an
   identity key, but the approver learns *whose* key that is from the
   server unless the applicant is a contact whose key they already hold
   (the app marks such requests). A server that swaps in its own
   `(E, IK)` under an applicant's name receives `secret` when the request
   is approved.
-* **The old open link still contains `secret`.** Closing a channel stops
-  the server from serving it to non-members; it does not invalidate
-  links issued while the channel was open.
+* **The old open link still contains the epoch-0 `secret`.** Closing a
+  channel stops the server from serving it to non-members; a link issued
+  while the channel was open still decrypts what was published before
+  the first key change.
+* **A substituted delivery key.** A server that replaces a member's
+  delivery key with its own receives the next epoch's secret. This needs
+  an actively malicious server; a removed subscriber alone gains nothing.
+* **A removed administrator plus the server** can start an epoch whose
+  secret they know: links signed by an administrator stay valid after
+  their removal, or the history they keyed would become unreadable.
+* **A member who is offline during a key change** reads new records only
+  after a device that runs the channel hands them the key.
 * **Membership is known to the server**, as subscription already was
   (§9.8); it additionally tells whoever runs the channel the account
   names of applicants and subscribers.
