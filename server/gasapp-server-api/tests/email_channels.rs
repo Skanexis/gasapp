@@ -2619,3 +2619,276 @@ async fn a_bot_admin_moderates_a_closed_channel() {
         StatusCode::NOT_FOUND
     );
 }
+
+// ---------------------------------------------------------------------------
+//  Смена ключа закрытого канала (миграция 0023)
+// ---------------------------------------------------------------------------
+
+/// Запись под ключом эпохи `epoch`: первый байт и номер — всё, что в ней
+/// видит сервер.
+fn epoch_body(epoch: u32, text: &[u8]) -> String {
+    let mut wire = vec![3u8];
+    wire.extend_from_slice(&epoch.to_be_bytes());
+    wire.extend_from_slice(text);
+
+    hex::encode(wire)
+}
+
+/// 🔐 Смена ключа: оставшиеся участники получают ключ новой эпохи,
+/// удалённый — нет, а запись под прежним ключом сервер не принимает.
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn rekeying_hands_the_new_key_to_those_who_stay() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let own = format!("/v1/channels/own/{owner_device}/{channel_id}");
+    let owner = (owner_key, owner_device);
+
+    // Двое входят по заявке; их ключи из заявок становятся ключами доставки.
+    let (stays, _) = applicant(&state, channel_id).await;
+    let (leaves, _) = applicant(&state, channel_id).await;
+    let (_, requests) = signed(&state, &owner_key, "GET", &format!("{own}/requests"), None).await;
+    let mut accounts = Vec::new();
+    for request in requests.as_array().unwrap() {
+        let (status, _) = signed(
+            &state,
+            &owner_key,
+            "POST",
+            &format!("{own}/requests"),
+            Some(serde_json::json!({
+                "account_id": request["account_id"],
+                "grant": hex::encode(b"epoch-0"),
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        accounts.push(request["account_id"].clone());
+    }
+
+    // Владелец называет свой ключ доставки — как любой участник.
+    assert_eq!(
+        reader(
+            &state,
+            &owner,
+            channel_id,
+            "key",
+            Some(serde_json::json!({ "member_key": hex::encode(b"owner-key") })),
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+
+    let (status, keys) = signed(&state, &owner_key, "GET", &format!("{own}/keys"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(keys.as_array().unwrap().len(), 3);
+
+    // Кто из двоих уходит — узнаём по ответу сервера на его чтение позже;
+    // удаляем второго по списку заявок.
+    let removed = accounts[1].clone();
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &format!("{own}/subscribers"),
+        Some(serde_json::json!({ "account_id": removed })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, keys) = signed(&state, &owner_key, "GET", &format!("{own}/keys"), None).await;
+    let keys = keys.as_array().unwrap().clone();
+    assert_eq!(keys.len(), 2, "ключ удалённого в выдачу не попадает");
+
+    // Смена ключа: звено и ответы — всем, включая удалённого (его ответ
+    // сервер обязан отбросить).
+    let mut grants: Vec<serde_json::Value> = keys
+        .iter()
+        .map(|key| serde_json::json!({ "account_id": key["account_id"], "grant": hex::encode(b"epoch-1") }))
+        .collect();
+    grants.push(serde_json::json!({ "account_id": removed, "grant": hex::encode(b"leak") }));
+
+    // Не та эпоха — отказ.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("{own}/keys"),
+        Some(serde_json::json!({ "epoch": 2, "record": hex::encode(b"link"), "grants": grants })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("{own}/keys"),
+        Some(serde_json::json!({ "epoch": 1, "record": hex::encode(b"link"), "grants": grants })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let leaked: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM channel_grants WHERE channel_id = $1 AND grant_blob = $2",
+    )
+    .bind(channel_id)
+    .bind(b"leak".as_slice())
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(leaked, 0, "удалённому ключ новой эпохи не сохранён");
+
+    // Оставшиеся видят новую эпоху, свой ответ и звено цепочки.
+    let mut served = 0;
+    for who in [&stays, &leaves] {
+        let (status, info) = member_get(&state, who, channel_id, "info").await;
+        if status != StatusCode::OK {
+            assert_eq!(
+                member_get(&state, who, channel_id, "epochs").await.0,
+                StatusCode::NOT_FOUND,
+                "удалённому звенья не отдаются"
+            );
+            continue;
+        }
+
+        served += 1;
+        assert_eq!(info["key_epoch"], 1);
+        assert_eq!(
+            member_get(&state, who, channel_id, "join").await.1["grant"],
+            hex::encode(b"epoch-1")
+        );
+
+        let (_, chain) = member_get(&state, who, channel_id, "epochs").await;
+        assert_eq!(chain.as_array().unwrap().len(), 1);
+        assert_eq!(chain[0]["epoch"], 1);
+        assert_eq!(chain[0]["record"], hex::encode(b"link"));
+    }
+    assert_eq!(served, 1);
+
+    // Запись под прежним ключом не принимается; под новым — да.
+    let posts = format!("{own}/posts");
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &posts,
+        Some(serde_json::json!({ "body": hex::encode(b"old key") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &posts,
+        Some(serde_json::json!({ "body": epoch_body(1, b"new key") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Канал, у которого меняли ключ, открытым не сделать.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "PUT",
+        &own,
+        Some(serde_json::json!({ "closed": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Ключи доставки и смена ключа — только для закрытого канала и только
+/// для тех, кто его ведёт; сменивший ключ участник получает новый ответ.
+#[tokio::test]
+async fn key_delivery_is_for_members_and_writers_only() {
+    let (state, _mailer) = require_state!();
+    let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
+    let own = format!("/v1/channels/own/{owner_device}/{channel_id}");
+    let (member, _) = applicant(&state, channel_id).await;
+    let key = |text: &[u8]| Some(serde_json::json!({ "member_key": hex::encode(text) }));
+
+    // Заявитель — ещё не участник.
+    assert_eq!(
+        reader(&state, &member, channel_id, "key", key(b"early")).await,
+        StatusCode::NOT_FOUND
+    );
+
+    let (_, requests) = signed(&state, &owner_key, "GET", &format!("{own}/requests"), None).await;
+    let account_id = requests[0]["account_id"].clone();
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("{own}/requests"),
+        Some(serde_json::json!({ "account_id": account_id, "grant": hex::encode(b"grant") })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Подписчик канал не ведёт: ни ключей, ни смены.
+    let member_own = format!("/v1/channels/own/{}/{channel_id}/keys", member.1);
+    let (status, _) = signed(&state, &member.0, "GET", &member_own, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = signed(
+        &state,
+        &member.0,
+        "POST",
+        &member_own,
+        Some(serde_json::json!({ "epoch": 1, "record": hex::encode(b"x"), "grants": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Все уже с ответом: «без ключа эпохи» — никого.
+    let missing = format!("{own}/keys?missing=true");
+    let (_, list) = signed(&state, &owner_key, "GET", &missing, None).await;
+    assert_eq!(list.as_array().unwrap().len(), 0);
+
+    // Участник сменил ключ доставки (новое устройство): прежний ответ
+    // ему бесполезен, и он снова в списке ждущих.
+    assert_eq!(
+        reader(&state, &member, channel_id, "key", key(b"fresh")).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        member_get(&state, &member, channel_id, "join").await.1["status"],
+        "none"
+    );
+    let (_, list) = signed(&state, &owner_key, "GET", &missing, None).await;
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["member_key"], hex::encode(b"fresh"));
+
+    // Досылка ответа для действующей эпохи — без звена.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("{own}/keys"),
+        Some(serde_json::json!({
+            "epoch": 0,
+            "grants": [{ "account_id": account_id, "grant": hex::encode(b"again") }],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        member_get(&state, &member, channel_id, "join").await.1["grant"],
+        hex::encode(b"again")
+    );
+
+    // В открытом канале ключей доставки нет.
+    let (open_key, open_device, open_channel) = channel_with_posts(&state, 0).await;
+    assert_eq!(
+        reader(
+            &state,
+            &(open_key, open_device),
+            open_channel,
+            "key",
+            key(b"k")
+        )
+        .await,
+        StatusCode::NOT_FOUND
+    );
+}

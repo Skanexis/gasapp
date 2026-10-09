@@ -180,7 +180,7 @@ pub use schema::TEST_DIFFICULTY;
 /// (см. [`schema::database_url`]).
 pub async fn state() -> Option<std::sync::Arc<gasapp_server_api::routes::AppState>> {
     let url = schema::database_url()?;
-    let pool = sqlx::PgPool::connect(&url).await.ok()?;
+    let pool = schema::connect(&url).await?;
 
     schema::bootstrap(&pool).await;
 
@@ -268,7 +268,7 @@ pub async fn state_with_mailer() -> Option<(
     std::sync::Arc<CapturingMailer>,
 )> {
     let url = schema::database_url()?;
-    let pool = sqlx::PgPool::connect(&url).await.ok()?;
+    let pool = schema::connect(&url).await?;
 
     schema::bootstrap(&pool).await;
 
