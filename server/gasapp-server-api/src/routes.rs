@@ -607,6 +607,11 @@ fn channel_key_routes() -> Router<Arc<AppState>> {
             "/v1/channels/reader/:device_id/:channel_id/epochs",
             get(crate::channels::epochs),
         )
+        // Жалоба на канал — от любого аккаунта.
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/report",
+            post(crate::channels::report),
+        )
 }
 
 /// Маршруты премиума и каналов (см. `channels`).

@@ -70,6 +70,8 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/transparency", get(transparency_page))
         .route("/accounts/:id/delete", post(delete_account))
         .route("/accounts/:id/dismiss", post(dismiss_reports))
+        .route("/channels/:id/delete", post(delete_channel))
+        .route("/channels/:id/dismiss", post(dismiss_channel_reports))
         .route("/accounts/:id/premium", post(set_premium))
         .route("/logout", post(logout))
         .route_layer(middleware::from_fn_with_state(
@@ -269,13 +271,60 @@ async fn reports_page(
         return Redirect::to("/login").into_response();
     };
 
-    match queries::reported_accounts(&state.pool).await {
-        Ok(rows) => Html(layout(
-            "Жалобы",
-            &csrf,
-            &reports_html(&rows, &csrf, flash.done.as_deref()),
-        ))
-        .into_response(),
+    let rows = match queries::reported_accounts(&state.pool).await {
+        Ok(rows) => rows,
+        Err(error) => return database_error(&error),
+    };
+    let channels = match queries::reported_channels(&state.pool).await {
+        Ok(channels) => channels,
+        Err(error) => return database_error(&error),
+    };
+
+    let mut body = reports_html(&rows, &csrf, flash.done.as_deref());
+    body.push_str(&channel_reports_html(&channels, &csrf));
+
+    Html(layout("Жалобы", &csrf, &body)).into_response()
+}
+
+/// Удаляет канал, на который жаловались.
+async fn delete_channel(
+    State(state): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Form(form): Form<CsrfForm>,
+) -> Response {
+    let Some((id, _)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    if !state.auth.csrf_matches(&id, &form.csrf) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    match queries::delete_reported_channel(&state.pool, channel_id).await {
+        Ok(()) => {
+            tracing::info!("админ-центр: канал удалён по жалобам");
+            Redirect::to("/reports?done=channel_deleted").into_response()
+        }
+        Err(error) => database_error(&error),
+    }
+}
+
+/// Отклоняет жалобы на канал.
+async fn dismiss_channel_reports(
+    State(state): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Form(form): Form<CsrfForm>,
+) -> Response {
+    let Some((id, _)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    if !state.auth.csrf_matches(&id, &form.csrf) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    match queries::dismiss_channel_reports(&state.pool, channel_id).await {
+        Ok(()) => Redirect::to("/reports?done=dismissed").into_response(),
         Err(error) => database_error(&error),
     }
 }
@@ -622,6 +671,7 @@ fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str
     match done {
         Some("deleted") => html.push_str("<p class=\"flash\">Аккаунт удалён.</p>"),
         Some("dismissed") => html.push_str("<p class=\"flash\">Жалобы отклонены.</p>"),
+        Some("channel_deleted") => html.push_str("<p class=\"flash\">Канал удалён.</p>"),
         _ => {}
     }
 
@@ -663,6 +713,64 @@ fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str
             active = escape(&row.active_month),
             delete = delete_form(row.account_id, csrf),
             id = row.account_id,
+            csrf = escape(csrf),
+        );
+    }
+    html.push_str("</table>");
+
+    html
+}
+
+/// Жалобы на каналы.
+///
+/// 🔐 Записи канала без публичного имени сервер не читает. Ссылка в
+/// строке — та, что приложил жалобщик: с ней канал открывается в
+/// приложении, и видно, на что жалуются.
+fn channel_reports_html(rows: &[queries::ReportedChannel], csrf: &str) -> String {
+    let mut html = String::from(
+        "<h2>Каналы</h2>\
+         <p class=\"note\">На канал жалуется любой аккаунт; доказательства отправителя, \
+         как у переписки, здесь нет. Канал с публичным именем сервер читает сам; у \
+         остальных записи видны только по ссылке, если её приложил жалобщик, — \
+         откройте её в приложении. Жалобы на безопасность детей — сразу и с сообщением \
+         в компетентные органы (docs/ops/admin-center.md). Удаление канала необратимо; \
+         аккаунт владельца удаляется отдельно.</p>",
+    );
+
+    if rows.is_empty() {
+        html.push_str("<p>Жалоб на каналы нет.</p>");
+        return html;
+    }
+
+    html.push_str(
+        "<table><tr><th>Канал</th><th>Владелец</th><th class=\"num\">Жалобщиков</th>\
+         <th class=\"num\">Безопасность детей</th><th>Последняя</th><th>Ссылка</th>\
+         <th>Решение</th></tr>",
+    );
+    for row in rows {
+        let name = row
+            .handle
+            .as_deref()
+            .map_or_else(|| row.channel_id.to_string(), |handle| format!("@{handle}"));
+
+        let _ = write!(
+            html,
+            "<tr><td>{name}</td><td>@{owner}</td><td class=\"num\">{reporters}</td>\
+             <td class=\"num\">{child}</td><td>{last}</td><td><code>{link}</code></td><td>\
+             <form class=\"inline\" method=\"post\" action=\"/channels/{id}/delete\">\
+             <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
+             <label><input type=\"checkbox\" name=\"confirm\" value=\"yes\" required> необратимо</label>\
+             <button class=\"danger\">Удалить канал</button></form>\
+             <form class=\"inline\" method=\"post\" action=\"/channels/{id}/dismiss\">\
+             <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
+             <button>Отклонить жалобы</button></form></td></tr>",
+            name = escape(&name),
+            owner = escape(&row.owner),
+            reporters = row.reporters,
+            child = row.child_safety,
+            last = escape(&row.last_report),
+            link = escape(row.link.as_deref().unwrap_or("—")),
+            id = row.channel_id,
             csrf = escape(csrf),
         );
     }

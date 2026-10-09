@@ -2062,3 +2062,48 @@ pub async fn epochs(
     .fetch_all(pool)
     .await?)
 }
+
+/// Сколько причин у жалобы на канал (см. миграцию 0024).
+pub const CHANNEL_REPORT_REASONS: i16 = 5;
+
+/// Сохраняет жалобу аккаунта на канал; повторная заменяет прежнюю.
+///
+/// `channel_link` — ссылка канала, которую жалобщик решил приложить,
+/// чтобы оператор мог прочитать записи. Сервер её не проверяет.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — канала нет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn report_channel(
+    pool: &PgPool,
+    channel_id: Uuid,
+    reporter_account: Uuid,
+    reason: i16,
+    post_seq: Option<i64>,
+    channel_link: Option<&str>,
+) -> Result<(), RepoError> {
+    let saved = sqlx::query(
+        "INSERT INTO channel_reports (channel_id, reporter_account, reason, post_seq, channel_link)
+         SELECT $1, $2, $3, $4, $5 WHERE EXISTS (SELECT 1 FROM channels WHERE channel_id = $1)
+         ON CONFLICT (channel_id, reporter_account) DO UPDATE SET
+             reason = EXCLUDED.reason,
+             post_seq = EXCLUDED.post_seq,
+             channel_link = COALESCE(EXCLUDED.channel_link, channel_reports.channel_link),
+             created_at = date_trunc('hour', now())",
+    )
+    .bind(channel_id)
+    .bind(reporter_account)
+    .bind(reason)
+    .bind(post_seq)
+    .bind(channel_link)
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    if saved == 0 {
+        return Err(RepoError::NotFound);
+    }
+
+    Ok(())
+}

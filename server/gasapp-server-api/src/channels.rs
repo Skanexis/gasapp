@@ -640,6 +640,58 @@ async fn require_current_epoch(
     }
 }
 
+/// Жалоба на канал.
+#[derive(Debug, Deserialize)]
+pub struct ReportChannelRequest {
+    /// Причина: 1 спам, 2 незаконное, 3 безопасность детей, 4 насилие
+    /// и ненависть, 5 другое.
+    pub reason: i16,
+    /// Номер записи, на которую жалуются; нет — на канал целиком.
+    #[serde(default)]
+    pub seq: Option<i64>,
+    /// Ссылка канала — если жалобщик решил дать оператору прочитать
+    /// записи.
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+/// Принимает жалобу на канал — от любого аккаунта, за подписью.
+///
+/// 🔐 Что в канале, сервер не знает и по жалобе: ссылку (ключ чтения)
+/// жалобщик прикладывает сам, если хочет.
+pub(crate) async fn report(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<ReportChannelRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    if !(1..=channels::CHANNEL_REPORT_REASONS).contains(&request.reason)
+        || request.seq.is_some_and(|seq| seq < 1)
+        || request
+            .link
+            .as_deref()
+            .is_some_and(|link| link.len() > MAX_LINK_LEN || !link.starts_with("gasapp://channel/"))
+    {
+        return Err(ApiError::BadRequest);
+    }
+
+    limit_reader(&state, account_id)?;
+
+    channels::report_channel(
+        &state.pool,
+        channel_id,
+        account_id,
+        request.reason,
+        request.seq,
+        request.link.as_deref(),
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Ключ доставки участника закрытого канала.
 #[derive(Debug, Deserialize)]
 pub struct MemberKeyRequest {

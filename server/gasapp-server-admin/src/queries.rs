@@ -429,3 +429,143 @@ pub async fn take_new_reports(pool: &PgPool) -> Result<i64, sqlx::Error> {
 
     Ok(fresh)
 }
+
+/// Канал, на который жаловались.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportedChannel {
+    /// Канал.
+    pub channel_id: Uuid,
+    /// Публичное имя, если есть.
+    pub handle: Option<String>,
+    /// Имя владельца.
+    pub owner: String,
+    /// Сколько разных аккаунтов пожаловалось.
+    pub reporters: i64,
+    /// Сколько из них — по причине «безопасность детей».
+    pub child_safety: i64,
+    /// Ссылка канала, если её приложил хотя бы один жалобщик: с ней
+    /// записи можно прочитать.
+    pub link: Option<String>,
+    /// Час последней жалобы.
+    pub last_report: String,
+}
+
+/// Строка выборки каналов с жалобами.
+type ReportedChannelRow = (
+    Uuid,
+    Option<String>,
+    String,
+    i64,
+    i64,
+    Option<String>,
+    String,
+);
+
+/// Каналы с жалобами: сначала те, где жалуются на безопасность детей,
+/// затем — где жалобщиков больше.
+///
+/// # Errors
+///
+/// Ошибка базы.
+pub async fn reported_channels(pool: &PgPool) -> Result<Vec<ReportedChannel>, sqlx::Error> {
+    let rows: Vec<ReportedChannelRow> = sqlx::query_as(
+        "SELECT c.channel_id,
+                    c.handle,
+                    a.username,
+                    count(*),
+                    count(*) FILTER (WHERE r.reason = 3),
+                    max(r.channel_link),
+                    to_char(max(r.created_at), 'YYYY-MM-DD HH24:00')
+               FROM channel_reports r
+               JOIN channels c ON c.channel_id = r.channel_id
+               JOIN accounts a ON a.account_id = c.owner_account
+              GROUP BY c.channel_id, c.handle, a.username
+              ORDER BY count(*) FILTER (WHERE r.reason = 3) DESC,
+                       count(*) DESC,
+                       max(r.created_at) DESC
+              LIMIT 200",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(channel_id, handle, owner, reporters, child_safety, link, last_report)| {
+                ReportedChannel {
+                    channel_id,
+                    handle,
+                    owner,
+                    reporters,
+                    child_safety,
+                    link,
+                    last_report,
+                }
+            },
+        )
+        .collect())
+}
+
+/// Отклоняет жалобы на канал: они удаляются, канал остаётся.
+///
+/// # Errors
+///
+/// Ошибка базы.
+pub async fn dismiss_channel_reports(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let reporters = sqlx::query("DELETE FROM channel_reports WHERE channel_id = $1")
+        .bind(channel_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    if reporters > 0 {
+        sqlx::query(
+            "INSERT INTO admin_actions (action, reason, reporters)
+             VALUES ('channel_reports_dismissed', 'unfounded', $1)",
+        )
+        .bind(i32::try_from(reporters).unwrap_or(i32::MAX))
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await
+}
+
+/// Удаляет канал по жалобам: записи, файлы и подписки уносят каскады.
+/// Аккаунт владельца остаётся — его удаляют отдельным решением.
+///
+/// # Errors
+///
+/// Ошибка базы.
+pub async fn delete_reported_channel(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let (reporters, child_safety): (i64, i64) = sqlx::query_as(
+        "SELECT count(*), count(*) FILTER (WHERE reason = 3)
+           FROM channel_reports WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let removed = sqlx::query("DELETE FROM channels WHERE channel_id = $1")
+        .bind(channel_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    if removed > 0 {
+        sqlx::query(
+            "INSERT INTO admin_actions (action, reason, reporters)
+             VALUES ('channel_deleted', $1, $2)",
+        )
+        .bind(if child_safety > 0 { "csae" } else { "illegal" })
+        .bind(i32::try_from(reporters).unwrap_or(i32::MAX))
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await
+}

@@ -2892,3 +2892,58 @@ async fn key_delivery_is_for_members_and_writers_only() {
         StatusCode::NOT_FOUND
     );
 }
+
+// ---------------------------------------------------------------------------
+//  Жалобы на каналы (миграция 0024)
+// ---------------------------------------------------------------------------
+
+/// На канал жалуется любой аккаунт; повторная жалоба заменяет прежнюю,
+/// а ссылку канала жалобщик прикладывает по своему выбору.
+#[tokio::test]
+async fn a_channel_can_be_reported() {
+    let (state, _mailer) = require_state!();
+    let (_owner_key, _owner_device, channel_id) = channel_with_posts(&state, 1).await;
+    let private = device_key();
+    let device_id = register(&state, &unique_name("reporter"), &private).await;
+    let who = (private, device_id);
+    let report = |body: serde_json::Value| reader(&state, &who, channel_id, "report", Some(body));
+
+    assert_eq!(
+        report(serde_json::json!({ "reason": 2, "seq": 1 })).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        report(serde_json::json!({ "reason": 3, "link": link_to(channel_id) })).await,
+        StatusCode::NO_CONTENT
+    );
+
+    let rows: Vec<(i16, Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT reason, post_seq, channel_link FROM channel_reports WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, vec![(3, None, Some(link_to(channel_id)))]);
+
+    // Негодная жалоба и жалоба на несуществующий канал.
+    for bad in [
+        serde_json::json!({ "reason": 0 }),
+        serde_json::json!({ "reason": 9 }),
+        serde_json::json!({ "reason": 1, "seq": 0 }),
+        serde_json::json!({ "reason": 1, "link": "https://example.org" }),
+    ] {
+        assert_eq!(report(bad).await, StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(
+        reader(
+            &state,
+            &who,
+            Uuid::new_v4(),
+            "report",
+            Some(serde_json::json!({ "reason": 1 })),
+        )
+        .await,
+        StatusCode::NOT_FOUND
+    );
+}
