@@ -261,6 +261,8 @@ pub struct ChannelResponse {
     pub subscribers: i64,
     /// Закрытый ли канал.
     pub closed: bool,
+    /// Номер действующего ключа чтения.
+    pub key_epoch: i32,
 }
 
 impl From<Channel> for ChannelResponse {
@@ -275,6 +277,7 @@ impl From<Channel> for ChannelResponse {
             public_link: channel.public_link,
             subscribers: channel.subscribers,
             closed: channel.closed,
+            key_epoch: channel.key_epoch,
         }
     }
 }
@@ -524,7 +527,8 @@ pub(crate) async fn update(
         channels::set_closed(&state.pool, account_id, channel_id, closed)
             .await
             .map_err(|error| match error {
-                // Канал с публичным именем закрытым не бывает.
+                // Канал с публичным именем закрытым не бывает, а канал,
+                // у которого меняли ключ, — открытым.
                 RepoError::Conflict => ApiError::BadRequest,
                 other => other.into(),
             })?;
@@ -592,6 +596,7 @@ pub(crate) async fn publish(
     // Ограничитель — после проверки подписи: чужой запрос бюджет
     // канала не тратит.
     limit_channel(&state, channel_id)?;
+    require_current_epoch(&state, channel_id, &body).await?;
 
     let (seq, rev) =
         channels::publish_post(&state.pool, account_id, channel_id, &body, request.seq)
@@ -604,6 +609,219 @@ pub(crate) async fn publish(
             })?;
 
     Ok(Json(PublishResponse { seq, rev }))
+}
+
+/// Первый байт записи под ключом эпохи старше нулевой; за ним — номер
+/// эпохи. Остальное сервер не разбирает.
+const EPOCH_WIRE_VERSION: u8 = 3;
+
+/// Номер эпохи, под которой сделана запись.
+fn wire_epoch(body: &[u8]) -> i64 {
+    match body {
+        [EPOCH_WIRE_VERSION, a, b, c, d, ..] => i64::from(u32::from_be_bytes([*a, *b, *c, *d])),
+        _ => 0,
+    }
+}
+
+/// 🔐 Запись принимается только под действующим ключом канала: автор,
+/// не узнавший о смене ключа, иначе писал бы ключом, который есть у
+/// удалённого подписчика. `409` — автор заберёт новый ключ и повторит.
+async fn require_current_epoch(
+    state: &AppState,
+    channel_id: Uuid,
+    body: &[u8],
+) -> Result<(), ApiError> {
+    let channel = channels::find_channel(&state.pool, channel_id).await?;
+
+    if wire_epoch(body) == i64::from(channel.key_epoch) {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict)
+    }
+}
+
+/// Ключ доставки участника закрытого канала.
+#[derive(Debug, Deserialize)]
+pub struct MemberKeyRequest {
+    /// Открытый ключ за подписью аккаунта, hex.
+    pub member_key: String,
+}
+
+/// Ключ доставки участника — тому, кто ведёт канал.
+#[derive(Debug, Serialize)]
+pub struct MemberKeyResponse {
+    /// Аккаунт участника.
+    pub account_id: Uuid,
+    /// Ключ доставки, hex.
+    pub member_key: String,
+}
+
+/// Какие ключи доставки нужны.
+#[derive(Debug, Deserialize)]
+pub struct MemberKeysQuery {
+    /// Только тех, у кого нет ключа действующей эпохи.
+    #[serde(default)]
+    pub missing: bool,
+    /// Последний аккаунт прошлой страницы.
+    #[serde(default)]
+    pub after: Option<Uuid>,
+}
+
+/// Ключ эпохи одному участнику.
+#[derive(Debug, Deserialize)]
+pub struct EpochGrant {
+    /// Кому.
+    pub account_id: Uuid,
+    /// Ключ эпохи шифротекстом под ключ доставки участника, hex.
+    pub grant: String,
+}
+
+/// Смена ключа канала либо досылка ключей действующей эпохи.
+#[derive(Debug, Deserialize)]
+pub struct RekeyRequest {
+    /// Эпоха: следующая — при смене ключа, действующая — при досылке.
+    pub epoch: i32,
+    /// Звено цепочки к новой эпохе, hex; нет — досылка.
+    #[serde(default)]
+    pub record: Option<String>,
+    /// Ключи участникам.
+    #[serde(default)]
+    pub grants: Vec<EpochGrant>,
+}
+
+/// Звено цепочки ключей.
+#[derive(Debug, Serialize)]
+pub struct EpochResponse {
+    /// Номер эпохи.
+    pub epoch: i32,
+    /// Прежний ключ, зашифрованный новым, за подписью сменившего, hex.
+    pub record: String,
+}
+
+/// С какой эпохи нужны звенья.
+#[derive(Debug, Deserialize)]
+pub struct EpochsQuery {
+    /// Номер последней известной эпохи.
+    #[serde(default)]
+    pub after: i32,
+}
+
+/// Участник закрытого канала называет ключ доставки.
+pub(crate) async fn set_member_key(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<MemberKeyRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let member_key = decode_bounded(&request.member_key, channels::MAX_JOIN_BLOB_BYTES)?;
+
+    limit_reader(&state, account_id)?;
+    channels::set_member_key(&state.pool, channel_id, account_id, &member_key).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Ключи доставки участников — тому, кто ведёт канал.
+pub(crate) async fn member_keys(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<MemberKeysQuery>,
+) -> Result<Json<Vec<MemberKeyResponse>>, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    Ok(Json(
+        channels::member_keys(
+            &state.pool,
+            account_id,
+            channel_id,
+            query.missing,
+            query.after,
+        )
+        .await?
+        .into_iter()
+        .map(|key| MemberKeyResponse {
+            account_id: key.account_id,
+            member_key: hex::encode(key.member_key),
+        })
+        .collect(),
+    ))
+}
+
+/// Меняет ключ канала либо досылает ключи действующей эпохи.
+///
+/// 🔐 Сервер не знает, что внутри: и звено, и ответы — шифротекст.
+/// Он следит только за номером эпохи. Не та эпоха — `409`.
+pub(crate) async fn rekey(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<RekeyRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    if request.grants.len() > usize::try_from(channels::MAX_MEMBER_KEYS_PER_PAGE).unwrap_or(0) {
+        return Err(ApiError::PayloadTooLarge);
+    }
+
+    let record = request
+        .record
+        .as_deref()
+        .map(|record| decode_bounded(record, channels::MAX_EPOCH_RECORD_BYTES))
+        .transpose()?;
+    let grants = request
+        .grants
+        .iter()
+        .map(|grant| {
+            Ok((
+                grant.account_id,
+                decode_bounded(&grant.grant, channels::MAX_JOIN_BLOB_BYTES)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+
+    channels::rekey(
+        &state.pool,
+        account_id,
+        channel_id,
+        request.epoch,
+        record.as_deref(),
+        &grants,
+    )
+    .await
+    .map_err(|error| match error {
+        RepoError::Conflict => ApiError::Conflict,
+        other => other.into(),
+    })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Звенья цепочки ключей — участнику.
+pub(crate) async fn epochs(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<EpochsQuery>,
+) -> Result<Json<Vec<EpochResponse>>, ApiError> {
+    let (account_id, _) = owner_of(&state, device, device_id).await?;
+
+    Ok(Json(
+        channels::epochs(&state.pool, channel_id, account_id, query.after)
+            .await
+            .map_err(|error| match error {
+                // Не участнику канала нет — как и на чтении.
+                RepoError::NotFound => ApiError::NotFound,
+                other => other.into(),
+            })?
+            .into_iter()
+            .map(|(epoch, record)| EpochResponse {
+                epoch,
+                record: hex::encode(record),
+            })
+            .collect(),
+    ))
 }
 
 /// Ключ подписи администратора из hex.
@@ -674,6 +892,7 @@ pub(crate) async fn replace(
     let body = decode_bounded(&request.body, MAX_POST_BYTES)?;
 
     limit_channel(&state, channel_id)?;
+    require_current_epoch(&state, channel_id, &body).await?;
 
     let rev = channels::replace_post(
         &state.pool,

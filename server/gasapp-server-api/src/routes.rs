@@ -591,6 +591,24 @@ pub struct VerifyRequest {
     pub signature: String,
 }
 
+/// Смена ключа закрытого канала: ключи доставки участников, новая
+/// эпоха и звенья цепочки.
+fn channel_key_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route(
+            "/v1/channels/own/:device_id/:channel_id/keys",
+            get(crate::channels::member_keys).post(crate::channels::rekey),
+        )
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/key",
+            post(crate::channels::set_member_key),
+        )
+        .route(
+            "/v1/channels/reader/:device_id/:channel_id/epochs",
+            get(crate::channels::epochs),
+        )
+}
+
 /// Маршруты премиума и каналов (см. `channels`).
 fn channel_routes(state: &Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()
@@ -723,6 +741,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Условия запроса письма: окно времени и текущая цена.
         .route("/v1/accounts/email/challenge", get(crate::email::challenge))
         .merge(channel_routes(&state))
+        .merge(channel_key_routes())
         // 🔐 Перепривязка аккаунта к новой identity — без подписи
         // устройства (старых устройств у человека уже нет): право
         // доказывает подпись ключа восстановления (см. `recovery`).

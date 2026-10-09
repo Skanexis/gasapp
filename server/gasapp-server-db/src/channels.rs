@@ -88,6 +88,8 @@ pub struct Channel {
     /// Закрытый ли канал: вход по одобренной заявке, записи — только
     /// участникам.
     pub closed: bool,
+    /// Номер действующего ключа чтения: растёт с каждой сменой ключа.
+    pub key_epoch: i32,
 }
 
 /// Запись канала.
@@ -146,10 +148,11 @@ type ChannelRow = (
     Option<String>,
     i64,
     bool,
+    i32,
 );
 
 const CHANNEL_COLUMNS: &str = "c.channel_id, c.verify_key, c.meta, c.last_seq, c.last_rev,
-        c.handle, c.public_link, c.subscribers, c.closed";
+        c.handle, c.public_link, c.subscribers, c.closed, c.key_epoch";
 
 fn channel_from_row(row: ChannelRow) -> Channel {
     let (
@@ -162,6 +165,7 @@ fn channel_from_row(row: ChannelRow) -> Channel {
         public_link,
         subscribers,
         closed,
+        key_epoch,
     ) = row;
 
     Channel {
@@ -174,6 +178,7 @@ fn channel_from_row(row: ChannelRow) -> Channel {
         public_link,
         subscribers,
         closed,
+        key_epoch,
     }
 }
 
@@ -1280,7 +1285,8 @@ pub async fn is_member(
 /// # Errors
 ///
 /// * [`RepoError::NotFound`] — канала нет или он чужой.
-/// * [`RepoError::Conflict`] — у канала есть публичное имя: по имени
+/// * [`RepoError::Conflict`] — у канала меняли ключ (такой остаётся
+///   закрытым) либо у канала есть публичное имя: по имени
 ///   раздаётся ссылка с ключом, и закрытым такой канал быть не может.
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn set_closed(
@@ -1291,7 +1297,8 @@ pub async fn set_closed(
 ) -> Result<(), RepoError> {
     let changed = sqlx::query(
         "UPDATE channels SET closed = $3
-          WHERE channel_id = $1 AND owner_account = $2 AND (NOT $3 OR handle IS NULL)",
+          WHERE channel_id = $1 AND owner_account = $2
+            AND (NOT $3 OR handle IS NULL) AND ($3 OR key_epoch = 0)",
     )
     .bind(channel_id)
     .bind(owner_account)
@@ -1579,26 +1586,42 @@ pub async fn answer_request(
         .fetch_optional(&mut *tx)
         .await?;
 
-    let answered =
-        sqlx::query("DELETE FROM channel_join_requests WHERE channel_id = $1 AND account_id = $2")
-            .bind(channel_id)
-            .bind(account_id)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
+    let answered: Option<Vec<u8>> = sqlx::query_scalar(
+        "DELETE FROM channel_join_requests WHERE channel_id = $1 AND account_id = $2
+      RETURNING request",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_optional(&mut *tx)
+    .await?;
 
-    if answered == 0 {
+    let Some(request) = answered else {
         return Err(RepoError::NotFound);
-    }
+    };
 
     if let Some(grant) = grant {
         sqlx::query(
-            "INSERT INTO channel_grants (channel_id, account_id, grant_blob) VALUES ($1, $2, $3)
-             ON CONFLICT (channel_id, account_id) DO UPDATE SET grant_blob = EXCLUDED.grant_blob",
+            "INSERT INTO channel_grants (channel_id, account_id, grant_blob, epoch)
+             SELECT $1, $2, $3, key_epoch FROM channels WHERE channel_id = $1
+             ON CONFLICT (channel_id, account_id)
+             DO UPDATE SET grant_blob = EXCLUDED.grant_blob, epoch = EXCLUDED.epoch",
         )
         .bind(channel_id)
         .bind(account_id)
         .bind(grant)
+        .execute(&mut *tx)
+        .await?;
+
+        // Ключ из заявки становится ключом доставки участника: под него
+        // же придёт ключ следующей эпохи.
+        sqlx::query(
+            "INSERT INTO channel_member_keys (channel_id, account_id, member_key)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (channel_id, account_id) DO UPDATE SET member_key = EXCLUDED.member_key",
+        )
+        .bind(channel_id)
+        .bind(account_id)
+        .bind(&request)
         .execute(&mut *tx)
         .await?;
 
@@ -1742,6 +1765,7 @@ pub async fn remove_subscriber(
         "channel_subscribers",
         "channel_grants",
         "channel_join_requests",
+        "channel_member_keys",
     ] {
         sqlx::query(&format!(
             "DELETE FROM {table} WHERE channel_id = $1 AND account_id = $2"
@@ -1789,4 +1813,252 @@ pub async fn unban(
         .await?;
 
     Ok(())
+}
+
+/// Сколько ключей доставки и ответов уходит одним запросом.
+pub const MAX_MEMBER_KEYS_PER_PAGE: i64 = 500;
+
+/// Предел звена цепочки ключей.
+pub const MAX_EPOCH_RECORD_BYTES: usize = 512;
+
+/// Ключ доставки участника: открытый ключ за подписью аккаунта.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberKey {
+    /// Аккаунт участника.
+    pub account_id: Uuid,
+    /// Ключ доставки — для сервера непрозрачные байты.
+    pub member_key: Vec<u8>,
+}
+
+/// Запоминает ключ доставки участника закрытого канала.
+///
+/// Сменившийся ключ делает прежний ответ бесполезным — он удаляется, и
+/// участнику выдадут новый.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — канала нет, он открытый либо аккаунт не
+///   участник.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn set_member_key(
+    pool: &PgPool,
+    channel_id: Uuid,
+    account_id: Uuid,
+    member_key: &[u8],
+) -> Result<(), RepoError> {
+    if !is_member(pool, channel_id, account_id).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+
+    let closed: Option<bool> =
+        sqlx::query_scalar("SELECT closed FROM channels WHERE channel_id = $1 FOR UPDATE")
+            .bind(channel_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    if closed != Some(true) {
+        return Err(RepoError::NotFound);
+    }
+
+    let known: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT member_key FROM channel_member_keys WHERE channel_id = $1 AND account_id = $2",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if known.as_deref() == Some(member_key) {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "INSERT INTO channel_member_keys (channel_id, account_id, member_key) VALUES ($1, $2, $3)
+         ON CONFLICT (channel_id, account_id) DO UPDATE SET member_key = EXCLUDED.member_key",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .bind(member_key)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM channel_grants WHERE channel_id = $1 AND account_id = $2")
+        .bind(channel_id)
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+/// Ключи доставки участников — для того, кто ведёт канал; страницами
+/// после аккаунта `after`. С `missing` — только тех, у кого нет ответа
+/// с ключом действующей эпохи.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn member_keys(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    missing: bool,
+    after: Option<Uuid>,
+) -> Result<Vec<MemberKey>, RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    // 🔐 Только действующие участники: ключ ушедшего либо снятого
+    // администратора в выдачу не попадает.
+    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
+        "SELECT k.account_id, k.member_key
+           FROM channel_member_keys k
+           JOIN channels c ON c.channel_id = k.channel_id
+          WHERE k.channel_id = $1
+            AND ($2::uuid IS NULL OR k.account_id > $2)
+            AND (c.owner_account = k.account_id
+                 OR EXISTS (SELECT 1 FROM channel_admins a
+                             WHERE a.channel_id = k.channel_id AND a.account_id = k.account_id)
+                 OR EXISTS (SELECT 1 FROM channel_subscribers s
+                             WHERE s.channel_id = k.channel_id AND s.account_id = k.account_id))
+            AND (NOT $3 OR NOT EXISTS (SELECT 1 FROM channel_grants g
+                                        WHERE g.channel_id = k.channel_id
+                                          AND g.account_id = k.account_id
+                                          AND g.epoch >= c.key_epoch))
+          ORDER BY k.account_id
+          LIMIT $4",
+    )
+    .bind(channel_id)
+    .bind(after)
+    .bind(missing)
+    .bind(MAX_MEMBER_KEYS_PER_PAGE)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(account_id, member_key)| MemberKey {
+            account_id,
+            member_key,
+        })
+        .collect())
+}
+
+/// Меняет ключ канала (`record` — звено к новой эпохе `epoch`) либо
+/// досылает ответы участникам для действующей эпохи (`record` нет).
+///
+/// Ответ сохраняется только участнику с известным ключом доставки:
+/// удалённому между «забрал список» и «прислал ответы» он не достанется.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт в канал не пишет либо канал
+///   открытый.
+/// * [`RepoError::Conflict`] — эпоха не та: ключ успел сменить кто-то ещё.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn rekey(
+    pool: &PgPool,
+    writer_account: Uuid,
+    channel_id: Uuid,
+    epoch: i32,
+    record: Option<&[u8]>,
+    grants: &[(Uuid, Vec<u8>)],
+) -> Result<(), RepoError> {
+    if !writes(pool, channel_id, writer_account).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+
+    let state: Option<(bool, i32)> =
+        sqlx::query_as("SELECT closed, key_epoch FROM channels WHERE channel_id = $1 FOR UPDATE")
+            .bind(channel_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    let Some((true, current)) = state else {
+        return Err(RepoError::NotFound);
+    };
+
+    match record {
+        Some(record) => {
+            if current.checked_add(1) != Some(epoch) {
+                return Err(RepoError::Conflict);
+            }
+
+            sqlx::query(
+                "INSERT INTO channel_epochs (channel_id, epoch, record) VALUES ($1, $2, $3)",
+            )
+            .bind(channel_id)
+            .bind(epoch)
+            .bind(record)
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query("UPDATE channels SET key_epoch = $2 WHERE channel_id = $1")
+                .bind(channel_id)
+                .bind(epoch)
+                .execute(&mut *tx)
+                .await?;
+        }
+        None => {
+            if current != epoch {
+                return Err(RepoError::Conflict);
+            }
+        }
+    }
+
+    for (account_id, grant) in grants {
+        sqlx::query(
+            "INSERT INTO channel_grants (channel_id, account_id, grant_blob, epoch)
+             SELECT $1, $2, $3, $4
+              WHERE EXISTS (SELECT 1 FROM channel_member_keys
+                             WHERE channel_id = $1 AND account_id = $2)
+             ON CONFLICT (channel_id, account_id)
+             DO UPDATE SET grant_blob = EXCLUDED.grant_blob, epoch = EXCLUDED.epoch",
+        )
+        .bind(channel_id)
+        .bind(account_id)
+        .bind(grant)
+        .bind(epoch)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+/// Звенья цепочки ключей с номером больше `after` — участнику.
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — аккаунт не участник.
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn epochs(
+    pool: &PgPool,
+    channel_id: Uuid,
+    account_id: Uuid,
+    after: i32,
+) -> Result<Vec<(i32, Vec<u8>)>, RepoError> {
+    if !is_member(pool, channel_id, account_id).await? {
+        return Err(RepoError::NotFound);
+    }
+
+    Ok(sqlx::query_as(
+        "SELECT epoch, record FROM channel_epochs
+          WHERE channel_id = $1 AND epoch > $2
+          ORDER BY epoch",
+    )
+    .bind(channel_id)
+    .bind(after)
+    .fetch_all(pool)
+    .await?)
 }

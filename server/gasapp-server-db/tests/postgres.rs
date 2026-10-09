@@ -49,7 +49,7 @@ mod schema;
 /// незачем пересекаться по схеме.
 async fn pool() -> Option<PgPool> {
     let url = schema::database_url()?;
-    let pool = PgPool::connect(&url).await.ok()?;
+    let pool = schema::connect(&url).await?;
 
     schema::bootstrap(&pool).await;
 
