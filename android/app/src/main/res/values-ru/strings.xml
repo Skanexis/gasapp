@@ -988,4 +988,9 @@
     <string name="bots_deleted">Бот удалён</string>
     <string name="channel_member_removed_rekey_pending">Подписчик удалён. Ключ канала сменится, как только появится связь</string>
     <string name="channel_about_rekey_pending">⚠️ Подписчик удалён, но ключ канала ещё не сменён: не было связи. Смена повторится сама; до неё новые записи пишутся прежним ключом.</string>
+    <string name="message_button_sent">Нажатие отправлено</string>
+    <string name="message_button_failed">Не получилось: кнопки уже нет либо нет связи</string>
+    <string name="message_button_link_title">Открыть ссылку?</string>
+    <string name="message_button_link_body">Кнопку и ссылку прислал собеседник. Она откроется вне GasApp:\n\n%1$s</string>
+    <string name="message_button_link_open">Открыть</string>
 </resources>

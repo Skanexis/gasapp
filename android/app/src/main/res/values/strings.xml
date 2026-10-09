@@ -936,4 +936,9 @@
     <string name="bots_deleted">Bot deleted</string>
     <string name="channel_member_removed_rekey_pending">Subscriber removed. The channel key will change as soon as there is a connection</string>
     <string name="channel_about_rekey_pending">⚠️ A subscriber was removed, but the channel key has not changed yet: there was no connection. It will be retried automatically; until then new posts use the old key.</string>
+    <string name="message_button_sent">Button press sent</string>
+    <string name="message_button_failed">Did not work: the button is gone or there is no connection</string>
+    <string name="message_button_link_title">Open the link?</string>
+    <string name="message_button_link_body">The button and the link were sent by the other person. It will open outside GasApp:\n\n%1$s</string>
+    <string name="message_button_link_open">Open</string>
 </resources>
