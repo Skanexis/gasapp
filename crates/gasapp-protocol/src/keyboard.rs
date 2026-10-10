@@ -70,23 +70,45 @@ pub struct Keyboard {
     pub rows: Vec<Vec<Button>>,
 }
 
+/// Знаки, которые меняют направление письма либо не видны.
+///
+/// 🔐 Ими подпись «Отмена» превращают в «анемтО», а в строку вставляют
+/// невидимое: человек нажимает не то, что читает.
+fn is_deceptive(symbol: char) -> bool {
+    matches!(
+        symbol,
+        '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}'
+    )
+}
+
 fn validate(button: &Button) -> Result<()> {
     let label_ok = !button.label.trim().is_empty()
         && button.label.chars().count() <= MAX_LABEL_CHARS
-        && !button.label.chars().any(char::is_control);
+        && !button
+            .label
+            .chars()
+            .any(|symbol| symbol.is_control() || is_deceptive(symbol));
 
     let action_ok = match &button.action {
         ButtonAction::Callback(data) => data.len() <= MAX_DATA_BYTES,
-        // 🔐 Только https и без управляющих знаков и пробелов: иная
-        // схема (`intent:`, `file:`, `javascript:`) открыла бы на
-        // телефоне нажавшего то, что выбрал собеседник.
+        // 🔐 Только https и только печатные знаки ASCII: иная схема
+        // (`intent:`, `file:`, `javascript:`) открыла бы на телефоне
+        // нажавшего то, что выбрал собеседник, а буквы других алфавитов
+        // в адресе выдают чужой сайт за знакомый (`аpple.com` с
+        // кириллической «а»). Международное имя пишется в виде `xn--…` —
+        // так человек видит, что оно не латинское.
         ButtonAction::Url(url) => {
             url.len() <= MAX_URL_BYTES
                 && url.starts_with("https://")
                 && url.len() > "https://".len()
+                && url.bytes().all(|byte| byte.is_ascii_graphic())
+                // Данные входа в адресе (`https://bank.example@evil.example`)
+                // прячут настоящий сайт за знакомым именем.
                 && !url
-                    .chars()
-                    .any(|symbol| symbol.is_control() || symbol.is_whitespace())
+                    .split(['/', '?', '#'])
+                    .nth(2)
+                    .unwrap_or_default()
+                    .contains('@')
         }
     };
 
@@ -305,6 +327,10 @@ mod tests {
             one(link("js", "javascript:alert(1)")),
             one(link("пусто", "https://")),
             one(link("пробел", "https://example.org/a b")),
+            one(link("кириллица", "https://аpple.com/")),
+            one(link("вход", "https://bank.example@evil.example/login")),
+            one(callback("отмена\u{202E}", b"x")),
+            one(callback("не\u{200B}видимое", b"x")),
             Keyboard {
                 rows: vec![Vec::new()],
             },

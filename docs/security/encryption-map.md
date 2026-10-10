@@ -55,7 +55,7 @@ or the key-transparency log.
 | Title, description, avatar, posts, files | Anyone holding the channel key | AES-256-GCM under a key derived from the channel secret; every record signed by the owner or an administrator (Ed25519) | `crates/gasapp-protocol/src/channel.rs` |
 | Channel key of a **link** channel | Whoever has the link | The link carries the secret; it never reaches the server | same |
 | Channel key of a **public** channel (`@name`) | Whoever has the link **and the server** | The owner hands the link to the server so the channel can be found by name | same |
-| Channel key of a **closed** channel | Approved members only | Sealed to each member's one-time key (X25519 → HKDF → AES-256-GCM); a new key after every removal, so a removed member cannot read later posts | `crates/gasapp-protocol/src/channel_join.rs` |
+| Channel key of a **closed** channel | Approved members only | Sealed to each member's one-time **hybrid** key (X25519 + ML-KEM-1024 → HKDF → AES-256-GCM): stored grants cannot be opened later by breaking one curve. A new key after every removal of a subscriber or administrator | `crates/gasapp-protocol/src/channel_join.rs` |
 | A report about a channel | The operator | Sent over TLS; the channel key is attached **only if the reporter chooses to** | `crates/gasapp-core/src/client/channel_closed.rs` |
 
 **Not covered.** A channel is not a private conversation: no forward

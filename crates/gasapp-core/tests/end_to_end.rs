@@ -8733,3 +8733,157 @@ fn a_channel_report_shares_the_key_only_on_request() {
         [(2, None)]
     );
 }
+
+// ---------------------------------------------------------------------------
+//  Закрытые каналы: враждебный сервер
+// ---------------------------------------------------------------------------
+
+/// Аккаунт по имени — как его знает поддельный сервер.
+fn account_of_name(server: &FakeServer, name: &str) -> String {
+    server.state.borrow().accounts[name].0.clone()
+}
+
+/// 🔐 Сервер подставил под аккаунт участника свой ключ доставки: ключ
+/// новой эпохи под него не шифруется.
+#[test]
+fn a_substituted_delivery_key_gets_no_epoch_key() {
+    use gasapp_protocol::channel_join::{self, JoinLink};
+    use gasapp_protocol::x25519::X25519PrivateKey;
+
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, victim) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let (channel_id, invite) = closed_channel(&author);
+
+    join_closed(&author, &victim, &channel_id, &invite);
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+    let victim_account = account_of_name(&server, "reader");
+
+    // Сервер заменяет ключ доставки жертвы своим: заявка составлена по
+    // всем правилам, но подписана чужим ключом аккаунта.
+    let link = JoinLink::parse(&invite).expect("ссылка");
+    let attacker = X25519PrivateKey::generate(&mut OsRng).expose_secret();
+    let forged = channel_join::seal_request(&link, &attacker, &mut OsRng).expect("заявка");
+    server
+        .state
+        .borrow_mut()
+        .channels
+        .get_mut(&channel_id)
+        .expect("канал")
+        .member_keys
+        .insert(victim_account.clone(), hex::encode(&forged.wire));
+
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+
+    let state = server.state.borrow();
+    let channel = &state.channels[&channel_id];
+    assert_eq!(channel.key_epoch, 1);
+    // Ответ под подставленный ключ не выдан: у жертвы остался прежний,
+    // нулевой эпохи, а сервер ключа новой эпохи не получил.
+    assert_eq!(channel.grant_epochs.get(&victim_account), Some(&0));
+    let grant = hex::decode(&channel.grants[&victim_account]).expect("hex");
+    assert!(
+        channel_join::open_grant(&link.channel_id, &link.verify_key, &forged.secret, &grant)
+            .is_err()
+    );
+}
+
+/// 🔐 Снятие администратора закрытого канала меняет ключ, а эпоху,
+/// заведённую снятым администратором в сговоре с сервером, участники
+/// не принимают.
+#[test]
+fn a_removed_admin_cannot_start_an_epoch() {
+    use gasapp_protocol::channel::{self, ChannelAccess};
+    use gasapp_protocol::channel_join;
+
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, reader) = author_and_reader(&server, &dir);
+    let admin = extra_reader(&server, &dir, "deputy");
+    let (channel_id, invite) = closed_channel(&owner);
+    let id = channel::parse_channel_id(&channel_id).expect("id");
+
+    join_closed(&owner, &reader, &channel_id, &invite);
+    join_closed(&owner, &admin, &channel_id, &invite);
+
+    let request = admin
+        .channel_admin_request(&channel_id, &mut OsRng)
+        .expect("заявка");
+    let admins = owner
+        .add_channel_admin(&channel_id, &request, "Зам", now(), &mut OsRng)
+        .expect("назначение");
+    admin
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+
+    // Владелец снимает администратора — ключ канала меняется сразу.
+    owner
+        .remove_channel_admin(&channel_id, &admins[0].verify_key, now(), &mut OsRng)
+        .expect("снятие");
+    assert_eq!(server.state.borrow().channels[&channel_id].key_epoch, 1);
+    reader
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+    admin
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+
+    // Снятый администратор (он остался подписчиком и знает ключ первой
+    // эпохи) вместе с сервером заводит вторую — с ключом, который знает.
+    let admin_storage = open_storage(&dir, "deputy.db");
+    let admin_row = admin_storage.channel(&id).expect("чтение").expect("канал");
+    let current = admin_storage
+        .channel_key(&id, 1)
+        .expect("чтение")
+        .expect("ключ первой эпохи");
+    let chosen = [0x66u8; 32];
+    let record = channel_join::seal_epoch(
+        &id,
+        2,
+        &chosen,
+        &current,
+        PrivateKeyBytes::new(admin_row.signing_key.expect("ключ подписи")),
+        &mut OsRng,
+    )
+    .expect("звено");
+
+    let reader_account = account_of_name(&server, "reader");
+    {
+        let mut state = server.state.borrow_mut();
+        let fake = state.channels.get_mut(&channel_id).expect("канал");
+        let delivery = channel_join::open_request(
+            &id,
+            &hex::decode(&fake.member_keys[&reader_account]).expect("hex"),
+        )
+        .expect("ключ доставки");
+        let grant = channel_join::seal_epoch_grant(
+            &ChannelAccess {
+                channel_id: id,
+                secret: chosen,
+                verify_key: PublicKeyBytes::new(admin_row.verify_key),
+            },
+            2,
+            &delivery,
+            &mut OsRng,
+        )
+        .expect("ответ");
+
+        fake.epochs.push(hex::encode(record));
+        fake.key_epoch = 2;
+        fake.grants
+            .insert(reader_account.clone(), hex::encode(grant));
+        fake.grant_epochs.insert(reader_account, 2);
+    }
+
+    // Читатель подложную эпоху не принимает: синхронизация отказывает,
+    // а его ключ остаётся прежним.
+    assert!(matches!(
+        reader.sync_channel(&channel_id, now()),
+        Err(GasAppError::InvalidSignature)
+    ));
+    let reader_storage = open_storage(&dir, "reader.db");
+    assert_eq!(reader_storage.channel_key_epoch(&id).expect("эпоха"), 1);
+}

@@ -8387,10 +8387,15 @@ data class FfiChannelJoinRequest (
      */
     var `username`: kotlin.String, 
     /**
-     * Заявка подписана ключом известного контакта с таким именем.
-     * `false` — о заявителе известно только то, что сказал сервер.
+     * Заявка подписана ключом подтверждённого контакта с таким именем
+     * (сверен, добавлен по ссылке либо QR).
      */
-    var `knownContact`: kotlin.Boolean
+    var `knownContact`: kotlin.Boolean, 
+    /**
+     * Ключ заявки стоит под этим именем в журнале ключей дольше суток.
+     * Оба `false` — о заявителе известно только то, что сказал сервер.
+     */
+    var `inKeyLog`: kotlin.Boolean
 ) {
     
     companion object
@@ -8405,19 +8410,22 @@ public object FfiConverterTypeFfiChannelJoinRequest: FfiConverterRustBuffer<FfiC
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiChannelJoinRequest) = (
             FfiConverterString.allocationSize(value.`accountId`) +
             FfiConverterString.allocationSize(value.`username`) +
-            FfiConverterBoolean.allocationSize(value.`knownContact`)
+            FfiConverterBoolean.allocationSize(value.`knownContact`) +
+            FfiConverterBoolean.allocationSize(value.`inKeyLog`)
     )
 
     override fun write(value: FfiChannelJoinRequest, buf: ByteBuffer) {
             FfiConverterString.write(value.`accountId`, buf)
             FfiConverterString.write(value.`username`, buf)
             FfiConverterBoolean.write(value.`knownContact`, buf)
+            FfiConverterBoolean.write(value.`inKeyLog`, buf)
     }
 }
 

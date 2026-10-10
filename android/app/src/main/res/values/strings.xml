@@ -960,4 +960,6 @@
     <string name="channel_report_plain">Report only</string>
     <string name="channel_report_with_key">Send with access</string>
     <string name="channel_report_sent">Report sent</string>
+    <string name="channel_request_row_key_log">\@%1$s · key in the log</string>
+    <string name="channel_request_body_key_log">You have not verified this person, but their key has stood under this name in the key log for more than a day: the server could not have swapped it unnoticed. Whoever you approve gets the channel read key — it cannot be taken back.</string>
 </resources>

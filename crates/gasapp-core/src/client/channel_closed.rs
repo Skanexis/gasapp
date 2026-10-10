@@ -47,11 +47,19 @@ pub struct ChannelJoinRequestInfo {
     pub account_id: String,
     /// Имя заявителя — со слов сервера.
     pub username: String,
-    /// Заявка подписана ключом, который на этом устройстве уже известен
-    /// как ключ контакта с таким именем. `false` — о заявителе известно
-    /// только то, что сказал сервер.
+    /// Заявка подписана ключом **подтверждённого** контакта с таким
+    /// именем: сверенного, добавленного по ссылке либо QR. Сервер такой
+    /// ключ подменить не мог.
     pub known_contact: bool,
+    /// Ключ заявки стоит под этим именем в журнале ключей дольше суток:
+    /// подменить его незаметно для владельца имени сервер не мог. Слабее
+    /// личной сверки, сильнее слова сервера.
+    pub in_key_log: bool,
 }
+
+/// Скольким незнакомым заявителям ключ проверяется по журналу за один
+/// показ списка: каждая проверка — запросы к серверу.
+const KEY_LOG_CHECKS: usize = 20;
 
 /// Подписчик либо удалённый — глазами того, кто ведёт канал.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -460,13 +468,20 @@ impl<T: Transport> Client<T> {
         };
         let meta = access.open_meta(&unhex(&info.meta)?)?;
 
-        // 🔐 Звенья обязан подписать тот, кто вёл канал.
+        // 🔐 Звенья обязан подписать тот, кто вёл канал, а самое новое —
+        // тот, кто ведёт его сейчас (см. `started_by_active`).
         if signers.iter().any(|signed_by| {
             *signed_by != owner
                 && !meta
                     .admins
                     .iter()
                     .any(|admin| admin.verify_key == *signed_by)
+        }) || signers.first().is_some_and(|newest| {
+            *newest != owner
+                && !meta
+                    .admins
+                    .iter()
+                    .any(|admin| admin.verify_key == *newest && admin.until.is_none())
         }) {
             return Err(GasAppError::InvalidSignature);
         }
@@ -516,6 +531,7 @@ impl<T: Transport> Client<T> {
             &DeviceSigner::new(&identity, now),
         )?;
 
+        let contacts = self.contacts()?;
         let mut requests = Vec::with_capacity(list.len());
 
         for item in list {
@@ -532,19 +548,55 @@ impl<T: Transport> Client<T> {
                 continue;
             }
 
-            let known_contact = self
-                .storage
-                .contact_identity_by_username(&item.username)?
-                .is_some_and(|known| known == request.identity.as_bytes());
+            // 🔐 «Ваш контакт» — только подтверждённый: ключ, который
+            // для имени назвал сервер и никто не сверял, ничего не
+            // доказывает — заявку под ним мог составить сам сервер.
+            let known_contact = contacts.iter().any(|contact| {
+                contact.key_confirmed
+                    && !contact.replaced
+                    && contact.username.as_deref() == Some(item.username.as_str())
+                    && contact.identity == request.identity
+            });
+
+            let in_key_log = !known_contact
+                && requests.len() < KEY_LOG_CHECKS
+                && self.request_in_key_log(&item.username, &request.identity, now);
 
             requests.push(ChannelJoinRequestInfo {
                 account_id,
                 username: item.username,
                 known_contact,
+                in_key_log,
             });
         }
 
         Ok(requests)
+    }
+
+    /// Стоит ли ключ заявки под этим именем в журнале ключей дольше
+    /// суток. Сбой сети и «ещё нет» — одинаково `false`.
+    fn request_in_key_log(
+        &self,
+        username: &str,
+        identity: &PublicKeyBytes,
+        now: Timestamp,
+    ) -> bool {
+        let Ok(found) = self.api.discover(username) else {
+            return false;
+        };
+
+        // Сервер обязан называть для имени тот же ключ, что в заявке:
+        // иначе журнал подтвердил бы чей-то другой ключ.
+        if unhex(&found.identity_key).ok().as_deref() != Some(identity.as_bytes().as_slice()) {
+            return false;
+        }
+
+        found.pq_identity_key.is_some_and(|pq| {
+            matches!(
+                self.kt_verify_contact(username, identity, &pq, now),
+                Ok(super::KtVerdict::Verified)
+            )
+        })
     }
 
     /// Одобряет заявку — шифрует секрет чтения под её ключ — либо
@@ -575,6 +627,7 @@ impl<T: Transport> Client<T> {
         let (device_id, identity) = self.own_device()?;
         let signer = DeviceSigner::new(&identity, now);
 
+        let mut approved = None;
         let grant = if approve {
             let list = self.api.channel_join_requests(&device_id, &uuid, &signer)?;
             let item = list
@@ -586,6 +639,7 @@ impl<T: Transport> Client<T> {
             // Заявителю уходит ключ действующей эпохи: до прежних он
             // дойдёт по звеньям цепочки.
             let (epoch, access) = self.writer_access(&stored, now)?;
+            approved = Some(request.identity);
 
             Some(hex(&channel_join::seal_epoch_grant(
                 &access, epoch, &request, rng,
@@ -597,9 +651,22 @@ impl<T: Transport> Client<T> {
         self.api.answer_channel_join(
             &device_id,
             &uuid,
-            &AnswerChannelJoinRequest { account_id, grant },
+            &AnswerChannelJoinRequest {
+                account_id: account_id.clone(),
+                grant,
+            },
             &signer,
-        )
+        )?;
+
+        // 🔐 Ключ аккаунта одобренного запоминается: ключ следующей эпохи
+        // получит только он, а не тот, кого под этим аккаунтом позже
+        // назовёт сервер (см. `seal_keys`).
+        if let (Some(identity), Ok(account)) = (approved, channel::parse_channel_id(&account_id)) {
+            self.storage
+                .pin_channel_member(&stored.channel_id, &account, identity.as_bytes())?;
+        }
+
+        Ok(())
     }
 
     /// Подписчики канала — страницей после аккаунта `after`. Сетевой
@@ -686,6 +753,11 @@ impl<T: Transport> Client<T> {
             restore,
             &DeviceSigner::new(&identity, now),
         )?;
+
+        if let (false, Ok(account)) = (restore, channel::parse_channel_id(account_id)) {
+            self.storage
+                .forget_channel_member(&stored.channel_id, &account)?;
+        }
 
         if !restore && stored.closed {
             // 🔐 Удалённый знает ключ чтения — ключ меняется. Долг
@@ -929,6 +1001,14 @@ impl<T: Transport> Client<T> {
                 .ok_or(GasAppError::Malformed)
                 .and_then(|record| unhex(&record.record))?;
 
+            // 🔐 Действующую эпоху обязан завести владелец либо
+            // действующий администратор. Звено снятого администратора
+            // годится только для чтения истории: иначе он, сговорившись
+            // с сервером, завёл бы каналу ключ, который знает сам.
+            if number == epoch && !started_by_active(&record, &owner, &admins)? {
+                return Err(GasAppError::InvalidSignature);
+            }
+
             keys.push((number, current));
             current = channel_join::open_epoch(id, &owner, &admins, number, &current, &record)?;
         }
@@ -951,27 +1031,78 @@ impl<T: Transport> Client<T> {
 
     /// Ответы с ключом эпохи `epoch` для страницы участников. Ключ
     /// доставки с подписью, которая не сходится, пропускается.
+    ///
+    /// 🔐 Ключ доставки подписан ключом аккаунта, и этот ключ аккаунта
+    /// обязан быть тем же, что устройство видело у участника раньше (при
+    /// одобрении заявки либо при первой раздаче). Иначе сервер подставил
+    /// бы под аккаунт участника свой ключ доставки и получил ключ новой
+    /// эпохи. Участник, у которого ключ аккаунта сменился (вернул аккаунт
+    /// на новом телефоне), ключа не получает, пока его не одобрят заново.
     fn seal_keys<R: RngCore + CryptoRng>(
+        &self,
         stored: &StoredChannel,
         access: &ChannelAccess,
         epoch: u32,
         members: &[ChannelMemberKeyResponse],
         rng: &mut R,
-    ) -> Vec<ChannelEpochGrant> {
-        members
-            .iter()
-            .filter_map(|member| {
-                let request = unhex(&member.member_key)
-                    .and_then(|wire| channel_join::open_request(&stored.channel_id, &wire))
-                    .ok()?;
-                let grant = channel_join::seal_epoch_grant(access, epoch, &request, rng).ok()?;
+    ) -> Result<Vec<ChannelEpochGrant>> {
+        let mut grants = Vec::with_capacity(members.len());
 
-                Some(ChannelEpochGrant {
-                    account_id: canonical_account(&member.account_id)?,
+        for member in members {
+            let Some(account_id) = canonical_account(&member.account_id) else {
+                continue;
+            };
+            let Ok(request) = unhex(&member.member_key)
+                .and_then(|wire| channel_join::open_request(&stored.channel_id, &wire))
+            else {
+                continue;
+            };
+            let Ok(account) = channel::parse_channel_id(&account_id) else {
+                continue;
+            };
+
+            if !self.storage.channel_member_matches(
+                &stored.channel_id,
+                &account,
+                request.identity.as_bytes(),
+            )? {
+                continue;
+            }
+
+            if let Ok(grant) = channel_join::seal_epoch_grant(access, epoch, &request, rng) {
+                grants.push(ChannelEpochGrant {
+                    account_id,
                     grant: hex(&grant),
-                })
-            })
-            .collect()
+                });
+            }
+        }
+
+        Ok(grants)
+    }
+
+    /// Меняет ключ канала после снятия администратора: снятый знает ключ
+    /// чтения, а его подпись под звеном больше не должна заводить каналу
+    /// новые эпохи. Не вышло (нет сети) — смена остаётся долгом.
+    pub(super) fn rekey_after_admin_removal<R: RngCore + CryptoRng>(
+        &self,
+        channel_id: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let stored = self.stored_channel(channel_id)?;
+
+        if !stored.closed {
+            return Ok(());
+        }
+
+        let uuid = channel::format_uuid(&stored.channel_id);
+        self.set_setting_bool(&rekey_due(&uuid), true)?;
+
+        if self.rekey_channel(&stored, now, rng).is_ok() {
+            self.set_setting_bool(&rekey_due(&uuid), false)?;
+        }
+
+        Ok(())
     }
 
     /// Меняет ключ канала: новая эпоха, звено к прежней и ключ каждому
@@ -1023,7 +1154,7 @@ impl<T: Transport> Client<T> {
             &RekeyChannelRequest {
                 epoch,
                 record: Some(hex(&record)),
-                grants: Self::seal_keys(stored, &next, epoch, &members, rng),
+                grants: self.seal_keys(stored, &next, epoch, &members, rng)?,
             },
             &signer,
         );
@@ -1053,7 +1184,7 @@ impl<T: Transport> Client<T> {
                 &RekeyChannelRequest {
                     epoch,
                     record: None,
-                    grants: Self::seal_keys(stored, &next, epoch, &members, rng),
+                    grants: self.seal_keys(stored, &next, epoch, &members, rng)?,
                 },
                 &signer,
             )?;
@@ -1089,11 +1220,25 @@ impl<T: Transport> Client<T> {
             &RekeyChannelRequest {
                 epoch,
                 record: None,
-                grants: Self::seal_keys(stored, &access, epoch, &members, rng),
+                grants: self.seal_keys(stored, &access, epoch, &members, rng)?,
             },
             &signer,
         )
     }
+}
+
+/// Подписано ли звено владельцем либо действующим администратором.
+fn started_by_active(
+    record: &[u8],
+    owner: &PublicKeyBytes,
+    admins: &[ChannelAdmin],
+) -> Result<bool> {
+    let signer = channel_join::epoch_signer(record)?;
+
+    Ok(signer == *owner
+        || admins
+            .iter()
+            .any(|admin| admin.verify_key == signer && admin.until.is_none()))
 }
 
 /// Настройка «канал ждёт смены ключа».

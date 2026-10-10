@@ -753,23 +753,34 @@ where `invite` is 16 random bytes. The link carries **no** `secret`. The
 server stores `SHA-256(invite)` and accepts a request only with a tag
 whose hash it holds and that has not been revoked.
 
-**Request.** The applicant generates a one-time X25519 key pair
-`(e, E)` and signs `E` with the account identity key (XEdDSA, §3):
+**Request.** The applicant draws a 32-byte one-time seed and derives a
+**hybrid** key pair from it — X25519 `(e, E)` and ML-KEM-1024 `(dk, EK)` —
+and signs both public halves with the account identity key (XEdDSA, §3):
 
 ```
-request = 0x01 ‖ E (32) ‖ IK (32) ‖ Sig (64)
-Sig     = XEdDSA.Sign(ik, "GASAPP_CHANNEL_v1_JOIN" ‖ channel_id ‖ E)
+e  = HKDF-SHA-256(ikm = seed, info = "GASAPP_CHANNEL_v2_SEED_X25519", L = 32)
+dk = ML-KEM-1024.KeyGen(HKDF-SHA-256(ikm = seed, info = "GASAPP_CHANNEL_v2_SEED_MLKEM", L = 64))
+
+request = 0x02 ‖ E (32) ‖ EK (1568) ‖ IK (32) ‖ Sig (64)
+Sig     = XEdDSA.Sign(ik, "GASAPP_CHANNEL_v2_JOIN" ‖ channel_id ‖ E ‖ EK)
 ```
 
 **Grant.** Whoever runs the channel verifies `Sig`, generates a one-time
-pair `(a, A)` and wraps the channel `secret`:
+X25519 pair `(a, A)`, encapsulates to `EK` and wraps the channel `secret`
+under both shared secrets:
 
 ```
-K     = HKDF-SHA-256(salt = channel_id, ikm = X25519(a, E),
-                     info = "GASAPP_CHANNEL_v1_GRANT" ‖ E ‖ A, L = 32)
-grant = 0x01 ‖ A (32) ‖ nonce (12) ‖
-        AES-256-GCM(K, nonce, secret, aad = "GASAPP_CHANNEL_v1_GRANT_AAD" ‖ channel_id ‖ vk)
+(ss, ct) = ML-KEM-1024.Encaps(EK)
+K     = HKDF-SHA-256(salt = channel_id, ikm = X25519(a, E) ‖ ss,
+                     info = "GASAPP_CHANNEL_v2_GRANT" ‖ E ‖ A ‖ SHA-256(EK) ‖ SHA-256(ct), L = 32)
+grant = 0x02 ‖ A (32) ‖ ct (1568) ‖ nonce (12) ‖
+        AES-256-GCM(K, nonce, epoch (4) ‖ secret,
+                    aad = "GASAPP_CHANNEL_v2_GRANT_AAD" ‖ channel_id ‖ vk)
 ```
+
+Breaking the grant requires breaking **both** X25519 and ML-KEM-1024: an
+adversary who stores grants today cannot open them with a quantum computer
+later. Version `0x01` (X25519 only) is not accepted.
 
 The server stores `request` and `grant` as opaque bytes. The applicant
 opens the grant with `e` and accepts the recovered `secret` **only if**
@@ -793,7 +804,9 @@ Sig      = Ed25519.Sign(sk_signer, "GASAPP_CHANNEL_v1_EPOCH_SIG" ‖ channel_id 
 `record_n` is a chain link: a member holding `S_n` recovers `S_{n-1}`
 and so reads the history; nothing leads forward from an old secret. The
 signer must be the owner or an administrator named in the channel
-metadata. `S_n` is handed to every remaining member as a grant (the same
+metadata — and the link that starts the **current** epoch must be signed
+by the owner or an administrator who is still active. Removing an
+administrator of a closed channel therefore changes the key at once. `S_n` is handed to every remaining member as a grant (the same
 construction as above, with the plaintext `n (4) ‖ S_n`) sealed to that
 member's **delivery key** — the one-time key of their join request, or,
 for members who never sent one, a key they register on their next
@@ -814,22 +827,29 @@ selects the key. A channel whose key was changed cannot be reopened.
   and the channel title, description and avatar (which stay under the
   epoch-0 key), remain readable to the removed subscriber if they obtain
   the ciphertext.
-* **The server can substitute a request.** `Sig` binds `E` to an
-  identity key, but the approver learns *whose* key that is from the
-  server unless the applicant is a contact whose key they already hold
-  (the app marks such requests). A server that swaps in its own
+* **The server can substitute a request.** `Sig` binds the one-time
+  keys to an identity key, but the approver learns *whose* key that is
+  from the server — unless the applicant is a **confirmed** contact
+  (verified, or added by link/QR), or the key has stood under that name in
+  the key-transparency log (§9.7) for more than a day. The app marks both
+  cases; everything else is the server's word. A server that swaps in its own
   `(E, IK)` under an applicant's name receives `secret` when the request
   is approved.
 * **The old open link still contains the epoch-0 `secret`.** Closing a
   channel stops the server from serving it to non-members; a link issued
   while the channel was open still decrypts what was published before
   the first key change.
-* **A substituted delivery key.** A server that replaces a member's
-  delivery key with its own receives the next epoch's secret. This needs
-  an actively malicious server; a removed subscriber alone gains nothing.
-* **A removed administrator plus the server** can start an epoch whose
-  secret they know: links signed by an administrator stay valid after
-  their removal, or the history they keyed would become unreadable.
+* **A delivery key substituted at first sight.** A device that runs the
+  channel remembers the identity key of every member it approved or first
+  handed a key to, and refuses a delivery key signed by any other identity
+  under that account. A server can still plant its own key for a member
+  the device has never seen — once, before the first hand-out. A member
+  whose identity key changes (account restored on a new phone) gets no
+  further keys until re-approved.
+* **An administrator removed while the owner is offline.** A removed
+  administrator cannot start the current epoch (see above), but until the
+  owner's device publishes the new metadata and the key change, they are
+  still an administrator.
 * **A member who is offline during a key change** reads new records only
   after a device that runs the channel hands them the key.
 * **Membership is known to the server**, as subscription already was
@@ -873,9 +893,11 @@ the pairwise session, so the server sees neither labels nor presses:
 
 * kind `10`, *keyboard*: `target (16) ‖ len (4) ‖ keyboard` — rows of
   buttons attached to a message the sender wrote earlier (`target` is
-  its identifier). A button is a label (≤ 40 characters) and either
-  callback data (≤ 64 bytes) or an `https://` URL (≤ 512 bytes); at most
-  8 rows of 4. An empty keyboard removes the buttons. The receiver
+  its identifier). A button is a label (≤ 40 characters, no control,
+  bidirectional-override or zero-width characters) and either callback
+  data (≤ 64 bytes) or an `https://` URL (≤ 512 bytes, printable ASCII
+  only, no credentials before the host — an internationalised name must be
+  written as `xn--…`); at most 8 rows of 4. An empty keyboard removes the buttons. The receiver
   accepts it only for a message of that peer in that chat.
 * kind `11`, *callback*: `target (16) ‖ len (4) ‖ data` — a press. The
   receiver accepts it only if it itself attached, to that message in

@@ -655,6 +655,16 @@ pub struct ReportChannelRequest {
     pub link: Option<String>,
 }
 
+/// Ведёт ли ссылка именно в этот канал.
+///
+/// 🔐 Иначе к жалобе на один канал приложили бы ссылку другого, и
+/// оператор судил бы о канале по чужим записям.
+fn links_to(link: &str, channel_id: Uuid) -> bool {
+    link.strip_prefix("gasapp://channel/")
+        .and_then(|rest| rest.split('.').next())
+        .is_some_and(|id| id.eq_ignore_ascii_case(&channel_id.simple().to_string()))
+}
+
 /// Принимает жалобу на канал — от любого аккаунта, за подписью.
 ///
 /// 🔐 Что в канале, сервер не знает и по жалобе: ссылку (ключ чтения)
@@ -672,7 +682,7 @@ pub(crate) async fn report(
         || request
             .link
             .as_deref()
-            .is_some_and(|link| link.len() > MAX_LINK_LEN || !link.starts_with("gasapp://channel/"))
+            .is_some_and(|link| link.len() > MAX_LINK_LEN || !links_to(link, channel_id))
     {
         return Err(ApiError::BadRequest);
     }
