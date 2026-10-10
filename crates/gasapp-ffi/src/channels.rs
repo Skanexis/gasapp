@@ -1049,8 +1049,9 @@ impl Messenger {
 
     /// Делает свой канал закрытым либо снова открытым. Сетевой вызов.
     ///
-    /// ⚠️ Прежняя ссылка канала несёт ключ чтения, и он не меняется:
-    /// сервер перестаёт отдавать записи посторонним, но не более.
+    /// 🔐 Прежняя ссылка канала несёт ключ чтения, поэтому закрытие
+    /// сразу меняет ключ канала (не вышло — при ближайшей синхронизации).
+    /// Открытым такой канал уже не сделать.
     ///
     /// # Errors
     ///
@@ -1065,9 +1066,17 @@ impl Messenger {
     ) -> Result<FfiChannel, FfiError> {
         let client = self.client()?;
 
-        guard(|| client.set_channel_closed(&channel_id, closed, Timestamp::from_millis(now_millis)))
-            .map(FfiChannel::from)
-            .map_err(malformed_is_invalid)
+        let now = Timestamp::from_millis(now_millis);
+
+        guard(|| {
+            client.set_channel_closed(&channel_id, closed, now)?;
+            // Смена ключа — сразу; без сети она остаётся долгом.
+            let _ = client.maintain_channel_keys(now, &mut rand_core::OsRng);
+
+            client.channel(&channel_id)
+        })
+        .map(FfiChannel::from)
+        .map_err(malformed_is_invalid)
     }
 
     /// Заводит ссылку-приглашение закрытого канала и возвращает её.

@@ -132,8 +132,8 @@ pub fn now_millis() -> i64 {
 
 /// Собирает подписанный запрос.
 ///
-/// Подписывается **путь**, а не весь URI: сервер видит
-/// `parts.uri.path()`, и строка запроса в подпись не входит.
+/// Подписывается путь вместе со строкой запроса — как его видит
+/// сервер.
 #[must_use]
 pub fn signed_request(
     private: &DeviceKey,
@@ -145,7 +145,7 @@ pub fn signed_request(
     use sha2::{Digest as _, Sha256};
 
     let issued_at = now_millis();
-    let path = uri.split('?').next().unwrap_or(uri);
+    let path = uri;
     let body_sha256: [u8; 32] = Sha256::digest(&body).into();
     let message = gasapp_server_api::authz::signed_message(method, path, issued_at, &body_sha256);
     let signature = client_sign(private, &message);

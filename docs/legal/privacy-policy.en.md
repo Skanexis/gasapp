@@ -143,9 +143,16 @@ The full list of what is stored and for how long is in
   connection is open (it does not record it — see below). Turn on Tor,
   built into the app itself, at sign-up or in the network settings, and
   the server sees the address of a Tor node, not yours.
+  🔐 The honest cost of a direct connection: requests the app
+  deliberately sends without a device signature (looking up a username,
+  checking keys against the key log, reading an open channel, sending a
+  message without naming the sender) come from the same address as the
+  signed ones. The server does not record them, but at the moment of the
+  request it could match them. With Tor such requests travel over
+  separate circuits and there is nothing to match them by.
 * **We do not learn who checks keys.** The key log (which the app uses to
   check a contact's key without meeting in person) is queried without the
-  device signature and over a separate Tor circuit. The log holds a hash of
+  device signature and, with Tor on, over a separate circuit. The log holds a hash of
   the username and a public key, which the server stores anyway.
 * **We do not log IP addresses.** The application does not see addresses at
   all: its rate limiters work on the username and device identifier. The

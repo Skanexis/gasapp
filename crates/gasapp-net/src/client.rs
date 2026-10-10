@@ -1507,14 +1507,12 @@ impl<T: Transport> ApiClient<T> {
         body: Option<String>,
         signer: &dyn crate::auth::RequestSigner,
     ) -> Result<HttpResponse> {
-        // Сервер сверяет подпись с путём без строки запроса. Параметры
-        // после `?` поэтому не подписаны: ими выбирают только страницу
-        // выдачи, прав они не дают.
-        let signed_path = path.split('?').next().unwrap_or(&path);
+        // 🔐 Подписан путь вместе со строкой запроса: параметры после
+        // `?` подменить нельзя.
         let headers = crate::auth::signature_headers(
             signer,
             method.as_str(),
-            signed_path,
+            &path,
             body.as_deref().unwrap_or("").as_bytes(),
         )?;
 

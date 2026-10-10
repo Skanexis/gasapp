@@ -531,6 +531,20 @@ gradle.taskGraph.whenReady { graph ->
         problems << "пины сертификата в release/res/xml/network_security_config.xml — заглушки"
     }
 
+    // 🔐 После даты `expiration` пиннинг молча выключается — остаётся
+    // обычная проверка цепочки. Релиз, у которого до этой даты меньше
+    // полугода, большую часть жизни прожил бы без пиннинга (аудит
+    // 2026-10-10, N-4). По умолчанию соединение прямое, и пин — главная
+    // защита от подставного сертификата.
+    def expiration = (pins =~ /expiration="(\d{4}-\d{2}-\d{2})"/)
+    if (!expiration.find()) {
+        problems << "у набора пинов нет expiration"
+    } else if (java.time.LocalDate.parse(expiration.group(1))
+            .isBefore(java.time.LocalDate.now().plusDays(180))) {
+        problems << "пины действуют до ${expiration.group(1)} — меньше полугода: " +
+            "продлите expiration (docs/ops/cert-pin-rotation.md)"
+    }
+
     if (!project.hasProperty('gasappKeystore')) {
         problems << "не задан gasappKeystore — APK вышел бы неподписанным"
     }

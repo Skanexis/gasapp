@@ -8887,3 +8887,54 @@ fn a_removed_admin_cannot_start_an_epoch() {
     let reader_storage = open_storage(&dir, "reader.db");
     assert_eq!(reader_storage.channel_key_epoch(&id).expect("эпоха"), 1);
 }
+
+/// 🔐 Закрытие канала меняет его ключ: прежняя ссылка несёт секрет
+/// чтения, и новые записи им уже не открываются. Прежний подписчик
+/// получает новый ключ, назвав ключ доставки.
+#[test]
+fn closing_a_channel_changes_its_key() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, early) = author_and_reader(&server, &dir);
+
+    let (channel_id, link) = followed_channel(&author, &early);
+    post_text(&author, &channel_id, "открытая");
+    early
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+
+    // Ссылка открытого канала могла разойтись как угодно далеко.
+    let old_access = gasapp_protocol::channel::ChannelAccess::parse(&link).expect("доступ");
+
+    author
+        .set_channel_closed(&channel_id, true, now())
+        .expect("закрыть");
+    assert!(author.channel(&channel_id).expect("канал").rekey_pending);
+    author
+        .maintain_channel_keys(now(), &mut OsRng)
+        .expect("обслуживание");
+    assert!(!author.channel(&channel_id).expect("канал").rekey_pending);
+    assert_eq!(server.state.borrow().channels[&channel_id].key_epoch, 1);
+
+    let number = post_text(&author, &channel_id, "после закрытия");
+    let seq = usize::try_from(number).expect("номер");
+
+    // Секрет из прежней ссылки новую запись не открывает.
+    let body = stored_body(&server, &channel_id, seq);
+    let (epoch, record) = gasapp_protocol::channel::split_epoch(&body).expect("эпоха");
+    assert_eq!(epoch, 1);
+    assert!(old_access.open_post(record, number, &[]).is_err());
+
+    // Прежний подписчик называет ключ доставки, получает ключ эпохи от
+    // того, кто ведёт канал, и читает дальше.
+    early
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+    author
+        .maintain_channel_keys(now(), &mut OsRng)
+        .expect("обслуживание");
+    early
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+    assert_eq!(texts(&early, &channel_id), ["открытая", "после закрытия"]);
+}
