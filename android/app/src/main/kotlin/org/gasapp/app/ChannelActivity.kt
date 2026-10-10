@@ -939,12 +939,58 @@ class ChannelActivity : AppCompatActivity() {
             if (current.role != FfiChannelRole.ADMIN) {
                 sheet.action(getString(R.string.channel_admin_request), R.drawable.ic_key) { showAdminRequest() }
             }
+            sheet.action(getString(R.string.channel_report), R.drawable.ic_block) { chooseReportReason() }
             sheet.action(getString(R.string.channel_leave), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = false)
             }
         }
 
         sheet.show()
+    }
+
+    // --- Жалоба на канал ----------------------------------------------------
+
+    private fun chooseReportReason() {
+        val sheet = GasAppSheet.on(this, R.string.channel_report)
+
+        for ((reason, label) in REPORT_REASONS) {
+            sheet.action(getString(label), R.drawable.ic_block) { confirmReport(reason) }
+        }
+
+        sheet.show()
+    }
+
+    /**
+     * Жалоба оператору сервера.
+     *
+     * 🔐 Записи канала без публичного имени оператор прочитать не может.
+     * Человек решает сам, дать ли ему ключ чтения: «Отправить с доступом»
+     * прикладывает ссылку канала, «Только жалоба» — нет. Что получит
+     * оператор в каждом случае, сказано до кнопок.
+     */
+    private fun confirmReport(reason: Int) {
+        GasAppDialog(this)
+            .title(R.string.channel_report)
+            .message(R.string.channel_report_body)
+            .secondary(R.string.channel_report_plain) { sendReport(reason, shareKey = false) }
+            .primary(R.string.channel_report_with_key) { sendReport(reason, shareKey = true) }
+            .show()
+    }
+
+    private fun sendReport(reason: Int, shareKey: Boolean) {
+        lifecycleScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().reportChannel(channelId, reason.toUByte(), shareKey, System.currentTimeMillis())
+                }
+            }
+
+            GasAppToast.show(
+                this@ChannelActivity,
+                if (sent.isSuccess) R.string.channel_report_sent else R.string.channels_error_network,
+                if (sent.isSuccess) GasAppToast.Tone.Success else GasAppToast.Tone.Error,
+            )
+        }
     }
 
     /** О канале: описание, имя, подписчики — и чьи это числа. */
@@ -1471,6 +1517,15 @@ class ChannelActivity : AppCompatActivity() {
         private const val MAX_SHOWN = 3_000
 
         private val SEARCH_LIMIT = 30u
+
+        /** Причины жалобы: номер, как его знает сервер, и подпись. */
+        private val REPORT_REASONS = listOf(
+            1 to R.string.channel_report_spam,
+            2 to R.string.channel_report_illegal,
+            3 to R.string.channel_report_child_safety,
+            4 to R.string.channel_report_violence,
+            5 to R.string.channel_report_other,
+        )
         private const val SNIPPET_CHARS = 80
 
         private const val LINK_TEXT_SP = 12f

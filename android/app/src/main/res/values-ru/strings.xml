@@ -993,4 +993,23 @@
     <string name="message_button_link_title">Открыть ссылку?</string>
     <string name="message_button_link_body">Кнопку и ссылку прислал собеседник. Она откроется вне GasApp:\n\n%1$s</string>
     <string name="message_button_link_open">Открыть</string>
+    <string name="legal_title">Условия и документы</string>
+    <string name="legal_terms">Условия использования</string>
+    <string name="legal_privacy">Политика конфиденциальности</string>
+    <string name="legal_guidelines">Правила сообщества</string>
+    <string name="legal_child_safety">Безопасность детей</string>
+    <string name="legal_account_deletion">Удаление аккаунта</string>
+    <string name="legal_support">Поддержка</string>
+    <string name="legal_open_failed">Не получилось открыть страницу: нет браузера</string>
+    <string name="onboarding_legal">Создавая аккаунт, вы принимаете Условия использования и Политику конфиденциальности. Нажмите, чтобы прочитать.</string>
+    <string name="channel_report">Пожаловаться на канал</string>
+    <string name="channel_report_spam">Спам или обман</string>
+    <string name="channel_report_illegal">Незаконное содержимое</string>
+    <string name="channel_report_child_safety">Угроза безопасности детей</string>
+    <string name="channel_report_violence">Насилие или ненависть</string>
+    <string name="channel_report_other">Другое</string>
+    <string name="channel_report_body">Жалоба уйдёт оператору сервера вместе с именем вашего аккаунта. Записи этого канала оператор прочитать не может — если не дать ему доступ. «Отправить с доступом» приложит к жалобе ссылку канала: оператор сможет открыть его и увидеть, на что вы жалуетесь.</string>
+    <string name="channel_report_plain">Только жалоба</string>
+    <string name="channel_report_with_key">Отправить с доступом</string>
+    <string name="channel_report_sent">Жалоба отправлена</string>
 </resources>

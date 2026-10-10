@@ -130,6 +130,16 @@ class OnboardingActivity : AppCompatActivity() {
         // Исправление имени снимает ошибку: подсказка возвращается.
         username.doAfterTextChanged { clearUsernameError() }
         email.doAfterTextChanged { clearEmailError() }
+        findViewById<View>(R.id.onboarding_legal).setOnClickListener {
+            org.gasapp.app.core.Legal.show(
+                this,
+                listOf(
+                    org.gasapp.app.core.Legal.Page.Terms,
+                    org.gasapp.app.core.Legal.Page.Privacy,
+                    org.gasapp.app.core.Legal.Page.Guidelines,
+                ),
+            )
+        }
         code.doAfterTextChanged { clearCodeError() }
         // 🔐 PIN — своей клавиатурой, не системной (см. [PinPad]).
         pin = PinPad(findViewById(android.R.id.content))

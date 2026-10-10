@@ -117,6 +117,12 @@ android {
         // устройствах; релиз обязан переопределить его.
         buildConfigField "String", "GASAPP_SERVER_URL",
                 "\"${project.findProperty('gasappServerUrl') ?: 'https://10.0.2.2:8443'}\""
+        // Адрес сайта с документами: условия, политика, правила
+        // сообщества, удаление аккаунта (`tools/build-site.py`).
+        // Магазины требуют, чтобы эти страницы открывались из приложения.
+        // Релиз обязан задать настоящий адрес: `-PgasappDocsUrl=https://…`.
+        buildConfigField "String", "GASAPP_DOCS_URL",
+                "\"${project.findProperty('gasappDocsUrl') ?: 'https://gasapp.chat'}\""
         // Onion-сервис сервера (`адрес.onion:порт`, см.
         // server/deploy/onion): в режиме Tor соединения к серверу идут
         // туда, без выходного узла. Пусто — через выходной узел.

@@ -305,6 +305,22 @@
                     android:text="@string/onboarding_email_helper" />
 
                 <!--
+                  Условия и политика — до создания аккаунта: магазины
+                  требуют согласия с условиями у приложений, где люди
+                  публикуют своё (каналы), а человек вправе прочитать,
+                  на что соглашается. Нажатие открывает список документов.
+                -->
+                <TextView
+                    android:id="@+id/onboarding_legal"
+                    style="@style/GasAppCaption"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:background="?attr/selectableItemBackground"
+                    android:minHeight="48dp"
+                    android:gravity="center_vertical"
+                    android:text="@string/onboarding_legal"
+                    android:textColor="@color/accent_base" />
+
+                <!--
                   🔐 Tor — по умолчанию (ADR-024). Прямое соединение отдаёт
                   серверу IP-адрес, и выбрать его можно только явно:
                   переключатель выключен, а подпись говорит, чем за это
