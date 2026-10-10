@@ -476,6 +476,22 @@ fn http_and_webhook(owner: &Client<HttpTransport>, data: &std::path::Path, bot_n
     assert_eq!(status, 200);
     assert_eq!(me["result"]["username"], bot_name);
 
+    // 🔐 Страница в браузере на этой же машине ботом не управляет —
+    // даже зная секрет: её выдают заголовки браузера и чужой `Host`.
+    for headers in [
+        "Origin: https://evil.example\r\n",
+        "Sec-Fetch-Site: cross-site\r\n",
+        "Host: evil.example\r\n",
+    ] {
+        let (status, _) = http_call(
+            port,
+            &format!(
+                "POST /getMe HTTP/1.1\r\n{headers}Authorization: Bearer s3cret\r\nContent-Length: 0\r\n\r\n"
+            ),
+        );
+        assert_eq!(status, 403, "{headers}");
+    }
+
     // Человек пишет боту — событие приходит на веб-хук с секретом.
     owner
         .add_contact_from_link(

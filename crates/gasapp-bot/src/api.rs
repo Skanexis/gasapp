@@ -22,7 +22,14 @@
 //!   заголовке `X-GasApp-Bot-Secret` — так программа бота отличает
 //!   события движка от чужих запросов;
 //! * сам интерфейс — открытый HTTP. Наружу его выставляют только за
-//!   своим обратным прокси с TLS.
+//!   своим обратным прокси с TLS;
+//! * 🔐 **запросы из браузера не принимаются вовсе.** Веб-страница,
+//!   открытая на машине бота, может слать запросы на `127.0.0.1` — и без
+//!   этой защиты управляла бы ботом, которого «слушает только своя
+//!   машина». Запрос с заголовком `Origin` либо `Sec-Fetch-Site` (их
+//!   ставит браузер), с чужим `Host` (подмена имени через DNS) либо
+//!   команда без `Content-Type: application/json` отвергаются
+//!   ([`ApiRequest::from_browser`], [`ApiRequest::host_allowed`]).
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -52,6 +59,53 @@ pub struct ApiRequest {
     pub bearer: Option<String>,
     /// Тело.
     pub body: Vec<u8>,
+    /// Заголовок `Host`.
+    pub host: Option<String>,
+    /// Тип тела — `application/json`.
+    pub json: bool,
+    /// Запрос несёт заголовки, которые ставит только браузер.
+    pub from_browser: bool,
+}
+
+impl ApiRequest {
+    /// Обращаются ли к движку по его собственному адресу.
+    ///
+    /// 🔐 Защита от подмены имени (DNS rebinding): страница на
+    /// `evil.example`, чьё имя вдруг стало указывать на `127.0.0.1`,
+    /// приходит с `Host: evil.example` — и получает отказ. Годится адрес,
+    /// на котором движок слушает, и `localhost` с тем же портом.
+    #[must_use]
+    pub fn host_allowed(&self, listening: &std::net::SocketAddr) -> bool {
+        let Some(host) = self.host.as_deref() else {
+            // HTTP/1.0 без `Host` — не браузер; имя подменять нечем.
+            return true;
+        };
+
+        let port = listening.port();
+        let named = host.eq_ignore_ascii_case(&format!("localhost:{port}"))
+            || (port == 80 && host.eq_ignore_ascii_case("localhost"));
+
+        named
+            || host
+                .parse::<std::net::SocketAddr>()
+                .is_ok_and(|address| address.port() == port && same_machine(&address, listening))
+            || (port == 80
+                && host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| same_ip(&ip, &listening.ip())))
+    }
+}
+
+fn same_ip(given: &std::net::IpAddr, listening: &std::net::IpAddr) -> bool {
+    // Слушая все адреса, движок не знает, каким именно к нему пришли:
+    // годится любой числовой адрес, но не имя.
+    given == listening
+        || listening.is_unspecified()
+        || (given.is_loopback() && listening.is_loopback())
+}
+
+fn same_machine(given: &std::net::SocketAddr, listening: &std::net::SocketAddr) -> bool {
+    same_ip(&given.ip(), &listening.ip())
 }
 
 /// Разбирает запрос HTTP/1.1, прочитанный целиком.
@@ -90,6 +144,9 @@ pub fn parse_request(raw: &[u8]) -> Result<ApiRequest> {
 
     let mut length = 0usize;
     let mut bearer = None;
+    let mut host = None;
+    let mut json = false;
+    let mut from_browser = false;
 
     for line in lines {
         let Some((name, value)) = line.split_once(':') else {
@@ -101,6 +158,17 @@ pub fn parse_request(raw: &[u8]) -> Result<ApiRequest> {
             length = value.parse().map_err(|_| GasAppError::Malformed)?;
         } else if name.eq_ignore_ascii_case("authorization") {
             bearer = value.strip_prefix("Bearer ").map(str::to_owned);
+        } else if name.eq_ignore_ascii_case("host") {
+            host = Some(value.to_owned());
+        } else if name.eq_ignore_ascii_case("content-type") {
+            json = value
+                .split(';')
+                .next()
+                .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("application/json"));
+        } else if name.eq_ignore_ascii_case("origin")
+            || name.to_ascii_lowercase().starts_with("sec-fetch-")
+        {
+            from_browser = true;
         }
     }
 
@@ -113,6 +181,9 @@ pub fn parse_request(raw: &[u8]) -> Result<ApiRequest> {
         command: command.to_owned(),
         bearer,
         body: body.get(..length).ok_or(GasAppError::Malformed)?.to_vec(),
+        host,
+        json,
+        from_browser,
     })
 }
 
@@ -154,6 +225,7 @@ pub fn write_response(stream: &mut TcpStream, status: u16, body: &str) {
         200 => "OK",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         _ => "Error",
     };
@@ -271,6 +343,46 @@ mod tests {
             ("GET", "getUpdates")
         );
         assert!(get.body.is_empty() && get.bearer.is_none());
+    }
+
+    #[test]
+    fn browser_requests_and_foreign_hosts_are_recognised() {
+        let listening: std::net::SocketAddr = "127.0.0.1:8081".parse().unwrap();
+        let request = |headers: &str| {
+            parse_request(format!("POST /getMe HTTP/1.1\r\n{headers}\r\n").as_bytes()).unwrap()
+        };
+
+        // Обычный клиент: свой адрес, JSON, без браузерных заголовков.
+        let plain =
+            request("Host: 127.0.0.1:8081\r\nContent-Type: application/json; charset=utf-8\r\n");
+        assert!(plain.json && !plain.from_browser && plain.host_allowed(&listening));
+        assert!(request("Host: localhost:8081\r\n").host_allowed(&listening));
+        assert!(request("Host: [::1]:8081\r\n").host_allowed(&listening));
+        assert!(request("").host_allowed(&listening));
+
+        // 🔐 Страница в браузере: её выдают `Origin` и `Sec-Fetch-*`.
+        assert!(request("Origin: https://evil.example\r\n").from_browser);
+        assert!(request("Sec-Fetch-Site: cross-site\r\n").from_browser);
+        // «Простой» запрос формы — без JSON, предварительной проверки нет.
+        assert!(!request("Content-Type: text/plain\r\n").json);
+
+        // 🔐 Подмена имени: чужое имя, чужой порт, чужой адрес.
+        for foreign in [
+            "evil.example:8081",
+            "evil.example",
+            "127.0.0.1:9",
+            "10.0.0.5:8081",
+        ] {
+            assert!(
+                !request(&format!("Host: {foreign}\r\n")).host_allowed(&listening),
+                "{foreign}"
+            );
+        }
+
+        // Слушая все адреса, движок принимает числовой адрес, но не имя.
+        let everywhere: std::net::SocketAddr = "0.0.0.0:8081".parse().unwrap();
+        assert!(request("Host: 192.168.1.7:8081\r\n").host_allowed(&everywhere));
+        assert!(!request("Host: evil.example:8081\r\n").host_allowed(&everywhere));
     }
 
     #[test]
