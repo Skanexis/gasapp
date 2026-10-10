@@ -1992,7 +1992,7 @@ async fn a_request_needs_a_live_invite() {
             "join",
             Some(serde_json::json!({
                 "invite": hex::encode(INVITE),
-                "request": hex::encode(vec![1u8; 513]),
+                "request": hex::encode(vec![1u8; 4097]),
             })),
         )
         .await,

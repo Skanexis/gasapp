@@ -1197,7 +1197,7 @@ pub const MAX_PENDING_REQUESTS_PER_CHANNEL: i64 = 1_000;
 pub const MAX_PENDING_REQUESTS_PER_ACCOUNT: i64 = 50;
 
 /// Предел заявки и ответа на неё, в байтах.
-pub const MAX_JOIN_BLOB_BYTES: usize = 512;
+pub const MAX_JOIN_BLOB_BYTES: usize = 4096;
 
 /// Сколько заявок или подписчиков отдаётся за один запрос.
 pub const MAX_MEMBERS_PER_PAGE: i64 = 100;
