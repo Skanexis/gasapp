@@ -500,7 +500,7 @@
 
     <!-- Network -->
     <string name="network_title">Network</string>
-    <string name="network_intro">Without Tor or a proxy, the server sees your device\'s IP address: it reveals roughly where you are and can link your accounts to each other. Tor, built into the app, is the default.</string>
+    <string name="network_intro">Without Tor or a proxy, the server sees your device\'s IP address: it reveals roughly where you are and can link your accounts to each other. Tor, built into the app, hides it.</string>
     <string name="network_section_mode">Connection method</string>
     <string name="network_mode_direct">Direct</string>
     <string name="network_mode_socks">SOCKS5 proxy</string>
@@ -863,7 +863,7 @@
     <string name="channel_admin_request_copied">Request copied</string>
     <string name="channel_close">Make closed</string>
     <string name="channel_close_title">Close the channel?</string>
-    <string name="channel_close_body">A closed channel is joined by request: you or an administrator approve each person. The server gives posts only to members; current subscribers stay. The old channel link will not let new people in. When a subscriber is removed, the channel key changes.</string>
+    <string name="channel_close_body">A closed channel is joined by request: you or an administrator approve each person. The server gives posts only to members; current subscribers stay. The channel key changes at once, so the old link no longer opens new posts; current subscribers receive the new key the next time both of you are online. When a subscriber is removed, the key changes again. A closed channel cannot be made open again.</string>
     <string name="channel_close_action">Close</string>
     <string name="channel_close_has_handle">Remove the public name first: by its \@name the server hands out a link with the read key, so such a channel cannot be closed.</string>
     <string name="channel_open">Make open</string>

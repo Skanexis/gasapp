@@ -58,6 +58,9 @@ gasapp-bot — движок бота GasApp
                  слушает только адрес своей машины
   --allow-http   разрешить открытый HTTP к чужой машине (только для стенда)
 
+Секрет и токен лучше передавать переменными окружения GASAPP_BOT_SECRET
+и GASAPP_BOT_TOKEN: командную строку видят другие пользователи машины.
+
 Токен берут в приложении: Каналы → Создать → Мои боты → Создать бота.
 Команды и события — в docs/bots.md.";
 
@@ -102,7 +105,37 @@ fn parse_options() -> Option<Options> {
         }
     }
 
+    // 🔐 Командную строку процесса видят другие пользователи машины
+    // (`ps`, `/proc`), окружение — только владелец процесса.
+    options.secret = options
+        .secret
+        .or_else(|| from_environment("GASAPP_BOT_SECRET"));
+    options.token = options
+        .token
+        .or_else(|| from_environment("GASAPP_BOT_TOKEN"));
+
     Some(options)
+}
+
+/// Непустое значение переменной окружения.
+fn from_environment(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+/// Заводит каталог бота; на Unix — доступный только владельцу (`0700`):
+/// в нём лежат база и её ключ.
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+
+        builder.mode(0o700);
+    }
+
+    builder.create(path)
 }
 
 fn now() -> Timestamp {
@@ -182,9 +215,12 @@ fn open_client(
 fn init(options: &Options) -> Result<(), String> {
     let data = options.data.as_deref().ok_or("нужен --data")?;
     let server = options.server.as_deref().ok_or("нужен --server")?;
-    let token = options.token.as_deref().ok_or("нужен --token")?;
+    let token = options
+        .token
+        .as_deref()
+        .ok_or("нужен --token или GASAPP_BOT_TOKEN")?;
 
-    std::fs::create_dir_all(data).map_err(|error| format!("{}: {error}", data.display()))?;
+    create_private_dir(data).map_err(|error| format!("{}: {error}", data.display()))?;
 
     if data.join(DATABASE_FILE).exists() {
         return Err(format!(

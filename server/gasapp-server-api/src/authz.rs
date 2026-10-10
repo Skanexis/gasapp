@@ -189,12 +189,16 @@ async fn verify_parts(
         .try_into()
         .map_err(|_| ApiError::Unauthorized)?;
 
-    let message = signed_message(
-        parts.method.as_str(),
-        parts.uri.path(),
-        issued_at,
-        &body_sha256,
-    );
+    // 🔐 Подписан путь вместе со строкой запроса. Прежде параметры после
+    // `?` в подпись не входили, и тот, кто видел запрос открытым, пять
+    // минут мог предъявлять его с другими параметрами — листать чужую
+    // выдачу дальше, чем просил владелец (аудит 2026-10-10, N-2).
+    let target = parts
+        .uri
+        .path_and_query()
+        .map_or_else(|| parts.uri.path(), axum::http::uri::PathAndQuery::as_str);
+
+    let message = signed_message(parts.method.as_str(), target, issued_at, &body_sha256);
 
     auth::verify_challenge_signature(&identity, &message, &signature)
         .map_err(|_| ApiError::Unauthorized)?;
