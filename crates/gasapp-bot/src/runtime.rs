@@ -334,6 +334,27 @@ impl<T: Transport> Runtime<T> {
 
                 Ok(json!({ "username": contact.username }))
             }
+            "acceptNewKey" => {
+                // ⚠️ У собеседника сменился ключ: переустановка,
+                // восстановление из копии — или подмена. Отличить их
+                // движок не может; команда — решение автора бота.
+                // Принятый ключ ещё не подтверждён: писать можно после
+                // `trustContact` либо когда его подтвердит журнал ключей.
+                let username = text(params, "username")?;
+                let changed = client
+                    .contacts()?
+                    .into_iter()
+                    .find(|contact| {
+                        contact.username.as_deref() == Some(username)
+                            && contact.key_changed
+                            && !contact.replaced
+                    })
+                    .ok_or(GasAppError::SessionNotFound)?;
+
+                client.accept_contact_identity(&changed.account_id, now)?;
+
+                Ok(json!({ "username": changed.username }))
+            }
             "contacts" => Ok(Value::Array(
                 client
                     .contacts()?

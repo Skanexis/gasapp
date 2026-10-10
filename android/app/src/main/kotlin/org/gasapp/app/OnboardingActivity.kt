@@ -489,9 +489,38 @@ class OnboardingActivity : AppCompatActivity() {
         firstPin?.fill(0)
         firstPin = null
 
-        if (!restoring) {
-            findViewById<TextView>(R.id.onboarding_pin_title).setText(R.string.onboarding_pin_title)
+        findViewById<TextView>(R.id.onboarding_pin_title).setText(
+            if (restoring) R.string.onboarding_restore_pin_title else R.string.onboarding_pin_title,
+        )
+    }
+
+    /**
+     * Новый PIN вводится дважды: первый ввод запоминается, второй обязан
+     * с ним совпасть.
+     *
+     * @return `true` — [pinValue] подтверждён вторым вводом и им можно
+     *   пользоваться. `false` — это был первый ввод (он запомнен) либо
+     *   второй не совпал ([pinValue] затёрт, начинать заново).
+     */
+    private fun confirmedByRepeat(pinValue: ByteArray): Boolean {
+        val first = firstPin
+        if (first == null) {
+            firstPin = pinValue
+            error.visibility = View.GONE
+            findViewById<TextView>(R.id.onboarding_pin_title).setText(R.string.onboarding_pin_repeat_title)
+
+            return false
         }
+
+        val same = java.security.MessageDigest.isEqual(first, pinValue)
+        forgetFirstPin()
+
+        if (!same) {
+            pinValue.fill(0)
+            showError(getString(R.string.onboarding_error_pin_mismatch))
+        }
+
+        return same
     }
 
     /**
@@ -534,26 +563,7 @@ class OnboardingActivity : AppCompatActivity() {
             return
         }
 
-        // Новый PIN вводится дважды: первый ввод запоминается, второй
-        // обязан с ним совпасть.
-        val first = firstPin
-        if (first == null) {
-            firstPin = pinValue
-            error.visibility = View.GONE
-            findViewById<TextView>(R.id.onboarding_pin_title).setText(R.string.onboarding_pin_repeat_title)
-
-            return
-        }
-
-        val same = java.security.MessageDigest.isEqual(first, pinValue)
-        forgetFirstPin()
-
-        if (!same) {
-            pinValue.fill(0)
-            showError(getString(R.string.onboarding_error_pin_mismatch))
-
-            return
-        }
+        if (!confirmedByRepeat(pinValue)) return
 
         // 🔐 Выбор сети берётся один раз, до работы: переключатель
         // на время регистрации заблокирован.
@@ -842,6 +852,8 @@ class OnboardingActivity : AppCompatActivity() {
 
             return
         }
+
+        if (!confirmedByRepeat(pinValue)) return
 
         val viaTor = tor.isChecked
 
