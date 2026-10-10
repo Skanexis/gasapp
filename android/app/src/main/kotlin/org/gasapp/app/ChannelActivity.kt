@@ -925,14 +925,18 @@ class ChannelActivity : AppCompatActivity() {
             if (current.avatar != null) {
                 sheet.action(getString(R.string.channel_avatar_remove), R.drawable.ic_close) { setAvatar(null) }
             }
-            sheet.action(
-                getString(if (current.handle == null) R.string.channel_public_make else R.string.channel_public_manage),
-                R.drawable.ic_globe,
-            ) { managePublic(current) }
-            sheet.action(
-                getString(if (current.closed) R.string.channel_open else R.string.channel_close),
-                R.drawable.ic_lock,
-            ) { gate.confirmClosed(current) }
+            // Закрытие необратимо: ключ канала сменён, и ни открыть его
+            // обратно, ни дать публичное имя уже нельзя. Пункты, которые
+            // кончились бы отказом, не показываются.
+            if (!current.closed) {
+                sheet.action(
+                    getString(
+                        if (current.handle == null) R.string.channel_public_make else R.string.channel_public_manage,
+                    ),
+                    R.drawable.ic_globe,
+                ) { managePublic(current) }
+                sheet.action(getString(R.string.channel_close), R.drawable.ic_lock) { gate.confirmClosed(current) }
+            }
             sheet.action(getString(R.string.channel_admins), R.drawable.ic_users) { showAdmins() }
             sheet.action(getString(R.string.channel_delete), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = true)

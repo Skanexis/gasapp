@@ -622,13 +622,15 @@
     <string name="onboarding_welcome_title">Welcome to GasApp</string>
     <string name="onboarding_feature_e2e">Messages are encrypted on your phone. The server only passes them on and cannot read them.</string>
     <string name="onboarding_feature_no_phone">No phone number. An account is a username and an email address — the server keeps only a hash of the address.</string>
-    <string name="onboarding_feature_tor">Tor is built in: the server does not see your IP address.</string>
+    <string name="onboarding_feature_tor">Tor is built in: turn it on and the server does not see your IP address.</string>
     <string name="onboarding_get_started">Create account</string>
     <string name="onboarding_username_title">Username and email</string>
     <string name="onboarding_username_subtitle">People will find you by your username. The email is only for confirming the account: we will send a code to it.</string>
     <string name="onboarding_network_label">Connection</string>
     <string name="onboarding_next">Continue</string>
     <string name="onboarding_pin_title">Create a PIN</string>
+    <string name="onboarding_pin_repeat_title">Repeat the PIN</string>
+    <string name="onboarding_error_pin_mismatch">The PINs do not match. Enter a new PIN again.</string>
     <string name="onboarding_restore_pin_title">A PIN for this phone</string>
     <string name="onboarding_restore_continue">Continue to the backup</string>
     <string name="onboarding_step">%1$d / %2$d</string>

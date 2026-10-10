@@ -57,10 +57,13 @@ class FailedRegistrationTest {
         activity.findViewById<EditText>(R.id.onboarding_username).setText("alice")
         activity.findViewById<EditText>(R.id.onboarding_email).setText("alice@example.org")
         activity.findViewById<Button>(R.id.onboarding_next).performClick()
-        for (key in listOf(R.id.key_4, R.id.key_8, R.id.key_2, R.id.key_9, R.id.key_1, R.id.key_5)) {
-            activity.findViewById<View>(key).performClick()
+        // PIN вводится дважды: второй ввод подтверждает первый.
+        repeat(2) {
+            for (key in listOf(R.id.key_4, R.id.key_8, R.id.key_2, R.id.key_9, R.id.key_1, R.id.key_5)) {
+                activity.findViewById<View>(key).performClick()
+            }
+            activity.findViewById<Button>(R.id.onboarding_create).performClick()
         }
-        activity.findViewById<Button>(R.id.onboarding_create).performClick()
 
         val error = activity.findViewById<TextView>(R.id.onboarding_error)
         val deadline = System.currentTimeMillis() + 10_000L
