@@ -85,7 +85,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var error: TextView
     private lateinit var progressLabel: TextView
     private lateinit var createButton: GasAppButton
-    private lateinit var direct: SwitchCompat
+    private lateinit var tor: SwitchCompat
     private lateinit var addBridge: GasAppButton
     private lateinit var progressRow: View
 
@@ -150,7 +150,7 @@ class OnboardingActivity : AppCompatActivity() {
         showMascotIfProvided()
         createButton = findViewById(R.id.onboarding_create)
 
-        direct = findViewById(R.id.onboarding_direct)
+        tor = findViewById(R.id.onboarding_tor)
         addBridge = findViewById(R.id.onboarding_add_bridge)
         addBridge.setOnClickListener { promptBridges() }
 
@@ -207,25 +207,22 @@ class OnboardingActivity : AppCompatActivity() {
 
         showStep(step)
 
-        direct.setOnCheckedChangeListener { _, checked ->
-            findViewById<TextView>(R.id.onboarding_network_hint).apply {
-                setText(if (checked) R.string.onboarding_network_direct else R.string.onboarding_network_tor)
-                // Прямое соединение — цена за него жёлтым, а не значком в тексте.
-                setTextColor(getColor(if (checked) R.color.status_warn else R.color.text_muted))
-            }
-            // Прямое соединение — Tor не нужен; снова Tor — прогрев.
+        tor.setOnCheckedChangeListener { _, checked ->
+            findViewById<TextView>(R.id.onboarding_network_hint)
+                .setText(if (checked) R.string.onboarding_network_tor else R.string.onboarding_network_direct)
+            // Tor включили — прогрев; выключили — он не нужен.
             if (checked) {
+                prewarmTor()
+            } else {
                 lifecycleScope.launch(Dispatchers.IO) { EmbeddedTor.stop() }
                 addBridge.visibility = View.GONE
-            } else {
-                prewarmTor()
             }
         }
 
-        // 🔐 Прогрев: Tor подключается, пока человек вводит имя и PIN.
-        // Умолчание регистрации — Tor, так что это та же сеть, в которую
-        // приложение пошло бы через минуту.
-        prewarmTor()
+        // Умолчание регистрации — прямое соединение; Tor человек включает
+        // сам. Прогрев — только если он уже включён (экран пересоздан):
+        // Tor подключается, пока человек вводит имя и PIN.
+        if (tor.isChecked) prewarmTor()
         watchTorForBlocking()
     }
 
@@ -431,7 +428,7 @@ class OnboardingActivity : AppCompatActivity() {
                 runCatching {
                     val messenger = Core.messenger()
                     messenger.setPendingRegistration(name, address)
-                    requestCodeWithRetry(messenger, address, !direct.isChecked)
+                    requestCodeWithRetry(messenger, address, tor.isChecked)
                 }
             }
 
@@ -516,7 +513,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         // 🔐 Выбор сети берётся один раз, до работы: переключатель
         // на время регистрации заблокирован.
-        val viaTor = !direct.isChecked
+        val viaTor = tor.isChecked
 
         setWorking(true)
 
@@ -545,10 +542,10 @@ class OnboardingActivity : AppCompatActivity() {
                         pinValue.fill(0)
                     }
 
-                    // 🔐 У новой базы режим по умолчанию — встроенный Tor:
-                    // его уже применил Core.unlock. Прямое соединение —
-                    // только если человек выбрал его сам, и до первого
-                    // запроса: регистрация — первое, что видит сервер.
+                    // 🔐 Ядро без настройки выбирает Tor (отказ в
+                    // безопасную сторону), поэтому выбор человека
+                    // записывается явно и до первого запроса:
+                    // регистрация — первое, что видит сервер.
                     if (!viaTor) {
                         messenger.setProxy(FfiProxy.Direct)
                         NetworkProxy.apply(this@OnboardingActivity, FfiProxy.Direct)
@@ -635,7 +632,7 @@ class OnboardingActivity : AppCompatActivity() {
             return
         }
 
-        val viaTor = !direct.isChecked
+        val viaTor = tor.isChecked
 
         confirmButton.isLoading = true
         code.isEnabled = false
@@ -697,7 +694,7 @@ class OnboardingActivity : AppCompatActivity() {
         if (System.currentTimeMillis() < resendAllowedAt) return
 
         val address = emailAddress() ?: return showStep(Step.Username)
-        val viaTor = !direct.isChecked
+        val viaTor = tor.isChecked
 
         resendButton.isLoading = true
 
@@ -794,7 +791,7 @@ class OnboardingActivity : AppCompatActivity() {
             return
         }
 
-        val viaTor = !direct.isChecked
+        val viaTor = tor.isChecked
 
         setWorking(true)
 
@@ -915,7 +912,7 @@ class OnboardingActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
 
                 while (true) {
-                    if (!direct.isChecked && EmbeddedTor.needsUserBridges(this@OnboardingActivity)) {
+                    if (tor.isChecked && EmbeddedTor.needsUserBridges(this@OnboardingActivity)) {
                         addBridge.visibility = View.VISIBLE
                     }
                     delay(TOR_WATCH_MS)
@@ -1003,7 +1000,7 @@ class OnboardingActivity : AppCompatActivity() {
             findViewById<View>(step.done).visibility = View.GONE
             findViewById<TextView>(step.label).setTextColor(getColor(R.color.text_tertiary))
         }
-        findViewById<View>(Stage.TOR.row).visibility = if (direct.isChecked) View.GONE else View.VISIBLE
+        findViewById<View>(Stage.TOR.row).visibility = if (tor.isChecked) View.VISIBLE else View.GONE
         findViewById<View>(Stage.REGISTER.row).visibility = if (restoring) View.GONE else View.VISIBLE
     }
 
@@ -1013,7 +1010,7 @@ class OnboardingActivity : AppCompatActivity() {
         createButton.isLoading = working
         username.isEnabled = !working
         email.isEnabled = !working
-        direct.isEnabled = !working
+        tor.isEnabled = !working
         pin.setEnabled(!working)
 
         progressRow.visibility = if (working) View.VISIBLE else View.GONE

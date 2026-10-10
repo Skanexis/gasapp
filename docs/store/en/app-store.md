@@ -67,14 +67,15 @@ submitting.
 | **User-Generated Content** | **Yes** |
 | **Messaging and Chat** | **Yes** |
 | **Social media capabilities** (required since September 2026) | **Yes** — public channels can be found by name and followed, and readers react to posts: user-generated content surfaced through discovery. The app gets the Social Media descriptor and at least 13+ |
-| Social media capabilities disabled for users under 13 | Not applicable — the app is for adults |
+| Social media capabilities disabled for users under 13 | Not applicable — the Terms of Use require users to be 16 or older |
 | Unrestricted Web Access | No |
 | Age assurance / parental controls | No |
 | Made for Kids | No |
 
 Expected result: the highest tier Apple assigns to unmoderated messaging.
-The Terms of Use require users to be 18 or older; set the age rating
-override to 18+ if the calculated rating is lower.
+The Terms of Use require users to be 16 or older; set the age rating
+override to 16+ if the calculated rating is lower. If Apple calculates
+18+, that rating stands in the store - it cannot be lowered by hand.
 
 ---
 
@@ -89,8 +90,8 @@ used only to create the account; the server keeps a hash of it.
 HOW TO TEST
 1. Tap "Create account", choose any free username, enter an email
    address you can read, then choose a PIN.
-2. The app connects through Tor by default; the first connection takes
-   20-60 seconds. A 6-digit code is then emailed to you - enter it.
+2. Leave "Connect through Tor" off (the default) - the app connects
+   at once. A 6-digit code is then emailed to you - enter it.
 3. Messaging: tap the pencil button and enter the username
    "gasapp_review_1". It is monitored during review and will reply.
 4. Channels: on the Channels tab tap the link icon, "Paste a link", and

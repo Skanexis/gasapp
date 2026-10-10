@@ -138,10 +138,11 @@ The full list of what is stored and for how long is in
 
 ## What we do not do
 
-* **By default we do not even see IP addresses.** The app connects through
-  Tor, built into the app itself, and the server sees the address of a Tor
-  node, not yours. A direct connection is enabled only explicitly, with a
-  warning that the server will see your address.
+* **You can hide your IP address.** By default the app connects to the
+  server directly, and the server sees your IP address while the
+  connection is open (it does not record it — see below). Turn on Tor,
+  built into the app itself, at sign-up or in the network settings, and
+  the server sees the address of a Tor node, not yours.
 * **We do not learn who checks keys.** The key log (which the app uses to
   check a contact's key without meeting in person) is queried without the
   device signature and over a separate Tor circuit. The log holds a hash of
@@ -258,8 +259,8 @@ conversation:
   leads to. If it matters that you reach a particular author's channel,
   compare the link with the author directly;
 * 🔐 when you read a channel, the server sees a request for that channel
-  and, on a direct connection without Tor, your IP address. With the
-  built-in Tor (the default) it sees a Tor exit relay;
+  and, on a direct connection (the default), your IP address. With the
+  built-in Tor it sees a Tor exit relay;
 * the channel owner is known to the server: it is the account that
   created the channel.
 
@@ -392,8 +393,8 @@ server does not see who wrote to whom.
 photograph or remember it. "Delete for everyone" is a request to their
 app, not a guarantee.
 
-**Your network address.** With the built-in Tor (the default) the server
-does not see it; with a direct connection it does — see
+**Your network address.** With a direct connection (the default) the
+server sees it; with the built-in Tor it does not — see
 [Tor, bridges and Tor Project services](#tor-bridges-and-tor-project-services).
 
 **Backups and the recovery key** — see
@@ -506,7 +507,7 @@ way to retry: the request is signed with the device key.
 
 ## Children
 
-The app is for adults: the Terms of Use require you to be 18 or older, and the
+The Terms of Use require you to be 16 or older, and the
 app is not designed to attract children. We cannot check age without
 collecting data we do not collect, so we do not check it, and we say so
 plainly.

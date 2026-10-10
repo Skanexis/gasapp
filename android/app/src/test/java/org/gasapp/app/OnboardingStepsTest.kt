@@ -72,7 +72,7 @@ class OnboardingStepsTest {
     fun steps_go_forward_and_back() = withOnboarding { activity ->
         activity.click(R.id.onboarding_start)
         assertTrue(activity.shown(R.id.onboarding_username))
-        assertTrue(activity.shown(R.id.onboarding_direct))
+        assertTrue(activity.shown(R.id.onboarding_tor))
         assertFalse(activity.shown(R.id.keypad))
 
         activity.findViewById<EditText>(R.id.onboarding_username).setText("alice")
@@ -101,7 +101,7 @@ class OnboardingStepsTest {
 
         assertTrue(activity.shown(R.id.keypad))
         assertFalse(activity.shown(R.id.onboarding_username))
-        assertTrue("при возвращении из копии нельзя выбрать сеть", activity.shown(R.id.onboarding_direct))
+        assertTrue("при возвращении из копии нельзя выбрать сеть", activity.shown(R.id.onboarding_tor))
         assertSame(
             activity.findViewById<View>(R.id.onboarding_page_pin),
             activity.findViewById<View>(R.id.onboarding_network).parent,

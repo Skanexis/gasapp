@@ -87,7 +87,7 @@ GasApp — мессенджер для личной переписки и кан
 Сообщения и файлы шифруются на вашем телефоне и расшифровываются только у собеседника. Протокол открыт: PQXDH и Double Ratchet. В установление переписки входит ML-KEM, поэтому записанный сегодня трафик не расшифровать и будущим квантовым компьютером.
 
 TOR ВСТРОЕН
-По умолчанию приложение подключается через Tor — сервер не видит ваш IP-адрес. Ставить отдельные программы не нужно. Если Tor у вас блокируют, GasApp сам подключится через мосты.
+Включите Tor одним переключателем — и сервер не увидит ваш IP-адрес. Ставить отдельные программы не нужно. Если Tor у вас блокируют, GasApp сам подключится через мосты.
 
 СЕРВЕР ЗНАЕТ МИНИМУМ
 • отправитель запечатан (sealed sender): сервер не знает, кто кому пишет;
@@ -126,7 +126,7 @@ END-TO-END ENCRYPTION
 Messages and files are encrypted on your phone and decrypted only on your contact's phone. The protocol is open: PQXDH and Double Ratchet. Starting a conversation includes ML-KEM, so traffic recorded today cannot be decrypted by a future quantum computer.
 
 TOR BUILT IN
-By default the app connects through Tor, so the server does not see your IP address. There is nothing extra to install. If Tor is blocked where you are, GasApp connects through bridges on its own.
+Turn on Tor with one switch and the server does not see your IP address. There is nothing extra to install. If Tor is blocked where you are, GasApp connects through bridges on its own.
 
 THE SERVER KNOWS AS LITTLE AS POSSIBLE
 • the sender is sealed (sealed sender): the server does not know who writes to whom;

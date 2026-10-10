@@ -20,7 +20,7 @@ GasApp prohibits child sexual abuse and exploitation (CSAE), including child
 sexual abuse material (CSAM), grooming and sextortion. Accounts used for
 this are removed.
 
-**Not for children.** GasApp is for adults: you must be 18 or older to use it (see the Terms of Use). It is not designed to attract children.
+**Not for children.** You must be 16 or older to use GasApp (see the Terms of Use). It is not designed to attract children.
 
 **What we can and cannot see.** Messages are end-to-end encrypted: the
 server cannot read them, and we cannot scan their content. What we can act
@@ -57,7 +57,7 @@ GasApp запрещает сексуальное насилие над деть�
 включая материалы сексуального насилия над детьми, груминг и
 вымогательство. Аккаунты, используемые для этого, удаляются.
 
-**Не для детей.** GasApp — для взрослых: пользоваться им можно с 18 лет (см. Условия использования). Он не рассчитан на то, чтобы привлекать детей.
+**Не для детей.** Пользоваться GasApp можно с 16 лет (см. Условия использования). Он не рассчитан на то, чтобы привлекать детей.
 
 **Что мы видим и чего нет.** Сообщения зашифрованы сквозным шифрованием:
 сервер не может их прочитать, и проверять их содержимое мы не можем.

@@ -61,8 +61,9 @@ kept until the account is deleted.
 * **Content of channels without a public name** (link-only and closed).
   Encrypted with a key the server does not have.
 * **Location.** Not collected or shared.
-* **IP address.** The app connects through Tor by default; the server does
-  not log addresses in either mode.
+* **IP address.** The app connects directly by default, so the server
+  sees the address while a connection is open; it does not log or store
+  it. Tor, built into the app, hides it when the user turns it on.
 * **Diagnostics, analytics, crash logs.** No SDK of any kind
   (`tools/check-no-telemetry.sh` in CI).
 * **Push token.** No push yet in any build. When it appears, add "Device or
@@ -72,7 +73,7 @@ kept until the account is deleted.
 
 | Question | Answer |
 |---|---|
-| Data is encrypted in transit | **Yes** — TLS 1.3 with certificate pinning, by default inside Tor |
+| Data is encrypted in transit | **Yes** — TLS 1.3 with certificate pinning; inside Tor when the user turns it on |
 | Users can request data deletion | **Yes** — in the app: Settings → Privacy → Delete account; web page — § 6 |
 | Committed to the Play Families policy | No (not for children) |
 | Independent security review (MASA) | ⚠️ **No.** Do not tick until one is done |
@@ -99,7 +100,7 @@ Category: **Social networking, messaging, communication**.
 
 | Question | Answer |
 |---|---|
-| Target age groups | **18 and over** only |
+| Target age groups | **16-17** and **18 and over**. The Terms of Use require 16: the highest age of digital consent in the EU (GDPR Art. 8), so parental consent is never needed. Do not tick any group under 16 |
 | Could the app appeal to children | No ⚠️ — re-read this against the final icon and screenshots: the visual style is playful. If the answer could honestly be "yes", the store may ask for a neutral-age screen |
 
 **Anonymous / random chat (policy in force since 2026-08-26).** GasApp is
@@ -108,7 +109,7 @@ function is not connecting strangers at random, and identities are not
 deliberately hidden — an account requires a verified e-mail address and a
 persistent username, and a first message from a new person arrives as a
 request the user must accept. If Play Console asks, answer accordingly. The
-18+ declaration above means minors are excluded regardless.
+16+ declaration above excludes children regardless.
 
 ---
 
@@ -122,9 +123,9 @@ address that you can read:
 1. Open the app and tap "Create account".
 2. Choose any free username and enter your email address. The links to
    the Terms of Use and Privacy Policy are on this screen.
-3. Choose a 6-digit PIN. Wait until "Connecting to Tor" finishes. The app
-   connects through Tor by default; the first connection takes 20-60
-   seconds, up to 2-3 minutes on networks that block Tor.
+3. Choose a 6-digit PIN. Leave "Connect through Tor" off (the
+   default): the app connects at once. With Tor on, the first connection
+   takes 20-60 seconds, up to 2-3 minutes on networks that block Tor.
 4. A 6-digit code is emailed to you (check the spam folder). You may
    leave the app to read it; when you come back and enter your PIN, the
    app returns to the code screen. Enter the code.
@@ -149,8 +150,8 @@ NOTES:
 - Messages are end-to-end encrypted; the server cannot read them.
 - New messages arrive while the app is open (no push notifications yet).
 - Account deletion: Settings > Privacy > Delete account (immediate).
-- Tor can be switched off: Settings > Privacy > Network > Direct
-  (the app warns that the server will then see the IP address).
+- Tor is optional: Settings > Privacy > Network > Tor (built in).
+  It hides the IP address from the server.
 ```
 
 Before submitting: register the review accounts on the production server,

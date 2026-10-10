@@ -40,7 +40,7 @@ app is built with `-PgasappDocsUrl=https://gasapp.chat`.
 |---|---|---|---|
 | 1 | New apps and updates target **Android 16 (API 36)** from 2026-08-31 | [Play target API](https://support.google.com/googleplay/android-developer/answer/11926878) | ✅ `targetSdk 36`, `compileSdk 36` |
 | 2 | 16 KB page-size support for native code | Play / Android 15+ | ✅ checked by `tools/check-16kb-pages.py` |
-| 3 | **Anonymous / random chat apps** must block minors with Play Console tools; child-safety standards extended to them (from 2026-08-26) | [Policy announcement 2026-07-15](https://support.google.com/googleplay/android-developer/answer/17134731), [deadlines](https://support.google.com/googleplay/android-developer/table/12921780) | ✅ **Not such an app**: an account needs a verified e-mail, people are found by a username or a link they were given, there is no random matching and no hidden-identity mode. The word "anonymous" was removed from the listing keywords. Target audience is declared 18+ anyway |
+| 3 | **Anonymous / random chat apps** must block minors with Play Console tools; child-safety standards extended to them (from 2026-08-26) | [Policy announcement 2026-07-15](https://support.google.com/googleplay/android-developer/answer/17134731), [deadlines](https://support.google.com/googleplay/android-developer/table/12921780) | ✅ **Not such an app**: an account needs a verified e-mail, people are found by a username or a link they were given, there is no random matching and no hidden-identity mode. The word "anonymous" was removed from the listing keywords. Target audience is declared 16+ |
 | 4 | **Child Safety Standards**: published CSAE prohibition, in-app reporting, CSAM process, named contact | [Developer Program Policy](https://support.google.com/googleplay/android-developer/answer/17190352) | ✅ page + in-app Report for people and channels; 🟡 the `abuse@` mailbox and an on-call person must exist |
 | 5 | **User-generated content**: terms accepted by users, published content rules, in-app reporting and blocking, ongoing moderation | same | ✅ Terms + Guidelines linked at sign-up; Report/Block for people; **Report channel** added 2026-10-10; operator console handles both |
 | 6 | **Account deletion** in the app and by a web link | same | ✅ in-app; web page explains why deletion is device-signed (see `google-play.md` § 6) |
@@ -72,13 +72,13 @@ app is built with `-PgasappDocsUrl=https://gasapp.chat`.
 6. **Screenshots and feature graphic** (`google-play.md` § 10).
 7. **Country list**: remove France in both consoles (decided 2026-10-10 —
    no French encryption declaration is filed).
-8. **Decisions**: who handles reports; confirm the 18+ age declaration.
+8. **Decisions**: who handles reports. (Age: 16+, decided 2026-10-10.)
 
 ## Speeding up review
 
 * Paste the reviewer instructions exactly (`google-play.md` § 5,
-  `app-store.md` § 4): the first Tor connection takes up to a minute, and a
-  reviewer who is not told so reports the app as broken.
+  `app-store.md` § 4): the app connects directly by default; with Tor on, the
+  first connection takes up to a minute.
 * Keep the demo account answering during review.
 * Do not claim what is not true today: no independent audit, no calls, no
   groups, no push. Reviewers compare the listing with the app.

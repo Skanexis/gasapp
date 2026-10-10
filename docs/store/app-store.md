@@ -96,8 +96,8 @@ used only to create the account; the server keeps a hash of it.
 HOW TO TEST
 1. Tap "Create account", choose any free username, enter an email
    address you can read, then choose a PIN.
-2. The app connects through Tor by default; the first connection takes
-   20-60 seconds. A 6-digit code is then emailed to you - enter it.
+2. Leave "Connect through Tor" off (the default) - the app connects
+   at once. A 6-digit code is then emailed to you - enter it.
    You may leave the app to read the email; after you return and enter
    your PIN, the app comes back to the code screen.
 3. To test messaging, message our demo account: tap the pencil button

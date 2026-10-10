@@ -351,13 +351,13 @@
                     android:paddingBottom="14dp">
 
                     <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/onboarding_direct"
+                        android:id="@+id/onboarding_tor"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:checked="false"
                         android:fontFamily="@font/inter"
                         android:minHeight="48dp"
-                        android:text="@string/onboarding_direct"
+                        android:text="@string/onboarding_tor"
                         android:textColor="@color/text_primary"
                         android:textSize="14sp"
                         android:thumb="@drawable/bg_switch_thumb"
@@ -366,7 +366,7 @@
                     <TextView
                         android:id="@+id/onboarding_network_hint"
                         style="@style/GasAppCaption"
-                        android:text="@string/onboarding_network_tor" />
+                        android:text="@string/onboarding_network_direct" />
                 </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
