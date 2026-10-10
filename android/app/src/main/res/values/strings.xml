@@ -600,7 +600,7 @@
     <string name="scan_denied_title">No access to the camera</string>
     <string name="scan_denied_body">The camera is needed only to read the code. Frames are processed on this device and are never stored or sent anywhere.</string>
     <string name="scan_denied_settings">Open settings</string>
-    <string name="add_contact_username_helper">If the account is more than a day old, you can write right away: the key is checked by the public key log. Scanning their QR code in person is the strongest check.</string>
+    <string name="add_contact_username_helper">If the account is more than a day old, you can write right away: the key is checked by the public key log. Scanning their QR code in person is the strongest check. A contact link (gasapp://contact/…), such as the one a bot’s author publishes, can be pasted here too.</string>
     <string name="add_contact_open">Open chat</string>
     <string name="add_contact_or">or</string>
     <string name="add_contact_scan">Scan QR code</string>

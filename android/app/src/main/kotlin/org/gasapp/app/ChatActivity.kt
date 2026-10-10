@@ -383,7 +383,7 @@ class ChatActivity : AppCompatActivity() {
             notifications = NotificationSocket(
                 baseUrl = BuildConfig.GASAPP_SERVER_URL,
                 deviceId = device,
-                onEnvelope = { runOnUiThread { fetchIncoming() } },
+                onEnvelope = { runOnUiThread { fetchIncoming(notified = true) } },
             ).also { it.connect() }
         }
     }
@@ -717,7 +717,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     /** Забирает входящие сообщения с сервера. */
-    private fun fetchIncoming() {
+    private fun fetchIncoming(notified: Boolean = false) {
         val device = Core.deviceId ?: return
 
         lifecycleScope.launch {
@@ -728,7 +728,11 @@ class ChatActivity : AppCompatActivity() {
                 }.getOrDefault(0u)
             }
 
-            if (received > 0u) {
+            // По уведомлению сервера экран перечитывается всегда: пришедшее
+            // могло быть не сообщением, а кнопками бота под уже показанным
+            // сообщением — в счёт принятых они не входят, и без этого
+            // кнопки появлялись только после повторного входа в чат.
+            if (received > 0u || notified) {
                 reload()
                 resolvePeerUsername()
             }

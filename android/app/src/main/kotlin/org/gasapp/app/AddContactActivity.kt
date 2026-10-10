@@ -98,6 +98,12 @@ class AddContactActivity : AppCompatActivity() {
     }
 
     private fun openByUsername() {
+        // Ссылка-контакт вместо имени: тот же код, что в QR, только
+        // текстом. Так добавляют бота — его не встретить, чтобы
+        // отсканировать код, а ссылку публикует его автор.
+        val raw = input.text?.toString().orEmpty().trim()
+        if (raw.startsWith(CONTACT_LINK_PREFIX)) return addScanned(raw)
+
         // Каноничная форма: «@Bob» находит «bob», двойник с кириллицей
         // не находит никого.
         val username = runCatching { canonicalUsername(input.text?.toString().orEmpty()) }
@@ -153,6 +159,11 @@ class AddContactActivity : AppCompatActivity() {
                 .onSuccess(::showAdded)
                 .onFailure { showStatus(getString(R.string.add_contact_scan_invalid), ok = false) }
         }
+    }
+
+    private companion object {
+        /** Начало ссылки-контакта — как её печатает ядро. */
+        const val CONTACT_LINK_PREFIX = "gasapp://contact/"
     }
 
     private fun showAdded(contact: FfiContact) {

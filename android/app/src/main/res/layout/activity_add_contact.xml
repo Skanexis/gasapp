@@ -61,7 +61,7 @@
                 android:imeOptions="actionGo"
                 android:importantForAutofill="no"
                 android:inputType="textNoSuggestions|textVisiblePassword"
-                android:maxLength="33"
+                android:maxLength="512"
                 android:maxLines="1"
                 app:fieldIcon="@drawable/ic_search" />
 
