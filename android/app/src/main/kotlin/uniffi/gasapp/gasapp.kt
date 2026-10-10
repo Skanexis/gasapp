@@ -2325,7 +2325,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_set_channel_avatar() != 52603.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_set_channel_closed() != 19649.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_set_channel_closed() != 24785.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_set_channel_handle() != 59185.toShort()) {
@@ -4448,8 +4448,9 @@ public interface MessengerInterface {
     /**
      * Делает свой канал закрытым либо снова открытым. Сетевой вызов.
      *
-     * ⚠️ Прежняя ссылка канала несёт ключ чтения, и он не меняется:
-     * сервер перестаёт отдавать записи посторонним, но не более.
+     * 🔐 Прежняя ссылка канала несёт ключ чтения, поэтому закрытие
+     * сразу меняет ключ канала (не вышло — при ближайшей синхронизации).
+     * Открытым такой канал уже не сделать.
      *
      * # Errors
      *
@@ -7118,8 +7119,9 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     /**
      * Делает свой канал закрытым либо снова открытым. Сетевой вызов.
      *
-     * ⚠️ Прежняя ссылка канала несёт ключ чтения, и он не меняется:
-     * сервер перестаёт отдавать записи посторонним, но не более.
+     * 🔐 Прежняя ссылка канала несёт ключ чтения, поэтому закрытие
+     * сразу меняет ключ канала (не вышло — при ближайшей синхронизации).
+     * Открытым такой канал уже не сделать.
      *
      * # Errors
      *
