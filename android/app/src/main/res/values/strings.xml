@@ -144,10 +144,10 @@
     <string name="onboarding_working">Setting things up — this takes a few seconds…</string>
     <string name="onboarding_error_username">3–32 characters: lowercase Latin letters, digits and _, starting with a letter</string>
     <string name="onboarding_error_taken">That username is taken</string>
-    <string name="onboarding_direct">Connect directly, without Tor</string>
-    <string name="onboarding_network_tor">Connections go through Tor, built into the app, so the server does not see your IP address. Nothing else to install.</string>
-    <string name="onboarding_network_direct">The server will see your IP address: roughly where you are, and which of your accounts share a network.</string>
-    <string name="onboarding_error_tor">Could not connect through Tor. Check your internet connection and try again, or choose a direct connection.</string>
+    <string name="onboarding_tor">Connect through Tor</string>
+    <string name="onboarding_network_tor">Connections go through Tor, built into the app, so the server does not see your IP address. The first connection takes up to a minute.</string>
+    <string name="onboarding_network_direct">Direct connection: messages stay end-to-end encrypted, but the server sees your IP address. Turn Tor on to hide it; you can change this later in Settings.</string>
+    <string name="onboarding_error_tor">Could not connect through Tor. Check your internet connection and try again, or turn Tor off.</string>
     <string name="onboarding_error_network">Server unavailable. Check your connection.</string>
     <string name="new_chat_hint">Enter the other person\'s username</string>
     <string name="new_chat_not_found">Couldn’t find this person. Check the name and your connection.</string>

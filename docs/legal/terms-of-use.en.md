@@ -16,7 +16,7 @@ together with the [Privacy Policy](privacy-policy.en.md) and the
 
 ## 1. Who may use GasApp
 
-* You must be at least **18 years old**. GasApp is not intended for
+* You must be at least **16 years old**. GasApp is not intended for
   children and is not designed to attract them.
 * You need an email address you control. One address — one account.
 * You may not create accounts by automated means, except bots created

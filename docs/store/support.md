@@ -35,9 +35,10 @@ Check the spam folder. A new code can be requested after one minute. The
 address must be one you can read; one address can hold one account.
 
 **The first connection takes a long time.**
-GasApp connects through Tor by default. The first connection takes 20–60
-seconds, and up to a few minutes on networks that block Tor. You can add a
-bridge or switch to a direct connection in Settings → Privacy → Network;
+GasApp connects directly by default; Tor is an option. With Tor on, the
+first connection takes 20–60 seconds, and up to a few minutes on networks
+that block Tor. You can add a bridge or switch Tor on or off in
+Settings → Privacy → Network;
 the app explains what the server then sees.
 
 **How do I delete my account?**
@@ -84,9 +85,10 @@ listed in the [Privacy Policy](../legal/privacy-policy.en.md).
 быть тот, который вы читаете; на один адрес — один аккаунт.
 
 **Первое подключение идёт долго.**
-GasApp по умолчанию ходит через Tor. Первое подключение занимает 20–60
-секунд, в сетях, где Tor блокируют, — до нескольких минут. Добавить мост
-или перейти на прямое соединение можно в «Настройки → Приватность →
+GasApp по умолчанию соединяется напрямую; Tor — по желанию. С Tor первое
+подключение занимает 20–60 секунд, в сетях, где Tor блокируют, — до
+нескольких минут. Добавить мост, включить или выключить Tor можно
+в «Настройки → Приватность →
 Сеть»; приложение объясняет, что тогда увидит сервер.
 
 **Как удалить аккаунт?**

@@ -107,7 +107,7 @@ Google Play, а не опечатка.
 
 | Вопрос | Ответ |
 |---|---|
-| Возрастные группы | **18 лет и старше.** Политика допускает с 13 лет, но проверять возраст мы не можем, не собирая данных; назначение — не для несовершеннолетних |
+| Возрастные группы | **16–17 и 18 лет и старше.** Условия использования требуют 16 лет: это верхняя граница возраста цифрового согласия в ЕС (GDPR, ст. 8), поэтому согласие родителей нигде не нужно. Группы младше 16 не отмечать |
 | Может ли привлекать детей | Нет |
 
 ---
@@ -122,9 +122,9 @@ GasApp needs no phone number. To create an account you need an email
 address that you can read:
 1. Open the app and tap "Create account".
 2. Choose any free username and enter your email address.
-3. Choose a 6-digit PIN. Wait until "Connecting to Tor" finishes. The app
-   connects through Tor by default; the first connection takes 20-60
-   seconds, up to 2-3 minutes on networks that block Tor.
+3. Choose a 6-digit PIN. Leave "Connect through Tor" off (the
+   default): the app connects at once. With Tor on, the first connection
+   takes 20-60 seconds, up to 2-3 minutes on networks that block Tor.
 4. A 6-digit code is emailed to you (check the spam folder). You may
    leave the app to read it; when you come back and enter your PIN, the
    app returns to the code screen. Enter the code.
@@ -143,8 +143,8 @@ Notes:
 - Messages are end-to-end encrypted; the server cannot read them.
 - New messages arrive while the app is open (no push notifications yet).
 - Account deletion: Settings > Privacy > Delete account.
-- Tor can be switched off: Settings > Privacy > Network > Direct
-  (the app warns that the server will then see the IP address).
+- Tor is optional: Settings > Privacy > Network > Tor (built in).
+  It hides the IP address from the server.
 ```
 
 ⚠️ До подачи: зарегистрировать на боевом сервере тестовые аккаунты

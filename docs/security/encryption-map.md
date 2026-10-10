@@ -17,7 +17,8 @@ end-to-end encrypted between devices; the server relays ciphertext it
 cannot read. Channel content is encrypted with a channel key the server
 does not have — unless the owner makes the channel public, which hands the
 server the key. Everything on the device is in an encrypted database. All
-traffic is TLS 1.3 with a pinned certificate, by default inside Tor. The
+traffic is TLS 1.3 with a pinned certificate, inside Tor when the user
+turns it on. The
 server knows account names, a hash of the e-mail address, who subscribes
 to which channel, and timing — the full list is at the end.
 
@@ -26,7 +27,7 @@ to which channel, and timing — the full list is at the end.
 | Link | Protection | Code |
 |---|---|---|
 | App ↔ server | TLS 1.3 only (1.2 refused), certificate pinning, no cleartext traffic allowed by the manifest | `server/gasapp-server-api/src/tls.rs`, `android/.../network_security_config.xml` |
-| App ↔ network | Tor by default (embedded Arti, onion service of the server when configured); direct connection only by explicit choice | `crates/gasapp-tor` |
+| App ↔ network | Direct TLS by default; Tor as a user option (embedded Arti, onion service of the server when configured). With no stored choice the core falls back to Tor, not to a direct connection | `crates/gasapp-tor` |
 | Every authenticated request | Signed by the device key over method, path, time and body hash; stale or altered requests are refused | `crates/gasapp-net/src/auth.rs`, `server/gasapp-server-api/src/authz.rs` |
 | Bot engine ↔ server | TLS 1.3 with public-CA validation; **no Tor, no pinning** | `crates/gasapp-bot/src/http.rs` |
 
