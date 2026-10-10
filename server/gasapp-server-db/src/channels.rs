@@ -201,25 +201,29 @@ pub async fn account_status(pool: &PgPool, device_id: Uuid) -> Result<(Uuid, boo
 
 /// Выдаёт или снимает премиум по точному имени.
 ///
-/// Возвращает `false`, если аккаунта нет.
+/// Возвращает `false`, если аккаунта нет. 🔐 Снятие премиума удаляет
+/// ботов аккаунта (см. [`crate::bots::delete_owner_bots`]).
 ///
 /// # Errors
 ///
 /// [`RepoError::Database`] — сбой базы.
 pub async fn set_premium(pool: &PgPool, username: &str, premium: bool) -> Result<bool, RepoError> {
-    let changed = sqlx::query("UPDATE accounts SET premium = $2 WHERE username = $1")
-        .bind(username)
-        .bind(premium)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    let account_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT account_id FROM accounts WHERE username = $1")
+            .bind(username)
+            .fetch_optional(pool)
+            .await?;
 
-    Ok(changed > 0)
+    match account_id {
+        Some(account_id) => set_premium_by_id(pool, account_id, premium).await,
+        None => Ok(false),
+    }
 }
 
 /// Выдаёт или снимает премиум по идентификатору аккаунта.
 ///
-/// Возвращает `false`, если аккаунта нет.
+/// Возвращает `false`, если аккаунта нет. 🔐 Снятие премиума удаляет
+/// ботов аккаунта (см. [`crate::bots::delete_owner_bots`]).
 ///
 /// # Errors
 ///
@@ -229,12 +233,20 @@ pub async fn set_premium_by_id(
     account_id: Uuid,
     premium: bool,
 ) -> Result<bool, RepoError> {
+    let mut tx = pool.begin().await?;
+
     let changed = sqlx::query("UPDATE accounts SET premium = $2 WHERE account_id = $1")
         .bind(account_id)
         .bind(premium)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?
         .rows_affected();
+
+    if changed > 0 && !premium {
+        crate::bots::delete_owner_bots(&mut tx, account_id).await?;
+    }
+
+    tx.commit().await?;
 
     Ok(changed > 0)
 }

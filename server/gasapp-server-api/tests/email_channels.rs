@@ -2949,3 +2949,130 @@ async fn a_channel_can_be_reported() {
         StatusCode::NOT_FOUND
     );
 }
+
+/// 🔐 Токены бота считаются за сутки: удаление бота места в бюджете не
+/// возвращает, и свежие аккаунты без почты не заводятся без счёта.
+#[tokio::test]
+async fn bot_tokens_have_a_daily_budget() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_device = premium_account(&state, &owner_key).await;
+    let bots = format!("/v1/bots/own/{owner_device}");
+
+    // Бюджет почти исчерпан: остался один токен.
+    let left = sqlx::query(
+        "UPDATE accounts SET bot_tokens_day = current_date, bot_tokens_taken = $2
+          WHERE account_id = (SELECT account_id FROM devices WHERE device_id = $1)",
+    )
+    .bind(owner_device)
+    .bind(gasapp_server_db::bots::MAX_BOT_TOKENS_PER_DAY - 1)
+    .execute(&state.pool)
+    .await
+    .unwrap()
+    .rows_affected();
+    assert_eq!(left, 1);
+
+    let last = bot_name();
+    bot_of(&state, &owner_key, owner_device, &last).await;
+
+    // Бота удалили — место среди ботов свободно, а бюджет суток нет.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &bots,
+        Some(serde_json::json!({ "username": last })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &bots,
+        Some(serde_json::json!({ "username": bot_name() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INSUFFICIENT_STORAGE);
+
+    // Назавтра счёт начинается заново.
+    sqlx::query(
+        "UPDATE accounts SET bot_tokens_day = current_date - 1
+          WHERE account_id = (SELECT account_id FROM devices WHERE device_id = $1)",
+    )
+    .bind(owner_device)
+    .execute(&state.pool)
+    .await
+    .unwrap();
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &bots,
+        Some(serde_json::json!({ "username": bot_name() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// 🔐 Снятие премиума удаляет ботов аккаунта и его неиспользованные
+/// токены: боты живут, пока у владельца есть премиум.
+#[tokio::test]
+async fn revoking_premium_removes_the_bots() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_device = premium_account(&state, &owner_key).await;
+    let name = bot_name();
+
+    bot_of(&state, &owner_key, owner_device, &name).await;
+
+    // Ещё один токен взят, но не использован.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("/v1/bots/own/{owner_device}"),
+        Some(serde_json::json!({ "username": bot_name() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let owner_account: Uuid =
+        sqlx::query_scalar("SELECT account_id FROM devices WHERE device_id = $1")
+            .bind(owner_device)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+
+    assert!(
+        gasapp_server_db::channels::set_premium_by_id(&state.pool, owner_account, false)
+            .await
+            .unwrap()
+    );
+
+    let bots_left: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE username = $1")
+        .bind(&name)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    let tokens_left: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM bot_tokens WHERE owner_id = $1")
+            .bind(owner_account)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!((bots_left, tokens_left), (0, 0));
+
+    // Сам владелец остаётся.
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "GET",
+        &format!("/v1/accounts/{owner_device}/status"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}

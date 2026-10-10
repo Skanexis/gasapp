@@ -781,7 +781,7 @@ fn channel_reports_html(rows: &[queries::ReportedChannel], csrf: &str) -> String
 
 fn premium_form(card: &queries::AccountCard, csrf: &str) -> String {
     let (state, value, action) = if card.premium {
-        ("есть", "off", "Снять премиум")
+        ("есть", "off", "Снять премиум и удалить ботов")
     } else {
         ("нет", "on", "Выдать премиум")
     };
@@ -822,6 +822,8 @@ fn account_html(wanted: Option<&str>, card: Option<&queries::AccountCard>, csrf:
                  <tr><th>Сертификатов</th><td class=\"num\">{certificates}</td></tr>\
                  <tr><th>Премиум</th><td>{premium}</td></tr>\
                  <tr><th>Каналов</th><td class=\"num\">{channels}</td></tr>\
+                 <tr><th>Ботов</th><td class=\"num\">{bots}</td></tr>\
+                 <tr><th>Бот аккаунта</th><td>{owner}</td></tr>\
                  <tr><th>Решение</th><td>{delete}</td></tr></table>",
                 name = escape(&card.username),
                 active = escape(&card.active_month),
@@ -830,6 +832,16 @@ fn account_html(wanted: Option<&str>, card: Option<&queries::AccountCard>, csrf:
                 certificates = card.certificates,
                 premium = premium_form(card, csrf),
                 channels = card.channels,
+                bots = card.bots,
+                owner = card.bot_owner.as_deref().map_or_else(
+                    || "—".to_owned(),
+                    |name| {
+                        format!(
+                            "<a href=\"/account?username={name}\">@{name}</a>",
+                            name = escape(name)
+                        )
+                    }
+                ),
                 delete = delete_form(card.account_id, csrf),
             );
         }

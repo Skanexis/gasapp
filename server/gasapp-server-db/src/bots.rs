@@ -14,6 +14,13 @@ use crate::repo::RepoError;
 /// Сколько ботов (вместе с невыкупленными токенами) у одного владельца.
 pub const MAX_BOTS_PER_OWNER: i64 = 20;
 
+/// Сколько токенов бота владелец берёт за сутки.
+///
+/// 🔐 Без этого предела удаление бота освобождало место, и премиум-
+/// аккаунт заводил свежие аккаунты без почты сколько угодно (аудит
+/// 2026-10-10, N-1).
+pub const MAX_BOT_TOKENS_PER_DAY: i16 = 20;
+
 /// Сколько живёт токен, секунды.
 pub const BOT_TOKEN_TTL_SECS: i64 = 3600;
 
@@ -46,7 +53,8 @@ pub fn is_bot_username(username: &str) -> bool {
 /// * [`RepoError::Conflict`] — у владельца нет премиума.
 /// * [`RepoError::UsernameTaken`] — имя занято аккаунтом либо другим
 ///   токеном.
-/// * [`RepoError::QuotaExceeded`] — у владельца предел ботов.
+/// * [`RepoError::QuotaExceeded`] — у владельца предел ботов либо
+///   токенов за сутки.
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn issue_token(
     pool: &PgPool,
@@ -58,16 +66,23 @@ pub async fn issue_token(
 
     // Блокировка строки владельца: предел считается и токен добавляется
     // вместе, два одновременных запроса его не обойдут.
-    let premium: Option<bool> =
-        sqlx::query_scalar("SELECT premium FROM accounts WHERE account_id = $1 FOR UPDATE")
-            .bind(owner_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let owner: Option<(bool, i16)> = sqlx::query_as(
+        "SELECT premium,
+                CASE WHEN bot_tokens_day = current_date THEN bot_tokens_taken ELSE 0::smallint END
+           FROM accounts WHERE account_id = $1 FOR UPDATE",
+    )
+    .bind(owner_id)
+    .fetch_optional(&mut *tx)
+    .await?;
 
-    match premium {
+    let taken_today = match owner {
         None => return Err(RepoError::NotFound),
-        Some(false) => return Err(RepoError::Conflict),
-        Some(true) => {}
+        Some((false, _)) => return Err(RepoError::Conflict),
+        Some((true, taken)) => taken,
+    };
+
+    if taken_today >= MAX_BOT_TOKENS_PER_DAY {
+        return Err(RepoError::QuotaExceeded);
     }
 
     // Истёкшие токены — чьи угодно — имён и мест не занимают.
@@ -114,7 +129,45 @@ pub async fn issue_token(
         return Err(RepoError::UsernameTaken);
     }
 
+    sqlx::query(
+        "UPDATE accounts SET bot_tokens_day = current_date, bot_tokens_taken = $2
+          WHERE account_id = $1",
+    )
+    .bind(owner_id)
+    .bind(taken_today.saturating_add(1))
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
+
+    Ok(())
+}
+
+/// Удаляет всех ботов владельца и его неиспользованные токены.
+///
+/// 🔐 Боты живут, пока у владельца есть премиум: иначе аккаунт, у
+/// которого оператор снял премиум за злоупотребление, продолжал бы
+/// рассылать со своих ботов.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn delete_owner_bots(
+    tx: &mut Transaction<'_, Postgres>,
+    owner_id: Uuid,
+) -> Result<(), RepoError> {
+    sqlx::query(
+        "DELETE FROM accounts
+          WHERE account_id IN (SELECT account_id FROM bots WHERE owner_id = $1)",
+    )
+    .bind(owner_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query("DELETE FROM bot_tokens WHERE owner_id = $1")
+        .bind(owner_id)
+        .execute(&mut **tx)
+        .await?;
 
     Ok(())
 }
