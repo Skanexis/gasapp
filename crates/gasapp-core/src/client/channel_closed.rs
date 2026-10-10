@@ -26,7 +26,7 @@
 use gasapp_net::api::{
     AnswerChannelJoinRequest, ChannelEpochGrant, ChannelInviteRequest, ChannelMemberKeyRequest,
     ChannelMemberKeyResponse, ChannelMemberResponse, JoinChannelRequest, RekeyChannelRequest,
-    UpdateChannelRequest,
+    ReportChannelRequest, UpdateChannelRequest,
 };
 use gasapp_net::client::Transport;
 use gasapp_protocol::channel::{self, ChannelAccess, ChannelAdmin};
@@ -699,6 +699,47 @@ impl<T: Transport> Client<T> {
         }
 
         Ok(())
+    }
+
+    /// Жалуется оператору сервера на канал.
+    ///
+    /// `reason`: 1 спам, 2 незаконное, 3 безопасность детей, 4 насилие
+    /// и ненависть, 5 другое. `seq` — запись, на которую жалуются.
+    ///
+    /// 🔐 Записи канала без публичного имени оператор прочитать не
+    /// может. С `share_key` к жалобе прикладывается ссылка канала — ключ
+    /// чтения: оператор увидит записи. Это решение человека, и
+    /// интерфейс обязан сказать о нём до отправки. У канала, где меняли
+    /// ключ, ссылка новых записей не открывает — она не прикладывается.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Malformed`] — причина не из списка;
+    /// * [`GasAppError::SessionNotFound`] — канала нет;
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn report_channel(
+        &self,
+        channel_id: &str,
+        reason: u8,
+        seq: Option<u64>,
+        share_key: bool,
+        now: Timestamp,
+    ) -> Result<()> {
+        if !(1..=5).contains(&reason) {
+            return Err(GasAppError::Malformed);
+        }
+
+        let stored = self.stored_channel(channel_id)?;
+        let link = (share_key && self.storage.channel_key_epoch(&stored.channel_id)? == 0)
+            .then(|| access_of(&stored).to_uri());
+        let (device_id, identity) = self.own_device()?;
+
+        self.api.report_channel(
+            &device_id,
+            &channel::format_uuid(&stored.channel_id),
+            &ReportChannelRequest { reason, seq, link },
+            &DeviceSigner::new(&identity, now),
+        )
     }
 
     /// Ждёт ли канал смены ключа: подписчик удалён, а новый ключ ещё

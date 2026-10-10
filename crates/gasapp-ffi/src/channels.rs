@@ -1009,6 +1009,40 @@ impl Messenger {
         guard(|| client.delete_bot(&username, Timestamp::from_millis(now_millis)))
     }
 
+    /// Жалуется оператору сервера на канал. Сетевой вызов.
+    ///
+    /// `reason`: 1 спам, 2 незаконное, 3 безопасность детей, 4 насилие
+    /// и ненависть, 5 другое.
+    ///
+    /// 🔐 С `share_key` оператор получает ссылку канала — ключ чтения —
+    /// и может прочитать записи. Без неё он видит только сам факт
+    /// жалобы. Спросить человека обязан интерфейс.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — причина не из списка;
+    /// [`FfiError::Core`] — сервер недоступен либо канала нет.
+    pub fn report_channel(
+        &self,
+        channel_id: String,
+        reason: u8,
+        share_key: bool,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client.report_channel(
+                &channel_id,
+                reason,
+                None,
+                share_key,
+                Timestamp::from_millis(now_millis),
+            )
+        })
+        .map_err(malformed_is_invalid)
+    }
+
     /// Делает свой канал закрытым либо снова открытым. Сетевой вызов.
     ///
     /// ⚠️ Прежняя ссылка канала несёт ключ чтения, и он не меняется:

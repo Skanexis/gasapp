@@ -622,6 +622,21 @@ pub struct ChannelResponse {
     pub key_epoch: u32,
 }
 
+/// Жалоба на канал.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportChannelRequest {
+    /// Причина: 1 спам, 2 незаконное, 3 безопасность детей, 4 насилие
+    /// и ненависть, 5 другое.
+    pub reason: u8,
+    /// Номер записи, на которую жалуются; нет — на канал целиком.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+    /// Ссылка канала — если жалобщик решил дать оператору прочитать
+    /// записи.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+}
+
 /// Ключ доставки участника закрытого канала.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMemberKeyRequest {
