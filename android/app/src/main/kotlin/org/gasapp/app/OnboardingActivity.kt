@@ -512,7 +512,8 @@ class OnboardingActivity : AppCompatActivity() {
             return false
         }
 
-        val same = java.security.MessageDigest.isEqual(first, pinValue)
+        // Оба ввода — самого человека: скрывать время сравнения не от кого.
+        val same = first.contentEquals(pinValue)
         forgetFirstPin()
 
         if (!same) {
