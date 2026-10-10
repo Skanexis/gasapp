@@ -341,13 +341,18 @@ impl<T: Transport> Runtime<T> {
                 // Принятый ключ ещё не подтверждён: писать можно после
                 // `trustContact` либо когда его подтвердит журнал ключей.
                 let username = text(params, "username")?;
+                // Новый ключ — тот, что назвал сервер и ещё ничем не
+                // подтверждён; прежний бот уже считал своим («ключ
+                // сменился» стоит у обеих записей имени). Последний из
+                // таких: записи идут в порядке появления.
                 let changed = client
                     .contacts()?
                     .into_iter()
-                    .find(|contact| {
+                    .rfind(|contact| {
                         contact.username.as_deref() == Some(username)
                             && contact.key_changed
-                            && !contact.replaced
+                            && !contact.verified
+                            && !contact.key_confirmed
                     })
                     .ok_or(GasAppError::SessionNotFound)?;
 
