@@ -1179,10 +1179,11 @@ fn channel_member_route(
             }
         }
         (Method::Get, "join") => {
-            let (status, grant) = if let Some(grant) = channel.grants.get(&account) {
-                ("approved", Some(grant.clone()))
-            } else if channel.requests.contains_key(&account) {
+            // Ждущая заявка важнее прежнего ответа — как у сервера.
+            let (status, grant) = if channel.requests.contains_key(&account) {
                 ("pending", None)
+            } else if let Some(grant) = channel.grants.get(&account) {
+                ("approved", Some(grant.clone()))
             } else {
                 ("none", None)
             };
@@ -8974,6 +8975,8 @@ fn closing_a_channel_changes_its_key() {
         .sync_channel(&channel_id, now())
         .expect("синхронизация");
     assert_eq!(texts(&early, &channel_id), ["открытая"]);
+    // Экран канала объясняет, почему нового нет.
+    assert!(early.channel(&channel_id).expect("канал").key_missing);
 
     // По ссылке-приглашению его одобряют, и он читает дальше.
     let invite = author
@@ -8984,6 +8987,7 @@ fn closing_a_channel_changes_its_key() {
         .sync_channel(&channel_id, now())
         .expect("синхронизация");
     assert_eq!(texts(&early, &channel_id), ["открытая", "после закрытия"]);
+    assert!(!early.channel(&channel_id).expect("канал").key_missing);
 }
 
 /// 🔐 Сервер называет выдуманного участника со своим ключом доставки:
@@ -9119,5 +9123,57 @@ fn a_removed_member_listed_again_gets_no_key() {
             .grant_epochs
             .get(&account_of_name(&server, "reader")),
         Some(&2)
+    );
+}
+
+/// Участник, у которого ключ уже есть, подаёт заявку заново (например,
+/// по подсказке экрана): пока её не одобрили, прежний ответ сервера не
+/// принимается за новый, а после одобрения ключи следующих эпох
+/// приходят под новый ключ доставки.
+#[test]
+fn a_member_who_asks_again_keeps_reading() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, member) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let (channel_id, invite) = closed_channel(&author);
+
+    join_closed(&author, &member, &channel_id, &invite);
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+
+    // Заявка подана заново и ещё не одобрена: вход не «срабатывает»
+    // прежним ответом, и заявка остаётся ждать.
+    member
+        .request_channel_join(&invite, now(), &mut OsRng)
+        .expect("заявка");
+    assert!(member.check_channel_joins(now()).expect("вход").is_empty());
+    assert_eq!(member.pending_channel_joins().expect("заявки").len(), 1);
+
+    let requests = author
+        .channel_join_requests(&channel_id, now())
+        .expect("заявки");
+    author
+        .answer_channel_join(
+            &channel_id,
+            &requests[0].account_id,
+            true,
+            now(),
+            &mut OsRng,
+        )
+        .expect("одобрение");
+    assert_eq!(member.check_channel_joins(now()).expect("вход").len(), 1);
+    assert!(member.pending_channel_joins().expect("заявки").is_empty());
+
+    // Смена ключа: новый приходит под новый ключ доставки.
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    post_text(&author, &channel_id, "после удаления");
+    member
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
+    assert_eq!(
+        texts(&member, &channel_id),
+        ["только для своих", "после удаления"]
     );
 }

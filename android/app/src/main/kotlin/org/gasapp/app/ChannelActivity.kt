@@ -315,12 +315,15 @@ class ChannelActivity : AppCompatActivity() {
             // Заявка показана, но владелец её не принял либо уже снял
             // администратора: писать нельзя, и экран говорит почему.
             setText(
-                if (found.role == FfiChannelRole.ADMIN_PENDING) {
-                    R.string.channel_admin_pending_note
-                } else {
-                    R.string.channel_reader_note
+                when {
+                    // Ключ канала сменили, а этому читателю его не выдали:
+                    // новые записи не появятся, и экран говорит почему.
+                    found.keyMissing -> R.string.channel_key_missing_note
+                    found.role == FfiChannelRole.ADMIN_PENDING -> R.string.channel_admin_pending_note
+                    else -> R.string.channel_reader_note
                 },
             )
+            setTextColor(getColor(if (found.keyMissing) R.color.status_warn else R.color.text_muted))
         }
 
         EmptyState.bind(
@@ -1000,6 +1003,7 @@ class ChannelActivity : AppCompatActivity() {
         if (current.description.isNotEmpty()) lines += current.description
         current.handle?.let { lines += getString(R.string.channel_about_public, it) }
         if (current.rekeyPending) lines += getString(R.string.channel_about_rekey_pending)
+        if (current.keyMissing) lines += getString(R.string.channel_key_missing_note)
         if (current.closed) {
             lines += getString(R.string.channel_about_closed)
         } else if (current.handle == null) {

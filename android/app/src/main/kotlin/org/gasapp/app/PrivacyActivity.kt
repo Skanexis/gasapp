@@ -60,8 +60,13 @@ class PrivacyActivity : AppCompatActivity() {
 
         bindPresence()
         bindLastSeen()
+        // Отметка «был(а) в сети» не собирается и не рассылается, а
+        // уведомлений нет вовсе (см. Settings): переключатели без
+        // действия скрыты, пока за ними ничего не стоит.
+        findViewById<android.view.View>(R.id.privacy_last_seen).visibility = android.view.View.GONE
         bindScreenshots()
         bindNotificationPreview()
+        findViewById<android.view.View>(R.id.privacy_preview).visibility = android.view.View.GONE
         bindBiometric()
         bindWipe()
         bindAutoLock()

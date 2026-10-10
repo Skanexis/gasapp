@@ -79,6 +79,9 @@ class PlatformTransport(private val baseUrl: String) : HttpTransport {
 
             val status = connection.responseCode
 
+            // Часы сервера — для подсказки «проверьте время» (ClockCheck).
+            ClockCheck.observe(connection.date)
+
             // Тело читается и при ошибке: сервер объясняет отказ
             // в теле ответа, и потерять его значит потерять причину.
             val stream = if (status in 200..299) {

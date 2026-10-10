@@ -8201,7 +8201,12 @@ data class FfiChannel (
      * Подписчик удалён, а ключ канала ещё не сменён: не было сети.
      * Смена повторится сама; до неё новые записи пишутся прежним ключом.
      */
-    var `rekeyPending`: kotlin.Boolean
+    var `rekeyPending`: kotlin.Boolean, 
+    /**
+     * У устройства нет ключа действующей эпохи закрытого канала: новые
+     * записи не читаются, пока ключ не выдаст тот, кто ведёт канал.
+     */
+    var `keyMissing`: kotlin.Boolean
 ) {
     
     companion object
@@ -8228,6 +8233,7 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterOptionalByteArray.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -8246,7 +8252,8 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterULong.allocationSize(value.`pinnedSeq`) +
             FfiConverterOptionalByteArray.allocationSize(value.`avatar`) +
             FfiConverterBoolean.allocationSize(value.`closed`) +
-            FfiConverterBoolean.allocationSize(value.`rekeyPending`)
+            FfiConverterBoolean.allocationSize(value.`rekeyPending`) +
+            FfiConverterBoolean.allocationSize(value.`keyMissing`)
     )
 
     override fun write(value: FfiChannel, buf: ByteBuffer) {
@@ -8265,6 +8272,7 @@ public object FfiConverterTypeFfiChannel: FfiConverterRustBuffer<FfiChannel> {
             FfiConverterOptionalByteArray.write(value.`avatar`, buf)
             FfiConverterBoolean.write(value.`closed`, buf)
             FfiConverterBoolean.write(value.`rekeyPending`, buf)
+            FfiConverterBoolean.write(value.`keyMissing`, buf)
     }
 }
 

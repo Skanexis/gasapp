@@ -1509,18 +1509,9 @@ pub async fn join_status(
     channel_id: Uuid,
     account_id: Uuid,
 ) -> Result<JoinStatus, RepoError> {
-    let grant: Option<Vec<u8>> = sqlx::query_scalar(
-        "SELECT grant_blob FROM channel_grants WHERE channel_id = $1 AND account_id = $2",
-    )
-    .bind(channel_id)
-    .bind(account_id)
-    .fetch_optional(pool)
-    .await?;
-
-    if let Some(grant) = grant {
-        return Ok(JoinStatus::Approved(grant));
-    }
-
+    // Ждущая заявка важнее прежнего ответа: участник, подавший заявку
+    // заново, ждёт ответа под **новый** ключ. Прежний ответ ему этим
+    // ключом не открыть, и «одобрено» с ним выглядело бы как отказ.
     let pending: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM channel_join_requests
                          WHERE channel_id = $1 AND account_id = $2)",
@@ -1530,11 +1521,19 @@ pub async fn join_status(
     .fetch_one(pool)
     .await?;
 
-    Ok(if pending {
-        JoinStatus::Pending
-    } else {
-        JoinStatus::None
-    })
+    if pending {
+        return Ok(JoinStatus::Pending);
+    }
+
+    let grant: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT grant_blob FROM channel_grants WHERE channel_id = $1 AND account_id = $2",
+    )
+    .bind(channel_id)
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(grant.map_or(JoinStatus::None, JoinStatus::Approved))
 }
 
 /// Заявки, ждущие ответа, — для владельца и администраторов.

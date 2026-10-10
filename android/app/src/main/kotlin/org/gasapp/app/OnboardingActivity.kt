@@ -31,6 +31,7 @@ import org.gasapp.app.core.AccountWipe
 import org.gasapp.app.core.Core
 import org.gasapp.app.core.Pin
 import org.gasapp.app.core.SecureWindow
+import org.gasapp.app.net.ClockCheck
 import org.gasapp.app.net.EmbeddedTor
 import org.gasapp.app.net.NetworkProxy
 import org.gasapp.app.core.TouchTarget
@@ -534,12 +535,17 @@ class OnboardingActivity : AppCompatActivity() {
                     // режима сети (см. EmbeddedTor.pendingBridges).
                     if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
 
+                    // Выбор сети — до открытия базы: см. Core.pendingProxy.
+                    Core.pendingProxy = if (viaTor) null else FfiProxy.Direct
+
                     stage(Stage.KEYS)
                     // 🔐 PIN байтами обнуляется сразу после вывода ключа.
                     val messenger = try {
                         Core.unlock(this@OnboardingActivity, pinValue)
                     } finally {
                         pinValue.fill(0)
+                        // Не открылась — выбор не должен достаться другой базе.
+                        Core.pendingProxy = null
                     }
 
                     // 🔐 Ядро без настройки выбирает Tor (отказ в
@@ -607,6 +613,7 @@ class OnboardingActivity : AppCompatActivity() {
 
                     showError(
                         when {
+                            ClockCheck.off -> getString(R.string.clock_wrong)
                             network && viaTor -> getString(R.string.onboarding_error_tor)
                             network -> getString(R.string.onboarding_error_network)
                             else -> getString(R.string.ffi_error)
@@ -800,12 +807,17 @@ class OnboardingActivity : AppCompatActivity() {
                 runCatching {
                     if (viaTor) EmbeddedTor.setPendingBridges(bridgesText)
 
+                    // Выбор сети — до открытия базы: см. Core.pendingProxy.
+                    Core.pendingProxy = if (viaTor) null else FfiProxy.Direct
+
                     stage(Stage.KEYS)
                     // 🔐 PIN байтами обнуляется сразу после вывода ключа.
                     val messenger = try {
                         Core.unlock(this@OnboardingActivity, pinValue)
                     } finally {
                         pinValue.fill(0)
+                        // Не открылась — выбор не должен достаться другой базе.
+                        Core.pendingProxy = null
                     }
 
                     if (!viaTor) {

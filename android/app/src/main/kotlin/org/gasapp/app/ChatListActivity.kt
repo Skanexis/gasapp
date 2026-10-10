@@ -22,6 +22,7 @@ import org.gasapp.app.core.ReadMarks
 import org.gasapp.app.core.SecureWindow
 import org.gasapp.app.core.TouchTarget
 import org.gasapp.app.net.EmbeddedTor
+import org.gasapp.app.net.ClockCheck
 import org.gasapp.app.net.NetworkProxy
 import org.gasapp.app.net.NotificationSocket
 import org.gasapp.app.ui.BottomNav
@@ -162,20 +163,19 @@ class ChatListActivity : AppCompatActivity() {
                         }
                         strip.visibility = View.VISIBLE
                         waited = true
-                    } else if (NetworkProxy.isDirect) {
-                        // 🔐 Прямое соединение — не «онлайн», а снятая
-                        // защита: сервер видит адрес. Видно всегда, пока
-                        // так, и ведёт туда, где это меняется.
-                        banner.setText(R.string.connection_direct)
-                        // Синяя поверхность и жёлтая черта по краю: полупрозрачный
-                        // жёлтый на синем фоне смешивался в серый.
+                    } else if (ClockCheck.off) {
+                        // Часы устройства расходятся с серверными: сервер
+                        // отвергает запросы, и без этой полосы всё выглядело
+                        // бы как «нет связи». Ведёт в настройки даты.
+                        banner.setText(R.string.clock_wrong)
                         banner.setTextColor(getColor(R.color.status_warn))
                         strip.setBackgroundColor(getColor(R.color.bg_raised))
                         progress.setBackgroundColor(getColor(R.color.status_warn))
                         progress.animate().cancel()
                         progress.scaleX = 1f
+                        banner.isClickable = true
                         banner.setOnClickListener {
-                            startActivity(Intent(this@ChatListActivity, NetworkActivity::class.java))
+                            runCatching { startActivity(Intent(android.provider.Settings.ACTION_DATE_SETTINGS)) }
                         }
                         strip.visibility = View.VISIBLE
                     } else {

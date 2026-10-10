@@ -146,6 +146,11 @@ class SettingsActivity : AppCompatActivity() {
         open(R.id.settings_security, SecurityCenterActivity::class.java)
         open(R.id.settings_privacy, PrivacyActivity::class.java)
         open(R.id.settings_notifications, NotificationsActivity::class.java)
+        // Системных уведомлений приложение пока не показывает (см.
+        // Settings.NOTIFICATION_PREVIEW): экран из четырёх переключателей,
+        // которые ничего не меняют, обещал бы то, чего нет. Строка
+        // вернётся вместе с уведомлениями.
+        findViewById<android.view.View>(R.id.settings_notifications).visibility = android.view.View.GONE
         open(R.id.settings_appearance, AppearanceActivity::class.java)
         open(R.id.settings_storage, StorageActivity::class.java)
         open(R.id.settings_devices, DevicesActivity::class.java)
