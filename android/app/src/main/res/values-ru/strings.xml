@@ -626,6 +626,8 @@
     <string name="network_bridges_hint">webtunnel [2001:db8::1]:443 ОТПЕЧАТОК url=https://…</string>
     <string name="network_bridges_help">Если Tor не подключается, возможно, он заблокирован у вас. Добавьте мосты WebTunnel, по одному на строку: их выдают на bridges.torproject.org (выберите WebTunnel) и Telegram-бот @GetBridgesBot. Пусто — подключение к Tor напрямую.</string>
     <string name="network_bridges_invalid">Строка моста негодна. Поддерживаются мосты WebTunnel и обычные, и у каждого должен быть отпечаток.</string>
+    <string name="lock_key_unavailable">Защищённое хранилище ключей телефона не ответило. Разблокируйте телефон, при необходимости перезагрузите его и повторите. PIN не проверялся.</string>
+    <string name="lock_key_lost">Ключ, которым защищена переписка, исчез из защищённого хранилища телефона. Открыть переписку на этом устройстве больше нельзя. Нажмите «Забыли PIN?», чтобы начать заново и восстановиться из резервной копии.</string>
     <string name="clock_wrong">На устройстве неверные дата или время, и сервер отклоняет запросы. Включите автоматическое время и повторите.</string>
     <string name="tor_blocked_hint">Tor не подключается — возможно, он здесь заблокирован. Нажмите, чтобы добавить мост.</string>
     <string name="onboarding_add_bridge">Tor заблокирован? Добавить мост</string>

@@ -154,6 +154,23 @@ object PinAttempts {
     }
 
     /**
+     * Снимает попытку, начатую [beginAttempt], не трогая прежние.
+     *
+     * Для случая, когда PIN не проверялся вовсе: ключ Keystore не
+     * ответил ([TeeKey.KeyUnavailable]). 🔐 Счётчик не сбрасывается, а
+     * возвращается на шаг: перебору это ничего не даёт — попытка, в
+     * которой PIN ни с чем не сверялся, ничего и не проверила.
+     */
+    @SuppressLint("ApplySharedPref")
+    fun cancelAttempt(context: Context) {
+        val failures = failures(context)
+
+        if (failures > 0) {
+            prefs(context).edit().putInt(KEY_FAILURES, failures - 1).commit()
+        }
+    }
+
+    /**
      * Сбрасывает счётчик после верного PIN.
      *
      * Вызывается только тогда, когда хранилище действительно
