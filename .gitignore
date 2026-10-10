@@ -120,3 +120,7 @@ server/deploy/tls/key.pem
 # Снимки проверок дизайна (impeccable): рабочие, не исходники.
 .impeccable/review/
 .impeccable/config.local.json
+
+# Собранный сайт документов (tools/build-site.py) и снимки проверки.
+/site/
+/.playwright-mcp/

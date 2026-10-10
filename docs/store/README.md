@@ -8,6 +8,11 @@
 
 | Документ | Что в нём |
 |---|---|
+| [`en/`](en/README.md) | **Комплект для подачи на английском** (редакция 2026-10-10): требования магазинов на эту дату с источниками, ответы для Play Console и App Store Connect. Где он расходится с русскими заметками ниже — новее он |
+| [`support.md`](support.md) | Страница поддержки — EN и RU |
+| [`../legal/terms-of-use.md`](../legal/terms-of-use.md), [`.en.md`](../legal/terms-of-use.en.md) | Условия использования — обязательны для приложений с пользовательским контентом |
+| [`../legal/community-guidelines.md`](../legal/community-guidelines.md), [`.en.md`](../legal/community-guidelines.en.md) | Правила сообщества |
+| `tools/build-site.py` | Собирает из этих документов публичный сайт; выкладка — `server/deploy/nginx/site.conf` |
 | [`listing.md`](listing.md) | Название, описания, ключевые слова — RU и EN, для обоих магазинов. Лимиты проверяет `tools/check-store-listing.py` |
 | [`google-play.md`](google-play.md) | Ответы Play Console: Data safety, рейтинг IARC, аудитория, инструкция ревьюеру, разрешения, выпуск, графика |
 | [`app-store.md`](app-store.md) | Ответы App Store Connect: App Privacy, экспорт шифрования, рейтинг, Review Notes, требования ревью |

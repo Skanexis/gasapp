@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Публичный сайт документов: политика, условия, правила сообщества,
+# безопасность детей, удаление аккаунта, поддержка.
+#
+# Магазины приложений открывают эти адреса при проверке, а приложение —
+# из «О программе» и с экрана регистрации. Источник — Markdown в `docs/`;
+# сайт собирает `tools/build-site.py` и руками не правится.
+#
+# Здесь сайт только собирается и проверяется: битая ссылка между
+# документами либо оставшаяся заглушка `<домен>` роняют сборку. Готовый
+# сайт лежит в артефакте `site`; на сервер его выкладывает оператор
+# (`server/deploy/nginx/site.conf`).
+
+name: site
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "tools/build-site.py", ".github/workflows/site.yml"]
+  pull_request:
+    paths: ["docs/**", "tools/build-site.py", ".github/workflows/site.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
+        with:
+          python-version: "3.12"
+      - name: Build the site
+        run: python tools/build-site.py --out site --base-url "${{ vars.SITE_BASE_URL || 'https://gasapp.chat' }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: site
+          path: site
+          include-hidden-files: true

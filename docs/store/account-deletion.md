@@ -2,7 +2,7 @@
 
 # Страница «Удаление аккаунта» — для ссылки в Google Play
 
-Опубликовать по постоянному адресу (`https://<домен>/delete-account`)
+Опубликовать по постоянному адресу (`https://gasapp.chat/account-deletion/`)
 и вписать в Play Console → «Безопасность данных» → «Удаление данных».
 Сверено с `docs/legal/data-retention-policy.md` на 2026-09-30.
 
@@ -58,7 +58,7 @@ account on an unverifiable request, because anyone could send one.
 * Otherwise, the account is **deleted automatically after 12 months**
   without sign-in, together with everything listed above.
 
-Questions: `privacy@<domain>`.
+Questions: `privacy@gasapp.chat`.
 
 ---
 
@@ -112,4 +112,4 @@ Questions: `privacy@<domain>`.
 * Иначе аккаунт **удаляется автоматически через 12 месяцев** без входа —
   вместе со всем перечисленным выше.
 
-Вопросы: `privacy@<домен>`.
+Вопросы: `privacy@gasapp.chat`.
