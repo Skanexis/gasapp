@@ -34,8 +34,8 @@ use crate::api::{
     EnvelopeResponse, JoinChannelRequest, KtHeadsResponse, KtProofsRequest, KtProofsResponse,
     PublishKeysRequest, PublishPostRequest, PublishPostResponse, RecoverAccountRequest,
     RegisterBotRequest, RegisterRequest, RegisterResponse, RekeyChannelRequest,
-    RemoveChannelAdminRequest, ReplacePostRequest, SealedAccessRequest, SealedReportRequest,
-    SealedReportResponse, SealedSendRequest, UpdateChannelRequest,
+    RemoveChannelAdminRequest, ReplacePostRequest, ReportChannelRequest, SealedAccessRequest,
+    SealedReportRequest, SealedReportResponse, SealedSendRequest, UpdateChannelRequest,
 };
 
 /// Метод HTTP.
@@ -1075,6 +1075,29 @@ impl<T: Transport> ApiClient<T> {
             "/v1/bots/register".to_owned(),
             Some(to_json(request)?),
         )?)
+    }
+
+    /// Жалуется оператору на канал — за подписью устройства.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::SessionNotFound`] — канала нет.
+    /// * [`GasAppError::Malformed`] — причина не из списка.
+    /// * [`GasAppError::Network`] — сбой соединения.
+    pub fn report_channel(
+        &self,
+        device_id: &str,
+        channel_id: &str,
+        request: &ReportChannelRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.reader_action(
+            device_id,
+            channel_id,
+            "report",
+            Some(to_json(request)?),
+            signer,
+        )
     }
 
     /// Называет серверу ключ доставки участника закрытого канала: под

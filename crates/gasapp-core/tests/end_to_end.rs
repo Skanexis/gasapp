@@ -481,6 +481,8 @@ struct FakeChannel {
     grant_epochs: HashMap<String, u32>,
     /// Сколько ближайших смен ключа отвергнуть как сбой сети.
     rekey_failures: u32,
+    /// Жалобы: причина и ссылка канала, если её приложили.
+    reports: Vec<(u8, Option<String>)>,
 }
 
 impl FakeChannel {
@@ -1502,6 +1504,14 @@ fn channel_reader_action(
 
             plain(204, String::new())
         }
+        // Жалоба: сервер запоминает причину и ссылку, если её приложили.
+        "report" => match serde_json::from_str::<gasapp_net::api::ReportChannelRequest>(body) {
+            Ok(parsed) if (1..=5).contains(&parsed.reason) => {
+                channel.reports.push((parsed.reason, parsed.link));
+                plain(204, String::new())
+            }
+            _ => plain(400, String::new()),
+        },
         "unsubscribe" => {
             channel.subscribers.remove(device_id);
             for post in &mut channel.posts {
@@ -8678,4 +8688,48 @@ fn buttons_under_a_message_are_shown_and_pressed() {
         human.press_button(&id, 0, 0, now(), &mut OsRng),
         Err(GasAppError::SessionNotFound)
     ));
+}
+
+/// 🔐 Жалоба на канал уходит оператору; ключ чтения — только если
+/// человек решил его приложить, и никогда — у канала со сменённым ключом.
+#[test]
+fn a_channel_report_shares_the_key_only_on_request() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, reader) = author_and_reader(&server, &dir);
+    let (channel_id, link) = followed_channel(&author, &reader);
+
+    reader
+        .report_channel(&channel_id, 1, None, false, now())
+        .expect("жалоба");
+    reader
+        .report_channel(&channel_id, 3, None, true, now())
+        .expect("жалоба с ключом");
+    assert!(matches!(
+        reader.report_channel(&channel_id, 9, None, false, now()),
+        Err(GasAppError::Malformed)
+    ));
+    assert_eq!(
+        server.state.borrow().channels[&channel_id].reports,
+        [(1, None), (3, Some(link))]
+    );
+
+    // Закрытый канал со сменённым ключом: ссылка не прикладывается.
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let (closed_id, invite) = closed_channel(&author);
+    join_closed(&author, &reader, &closed_id, &invite);
+    let removed = join_closed(&author, &leaves, &closed_id, &invite);
+    author
+        .remove_channel_subscriber(&closed_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    reader
+        .sync_channel(&closed_id, now())
+        .expect("синхронизация");
+    reader
+        .report_channel(&closed_id, 2, None, true, now())
+        .expect("жалоба");
+    assert_eq!(
+        server.state.borrow().channels[&closed_id].reports,
+        [(2, None)]
+    );
 }
