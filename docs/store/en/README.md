@@ -50,7 +50,7 @@ app is built with `-PgasappDocsUrl=https://gasapp.chat`.
 | 10 | Personal developer accounts: **closed test, 12 testers for 14 days** before production | Play Console | 🟡 operator |
 | 11 | Apps built with the **iOS 26 SDK / Xcode 26** (since 2026-04-28) | [App Store submission requirements](https://developer.apple.com/news/) | 🔴 iOS app is a skeleton; build with Xcode 26 when it exists |
 | 12 | Age rating questionnaire incl. **social media capability** questions (required from September 2026) | [Apple news 2026-07-09](https://developer.apple.com/news/?id=tlur8uvi) | ✅ answers in `app-store.md` § 3: public channels found by search = yes |
-| 13 | **Export compliance**: non-exempt standard encryption → French declaration or exclude France; US self-classification notice for open source | [Apple export compliance](https://developer.apple.com/help/app-store-connect/reference/export-compliance-documentation-for-encryption) | 🟡 operator: e-mail notice to BIS/NSA before first release; decide on France (`app-store.md` § 2) |
+| 13 | **Export compliance**: non-exempt standard encryption → French declaration or exclude France; US self-classification notice for open source | [Apple export compliance](https://developer.apple.com/help/app-store-connect/reference/export-compliance-documentation-for-encryption) | ✅ France excluded from distribution in both stores (owner's decision, 2026-10-10). 🟡 operator: e-mail notice to BIS/NSA before first release (`app-store.md` § 2) |
 | 14 | Guideline 1.2 (UGC): filter/report/block, published contact; 5.1.1(v) in-app account deletion; privacy manifest | App Store Review Guidelines | ✅ on Android; 🔴 to be carried to iOS |
 
 ## What still blocks submission (operator, not code)
@@ -70,8 +70,9 @@ app is built with `-PgasappDocsUrl=https://gasapp.chat`.
    of them premium with a test channel, and someone watching them during
    review.
 6. **Screenshots and feature graphic** (`google-play.md` § 10).
-7. **Decisions**: who handles reports; whether France is in the country list;
-   confirm the 18+ age declaration.
+7. **Country list**: remove France in both consoles (decided 2026-10-10 —
+   no French encryption declaration is filed).
+8. **Decisions**: who handles reports; confirm the 18+ age declaration.
 
 ## Speeding up review
 

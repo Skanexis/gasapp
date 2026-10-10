@@ -220,6 +220,7 @@ on message content.
 | Signing | Play App Signing; the upload key is separate and kept by the owner |
 | Format | App Bundle: `./gradlew :app:bundleGmsRelease -PgasappDocsUrl=https://gasapp.chat …` — as its own command. 16 KB page check: `tools/check-16kb-pages.py` |
 | Version | `versionCode` grows with every upload; for the beta use `versionName` `0.9.x` |
+| Countries | All except **France** (owner's decision, 2026-10-10: no French encryption declaration is filed) |
 | Production TLS pins | ⚠️ **Blocker:** `release/res/xml/network_security_config.xml` still holds placeholders |
 
 ---
