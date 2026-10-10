@@ -6196,6 +6196,23 @@ fn a_reinstalled_device_gets_its_account_and_name_back() {
         .iter()
         .any(|message| message.text == "до переустановки"));
 
+    // 🔐 И вернулась в тот чат, куда придут новые сообщения собеседника:
+    // идентификатор чата выводится из ключей обоих, а свой ключ теперь
+    // новый. Прежде история оставалась в чате без контакта, а новое
+    // сообщение того же человека открывало другой.
+    let bob_contact = reinstalled
+        .contacts()
+        .expect("контакты")
+        .into_iter()
+        .find(|contact| contact.username.as_deref() == Some("bob"))
+        .expect("контакт вернулся");
+    assert_eq!(
+        bob_contact.chat_id,
+        Some(chat),
+        "контакт указывает на прежний чат"
+    );
+    assert_eq!(reinstalled.chats().expect("чаты").len(), 1);
+
     // 🔐 Собеседник видит смену ключа и без новой сверки не пишет.
     assert!(matches!(
         bob.send_message("alice", "это ты?", later(11), &mut OsRng),

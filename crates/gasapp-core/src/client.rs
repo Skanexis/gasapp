@@ -597,6 +597,10 @@ impl<T: Transport> Client<T> {
         // под ним стоял прежний ключ (или ничего), и чужим он не был.
         self.kt_start_self_check(now)?;
 
+        // Аккаунт вернули из копии: ключ новый, и переписка переезжает
+        // в чаты, выведенные из него. У нового аккаунта контактов нет.
+        self.rehome_chats(identity.public().public())?;
+
         Ok(Account {
             account_id,
             device_id: server_device_id,
@@ -2160,8 +2164,61 @@ impl<T: Transport> Client<T> {
             return Ok(());
         };
 
+        // Прежние записи этого имени — тот же человек под прежним ключом:
+        // его переписка переезжает в чат нового ключа. Иначе история
+        // осталась бы в чате без контакта, а новое шло бы отдельно.
+        // Чата с новым ключом может ещё не быть — тогда берётся тот, что
+        // появится с первым сообщением: он выводится из тех же ключей.
+        let target = match (
+            row.chat_id,
+            <[u8; 32]>::try_from(row.identity_key.as_slice()),
+        ) {
+            (Some(chat), _) => Some(chat),
+            (None, Ok(identity)) => self.load_identity().ok().map(|(own, _)| {
+                derive_chat_id(own.public().public(), &PublicKeyBytes::new(identity))
+            }),
+            (None, Err(_)) => None,
+        };
+
+        if let Some(target) = target {
+            for other in self.storage.list_contacts(MAX_CONTACTS_TO_LIST)? {
+                if other.account_id != *contact && other.username.as_deref() == Some(name.as_str())
+                {
+                    if let Some(old) = other.chat_id {
+                        self.storage.move_chat(&old, &target)?;
+                    }
+                }
+            }
+        }
+
         self.storage.restore_contact(contact)?;
         self.storage.replace_other_contacts(&name, contact, now)?;
+
+        Ok(())
+    }
+
+    /// Переносит переписку в чаты, выведенные из своего ключа `own`.
+    ///
+    /// Идентификатор чата зависит от ключей обоих собеседников (см.
+    /// [`derive_chat_id`]). После восстановления из копии свой ключ
+    /// новый, и чаты из копии остались бы под прежними идентификаторами:
+    /// история — в безымянных чатах, новые сообщения тех же людей —
+    /// в других.
+    fn rehome_chats(&self, own: &PublicKeyBytes) -> Result<()> {
+        for contact in self.storage.list_contacts(MAX_CONTACTS_TO_LIST)? {
+            let (Some(old), Ok(identity)) = (
+                contact.chat_id,
+                <[u8; 32]>::try_from(contact.identity_key.as_slice()),
+            ) else {
+                continue;
+            };
+
+            let new = derive_chat_id(own, &PublicKeyBytes::new(identity));
+
+            if new != old {
+                self.storage.move_chat(&old, &new)?;
+            }
+        }
 
         Ok(())
     }

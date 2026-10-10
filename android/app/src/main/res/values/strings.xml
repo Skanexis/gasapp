@@ -163,6 +163,9 @@
     <string name="profile_qr_description">Profile QR code: show it to someone so they can add you</string>
     <string name="profile_copy">Copy username</string>
     <string name="profile_share">Share username</string>
+    <string name="profile_share_link">Share contact link</string>
+    <string name="profile_share_link_hint">The link carries your key, like the QR code: whoever pastes it into “New chat” can write to you right away. Send it over a channel you trust.</string>
+    <string name="profile_share_link_text">Write to me in GasApp. Paste this link into “New chat”:\n%1$s</string>
     <string name="profile_copied">Username copied</string>
 
     <string name="add_contact_key_changed">“%1$s” was already in your contacts with a different key. It may be a reinstall — or an impostor. Compare safety numbers in person before messaging them.</string>
