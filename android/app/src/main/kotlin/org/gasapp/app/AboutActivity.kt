@@ -63,5 +63,16 @@ class AboutActivity : AppCompatActivity() {
             value = getString(R.string.about_source_value),
             icon = R.drawable.ic_globe,
         )
+
+        // Условия, политика, правила сообщества, удаление аккаунта.
+        SettingsRow.bind(
+            root = findViewById(R.id.about_documents),
+            label = R.string.legal_title,
+            value = null,
+            icon = R.drawable.ic_file,
+        )
+        findViewById<android.view.View>(R.id.about_documents).setOnClickListener {
+            org.gasapp.app.core.Legal.show(this)
+        }
     }
 }

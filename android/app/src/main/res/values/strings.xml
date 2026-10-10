@@ -941,4 +941,23 @@
     <string name="message_button_link_title">Open the link?</string>
     <string name="message_button_link_body">The button and the link were sent by the other person. It will open outside GasApp:\n\n%1$s</string>
     <string name="message_button_link_open">Open</string>
+    <string name="legal_title">Terms and documents</string>
+    <string name="legal_terms">Terms of Use</string>
+    <string name="legal_privacy">Privacy Policy</string>
+    <string name="legal_guidelines">Community Guidelines</string>
+    <string name="legal_child_safety">Child safety</string>
+    <string name="legal_account_deletion">Account deletion</string>
+    <string name="legal_support">Support</string>
+    <string name="legal_open_failed">Could not open the page: no browser found</string>
+    <string name="onboarding_legal">By creating an account you accept the Terms of Use and the Privacy Policy. Tap to read them.</string>
+    <string name="channel_report">Report channel</string>
+    <string name="channel_report_spam">Spam or scam</string>
+    <string name="channel_report_illegal">Illegal content</string>
+    <string name="channel_report_child_safety">Child safety concern</string>
+    <string name="channel_report_violence">Violence or hate</string>
+    <string name="channel_report_other">Something else</string>
+    <string name="channel_report_body">The report goes to the server operator together with your account name. The operator cannot read this channel\'s posts unless you give access. “Send with access” attaches the channel link to the report, so the operator can open the channel and see what you are reporting.</string>
+    <string name="channel_report_plain">Report only</string>
+    <string name="channel_report_with_key">Send with access</string>
+    <string name="channel_report_sent">Report sent</string>
 </resources>

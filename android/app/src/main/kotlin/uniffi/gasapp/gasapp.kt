@@ -1060,6 +1060,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1308,6 +1310,8 @@ fun uniffi_gasapp_checksum_method_messenger_rekey_storage(
 fun uniffi_gasapp_checksum_method_messenger_remove_channel_admin(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_remove_channel_subscriber(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_report_channel(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_report_channel_seen(
 ): Short
@@ -1618,6 +1622,8 @@ fun uniffi_gasapp_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: Rus
 fun uniffi_gasapp_fn_method_messenger_remove_channel_admin(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`verifyKey`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_remove_channel_subscriber(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`accountId`: RustBuffer.ByValue,`restore`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_gasapp_fn_method_messenger_report_channel(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`reason`: Byte,`shareKey`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_report_channel_seen(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -2254,6 +2260,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_remove_channel_subscriber() != 33753.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_report_channel() != 63168.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_report_channel_seen() != 57060.toShort()) {
@@ -4164,6 +4173,23 @@ public interface MessengerInterface {
      * администратора; [`FfiError::Core`] — сервер недоступен.
      */
     fun `removeChannelSubscriber`(`channelId`: kotlin.String, `accountId`: kotlin.String, `restore`: kotlin.Boolean, `nowMillis`: kotlin.Long)
+    
+    /**
+     * Жалуется оператору сервера на канал. Сетевой вызов.
+     *
+     * `reason`: 1 спам, 2 незаконное, 3 безопасность детей, 4 насилие
+     * и ненависть, 5 другое.
+     *
+     * 🔐 С `share_key` оператор получает ссылку канала — ключ чтения —
+     * и может прочитать записи. Без неё он видит только сам факт
+     * жалобы. Спросить человека обязан интерфейс.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — причина не из списка;
+     * [`FfiError::Core`] — сервер недоступен либо канала нет.
+     */
+    fun `reportChannel`(`channelId`: kotlin.String, `reason`: kotlin.UByte, `shareKey`: kotlin.Boolean, `nowMillis`: kotlin.Long)
     
     /**
      * Сообщает серверу, до какой записи канал прочитан: из этого
@@ -6591,6 +6617,33 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_remove_channel_subscriber(
         it, FfiConverterString.lower(`channelId`),FfiConverterString.lower(`accountId`),FfiConverterBoolean.lower(`restore`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Жалуется оператору сервера на канал. Сетевой вызов.
+     *
+     * `reason`: 1 спам, 2 незаконное, 3 безопасность детей, 4 насилие
+     * и ненависть, 5 другое.
+     *
+     * 🔐 С `share_key` оператор получает ссылку канала — ключ чтения —
+     * и может прочитать записи. Без неё он видит только сам факт
+     * жалобы. Спросить человека обязан интерфейс.
+     *
+     * # Errors
+     *
+     * [`FfiError::InvalidArgument`] — причина не из списка;
+     * [`FfiError::Core`] — сервер недоступен либо канала нет.
+     */
+    @Throws(FfiException::class)override fun `reportChannel`(`channelId`: kotlin.String, `reason`: kotlin.UByte, `shareKey`: kotlin.Boolean, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_report_channel(
+        it, FfiConverterString.lower(`channelId`),FfiConverterUByte.lower(`reason`),FfiConverterBoolean.lower(`shareKey`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
     

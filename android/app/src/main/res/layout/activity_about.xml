@@ -74,6 +74,10 @@
 <include
                     android:id="@+id/about_source"
                     layout="@layout/item_settings_row" />
+
+                <include
+                    android:id="@+id/about_documents"
+                    layout="@layout/item_settings_row" />
             </org.gasapp.app.components.GasAppGroup>
             <TextView
                 style="@style/GasAppCaption"
