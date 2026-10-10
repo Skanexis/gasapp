@@ -114,6 +114,26 @@
                 android:layout_marginTop="@dimen/space_s"
                 android:text="@string/profile_copy"
                 app:buttonVariant="ghost" />
+
+            <!--
+              Ссылка-контакт — тот же код, что в QR, текстом: тому, с кем
+              не встретиться. Несёт ключ, поэтому получатель может писать
+              сразу, не дожидаясь суток в журнале ключей.
+            -->
+            <org.gasapp.app.components.GasAppButton
+                android:id="@+id/profile_share_link"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/profile_share_link"
+                app:buttonVariant="ghost" />
+
+            <TextView
+                style="@style/GasAppCaption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:text="@string/profile_share_link_hint" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

@@ -58,6 +58,7 @@ class ProfileActivity : AppCompatActivity() {
 
         findViewById<GasAppButton>(R.id.profile_copy).setOnClickListener { copyUsername() }
         findViewById<GasAppButton>(R.id.profile_share).setOnClickListener { shareUsername() }
+        findViewById<GasAppButton>(R.id.profile_share_link).setOnClickListener { shareContactLink() }
 
         loadProfile()
     }
@@ -134,6 +135,28 @@ class ProfileActivity : AppCompatActivity() {
      * 🔐 Ни ключа, ни чего-либо ещё: получатель найдёт по имени, а ключ
      * сверит журнал ключей — или QR при встрече.
      */
+    /**
+     * Отдаёт ссылку-контакт — то же, что в QR-коде, текстом.
+     *
+     * Для тех, с кем не встретиться: получатель вставляет ссылку в «Новый
+     * чат» и может писать сразу. 🔐 Ссылка несёт ключ, и подменивший её
+     * по дороге подставил бы свой: верить ей можно настолько, насколько
+     * каналу, которым она пришла. Имя из ссылки ядро получателя сверяет
+     * с сервером, так что одной подмены ссылки для подлога мало.
+     */
+    private fun shareContactLink() {
+        val link = qrPayload.takeIf { it.isNotEmpty() } ?: return
+
+        startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.profile_share_link_text, link)),
+                getString(R.string.profile_share_link),
+            ),
+        )
+    }
+
     private fun shareUsername() {
         val name = username ?: return
 

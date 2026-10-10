@@ -147,6 +147,9 @@
     <string name="profile_qr_description">QR-код профиля: покажите его собеседнику, чтобы он добавил вас</string>
     <string name="profile_copy">Скопировать имя</string>
     <string name="profile_share">Поделиться именем</string>
+    <string name="profile_share_link">Поделиться ссылкой-контактом</string>
+    <string name="profile_share_link_hint">Ссылка несёт ваш ключ, как и QR-код: тот, кто вставит её в «Новый чат», сможет писать вам сразу. Отправляйте её каналом, которому доверяете.</string>
+    <string name="profile_share_link_text">Напишите мне в GasApp. Вставьте эту ссылку в «Новый чат»:\n%1$s</string>
     <string name="profile_copied">Имя скопировано</string>
 
     <!-- Добавление контакта: по @имени или QR. -->

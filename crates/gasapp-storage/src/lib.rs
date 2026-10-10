@@ -1920,6 +1920,62 @@ impl Storage {
 
     // TODO: Implement other methods (prekey bundles, used OPKs, known devices, etc.)
 
+    /// Переносит переписку из чата `old` в чат `new`.
+    ///
+    /// Идентификатор чата выводится из ключей обоих собеседников, поэтому
+    /// меняется вместе с любым из них: после восстановления из копии
+    /// (свой ключ новый) и после переустановки у собеседника (новый — его).
+    /// Без переноса история оставалась в прежнем чате — безымянном, без
+    /// контакта, — а новые сообщения того же человека шли в другой
+    /// (проверка на устройстве 2026-10-10).
+    ///
+    /// Переезжают сообщения, кнопки под ними, блокировка и состояние
+    /// чата; контакт указывает на новый чат. Сессия и сертификат для
+    /// жалобы прежнего чата удаляются: они принадлежат ключу, которого
+    /// больше нет. Что в новом чате уже есть (состояние, блокировка) —
+    /// остаётся его собственным.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — запись не удалась; тогда не меняется
+    /// ничего.
+    pub fn move_chat(&self, old: &ChatId, new: &ChatId) -> Result<()> {
+        if old == new {
+            return Ok(());
+        }
+
+        let mut connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        let transaction = connection.transaction().map_err(storage_error)?;
+        let pair = params![new.as_bytes().as_slice(), old.as_bytes().as_slice()];
+
+        for statement in [
+            "UPDATE messages SET chat_id = ?1 WHERE chat_id = ?2",
+            "UPDATE message_keyboards SET chat_id = ?1 WHERE chat_id = ?2",
+            "UPDATE button_callbacks SET chat_id = ?1 WHERE chat_id = ?2",
+            "UPDATE known_contacts SET chat_id = ?1 WHERE chat_id = ?2",
+            // Строка нового чата, если она есть, главнее прежней.
+            "UPDATE OR IGNORE chat_states SET chat_id = ?1 WHERE chat_id = ?2",
+            "UPDATE OR IGNORE blocked_chats SET chat_id = ?1 WHERE chat_id = ?2",
+        ] {
+            transaction
+                .execute(statement, pair)
+                .map_err(storage_error)?;
+        }
+
+        for statement in [
+            "DELETE FROM chat_states WHERE chat_id = ?",
+            "DELETE FROM blocked_chats WHERE chat_id = ?",
+            "DELETE FROM report_certificates WHERE chat_id = ?",
+            "DELETE FROM sessions WHERE chat_id = ?",
+        ] {
+            transaction
+                .execute(statement, params![old.as_bytes().as_slice()])
+                .map_err(storage_error)?;
+        }
+
+        transaction.commit().map_err(storage_error)
+    }
+
     /// Записывает событие в журнал безопасности.
     ///
     /// # Errors
