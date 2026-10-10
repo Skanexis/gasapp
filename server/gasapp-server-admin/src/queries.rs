@@ -135,6 +135,13 @@ pub struct AccountCard {
     pub premium: bool,
     /// Сколько каналов у аккаунта.
     pub channels: i64,
+    /// Сколько ботов завёл аккаунт.
+    pub bots: i64,
+    /// Владелец, если аккаунт — бот.
+    ///
+    /// 🔐 Без него оператор, удалив бота по жалобе, не видел, кто его
+    /// завёл, — и владелец тут же заводил нового (аудит 2026-10-10, N-1).
+    pub bot_owner: Option<String>,
 }
 
 /// Строка отчёта о прозрачности: месяц, действие, причина, сколько.
@@ -235,7 +242,19 @@ pub async fn account_by_username(
     pool: &PgPool,
     username: &str,
 ) -> Result<Option<AccountCard>, sqlx::Error> {
-    let row: Option<(Uuid, String, String, i64, i64, i64, bool, i64)> = sqlx::query_as(
+    #[allow(clippy::type_complexity)]
+    let row: Option<(
+        Uuid,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        bool,
+        i64,
+        i64,
+        Option<String>,
+    )> = sqlx::query_as(
         "SELECT a.account_id,
                 a.username,
                 to_char(a.active_month, 'YYYY-MM'),
@@ -247,7 +266,11 @@ pub async fn account_by_username(
                    FROM sealed_sender_reports r
                   WHERE r.reported_account = a.account_id),
                 a.premium,
-                (SELECT count(*) FROM channels c WHERE c.owner_account = a.account_id)
+                (SELECT count(*) FROM channels c WHERE c.owner_account = a.account_id),
+                (SELECT count(*) FROM bots b WHERE b.owner_id = a.account_id),
+                (SELECT o.username
+                   FROM bots b JOIN accounts o ON o.account_id = b.owner_id
+                  WHERE b.account_id = a.account_id)
            FROM accounts a
           WHERE a.username = $1",
     )
@@ -265,6 +288,8 @@ pub async fn account_by_username(
             certificates,
             premium,
             channels,
+            bots,
+            bot_owner,
         )| {
             AccountCard {
                 account_id,
@@ -275,6 +300,8 @@ pub async fn account_by_username(
                 certificates,
                 premium,
                 channels,
+                bots,
+                bot_owner,
             }
         },
     ))
