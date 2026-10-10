@@ -326,7 +326,7 @@ fn serve(
                 .map_err(|error| format!("--listen {address}: {error}"))?;
             eprintln!("gasapp-bot: команды принимаются на http://{local}");
 
-            Some(listener)
+            Some((listener, local))
         }
         None => None,
     };
@@ -335,13 +335,14 @@ fn serve(
     let mut next_poll = std::time::Instant::now();
 
     loop {
-        if let Some(listener) = &listener {
+        if let Some((listener, local)) = &listener {
             while let Ok((mut stream, _)) = listener.accept() {
                 // Принятое соединение читается обычным, блокирующим чтением.
                 let _ = stream.set_nonblocking(false);
                 answer(
                     runtime,
                     options,
+                    local,
                     webhook.is_some(),
                     &mut events,
                     &mut stream,
@@ -381,16 +382,26 @@ fn serve(
 fn answer(
     runtime: &mut Runtime<HttpTransport>,
     options: &Options,
+    listening: &std::net::SocketAddr,
     has_webhook: bool,
     events: &mut std::collections::VecDeque<String>,
     stream: &mut std::net::TcpStream,
 ) {
     const REFUSED: &str = r#"{"ok":false,"error":"bad_request"}"#;
+    const FORBIDDEN: &str = r#"{"ok":false,"error":"forbidden"}"#;
 
     let Ok(request) = api::read_request(stream) else {
         api::write_response(stream, 400, REFUSED);
         return;
     };
+
+    // 🔐 Запросы из браузера и по чужому имени не принимаются — раньше
+    // всего остального: страница, открытая на машине бота, не должна
+    // ни управлять им, ни вычерпывать его события.
+    if request.from_browser || !request.host_allowed(listening) {
+        api::write_response(stream, 403, FORBIDDEN);
+        return;
+    }
 
     if let Some(secret) = &options.secret {
         if !api::secrets_match(secret, request.bearer.as_deref()) {
@@ -414,13 +425,17 @@ fn answer(
         return;
     }
 
-    if request.method != "POST" {
+    // Команда — `POST` с JSON: «простую» форму, которую браузер шлёт
+    // без предварительной проверки, движок не принимает (тело без
+    // параметров — исключение: в нём нечего подделывать).
+    let empty = request.body.iter().all(u8::is_ascii_whitespace);
+    if request.method != "POST" || !(request.json || empty) {
         api::write_response(stream, 400, REFUSED);
         return;
     }
 
     // Тело — параметры команды; пустое — без параметров.
-    let params = if request.body.iter().all(u8::is_ascii_whitespace) {
+    let params = if empty {
         "{}".to_owned()
     } else {
         String::from_utf8_lossy(&request.body).into_owned()
