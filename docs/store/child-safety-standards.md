@@ -2,7 +2,7 @@
 
 # Стандарты безопасности детей — страница для Google Play
 
-Опубликовать по постоянному адресу (`https://<домен>/child-safety`).
+Опубликовать по постоянному адресу (`https://gasapp.chat/child-safety/`).
 Google Play требует такую страницу от приложений категорий «Социальные»
 и «Знакомства»; для «Связи» — желательна (`google-play.md`, § 8).
 
@@ -20,7 +20,7 @@ GasApp prohibits child sexual abuse and exploitation (CSAE), including child
 sexual abuse material (CSAM), grooming and sextortion. Accounts used for
 this are removed.
 
-**Not for children.** GasApp is not intended for anyone under 13.
+**Not for children.** GasApp is for adults: you must be 18 or older to use it (see the Terms of Use). It is not designed to attract children.
 
 **What we can and cannot see.** Messages are end-to-end encrypted: the
 server cannot read them, and we cannot scan their content. What we can act
@@ -28,21 +28,24 @@ on is a report and the account behind it.
 
 **How to report**
 
-* In the app: open the contact, tap **Report**. The report reaches us; the
-  person is not notified.
-* By email: `abuse@<domain>`. You may attach screenshots — they are the
+* In the app, a person: open the contact, tap **Report**. The report
+  reaches us; the person is not notified.
+* In the app, a channel: open the channel menu, tap **Report channel** and
+  choose "Child safety concern". You can give us access to the channel so
+  we can see its posts.
+* By email: `abuse@gasapp.chat`. You may attach screenshots — they are the
   only way we can see reported content, because we never hold readable
   messages.
 
 **What we do.** A report is reviewed within 24 hours. An account engaged in
-CSAE is suspended and deleted. Where the law requires, and in every case of
+CSAE is suspended and deleted; a channel used for it is deleted. Where the law requires, and in every case of
 apparent CSAM we become aware of, we report to the relevant authorities —
 in the EU to the national hotline (INHOPE network), in the US to NCMEC.
 We hand over what the server has, which is limited by design: the
 username, its public keys and the month it was last active (see our data retention
 policy).
 
-**Child safety contact:** `abuse@<domain>`.
+**Child safety contact:** `abuse@gasapp.chat`.
 
 ---
 
@@ -54,7 +57,7 @@ GasApp запрещает сексуальное насилие над деть�
 включая материалы сексуального насилия над детьми, груминг и
 вымогательство. Аккаунты, используемые для этого, удаляются.
 
-**Не для детей.** GasApp не предназначен для лиц младше 13 лет.
+**Не для детей.** GasApp — для взрослых: пользоваться им можно с 18 лет (см. Условия использования). Он не рассчитан на то, чтобы привлекать детей.
 
 **Что мы видим и чего нет.** Сообщения зашифрованы сквозным шифрованием:
 сервер не может их прочитать, и проверять их содержимое мы не можем.
@@ -62,17 +65,20 @@ GasApp запрещает сексуальное насилие над деть�
 
 **Как сообщить**
 
-* В приложении: откройте собеседника → **Пожаловаться**. Жалоба приходит
-  нам; собеседник о ней не узнаёт.
-* По почте: `abuse@<домен>`. Можно приложить снимки экрана — только так
+* В приложении, на человека: откройте собеседника → **Пожаловаться**.
+  Жалоба приходит нам; собеседник о ней не узнаёт.
+* В приложении, на канал: меню канала → **Пожаловаться на канал**,
+  причина «Угроза безопасности детей». Можно дать нам доступ к каналу,
+  чтобы мы увидели его записи.
+* По почте: `abuse@gasapp.chat`. Можно приложить снимки экрана — только так
   мы видим содержимое жалобы: читаемых сообщений у нас нет.
 
 **Что мы делаем.** Жалоба рассматривается в течение 24 часов. Аккаунт,
-замеченный в таком, блокируется и удаляется. Когда этого требует закон —
+замеченный в таком, блокируется и удаляется; канал — удаляется. Когда этого требует закон —
 и в каждом известном нам случае явных материалов насилия — мы сообщаем
 в компетентные органы: в ЕС — на национальную горячую линию (сеть INHOPE),
 в США — в NCMEC. Передаём то, что есть у сервера, а это немного по
 устройству системы: имя пользователя, его открытые ключи и месяц последней активности
 (см. политику хранения данных).
 
-**Контакт по безопасности детей:** `abuse@<домен>`.
+**Контакт по безопасности детей:** `abuse@gasapp.chat`.

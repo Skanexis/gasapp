@@ -2,7 +2,7 @@
 
 # GasApp Privacy Policy
 
-**Version:** 2026-10-07. This is a translation of
+**Version:** 2026-10-10. This is a translation of
 [`privacy-policy.md`](privacy-policy.md); if the two differ, the Russian
 text is the reference and the difference is a bug — please report it.
 
@@ -314,6 +314,14 @@ while both accounts exist, or until the operator decides. The decision
 operator log **without the username**: what was done, why, and how many
 people reported. The transparency report is built from this log.
 
+**A report about a channel** also goes to the operator, together with
+your account name and the reason you chose. 🔐 The operator cannot read a
+channel that has no public name. The app therefore asks whether to attach
+the channel link — its read key — to the report: if you agree, the operator
+can open the channel and see its posts; if not, the operator sees only that
+a report was made. One report per account per channel is kept until the
+operator decides or the channel is deleted.
+
 ## Push notifications
 
 ⚠️ **There are no push notifications in any build today.** A new message
@@ -498,7 +506,8 @@ way to retry: the request is signed with the device key.
 
 ## Children
 
-The app is not intended for children under 13. We cannot check age without
+The app is for adults: the Terms of Use require you to be 18 or older, and the
+app is not designed to attract children. We cannot check age without
 collecting data we do not collect, so we do not check it, and we say so
 plainly.
 

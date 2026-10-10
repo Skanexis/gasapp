@@ -226,13 +226,13 @@ Apple считает байты: кириллица — два байта на �
 RU:
 
 ```text
-шифрование,мессенджер,приватный,чат,tor,e2ee,анонимно
+шифрование,мессенджер,приватный,чат,tor,e2ee,каналы
 ```
 
 EN:
 
 ```text
-encrypted,messenger,private,chat,tor,e2ee,secure,anonymous,privacy,no phone
+encrypted,messenger,private,chat,tor,e2ee,secure,channels,privacy,no phone
 ```
 
 ### Описание (≤ 4000)
@@ -250,8 +250,8 @@ encrypted,messenger,private,chat,tor,e2ee,secure,anonymous,privacy,no phone
 
 | Поле | Значение | Статус |
 |---|---|---|
-| Политика конфиденциальности | `https://<домен>/privacy` — страница из `docs/legal/privacy-policy.md` и `.en.md` | ⚠️ домен и хостинг — решение владельца |
-| Удаление аккаунта (Google Play) | `https://<домен>/delete-account` — страница из `account-deletion.md` | ⚠️ то же |
-| Поддержка (App Store — обязательно) | `https://<домен>/support` или страница проекта | ⚠️ то же |
+| Политика конфиденциальности | `https://gasapp.chat/privacy/` — страница из `docs/legal/privacy-policy.md` и `.en.md` | ⚠️ домен и хостинг — решение владельца |
+| Удаление аккаунта (Google Play) | `https://gasapp.chat/account-deletion/` — страница из `account-deletion.md` | ⚠️ то же |
+| Поддержка (App Store — обязательно) | `https://gasapp.chat/support/` или страница проекта | ⚠️ то же |
 | Почта поддержки | `privacy@gasapp.chat`, `security@gasapp.chat` из политики | ⚠️ ящики должны существовать до подачи |
-| Стандарты безопасности детей (Google Play) | `https://<домен>/child-safety` — `child-safety-standards.md` | ⚠️ то же |
+| Стандарты безопасности детей (Google Play) | `https://gasapp.chat/child-safety/` — `child-safety-standards.md` | ⚠️ то же |
