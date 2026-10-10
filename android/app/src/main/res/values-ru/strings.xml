@@ -1012,4 +1012,6 @@
     <string name="channel_report_plain">Только жалоба</string>
     <string name="channel_report_with_key">Отправить с доступом</string>
     <string name="channel_report_sent">Жалоба отправлена</string>
+    <string name="channel_request_row_key_log">\@%1$s · ключ в журнале</string>
+    <string name="channel_request_body_key_log">Вы с этим человеком не сверялись, но его ключ стоит под этим именем в журнале ключей больше суток: подменить его незаметно сервер не мог. Одобренный получит ключ чтения канала — забрать его обратно нельзя.</string>
 </resources>

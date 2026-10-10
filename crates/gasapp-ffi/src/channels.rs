@@ -80,9 +80,12 @@ pub struct FfiChannelJoinRequest {
     pub account_id: String,
     /// Имя заявителя — со слов сервера.
     pub username: String,
-    /// Заявка подписана ключом известного контакта с таким именем.
-    /// `false` — о заявителе известно только то, что сказал сервер.
+    /// Заявка подписана ключом подтверждённого контакта с таким именем
+    /// (сверен, добавлен по ссылке либо QR).
     pub known_contact: bool,
+    /// Ключ заявки стоит под этим именем в журнале ключей дольше суток.
+    /// Оба `false` — о заявителе известно только то, что сказал сервер.
+    pub in_key_log: bool,
 }
 
 impl From<ChannelJoinRequestInfo> for FfiChannelJoinRequest {
@@ -91,6 +94,7 @@ impl From<ChannelJoinRequestInfo> for FfiChannelJoinRequest {
             account_id: request.account_id,
             username: request.username,
             known_contact: request.known_contact,
+            in_key_log: request.in_key_log,
         }
     }
 }

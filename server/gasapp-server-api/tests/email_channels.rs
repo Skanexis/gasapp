@@ -2932,6 +2932,8 @@ async fn a_channel_can_be_reported() {
         serde_json::json!({ "reason": 9 }),
         serde_json::json!({ "reason": 1, "seq": 0 }),
         serde_json::json!({ "reason": 1, "link": "https://example.org" }),
+        // Ссылка другого канала к жалобе на этот не прикладывается.
+        serde_json::json!({ "reason": 1, "link": link_to(Uuid::new_v4()) }),
     ] {
         assert_eq!(report(bad).await, StatusCode::BAD_REQUEST);
     }

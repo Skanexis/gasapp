@@ -153,10 +153,18 @@ class ChannelGate(
                     for (request in requests) {
                         sheet.action(
                             activity.getString(
-                                if (request.knownContact) R.string.channel_request_row_known else R.string.channel_request_row,
+                                when {
+                                    request.knownContact -> R.string.channel_request_row_known
+                                    request.inKeyLog -> R.string.channel_request_row_key_log
+                                    else -> R.string.channel_request_row
+                                },
                                 request.username,
                             ),
-                            if (request.knownContact) R.drawable.ic_shield_check else R.drawable.ic_users,
+                            if (request.knownContact || request.inKeyLog) {
+                                R.drawable.ic_shield_check
+                            } else {
+                                R.drawable.ic_users
+                            },
                         ) { answer(request) }
                     }
 
@@ -175,7 +183,11 @@ class ChannelGate(
         GasAppDialog(activity)
             .title(activity.getString(R.string.channel_request_title, request.username))
             .message(
-                if (request.knownContact) R.string.channel_request_body_known else R.string.channel_request_body_unknown,
+                when {
+                    request.knownContact -> R.string.channel_request_body_known
+                    request.inKeyLog -> R.string.channel_request_body_key_log
+                    else -> R.string.channel_request_body_unknown
+                },
             )
             .secondary(R.string.channel_request_decline) { send(request, approve = false) }
             .primary(R.string.channel_request_approve) { send(request, approve = true) }

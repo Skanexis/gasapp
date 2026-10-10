@@ -402,7 +402,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 21;
+    const SCHEMA_VERSION: i32 = 22;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1040,6 +1040,21 @@ impl Storage {
                     ] {
                         transaction.execute(statement, []).map_err(storage_error)?;
                     }
+                }
+                // 21 → 22: ключи аккаунтов участников закрытого канала,
+                // запомненные тем, кто его ведёт (`channels`).
+                22 => {
+                    transaction
+                        .execute(
+                            "CREATE TABLE IF NOT EXISTS channel_member_identities (
+                                 channel_id BLOB NOT NULL,
+                                 account_id BLOB NOT NULL,
+                                 identity   BLOB NOT NULL,
+                                 PRIMARY KEY (channel_id, account_id)
+                             )",
+                            [],
+                        )
+                        .map_err(storage_error)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.

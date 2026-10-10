@@ -302,6 +302,7 @@ impl<T: Transport> Runtime<T> {
                     "account_id": request.account_id,
                     "username": request.username,
                     "known_contact": request.known_contact,
+                    "in_key_log": request.in_key_log,
                 }));
             }
         }
@@ -504,6 +505,7 @@ impl<T: Transport> Runtime<T> {
                             "account_id": request.account_id,
                             "username": request.username,
                             "known_contact": request.known_contact,
+                            "in_key_log": request.in_key_log,
                         })
                     })
                     .collect(),

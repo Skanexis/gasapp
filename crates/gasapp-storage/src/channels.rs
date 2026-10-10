@@ -882,6 +882,89 @@ impl Storage {
         }
     }
 
+    /// Запоминает ключ аккаунта участника канала — с заменой прежнего.
+    /// Вызывается, когда тот, кто ведёт канал, сам одобрил заявку.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn pin_channel_member(
+        &self,
+        channel_id: &[u8; 16],
+        account_id: &[u8; 16],
+        identity: &[u8; 32],
+    ) -> Result<()> {
+        self.channel_update(
+            "INSERT OR REPLACE INTO channel_member_identities (channel_id, account_id, identity)
+             VALUES (?1, ?2, ?3)",
+            params![
+                channel_id.as_slice(),
+                account_id.as_slice(),
+                identity.as_slice()
+            ],
+        )
+    }
+
+    /// Сверяет ключ аккаунта участника с запомненным; незнакомого —
+    /// запоминает. Возвращает `false`, если под этим аккаунтом раньше
+    /// был **другой** ключ.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn channel_member_matches(
+        &self,
+        channel_id: &[u8; 16],
+        account_id: &[u8; 16],
+        identity: &[u8; 32],
+    ) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+
+        let known: Option<Vec<u8>> = connection
+            .query_row(
+                "SELECT identity FROM channel_member_identities
+                  WHERE channel_id = ? AND account_id = ?",
+                params![channel_id.as_slice(), account_id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage_error)?;
+
+        if let Some(known) = known {
+            return Ok(known == identity);
+        }
+
+        connection
+            .execute(
+                "INSERT INTO channel_member_identities (channel_id, account_id, identity)
+                 VALUES (?, ?, ?)",
+                params![
+                    channel_id.as_slice(),
+                    account_id.as_slice(),
+                    identity.as_slice()
+                ],
+            )
+            .map_err(storage_error)?;
+
+        Ok(true)
+    }
+
+    /// Забывает ключ аккаунта участника: он удалён из канала.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — сбой базы.
+    pub fn forget_channel_member(
+        &self,
+        channel_id: &[u8; 16],
+        account_id: &[u8; 16],
+    ) -> Result<()> {
+        self.channel_update(
+            "DELETE FROM channel_member_identities WHERE channel_id = ?1 AND account_id = ?2",
+            params![channel_id.as_slice(), account_id.as_slice()],
+        )
+    }
+
     fn channel_update(&self, sql: &str, params: impl rusqlite::Params) -> Result<()> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
@@ -1280,6 +1363,12 @@ impl Storage {
             .map_err(storage_error)?;
         transaction
             .execute(
+                "DELETE FROM channel_member_identities WHERE channel_id = ?",
+                params![channel_id.as_slice()],
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
                 "DELETE FROM channel_keys WHERE channel_id = ?",
                 params![channel_id.as_slice()],
             )
@@ -1478,6 +1567,35 @@ mod tests {
             my_reaction: String::new(),
             attachments: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_member_identity_is_pinned_on_first_sight() {
+        let (storage, _dir) = open_temp();
+        let (channel, account) = ([0x81; 16], [0x82; 16]);
+
+        // Первый раз — запоминается; тот же ключ — сходится; другой — нет.
+        assert!(storage
+            .channel_member_matches(&channel, &account, &[1; 32])
+            .unwrap());
+        assert!(storage
+            .channel_member_matches(&channel, &account, &[1; 32])
+            .unwrap());
+        assert!(!storage
+            .channel_member_matches(&channel, &account, &[2; 32])
+            .unwrap());
+
+        // Одобрение заново заменяет ключ; удаление из канала — забывает.
+        storage
+            .pin_channel_member(&channel, &account, &[2; 32])
+            .unwrap();
+        assert!(storage
+            .channel_member_matches(&channel, &account, &[2; 32])
+            .unwrap());
+        storage.forget_channel_member(&channel, &account).unwrap();
+        assert!(storage
+            .channel_member_matches(&channel, &account, &[3; 32])
+            .unwrap());
     }
 
     #[test]
