@@ -628,6 +628,7 @@ fn contact_to_record(contact: &ContactRow) -> ContactRecord {
         username: contact.username.clone(),
         chat_id: contact.chat_id.as_ref().map(|id| *id.as_bytes()),
         verified: contact.verified,
+        confirmed_by_link: contact.confirmed_by_link,
         added_at_millis: contact.added_at,
     }
 }
@@ -646,9 +647,10 @@ fn record_to_contact(record: &ContactRecord) -> ContactRow {
         // после восстановления неоднозначность имени придётся снять
         // заново — это безопаснее, чем молча считать её снятой.
         replaced: false,
-        // Источник ключа в копию не попадает: после восстановления
-        // контакт, не сверенный вживую, подтверждается заново.
-        confirmed_by_link: false,
+        // Ключ, принесённый ссылкой или QR-кодом, остаётся подтверждённым.
+        // Подтверждение журналом в копию не попадает: его надёжнее
+        // получить заново, чем доверять копии.
+        confirmed_by_link: record.confirmed_by_link,
         confirmed_by_kt: false,
     }
 }

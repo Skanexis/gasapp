@@ -519,6 +519,7 @@ mod tests {
                         username: Some("bob".to_owned()),
                         chat_id: None,
                         verified: true,
+                        confirmed_by_link: false,
                         added_at_millis: None,
                     }],
                     ..BackupBundle::default()

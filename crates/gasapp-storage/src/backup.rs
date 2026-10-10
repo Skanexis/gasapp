@@ -268,8 +268,8 @@ impl Storage {
                 .execute(
                     "
                 INSERT OR REPLACE INTO known_contacts
-                    (account_id, identity_key, username, chat_id, added_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (account_id, identity_key, username, chat_id, added_at, confirmed_by_link)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ",
                     params![
                         contact.account_id.as_bytes(),
@@ -277,6 +277,7 @@ impl Storage {
                         contact.username,
                         contact.chat_id.as_ref().map(ChatId::as_bytes),
                         contact.added_at,
+                        contact.confirmed_by_link,
                     ],
                 )
                 .map_err(storage_error)?;
@@ -997,7 +998,7 @@ fn read_contacts(connection: &Connection) -> Result<Vec<ContactRow>> {
         .prepare(
             "
         SELECT c.account_id, c.identity_key, c.username, c.chat_id, c.added_at,
-               v.account_id IS NOT NULL
+               v.account_id IS NOT NULL, c.confirmed_by_link
         FROM known_contacts AS c
         LEFT JOIN verified_contacts AS v ON v.account_id = c.account_id
         ORDER BY c.added_at ASC
@@ -1014,13 +1015,15 @@ fn read_contacts(connection: &Connection) -> Result<Vec<ContactRow>> {
                 row.get::<_, Option<Vec<u8>>>(3)?,
                 row.get::<_, Option<i64>>(4)?,
                 row.get::<_, bool>(5)?,
+                row.get::<_, bool>(6)?,
             ))
         })
         .map_err(storage_error)?;
 
     let mut contacts = Vec::new();
     for row in rows {
-        let (account, identity, username, chat, added_at, verified) = row.map_err(storage_error)?;
+        let (account, identity, username, chat, added_at, verified, confirmed_by_link) =
+            row.map_err(storage_error)?;
 
         let chat_id = match chat {
             None => None,
@@ -1035,7 +1038,7 @@ fn read_contacts(connection: &Connection) -> Result<Vec<ContactRow>> {
             verified,
             added_at,
             replaced: false,
-            confirmed_by_link: false,
+            confirmed_by_link,
             // Подтверждение журналом не переносится: его проще и
             // надёжнее получить заново, чем доверять копии.
             confirmed_by_kt: false,

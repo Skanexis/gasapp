@@ -141,6 +141,12 @@ pub struct MessageRecord {
     pub expires_at_millis: Option<i64>,
 }
 
+/// Признак контакта: сверен лично.
+const CONTACT_VERIFIED: u8 = 0b01;
+
+/// Признак контакта: ключ получен из ссылки-контакта или QR-кода.
+const CONTACT_BY_LINK: u8 = 0b10;
+
 /// Контакт в копии.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContactRecord {
@@ -158,6 +164,14 @@ pub struct ContactRecord {
     pub chat_id: Option<[u8; ID_LEN]>,
     /// Отметка личной верификации.
     pub verified: bool,
+    /// Ключ получен напрямую — из ссылки-контакта или QR-кода, а не со
+    /// слов сервера.
+    ///
+    /// 🔐 Прежде в копию не попадала: после восстановления человек не
+    /// мог написать тому, чей ключ сам же и принёс, пока журнал ключей
+    /// не подтвердит его заново, — сутки для свежего контакта (проверка
+    /// на устройстве 2026-10-10).
+    pub confirmed_by_link: bool,
     /// Когда контакт добавлен.
     pub added_at_millis: Option<i64>,
 }
@@ -397,7 +411,16 @@ impl BackupBundle {
             write_bytes(&mut out, &contact.identity_key)?;
             write_optional_str(&mut out, contact.username.as_deref())?;
             write_optional_id(&mut out, contact.chat_id.as_ref());
-            out.push(u8::from(contact.verified));
+            // Один байт признаков: бит 0 — сверен лично, бит 1 — ключ из
+            // ссылки. Копии прежнего формата несут здесь 0 или 1.
+            out.push(
+                u8::from(contact.verified)
+                    | if contact.confirmed_by_link {
+                        CONTACT_BY_LINK
+                    } else {
+                        0
+                    },
+            );
             write_optional_i64(&mut out, contact.added_at_millis);
         }
 
@@ -513,12 +536,24 @@ impl BackupBundle {
         let contact_count = cursor.take_count()?;
         let mut contacts = Vec::with_capacity(contact_count.min(1024));
         for _ in 0..contact_count {
+            let account_id = cursor.take_id()?;
+            let identity_key = cursor.take_bytes()?.to_vec();
+            let username = cursor.take_optional_str()?;
+            let chat_id = cursor.take_optional_id()?;
+            let marks = cursor.take_u8()?;
+
+            // Неизвестный бит — файл собран не этим форматом.
+            if marks & !(CONTACT_VERIFIED | CONTACT_BY_LINK) != 0 {
+                return Err(GasAppError::Malformed);
+            }
+
             contacts.push(ContactRecord {
-                account_id: cursor.take_id()?,
-                identity_key: cursor.take_bytes()?.to_vec(),
-                username: cursor.take_optional_str()?,
-                chat_id: cursor.take_optional_id()?,
-                verified: cursor.take_bool()?,
+                account_id,
+                identity_key,
+                username,
+                chat_id,
+                verified: marks & CONTACT_VERIFIED != 0,
+                confirmed_by_link: marks & CONTACT_BY_LINK != 0,
                 added_at_millis: cursor.take_optional_i64()?,
             });
         }
@@ -1166,6 +1201,7 @@ mod tests {
                 username: Some("bob".to_owned()),
                 chat_id: Some([0x11; ID_LEN]),
                 verified: true,
+                confirmed_by_link: false,
                 added_at_millis: Some(1_759_000_000_000),
             }],
             chats: vec![ChatRecord {
@@ -1284,6 +1320,27 @@ mod tests {
     }
 
     /// Пустой бандл тоже разбирается.
+    /// Отметка «ключ из ссылки» переживает копию — отдельно от личной
+    /// сверки и вместе с ней.
+    #[test]
+    fn contact_marks_round_trip() {
+        for (verified, by_link) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut bundle = populated();
+            let contact = bundle.contacts.first_mut().expect("контакт");
+            contact.verified = verified;
+            contact.confirmed_by_link = by_link;
+
+            let decoded = BackupBundle::from_bytes(&bundle.to_bytes().expect("сериализация"))
+                .expect("разбор");
+            let contact = decoded.contacts.first().expect("контакт");
+
+            assert_eq!(
+                (contact.verified, contact.confirmed_by_link),
+                (verified, by_link)
+            );
+        }
+    }
+
     #[test]
     fn empty_bundle_round_trips() {
         let bundle = BackupBundle::default();

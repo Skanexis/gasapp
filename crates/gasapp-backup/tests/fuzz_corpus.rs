@@ -89,6 +89,7 @@ fn populated() -> BackupBundle {
             username: Some("bob".to_owned()),
             chat_id: Some([0x11; ID_LEN]),
             verified: true,
+            confirmed_by_link: false,
             added_at_millis: Some(1_759_000_000_000),
         }],
         ..BackupBundle::default()
