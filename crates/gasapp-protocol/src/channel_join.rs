@@ -87,6 +87,10 @@ const SEED_X25519_INFO: &[u8] = b"GASAPP_CHANNEL_v2_SEED_X25519";
 const SEED_MLKEM_INFO: &[u8] = b"GASAPP_CHANNEL_v2_SEED_MLKEM";
 const EPOCH_INFO: &[u8] = b"GASAPP_CHANNEL_v1_EPOCH";
 const EPOCH_DOMAIN: &[u8] = b"GASAPP_CHANNEL_v1_EPOCH_SIG";
+const APPROVAL_DOMAIN: &[u8] = b"GASAPP_CHANNEL_v1_MEMBER";
+
+/// Длина удостоверения участника: эпоха, подписавший, подпись.
+pub const APPROVAL_LEN: usize = 4 + 32 + SIGNATURE_LEN;
 
 /// Ссылка-приглашение закрытого канала. Секрета чтения в ней нет.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -747,6 +751,94 @@ pub fn open_epoch(
         .map_err(|_| GasAppError::Malformed)
 }
 
+/// Что подписывается в удостоверении участника.
+fn approval_message(
+    channel_id: &ChannelId,
+    epoch: u32,
+    signer: &PublicKeyBytes,
+    member_key: &[u8],
+) -> Vec<u8> {
+    let mut message = Vec::with_capacity(APPROVAL_DOMAIN.len().saturating_add(16 + 4 + 32 + 32));
+    message.extend_from_slice(APPROVAL_DOMAIN);
+    message.extend_from_slice(channel_id);
+    message.extend_from_slice(&epoch.to_be_bytes());
+    message.extend_from_slice(signer.as_bytes());
+    message.extend_from_slice(&Sha256::digest(member_key));
+    message
+}
+
+/// Удостоверение участника: тот, кто ведёт канал, подписывает ключ
+/// доставки `member_key` (заявку целиком) и эпоху, в которой участник
+/// состоит в канале.
+///
+/// 🔐 Список ключей доставки приходит от сервера. Без удостоверения
+/// сервер назвал бы выдуманного участника со своим ключом и получил
+/// ключ следующей эпохи. Подделать удостоверение ему нечем: ключа
+/// подписи канала у него нет.
+///
+/// Эпоха в подписи делает удостоверение удалённого участника негодным:
+/// при смене ключа оставшимся выписывают новое, а у него остаётся
+/// прежнее — на эпоху, которой больше нет.
+///
+/// # Errors
+///
+/// [`GasAppError::Crypto`] — ключ подписи негоден.
+pub fn seal_approval(
+    channel_id: &ChannelId,
+    epoch: u32,
+    member_key: &[u8],
+    signing_key: PrivateKeyBytes,
+) -> Result<Vec<u8>> {
+    let signing = XEdDSAPrivateKey::from_bytes(signing_key)?;
+    let signer = signing.public_key().as_bytes();
+    let signature = signing.sign(&approval_message(channel_id, epoch, &signer, member_key));
+
+    let mut wire = Vec::with_capacity(APPROVAL_LEN);
+    wire.extend_from_slice(&epoch.to_be_bytes());
+    wire.extend_from_slice(signer.as_bytes());
+    wire.extend_from_slice(&signature);
+
+    Ok(wire)
+}
+
+/// Проверяет удостоверение участника и возвращает эпоху и ключ того,
+/// кто его подписал. Вправе ли он вести канал, решает вызывающий — по
+/// описанию канала.
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — это не удостоверение;
+/// [`GasAppError::InvalidSignature`] — подпись не сходится: другой ключ
+/// доставки, другой канал либо другая эпоха.
+pub fn open_approval(
+    channel_id: &ChannelId,
+    member_key: &[u8],
+    wire: &[u8],
+) -> Result<(u32, PublicKeyBytes)> {
+    if wire.len() != APPROVAL_LEN {
+        return Err(GasAppError::Malformed);
+    }
+
+    let epoch = u32::from_be_bytes(
+        wire.get(..4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(GasAppError::Malformed)?,
+    );
+    let signer = key_at(wire, 4)?;
+    let signature = wire.get(36..).ok_or(GasAppError::Malformed)?;
+
+    XEdDSAPublicKey::from_bytes(signer)
+        .and_then(|key| {
+            key.verify_strict(
+                &approval_message(channel_id, epoch, &signer, member_key),
+                signature,
+            )
+        })
+        .map_err(|_| GasAppError::InvalidSignature)?;
+
+    Ok((epoch, signer))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
@@ -1049,5 +1141,41 @@ mod tests {
         let grant = seal_grant(&created.access, &request, &mut OsRng).unwrap();
         let (_, access) = open_grant(&id, &created.access.verify_key, &first, &grant).unwrap();
         assert_eq!(access, created.access);
+    }
+
+    /// 🔐 Удостоверение привязано к каналу, эпохе и ключу доставки:
+    /// к другому ключу, каналу или эпохе оно не подходит.
+    #[test]
+    fn an_approval_is_bound_to_key_channel_and_epoch() {
+        let signing = PrivateKeyBytes::new([0x31; 32]);
+        let signer = XEdDSAPrivateKey::from_bytes(PrivateKeyBytes::new([0x31; 32]))
+            .unwrap()
+            .public_key()
+            .as_bytes();
+        let channel = [7u8; 16];
+        let member_key = [0x44u8; 80];
+
+        let approval = seal_approval(&channel, 3, &member_key, signing).unwrap();
+        assert_eq!(approval.len(), APPROVAL_LEN);
+        assert_eq!(
+            open_approval(&channel, &member_key, &approval).unwrap(),
+            (3, signer)
+        );
+
+        // Чужой ключ доставки и чужой канал.
+        assert!(open_approval(&channel, &[0x45u8; 80], &approval).is_err());
+        assert!(open_approval(&[8u8; 16], &member_key, &approval).is_err());
+
+        // Эпоху не переписать: она под подписью.
+        let mut moved = approval.clone();
+        moved[3] = 4;
+        assert!(open_approval(&channel, &member_key, &moved).is_err());
+
+        // И подписавшего не подменить.
+        let mut renamed = approval.clone();
+        renamed[4] ^= 1;
+        assert!(open_approval(&channel, &member_key, &renamed).is_err());
+
+        assert!(open_approval(&channel, &member_key, &approval[..APPROVAL_LEN - 1]).is_err());
     }
 }

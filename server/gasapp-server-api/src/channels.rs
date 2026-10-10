@@ -151,6 +151,9 @@ pub struct AnswerRequest {
     /// Ключ чтения, зашифрованный под заявку, hex; нет — отклонить.
     #[serde(default)]
     pub grant: Option<String>,
+    /// Удостоверение участника, hex (миграция 0027).
+    #[serde(default)]
+    pub approval: Option<String>,
 }
 
 /// Подписчик глазами владельца и администраторов.
@@ -374,6 +377,21 @@ pub(crate) async fn owner_of(
 }
 
 /// Декодирует hex-поле с пределом длины.
+/// Разбирает удостоверение участника: ровно
+/// [`channels::MEMBER_APPROVAL_BYTES`] байт либо ничего.
+fn decode_approval(hex_text: Option<&str>) -> Result<Option<Vec<u8>>, ApiError> {
+    let Some(hex_text) = hex_text else {
+        return Ok(None);
+    };
+    let approval = decode_bounded(hex_text, channels::MEMBER_APPROVAL_BYTES)?;
+
+    if approval.len() == channels::MEMBER_APPROVAL_BYTES {
+        Ok(Some(approval))
+    } else {
+        Err(ApiError::BadRequest)
+    }
+}
+
 fn decode_bounded(hex_text: &str, max_bytes: usize) -> Result<Vec<u8>, ApiError> {
     // Длина проверяется до декодирования: hex вдвое длиннее байтов.
     if hex_text.len() > max_bytes.saturating_mul(2) {
@@ -707,6 +725,9 @@ pub(crate) async fn report(
 pub struct MemberKeyRequest {
     /// Открытый ключ за подписью аккаунта, hex.
     pub member_key: String,
+    /// Удостоверение — его выписывает себе тот, кто ведёт канал, hex.
+    #[serde(default)]
+    pub approval: Option<String>,
 }
 
 /// Ключ доставки участника — тому, кто ведёт канал.
@@ -716,6 +737,8 @@ pub struct MemberKeyResponse {
     pub account_id: Uuid,
     /// Ключ доставки, hex.
     pub member_key: String,
+    /// Удостоверение участника, hex.
+    pub approval: Option<String>,
 }
 
 /// Какие ключи доставки нужны.
@@ -736,6 +759,9 @@ pub struct EpochGrant {
     pub account_id: Uuid,
     /// Ключ эпохи шифротекстом под ключ доставки участника, hex.
     pub grant: String,
+    /// Удостоверение на эту эпоху, hex; нет — прежнее остаётся.
+    #[serde(default)]
+    pub approval: Option<String>,
 }
 
 /// Смена ключа канала либо досылка ключей действующей эпохи.
@@ -777,9 +803,17 @@ pub(crate) async fn set_member_key(
 ) -> Result<StatusCode, ApiError> {
     let (account_id, _) = owner_of(&state, device, device_id).await?;
     let member_key = decode_bounded(&request.member_key, channels::MAX_JOIN_BLOB_BYTES)?;
+    let approval = decode_approval(request.approval.as_deref())?;
 
     limit_reader(&state, account_id)?;
-    channels::set_member_key(&state.pool, channel_id, account_id, &member_key).await?;
+    channels::set_member_key(
+        &state.pool,
+        channel_id,
+        account_id,
+        &member_key,
+        approval.as_deref(),
+    )
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -806,6 +840,7 @@ pub(crate) async fn member_keys(
         .map(|key| MemberKeyResponse {
             account_id: key.account_id,
             member_key: hex::encode(key.member_key),
+            approval: key.approval.map(hex::encode),
         })
         .collect(),
     ))
@@ -836,10 +871,11 @@ pub(crate) async fn rekey(
         .grants
         .iter()
         .map(|grant| {
-            Ok((
-                grant.account_id,
-                decode_bounded(&grant.grant, channels::MAX_JOIN_BLOB_BYTES)?,
-            ))
+            Ok(channels::EpochGrant {
+                account_id: grant.account_id,
+                grant: decode_bounded(&grant.grant, channels::MAX_JOIN_BLOB_BYTES)?,
+                approval: decode_approval(grant.approval.as_deref())?,
+            })
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
 
@@ -1340,6 +1376,7 @@ pub(crate) async fn answer_request(
         .as_deref()
         .map(|grant| decode_bounded(grant, channels::MAX_JOIN_BLOB_BYTES))
         .transpose()?;
+    let approval = decode_approval(request.approval.as_deref())?;
 
     channels::answer_request(
         &state.pool,
@@ -1347,6 +1384,7 @@ pub(crate) async fn answer_request(
         channel_id,
         request.account_id,
         grant.as_deref(),
+        approval.as_deref(),
     )
     .await?;
 

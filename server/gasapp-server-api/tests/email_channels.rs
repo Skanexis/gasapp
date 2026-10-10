@@ -2802,6 +2802,7 @@ async fn rekeying_hands_the_new_key_to_those_who_stay() {
 /// Ключи доставки и смена ключа — только для закрытого канала и только
 /// для тех, кто его ведёт; сменивший ключ участник получает новый ответ.
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn key_delivery_is_for_members_and_writers_only() {
     let (state, _mailer) = require_state!();
     let (owner_key, owner_device, channel_id) = closed_channel(&state).await;
@@ -2856,11 +2857,42 @@ async fn key_delivery_is_for_members_and_writers_only() {
         member_get(&state, &member, channel_id, "join").await.1["status"],
         "none"
     );
+    // 🔐 У нового ключа нет удостоверения (миграция 0027): ключа эпохи
+    // под него не выдадут, и среди ждущих его нет. В полном списке он
+    // есть — без удостоверения.
+    let (_, list) = signed(&state, &owner_key, "GET", &missing, None).await;
+    assert_eq!(list.as_array().unwrap().len(), 0);
+    let (_, all) = signed(&state, &owner_key, "GET", &format!("{own}/keys"), None).await;
+    let fresh = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["member_key"] == hex::encode(b"fresh"))
+        .expect("ключ в списке");
+    assert!(fresh["approval"].is_null());
+
+    // Удостоверение — ровно сто байт, иначе отказ.
+    let approved = |approval: &[u8]| {
+        Some(serde_json::json!({
+            "member_key": hex::encode(b"fresh"),
+            "approval": hex::encode(approval),
+        }))
+    };
+    assert_eq!(
+        reader(&state, &member, channel_id, "key", approved(&[7u8; 99])).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        reader(&state, &member, channel_id, "key", approved(&[7u8; 100])).await,
+        StatusCode::NO_CONTENT
+    );
     let (_, list) = signed(&state, &owner_key, "GET", &missing, None).await;
     assert_eq!(list.as_array().unwrap().len(), 1);
     assert_eq!(list[0]["member_key"], hex::encode(b"fresh"));
+    assert_eq!(list[0]["approval"], hex::encode([7u8; 100]));
 
-    // Досылка ответа для действующей эпохи — без звена.
+    // Досылка ответа для действующей эпохи — без звена; вместе с ней
+    // приходит удостоверение на эту эпоху.
     let (status, _) = signed(
         &state,
         &owner_key,
@@ -2868,11 +2900,21 @@ async fn key_delivery_is_for_members_and_writers_only() {
         &format!("{own}/keys"),
         Some(serde_json::json!({
             "epoch": 0,
-            "grants": [{ "account_id": account_id, "grant": hex::encode(b"again") }],
+            "grants": [{
+                "account_id": account_id,
+                "grant": hex::encode(b"again"),
+                "approval": hex::encode([9u8; 100]),
+            }],
         })),
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, all) = signed(&state, &owner_key, "GET", &format!("{own}/keys"), None).await;
+    assert!(all
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["approval"] == hex::encode([9u8; 100])));
     assert_eq!(
         member_get(&state, &member, channel_id, "join").await.1["grant"],
         hex::encode(b"again")

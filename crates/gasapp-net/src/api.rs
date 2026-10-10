@@ -510,6 +510,10 @@ pub struct AnswerChannelJoinRequest {
     /// Секрет чтения, зашифрованный под заявку, hex; нет — отклонить.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant: Option<String>,
+    /// Удостоверение участника, hex: подпись того, кто ведёт канал,
+    /// под ключом доставки из заявки.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<String>,
 }
 
 /// Подписчик глазами того, кто ведёт канал.
@@ -642,6 +646,9 @@ pub struct ReportChannelRequest {
 pub struct ChannelMemberKeyRequest {
     /// Открытый ключ за подписью аккаунта, hex.
     pub member_key: String,
+    /// Удостоверение, hex — его выписывает себе тот, кто ведёт канал.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<String>,
 }
 
 /// Ключ доставки участника — тому, кто ведёт канал.
@@ -651,6 +658,9 @@ pub struct ChannelMemberKeyResponse {
     pub account_id: String,
     /// Ключ доставки, hex.
     pub member_key: String,
+    /// Удостоверение участника, hex. 🔐 Проверяет его устройство, а не сервер.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<String>,
 }
 
 /// Ключ эпохи одному участнику.
@@ -660,6 +670,9 @@ pub struct ChannelEpochGrant {
     pub account_id: String,
     /// Ключ эпохи шифротекстом под ключ доставки участника, hex.
     pub grant: String,
+    /// Удостоверение на эту эпоху, hex; нет — прежнее остаётся.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<String>,
 }
 
 /// Смена ключа канала либо досылка ключей действующей эпохи.

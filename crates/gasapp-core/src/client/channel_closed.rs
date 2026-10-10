@@ -293,9 +293,14 @@ impl<T: Transport> Client<T> {
     ) -> Result<()> {
         let link = JoinLink::parse(link)?;
 
-        if self.storage.channel(&link.channel_id)?.is_some() {
-            // Канал уже есть на устройстве — проситься некуда.
-            return Ok(());
+        if let Some(known) = self.storage.channel(&link.channel_id)? {
+            // Канал уже есть на устройстве. Проситься есть смысл только
+            // читателю закрытого канала: подписавшегося, пока канал был
+            // открытым, никто не одобрял, и ключа новой эпохи ему не
+            // выдадут, пока он не подаст заявку.
+            if !known.closed || known.signing_key.is_some() {
+                return Ok(());
+            }
         }
 
         let (device_id, identity) = self.own_device()?;
@@ -493,11 +498,21 @@ impl<T: Transport> Client<T> {
             return Err(GasAppError::InvalidSignature);
         }
 
-        let mut stored = new_stored(&access, None, &meta, now);
-        // Одобрение и есть подписка: её оформил сервер.
-        stored.closed = true;
-        stored.subscribed = true;
-        self.storage.insert_channel(&stored)?;
+        // Прежний подписчик: канал и его записи на устройстве уже есть —
+        // меняются только ключи.
+        if let Some(known) = self.storage.channel(&channel_id)? {
+            if known.verify_key != *owner.as_bytes() {
+                return Err(GasAppError::InvalidSignature);
+            }
+
+            self.storage.set_channel_closed(&channel_id, true)?;
+        } else {
+            let mut stored = new_stored(&access, None, &meta, now);
+            // Одобрение и есть подписка: её оформил сервер.
+            stored.closed = true;
+            stored.subscribed = true;
+            self.storage.insert_channel(&stored)?;
+        }
 
         for (number, key) in keys {
             self.storage.put_channel_key(&channel_id, number, &key)?;
@@ -509,6 +524,7 @@ impl<T: Transport> Client<T> {
             .set_channel_delivery(&channel_id, &join.secret, true)?;
 
         // Записи — сразу, но их сбой входу не мешает.
+        let stored = self.stored_channel(&uuid)?;
         let _ = self.sync_stored(&stored, true, now);
 
         self.channel(&uuid)
@@ -635,18 +651,29 @@ impl<T: Transport> Client<T> {
         let signer = DeviceSigner::new(&identity, now);
 
         let mut approved = None;
+        let mut approval = None;
         let grant = if approve {
             let list = self.api.channel_join_requests(&device_id, &uuid, &signer)?;
             let item = list
                 .iter()
                 .find(|item| canonical_account(&item.account_id).as_ref() == Some(&account_id))
                 .ok_or(GasAppError::SessionNotFound)?;
-            let request = channel_join::open_request(&stored.channel_id, &unhex(&item.request)?)?;
+            let wire = unhex(&item.request)?;
+            let request = channel_join::open_request(&stored.channel_id, &wire)?;
 
             // Заявителю уходит ключ действующей эпохи: до прежних он
             // дойдёт по звеньям цепочки.
             let (epoch, access) = self.writer_access(&stored, now)?;
             approved = Some(request.identity);
+
+            // 🔐 Удостоверение: ключ следующей эпохи получит только тот,
+            // чей ключ доставки подписал ведущий канал (см. `seal_keys`).
+            approval = Some(hex(&channel_join::seal_approval(
+                &stored.channel_id,
+                epoch,
+                &wire,
+                PrivateKeyBytes::new(stored.signing_key.ok_or(GasAppError::Forbidden)?),
+            )?));
 
             Some(hex(&channel_join::seal_epoch_grant(
                 &access, epoch, &request, rng,
@@ -661,6 +688,7 @@ impl<T: Transport> Client<T> {
             &AnswerChannelJoinRequest {
                 account_id: account_id.clone(),
                 grant,
+                approval,
             },
             &signer,
         )?;
@@ -770,6 +798,13 @@ impl<T: Transport> Client<T> {
             // 🔐 Удалённый знает ключ чтения — ключ меняется. Долг
             // записывается до попытки: не вышло сейчас (нет сети) —
             // смену повторит ближайшее обслуживание каналов.
+            //
+            // Его удостоверение ещё годно на действующую эпоху, и сервер
+            // мог бы назвать его среди участников: до смены ключа
+            // аккаунт стоит в списке отказа.
+            if let Some(account) = canonical_account(account_id) {
+                self.push_rekey_item(&rekey_denied(&uuid), &account)?;
+            }
             self.set_setting_bool(&rekey_due(&uuid), true)?;
 
             if self.rekey_channel(&stored, now, rng).is_ok() {
@@ -972,11 +1007,23 @@ impl<T: Transport> Client<T> {
                     &PrivateKeyBytes::new(secret),
                 )?;
 
+                // 🔐 Тот, кто ведёт канал, удостоверяет свой ключ сам:
+                // его подпись другие ведущие сверят с описанием канала.
+                // Читателю удостоверение выписывают при одобрении заявки.
+                let approval = stored
+                    .signing_key
+                    .map(|key| {
+                        channel_join::seal_approval(id, server, &wire, PrivateKeyBytes::new(key))
+                    })
+                    .transpose()?
+                    .map(|approval| hex(&approval));
+
                 self.api.set_channel_member_key(
                     &device_id,
                     &uuid,
                     &ChannelMemberKeyRequest {
                         member_key: hex(&wire),
+                        approval,
                     },
                     &signer,
                 )?;
@@ -1036,50 +1083,83 @@ impl<T: Transport> Client<T> {
         Ok(epoch >= server)
     }
 
-    /// Ответы с ключом эпохи `epoch` для страницы участников. Ключ
-    /// доставки с подписью, которая не сходится, пропускается.
+    /// Ответы с ключом эпохи `epoch` для страницы участников.
     ///
-    /// 🔐 Ключ доставки подписан ключом аккаунта, и этот ключ аккаунта
-    /// обязан быть тем же, что устройство видело у участника раньше (при
-    /// одобрении заявки либо при первой раздаче). Иначе сервер подставил
-    /// бы под аккаунт участника свой ключ доставки и получил ключ новой
-    /// эпохи. Участник, у которого ключ аккаунта сменился (вернул аккаунт
-    /// на новом телефоне), ключа не получает, пока его не одобрят заново.
+    /// 🔐 Ключ получает только участник с удостоверением: подписью
+    /// владельца либо действующего администратора под его ключом доставки
+    /// и эпохой `trust.epoch`. Список участников приходит от сервера, и
+    /// прежде устройство верило первому ключу, увиденному под аккаунтом:
+    /// сервер называл выдуманного участника со своим ключом и получал
+    /// ключ канала (аудит 2026-10-10, N-0).
+    ///
+    /// Удостоверение на прошлую эпоху не годится: оно осталось у того,
+    /// кого удалили. Оставшимся при смене ключа выписывается новое.
     fn seal_keys<R: RngCore + CryptoRng>(
-        &self,
         stored: &StoredChannel,
         access: &ChannelAccess,
         epoch: u32,
         members: &[ChannelMemberKeyResponse],
+        trust: &Trust<'_>,
         rng: &mut R,
     ) -> Result<Vec<ChannelEpochGrant>> {
+        let signing_key = stored.signing_key.ok_or(GasAppError::Forbidden)?;
+        let owner = PublicKeyBytes::new(stored.verify_key);
+        let admins = admins_of(stored);
         let mut grants = Vec::with_capacity(members.len());
 
         for member in members {
             let Some(account_id) = canonical_account(&member.account_id) else {
                 continue;
             };
-            let Ok(request) = unhex(&member.member_key)
-                .and_then(|wire| channel_join::open_request(&stored.channel_id, &wire))
-            else {
+
+            if trust.denied.contains(&account_id) {
+                continue;
+            }
+
+            let Ok(wire) = unhex(&member.member_key) else {
                 continue;
             };
-            let Ok(account) = channel::parse_channel_id(&account_id) else {
+            let Ok(request) = channel_join::open_request(&stored.channel_id, &wire) else {
                 continue;
             };
 
-            if !self.storage.channel_member_matches(
-                &stored.channel_id,
-                &account,
-                request.identity.as_bytes(),
-            )? {
+            let approved = member
+                .approval
+                .as_deref()
+                .and_then(|approval| unhex(approval).ok())
+                .and_then(|approval| {
+                    channel_join::open_approval(&stored.channel_id, &wire, &approval).ok()
+                })
+                .is_some_and(|(named, signer)| {
+                    named == trust.epoch
+                        && (signer == owner
+                            || admins
+                                .iter()
+                                .any(|admin| admin.verify_key == signer && admin.until.is_none())
+                            || trust.signers.contains(signer.as_bytes()))
+                });
+
+            if !approved {
                 continue;
             }
 
             if let Ok(grant) = channel_join::seal_epoch_grant(access, epoch, &request, rng) {
+                // Удостоверение на новую эпоху — оставшимся участникам.
+                let approval = if epoch == trust.epoch {
+                    None
+                } else {
+                    Some(hex(&channel_join::seal_approval(
+                        &stored.channel_id,
+                        epoch,
+                        &wire,
+                        PrivateKeyBytes::new(signing_key),
+                    )?))
+                };
+
                 grants.push(ChannelEpochGrant {
                     account_id,
                     grant: hex(&grant),
+                    approval,
                 });
             }
         }
@@ -1087,12 +1167,87 @@ impl<T: Transport> Client<T> {
         Ok(grants)
     }
 
+    /// Раздаёт ключ эпохи `epoch` участникам, у которых его нет, — всем
+    /// страницам выдачи.
+    fn distribute_keys<R: RngCore + CryptoRng>(
+        &self,
+        stored: &StoredChannel,
+        access: &ChannelAccess,
+        epoch: u32,
+        trust: &Trust<'_>,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let uuid = channel::format_uuid(&stored.channel_id);
+        let (device_id, identity) = self.own_device()?;
+        let signer = DeviceSigner::new(&identity, now);
+        let mut after: Option<String> = None;
+
+        loop {
+            let members =
+                self.api
+                    .channel_member_keys(&device_id, &uuid, true, after.as_deref(), &signer)?;
+
+            let Some(last) = members.last().map(|member| member.account_id.clone()) else {
+                return Ok(());
+            };
+
+            let grants = Self::seal_keys(stored, access, epoch, &members, trust, rng)?;
+
+            if !grants.is_empty() {
+                self.api.rekey_channel(
+                    &device_id,
+                    &uuid,
+                    &RekeyChannelRequest {
+                        epoch,
+                        record: None,
+                        grants,
+                    },
+                    &signer,
+                )?;
+            }
+
+            after = Some(last);
+        }
+    }
+
+    /// Список из настройки: значения через запятую.
+    fn rekey_items(&self, key: &str) -> Result<Vec<String>> {
+        Ok(self
+            .storage
+            .setting_text(key)?
+            .map(|text| {
+                text.split(',')
+                    .filter(|item| !item.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Дописывает значение в список из настройки.
+    fn push_rekey_item(&self, key: &str, item: &str) -> Result<()> {
+        let mut items = self.rekey_items(key)?;
+
+        if !items.iter().any(|known| known == item) {
+            items.push(item.to_owned());
+        }
+
+        self.storage.set_setting_text(key, &items.join(","))
+    }
+
     /// Меняет ключ канала после снятия администратора: снятый знает ключ
     /// чтения, а его подпись под звеном больше не должна заводить каналу
     /// новые эпохи. Не вышло (нет сети) — смена остаётся долгом.
+    ///
+    /// 🔐 Участников, которых одобрял снятый, владелец перенимает: в этой
+    /// смене ключа его удостоверения ещё принимаются, и каждому
+    /// выписывается новое — уже владельцем. После неё подпись снятого
+    /// администратора ничего не удостоверяет.
     pub(super) fn rekey_after_admin_removal<R: RngCore + CryptoRng>(
         &self,
         channel_id: &str,
+        removed: &[u8; 32],
         now: Timestamp,
         rng: &mut R,
     ) -> Result<()> {
@@ -1103,6 +1258,7 @@ impl<T: Transport> Client<T> {
         }
 
         let uuid = channel::format_uuid(&stored.channel_id);
+        self.push_rekey_item(&rekey_signers(&uuid), &hex(removed))?;
         self.set_setting_bool(&rekey_due(&uuid), true)?;
 
         if self.rekey_channel(&stored, now, rng).is_ok() {
@@ -1113,7 +1269,8 @@ impl<T: Transport> Client<T> {
     }
 
     /// Меняет ключ канала: новая эпоха, звено к прежней и ключ каждому
-    /// оставшемуся участнику — под его ключ доставки.
+    /// оставшемуся участнику — под его ключ доставки, вместе с
+    /// удостоверением на новую эпоху.
     ///
     /// «Эпоха не та» от сервера — ключ только что сменил кто-то ещё:
     /// этого достаточно, вторая смена подряд не нужна.
@@ -1127,10 +1284,25 @@ impl<T: Transport> Client<T> {
 
         let signing_key = stored.signing_key.ok_or(GasAppError::Forbidden)?;
         let (current, access) = self.writer_access(stored, now)?;
-        let epoch = current.checked_add(1).ok_or(GasAppError::Malformed)?;
         let uuid = channel::format_uuid(&stored.channel_id);
         let (device_id, identity) = self.own_device()?;
         let signer = DeviceSigner::new(&identity, now);
+
+        let denied = self.rekey_items(&rekey_denied(&uuid))?;
+        let signers: Vec<[u8; 32]> = self
+            .rekey_items(&rekey_signers(&uuid))?
+            .iter()
+            .filter_map(|key| unhex(key).ok()?.try_into().ok())
+            .collect();
+
+        self.finish_started_rekey(stored, &access, current, &signers, &denied, now, rng)?;
+
+        let epoch = current.checked_add(1).ok_or(GasAppError::Malformed)?;
+        let trust = Trust {
+            epoch: current,
+            signers: &signers,
+            denied: &denied,
+        };
 
         let mut secret = [0u8; 32];
         rng.fill_bytes(&mut secret);
@@ -1161,7 +1333,7 @@ impl<T: Transport> Client<T> {
             &RekeyChannelRequest {
                 epoch,
                 record: Some(hex(&record)),
-                grants: self.seal_keys(stored, &next, epoch, &members, rng)?,
+                grants: Self::seal_keys(stored, &next, epoch, &members, &trust, rng)?,
             },
             &signer,
         );
@@ -1174,6 +1346,9 @@ impl<T: Transport> Client<T> {
 
         self.storage
             .put_channel_key(&stored.channel_id, epoch, &secret)?;
+        // Оборвётся раздача — следующая попытка начнёт с неё.
+        self.storage
+            .set_setting_text(&rekey_resume(&uuid), &epoch.to_string())?;
 
         // Остальные страницы — досылкой.
         while let Some(last) = members.last().map(|member| member.account_id.clone()) {
@@ -1185,22 +1360,72 @@ impl<T: Transport> Client<T> {
                 break;
             }
 
-            self.api.rekey_channel(
-                &device_id,
-                &uuid,
-                &RekeyChannelRequest {
-                    epoch,
-                    record: None,
-                    grants: self.seal_keys(stored, &next, epoch, &members, rng)?,
+            let grants = Self::seal_keys(stored, &next, epoch, &members, &trust, rng)?;
+
+            if !grants.is_empty() {
+                self.api.rekey_channel(
+                    &device_id,
+                    &uuid,
+                    &RekeyChannelRequest {
+                        epoch,
+                        record: None,
+                        grants,
+                    },
+                    &signer,
+                )?;
+            }
+        }
+
+        // Смена завершена: удалённые остались с удостоверением прошлой
+        // эпохи, снятый администратор больше никого не удостоверяет.
+        self.storage.set_setting_text(&rekey_resume(&uuid), "")?;
+        self.storage.set_setting_text(&rekey_denied(&uuid), "")?;
+        self.storage.set_setting_text(&rekey_signers(&uuid), "")
+    }
+
+    /// Прошлая смена начала эпоху `current`, но не дораздала её ключ:
+    /// он доходит до тех, кто состоял в канале до неё.
+    #[allow(clippy::too_many_arguments)]
+    fn finish_started_rekey<R: RngCore + CryptoRng>(
+        &self,
+        stored: &StoredChannel,
+        access: &ChannelAccess,
+        current: u32,
+        signers: &[[u8; 32]],
+        denied: &[String],
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let resume = rekey_resume(&channel::format_uuid(&stored.channel_id));
+        let unfinished = self
+            .storage
+            .setting_text(&resume)?
+            .and_then(|epoch| epoch.parse::<u32>().ok());
+
+        let (Some(started), Some(before)) = (unfinished, current.checked_sub(1)) else {
+            return Ok(());
+        };
+
+        if started == current {
+            self.distribute_keys(
+                stored,
+                access,
+                current,
+                &Trust {
+                    epoch: before,
+                    signers,
+                    denied,
                 },
-                &signer,
+                now,
+                rng,
             )?;
         }
 
-        Ok(())
+        self.storage.set_setting_text(&resume, "")
     }
 
-    /// Выдаёт ключ действующей эпохи участникам, у которых его нет.
+    /// Выдаёт ключ действующей эпохи участникам, у которых его нет, —
+    /// тем, чьё удостоверение выписано на эту эпоху.
     fn issue_missing_keys<R: RngCore + CryptoRng>(
         &self,
         stored: &StoredChannel,
@@ -1211,25 +1436,28 @@ impl<T: Transport> Client<T> {
         let (device_id, identity) = self.own_device()?;
         let signer = DeviceSigner::new(&identity, now);
 
-        let members = self
+        // Обычно ждущих нет: одного запроса хватает, чтобы это узнать.
+        if self
             .api
-            .channel_member_keys(&device_id, &uuid, true, None, &signer)?;
-
-        if members.is_empty() {
+            .channel_member_keys(&device_id, &uuid, true, None, &signer)?
+            .is_empty()
+        {
             return Ok(());
         }
 
         let (epoch, access) = self.writer_access(stored, now)?;
 
-        self.api.rekey_channel(
-            &device_id,
-            &uuid,
-            &RekeyChannelRequest {
+        self.distribute_keys(
+            stored,
+            &access,
+            epoch,
+            &Trust {
                 epoch,
-                record: None,
-                grants: self.seal_keys(stored, &access, epoch, &members, rng)?,
+                signers: &[],
+                denied: &[],
             },
-            &signer,
+            now,
+            rng,
         )
     }
 }
@@ -1251,4 +1479,31 @@ fn started_by_active(
 /// Настройка «канал ждёт смены ключа».
 fn rekey_due(uuid: &str) -> String {
     format!("channel.rekey_due.{uuid}")
+}
+
+/// Настройка: аккаунты, удалённые из канала и ждущие смены ключа.
+fn rekey_denied(uuid: &str) -> String {
+    format!("channel.rekey_denied.{uuid}")
+}
+
+/// Настройка: ключи снятых администраторов, чьи удостоверения
+/// принимаются в ближайшей смене ключа.
+fn rekey_signers(uuid: &str) -> String {
+    format!("channel.rekey_signers.{uuid}")
+}
+
+/// Настройка: эпоха, ключ которой эта установка начала раздавать.
+fn rekey_resume(uuid: &str) -> String {
+    format!("channel.rekey_resume.{uuid}")
+}
+
+/// Чьим удостоверениям верить при выдаче ключа эпохи.
+struct Trust<'a> {
+    /// Эпоха, на которую удостоверение обязано быть выписано.
+    epoch: u32,
+    /// Ключи только что снятых администраторов: участников, которых они
+    /// одобряли, владелец перенимает в этой смене ключа.
+    signers: &'a [[u8; 32]],
+    /// Аккаунты, удалённые из канала: ключа новой эпохи им не будет.
+    denied: &'a [String],
 }

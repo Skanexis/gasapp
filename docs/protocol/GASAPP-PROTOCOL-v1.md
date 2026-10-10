@@ -820,6 +820,28 @@ reads only this prefix and refuses (`409`) a record whose epoch is not
 the channel's current one. The prefix is not authenticated — it only
 selects the key. A channel whose key was changed cannot be reopened.
 
+**Member approvals.** The list of delivery keys comes from the server, so
+a key is handed only to a delivery key that carries an *approval*:
+
+```
+approval = n (4) ‖ signer_vk (32) ‖ Sig (64)
+Sig      = Ed25519.Sign(sk_signer, "GASAPP_CHANNEL_v1_MEMBER" ‖ channel_id ‖ n ‖
+                        signer_vk ‖ SHA-256(delivery key wire))
+```
+
+The signer must be the owner or an administrator who is active now, and
+`n` must be the current epoch. An approval is issued when a join request
+is approved; a device that runs the channel approves its own delivery
+key. On a key change every remaining member is issued an approval for the
+new epoch together with the grant, so the approval of a removed member
+stays behind on an epoch that no longer exists. When an administrator is
+removed, the owner's device accepts that administrator's approvals for
+that one key change and re-issues them under its own key. The server
+stores an approval as 100 opaque bytes and cannot forge one.
+
+Closing an open channel schedules a key change: the epoch-0 `secret` is in
+every link issued while the channel was open.
+
 **What this does not provide.**
 
 * **Removal is not retroactive.** Changing the key (below) protects
@@ -835,17 +857,15 @@ selects the key. A channel whose key was changed cannot be reopened.
   cases; everything else is the server's word. A server that swaps in its own
   `(E, IK)` under an applicant's name receives `secret` when the request
   is approved.
-* **The old open link still contains the epoch-0 `secret`.** Closing a
-  channel stops the server from serving it to non-members; a link issued
-  while the channel was open still decrypts what was published before
-  the first key change.
-* **A delivery key substituted at first sight.** A device that runs the
-  channel remembers the identity key of every member it approved or first
-  handed a key to, and refuses a delivery key signed by any other identity
-  under that account. A server can still plant its own key for a member
-  the device has never seen — once, before the first hand-out. A member
-  whose identity key changes (account restored on a new phone) gets no
-  further keys until re-approved.
+* **The old open link still contains the epoch-0 `secret`.** A link
+  issued while the channel was open still decrypts what was published
+  before it was closed.
+* **Readers from before the channel was closed are not members.** Nobody
+  approved them, and the subscriber list of an open channel is the
+  server's word, so they receive no key for the new epoch until they send
+  a join request and it is approved. What they already downloaded stays.
+* **An active administrator can approve anyone** — that is the role. A
+  mistaken approval is undone by removing the member.
 * **An administrator removed while the owner is offline.** A removed
   administrator cannot start the current epoch (see above), but until the
   owner's device publishes the new metadata and the key change, they are
