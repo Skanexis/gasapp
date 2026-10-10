@@ -644,7 +644,7 @@
     <string name="scan_denied_title">Нет доступа к камере</string>
     <string name="scan_denied_body">Камера нужна только чтобы прочитать код. Кадры обрабатываются на этом устройстве, не сохраняются и никуда не отправляются.</string>
     <string name="scan_denied_settings">Открыть настройки</string>
-    <string name="add_contact_username_helper">Если аккаунту больше суток, писать можно сразу: ключ проверяет открытый журнал ключей. Самая надёжная проверка — отсканировать QR-код собеседника при встрече.</string>
+    <string name="add_contact_username_helper">Если аккаунту больше суток, писать можно сразу: ключ проверяет открытый журнал ключей. Самая надёжная проверка — отсканировать QR-код собеседника при встрече. Сюда же можно вставить ссылку-контакт (gasapp://contact/…) — например ту, что публикует автор бота.</string>
     <string name="add_contact_open">Открыть чат</string>
     <string name="add_contact_or">или</string>
     <string name="add_contact_scan">Сканировать QR-код</string>
