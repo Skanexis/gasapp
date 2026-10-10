@@ -64,7 +64,7 @@ object AccountWipe {
         if (runCatching { HardwareKey.destroy() }.isFailure) {
             clean = false
         }
-        if (runCatching { TeeKey.destroy() }.isFailure) {
+        if (runCatching { TeeKey.destroy(context) }.isFailure) {
             clean = false
         }
 

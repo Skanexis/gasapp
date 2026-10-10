@@ -582,6 +582,8 @@
     <string name="network_bridges_hint">webtunnel [2001:db8::1]:443 FINGERPRINT url=https://…</string>
     <string name="network_bridges_help">If Tor does not connect, it may be blocked where you are. Add WebTunnel bridges, one per line: get them at bridges.torproject.org (choose WebTunnel) or from the Telegram bot @GetBridgesBot. Leave empty to connect to Tor directly.</string>
     <string name="network_bridges_invalid">A bridge line is not valid. Only WebTunnel and plain bridges are supported, and each needs its fingerprint.</string>
+    <string name="lock_key_unavailable">The phone\'s secure key storage did not respond. Unlock the phone, restart it if needed, and try again. Your PIN was not checked.</string>
+    <string name="lock_key_lost">The key that protects your messages is gone from this phone\'s secure storage. The messages on this device cannot be opened any more. Use “Forgot PIN?” to start over and restore from a backup.</string>
     <string name="clock_wrong">The date or time on this device is wrong, so the server rejects requests. Set the time automatically and try again.</string>
     <string name="tor_blocked_hint">Tor is not connecting — it may be blocked here. Tap to add a bridge.</string>
     <string name="onboarding_add_bridge">Tor blocked? Add a bridge</string>

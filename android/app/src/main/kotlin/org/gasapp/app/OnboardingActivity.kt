@@ -613,6 +613,8 @@ class OnboardingActivity : AppCompatActivity() {
 
                     showError(
                         when {
+                            failure is org.gasapp.app.core.TeeKey.KeyUnavailable ->
+                                getString(R.string.lock_key_unavailable)
                             ClockCheck.off -> getString(R.string.clock_wrong)
                             network && viaTor -> getString(R.string.onboarding_error_tor)
                             network -> getString(R.string.onboarding_error_network)

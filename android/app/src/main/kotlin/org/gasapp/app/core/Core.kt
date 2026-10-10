@@ -239,7 +239,7 @@ object Core {
         val stretched = deriveStorageKey(pin, salt)
 
         try {
-            val key = teeKey(stretched, salt)
+            val key = teeKey(context, stretched, salt)
             val current = runCatching { open(context, key) }
 
             current.getOrNull()?.let { opened ->
@@ -302,8 +302,8 @@ object Core {
     }
 
     /** Ключ схемы v3 из растянутого PIN. */
-    private fun teeKey(stretched: ByteArray, salt: ByteArray): ByteArray {
-        val response = TeeKey.respond(stretched)
+    private fun teeKey(context: Context, stretched: ByteArray, salt: ByteArray): ByteArray {
+        val response = TeeKey.respond(context, stretched)
         try {
             return deriveStorageKeyTee(stretched, salt, response)
         } finally {
@@ -347,7 +347,7 @@ object Core {
         val salt = salt(context)
         val stretched = deriveStorageKey(pin, salt)
         try {
-            return teeKey(stretched, salt)
+            return teeKey(context, stretched, salt)
         } finally {
             stretched.fill(0)
         }

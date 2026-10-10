@@ -469,6 +469,24 @@ class LockActivity : AppCompatActivity() {
             // бы мессенджер с неверным ключом.
             Core.close()
 
+            // 🔐 Ключ Keystore не ответил: PIN ни с чем не сверялся.
+            // Это не неверная попытка — она не считается, не ведёт к
+            // стиранию, и экран говорит, что случилось на самом деле.
+            val unavailable = opened.exceptionOrNull() as? org.gasapp.app.core.TeeKey.KeyUnavailable
+            if (unavailable != null) {
+                runCatching { PinAttempts.cancelAttempt(app) }
+
+                if (isFinishing || isDestroyed) return@launch
+
+                checking = false
+                error.setText(if (unavailable.lost) R.string.lock_key_lost else R.string.lock_key_unavailable)
+                error.visibility = View.VISIBLE
+                renderDots()
+                setKeypadEnabled(true)
+
+                return@launch
+            }
+
             // 🔐 Opt-in стирание после десяти неверных PIN (раздел 19.3).
             // Стирает то же, что удаление аккаунта на устройстве, —
             // кроме записи на сервере: для запроса к нему нужен ключ,
