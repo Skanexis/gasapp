@@ -8,6 +8,7 @@ import org.gasapp.app.BuildConfig
 import org.gasapp.app.net.EmbeddedTor
 import org.gasapp.app.net.NetworkProxy
 import org.gasapp.app.net.PlatformTransport
+import uniffi.gasapp.FfiProxy
 import uniffi.gasapp.deriveStorageKey
 import uniffi.gasapp.deriveStorageKeyBound
 import uniffi.gasapp.deriveStorageKeyTee
@@ -69,6 +70,10 @@ object Core {
      * она означала бы хранить где-то признак верного PIN — подсказку
      * для перебора.
      */
+    /** Режим сети, выбранный до появления базы: его применит [open]. */
+    @Volatile
+    var pendingProxy: FfiProxy? = null
+
     @Synchronized
     fun open(context: Context, key: ByteArray): Messenger {
         messenger?.let { return it }
@@ -90,6 +95,16 @@ object Core {
         // Мосты с экрана регистрации — в базу до применения режима:
         // см. EmbeddedTor.pendingBridges.
         EmbeddedTor.takePendingBridges()?.let { text -> runCatching { opened.setTorBridges(text) } }
+
+        // 🔐 Режим сети, выбранный при регистрации, — тоже до применения.
+        // Ядро без настройки выбирает Tor, и прежде он успевал запуститься
+        // у человека, выбравшего прямое соединение: телефон обращался к
+        // сети Tor, хотя его об этом не просили. Не записалось — остаётся
+        // умолчание ядра, то есть Tor, а не открытая сеть.
+        pendingProxy?.let { mode ->
+            pendingProxy = null
+            runCatching { opened.setProxy(mode) }
+        }
 
         NetworkProxy.apply(
             context,

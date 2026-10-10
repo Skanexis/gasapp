@@ -626,6 +626,7 @@
     <string name="network_bridges_hint">webtunnel [2001:db8::1]:443 ОТПЕЧАТОК url=https://…</string>
     <string name="network_bridges_help">Если Tor не подключается, возможно, он заблокирован у вас. Добавьте мосты WebTunnel, по одному на строку: их выдают на bridges.torproject.org (выберите WebTunnel) и Telegram-бот @GetBridgesBot. Пусто — подключение к Tor напрямую.</string>
     <string name="network_bridges_invalid">Строка моста негодна. Поддерживаются мосты WebTunnel и обычные, и у каждого должен быть отпечаток.</string>
+    <string name="clock_wrong">На устройстве неверные дата или время, и сервер отклоняет запросы. Включите автоматическое время и повторите.</string>
     <string name="tor_blocked_hint">Tor не подключается — возможно, он здесь заблокирован. Нажмите, чтобы добавить мост.</string>
     <string name="onboarding_add_bridge">Tor заблокирован? Добавить мост</string>
     <string name="onboarding_bridges_title">Мосты Tor</string>
@@ -727,7 +728,6 @@
     <string name="onboarding_stage_keys">Ключи шифрования на этом телефоне</string>
     <string name="onboarding_stage_tor">Подключение через Tor</string>
     <string name="onboarding_stage_register">Письмо с кодом на вашу почту</string>
-    <string name="connection_direct">Прямое соединение: сервер видит ваш IP-адрес</string>
 
     <!-- Почта при регистрации, премиум и каналы. -->
     <string name="action_ok">Понятно</string>
@@ -776,6 +776,7 @@
     <string name="channel_no_posts">Записей пока нет</string>
     <string name="channel_subtitle_reader">Канал</string>
     <string name="channel_reader_note">Писать здесь может только автор</string>
+    <string name="channel_key_missing_note">Ключ канала сменился. Чтобы читать новые записи, попросите у ведущего канал ссылку-приглашение и подайте заявку.</string>
     <string name="channel_post_hint">Новая запись</string>
     <string name="channel_publish">Опубликовать</string>
     <string name="channel_post_failed">Запись не опубликована: нет связи с сервером. Текст остался в поле.</string>

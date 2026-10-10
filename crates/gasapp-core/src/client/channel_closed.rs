@@ -405,6 +405,18 @@ impl<T: Transport> Client<T> {
                         joined.push(channel);
                     }
                     Err(GasAppError::Network) => {}
+                    // Канал на устройстве уже есть, а ответ ключом заявки
+                    // не открылся: это прежний ответ, под прежний ключ
+                    // доставки. Новый ещё не выдан — заявка ждёт дальше.
+                    //
+                    // Не вечно: заявку могли и отклонить, а прежний ответ
+                    // сервер так и будет отдавать.
+                    Err(GasAppError::Crypto)
+                        if self.storage.channel(&join.channel_id)?.is_some()
+                            && now
+                                .as_millis()
+                                .saturating_sub(join.requested_at.as_millis())
+                                < REJOIN_WAIT_MILLIS => {}
                     Err(_) => self.storage.remove_pending_join(&join.channel_id)?,
                 },
                 _ => self.storage.remove_pending_join(&join.channel_id)?,
@@ -1475,6 +1487,9 @@ fn started_by_active(
             .iter()
             .any(|admin| admin.verify_key == signer && admin.until.is_none()))
 }
+
+/// Сколько повторная заявка участника ждёт нового ответа: месяц.
+const REJOIN_WAIT_MILLIS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 /// Настройка «канал ждёт смены ключа».
 fn rekey_due(uuid: &str) -> String {

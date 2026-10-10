@@ -83,6 +83,8 @@ const MAX_COUNTER: u64 = i64::MAX.unsigned_abs();
 const MAX_REACTIONS_TEXT: usize = 256;
 
 /// Канал в том виде, в каком его показывает интерфейс.
+// Признаки независимы: закрыт, ждёт смены ключа, нет ключа, без звука.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Channel {
     /// Идентификатор, UUID.
@@ -117,6 +119,11 @@ pub struct Channel {
     /// Подписчик удалён, а ключ канала ещё не сменён (не было сети):
     /// смена повторится сама при следующем обслуживании каналов.
     pub rekey_pending: bool,
+    /// У этого устройства нет ключа действующей эпохи закрытого канала:
+    /// новые записи не читаются. Ключ выдаёт тот, кто ведёт канал;
+    /// читателю, которого не одобряли, нужно подать заявку по
+    /// ссылке-приглашению.
+    pub key_missing: bool,
 }
 
 /// Вложение записи канала.
@@ -693,8 +700,18 @@ impl<T: Transport> Client<T> {
         // 🔐 У закрытого канала ключ мог смениться: сначала ключ, потом
         // записи. Пока ключа действующей эпохи нет, новое не забирается —
         // иначе записи легли бы пропущенными и уже не прочитались.
-        if stored.closed && !self.catch_up_keys(stored, info.key_epoch, now)? {
-            return Ok(0);
+        if stored.closed {
+            let ready = self.catch_up_keys(stored, info.key_epoch, now)?;
+
+            // Экран канала говорит читателю, почему нового нет.
+            let flag = key_missing(&channel::format_uuid(&stored.channel_id));
+            if self.setting_bool(&flag, false)? == ready {
+                self.set_setting_bool(&flag, !ready)?;
+            }
+
+            if !ready {
+                return Ok(0);
+            }
         }
 
         let mut fresh = 0u32;
@@ -2113,8 +2130,18 @@ impl<T: Transport> Client<T> {
             avatar: stored.avatar.clone(),
             closed: stored.closed,
             rekey_pending: self.channel_rekey_pending(&channel::format_uuid(&stored.channel_id))?,
+            key_missing: stored.closed
+                && self.setting_bool(
+                    &key_missing(&channel::format_uuid(&stored.channel_id)),
+                    false,
+                )?,
         })
     }
+}
+
+/// Настройка «у устройства нет ключа действующей эпохи канала».
+fn key_missing(uuid: &str) -> String {
+    format!("channel.key_missing.{uuid}")
 }
 
 /// Строка нового канала для базы.

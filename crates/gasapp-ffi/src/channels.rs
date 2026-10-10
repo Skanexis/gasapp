@@ -71,6 +71,9 @@ pub struct FfiChannel {
     /// Подписчик удалён, а ключ канала ещё не сменён: не было сети.
     /// Смена повторится сама; до неё новые записи пишутся прежним ключом.
     pub rekey_pending: bool,
+    /// У устройства нет ключа действующей эпохи закрытого канала: новые
+    /// записи не читаются, пока ключ не выдаст тот, кто ведёт канал.
+    pub key_missing: bool,
 }
 
 /// Заявка на вход в закрытый канал — для того, кто его ведёт.
@@ -158,6 +161,7 @@ impl From<Channel> for FfiChannel {
             avatar: channel.avatar,
             closed: channel.closed,
             rekey_pending: channel.rekey_pending,
+            key_missing: channel.key_missing,
         }
     }
 }
