@@ -666,13 +666,15 @@
     <string name="onboarding_welcome_title">Добро пожаловать в GasApp</string>
     <string name="onboarding_feature_e2e">Сообщения шифруются на телефоне. Сервер только передаёт их и прочитать не может.</string>
     <string name="onboarding_feature_no_phone">Без номера телефона. Аккаунт — это имя и адрес почты; сервер хранит только хеш адреса.</string>
-    <string name="onboarding_feature_tor">Tor встроен: сервер не видит ваш IP-адрес.</string>
+    <string name="onboarding_feature_tor">Tor встроен: включите его — и сервер не увидит ваш IP-адрес.</string>
     <string name="onboarding_get_started">Создать аккаунт</string>
     <string name="onboarding_username_title">Имя и почта</string>
     <string name="onboarding_username_subtitle">По имени вас найдут собеседники. Почта нужна только чтобы подтвердить аккаунт: на неё придёт код.</string>
     <string name="onboarding_network_label">Соединение</string>
     <string name="onboarding_next">Продолжить</string>
     <string name="onboarding_pin_title">Придумайте PIN</string>
+    <string name="onboarding_pin_repeat_title">Повторите PIN</string>
+    <string name="onboarding_error_pin_mismatch">PIN не совпали. Введите новый PIN заново.</string>
     <string name="onboarding_restore_pin_title">PIN для этого телефона</string>
     <string name="onboarding_restore_continue">Перейти к копии</string>
     <string name="onboarding_step">%1$d / %2$d</string>

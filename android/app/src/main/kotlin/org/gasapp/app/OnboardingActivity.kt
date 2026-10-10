@@ -83,6 +83,15 @@ class OnboardingActivity : AppCompatActivity() {
     private var resendWatch: kotlinx.coroutines.Job? = null
     private lateinit var scroll: ScrollView
     private lateinit var pin: PinPad
+
+    /**
+     * Первый ввод нового PIN — до подтверждения вторым.
+     *
+     * PIN нельзя сбросить, а вводится он вслепую: одна опечатка при
+     * единственном вводе заперла бы аккаунт при первой же блокировке.
+     * 🔐 Живёт только на шаге PIN и затирается при уходе с него.
+     */
+    private var firstPin: ByteArray? = null
     private lateinit var error: TextView
     private lateinit var progressLabel: TextView
     private lateinit var createButton: GasAppButton
@@ -240,7 +249,10 @@ class OnboardingActivity : AppCompatActivity() {
      * а не ждут в памяти, пока человек вернётся.
      */
     private fun showStep(target: Step) {
-        if (target != Step.Pin) pin.clear()
+        if (target != Step.Pin) {
+            pin.clear()
+            forgetFirstPin()
+        }
 
         step = target
         error.visibility = View.GONE
@@ -472,6 +484,16 @@ class OnboardingActivity : AppCompatActivity() {
         }
     }
 
+    /** Затирает первый ввод PIN и возвращает заголовок шага. */
+    private fun forgetFirstPin() {
+        firstPin?.fill(0)
+        firstPin = null
+
+        if (!restoring) {
+            findViewById<TextView>(R.id.onboarding_pin_title).setText(R.string.onboarding_pin_title)
+        }
+    }
+
     /**
      * Шаг PIN: создаёт базу под PIN, подключается и просит у сервера
      * письмо с кодом. Аккаунт регистрируется позже — на шаге кода.
@@ -508,6 +530,27 @@ class OnboardingActivity : AppCompatActivity() {
         if (Pin.isTooSimple(pinValue)) {
             pinValue.fill(0)
             showError(getString(R.string.onboarding_error_pin_simple))
+
+            return
+        }
+
+        // Новый PIN вводится дважды: первый ввод запоминается, второй
+        // обязан с ним совпасть.
+        val first = firstPin
+        if (first == null) {
+            firstPin = pinValue
+            error.visibility = View.GONE
+            findViewById<TextView>(R.id.onboarding_pin_title).setText(R.string.onboarding_pin_repeat_title)
+
+            return
+        }
+
+        val same = java.security.MessageDigest.isEqual(first, pinValue)
+        forgetFirstPin()
+
+        if (!same) {
+            pinValue.fill(0)
+            showError(getString(R.string.onboarding_error_pin_mismatch))
 
             return
         }
