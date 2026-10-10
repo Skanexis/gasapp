@@ -39,7 +39,7 @@ const BOOTSTRAP_LOCK: i64 = 0x0AE6_1500;
 /// Хранится в базе. Пока он совпадает, схема не пересоздаётся —
 /// значит второй набор тестов не снесёт таблицы из-под первого.
 const SCHEMA_FINGERPRINT: &str =
-    "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013+0014+0015+0016+0017+0018+0019d+0020+0021+0022+0023+0024+0025+0026";
+    "0001+0002+0003+0004+0005+0006+0007+0008+0009+0010+0011+0012+0013+0014+0015+0016+0017+0018+0019d+0020+0021+0022+0023+0024+0025+0026+0027";
 
 /// Адрес тестовой базы, если он задан.
 ///
@@ -165,6 +165,7 @@ pub async fn bootstrap(pool: &sqlx::PgPool) {
             include_str!("../migrations/0024_channel_reports.sql"),
             include_str!("../migrations/0025_hybrid_join.sql"),
             include_str!("../migrations/0026_bot_token_budget.sql"),
+            include_str!("../migrations/0027_member_approvals.sql"),
         ] {
             sqlx::raw_sql(migration)
                 .execute(&mut *conn)

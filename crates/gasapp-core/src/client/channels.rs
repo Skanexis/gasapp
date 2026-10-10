@@ -1843,7 +1843,7 @@ impl<T: Transport> Client<T> {
 
         // 🔐 У закрытого канала снятие администратора меняет ключ: он
         // знал ключ чтения и мог заводить новые эпохи.
-        self.rekey_after_admin_removal(channel_id, now, rng)?;
+        self.rekey_after_admin_removal(channel_id, &key, now, rng)?;
 
         self.channel_admins(channel_id)
     }

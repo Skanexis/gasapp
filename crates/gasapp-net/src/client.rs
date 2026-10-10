@@ -806,6 +806,7 @@ impl<T: Transport> ApiClient<T> {
         let request = AnswerChannelJoinRequest {
             account_id: canonical_uuid(&request.account_id)?,
             grant: request.grant.clone(),
+            approval: request.approval.clone(),
         };
 
         self.send_signed(

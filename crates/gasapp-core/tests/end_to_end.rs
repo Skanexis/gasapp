@@ -477,6 +477,8 @@ struct FakeChannel {
     epochs: Vec<String>,
     /// Ключи доставки участников: аккаунт → ключ, hex.
     member_keys: HashMap<String, String>,
+    /// Удостоверения участников: аккаунт → подпись ведущего канал, hex.
+    approvals: HashMap<String, String>,
     /// Под какую эпоху выдан ответ аккаунту.
     grant_epochs: HashMap<String, u32>,
     /// Сколько ближайших смен ключа отвергнуть как сбой сети.
@@ -1205,7 +1207,13 @@ fn channel_member_route(
             if channel.member_keys.get(&account) != Some(&parsed.member_key) {
                 channel.grants.remove(&account);
                 channel.grant_epochs.remove(&account);
-                channel.member_keys.insert(account, parsed.member_key);
+                channel.approvals.remove(&account);
+                channel
+                    .member_keys
+                    .insert(account.clone(), parsed.member_key);
+            }
+            if let Some(approval) = parsed.approval {
+                channel.approvals.insert(account, approval);
             }
 
             plain(204, String::new())
@@ -1307,6 +1315,16 @@ fn channel_moderation(
                 channel
                     .member_keys
                     .insert(parsed.account_id.clone(), request.unwrap_or_default());
+                match parsed.approval {
+                    Some(approval) => {
+                        channel
+                            .approvals
+                            .insert(parsed.account_id.clone(), approval);
+                    }
+                    None => {
+                        channel.approvals.remove(&parsed.account_id);
+                    }
+                }
                 channel.grants.insert(parsed.account_id, grant);
                 channel.subscribers.entry(device).or_insert(0);
             }
@@ -1341,6 +1359,7 @@ fn channel_moderation(
             channel.grants.remove(&account_id);
             channel.grant_epochs.remove(&account_id);
             channel.member_keys.remove(&account_id);
+            channel.approvals.remove(&account_id);
             channel.requests.remove(&account_id);
             channel.bans.insert(account_id);
 
@@ -1370,12 +1389,19 @@ fn channel_moderation(
                 .filter(|(account, _)| account.as_str() > after.as_str())
                 .filter(|(account, _)| {
                     !missing
-                        || channel
-                            .grant_epochs
-                            .get(*account)
-                            .is_none_or(|epoch| *epoch < channel.key_epoch)
+                        || (channel.approvals.contains_key(*account)
+                            && channel
+                                .grant_epochs
+                                .get(*account)
+                                .is_none_or(|epoch| *epoch < channel.key_epoch))
                 })
-                .map(|(account, key)| serde_json::json!({ "account_id": account, "member_key": key }))
+                .map(|(account, key)| {
+                    serde_json::json!({
+                        "account_id": account,
+                        "member_key": key,
+                        "approval": channel.approvals.get(account),
+                    })
+                })
                 .collect();
             list.sort_by_key(|key| key["account_id"].as_str().map(str::to_owned));
             list.truncate(2);
@@ -1416,6 +1442,9 @@ fn channel_moderation(
                     channel
                         .grant_epochs
                         .insert(grant.account_id.clone(), parsed.epoch);
+                    if let Some(approval) = grant.approval {
+                        channel.approvals.insert(grant.account_id.clone(), approval);
+                    }
                     channel.grants.insert(grant.account_id, grant.grant);
                 }
             }
@@ -8481,11 +8510,12 @@ fn a_failed_rekey_is_retried() {
     );
 }
 
-/// Участник, вошедший до закрытия канала, называет ключ доставки при
-/// синхронизации; если он опоздал к смене ключа, ключ ему выдаёт
-/// обслуживание каналов у того, кто ведёт канал.
+/// 🔐 Читатель, подписавшийся, пока канал был открытым, ключа новой
+/// эпохи сам собой не получает: тот, кто ведёт канал, его не одобрял, а
+/// список подписчиков открытого канала — слово сервера. Он входит
+/// заново, по заявке.
 #[test]
-fn a_member_without_a_key_gets_it_later() {
+fn a_reader_from_before_closing_must_be_approved() {
     let dir = tempfile::tempdir().expect("каталог");
     let server = FakeServer::new();
     let (author, early) = author_and_reader(&server, &dir);
@@ -8506,23 +8536,16 @@ fn a_member_without_a_key_gets_it_later() {
         .expect("ссылка");
     let removed = join_closed(&author, &leaves, &channel_id, &invite);
 
-    // Ранний читатель о закрытии ещё не знает и ключа доставки не назвал.
     author
         .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
         .expect("удаление");
     post_text(&author, &channel_id, "после смены");
 
-    // Он синхронизируется: ключа новой эпохи нет — новое не приходит,
-    // но ключ доставки теперь назван.
-    assert_eq!(
-        early
-            .sync_channel(&channel_id, now())
-            .expect("синхронизация"),
-        0
-    );
-    assert_eq!(texts(&early, &channel_id), ["открытая"]);
-
-    // Тот, кто ведёт канал, выдаёт ключ — и записи доходят.
+    // Он синхронизируется и называет ключ доставки — но удостоверения
+    // у этого ключа нет, и обслуживание каналов ключа ему не выдаёт.
+    early
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     author
         .maintain_channel_keys(now(), &mut OsRng)
         .expect("обслуживание");
@@ -8530,8 +8553,23 @@ fn a_member_without_a_key_gets_it_later() {
         early
             .sync_channel(&channel_id, now())
             .expect("синхронизация"),
-        1
+        0
     );
+    assert_eq!(texts(&early, &channel_id), ["открытая"]);
+    {
+        let state = server.state.borrow();
+        let channel = &state.channels[&channel_id];
+        let account = account_of_name(&server, "reader");
+        assert!(channel.member_keys.contains_key(&account));
+        assert!(!channel.approvals.contains_key(&account));
+        assert!(!channel.grants.contains_key(&account));
+    }
+
+    // По заявке его одобряют — и записи доходят.
+    join_closed(&author, &early, &channel_id, &invite);
+    early
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&early, &channel_id), ["открытая", "после смены"]);
 }
 
@@ -8890,7 +8928,7 @@ fn a_removed_admin_cannot_start_an_epoch() {
 
 /// 🔐 Закрытие канала меняет его ключ: прежняя ссылка несёт секрет
 /// чтения, и новые записи им уже не открываются. Прежний подписчик
-/// получает новый ключ, назвав ключ доставки.
+/// читает дальше, когда его одобрят по заявке.
 #[test]
 fn closing_a_channel_changes_its_key() {
     let dir = tempfile::tempdir().expect("каталог");
@@ -8925,8 +8963,7 @@ fn closing_a_channel_changes_its_key() {
     assert_eq!(epoch, 1);
     assert!(old_access.open_post(record, number, &[]).is_err());
 
-    // Прежний подписчик называет ключ доставки, получает ключ эпохи от
-    // того, кто ведёт канал, и читает дальше.
+    // Прежнего подписчика никто не одобрял: нового ключа у него нет.
     early
         .sync_channel(&channel_id, now())
         .expect("синхронизация");
@@ -8936,5 +8973,151 @@ fn closing_a_channel_changes_its_key() {
     early
         .sync_channel(&channel_id, now())
         .expect("синхронизация");
+    assert_eq!(texts(&early, &channel_id), ["открытая"]);
+
+    // По ссылке-приглашению его одобряют, и он читает дальше.
+    let invite = author
+        .create_channel_invite(&channel_id, now(), &mut OsRng)
+        .expect("ссылка");
+    join_closed(&author, &early, &channel_id, &invite);
+    early
+        .sync_channel(&channel_id, now())
+        .expect("синхронизация");
     assert_eq!(texts(&early, &channel_id), ["открытая", "после закрытия"]);
+}
+
+/// 🔐 Сервер называет выдуманного участника со своим ключом доставки:
+/// удостоверения у такого ключа нет, и ключ новой эпохи под него не
+/// шифруется — ни при смене ключа, ни при досылке (аудит 2026-10-10, N-0).
+#[test]
+fn an_invented_member_gets_no_epoch_key() {
+    use gasapp_protocol::channel_join::{self, JoinLink};
+    use gasapp_protocol::x25519::X25519PrivateKey;
+
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, stays) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let ghost = extra_reader(&server, &dir, "ghost");
+    let (channel_id, invite) = closed_channel(&author);
+
+    join_closed(&author, &stays, &channel_id, &invite);
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+
+    // Сервер записывает в участники аккаунт, которого никто не одобрял,
+    // с ключом доставки, от которого знает секрет, — и даже с
+    // удостоверением, но подписанным не тем, кто ведёт канал.
+    let link = JoinLink::parse(&invite).expect("ссылка");
+    let attacker = X25519PrivateKey::generate(&mut OsRng).expose_secret();
+    let forged = channel_join::seal_request(&link, &attacker, &mut OsRng).expect("заявка");
+    let fake_approval = channel_join::seal_approval(
+        &link.channel_id,
+        0,
+        &forged.wire,
+        PrivateKeyBytes::new([0x77; 32]),
+    )
+    .expect("удостоверение");
+    let ghost_account = account_of_name(&server, "ghost");
+    let ghost_device = ghost.own_device_id().expect("чтение").expect("устройство");
+    {
+        let mut state = server.state.borrow_mut();
+        let channel = state.channels.get_mut(&channel_id).expect("канал");
+        channel.subscribers.insert(ghost_device, 0);
+        channel
+            .member_keys
+            .insert(ghost_account.clone(), hex::encode(&forged.wire));
+        channel
+            .approvals
+            .insert(ghost_account.clone(), hex::encode(fake_approval));
+    }
+
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    author
+        .maintain_channel_keys(now(), &mut OsRng)
+        .expect("обслуживание");
+
+    {
+        let state = server.state.borrow();
+        let channel = &state.channels[&channel_id];
+        assert_eq!(channel.key_epoch, 1);
+        assert!(!channel.grants.contains_key(&ghost_account));
+        // Настоящий участник ключ получил — вместе с удостоверением на
+        // новую эпоху.
+        let real = account_of_name(&server, "reader");
+        assert_eq!(channel.grant_epochs.get(&real), Some(&1));
+    }
+
+    post_text(&author, &channel_id, "после удаления");
+    assert_eq!(
+        stays
+            .sync_channel(&channel_id, now())
+            .expect("синхронизация"),
+        1
+    );
+}
+
+/// 🔐 Удалённого сервер снова называет участником — с прежним ключом
+/// доставки и прежним, настоящим удостоверением. Оно выписано на эпоху,
+/// которой больше нет, и ключа действующей эпохи удалённый не получает.
+#[test]
+fn a_removed_member_listed_again_gets_no_key() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (author, stays) = author_and_reader(&server, &dir);
+    let leaves = extra_reader(&server, &dir, "leaver");
+    let (channel_id, invite) = closed_channel(&author);
+
+    join_closed(&author, &stays, &channel_id, &invite);
+    let removed = join_closed(&author, &leaves, &channel_id, &invite);
+
+    let (old_key, old_approval) = {
+        let state = server.state.borrow();
+        let channel = &state.channels[&channel_id];
+        (
+            channel.member_keys[&removed].clone(),
+            channel.approvals[&removed].clone(),
+        )
+    };
+    let removed_device = leaves.own_device_id().expect("чтение").expect("устройство");
+
+    author
+        .remove_channel_subscriber(&channel_id, &removed, false, now(), &mut OsRng)
+        .expect("удаление");
+    assert_eq!(server.state.borrow().channels[&channel_id].key_epoch, 1);
+
+    // Сервер в сговоре с удалённым возвращает его в список.
+    {
+        let mut state = server.state.borrow_mut();
+        let channel = state.channels.get_mut(&channel_id).expect("канал");
+        channel.bans.remove(&removed);
+        channel.subscribers.insert(removed_device, 0);
+        channel.member_keys.insert(removed.clone(), old_key);
+        channel.approvals.insert(removed.clone(), old_approval);
+    }
+
+    author
+        .maintain_channel_keys(now(), &mut OsRng)
+        .expect("обслуживание");
+    assert!(!server.state.borrow().channels[&channel_id]
+        .grants
+        .contains_key(&removed));
+
+    // И следующая смена ключа его тоже обходит.
+    let third = extra_reader(&server, &dir, "third");
+    let third_account = join_closed(&author, &third, &channel_id, &invite);
+    author
+        .remove_channel_subscriber(&channel_id, &third_account, false, now(), &mut OsRng)
+        .expect("удаление");
+    let state = server.state.borrow();
+    let channel = &state.channels[&channel_id];
+    assert_eq!(channel.key_epoch, 2);
+    assert!(!channel.grants.contains_key(&removed));
+    assert_eq!(
+        channel
+            .grant_epochs
+            .get(&account_of_name(&server, "reader")),
+        Some(&2)
+    );
 }

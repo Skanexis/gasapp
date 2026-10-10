@@ -1211,6 +1211,10 @@ pub const MAX_PENDING_REQUESTS_PER_ACCOUNT: i64 = 50;
 /// Предел заявки и ответа на неё, в байтах.
 pub const MAX_JOIN_BLOB_BYTES: usize = 4096;
 
+/// Длина удостоверения участника: эпоха, подписавший, подпись
+/// (миграция 0027). Для сервера — непрозрачные байты.
+pub const MEMBER_APPROVAL_BYTES: usize = 100;
+
 /// Сколько заявок или подписчиков отдаётся за один запрос.
 pub const MAX_MEMBERS_PER_PAGE: i64 = 100;
 
@@ -1585,6 +1589,7 @@ pub async fn answer_request(
     channel_id: Uuid,
     account_id: Uuid,
     grant: Option<&[u8]>,
+    approval: Option<&[u8]>,
 ) -> Result<(), RepoError> {
     if !writes(pool, channel_id, writer_account).await? {
         return Err(RepoError::NotFound);
@@ -1627,13 +1632,15 @@ pub async fn answer_request(
         // Ключ из заявки становится ключом доставки участника: под него
         // же придёт ключ следующей эпохи.
         sqlx::query(
-            "INSERT INTO channel_member_keys (channel_id, account_id, member_key)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (channel_id, account_id) DO UPDATE SET member_key = EXCLUDED.member_key",
+            "INSERT INTO channel_member_keys (channel_id, account_id, member_key, approval)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (channel_id, account_id)
+             DO UPDATE SET member_key = EXCLUDED.member_key, approval = EXCLUDED.approval",
         )
         .bind(channel_id)
         .bind(account_id)
         .bind(&request)
+        .bind(approval)
         .execute(&mut *tx)
         .await?;
 
@@ -1840,6 +1847,19 @@ pub struct MemberKey {
     pub account_id: Uuid,
     /// Ключ доставки — для сервера непрозрачные байты.
     pub member_key: Vec<u8>,
+    /// Удостоверение участника — подпись того, кто ведёт канал.
+    pub approval: Option<Vec<u8>>,
+}
+
+/// Ключ эпохи участнику и, если его выписали заново, удостоверение.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpochGrant {
+    /// Кому.
+    pub account_id: Uuid,
+    /// Ключ эпохи шифротекстом под ключ доставки участника.
+    pub grant: Vec<u8>,
+    /// Удостоверение на эту эпоху; нет — прежнее остаётся.
+    pub approval: Option<Vec<u8>>,
 }
 
 /// Запоминает ключ доставки участника закрытого канала.
@@ -1857,6 +1877,7 @@ pub async fn set_member_key(
     channel_id: Uuid,
     account_id: Uuid,
     member_key: &[u8],
+    approval: Option<&[u8]>,
 ) -> Result<(), RepoError> {
     if !is_member(pool, channel_id, account_id).await? {
         return Err(RepoError::NotFound);
@@ -1883,16 +1904,36 @@ pub async fn set_member_key(
     .await?;
 
     if known.as_deref() == Some(member_key) {
+        // Ключ прежний: меняется разве что удостоверение (тот, кто ведёт
+        // канал, выписывает его себе сам).
+        if let Some(approval) = approval {
+            sqlx::query(
+                "UPDATE channel_member_keys SET approval = $3
+                  WHERE channel_id = $1 AND account_id = $2",
+            )
+            .bind(channel_id)
+            .bind(account_id)
+            .bind(approval)
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+        }
+
         return Ok(());
     }
 
+    // Новый ключ — прежнее удостоверение к нему не относится.
     sqlx::query(
-        "INSERT INTO channel_member_keys (channel_id, account_id, member_key) VALUES ($1, $2, $3)
-         ON CONFLICT (channel_id, account_id) DO UPDATE SET member_key = EXCLUDED.member_key",
+        "INSERT INTO channel_member_keys (channel_id, account_id, member_key, approval)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (channel_id, account_id)
+         DO UPDATE SET member_key = EXCLUDED.member_key, approval = EXCLUDED.approval",
     )
     .bind(channel_id)
     .bind(account_id)
     .bind(member_key)
+    .bind(approval)
     .execute(&mut *tx)
     .await?;
 
@@ -1928,8 +1969,10 @@ pub async fn member_keys(
 
     // 🔐 Только действующие участники: ключ ушедшего либо снятого
     // администратора в выдачу не попадает.
-    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
-        "SELECT k.account_id, k.member_key
+    // Без удостоверения ключ эпохи не выдают, и в выдаче «кому не
+    // хватает ключа» таким строкам делать нечего.
+    let rows: Vec<(Uuid, Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT k.account_id, k.member_key, k.approval
            FROM channel_member_keys k
            JOIN channels c ON c.channel_id = k.channel_id
           WHERE k.channel_id = $1
@@ -1939,10 +1982,11 @@ pub async fn member_keys(
                              WHERE a.channel_id = k.channel_id AND a.account_id = k.account_id)
                  OR EXISTS (SELECT 1 FROM channel_subscribers s
                              WHERE s.channel_id = k.channel_id AND s.account_id = k.account_id))
-            AND (NOT $3 OR NOT EXISTS (SELECT 1 FROM channel_grants g
-                                        WHERE g.channel_id = k.channel_id
-                                          AND g.account_id = k.account_id
-                                          AND g.epoch >= c.key_epoch))
+            AND (NOT $3 OR (k.approval IS NOT NULL
+                            AND NOT EXISTS (SELECT 1 FROM channel_grants g
+                                             WHERE g.channel_id = k.channel_id
+                                               AND g.account_id = k.account_id
+                                               AND g.epoch >= c.key_epoch)))
           ORDER BY k.account_id
           LIMIT $4",
     )
@@ -1955,9 +1999,10 @@ pub async fn member_keys(
 
     Ok(rows
         .into_iter()
-        .map(|(account_id, member_key)| MemberKey {
+        .map(|(account_id, member_key, approval)| MemberKey {
             account_id,
             member_key,
+            approval,
         })
         .collect())
 }
@@ -1980,7 +2025,7 @@ pub async fn rekey(
     channel_id: Uuid,
     epoch: i32,
     record: Option<&[u8]>,
-    grants: &[(Uuid, Vec<u8>)],
+    grants: &[EpochGrant],
 ) -> Result<(), RepoError> {
     if !writes(pool, channel_id, writer_account).await? {
         return Err(RepoError::NotFound);
@@ -2026,7 +2071,7 @@ pub async fn rekey(
         }
     }
 
-    for (account_id, grant) in grants {
+    for grant in grants {
         sqlx::query(
             "INSERT INTO channel_grants (channel_id, account_id, grant_blob, epoch)
              SELECT $1, $2, $3, $4
@@ -2036,11 +2081,23 @@ pub async fn rekey(
              DO UPDATE SET grant_blob = EXCLUDED.grant_blob, epoch = EXCLUDED.epoch",
         )
         .bind(channel_id)
-        .bind(account_id)
-        .bind(grant)
+        .bind(grant.account_id)
+        .bind(&grant.grant)
         .bind(epoch)
         .execute(&mut *tx)
         .await?;
+
+        if let Some(approval) = &grant.approval {
+            sqlx::query(
+                "UPDATE channel_member_keys SET approval = $3
+                  WHERE channel_id = $1 AND account_id = $2",
+            )
+            .bind(channel_id)
+            .bind(grant.account_id)
+            .bind(approval)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
 
     tx.commit().await?;
