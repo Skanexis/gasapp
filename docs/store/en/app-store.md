@@ -48,8 +48,8 @@ The app encrypts content (not only HTTPS), so the "authentication only" and
 | `Info.plist` | `ITSAppUsesNonExemptEncryption = YES` |
 | Uses encryption? | Yes |
 | Proprietary or non-standard algorithms? | **No** — standard only: X25519, Ed25519, ML-KEM-1024 (FIPS 203), ML-DSA-65 (FIPS 204), AES-256-GCM, XChaCha20-Poly1305, SHA-2, HKDF, Argon2id |
-| Standard algorithms **not provided by the OS** | **Yes** (the Rust core implements them) → App Store Connect asks for the **French encryption declaration** if the app is distributed in France |
-| France | Either file the declaration with ANSSI and upload it, or exclude France from the country list until it is filed. Owner's decision |
+| Standard algorithms **not provided by the OS** | **Yes** (the Rust core implements them). App Store Connect asks for a French encryption declaration only if the app is distributed in France — it is not, see the next row |
+| France | ✅ Owner's decision, 2026-10-10: **France is excluded from distribution** (App Store Connect → Pricing and Availability → deselect France; Google Play → Production → Countries/regions → remove France). No ANSSI declaration is filed. France can be added back only after a declaration is filed |
 | United States (BIS) | The source code is public → before the first release, one e-mail notice to `crypt@bis.doc.gov` and `enc@nsa.gov` with the repository URL (EAR §742.15(b)). No CCATS is needed for standard algorithms |
 
 Supporting document for any question: `https://gasapp.chat/encryption/`.
