@@ -151,6 +151,9 @@ pub struct AppState {
     pub channel_post_limiter: Mutex<RateLimiter>,
     /// Ограничитель действий читателя канала — по жетону подписчика.
     pub channel_reader_limiter: Mutex<RateLimiter>,
+    /// Ограничитель проверок очереди по токену уведомлений — по
+    /// устройству (см. [`crate::notify`]).
+    pub notify_limiter: Mutex<RateLimiter>,
 }
 
 /// Сколько вложений узел принимает одновременно.
@@ -259,6 +262,10 @@ impl AppState {
             ))),
             channel_reader_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 crate::channels::READER_ACTIONS_PER_MINUTE,
+                nodes,
+            ))),
+            notify_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                crate::notify::NOTIFY_CHECKS_PER_MINUTE,
                 nodes,
             ))),
         }
@@ -806,6 +813,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Токен push: клиент присылает его после регистрации
         // и при каждой смене — провайдеры их отзывают.
         .route("/v1/push/:device_id", put(register_push_token))
+        // Уведомления без провайдера (ADR-040): токен регистрируется за
+        // подписью, очередь по нему проверяется без неё — в фоне
+        // приложение заперто и подписывать ему нечем.
+        .route(
+            "/v1/notify/:device_id",
+            put(crate::notify::register).delete(crate::notify::unregister),
+        )
+        .route("/v1/notify/check", post(crate::notify::check))
         // Проверка готовности узла.
         //
         // 🔐 Не должна торчать в интернет: версия подсказывает

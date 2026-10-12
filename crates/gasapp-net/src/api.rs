@@ -418,6 +418,13 @@ pub struct UpdateChannelRequest {
     pub closed: Option<bool>,
 }
 
+/// Токен уведомлений: устройство называет серверу его SHA-256.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotifyTokenRequest {
+    /// SHA-256 токена, hex.
+    pub token_hash: String,
+}
+
 /// Имя бота: запрос токена под него либо удаление бота.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotNameRequest {

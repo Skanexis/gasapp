@@ -1062,6 +1062,12 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1118,6 +1124,8 @@ fun uniffi_gasapp_checksum_func_fetch_tor_bridges(
 fun uniffi_gasapp_checksum_func_format_safety_number(
 ): Short
 fun uniffi_gasapp_checksum_func_generate_identity_public_key(
+): Short
+fun uniffi_gasapp_checksum_func_generate_notify_token(
 ): Short
 fun uniffi_gasapp_checksum_func_generate_recovery_key(
 ): Short
@@ -1305,6 +1313,8 @@ fun uniffi_gasapp_checksum_method_messenger_refresh_premium(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_register(
 ): Short
+fun uniffi_gasapp_checksum_method_messenger_register_notify_token(
+): Short
 fun uniffi_gasapp_checksum_method_messenger_rekey_storage(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_remove_channel_admin(
@@ -1392,6 +1402,8 @@ fun uniffi_gasapp_checksum_method_messenger_unblock_chat(
 fun uniffi_gasapp_checksum_method_messenger_unlock_vault(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_unread_channel_posts(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_unregister_notify_token(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_update_channel(
 ): Short
@@ -1617,6 +1629,8 @@ fun uniffi_gasapp_fn_method_messenger_refresh_premium(`ptr`: Pointer,`nowMillis`
 ): Byte
 fun uniffi_gasapp_fn_method_messenger_register(`ptr`: Pointer,`username`: RustBuffer.ByValue,`email`: RustBuffer.ByValue,`emailCode`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_gasapp_fn_method_messenger_register_notify_token(`ptr`: Pointer,`token`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_gasapp_fn_method_messenger_rekey_storage(`ptr`: Pointer,`newKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_remove_channel_admin(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`verifyKey`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1705,6 +1719,8 @@ fun uniffi_gasapp_fn_method_messenger_unlock_vault(`ptr`: Pointer,`pin`: RustBuf
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_unread_channel_posts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
+fun uniffi_gasapp_fn_method_messenger_unregister_notify_token(`ptr`: Pointer,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_gasapp_fn_method_messenger_update_channel(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`description`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_vault_file_count(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1752,6 +1768,8 @@ fun uniffi_gasapp_fn_func_fetch_tor_bridges(`country`: RustBuffer.ByValue,uniffi
 fun uniffi_gasapp_fn_func_format_safety_number(`local`: RustBuffer.ByValue,`remote`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_func_generate_identity_public_key(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_gasapp_fn_func_generate_notify_token(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_func_generate_recovery_key(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1972,6 +1990,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_func_generate_identity_public_key() != 11948.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_func_generate_notify_token() != 12599.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_func_generate_recovery_key() != 30926.toShort()) {
@@ -2253,6 +2274,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_register() != 49579.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_gasapp_checksum_method_messenger_register_notify_token() != 59837.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_gasapp_checksum_method_messenger_rekey_storage() != 2038.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2383,6 +2407,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_unread_channel_posts() != 22916.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_unregister_notify_token() != 57443.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_update_channel() != 49477.toShort()) {
@@ -4126,6 +4153,15 @@ public interface MessengerInterface {
     fun `register`(`username`: kotlin.String, `email`: kotlin.String, `emailCode`: kotlin.String, `nowMillis`: kotlin.Long): FfiAccount
     
     /**
+     * Называет серверу токен уведомлений устройства. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — токен не той длины либо сервер недоступен.
+     */
+    fun `registerNotifyToken`(`token`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
+    
+    /**
      * Перешифровывает базу новым ключом.
      *
      * Нужен ровно для одного: перевести базу, созданную схемой
@@ -4681,6 +4717,15 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
     fun `unreadChannelPosts`(): kotlin.ULong
+    
+    /**
+     * Отзывает токен уведомлений. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    fun `unregisterNotifyToken`(`nowMillis`: kotlin.Long)
     
     /**
      * Меняет название и описание своего канала. Сетевой вызов.
@@ -6545,6 +6590,25 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
+     * Называет серверу токен уведомлений устройства. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — токен не той длины либо сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `registerNotifyToken`(`token`: kotlin.ByteArray, `nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_register_notify_token(
+        it, FfiConverterByteArray.lower(`token`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Перешифровывает базу новым ключом.
      *
      * Нужен ровно для одного: перевести базу, созданную схемой
@@ -7561,6 +7625,25 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     }
     )
     }
+    
+
+    
+    /**
+     * Отзывает токен уведомлений. Сетевой вызов.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — сервер недоступен.
+     */
+    @Throws(FfiException::class)override fun `unregisterNotifyToken`(`nowMillis`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_unregister_notify_token(
+        it, FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
     
 
     
@@ -11739,6 +11822,18 @@ public object FfiConverterSequenceSequenceTypeFfiMessageButton: FfiConverterRust
             return FfiConverterByteArray.lift(
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_func_generate_identity_public_key(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Новый случайный токен уведомлений. Без сети и без базы.
+         */ fun `generateNotifyToken`(): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_func_generate_notify_token(
         _status)
 }
     )

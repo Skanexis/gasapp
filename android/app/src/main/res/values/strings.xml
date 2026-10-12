@@ -970,4 +970,15 @@
     <string name="channel_report_sent">Report sent</string>
     <string name="channel_request_row_key_log">\@%1$s · key in the log</string>
     <string name="channel_request_body_key_log">You have not verified this person, but their key has stood under this name in the key log for more than a day: the server could not have swapped it unnoticed. Whoever you approve gets the channel read key — it cannot be taken back.</string>
+    <string name="notify_channel">New messages</string>
+    <string name="notify_channel_hint">A notice that something has arrived. It never contains the text or the sender.</string>
+    <string name="notify_title">New messages</string>
+    <string name="notify_body">Open GasApp to read them</string>
+    <string name="notifications_enabled">New message notifications</string>
+    <string name="notifications_enabled_hint">Without the text or the sender: they arrive while the app is locked, and there is nothing to decrypt them with.</string>
+    <string name="notifications_sound_system">Sound and vibration</string>
+    <string name="notifications_allow">Allow in phone settings</string>
+    <string name="notifications_blocked">Notifications are turned off for GasApp in the phone settings.</string>
+    <string name="notifications_tor">With Tor or a proxy, notifications arrive only while the app is open: a background check would go directly and reveal your IP address.</string>
+    <string name="notifications_how">About every 15 minutes the phone asks the server whether anything is waiting — with a separate token that answers only “yes” or “no”. The server sees that your phone is online, as it would during any connection, and does not record when it asked. Messages themselves are fetched only when you open the app.</string>
 </resources>

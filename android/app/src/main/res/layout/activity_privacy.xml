@@ -69,10 +69,6 @@
                 <include
                     android:id="@+id/privacy_screenshots"
                     layout="@layout/item_settings_toggle" />
-
-<include
-                    android:id="@+id/privacy_preview"
-                    layout="@layout/item_settings_toggle" />
             </org.gasapp.app.components.GasAppGroup>
 
             <!--

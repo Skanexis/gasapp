@@ -60,13 +60,10 @@ class PrivacyActivity : AppCompatActivity() {
 
         bindPresence()
         bindLastSeen()
-        // Отметка «был(а) в сети» не собирается и не рассылается, а
-        // уведомлений нет вовсе (см. Settings): переключатели без
-        // действия скрыты, пока за ними ничего не стоит.
+        // Отметка «был(а) в сети» не собирается и не рассылается:
+        // переключатель без действия скрыт, пока за ним ничего не стоит.
         findViewById<android.view.View>(R.id.privacy_last_seen).visibility = android.view.View.GONE
         bindScreenshots()
-        bindNotificationPreview()
-        findViewById<android.view.View>(R.id.privacy_preview).visibility = android.view.View.GONE
         bindBiometric()
         bindWipe()
         bindAutoLock()
@@ -143,24 +140,6 @@ class PrivacyActivity : AppCompatActivity() {
             if (wanted) return@bind writeBool(Settings.BLOCK_SCREENSHOTS, true)
 
             weakenAfterPin { if (writeBool(Settings.BLOCK_SCREENSHOTS, false)) toggle.isChecked = false }
-            false
-        }
-    }
-
-    private fun bindNotificationPreview() {
-        lateinit var toggle: SettingsToggle
-
-        toggle = SettingsToggle.bind(
-            root = findViewById(R.id.privacy_preview),
-            label = R.string.privacy_preview,
-            hint = R.string.privacy_preview_hint,
-            icon = R.drawable.ic_bell,
-            checked = readBool(Settings.NOTIFICATION_PREVIEW, default = false),
-        ) { wanted ->
-            // 🔐 Текст сообщений на экране блокировки — только по PIN.
-            if (!wanted) return@bind writeBool(Settings.NOTIFICATION_PREVIEW, false)
-
-            weakenAfterPin { if (writeBool(Settings.NOTIFICATION_PREVIEW, true)) toggle.isChecked = true }
             false
         }
     }

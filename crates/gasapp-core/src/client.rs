@@ -61,6 +61,7 @@ mod channels;
 mod keyboards;
 mod kt;
 mod network;
+mod notify;
 mod pq;
 mod requests;
 mod sealed;
@@ -83,6 +84,7 @@ use gasapp_types::{
 pub use keyboards::ButtonCallback;
 pub use kt::{KtSelfCheck, KtVerdict};
 pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
+pub use notify::{new_notify_token, NOTIFY_TOKEN_LEN};
 use rand_core::{CryptoRng, RngCore};
 pub use signup::PendingRegistration;
 

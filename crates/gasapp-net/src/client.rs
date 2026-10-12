@@ -32,10 +32,11 @@ use crate::api::{
     ChannelReactRequest, ChannelResponse, ChannelSeenRequest, CreateChannelRequest,
     DeleteChannelMediaRequest, DiscoveryResponse, EmailChallengeResponse, EmailCodeRequest,
     EnvelopeResponse, JoinChannelRequest, KtHeadsResponse, KtProofsRequest, KtProofsResponse,
-    PublishKeysRequest, PublishPostRequest, PublishPostResponse, RecoverAccountRequest,
-    RegisterBotRequest, RegisterRequest, RegisterResponse, RekeyChannelRequest,
-    RemoveChannelAdminRequest, ReplacePostRequest, ReportChannelRequest, SealedAccessRequest,
-    SealedReportRequest, SealedReportResponse, SealedSendRequest, UpdateChannelRequest,
+    NotifyTokenRequest, PublishKeysRequest, PublishPostRequest, PublishPostResponse,
+    RecoverAccountRequest, RegisterBotRequest, RegisterRequest, RegisterResponse,
+    RekeyChannelRequest, RemoveChannelAdminRequest, ReplacePostRequest, ReportChannelRequest,
+    SealedAccessRequest, SealedReportRequest, SealedReportResponse, SealedSendRequest,
+    UpdateChannelRequest,
 };
 
 /// Метод HTTP.
@@ -1061,6 +1062,51 @@ impl<T: Transport> ApiClient<T> {
         Ok(())
     }
 
+    /// Называет серверу хеш токена уведомлений устройства (ADR-040).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn set_notify_token(
+        &self,
+        device_id: &str,
+        request: &NotifyTokenRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let device_id = canonical_uuid(device_id)?;
+
+        self.send_signed(
+            Method::Put,
+            format!("/v1/notify/{device_id}"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Забывает токен уведомлений устройства на сервере.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn delete_notify_token(
+        &self,
+        device_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let device_id = canonical_uuid(device_id)?;
+
+        self.send_signed(
+            Method::Delete,
+            format!("/v1/notify/{device_id}"),
+            None,
+            signer,
+        )?;
+
+        Ok(())
+    }
+
     /// Регистрирует бота по токену владельца. Без подписи: аккаунта у
     /// программы бота ещё нет.
     ///
@@ -1865,6 +1911,37 @@ mod tests {
             pow_challenge: "cc".to_owned(),
             pow_nonce: 7,
         }
+    }
+
+    /// Токен уведомлений уходит хешем, за подписью и только на путь
+    /// своего устройства.
+    #[test]
+    fn notify_token_is_registered_by_hash() {
+        let client = ApiClient::new(FakeTransport::with(204, ""));
+
+        client
+            .set_notify_token(
+                "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+                &NotifyTokenRequest {
+                    token_hash: "ab".repeat(32),
+                },
+                &TestSigner,
+            )
+            .expect("регистрация");
+
+        let sent = client.transport.last_request();
+        assert_eq!(sent.method, Method::Put);
+        assert_eq!(sent.path, "/v1/notify/3f2504e0-4f89-11d3-9a0c-0305e82c3301");
+        assert!(sent
+            .body
+            .as_deref()
+            .unwrap_or_default()
+            .contains(&"ab".repeat(32)));
+        assert!(!header(&sent, "x-gasapp-signature").is_empty());
+
+        assert!(client
+            .delete_notify_token("../keys/x", &TestSigner)
+            .is_err());
     }
 
     #[test]

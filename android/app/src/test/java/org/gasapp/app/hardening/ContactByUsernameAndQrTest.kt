@@ -78,12 +78,16 @@ class ContactByUsernameAndQrTest {
                 "android.permission.ACCESS_NETWORK_STATE",
                 "android.permission.VIBRATE",
                 "android.permission.WAKE_LOCK",
+                // Уведомления «есть новое» (ADR-040): показ и восстановление
+                // фоновой проверки после перезагрузки.
+                "android.permission.POST_NOTIFICATIONS",
+                "android.permission.RECEIVE_BOOT_COMPLETED",
                 // Только для встроенного сканера QR, запрашивается в момент сканирования.
                 "android.permission.CAMERA",
                 // Добавляет androidx.biometric: вход по отпечатку на старых версиях.
                 "android.permission.USE_FINGERPRINT",
             ),
-            requested - setOf("android.permission.POST_NOTIFICATIONS", "android.permission.USE_BIOMETRIC"),
+            requested - setOf("android.permission.USE_BIOMETRIC"),
         )
     }
 

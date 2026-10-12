@@ -129,9 +129,9 @@ dropped and how long it lasted. Such a trace reveals a daily routine — and
 that two people tend to be online at the same time. Encrypting the content
 does not protect against this: it is not content.
 
-⚠️ There is no background connection in any build today (see "Push
-notifications" below): the presence trace described above is the same for
-everyone.
+There is no persistent background connection in any build. The background
+notification check is a short request about every quarter of an hour (see
+"Push notifications" below).
 
 The full list of what is stored and for how long is in
 [`data-retention-policy.md`](data-retention-policy.md).
@@ -332,24 +332,33 @@ operator decides or the channel is deleted.
 
 ## Push notifications
 
-⚠️ **There are no push notifications in any build today.** A new message
-arrives while the chat list or a conversation is open; the rest arrive
-the next time you open the app. Notifications for messages that arrive
-while the app is closed are not shown.
+There are no Google, Apple or Firebase services in notifications: no third
+party learns when someone writes to you.
 
-This section used to describe delivery through Firebase in the build with
-Google services and a persistent connection in the F-Droid build. Neither
-existed in the app: both implementations were stubs, and the server does
-not send push.
+**How it works.** While the app is locked, your messages are encrypted
+under your PIN and there is nothing to read them with. So about every 15
+minutes (the phone's system decides when) the app asks the server one
+thing: is anything waiting for this device. It asks with a separate random
+**notification token**, stored on the phone outside the encrypted database;
+the server stores only its hash. The token cannot read or fetch messages —
+it only gets a "yes" or "no".
 
-When push arrives, it will work as follows, and this section will be
-updated with it:
+If the answer is "yes", the phone shows a **"New messages" notification —
+without the text and without the sender**: there is nothing to decrypt
+them with at that moment. The messages themselves are fetched when you
+open the app.
 
-* 🔐 a notification will carry **only a "something new" flag** — no text,
-  no sender, no chat. Anything in the payload would be seen by Apple and
-  Google;
-* the F-Droid build will do without them, keeping its own connection, at
-  the cost of battery.
+**What the server sees.** From these requests — that the phone is on and
+online, as with any connection. It does not record when they were made.
+On a direct connection it also sees the IP address.
+
+**With Tor or a proxy** the background check does not go online: a direct
+request would reveal the address to someone who chose to hide it. New
+messages then arrive only while the app is open.
+
+Notifications are turned off in Settings → Notifications; the server then
+forgets the token. Deleting the account deletes the token together with
+the device.
 
 ## What stays on your device
 

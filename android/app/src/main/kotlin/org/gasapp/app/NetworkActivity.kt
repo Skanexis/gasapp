@@ -217,6 +217,8 @@ class NetworkActivity : AppCompatActivity() {
                     // выбранным способом. Открытый сокет уведомлений
                     // переподключится через него при ближайшем разрыве.
                     NetworkProxy.apply(this@NetworkActivity, mode, bridges)
+                    // Фоновая проверка уведомлений ходит только напрямую.
+                    runCatching { org.gasapp.app.notify.NotifySetup.sync(this@NetworkActivity, messenger) }
                     bridges
                 }
             }

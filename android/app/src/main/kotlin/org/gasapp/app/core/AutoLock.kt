@@ -78,6 +78,10 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
     /** Сколько экранов приложения сейчас показано. */
     private var visible = 0
 
+    /** Виден ли сейчас хоть один экран приложения. */
+    val inForeground: Boolean
+        get() = visible > 0
+
     /**
      * Момент ухода в фон, `0` — приложение на переднем плане.
      *

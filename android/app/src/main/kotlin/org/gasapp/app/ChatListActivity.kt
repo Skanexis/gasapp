@@ -25,6 +25,8 @@ import org.gasapp.app.net.EmbeddedTor
 import org.gasapp.app.net.ClockCheck
 import org.gasapp.app.net.NetworkProxy
 import org.gasapp.app.net.NotificationSocket
+import org.gasapp.app.notify.NotifyPrefs
+import org.gasapp.app.notify.NotifySetup
 import org.gasapp.app.ui.BottomNav
 import org.gasapp.app.ui.ChatListAdapter
 import org.gasapp.app.ui.ChatSummary
@@ -107,6 +109,38 @@ class ChatListActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.new_chat_button).setOnClickListener { promptNewChat() }
 
         watchTor()
+        offerNotifications()
+    }
+
+    /**
+     * Разрешение на уведомления (Android 13+) — один раз, после входа, и
+     * синхронизация токена уведомлений (ADR-040).
+     */
+    private val askNotifications =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {
+            syncNotifications()
+        }
+
+    private fun offerNotifications() {
+        val prefs = NotifyPrefs(this)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            prefs.enabled && !prefs.askedPermission &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            prefs.askedPermission = true
+            askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            syncNotifications()
+        }
+    }
+
+    private fun syncNotifications() {
+        val app = applicationContext
+        org.gasapp.app.core.AppScope.launch(Dispatchers.IO) {
+            runCatching { NotifySetup.sync(app, Core.messenger()) }
+        }
     }
 
     /**
@@ -211,6 +245,8 @@ class ChatListActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Приложение открыто: уведомление «есть новое» больше не нужно.
+        NotifySetup.onAppOpened(this)
         loadChats()
 
         // Новый конверт — повод забрать очередь заново: так появляется
