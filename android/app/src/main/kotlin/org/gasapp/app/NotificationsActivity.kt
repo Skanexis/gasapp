@@ -2,90 +2,124 @@
 
 package org.gasapp.app
 
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings as SystemSettings
+import android.view.View
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.gasapp.app.components.GasAppButton
 import org.gasapp.app.core.Core
 import org.gasapp.app.core.SecureWindow
-import org.gasapp.app.core.Settings
+import org.gasapp.app.notify.NotifyPrefs
+import org.gasapp.app.notify.NotifySetup
+import org.gasapp.app.notify.Notifier
 import org.gasapp.app.ui.SettingsToggle
 
 /**
- * Настройки уведомлений.
+ * Настройки уведомлений (ADR-040).
  *
  * # Что здесь на самом деле настраивается
  *
- * 🔐 Не то, что присылает сервер, а то, что подставляет приложение.
- * Уведомление приходит без содержимого: сервер отправляет флаг
- * «есть новое», и ни текста, ни отправителя, ни чата в нём нет
- * (ADR-014). Иначе Apple и Google видели бы, кто с кем переписывается,
- * — а мессенджер, отдающий это посреднику, перестаёт быть тем,
- * за что его выбрали.
+ * Приходит ли уведомление «есть новые сообщения» вообще. 🔐 В нём нет
+ * ни текста, ни отправителя: оно показывается, пока приложение заперто,
+ * и расшифровать ему нечего. Поэтому переключателей «показывать текст»
+ * здесь нет — обещать их значило бы обещать то, чего нет.
  *
- * Приложение расшифровывает сообщение на устройстве и решает, сколько
- * из него показать на заблокированном экране. Это решение и живёт
- * здесь.
+ * Звук и вибрация — настройки канала в системе: Android хранит их сам,
+ * и второй, приложенческий, выключатель только расходился бы с ними.
  */
 class NotificationsActivity : AppCompatActivity() {
+
+    private lateinit var toggle: SettingsToggle
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 🔐 Блокировка снимков экрана по настройке пользователя.
         SecureWindow.apply(this)
-
         setContentView(R.layout.activity_notifications)
 
         findViewById<ImageView>(R.id.notifications_back).setOnClickListener { finish() }
 
-        SettingsToggle.bind(
-            root = findViewById(R.id.notifications_preview),
-            label = R.string.notifications_preview,
-            hint = R.string.notifications_preview_hint,
-            icon = R.drawable.ic_chat,
-            checked = readBool(Settings.NOTIFICATION_PREVIEW, default = false),
-        ) { wanted -> writeBool(Settings.NOTIFICATION_PREVIEW, wanted) }
+        val prefs = NotifyPrefs(this)
 
-        SettingsToggle.bind(
-            root = findViewById(R.id.notifications_sender),
-            label = R.string.notifications_sender,
-            hint = R.string.notifications_sender_hint,
-            icon = R.drawable.ic_users,
-            checked = readBool(NOTIFICATION_SENDER, default = false),
-        ) { wanted -> writeBool(NOTIFICATION_SENDER, wanted) }
-
-        SettingsToggle.bind(
-            root = findViewById(R.id.notifications_sound),
-            label = R.string.notifications_sound,
+        toggle = SettingsToggle.bind(
+            root = findViewById(R.id.notifications_enabled),
+            label = R.string.notifications_enabled,
+            hint = R.string.notifications_enabled_hint,
             icon = R.drawable.ic_bell,
-            checked = readBool(Settings.NOTIFICATION_SOUND, default = true),
-        ) { wanted -> writeBool(Settings.NOTIFICATION_SOUND, wanted) }
+            checked = prefs.enabled,
+        ) { wanted ->
+            prefs.enabled = wanted
+            if (wanted && !Notifier.permitted(this)) openSystemSettings()
+            resync()
+            true
+        }
 
-        SettingsToggle.bind(
-            root = findViewById(R.id.notifications_vibrate),
-            label = R.string.notifications_vibrate,
-            icon = R.drawable.ic_mobile,
-            checked = readBool(NOTIFICATION_VIBRATE, default = true),
-        ) { wanted -> writeBool(NOTIFICATION_VIBRATE, wanted) }
+        findViewById<View>(R.id.notifications_sound).apply {
+            findViewById<ImageView>(R.id.row_icon).setImageResource(R.drawable.ic_settings)
+            findViewById<TextView>(R.id.row_label).setText(R.string.notifications_sound_system)
+            findViewById<TextView>(R.id.row_value).visibility = View.GONE
+            setOnClickListener {
+                Notifier.ensureChannel(this@NotificationsActivity)
+                runCatching {
+                    startActivity(
+                        Intent(SystemSettings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                            .putExtra(SystemSettings.EXTRA_APP_PACKAGE, packageName)
+                            .putExtra(SystemSettings.EXTRA_CHANNEL_ID, Notifier.CHANNEL),
+                    )
+                }
+            }
+        }
+
+        findViewById<GasAppButton>(R.id.notifications_allow).setOnClickListener { openSystemSettings() }
     }
 
-    private fun readBool(key: String, default: Boolean): Boolean =
-        runCatching { Core.messenger().settingBool(key, default) }.getOrDefault(default)
+    override fun onResume() {
+        super.onResume()
+        // Разрешение могли выдать или забрать в системных настройках.
+        resync()
+    }
 
-    private fun writeBool(key: String, enabled: Boolean): Boolean =
-        runCatching { Core.messenger().setSettingBool(key, enabled) }.isSuccess
+    private fun resync() {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { NotifySetup.sync(this@NotificationsActivity, Core.messenger()) }
+            }
+            renderState()
+        }
+    }
 
-    private companion object {
-        /**
-         * Показывать ли имя отправителя в уведомлении.
-         *
-         * 🔐 Выключено по умолчанию: имя на заблокированном экране
-         * видно любому, кто рядом, и выдаёт круг общения, даже когда
-         * текст скрыт.
-         */
-        const val NOTIFICATION_SENDER = "notification_sender"
+    /** Почему уведомлений сейчас не будет — если не будет. */
+    private fun renderState() {
+        val prefs = NotifyPrefs(this)
+        val permitted = Notifier.permitted(this)
+        val state = findViewById<TextView>(R.id.notifications_state)
+        val allow = findViewById<View>(R.id.notifications_allow)
 
-        /** Вибрация уведомлений. */
-        const val NOTIFICATION_VIBRATE = "notification_vibrate"
+        val reason = when {
+            !prefs.enabled -> null
+            !permitted -> R.string.notifications_blocked
+            !prefs.direct -> R.string.notifications_tor
+            else -> null
+        }
+
+        state.visibility = if (reason == null) View.GONE else View.VISIBLE
+        reason?.let(state::setText)
+        allow.visibility = if (prefs.enabled && !permitted) View.VISIBLE else View.GONE
+    }
+
+    private fun openSystemSettings() {
+        runCatching {
+            startActivity(
+                Intent(SystemSettings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(SystemSettings.EXTRA_APP_PACKAGE, packageName),
+            )
+        }
     }
 }

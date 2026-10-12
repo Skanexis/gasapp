@@ -1022,4 +1022,15 @@
     <string name="channel_report_sent">Жалоба отправлена</string>
     <string name="channel_request_row_key_log">\@%1$s · ключ в журнале</string>
     <string name="channel_request_body_key_log">Вы с этим человеком не сверялись, но его ключ стоит под этим именем в журнале ключей больше суток: подменить его незаметно сервер не мог. Одобренный получит ключ чтения канала — забрать его обратно нельзя.</string>
+    <string name="notify_channel">Новые сообщения</string>
+    <string name="notify_channel_hint">Знак, что что-то пришло. Текста и отправителя в нём не бывает.</string>
+    <string name="notify_title">Новые сообщения</string>
+    <string name="notify_body">Откройте GasApp, чтобы прочитать</string>
+    <string name="notifications_enabled">Уведомлять о новых сообщениях</string>
+    <string name="notifications_enabled_hint">Без текста и отправителя: уведомление приходит, пока приложение заперто, и расшифровать ему нечем.</string>
+    <string name="notifications_sound_system">Звук и вибрация</string>
+    <string name="notifications_allow">Разрешить в настройках телефона</string>
+    <string name="notifications_blocked">Уведомления GasApp выключены в настройках телефона.</string>
+    <string name="notifications_tor">С Tor или прокси уведомления приходят, только пока приложение открыто: фоновая проверка пошла бы напрямую и выдала бы ваш IP-адрес.</string>
+    <string name="notifications_how">Примерно раз в 15 минут телефон спрашивает сервер, нет ли чего-то для него, — отдельным токеном, который отвечает только «да» или «нет». Сервер видит, что телефон в сети, как и при любом соединении, и не записывает, когда его спрашивали. Сами сообщения забираются, только когда вы открываете приложение.</string>
 </resources>

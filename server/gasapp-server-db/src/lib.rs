@@ -23,6 +23,7 @@ pub mod bots;
 pub mod channels;
 pub mod email;
 pub mod kt;
+pub mod notify;
 pub mod repo;
 pub mod runtime;
 

@@ -141,7 +141,7 @@ Or install the app on a second device and register a second account.
 
 Notes:
 - Messages are end-to-end encrypted; the server cannot read them.
-- New messages arrive while the app is open (no push notifications yet).
+- Notifications: about every 15 minutes the app checks for new messages and shows "New messages" without the text or sender. With Tor on, messages arrive only while the app is open.
 - Account deletion: Settings > Privacy > Delete account.
 - Tor is optional: Settings > Privacy > Network > Tor (built in).
   It hides the IP address from the server.

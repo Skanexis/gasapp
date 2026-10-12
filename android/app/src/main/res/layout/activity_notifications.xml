@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Уведомления.
+  Уведомления (ADR-040).
 
-  🔐 Само уведомление приходит без содержимого: сервер отправляет
-  только флаг «есть новое», а текста, отправителя и чата в нём нет
-  (ADR-014). Всё, что настраивается здесь, — что подставит приложение
-  уже на устройстве, после расшифровки.
+  🔐 Уведомление приходит, пока приложение заперто, и расшифровать ему
+  нечего: в нём нет ни текста, ни отправителя — только «есть новое».
+  Настраивается здесь, приходит ли оно вообще; звук и вибрация — в
+  системных настройках канала.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_base"
@@ -36,8 +35,8 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:fillViewport="true"
-        android:defaultFocusHighlightEnabled="false">
+        android:defaultFocusHighlightEnabled="false"
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -45,38 +44,42 @@
             android:orientation="vertical"
             android:padding="@dimen/screen_padding">
 
-            <TextView
-                style="@style/GasAppSectionLabel"
-                android:text="@string/notifications_section_content" />
             <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
-                    android:id="@+id/notifications_preview"
+                    android:id="@+id/notifications_enabled"
                     layout="@layout/item_settings_toggle" />
-
-<include
-                    android:id="@+id/notifications_sender"
-                    layout="@layout/item_settings_toggle" />
-            </org.gasapp.app.components.GasAppGroup>
-            <TextView
-                style="@style/GasAppCaption"
-                android:layout_marginTop="@dimen/space_m"
-                android:text="@string/notifications_content_note" />
-            <TextView
-                style="@style/GasAppSectionLabel"
-                android:layout_marginTop="@dimen/space_l"
-                android:text="@string/notifications_section_alerts" />
-            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
 
                 <include
                     android:id="@+id/notifications_sound"
-                    layout="@layout/item_settings_toggle" />
-
-<include
-                    android:id="@+id/notifications_vibrate"
-                    layout="@layout/item_settings_toggle" />
+                    layout="@layout/item_settings_row" />
             </org.gasapp.app.components.GasAppGroup>
 
+            <!-- Почему уведомлений сейчас не будет: запрет системы или Tor. -->
+            <TextView
+                android:id="@+id/notifications_state"
+                style="@style/GasAppCaption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_m"
+                android:textColor="@color/status_warn"
+                android:visibility="gone" />
+
+            <org.gasapp.app.components.GasAppButton
+                android:id="@+id/notifications_allow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/notifications_allow"
+                android:visibility="gone"
+                app:buttonVariant="secondary" />
+
+            <TextView
+                style="@style/GasAppCaption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_m"
+                android:text="@string/notifications_how" />
         </LinearLayout>
     </ScrollView>
 

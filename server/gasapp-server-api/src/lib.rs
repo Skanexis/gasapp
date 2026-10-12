@@ -46,6 +46,7 @@ pub mod email;
 pub mod health;
 pub mod hub;
 pub mod kt;
+pub mod notify;
 pub mod pow;
 pub mod push;
 pub mod rate_limit;

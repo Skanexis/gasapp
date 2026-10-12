@@ -35,6 +35,7 @@ pub mod channels;
 pub mod keyboards;
 pub mod messenger;
 pub mod network;
+pub mod notify;
 pub mod tor;
 
 /// Длина отпечатка identity-ключа в байтах.

@@ -53,6 +53,10 @@ object AccountWipe {
     fun wipe(context: Context): Boolean {
         Core.close()
 
+        // Расписание фоновой проверки, токен уведомлений и само
+        // уведомление: следа от аккаунта не должно остаться и здесь.
+        runCatching { org.gasapp.app.notify.NotifySetup.forget(context) }
+
         var clean = true
 
         // Ключ Keystore — первым: без него всё остальное уже

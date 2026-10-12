@@ -3118,3 +3118,77 @@ async fn revoking_premium_removes_the_bots() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+// ---------------------------------------------------------------------------
+//  Уведомления по токену (миграция 0028, ADR-040)
+// ---------------------------------------------------------------------------
+
+/// Токен уведомлений отвечает только «есть ли новое»: регистрируется за
+/// подписью, проверяется без неё, неверный токен не отличим от чужого
+/// устройства, а частый опрос упирается в предел.
+#[tokio::test]
+async fn a_notify_token_answers_only_whether_mail_waits() {
+    use sha2::{Digest as _, Sha256};
+
+    let (state, _mailer) = require_state!();
+    let private = device_key();
+    let device = register(&state, &unique_name("notify"), &private).await;
+    let token = [0x5Au8; 32];
+    let check =
+        |token: [u8; 32]| serde_json::json!({ "device_id": device, "token": hex::encode(token) });
+
+    // Токена ещё нет — отказ.
+    let (status, _) = post(&state, "/v1/notify/check", check(token)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Регистрация — только за подписью.
+    let body = serde_json::json!({ "token_hash": hex::encode(Sha256::digest(token)) });
+    let (status, _) = post(&state, &format!("/v1/notify/{device}"), body.clone()).await;
+    assert_ne!(status, StatusCode::NO_CONTENT);
+    let (status, _) = signed(
+        &state,
+        &private,
+        "PUT",
+        &format!("/v1/notify/{device}"),
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, answer) = post(&state, "/v1/notify/check", check(token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(answer["pending"], false);
+
+    gasapp_server_db::repo::enqueue_envelope(&state.pool, device, b"sealed", 3600)
+        .await
+        .unwrap();
+    let (_, answer) = post(&state, "/v1/notify/check", check(token)).await;
+    assert_eq!(answer["pending"], true);
+    // Кроме «да» в ответе ничего нет.
+    assert_eq!(answer.as_object().unwrap().len(), 1);
+
+    // Чужой токен — тот же отказ, что у несуществующего устройства.
+    let (status, _) = post(&state, "/v1/notify/check", check([0x11; 32])).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Частый опрос упирается в предел.
+    let (status, _) = post(&state, "/v1/notify/check", check(token)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+    // Выключение уведомлений забывает токен.
+    let (status, _) = signed(
+        &state,
+        &private,
+        "DELETE",
+        &format!("/v1/notify/{device}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM notify_tokens WHERE device_id = $1")
+        .bind(device)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}

@@ -246,11 +246,8 @@ class SecurityCenterActivity : AppCompatActivity() {
                 passed = readBool(messenger, Settings.BLOCK_SCREENSHOTS, default = true) == true,
                 fix = screen(PrivacyActivity::class.java),
             ),
-            // ⚠️ Проверки «текст скрыт в уведомлениях» нет, пока нет
-            // уведомлений: приложение их не показывает вовсе (см.
-            // `Settings.NOTIFICATION_PREVIEW`). Прежде она засчитывалась
-            // по настройке, которую никто не читает, — и «проваливалась»
-            // у того, кто её включил, хотя показывать было нечего.
+            // Проверки «текст скрыт в уведомлениях» нет: текста в них не
+            // бывает по построению (ADR-040), и проверять нечего.
             Check(
                 label = R.string.security_check_autolock,
                 passed = autoLockWithinLimit(messenger),

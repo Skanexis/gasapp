@@ -111,7 +111,7 @@ TOR ВСТРОЕН
 ЧЕСТНО О СТАТУСЕ
 GasApp — открытый проект, и он ещё не прошёл независимый аудит безопасности. Не полагайтесь на него там, где на кону жизнь или свобода. Исходный код открыт: каждое утверждение выше можно проверить по нему.
 
-Пока нет звонков, голосовых сообщений и групповых чатов. Новые сообщения приходят, пока приложение открыто: push-уведомлений ещё нет.
+Пока нет звонков, голосовых сообщений и групповых чатов. Уведомления о новых сообщениях — без Google и без текста: телефон сам раз в 15 минут спрашивает сервер, есть ли что-то новое.
 ```
 
 EN:
@@ -150,7 +150,7 @@ ALSO
 HONEST STATUS
 GasApp is an open-source project and has not yet had an independent security audit. Do not rely on it where life or liberty is at stake. The source code is open: every claim above can be checked against it.
 
-Calls, voice messages and group chats are not available yet. New messages arrive while the app is open: there are no push notifications yet.
+Calls, voice messages and group chats are not available yet. Message notifications work without Google and without the text: about every 15 minutes the phone asks the server whether anything new has arrived.
 ```
 
 ### Что нового (≤ 500)
