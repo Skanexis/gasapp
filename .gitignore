@@ -124,3 +124,7 @@ server/deploy/tls/key.pem
 # Собранный сайт документов (tools/build-site.py) и снимки проверки.
 /site/
 /.playwright-mcp/
+
+# Комплект развёртывания с адресами машин и его настройки (server/deploy/prepare-bundle.sh)
+/server/deploy-bundle/
+/server/deploy/bundle.conf
