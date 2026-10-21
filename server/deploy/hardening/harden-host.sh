@@ -11,6 +11,8 @@
 #
 # Необязательно:
 #     --ssh-from 203.0.113.0/24   SSH только с этих адресов (через пробел)
+#     --relay-from 10.0.0.0/24    почтовый релей (порт 25) — только для этих
+#                                 адресов: узлы отдают ему письма с кодом
 #     --auto-reboot               перезагружаться после обновлений ядра в 04:30
 #     --dry-run                   показать, что будет сделано
 #
@@ -41,7 +43,7 @@
 
 set -euo pipefail
 
-role="" admin="" lb="" nodes="" onion="" ssh_from="" auto_reboot=0 dry=0
+role="" admin="" lb="" nodes="" onion="" ssh_from="" relay_from="" auto_reboot=0 dry=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -51,6 +53,7 @@ while [[ $# -gt 0 ]]; do
         --nodes)       nodes="$2"; shift 2 ;;
         --onion)       onion="$2"; shift 2 ;;
         --ssh-from)    ssh_from="$2"; shift 2 ;;
+        --relay-from)  relay_from="$2"; shift 2 ;;
         --auto-reboot) auto_reboot=1; shift ;;
         --dry-run)     dry=1; shift ;;
         -h|--help)     sed -n '3,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -290,6 +293,10 @@ fi
 if has_role db; then
     for node in $nodes; do run ufw allow from "$node" to any port 5432 proto tcp; done
 fi
+# Почтовый релей (Postfix) на балансировщике: письма с кодом от узлов.
+# Только внутренней сети — открытый в интернет релей рассылал бы спам
+# от имени домена.
+for net in $relay_from; do run ufw allow from "$net" to any port 25 proto tcp; done
 run ufw logging off
 run ufw --force enable
 
@@ -309,8 +316,29 @@ run usermod -aG systemd-journal gasapp-monitor
 run install -d -m 755 -o root -g root /etc/gasapp /etc/gasapp/pki /opt/gasapp
 # Секреты: только root. Службы получают их через LoadCredential.
 run install -d -m 700 -o root -g root /etc/gasapp/credentials
-if has_role db && id postgres > /dev/null 2>&1; then
-    run install -d -m 700 -o postgres -g postgres /var/backups/gasapp
+if has_role db; then
+    # Зашифрованные копии базы администратор забирает на свою машину
+    # (rsync под --admin): каталог принадлежит группе gasapp-backup,
+    # и файлы получают её сами (setgid). Читать группе можно только
+    # готовый .age — открытый дамп backup.sh создаёт с правами 600.
+    getent group gasapp-backup > /dev/null || run groupadd --system gasapp-backup
+    run usermod -aG gasapp-backup "$admin"
+    if id postgres > /dev/null 2>&1; then
+        run install -d -m 2750 -o postgres -g gasapp-backup /var/backups/gasapp
+    else
+        echo "  ⚠️ PostgreSQL ещё не установлен — каталог копий создайте после установки:"
+        echo "     install -d -m 2750 -o postgres -g gasapp-backup /var/backups/gasapp"
+    fi
+    # ⚠️ PostgreSQL в Debian/Ubuntu ждёт только network.target — то есть
+    # может стартовать раньше, чем частная сеть получит адрес. Тогда он
+    # не падает, а молча слушает один localhost: после перезагрузки узлы
+    # не видят базу. Ждать сети по-настоящему.
+    put /etc/systemd/system/postgresql@.service.d/10-gasapp-network.conf 644 <<'EOF'
+[Unit]
+Wants=network-online.target
+After=network-online.target
+EOF
+    run systemctl daemon-reload
 fi
 
 step "готово"
