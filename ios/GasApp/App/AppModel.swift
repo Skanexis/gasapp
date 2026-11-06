@@ -22,7 +22,18 @@ final class AppModel {
     var coverVisible = false
 
     /// Сколько можно пробыть в фоне без повторного PIN.
-    let autoLockAfter: TimeInterval = 30
+    var autoLockAfter: TimeInterval { TimeInterval(Self.autoLockSeconds) }
+
+    /// Время до автоблокировки в фоне (настройки): 0 — сразу. По умолчанию
+    /// 30 секунд. В Keychain значение хранится со сдвигом на 1, чтобы
+    /// «не задано» (0) отличалось от «сразу».
+    static var autoLockSeconds: Int {
+        get {
+            let stored = SecureStore.int("autolock.seconds")
+            return stored == 0 ? 30 : stored - 1
+        }
+        set { SecureStore.set(newValue + 1, for: "autolock.seconds") }
+    }
     private var backgroundSince: Date?
 
     init() {
@@ -32,18 +43,39 @@ final class AppModel {
     /// После успешного PIN или регистрации.
     func didUnlock() {
         phase = .unlocked
+        // Токен пушей подписывается ключом устройства — он доступен
+        // только сейчас, при открытой базе.
+        Push.shared.sync()
+        Push.shared.send()
+    }
+
+    /// Регистрация, прерванная на шаге кода: база открыта, имя и почта —
+    /// в ней. Экран регистрации продолжит с кода.
+    private(set) var resume: FfiPendingRegistration?
+
+    func resumeRegistration(_ pending: FfiPendingRegistration) {
+        resume = pending
+        phase = .onboarding
+    }
+
+    func takeResume() -> FfiPendingRegistration? {
+        defer { resume = nil }
+        return resume
     }
 
     /// 🔐 Запереть сейчас.
     func lock() {
         // Приём останавливается вместе с базой: без неё ему нечем работать.
         Inbox.shared.stop()
+        // 🔐 Расшифрованные вложения — только до блокировки.
+        AttachmentCache.shared.clear()
         CoreStore.shared.close()
         phase = CoreStore.shared.hasAccount ? .locked : .onboarding
     }
 
     /// 🔐 Всё стёрто (удаление аккаунта, стирание после неверных PIN).
     func didWipe() {
+        AttachmentCache.shared.clear()
         Inbox.shared.stop()
         CoreStore.shared.wipe()
         phase = .onboarding
@@ -62,8 +94,43 @@ final class AppModel {
         case .background:
             coverVisible = true
             backgroundSince = backgroundSince ?? Date()
+            scheduleBackgroundLock()
         @unknown default:
             coverVisible = true
+        }
+    }
+
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+    /// 🔐 Запирает базу через [autoLockAfter] в фоне — не дожидаясь
+    /// возвращения. Иначе ключ базы жил бы в памяти приостановленного
+    /// приложения сколько угодно, в том числе на заблокированном
+    /// телефоне. iOS даёт фоновому заданию около 30 секунд; отбирает
+    /// раньше — запираем сразу.
+    private func scheduleBackgroundLock() {
+        // «Сразу» — без ожидания и без фонового задания.
+        if phase == .unlocked && autoLockAfter <= 0 {
+            lock()
+            return
+        }
+        guard phase == .unlocked, backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "gasapp-autolock") { [weak self] in
+            Task { @MainActor in self?.finishBackgroundLock(force: true) }
+        }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64((self?.autoLockAfter ?? 30) * 1_000_000_000))
+            self?.finishBackgroundLock(force: false)
+        }
+    }
+
+    private func finishBackgroundLock(force: Bool) {
+        let stillAway = backgroundSince != nil
+        if stillAway && phase == .unlocked && (force || Date().timeIntervalSince(backgroundSince ?? Date()) >= autoLockAfter - 1) {
+            lock()
+        }
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
         }
     }
 }

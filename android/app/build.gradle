@@ -198,7 +198,17 @@ android {
         gms {
             dimension = "mode"
             applicationIdSuffix = ".gms"
-            // GMS-specific dependencies will go here
+
+            // 🔐 Проект Firebase — из свойств сборки, без google-services.json
+            // и плагина: без них Firebase не стартует вовсе, и остаётся
+            // опрос по токену (ADR-040). Значения — из консоли Firebase:
+            // Project settings → General → Your apps (Android).
+            //   -PgasappFcmProjectId=…  -PgasappFcmAppId=1:…:android:…
+            //   -PgasappFcmApiKey=AIza…  -PgasappFcmSenderId=…
+            buildConfigField "String", "GASAPP_FCM_PROJECT_ID", "\"${project.findProperty('gasappFcmProjectId') ?: ''}\""
+            buildConfigField "String", "GASAPP_FCM_APP_ID", "\"${project.findProperty('gasappFcmAppId') ?: ''}\""
+            buildConfigField "String", "GASAPP_FCM_API_KEY", "\"${project.findProperty('gasappFcmApiKey') ?: ''}\""
+            buildConfigField "String", "GASAPP_FCM_SENDER_ID", "\"${project.findProperty('gasappFcmSenderId') ?: ''}\""
         }
 
         foss {
@@ -462,10 +472,11 @@ dependencies {
 
     // Зависимости flavor'ов.
     //
-    // ⚠️ Для gms они появятся в M4 вместе с реальным подключением FCM
-    // (`play-services-base`, `firebase-messaging`). Пока их нет намеренно:
-    // тянуть Play Services в сборку, которая ими не пользуется, значит
-    // раздувать APK и без нужды расширять поверхность доверия.
+    // gms: пустые пуши FCM (push/PushProviderFactory.kt). Только
+    // firebase-messaging — без analytics и crashlytics (правило 7,
+    // tools/check-no-telemetry.sh). Автозапуск, аналитика и выгрузка
+    // метрик доставки выключены в src/gms/AndroidManifest.xml.
+    gmsImplementation 'com.google.firebase:firebase-messaging:26.0.1'
     //
     // Для foss зависимостей нет и не будет: этот flavor обязан оставаться
     // свободным от проприетарных сервисов (раздел 18.2). Раньше здесь

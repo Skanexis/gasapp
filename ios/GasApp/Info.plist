@@ -37,6 +37,12 @@
 	<!-- Камера — только для сканирования QR контакта и safety number. -->
 	<key>NSCameraUsageDescription</key>
 	<string>Камера нужна, чтобы сканировать QR-код контакта или кода безопасности. Снимки никуда не отправляются.</string>
+	<!-- Face ID — только чтобы открыть переписку вместо PIN (по желанию). -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID открывает переписку вместо PIN. Включается в настройках.</string>
+	<!-- Фото — только то, что вы выбрали для отправки. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Чтобы отправить выбранное фото. Метаданные (место съёмки, устройство) удаляются перед отправкой.</string>
 	<!-- Настройки сборки (ios/Config/*.xcconfig) — читает AppConfig.swift. -->
 	<key>GASAPPServerURL</key>
 	<string>$(GASAPP_SERVER_URL)</string>

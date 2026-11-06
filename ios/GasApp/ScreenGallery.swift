@@ -8,7 +8,7 @@ import SwiftUI
 /// симулятор передаёт как SIMCTL_CHILD_GASAPP_SCREEN. Без аккаунта
 /// экраны показывают пустые состояния — проверяется вёрстка.
 enum ScreenGallery {
-    static let names = ["onboarding", "lock", "chats", "addcontact", "settings", "privacy"]
+    static let names = ["onboarding", "lock", "chats", "channels", "contacts", "addcontact", "settings", "backup", "security", "privacy"]
 
     @ViewBuilder
     static func root() -> some View {
@@ -17,6 +17,14 @@ enum ScreenGallery {
             LockScreen().gasScreen()
         case "chats":
             ChatListScreen()
+        case "channels":
+            ChannelsScreen()
+        case "contacts":
+            NavigationStack { ContactsScreen() }
+        case "backup":
+            NavigationStack { BackupScreen() }
+        case "security":
+            NavigationStack { SecurityScreen() }
         case "addcontact":
             NavigationStack { AddContactScreen { _, _ in } }
         case "settings":

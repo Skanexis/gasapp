@@ -33,7 +33,7 @@ use crate::api::{
     DeleteChannelMediaRequest, DiscoveryResponse, EmailChallengeResponse, EmailCodeRequest,
     EnvelopeResponse, JoinChannelRequest, KtHeadsResponse, KtProofsRequest, KtProofsResponse,
     NotifyTokenRequest, PublishKeysRequest, PublishPostRequest, PublishPostResponse,
-    RecoverAccountRequest, RegisterBotRequest, RegisterRequest, RegisterResponse,
+    PushTokenRequest, RecoverAccountRequest, RegisterBotRequest, RegisterRequest, RegisterResponse,
     RekeyChannelRequest, RemoveChannelAdminRequest, ReplacePostRequest, ReportChannelRequest,
     SealedAccessRequest, SealedReportRequest, SealedReportResponse, SealedSendRequest,
     UpdateChannelRequest,
@@ -1100,6 +1100,51 @@ impl<T: Transport> ApiClient<T> {
         self.send_signed(
             Method::Delete,
             format!("/v1/notify/{device_id}"),
+            None,
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Называет серверу токен пуш-уведомлений устройства (APNs или FCM).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn set_push_token(
+        &self,
+        device_id: &str,
+        request: &PushTokenRequest,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let device_id = canonical_uuid(device_id)?;
+
+        self.send_signed(
+            Method::Put,
+            format!("/v1/push/{device_id}"),
+            Some(to_json(request)?),
+            signer,
+        )?;
+
+        Ok(())
+    }
+
+    /// Забывает токен пуш-уведомлений устройства на сервере.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn delete_push_token(
+        &self,
+        device_id: &str,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        let device_id = canonical_uuid(device_id)?;
+
+        self.send_signed(
+            Method::Delete,
+            format!("/v1/push/{device_id}"),
             None,
             signer,
         )?;

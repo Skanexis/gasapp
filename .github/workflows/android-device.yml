@@ -31,7 +31,7 @@ permissions:
 jobs:
   connected:
     name: instrumentation tests on an emulator (API ${{ matrix.api-level }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Две крайние версии: minSdk (28) — самая старая, на которой
     # приложение ставится, и targetSdk (36, Android 16) — ограничения,
     # которые мы на себя приняли. Промежуточные ломаются реже крайних.

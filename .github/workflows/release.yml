@@ -29,7 +29,7 @@ env:
 jobs:
   build:
     name: build and hash
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # 🔐 Ключ подписи выдаётся только в окружении `release`. В настройках
     # репозитория у него должны стоять обязательные подтверждающие и

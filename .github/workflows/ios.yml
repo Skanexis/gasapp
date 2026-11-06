@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# iOS на macOS-машинах GitHub — без своего Mac.
+#
+# * check — на каждый push в ios/, ядро и скрипты: ядро под iOS, проект
+#   из ios/project.yml, все ошибки Swift, сборка и запуск каждого экрана
+#   в симуляторе со снимками. Отчёт — артефакт mac-report.
+# * testflight — вручную (Actions → ios → Run workflow, галочка
+#   testflight): релизная сборка, подпись и отправка в TestFlight.
+#   Оттуда приложение ставится на iPhone приложением TestFlight.
+#
+# Секреты для testflight (Settings → Secrets and variables → Actions),
+# см. ios/СБОРКА-В-GITHUB.md:
+#   APPLE_TEAM_ID   — Team ID (10 символов)
+#   ASC_KEY_ID      — ключ App Store Connect API: Key ID
+#   ASC_ISSUER_ID   — Issuer ID
+#   ASC_KEY_P8      — содержимое файла AuthKey_….p8 целиком
+#   GASAPP_PINS     — пины сервера через запятую (основной,запасной)
+#   GASAPP_SERVER_ONION — onion-адрес (необязательно)
+
+name: ios
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - "crates/**"
+      - "tools/mac-check.sh"
+      - "tools/build-rust-ios.sh"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: "Собрать релиз и отправить в TestFlight"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: build and run in the simulator
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
+          # (build.rs зависимостей), и он прочёл бы его оттуда.
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: crates
+
+      - name: check on macOS (core, project, Swift, simulator)
+        run: bash tools/mac-check.sh < /dev/null
+
+      - name: report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mac-report
+          path: mac-report/
+          retention-days: 14
+
+      - name: fail if the app did not build or crashed
+        run: |
+          cat mac-report/SUMMARY.txt
+          ! grep -E "ОШИБКА|УПАЛО|ПРОПУЩЕНО" mac-report/SUMMARY.txt
+
+  testflight:
+    name: release build to TestFlight
+    if: github.event_name == 'workflow_dispatch' && inputs.testflight
+    needs: check
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: crates
+
+      - name: core for iOS (release)
+        run: bash tools/build-rust-ios.sh
+
+      - name: project
+        run: |
+          brew install xcodegen
+          # 🔐 Настройки релиза — из секретов, не из репозитория.
+          # Пины-заглушки дали бы приложение, которое ни с чем не
+          # соединится: проверка в project.yml такой релиз не соберёт.
+          # ⚠️ В xcconfig «//» — начало комментария, а в base64 пина оно
+          # бывает: без замены на «/$()/» пин молча обрезался бы.
+          {
+            echo "DEVELOPMENT_TEAM = ${APPLE_TEAM_ID}"
+            echo "GASAPP_PINS = $(printf '%s' "${GASAPP_PINS}" | sed 's#//#/$()/#g')"
+            if [ -n "${GASAPP_SERVER_ONION}" ]; then echo "GASAPP_SERVER_ONION = ${GASAPP_SERVER_ONION}"; fi
+          } > ios/Config/Local.xcconfig
+          cd ios && xcodegen generate
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GASAPP_PINS: ${{ secrets.GASAPP_PINS }}
+          GASAPP_SERVER_ONION: ${{ secrets.GASAPP_SERVER_ONION }}
+
+      - name: archive, sign and upload to TestFlight
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ASC_KEY_P8" > "$KEY"
+          AUTH=(-allowProvisioningUpdates
+                -authenticationKeyPath "$KEY"
+                -authenticationKeyID "$ASC_KEY_ID"
+                -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+
+          # Номер сборки растёт с каждым запуском: App Store Connect
+          # не принимает повторный.
+          xcodebuild archive -project ios/GasApp.xcodeproj -scheme GasApp \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/GasApp.xcarchive" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" "${AUTH[@]}"
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          EOF
+
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/GasApp.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}"
+
+          rm -f "$KEY"
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}

@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct GasAppApp: App {
+    /// Только ради токена пуш-уведомлений (APNs): SwiftUI его не отдаёт.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -24,6 +26,7 @@ struct GasAppApp: App {
 /// Корень: экран по фазе приложения и шторка поверх всего.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.isSceneCaptured) private var isCaptured
 
     var body: some View {
         ZStack {
@@ -32,12 +35,13 @@ struct RootView: View {
             switch model.phase {
             case .onboarding: OnboardingFlow()
             case .locked: LockScreen()
-            case .unlocked: ChatListScreen()
+            case .unlocked: MainTabs()
             }
 
             // 🔐 Пока приложение не активно — шторка: снимок экрана для
-            // переключателя приложений не покажет переписку.
-            if model.coverVisible {
+            // переключателя приложений не покажет переписку. То же — пока
+            // экран записывается или транслируется (AirPlay, запись экрана).
+            if model.coverVisible || isCaptured {
                 PrivacyCover()
             }
         }

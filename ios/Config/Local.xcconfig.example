@@ -5,6 +5,8 @@
 DEVELOPMENT_TEAM = ABCDE12345
 
 // Настоящие пины — из V:\gasapp\pin-primary.txt и pin-backup.txt.
+// ⚠️ Если в пине есть «//», замените его на «/$()/»: иначе xcconfig
+// примет остаток строки за комментарий и пин обрежется.
 // GASAPP_PINS = основной=,запасной=
 
 // GASAPP_SERVER_ONION = адрес.onion:443

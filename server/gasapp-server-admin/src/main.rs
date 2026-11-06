@@ -46,9 +46,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "serve" => serve().await,
         "watch-reports" => watch_reports().await,
         "premium" => premium().await,
+        "push" => push().await,
         other => {
             eprintln!(
-                "неизвестная команда «{other}»: hash-token | serve | watch-reports | \
+                "неизвестная команда «{other}»: hash-token | serve | watch-reports | push | \
                  premium grant|revoke <имя>"
             );
             std::process::exit(2);
@@ -153,6 +154,51 @@ async fn premium() -> Result<(), Box<dyn Error>> {
     } else {
         Err(format!("аккаунта @{username} нет").into())
     }
+}
+
+/// Отправщик пустых пушей (`gasapp-push.service`): слушает канал
+/// конвертов и будит устройства через Apple и Google.
+///
+/// Ключи — учётными данными systemd (`GASAPP_APNS_KEY` — `.p8`,
+/// `GASAPP_FCM_SERVICE_ACCOUNT` — JSON); несекретное — окружением:
+/// `GASAPP_APNS_KEY_ID`, `GASAPP_APNS_TEAM_ID`, `GASAPP_APNS_TOPIC`.
+/// Провайдер без ключа просто не используется.
+async fn push() -> Result<(), Box<dyn Error>> {
+    use gasapp_server_admin::push::{Apns, Fcm, Pusher};
+
+    let env = |name: &str| std::env::var(name).unwrap_or_default();
+
+    let apns = gasapp_server_db::runtime::secret("GASAPP_APNS_KEY")
+        .map(|key| {
+            let topic = std::env::var("GASAPP_APNS_TOPIC")
+                .unwrap_or_else(|_| "org.gasapp.messenger".to_owned());
+            Apns::new(
+                &key,
+                &env("GASAPP_APNS_KEY_ID"),
+                &env("GASAPP_APNS_TEAM_ID"),
+                &topic,
+            )
+        })
+        .transpose()?;
+    let fcm = gasapp_server_db::runtime::secret("GASAPP_FCM_SERVICE_ACCOUNT")
+        .map(|json| Fcm::new(&json))
+        .transpose()?;
+
+    if apns.is_none() && fcm.is_none() {
+        return Err(
+            "не задан ни GASAPP_APNS_KEY, ни GASAPP_FCM_SERVICE_ACCOUNT — будить нечем".into(),
+        );
+    }
+    tracing::info!(
+        apns = apns.is_some(),
+        fcm = fcm.is_some(),
+        "отправщик пушей запускается"
+    );
+
+    let pool = pool().await?;
+    Pusher { apns, fcm }.run(pool).await;
+
+    Ok(())
 }
 
 /// Уведомляет оператора о новых жалобах — для cron.

@@ -35,8 +35,10 @@ final class PlatformTransport: HttpTransport, @unchecked Sendable {
         method: String, path: String, body: String?, binaryBody: Data?,
         headers: [FfiHeader], anonymous: Bool
     ) throws -> FfiHttpResponse {
+        // Маршрут — один раз на запрос: и настройка сессии, и её ключ.
+        let route = NetworkRoute.current
         guard let url = URL(string: baseURL.absoluteString + path),
-              let config = NetworkRoute.current.configuration(anonymous: anonymous)
+              let config = route.configuration(anonymous: anonymous)
         else {
             // Сеть закрыта (Tor выбран, но не готов) — сбой сети для ядра,
             // а не запрос в обход.
@@ -66,11 +68,30 @@ final class PlatformTransport: HttpTransport, @unchecked Sendable {
         let binary = Self.isBinaryDownload(method: method, path: path)
         let limit = binary ? Self.maxBinaryResponse : Self.maxTextResponse
 
-        let delegate = TransportDelegate(pins: pins, host: baseURL.host ?? "", limit: limit)
+        let host = baseURL.host ?? ""
+        let delegate = TransportDelegate(pins: pins, host: host, limit: limit)
+
+        #if canImport(Security)
+        if anonymous {
+            // 🔐 Анонимный запрос — своя сессия и своё соединение (своя
+            // цепочка Tor): с соседними его не связать.
+            let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+            defer { session.finishTasksAndInvalidate() }
+            session.dataTask(with: request).resume()
+        } else {
+            // Обычные запросы — через одно соединение на маршрут: опрос
+            // раз в несколько секунд не открывает каждый раз новый TLS.
+            // Пин проверяется делегатом сессии на каждом новом соединении,
+            // данные и пределы — делегатом задачи.
+            let task = sharedSession(route: route, config: config, host: host).dataTask(with: request)
+            task.delegate = delegate
+            task.resume()
+        }
+        #else
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-
         session.dataTask(with: request).resume()
+        #endif
         delegate.wait()
 
         // Любой сбой — таймаут, обрыв, отказ пиннинга, превышение
@@ -93,6 +114,27 @@ final class PlatformTransport: HttpTransport, @unchecked Sendable {
             binaryBody: isBinary ? data : Data()
         )
     }
+
+    #if canImport(Security)
+    private static let sessionLock = NSLock()
+    nonisolated(unsafe) private static var shared: (route: NetworkRoute, session: URLSession)?
+
+    /// Сессия текущего маршрута. 🔐 Сменился маршрут (Tor ↔ напрямую) —
+    /// прежняя сессия закрывается: её соединения шли бы старым путём.
+    private func sharedSession(route: NetworkRoute, config: URLSessionConfiguration, host: String) -> URLSession {
+        Self.sessionLock.lock()
+        defer { Self.sessionLock.unlock() }
+        if let shared = Self.shared, shared.route == route {
+            return shared.session
+        }
+        Self.shared?.session.invalidateAndCancel()
+        let session = URLSession(configuration: config,
+                                 delegate: PinningSessionDelegate(pins: pins, host: host),
+                                 delegateQueue: nil)
+        Self.shared = (route, session)
+        return session
+    }
+    #endif
 
     /// Отдаёт ли запрос сырые байты: скачивание вложения или медиа
     /// канала. По методу и пути, а не по Content-Type: заголовку сервера

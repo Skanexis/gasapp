@@ -29,7 +29,7 @@ OUT="$ROOT/mac-report"
 IOS="$ROOT/ios"
 DERIVED="$IOS/build/dd"
 BUNDLE_ID="org.gasapp.messenger"
-SCREENS="onboarding lock chats addcontact settings privacy"
+SCREENS="onboarding lock chats channels contacts addcontact settings backup security privacy"
 
 RUST_TESTS=0
 TEAM=""

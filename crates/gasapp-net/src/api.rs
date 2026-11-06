@@ -425,6 +425,19 @@ pub struct NotifyTokenRequest {
     pub token_hash: String,
 }
 
+/// Токен пуш-уведомлений платформы (APNs или FCM).
+///
+/// 🔐 Пуш — пустой: сервер просит Apple или Google показать «Новое
+/// сообщение» на устройстве и ничего больше — ни текста, ни отправителя.
+/// Посредник видит лишь, что устройству что-то пришло, и когда.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PushTokenRequest {
+    /// `apns`, `apns-sandbox` (отладочная сборка iOS) или `fcm`.
+    pub provider: String,
+    /// Токен устройства у провайдера.
+    pub token: String,
+}
+
 /// Имя бота: запрос токена под него либо удаление бота.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotNameRequest {

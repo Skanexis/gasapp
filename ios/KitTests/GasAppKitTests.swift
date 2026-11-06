@@ -155,7 +155,17 @@ final class CoreBindingTests: XCTestCase {
         // Короче шести — отказ.
         XCTAssertThrowsError(try deriveStorageKey(pin: Data("4829".utf8), salt: salt))
 
-        let response = try EnclaveKey.respond(to: [UInt8](stretched))
+        // 🔐 Проба для Enclave — точка, хешированная в кривую, а не PIN·G.
+        let probe = try enclaveProbePoint(stretched: stretched, salt: salt)
+        XCTAssertEqual(probe.count, 65)
+        XCTAssertEqual(probe.first, 0x04)
+        XCTAssertEqual(probe, try enclaveProbePoint(stretched: stretched, salt: salt))
+        XCTAssertThrowsError(try enclaveProbePoint(stretched: Data(count: 31), salt: salt))
+
+        EnclaveKey.destroy()
+        // Входа в существующий аккаунт без ключа нет: ключ не заводится молча.
+        XCTAssertThrowsError(try EnclaveKey.respond(to: probe, create: false))
+        let response = try EnclaveKey.respond(to: probe, create: true)
         XCTAssertEqual(response.count, 32)
         let key = try deriveStorageKeyTee(stretched: stretched, salt: salt, teeMac: Data(response))
         XCTAssertEqual(key.count, 32)
@@ -185,6 +195,19 @@ final class CoreBindingTests: XCTestCase {
         // Ожидающая регистрация переживает повторное открытие.
         try messenger.setPendingRegistration(username: "anna_k", email: "a@example.org")
         XCTAssertEqual(try messenger.pendingRegistration()?.username, "anna_k")
+    }
+
+    /// Токен пушей: неверный формат отвергается ядром до сети; верный
+    /// уходит в транспорт (здесь — без сети, значит ошибка сети).
+    func testPushTokenIsValidatedBeforeNetwork() throws {
+        let path = dir.appendingPathComponent("p.db").path
+        let transport = OfflineTransport()
+        let messenger = try Messenger.open(databasePath: path, databaseKey: Data(repeating: 5, count: 32),
+                                           transport: transport)
+        // Аккаунта нет — отказ, но без обращения к сети.
+        XCTAssertThrowsError(try messenger.registerPushToken(provider: .apns, token: "zz/../x", nowMillis: 0))
+        XCTAssertThrowsError(try messenger.registerPushToken(provider: .fcm, token: "", nowMillis: 0))
+        XCTAssertTrue(transport.calls.isEmpty, "неверный токен ушёл в сеть: \(transport.calls)")
     }
 
     func testWrongKeyDoesNotOpen() throws {

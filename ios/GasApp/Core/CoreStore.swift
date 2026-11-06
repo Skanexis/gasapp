@@ -24,6 +24,8 @@ final class CoreStore: @unchecked Sendable {
         case locked
         /// Сборка без адреса сервера.
         case misconfigured
+        /// База есть, а соли нет (повреждение): открыть нечем.
+        case saltMissing
     }
 
     private let lock = NSRecursiveLock()
@@ -63,11 +65,15 @@ final class CoreStore: @unchecked Sendable {
 
     /// Соль растягивания PIN. Лежит открыто: она защищает от заранее
     /// посчитанных таблиц, а не от того, кто получил устройство.
-    func salt() throws -> Data {
+    func salt(create: Bool) throws -> Data {
         lock.lock(); defer { lock.unlock() }
         if let data = try? Data(contentsOf: saltURL), !data.isEmpty {
             return data
         }
+        // 🔐 Соли нет, а база есть — новую не заводим: под ней ключ базы
+        // не сошёлся бы никогда, и каждая попытка шла бы в счётчик
+        // неверных PIN.
+        guard create else { throw Failure.saltMissing }
         let fresh = generateStorageSalt()
         try fresh.write(to: saltURL, options: [.atomic, .completeFileProtection])
         return fresh
@@ -95,11 +101,15 @@ final class CoreStore: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         close()
 
-        let salt = try salt()
+        // Новая база — только если её ещё нет: тогда и ключ Enclave
+        // заводится впервые.
+        let creating = !hasAccount
+        let salt = try salt(create: creating)
         var stretched = try [UInt8](deriveStorageKey(pin: Data(pin), salt: salt))
         defer { stretched.wipe() }
 
-        var response = try EnclaveKey.respond(to: stretched)
+        let probe = try enclaveProbePoint(stretched: Data(stretched), salt: salt)
+        var response = try EnclaveKey.respond(to: probe, create: creating)
         defer { response.wipe() }
 
         var key = try [UInt8](deriveStorageKeyTee(stretched: Data(stretched), salt: salt, teeMac: Data(response)))
@@ -107,6 +117,35 @@ final class CoreStore: @unchecked Sendable {
 
         return try open(key: key)
     }
+
+    /// 🔐 Ключ базы из PIN — без открытия: только для включения Face ID.
+    /// Других вызывающих быть не должно (см. `Core.deriveKey` на Android).
+    func deriveKey(pin: [UInt8]) throws -> [UInt8] {
+        lock.lock(); defer { lock.unlock() }
+        let salt = try salt(create: false)
+        var stretched = try [UInt8](deriveStorageKey(pin: Data(pin), salt: salt))
+        defer { stretched.wipe() }
+        let probe = try enclaveProbePoint(stretched: Data(stretched), salt: salt)
+        var response = try EnclaveKey.respond(to: probe, create: false)
+        defer { response.wipe() }
+        return try [UInt8](deriveStorageKeyTee(stretched: Data(stretched), salt: salt, teeMac: Data(response)))
+    }
+
+    /// Открыта ли база именно этим ключом (для включения Face ID).
+    func keyOpensStorage(_ key: [UInt8]) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return messenger != nil && openedKey.matches(key)
+    }
+
+    /// Вход ключом из Face ID: PIN тут не нужен — ключ уже готов.
+    func unlock(key: [UInt8]) throws -> Messenger {
+        lock.lock(); defer { lock.unlock() }
+        close()
+        return try open(key: key)
+    }
+
+    /// Отпечаток ключа открытой базы — не сам ключ (`OpenedKey`).
+    private var openedKey = OpenedKey()
 
     private func open(key: [UInt8]) throws -> Messenger {
         guard let server = AppConfig.serverURL else { throw Failure.misconfigured }
@@ -118,6 +157,7 @@ final class CoreStore: @unchecked Sendable {
             transport: PlatformTransport(baseURL: server, pins: AppConfig.pins)
         )
         messenger = opened
+        openedKey.remember(key)
 
         // 🔐 Режим сети — сразу после открытия базы и до первого запроса:
         // настройка живёт в зашифрованной базе, раньше её не прочитать,
@@ -172,6 +212,7 @@ final class CoreStore: @unchecked Sendable {
         // время вызова (`current()`), поэтому ссылка здесь — последняя.
         if let messenger { retired = messenger }
         messenger = nil
+        openedKey.forget()
         cachedDeviceId = nil
     }
 
@@ -200,6 +241,7 @@ final class CoreStore: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         close()
         EnclaveKey.destroy()
+        Biometric.disable()
         try? FileManager.default.removeItem(at: dataDirectory)
         SecureStore.removeAll()
     }

@@ -24,7 +24,7 @@ struct ChatListScreen: View {
     enum Route: Hashable {
         case chat(ChatRowModel)
         case addContact
-        case settings
+        case search
     }
 
     var body: some View {
@@ -56,8 +56,8 @@ struct ChatListScreen: View {
             .navigationTitle(L10n.t("Чаты", "Chats"))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { path.append(.settings) } label: { Image(systemName: "gearshape.fill") }
-                        .accessibilityLabel(L10n.t("Настройки", "Settings"))
+                    Button { path.append(.search) } label: { Image(systemName: "magnifyingglass") }
+                        .accessibilityLabel(L10n.t("Поиск", "Search"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { path.append(.addContact) } label: { Image(systemName: "square.and.pencil") }
@@ -72,7 +72,7 @@ struct ChatListScreen: View {
                     path.append(.chat(ChatRowModel(id: chatId ?? "", name: username, preview: "", time: "",
                                                    verified: false, isRequest: false, peerUsername: username)))
                 }
-                case .settings: SettingsScreen()
+                case .search: SearchScreen()
                 }
             }
             .gasScreen()

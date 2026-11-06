@@ -143,6 +143,35 @@ final class TransportDelegate: NSObject, URLSessionDataDelegate, @unchecked Send
         _ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        PinCheck.evaluate(challenge, pins: pins, host: host, completionHandler)
+    }
+}
+
+/// Делегат уровня сессии для переиспользуемой сессии: пиннинг на каждое
+/// **новое соединение** (переиспользованное уже проверено им же).
+final class PinningSessionDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
+    private let pins: PinSet
+    private let host: String
+
+    init(pins: PinSet, host: String) {
+        self.pins = pins
+        self.host = host
+    }
+
+    func urlSession(
+        _ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        PinCheck.evaluate(challenge, pins: pins, host: host, completionHandler)
+    }
+}
+
+/// Проверка сервера — одна на все пути.
+enum PinCheck {
+    static func evaluate(
+        _ challenge: URLAuthenticationChallenge, pins: PinSet, host: String,
+        _ completionHandler: (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
         #if canImport(Security) && canImport(CryptoKit)
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust,

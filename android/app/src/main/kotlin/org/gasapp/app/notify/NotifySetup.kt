@@ -3,6 +3,7 @@
 package org.gasapp.app.notify
 
 import android.content.Context
+import org.gasapp.app.push.PushProviderFactory
 import uniffi.gasapp.FfiProxy
 import uniffi.gasapp.Messenger
 import uniffi.gasapp.generateNotifyToken
@@ -28,6 +29,7 @@ object NotifySetup {
         val now = System.currentTimeMillis()
 
         prefs.direct = runCatching { messenger.proxy() }.getOrNull() is FfiProxy.Direct
+        val push = PushProviderFactory.create()
 
         if (!prefs.enabled || !Notifier.permitted(context)) {
             if (prefs.token != null) {
@@ -36,6 +38,7 @@ object NotifySetup {
                     prefs.token = null
                 }
             }
+            if (push.isAvailable(context)) runCatching { push.unregister(context, messenger) }
             NotifyJob.cancel(context)
             Notifier.cancel(context)
 
@@ -43,6 +46,16 @@ object NotifySetup {
         }
 
         Notifier.ensureChannel(context)
+
+        // 🔐 Пустой пуш (сборка для Google Play): сервер будит телефон через
+        // Google, телефон в фоне сам не ходит никуда — значит, и в режиме
+        // Tor ничего не уходит напрямую. Токен называется при каждом входе:
+        // провайдер меняет его без спроса. Не вышло — остаётся опрос ниже.
+        if (push.isAvailable(context) && runCatching { push.register(context, messenger) }.isSuccess) {
+            NotifyJob.cancel(context)
+
+            return
+        }
 
         if (prefs.token == null || prefs.device != device) {
             val token = generateNotifyToken()

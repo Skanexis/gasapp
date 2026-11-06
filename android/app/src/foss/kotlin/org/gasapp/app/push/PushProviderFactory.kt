@@ -2,43 +2,20 @@
 
 package org.gasapp.app.push
 
-/**
- * Фабрика провайдера доставки для сборки **foss** (F-Droid).
- *
- * Во всём каталоге `src/foss` не должно быть ни одной ссылки на сервисы
- * Google — ни на Play Services, ни на Firebase. За этим следит
- * `tools/check-no-telemetry.sh` (джоб `no-telemetry` в CI): он ищет
- * соответствующие имена пакетов по подстроке, поэтому упоминать их здесь
- * нельзя даже в комментарии.
- */
-object PushProviderFactory {
+import android.content.Context
+import uniffi.gasapp.Messenger
 
-    /** Возвращает провайдер доставки для этой сборки. */
-    fun create(): PushProvider = SocketPushProvider()
+/** Сборка без Google: пушей нет, уведомления — опросом по токену (ADR-040). */
+object PushProviderFactory {
+    fun create(): PushProvider = NoPushProvider
 }
 
-/**
- * Доставка через собственный постоянный сокет.
- *
- * Компромисс задокументирован в разделе 18.2 плана: без сервисов Google
- * приложение вынуждено держать фоновое соединение, что заметнее расходует
- * батарею. Пользователь F-Droid-сборки выбирает это сознательно в обмен
- * на отсутствие проприетарных зависимостей.
- */
-internal class SocketPushProvider : PushProvider {
+internal object NoPushProvider : PushProvider {
+    override val displayName: String = "Проверка по расписанию"
 
-    override val displayName: String = "Постоянное соединение"
+    override fun isAvailable(context: Context): Boolean = false
 
-    // Сокет доступен всегда: он не зависит от наличия сторонних сервисов.
-    override fun isAvailable(): Boolean = true
+    override fun register(context: Context, messenger: Messenger) = Unit
 
-    override fun start() {
-        // Реализация — M4 (доставка сообщений). Здесь фиксируется только
-        // граница между flavor'ами, чтобы её проверял CI начиная с M1.
-        TODO("Фоновое соединение реализуется в M4")
-    }
-
-    override fun stop() {
-        TODO("Фоновое соединение реализуется в M4")
-    }
+    override fun unregister(context: Context, messenger: Messenger) = Unit
 }

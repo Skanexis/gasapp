@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Сборка для Google Play: пустые пуши Firebase Cloud Messaging.
+
+  🔐 Firebase не стартует сам: FirebaseInitProvider убран, токен не
+  заводится автоматически, аналитики нет, метрики доставки не
+  выгружаются. Firebase запускается только когда человек включил
+  уведомления (push/PushProviderFactory.kt).
+
+  Уведомление рисует сам FCM — ключами строк приложения
+  (notify_title, notify_body) в канале «messages»: текста от сервера
+  в нём нет.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
+
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_analytics_collection_deactivated"
+            android:value="true" />
+        <meta-data
+            android:name="delivery_metrics_exported_to_big_query_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_bell" />
+    </application>
+</manifest>

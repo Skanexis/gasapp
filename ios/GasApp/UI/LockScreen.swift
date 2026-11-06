@@ -41,11 +41,25 @@ struct LockScreen: View {
 
             PinPad(digits: $digits, isEnabled: !working && waitLeft <= 0) { submit() }
 
+            if Biometric.enabled {
+                Button {
+                    unlockWithBiometric()
+                } label: {
+                    Label(Biometric.name, systemImage: Biometric.name == "Touch ID" ? "touchid" : "faceid")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(GasAppColor.accent)
+                }
+                .disabled(working)
+            }
+
             Spacer()
         }
         .padding(.horizontal, 24)
         .gasScreen()
-        .onAppear { waitLeft = PinAttempts.waitRemaining() }
+        .onAppear {
+            waitLeft = PinAttempts.waitRemaining()
+            if Biometric.enabled && waitLeft <= 0 { unlockWithBiometric() }
+        }
         .onReceive(ticker) { _ in waitLeft = PinAttempts.waitRemaining() }
     }
 
@@ -71,26 +85,31 @@ struct LockScreen: View {
         error = nil
 
         Task {
-            let opened: Bool
+            var opened: Messenger?
             do {
                 let copy = pin
-                _ = try await Background.run { try CoreStore.shared.unlock(pin: copy) }
-                opened = true
+                opened = try await Background.run { try CoreStore.shared.unlock(pin: copy) }
             } catch EnclaveKey.Failure.unavailable {
                 // 🔐 Ключа Enclave нет (приложение восстановили из копии
                 // на другой телефон): эта база здесь не откроется ничем.
-                opened = false
                 self.error = L10n.t("Ключ устройства недоступен. Базу на этом телефоне открыть нельзя.",
-                               "Device key unavailable. This database cannot be opened on this phone.")
+                                    "Device key unavailable. This database cannot be opened on this phone.")
+            } catch is FfiError {
+                // Ядро не открыло базу этим ключом — неверный PIN. Только
+                // это идёт в счётчик попыток (ниже).
             } catch {
-                opened = false
+                // Сбой не из-за PIN (настройка сборки, соль, занятая база):
+                // 🔐 в счётчик неверных попыток не идёт — иначе вёл бы
+                // к стиранию данных.
+                self.error = L10n.t("Не удалось открыть базу. Попробуйте ещё раз.",
+                                    "Could not open the database. Try again.")
             }
             pin.wipe()
             working = false
 
-            if opened {
+            if let opened {
                 PinAttempts.reset()
-                model.didUnlock()
+                await finishUnlock(opened)
                 return
             }
 
@@ -107,6 +126,52 @@ struct LockScreen: View {
                     : L10n.t("Неверный PIN", "Wrong PIN")
             }
             waitLeft = PinAttempts.waitRemaining()
+        }
+    }
+
+    /// Вход по Face ID: ключ базы достаёт Secure Enclave после проверки лица.
+    private func unlockWithBiometric() {
+        working = true
+        error = nil
+        Task {
+            do {
+                let messenger = try await Background.run { () -> Messenger in
+                    var key = try Biometric.key(reason: L10n.t("Открыть переписку", "Unlock your messages"))
+                    defer { key.wipe() }
+                    return try CoreStore.shared.unlock(key: key)
+                }
+                working = false
+                PinAttempts.reset()
+                await finishUnlock(messenger)
+            } catch {
+                working = false
+                // Отменили или лицо не узнано — остаётся PIN. Ключ из записи
+                // не открыл базу (её перешифровали) — запись больше не нужна.
+                if error is FfiError { Biometric.disable() }
+            }
+        }
+    }
+
+    /// База открылась. Если регистрация не дошла до конца (приложение
+    /// закрыли на шаге кода) — назад к коду из письма; пустая база без
+    /// регистрации стирается.
+    private func finishUnlock(_ messenger: Messenger) async {
+        let state = try? await Background.run { () -> (String?, FfiPendingRegistration?) in
+            (try messenger.ownUsername(), try messenger.pendingRegistration())
+        }
+        // 🔐 Сбой чтения — не повод стирать: только явное «аккаунта нет
+        // и регистрации нет» ведёт к стиранию пустой базы.
+        guard let state else {
+            model.didUnlock()
+            return
+        }
+        switch (state.0, state.1) {
+        case (.some, _):
+            model.didUnlock()
+        case let (nil, .some(pending)):
+            model.resumeRegistration(pending)
+        case (nil, nil):
+            model.didWipe()
         }
     }
 
