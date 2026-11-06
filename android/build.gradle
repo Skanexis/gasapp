@@ -12,5 +12,5 @@ plugins {
     // AGP 8.10: первая версия с полной поддержкой compileSdk 36 (Android 16);
     // требует Gradle 8.11.1 — он и стоит в wrapper.
     id 'com.android.application' version '8.10.1' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.25' apply false
+    id 'org.jetbrains.kotlin.android' version '2.4.21' apply false
 }
