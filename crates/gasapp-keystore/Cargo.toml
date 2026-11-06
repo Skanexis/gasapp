@@ -23,6 +23,9 @@ rand_core.workspace = true
 thiserror.workspace = true
 async-trait = { workspace = true }
 chacha20poly1305.workspace = true
+# Хеширование в кривую P-256 (RFC 9380) — точка-проба для Secure Enclave
+# на iOS (`pin::enclave_probe`). Крейт уже в дереве зависимостей ядра.
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "hash2curve"] }
 
 [dev-dependencies]
 proptest = "1.0"

@@ -30,6 +30,7 @@
 //! или onion-сервис. Вход — токеном оператора (`auth`).
 
 pub mod auth;
+pub mod push;
 pub mod queries;
 
 use std::fmt::Write as _;

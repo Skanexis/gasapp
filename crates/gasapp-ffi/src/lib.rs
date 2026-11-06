@@ -664,6 +664,22 @@ pub fn derive_storage_key_tee(
     Ok(key.expose_secret().to_vec())
 }
 
+/// 🔐 Точка-проба для Secure Enclave (iOS, схема v3): растянутый PIN,
+/// хешированный в кривую P-256. Платформа отдаёт её Enclave на ECDH,
+/// хеширует общий секрет SHA-256 и передаёт как `tee_mac` в
+/// [`derive_storage_key_tee`] (см. [`gasapp_keystore::pin::enclave_probe`]).
+///
+/// # Errors
+///
+/// [`FfiError::InvalidArgument`] — растянутый PIN или соль не той длины.
+#[uniffi::export]
+pub fn enclave_probe_point(stretched: Vec<u8>, salt: Vec<u8>) -> Result<Vec<u8>, FfiError> {
+    let stretched = stretched_array(stretched)?;
+    let probe = guard(|| gasapp_keystore::pin::enclave_probe(&stretched, &salt))?;
+
+    Ok(probe.to_vec())
+}
+
 /// Растянутый PIN с границы FFI — затираемый массив ровной длины.
 fn stretched_array(
     stretched: Vec<u8>,

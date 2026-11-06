@@ -26,7 +26,7 @@ jobs:
   # --------------------------------------------------------------------------
   secrets:
     name: no committed secrets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -43,7 +43,7 @@ jobs:
   # --------------------------------------------------------------------------
   supply-chain:
     name: supply chain (deny + audit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -77,7 +77,7 @@ jobs:
   # --------------------------------------------------------------------------
   no-crypto-in-ui:
     name: rule 1 — no crypto in UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -91,7 +91,7 @@ jobs:
   # --------------------------------------------------------------------------
   no-telemetry:
     name: rule 7 — no analytics SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -105,7 +105,7 @@ jobs:
   # --------------------------------------------------------------------------
   ndk-pins:
     name: "adr-020 — ndk pins agree"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -125,7 +125,7 @@ jobs:
   # --------------------------------------------------------------------------
   gradle-wrapper:
     name: "supply chain — gradle wrapper is genuine"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -143,7 +143,7 @@ jobs:
   # --------------------------------------------------------------------------
   masvs-summary:
     name: MASVS summary matches its own rows
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -161,7 +161,7 @@ jobs:
   # --------------------------------------------------------------------------
   settings-are-used:
     name: every setting has a reader
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -180,7 +180,7 @@ jobs:
   # --------------------------------------------------------------------------
   sources-tracked:
     name: every source file is in the repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -198,7 +198,7 @@ jobs:
   # --------------------------------------------------------------------------
   protocol-spec:
     name: spec agrees with the implementation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -216,7 +216,7 @@ jobs:
   # --------------------------------------------------------------------------
   foss-apk:
     name: "18.2 — no Google classes in the foss build"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -257,7 +257,7 @@ jobs:
   # --------------------------------------------------------------------------
   android-tests:
     name: android unit tests and lint (both flavors)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -286,7 +286,7 @@ jobs:
   # --------------------------------------------------------------------------
   strings-parity:
     name: translations agree with the default locale
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -304,7 +304,7 @@ jobs:
   # --------------------------------------------------------------------------
   layout-sizes:
     name: every layout element has a size
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -322,7 +322,7 @@ jobs:
   # --------------------------------------------------------------------------
   ffi-exports-used:
     name: every FFI export is called by the app
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -341,7 +341,7 @@ jobs:
   # --------------------------------------------------------------------------
   security-events-labelled:
     name: every security event has a label
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -355,7 +355,7 @@ jobs:
   # --------------------------------------------------------------------------
   no-secrets-in-logs:
     name: "masvs storage-2 — no secrets in logs"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -369,7 +369,7 @@ jobs:
   # --------------------------------------------------------------------------
   unsafe-boundary:
     name: unsafe only in gasapp-ffi
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -405,7 +405,7 @@ jobs:
   # --------------------------------------------------------------------------
   design-tokens:
     name: tokens match UI kit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -422,7 +422,7 @@ jobs:
   # --------------------------------------------------------------------------
   pre-commit:
     name: pre-commit hooks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -440,7 +440,7 @@ jobs:
   # --------------------------------------------------------------------------
   license-separation:
     name: no AGPL crate in client graph
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

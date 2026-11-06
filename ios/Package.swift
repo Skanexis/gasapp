@@ -26,6 +26,11 @@ let package = Package(
             name: "GasAppKit",
             dependencies: ["gasappFFI"],
             path: "GasApp",
+            // Интерфейс, ресурсы и настройки сборки — не часть слоя ядра:
+            // их собирает проект Xcode.
+            exclude: ["UI", "Resources", "Assets.xcassets", "Info.plist", "GasApp.entitlements",
+                      "PrivacyInfo.xcprivacy", "GasAppApp.swift", "ScreenGallery.swift", "Theme.swift",
+                      "App/AppModel.swift", "App/Inbox.swift", "App/L10n.swift", "App/Push.swift"],
             sources: ["Core", "Net", "App/AppConfig.swift", "Generated/gasapp.swift"]
         ),
         .testTarget(

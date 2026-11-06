@@ -19,10 +19,12 @@ import Security
 ///
 /// # Как получается ответ
 ///
-/// Растянутый PIN берётся скаляром ключа P-256 программно, его открытая
-/// точка отдаётся Secure Enclave на ECDH, а общий секрет хешируется
-/// SHA-256 в 32 байта. Одинаковый PIN — одинаковый ответ; другой PIN —
-/// другой; без самого Enclave — никакого.
+/// Ядро хеширует растянутый PIN **в кривую** P-256 (RFC 9380) — точка,
+/// дискретного логарифма которой не знает никто. Enclave делает с ней
+/// ECDH своим ключом, общий секрет хешируется SHA-256 в 32 байта.
+/// Одинаковый PIN — одинаковый ответ; другой PIN — другой; без самого
+/// Enclave — никакого (вычислительная задача Диффи — Хеллмана), даже
+/// зная открытый ключ Enclave.
 ///
 /// ⚠️ В симуляторе Secure Enclave нет: там ключ — обычный, в Keychain.
 /// Это только для разработки; на телефоне всегда Enclave.
@@ -44,30 +46,42 @@ enum EnclaveKey {
         #endif
     }
 
-    /// Ответ на растянутый PIN (32 байта). Ключа нет — создаётся.
-    static func respond(to stretched: [UInt8]) throws -> [UInt8] {
+    /// Ответ Enclave на пробу (32 байта): `SHA-256(x(d · P))`.
+    ///
+    /// `probe` — точка-проба из ядра (`enclavePointProbe`): растянутый PIN,
+    /// **хешированный в кривую**. 🔐 Не `PIN · G`: тогда ответ считался бы
+    /// из открытого ключа Enclave без самого Enclave, и файл базы
+    /// перебирался бы вне телефона (так было в первой версии — найдено
+    /// на проверке; подробности — `gasapp_keystore::pin::enclave_probe`).
+    ///
+    /// `create` — завести ключ, если его нет: только при регистрации.
+    /// 🔐 При входе в существующий аккаунт новый ключ не заводится: он
+    /// всё равно не открыл бы базу, а неверный PIN и потерянный ключ
+    /// выглядели бы одинаково.
+    static func respond(to probe: Data, create: Bool) throws -> [UInt8] {
         #if canImport(CryptoKit) && canImport(Security)
-        guard stretched.count == 32,
-              let probe = try? P256.KeyAgreement.PrivateKey(rawRepresentation: Data(stretched).reducedScalar)
-        else { throw Failure.unavailable }
-
-        let key = try loadKey() ?? createKey()
-        let point = probe.publicKey.x963Representation as CFData
+        guard probe.count == 65, let key = try loadKey() ?? (create ? createKey() : nil) else {
+            throw Failure.unavailable
+        }
 
         let attributes: [String: Any] = [
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeyClass as String: kSecAttrKeyClassPublic,
         ]
-        guard let peer = SecKeyCreateWithData(point, attributes as CFDictionary, nil),
+        guard let peer = SecKeyCreateWithData(probe as CFData, attributes as CFDictionary, nil),
               let shared = SecKeyCopyKeyExchangeResult(
                 key, .ecdhKeyExchangeStandard, peer, [:] as CFDictionary, nil) as Data?
         else { throw Failure.unavailable }
 
         return Array(SHA256.hash(data: shared))
         #else
-        // Linux-тесты: детерминированный ответ без оборудования.
-        if testKey == nil { testKey = (0..<32).map { _ in UInt8.random(in: 0...255) } }
-        return zip(stretched, testKey ?? []).map { $0 ^ $1 }
+        // Linux-тесты: без оборудования — секрет в памяти, детерминированно.
+        if testKey == nil {
+            guard create else { throw Failure.unavailable }
+            testKey = (0..<32).map { _ in UInt8.random(in: 0...255) }
+        }
+        let secret = testKey ?? []
+        return Array(probe.prefix(32)).enumerated().map { $1 ^ secret[$0 % secret.count] }
         #endif
     }
 
@@ -130,17 +144,3 @@ enum EnclaveKey {
     #endif
 }
 
-private extension Data {
-    /// Скаляр P-256 из 32 случайных байт: 0 и значения ≥ порядка группы
-    /// ключом не являются. Вероятность попасть в них — около 2⁻³²,
-    /// но тогда ответ не построился бы вовсе; первый байт сбрасывается
-    /// до значения меньше порядка, а нулевой ключ исключается.
-    var reducedScalar: Data {
-        var bytes = [UInt8](self)
-        // Порядок P-256 начинается с 0xFFFFFFFF00000000…: старший байт
-        // меньше 0xFF гарантирует значение ниже порядка.
-        if bytes[0] == 0xFF { bytes[0] = 0x7F }
-        if bytes.allSatisfy({ $0 == 0 }) { bytes[31] = 1 }
-        return Data(bytes)
-    }
-}

@@ -1282,6 +1282,34 @@ async fn push_tokens_are_validated() {
         StatusCode::BAD_REQUEST
     );
     assert_eq!(put("fcm", String::new()).await, StatusCode::BAD_REQUEST);
+
+    // APNs: только hex — токен встаёт в путь запроса к Apple.
+    assert_eq!(put("apns", "ab".repeat(32)).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        put("apns-sandbox", "0f".repeat(32)).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        put("apns", format!("{}/../x", "ab".repeat(32))).await,
+        StatusCode::BAD_REQUEST,
+        "принят токен APNs с путём"
+    );
+    assert_eq!(put("apns", "ab".repeat(8)).await, StatusCode::BAD_REQUEST);
+
+    // Отзыв — за подписью, и токен действительно уходит.
+    assert_eq!(
+        call_signed_json(&state, &private, "DELETE", &uri, None)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        gasapp_server_db::repo::find_push_token(&state.pool, device_id)
+            .await
+            .expect("чтение")
+            .is_none(),
+        "токен остался после отзыва"
+    );
 }
 
 /// 🔐 Запрос без хеша тела — формат v1 — отвергается.

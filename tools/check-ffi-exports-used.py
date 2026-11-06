@@ -94,7 +94,19 @@ def exported() -> set[str]:
 
 
 def app_source() -> str:
-    return "\n".join(path.read_text(encoding="utf-8") for path in APP.rglob("*.kt"))
+    # Все варианты Android (main и flavor'ы: пуши FCM живут в src/gms)
+    # и приложение iOS — без сгенерированных привязок: их вызов функции
+    # «использованием» не считается.
+    kotlin = [
+        path
+        for path in (ROOT / "android/app/src").glob("*/kotlin/org/**/*.kt")
+    ]
+    swift = [
+        path
+        for path in (ROOT / "ios/GasApp").rglob("*.swift")
+        if "Generated" not in path.parts
+    ]
+    return "\n".join(path.read_text(encoding="utf-8") for path in kotlin + swift)
 
 
 def main() -> int:

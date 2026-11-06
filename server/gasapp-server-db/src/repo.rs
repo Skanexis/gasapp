@@ -1087,6 +1087,28 @@ pub async fn delete_push_token(pool: &PgPool, device_id: Uuid) -> Result<(), Rep
     Ok(())
 }
 
+/// Удаляет токен, который провайдер назвал недействительным, — только
+/// если он всё ещё тот же: пока шёл пуш, устройство могло назвать новый,
+/// и его стирать нельзя.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn forget_dead_push_token(
+    pool: &PgPool,
+    device_id: Uuid,
+    token: &str,
+) -> Result<(), RepoError> {
+    sqlx::query("DELETE FROM push_tokens WHERE device_id = $1 AND token = $2")
+        .bind(device_id)
+        .bind(token)
+        .execute(pool)
+        .await
+        .map_err(|_| RepoError::Database)?;
+
+    Ok(())
+}
+
 // --- Sealed sender (раздел 15.2) ---
 
 /// Аккаунт и identity-ключ устройства — то, что попадает в сертификат.

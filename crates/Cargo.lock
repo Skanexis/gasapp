@@ -1746,6 +1746,7 @@ dependencies = [
  "gasapp-types",
  "hex",
  "hkdf",
+ "p256",
  "proptest",
  "rand_core 0.6.4",
  "sha2",

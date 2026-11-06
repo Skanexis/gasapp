@@ -188,6 +188,55 @@ pub fn bind_hardware(
 /// Длина ответа защищённого оборудования для схемы v3.
 pub const TEE_MAC_LEN: usize = 32;
 
+/// Длина точки-пробы для Secure Enclave: несжатая точка P-256 (SEC1).
+pub const ENCLAVE_PROBE_LEN: usize = 65;
+
+/// Метка домена хеширования в кривую (RFC 9380, раздел 3.1).
+const ENCLAVE_PROBE_DST: &[u8] = b"GASAPP-ENCLAVE-PROBE-V1_P256_XMD:SHA-256_SSWU_RO_";
+
+/// 🔐 Точка-проба для Secure Enclave (iOS): `H(соль ‖ растянутый PIN)`,
+/// хешированная **в кривую** P-256 (RFC 9380, `P256_XMD:SHA-256_SSWU_RO_`).
+///
+/// # Зачем хеширование в кривую, а не `PIN · G`
+///
+/// В Secure Enclave нет HMAC, как в Android Keystore, — только ECDH на
+/// P-256. Ответ оборудования — `d · P`, где `d` — ключ внутри Enclave.
+/// Если бы проба была `s · G` (скаляр из PIN), ответ равнялся бы
+/// `s · (d · G)` — то есть считался бы из **открытого** ключа Enclave
+/// без самого Enclave, и снятый с телефона файл базы перебирался бы на
+/// чужих машинах. Так и было в первой версии iOS — найдено на проверке.
+///
+/// У точки, полученной хешированием в кривую, дискретный логарифм не
+/// известен никому, и `d · H(…)` без `d` — это вычислительная задача
+/// Диффи — Хеллмана. Каждая попытка перебора требует самого телефона —
+/// как у `bind_tee` на Android.
+///
+/// Платформа отдаёт пробу Enclave на ECDH, хеширует общий секрет
+/// SHA-256 и передаёт его в [`bind_tee`] как `tee_mac`.
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — соль не той длины;
+/// [`GasAppError::Crypto`] — хеширование в кривую не удалось.
+pub fn enclave_probe(stretched: &[u8; KEY_LEN], salt: &[u8]) -> Result<[u8; ENCLAVE_PROBE_LEN]> {
+    use p256::elliptic_curve::hash2curve::{ExpandMsgXmd, GroupDigest};
+    use p256::elliptic_curve::sec1::ToEncodedPoint;
+
+    if salt.len() != SALT_LEN {
+        return Err(GasAppError::Malformed);
+    }
+
+    let point = p256::NistP256::hash_from_bytes::<ExpandMsgXmd<Sha256>>(
+        &[salt, stretched.as_slice()],
+        &[ENCLAVE_PROBE_DST],
+    )
+    .map_err(|_| GasAppError::Crypto)?;
+
+    let encoded = point.to_affine().to_encoded_point(false);
+
+    <[u8; ENCLAVE_PROBE_LEN]>::try_from(encoded.as_bytes()).map_err(|_| GasAppError::Crypto)
+}
+
 /// Метка HKDF для ключа хранилища схемы v3.
 const TEE_KEY_INFO: &[u8] = b"GasApp storage key v3 (TEE-chained)";
 
@@ -275,6 +324,47 @@ pub fn generate_salt<R: rand_core::RngCore + rand_core::CryptoRng>(rng: &mut R) 
 mod tests {
     use super::*;
     use rand_core::OsRng;
+
+    /// 🔐 Проба для Enclave: та же для того же PIN, другая для другого,
+    /// и это настоящая точка кривой — но **не** `s · G`: из открытого
+    /// ключа Enclave ответ не посчитать (см. [`enclave_probe`]).
+    #[test]
+    fn enclave_probe_is_a_hashed_curve_point() {
+        use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+        use p256::elliptic_curve::PrimeField;
+        use p256::{AffinePoint, EncodedPoint, ProjectivePoint, Scalar};
+
+        let salt = [0x42u8; SALT_LEN];
+        let stretched = [0x11u8; KEY_LEN];
+
+        let probe = enclave_probe(&stretched, &salt).expect("проба");
+        assert_eq!(probe.len(), ENCLAVE_PROBE_LEN);
+        assert_eq!(probe.first(), Some(&0x04), "несжатая точка SEC1");
+        assert_eq!(probe, enclave_probe(&stretched, &salt).expect("проба"));
+        assert_ne!(
+            probe,
+            enclave_probe(&[0x12u8; KEY_LEN], &salt).expect("проба")
+        );
+        assert_ne!(
+            probe,
+            enclave_probe(&stretched, &[0x43u8; SALT_LEN]).expect("проба")
+        );
+
+        let encoded = EncodedPoint::from_bytes(probe).expect("кодировка");
+        assert!(
+            bool::from(AffinePoint::from_encoded_point(&encoded).is_some()),
+            "точка на кривой"
+        );
+
+        // Не тот слабый вариант, где проба — растянутый PIN, умноженный на G.
+        let scalar = Option::<Scalar>::from(Scalar::from_repr(stretched.into())).expect("скаляр");
+        let weak = (ProjectivePoint::GENERATOR * scalar)
+            .to_affine()
+            .to_encoded_point(false);
+        assert_ne!(probe.as_slice(), weak.as_bytes());
+
+        assert!(enclave_probe(&stretched, &[0u8; 3]).is_err());
+    }
 
     /// Один PIN и одна соль дают один ключ.
     ///

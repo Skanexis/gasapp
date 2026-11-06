@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import PhotosUI
 import SwiftUI
 
 /// Сообщение на экране: из ядра или только что набранное (ещё не ушло).
@@ -9,6 +10,8 @@ struct MessageRow: Identifiable, Equatable {
     let timestamp: Int64
     let outgoing: Bool
     var status: FfiDeliveryStatus
+    /// Описания вложений (адрес, ключ — под сквозным шифрованием).
+    var attachments: [Data] = []
 }
 
 /// Переписка — аналог `ChatActivity`.
@@ -40,6 +43,11 @@ struct ChatScreen: View {
     @State private var showSafety = false
     @State private var confirmDecline = false
     @State private var toast: String?
+    @State private var receiptSentFor: String?
+    @State private var photo: PhotosPickerItem?
+    @State private var sendingPhoto = false
+    @State private var editing: MessageRow?
+    @State private var editText = ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -48,7 +56,9 @@ struct ChatScreen: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(messages) { message in
-                            MessageBubble(message: message).id(message.id)
+                            MessageBubble(message: message)
+                                .id(message.id)
+                                .contextMenu { messageMenu(message) }
                         }
                     }
                     .padding(12)
@@ -82,6 +92,15 @@ struct ChatScreen: View {
                         Button(L10n.t("Код безопасности", "Safety number")) { showSafety = true }
                     }
                     if !resolvedChatId.isEmpty {
+                        // Исчезающие сообщения: ядро стирает их у обоих по сроку.
+                        Menu(L10n.t("Исчезающие сообщения", "Disappearing messages")) {
+                            Button(L10n.t("Выключить", "Off")) { setTimer(0) }
+                            Button(L10n.t("Через час", "After 1 hour")) { setTimer(3600) }
+                            Button(L10n.t("Через сутки", "After 1 day")) { setTimer(86_400) }
+                            Button(L10n.t("Через неделю", "After 1 week")) { setTimer(604_800) }
+                        }
+                    }
+                    if !resolvedChatId.isEmpty {
                         Button(blocked ? L10n.t("Разблокировать", "Unblock") : L10n.t("Заблокировать", "Block"),
                                role: blocked ? nil : .destructive) { toggleBlock() }
                     }
@@ -99,6 +118,13 @@ struct ChatScreen: View {
         } message: {
             Text(L10n.t("Переписка удалится. Собеседник не узнает даже того, что вы её видели.",
                         "The chat is deleted. The sender won’t even learn you saw it."))
+        }
+        .alert(L10n.t("Изменить сообщение", "Edit message"), isPresented: Binding(
+            get: { editing != nil }, set: { if !$0 { editing = nil } }
+        )) {
+            TextField(L10n.t("Текст", "Text"), text: $editText)
+            Button(L10n.t("Сохранить", "Save")) { saveEdit() }
+            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { editing = nil }
         }
         .task {
             resolvedChatId = chatId
@@ -166,6 +192,19 @@ struct ChatScreen: View {
 
     private var composer: some View {
         HStack(spacing: 10) {
+            PhotosPicker(selection: $photo, matching: .images) {
+                if sendingPhoto {
+                    ProgressView().tint(GasAppColor.accent).frame(width: 30, height: 30)
+                } else {
+                    Image(systemName: "photo.on.rectangle.angled").font(.system(size: 24))
+                        .foregroundStyle(GasAppColor.accent)
+                }
+            }
+            .disabled(sendingPhoto)
+            .accessibilityLabel(L10n.t("Отправить фото", "Send a photo"))
+            .onChange(of: photo) { _, item in
+                if let item { sendPhoto(item) }
+            }
             TextField(L10n.t("Сообщение", "Message"), text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .padding(12)
@@ -188,6 +227,120 @@ struct ChatScreen: View {
         mode == .open && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    // MARK: - Действия с сообщением
+
+    @ViewBuilder
+    private func messageMenu(_ message: MessageRow) -> some View {
+        if !message.text.isEmpty {
+            Button {
+                // 🔐 Только локально и с истечением: буфер обмена видят
+                // другие приложения.
+                UIPasteboard.general.setItems([["public.utf8-plain-text": message.text]],
+                                              options: [.localOnly: true,
+                                                        .expirationDate: Date().addingTimeInterval(120)])
+            } label: { Label(L10n.t("Копировать", "Copy"), systemImage: "doc.on.doc") }
+        }
+        if message.outgoing && mode == .open && !message.id.hasPrefix("local-") {
+            Button {
+                editing = message
+                editText = message.text
+            } label: { Label(L10n.t("Изменить", "Edit"), systemImage: "pencil") }
+            Button(role: .destructive) { deleteForEveryone(message) } label: {
+                Label(L10n.t("Удалить у всех", "Delete for everyone"), systemImage: "trash")
+            }
+        }
+    }
+
+    private func setTimer(_ seconds: UInt32) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let chat = resolvedChatId
+        Task {
+            let done = (try? await Background.run { try messenger.setDisappearingTimer(chatId: chat, seconds: seconds) }) != nil
+            toast = done
+                ? (seconds == 0 ? L10n.t("Исчезающие сообщения выключены", "Disappearing messages off")
+                                : L10n.t("Новые сообщения будут исчезать", "New messages will disappear"))
+                : L10n.t("Не удалось изменить", "Could not change it")
+        }
+    }
+
+    private func saveEdit() {
+        guard let target = editing, let messenger = try? CoreStore.shared.current() else { return }
+        let text = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+        editing = nil
+        guard !text.isEmpty, text != target.text else { return }
+        let peer = peerUsername
+        Task {
+            if (try? await Background.run {
+                try messenger.editMessage(peerUsername: peer, targetMessageId: target.id, text: text,
+                                          nowMillis: CoreStore.nowMillis)
+            }) == nil {
+                toast = L10n.t("Не удалось изменить", "Could not edit")
+            }
+            await refresh()
+        }
+    }
+
+    private func deleteForEveryone(_ message: MessageRow) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let peer = peerUsername
+        Task {
+            if (try? await Background.run {
+                try messenger.deleteForEveryone(peerUsername: peer, targetMessageId: message.id,
+                                                nowMillis: CoreStore.nowMillis)
+            }) == nil {
+                toast = L10n.t("Не удалось удалить", "Could not delete")
+            }
+            await refresh()
+        }
+    }
+
+    /// Фото уходит перекодированным: 🔐 перекодирование в JPEG выбрасывает
+    /// EXIF — место съёмки, модель телефона, время. Отправитель не отдаёт
+    /// собеседнику (и тому, кто перехватит телефон собеседника) то, чего
+    /// не видит на самом снимке.
+    private func sendPhoto(_ item: PhotosPickerItem) {
+        guard let messenger = try? CoreStore.shared.current(), let device = CoreStore.shared.deviceId else { return }
+        let peer = peerUsername
+        sendingPhoto = true
+        photo = nil
+        toast = nil
+        Task {
+            defer { sendingPhoto = false }
+            guard let raw = try? await item.loadTransferable(type: Data.self),
+                  let clean = Self.strippedJPEG(raw)
+            else {
+                toast = L10n.t("Фото не открылось", "Could not open the photo")
+                return
+            }
+            let file = FfiAttachmentFile(kind: .image, bytes: clean, name: "photo.jpg", description: nil,
+                                         durationMillis: nil, waveform: nil)
+            do {
+                try await Background.run {
+                    try messenger.sendAttachment(peerUsername: peer, deviceId: device, file: file, body: "",
+                                                 nowMillis: CoreStore.nowMillis)
+                }
+                inbox.touch()
+                await refresh()
+            } catch {
+                toast = L10n.t("Фото не отправлено", "Photo not sent")
+            }
+        }
+    }
+
+    /// Снимок без метаданных и не больше 2560 точек по длинной стороне.
+    static func strippedJPEG(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let longest = max(image.size.width, image.size.height)
+        let scale = longest > 2560 ? 2560 / longest : 1
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let redrawn = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return redrawn.jpegData(compressionQuality: 0.85)
+    }
+
     // MARK: - Ядро
 
     private func refresh() async {
@@ -199,6 +352,7 @@ struct ChatScreen: View {
             var chatId: String
             var contact: FfiContact?
             var messages: [FfiMessage]
+            var attachments: [String: [Data]]
             var request: FfiChatRequest
             var blocked: Bool
         }
@@ -213,14 +367,24 @@ struct ChatScreen: View {
             let list = chat.isEmpty ? [] : try messenger.messages(chatId: chat, limit: 500)
             let request = chat.isEmpty ? FfiChatRequest.settled : (try? messenger.chatRequest(chatId: chat)) ?? .settled
             let blocked = chat.isEmpty ? false : (try? messenger.isChatBlocked(chatId: chat)) ?? false
-            return Snapshot(chatId: chat, contact: found, messages: list, request: request, blocked: blocked)
+            // Описания вложений — из локальной базы; сами файлы качаются,
+            // только когда сообщение на экране (AttachmentView).
+            var attachments: [String: [Data]] = [:]
+            for message in list {
+                if let descriptors = try? messenger.attachmentsOf(messageId: message.messageId), !descriptors.isEmpty {
+                    attachments[message.messageId] = descriptors
+                }
+            }
+            return Snapshot(chatId: chat, contact: found, messages: list, attachments: attachments,
+                            request: request, blocked: blocked)
         }) else { return }
 
         resolvedChatId = snap.chatId
         contact = snap.contact
         blocked = snap.blocked
         messages = snap.messages.map {
-            MessageRow(id: $0.messageId, text: $0.text, timestamp: $0.timestamp, outgoing: $0.outgoing, status: $0.status)
+            MessageRow(id: $0.messageId, text: $0.text, timestamp: $0.timestamp, outgoing: $0.outgoing,
+                       status: $0.status, attachments: snap.attachments[$0.messageId] ?? [])
         }
         // Контакта нет или он не прочитался — ключ не подтверждён:
         // отправку это не откроет, её всё равно решает ядро.
@@ -234,10 +398,14 @@ struct ChatScreen: View {
 
         // Отметка «прочитано» — до последнего входящего, и только после
         // принятия запроса: незнакомец не должен узнать, что прочли.
-        if mode == .open, let lastIncoming = snap.messages.last(where: { !$0.outgoing }) {
+        // Одна отметка на новое входящее, а не на каждое обновление экрана.
+        if mode == .open, let lastIncoming = snap.messages.last(where: { !$0.outgoing }),
+           lastIncoming.messageId != receiptSentFor {
             let id = lastIncoming.messageId
-            _ = try? await Background.run {
+            if (try? await Background.run {
                 try messenger.sendReadReceipt(peerUsername: peer, untilMessageId: id, nowMillis: CoreStore.nowMillis)
+            }) != nil {
+                receiptSentFor = id
             }
         }
     }
@@ -326,10 +494,15 @@ struct MessageBubble: View {
         HStack {
             if message.outgoing { Spacer(minLength: 50) }
             VStack(alignment: .trailing, spacing: 4) {
-                Text(message.text)
-                    .font(.system(size: 16))
-                    .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingText : GasAppColor.textPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, descriptor in
+                    AttachmentView(descriptor: descriptor)
+                }
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .font(.system(size: 16))
+                        .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingText : GasAppColor.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 HStack(spacing: 4) {
                     Text(formatChatTime(message.timestamp))
                     if message.outgoing { statusIcon }

@@ -121,6 +121,8 @@ pg_dump \
     --exclude-table-data='envelopes' \
     --exclude-table-data='attachments' \
     --exclude-table-data='email_codes' \
+    --exclude-table-data='push_tokens' \
+    --exclude-table-data='notify_tokens' \
     --no-owner \
     --no-privileges \
     --file="$DUMP"
@@ -135,7 +137,10 @@ pg_dump \
 # pg_dump тихо включила бы конверты обратно, и обещание «сообщения
 # не хранятся» перестало бы выполняться без единого сообщения
 # об ошибке.
-for table in envelopes attachments email_codes; do
+# Токены уведомлений (push_tokens — адрес устройства у Apple и Google,
+# notify_tokens — хеш токена опроса) тоже не нужны в копии: после
+# восстановления телефон назовёт их заново при первом входе.
+for table in envelopes attachments email_codes push_tokens notify_tokens; do
     if grep -qE "^COPY public\.${table} .* FROM stdin;" "$DUMP"; then
         echo "ОШИБКА: в дамп попали данные таблицы ${table}" >&2
         shred --remove --zero "$DUMP" 2>/dev/null || rm -f "$DUMP"

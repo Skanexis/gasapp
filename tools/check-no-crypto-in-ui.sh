@@ -72,7 +72,17 @@ FORBIDDEN_ANDROID='javax\.crypto|java\.security\.(KeyPairGenerator|Signature|Mes
 # Тестовые исходники (`src/test`, `src/androidTest`) не сканируются:
 # они не часть интерфейса и не попадают в APK, а заготовки для
 # проверки аттестации без `KeyPairGenerator` и `Signature` не собрать.
-ALLOWED='ios/GasApp/Platform/KeyProtection.swift|android/app/src/main/kotlin/org/gasapp/platform/KeyProtection.kt|android/app/src/main/kotlin/org/gasapp/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/gasapp/app/core/BiometricUnlock.kt|android/app/src/main/kotlin/org/gasapp/app/core/KeyAttestation.kt|android/app/src/main/kotlin/org/gasapp/app/core/AppSignature.kt|android/app/src/main/kotlin/org/gasapp/app/core/OpenedKey.kt|android/app/src/main/kotlin/org/gasapp/app/core/TeeKey.kt|/src/test/|/src/androidTest/'
+#
+# iOS (2026-11-06) — те же три роли, что у Android выше:
+# * `Core/EnclaveKey.swift` — аналог `TeeKey.kt`: ECDH внутри Secure
+#   Enclave невынимаемым ключом и SHA-256 общего секрета; точку-пробу
+#   строит ядро (`enclave_probe_point`, хеширование в кривую);
+# * `Core/OpenedKey.swift` — аналог `OpenedKey.kt`: SHA-256 ключа базы
+#   для проверки перед включением Face ID;
+# * `Net/Pinning.swift` — пиннинг SPKI SHA-256. На Android его делает
+#   система (`network_security_config.xml`), в iOS такого механизма нет,
+#   и проверка цепочки возможна только в коде платформы.
+ALLOWED='ios/GasApp/Platform/KeyProtection.swift|ios/GasApp/Core/EnclaveKey.swift|ios/GasApp/Core/OpenedKey.swift|ios/GasApp/Net/Pinning.swift|android/app/src/main/kotlin/org/gasapp/platform/KeyProtection.kt|android/app/src/main/kotlin/org/gasapp/app/core/HardwareKey.kt|android/app/src/main/kotlin/org/gasapp/app/core/BiometricUnlock.kt|android/app/src/main/kotlin/org/gasapp/app/core/KeyAttestation.kt|android/app/src/main/kotlin/org/gasapp/app/core/AppSignature.kt|android/app/src/main/kotlin/org/gasapp/app/core/OpenedKey.kt|android/app/src/main/kotlin/org/gasapp/app/core/TeeKey.kt|/src/test/|/src/androidTest/'
 
 violations=0
 

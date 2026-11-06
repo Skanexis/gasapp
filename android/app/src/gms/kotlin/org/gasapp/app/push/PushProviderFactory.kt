@@ -2,45 +2,70 @@
 
 package org.gasapp.app.push
 
-/**
- * Фабрика провайдера доставки для сборки **gms** (Google Play).
- *
- * Здесь ссылки на Firebase допустимы — в отличие от flavor'а `foss`.
- */
-object PushProviderFactory {
+import android.content.Context
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailabilityLight
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
+import com.google.firebase.messaging.FirebaseMessaging
+import java.util.concurrent.TimeUnit
+import org.gasapp.app.BuildConfig
+import uniffi.gasapp.FfiPushProvider
+import uniffi.gasapp.Messenger
 
-    /** Возвращает провайдер доставки для этой сборки. */
-    fun create(): PushProvider = FcmPushProvider()
+/** Сборка для Google Play: пустые пуши через Firebase Cloud Messaging. */
+object PushProviderFactory {
+    fun create(): PushProvider = FcmPushProvider
 }
 
 /**
- * Доставка через Firebase Cloud Messaging.
- *
- * ⚠️ FCM видит факт и время доставки уведомления — это метаданные, которые
- * мы честно **не** скрываем (раздел 15.5 плана). Содержимое push при этом
- * всегда пустое (ADR-014): в нём нет ни текста, ни отправителя, ни чата.
- * Клиент, получив сигнал, сам идёт на сервер за шифроблобом.
- *
- * Если Play Services на устройстве нет (частый случай на прошивках без GMS),
- * [isAvailable] возвращает `false`, и приложение переходит на постоянное
- * соединение — тот же механизм, что в flavor'е `foss`.
+ * 🔐 Firebase подключается вручную, из настроек сборки
+ * (`-PgasappFcmProjectId` и др.), а не файлом `google-services.json`
+ * с автозапуском: без этих настроек он не стартует вовсе, а с ними —
+ * только когда человек включил уведомления. Аналитика и выгрузка
+ * метрик доставки выключены в манифесте (`src/gms/AndroidManifest.xml`).
  */
-internal class FcmPushProvider : PushProvider {
-
+internal object FcmPushProvider : PushProvider {
     override val displayName: String = "Firebase Cloud Messaging"
 
-    override fun isAvailable(): Boolean {
-        // Проверка наличия Play Services — M4, вместе с подключением FCM.
-        return false
+    private const val TIMEOUT_SECONDS = 30L
+
+    override fun isAvailable(context: Context): Boolean =
+        BuildConfig.GASAPP_FCM_PROJECT_ID.isNotEmpty() &&
+            GoogleApiAvailabilityLight.getInstance()
+                .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+
+    override fun register(context: Context, messenger: Messenger) {
+        val token = Tasks.await(messaging(context).token, TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        messenger.registerPushToken(FfiPushProvider.FCM, token, System.currentTimeMillis())
     }
 
-    override fun start() {
-        // Реализация — M4 (доставка сообщений). Здесь фиксируется только
-        // граница между flavor'ами, чтобы её проверял CI начиная с M1.
-        TODO("Подключение FCM реализуется в M4")
+    override fun unregister(context: Context, messenger: Messenger) {
+        // Сначала сервер: он перестанет будить. Потом провайдер.
+        runCatching { messenger.unregisterPushToken(System.currentTimeMillis()) }
+        if (FirebaseApp.getApps(context).isNotEmpty()) {
+            runCatching {
+                Tasks.await(FirebaseMessaging.getInstance().deleteToken(), TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            }
+        }
     }
 
-    override fun stop() {
-        TODO("Подключение FCM реализуется в M4")
+    @Synchronized
+    private fun messaging(context: Context): FirebaseMessaging {
+        if (FirebaseApp.getApps(context).isEmpty()) {
+            FirebaseApp.initializeApp(
+                context.applicationContext,
+                FirebaseOptions.Builder()
+                    .setProjectId(BuildConfig.GASAPP_FCM_PROJECT_ID)
+                    .setApplicationId(BuildConfig.GASAPP_FCM_APP_ID)
+                    .setApiKey(BuildConfig.GASAPP_FCM_API_KEY)
+                    .setGcmSenderId(BuildConfig.GASAPP_FCM_SENDER_ID)
+                    .build(),
+            )
+        }
+
+        return FirebaseMessaging.getInstance()
     }
 }

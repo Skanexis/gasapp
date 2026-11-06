@@ -31,6 +31,9 @@ struct OnboardingFlow: View {
     @State private var stage = ""
     @State private var resendAt = Date.distantPast
     @State private var now = Date()
+    /// Возвращение аккаунта из копии: имя и почта не нужны — они в копии.
+    @State private var recovering = false
+    @State private var showRestore = false
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -49,6 +52,34 @@ struct OnboardingFlow: View {
         .scrollDismissesKeyboard(.interactively)
         .gasScreen()
         .onReceive(ticker) { now = $0 }
+        .fullScreenCover(isPresented: $showRestore, onDismiss: {
+            // Закрыли, не вернув аккаунт, — база без аккаунта не нужна.
+            if !(((try? CoreStore.shared.current().ownUsername()) ?? nil) != nil) {
+                CoreStore.shared.wipe()
+                recovering = false
+                step = .welcome
+            }
+        }) {
+            NavigationStack {
+                RestoreScreen(recovering: true) {
+                    showRestore = false
+                    model.didUnlock()
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(L10n.t("Отмена", "Cancel")) { showRestore = false }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            // Продолжение после входа по PIN: база открыта, ждём код.
+            if let pending = model.takeResume() {
+                username = pending.username
+                email = pending.email
+                step = .code
+            }
+        }
     }
 
     // MARK: - Приветствие
@@ -67,6 +98,10 @@ struct OnboardingFlow: View {
                 .multilineTextAlignment(.center)
             Spacer(minLength: 60)
             GoldButton(title: L10n.t("Начать", "Get started")) { step = .account }
+            OutlineButton(title: L10n.t("У меня есть резервная копия", "I have a backup")) {
+                recovering = true
+                step = .pin
+            }
             Button(L10n.t("Политика конфиденциальности", "Privacy policy")) {
                 UIApplication.shared.open(AppConfig.docsURL.appendingPathComponent("privacy/"))
             }
@@ -97,10 +132,13 @@ struct OnboardingFlow: View {
     private func checkAccount() {
         usernameError = nil
         emailError = nil
-        guard (try? canonicalUsername(raw: username)) != nil else {
+        // Имя — в каноническом виде ядра (регистр, пробелы): то же, что
+        // увидит сервер и что найдут другие.
+        guard let canonical = try? canonicalUsername(raw: username) else {
             usernameError = L10n.t("3–32 символа: латиница, цифры, «_».", "3–32 characters: letters, digits, “_”.")
             return
         }
+        username = canonical
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         guard trimmed.contains("@"), trimmed.contains(".") else {
             emailError = L10n.t("Похоже, это не адрес почты", "That doesn’t look like an email")
@@ -170,7 +208,7 @@ struct OnboardingFlow: View {
             return
         }
         firstPin.wipe(); firstPin = []
-        createAccount(pin: entered)
+        if recovering { openForRecovery(pin: entered) } else { createAccount(pin: entered) }
     }
 
     private func createAccount(pin: [UInt8]) {
@@ -287,6 +325,34 @@ struct OnboardingFlow: View {
                 codeError = nil
             } catch {
                 codeError = L10n.t("Не удалось отправить письмо", "Could not send the email")
+            }
+        }
+    }
+
+    /// База — под новым PIN, сеть — по выбору; дальше экран копии вернёт
+    /// аккаунт. 🔐 Не дошло до конца — база стирается (как у регистрации).
+    private func openForRecovery(pin: [UInt8]) {
+        working = true
+        let tor = viaTor
+        Task {
+            do {
+                stage = L10n.t("Создаём ключи…", "Creating keys…")
+                CoreStore.shared.pendingProxy = tor ? .tor : .direct
+                let copy = pin
+                _ = try await Background.run { try CoreStore.shared.unlock(pin: copy) }
+                if tor {
+                    stage = L10n.t("Подключаемся к Tor…", "Connecting to Tor…")
+                    guard await NetworkController.shared.awaitTor(timeout: 180, progress: { _ in }) else {
+                        throw OnboardingFailure.torNotReady
+                    }
+                }
+                working = false
+                showRestore = true
+            } catch {
+                CoreStore.shared.wipe()
+                working = false
+                step = .pin
+                pinError = Self.message(for: error, viaTor: tor)
             }
         }
     }

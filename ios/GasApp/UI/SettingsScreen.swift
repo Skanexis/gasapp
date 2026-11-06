@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Настройки: аккаунт, сеть, защита, документы, удаление аккаунта.
 ///
@@ -12,6 +13,15 @@ struct SettingsScreen: View {
     @State private var username = ""
     @State private var viaTor = false
     @State private var wipeAfterTen = PinAttempts.wipeEnabled
+    @State private var pushEnabled = Push.shared.enabled
+    @State private var currentProxy: FfiProxy?
+    @State private var biometricOn = Biometric.enabled
+    @State private var askPinForBiometric = false
+    @State private var autoLock = AppModel.autoLockSeconds
+    @State private var presence = false
+    @State private var presenceLoaded = false
+    @State private var exportDocument: BackupDocument?
+    @State private var exporting = false
     @State private var torStatus = ""
     @State private var confirmDelete = false
     @State private var deleting = false
@@ -26,11 +36,25 @@ struct SettingsScreen: View {
             }
 
             Section {
+                Toggle(L10n.t("Уведомления", "Notifications"), isOn: $pushEnabled)
+                    .onChange(of: pushEnabled) { _, value in
+                        Push.shared.enabled = value
+                        Push.shared.sync()
+                    }
+            } header: {
+                Text(L10n.t("Уведомления", "Notifications"))
+            } footer: {
+                Text(L10n.t("Только «Новые сообщения» — без текста и имени. Apple видит лишь, что вам что-то пришло, и когда.",
+                            "Only “New messages” — no text or name. Apple only sees that something arrived, and when."))
+            }
+
+            Section {
                 Toggle(L10n.t("Через Tor", "Use Tor"), isOn: $viaTor)
                     .onChange(of: viaTor) { _, value in setTor(value) }
                 if viaTor && !torStatus.isEmpty {
                     Text(torStatus).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
                 }
+                NavigationLink(L10n.t("Мосты Tor", "Tor bridges")) { NetworkScreen() }
             } header: {
                 Text(L10n.t("Сеть", "Network"))
             } footer: {
@@ -39,9 +63,32 @@ struct SettingsScreen: View {
             }
 
             Section {
+                if Biometric.available {
+                    Toggle(L10n.t("Вход по \(Biometric.name)", "Unlock with \(Biometric.name)"), isOn: Binding(
+                        get: { biometricOn },
+                        set: { value in
+                            if value { askPinForBiometric = true } else { Biometric.disable(); biometricOn = false }
+                        }
+                    ))
+                }
+                Picker(L10n.t("Автоблокировка", "Auto-lock"), selection: $autoLock) {
+                    Text(L10n.t("Сразу", "Immediately")).tag(0)
+                    Text(L10n.t("Через 30 с", "After 30 s")).tag(30)
+                    Text(L10n.t("Через 1 мин", "After 1 min")).tag(60)
+                    Text(L10n.t("Через 5 мин", "After 5 min")).tag(300)
+                }
+                .onChange(of: autoLock) { _, value in AppModel.autoLockSeconds = value }
+                Toggle(L10n.t("Показывать, что я в сети", "Show when I’m online"), isOn: $presence)
+                    .onChange(of: presence) { _, value in setPresence(value) }
                 Toggle(L10n.t("Стереть всё после 10 неверных PIN", "Erase everything after 10 wrong PINs"),
                        isOn: $wipeAfterTen)
                     .onChange(of: wipeAfterTen) { _, value in PinAttempts.wipeEnabled = value }
+                NavigationLink(L10n.t("Центр безопасности", "Security center")) { SecurityScreen() }
+                NavigationLink(L10n.t("Резервная копия", "Backup")) { BackupScreen() }
+                NavigationLink(L10n.t("Восстановить из копии", "Restore from backup")) {
+                    RestoreScreen(recovering: false) { Inbox.shared.touch() }
+                }
+                Button(L10n.t("Выгрузить мои данные", "Export my data")) { exportData() }
             } header: {
                 Text(L10n.t("Защита", "Security"))
             } footer: {
@@ -90,6 +137,13 @@ struct SettingsScreen: View {
             }
         }
         .task { await load() }
+        .sheet(isPresented: $askPinForBiometric) {
+            PinConfirmSheet(title: L10n.t("PIN для \(Biometric.name)", "PIN for \(Biometric.name)")) { pin in
+                enableBiometric(pin: pin)
+            }
+        }
+        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .json,
+                      defaultFilename: "gasapp-my-data.json") { _ in exportDocument = nil }
     }
 
     private func link(_ title: String, _ path: String) -> some View {
@@ -102,15 +156,62 @@ struct SettingsScreen: View {
             (try messenger.ownUsername(), try messenger.proxy())
         }
         username = state?.0 ?? ""
+        currentProxy = state?.1
         viaTor = state?.1 == .tor
         updateTorStatus()
+        presence = (try? await Background.run { try messenger.presenceSharingEnabled() }) ?? false
+        presenceLoaded = true
+    }
+
+    private func setPresence(_ value: Bool) {
+        // Значение из базы при открытии — не действие человека.
+        guard presenceLoaded, let messenger = try? CoreStore.shared.current() else { return }
+        Task { _ = try? await Background.run { try messenger.setPresenceSharing(enabled: value) } }
+    }
+
+    /// 🔐 Face ID включается только ключом, который действительно открыл
+    /// базу: PIN спрашивается заново и проверяется.
+    private func enableBiometric(pin: [UInt8]) {
+        Task {
+            let done = (try? await Background.run { () -> Bool in
+                var key = try CoreStore.shared.deriveKey(pin: pin)
+                defer { key.wipe() }
+                guard CoreStore.shared.keyOpensStorage(key) else { return false }
+                try Biometric.enable(key: key)
+                return true
+            }) ?? false
+            biometricOn = done
+            if !done { error = L10n.t("PIN не подошёл — Face ID не включён", "Wrong PIN — Face ID not enabled") }
+        }
+    }
+
+    /// Выгрузка своих данных (GDPR, ст. 20): то, что знает о вас этот
+    /// телефон, — в файл, который вы сохраняете сами.
+    private func exportData() {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            guard let json = try? await Background.run({ try messenger.exportData(nowMillis: CoreStore.nowMillis) }) else {
+                error = L10n.t("Не удалось выгрузить данные", "Could not export data")
+                return
+            }
+            exportDocument = BackupDocument(data: Data(json.utf8), name: "gasapp-my-data.json")
+            exporting = true
+        }
     }
 
     private func setTor(_ enabled: Bool) {
-        guard let messenger = try? CoreStore.shared.current() else { return }
+        let mode: FfiProxy = enabled ? .tor : .direct
+        // Значение пришло из базы при открытии экрана, а не от человека:
+        // переключать сеть незачем (у Tor она на это время закрылась бы).
+        guard mode != currentProxy, let messenger = try? CoreStore.shared.current() else { return }
         Task {
-            let mode: FfiProxy = enabled ? .tor : .direct
-            _ = try? await Background.run { try messenger.setProxy(proxy: mode) }
+            // Сеть меняется, только если выбор записан: иначе после
+            // перезапуска база вернула бы прежний режим.
+            guard (try? await Background.run { try messenger.setProxy(proxy: mode) }) != nil else {
+                viaTor = currentProxy == .tor
+                return
+            }
+            currentProxy = mode
             let bridges = try? await Background.run { try messenger.torBridges() }
             NetworkController.shared.apply(proxy: mode, bridges: bridges)
             updateTorStatus()

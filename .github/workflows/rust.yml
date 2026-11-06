@@ -15,7 +15,7 @@ env:
 jobs:
   check:
     name: fmt · clippy · test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -87,7 +87,7 @@ jobs:
   # ---------------------------------------------------------------------------
   server:
     name: server · clippy · tests (postgres)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -166,7 +166,7 @@ jobs:
   # ---------------------------------------------------------------------------
   client-against-server:
     name: client talks to the real server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -260,11 +260,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: aarch64-apple-ios,       os: macos-latest }
-          - { target: aarch64-apple-ios-sim,   os: macos-latest }
-          - { target: aarch64-linux-android,   os: ubuntu-latest }
-          - { target: armv7-linux-androideabi, os: ubuntu-latest }
-          - { target: x86_64-linux-android,    os: ubuntu-latest }
+          - { target: aarch64-apple-ios,       os: macos-15 }
+          - { target: aarch64-apple-ios-sim,   os: macos-15 }
+          - { target: aarch64-linux-android,   os: ubuntu-24.04 }
+          - { target: armv7-linux-androideabi, os: ubuntu-24.04 }
+          - { target: x86_64-linux-android,    os: ubuntu-24.04 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -286,5 +286,8 @@ jobs:
         with:
           tool: cargo-ndk
 
+      # vendored-openssl: в SDK iOS и NDK нет системного OpenSSL, а он
+      # нужен SQLCipher — без флага ядро под телефоны не собирается
+      # (так же собирают tools/build-rust-ios.sh и build-rust-android.sh).
       - name: build
-        run: cargo build --manifest-path crates/Cargo.toml --workspace --release --target ${{ matrix.target }}
+        run: cargo build --manifest-path crates/Cargo.toml --workspace --release --target ${{ matrix.target }} --features gasapp-ffi/vendored-openssl

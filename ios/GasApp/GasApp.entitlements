@@ -6,5 +6,10 @@
 	     (Data Protection: класс Complete). База и соль — тоже. -->
 	<key>com.apple.developer.default-data-protection</key>
 	<string>NSFileProtectionComplete</string>
+	<!-- Пустые пуш-уведомления (App/Push.swift). «development» — для
+	     сборки из Xcode; при выгрузке в TestFlight/App Store Xcode сам
+	     ставит «production». -->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

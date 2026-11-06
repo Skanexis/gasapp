@@ -18,7 +18,7 @@ gasapp-server-db.workspace = true
 # Формы входа и действий — `form`; поиск аккаунта — `query`.
 axum = { workspace = true, features = ["form", "query"] }
 sqlx.workspace = true
-tokio = { workspace = true, features = ["io-util", "io-std", "process"] }
+tokio = { workspace = true, features = ["io-util", "io-std", "process", "net"] }
 serde.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -27,6 +27,25 @@ sha2.workspace = true
 subtle.workspace = true
 hex.workspace = true
 rand = "0.8"
+
+# Отправщик пушей (`push`): HTTP/2 к Apple (APNs) и Google (FCM).
+# Без reqwest: hyper, rustls и aws-lc-rs уже есть в сервере, и новый
+# HTTP-клиент со своим деревом зависимостей ради двух запросов не нужен.
+hyper = { version = "1", default-features = false, features = ["client", "http2"] }
+hyper-util = { workspace = true }
+http-body-util = "0.1"
+bytes = "1"
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+# Корни доверия — встроенные (Mozilla): на машине базы своих CA для
+# этого не нужно.
+webpki-roots = "1"
+# Подписи JWT: ES256 для Apple, RS256 для Google — тем же поставщиком
+# криптографии, что у TLS.
+aws-lc-rs = "1"
+base64 = "0.22"
+serde_json.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }

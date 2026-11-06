@@ -812,7 +812,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/ws/:device_id", get(crate::hub::websocket_handler))
         // Токен push: клиент присылает его после регистрации
         // и при каждой смене — провайдеры их отзывают.
-        .route("/v1/push/:device_id", put(register_push_token))
+        .route(
+            "/v1/push/:device_id",
+            put(register_push_token).delete(unregister_push_token),
+        )
         // Уведомления без провайдера (ADR-040): токен регистрируется за
         // подписью, очередь по нему проверяется без неё — в фоне
         // приложение заперто и подписывать ему нечем.
@@ -1548,15 +1551,54 @@ async fn register_push_token(
     // сам пойдёт запросом, и без списка разрешённых адресов это был бы
     // запрос во внутреннюю сеть оператора по указке клиента (SSRF).
     // Поэтому UnifiedPush здесь не принимается, пока такой защиты нет.
-    let known_provider = matches!(request.provider.as_str(), "fcm" | "apns");
-    let sane_token = !request.token.is_empty()
-        && request.token.len() <= MAX_PUSH_TOKEN_CHARS
-        && request.token.bytes().all(|byte| byte.is_ascii_graphic());
-    if !known_provider || !sane_token {
+    if !push_token_valid(&request.provider, &request.token) {
         return Err(ApiError::BadRequest);
     }
 
     repo::save_push_token(&state.pool, device_id, &request.provider, &request.token).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Похож ли токен на токен провайдера.
+///
+/// * `fcm` — непустой, до [`MAX_PUSH_TOKEN_CHARS`], печатный ASCII;
+/// * `apns`, `apns-sandbox` (отладочная сборка iOS) — hex из 32 байт
+///   и больше. 🔐 Строже, чем FCM: токен Apple встаёт в путь запроса
+///   (`/3/device/<токен>`), и без проверки устройство подставило бы
+///   туда путь или параметр.
+#[must_use]
+pub fn push_token_valid(provider: &str, token: &str) -> bool {
+    match provider {
+        "fcm" => {
+            !token.is_empty()
+                && token.len() <= MAX_PUSH_TOKEN_CHARS
+                && token.bytes().all(|byte| byte.is_ascii_graphic())
+        }
+        "apns" | "apns-sandbox" => {
+            (64..=200).contains(&token.len())
+                && token.len().is_multiple_of(2)
+                && token.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }
+        _ => false,
+    }
+}
+
+/// Отзыв токена push: человек выключил уведомления или удалил
+/// приложение с этого телефона.
+///
+/// 🔐 Требует подпись устройства — иначе любой отключил бы чужие
+/// уведомления.
+async fn unregister_push_token(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+
+    repo::delete_push_token(&state.pool, device_id).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
