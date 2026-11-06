@@ -1,5 +1,4 @@
 import UIKit
-import GasAppCore
 
 class ViewController: UIViewController {
 

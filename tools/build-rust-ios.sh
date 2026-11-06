@@ -63,9 +63,12 @@ echo
 for target in "$DEVICE_TARGET" "${SIM_TARGETS[@]}"; do
   rustup target add "$target" > /dev/null 2>&1 || true
   echo "сборка $target"
+  # --features vendored-openssl: как и в NDK, в SDK iOS нет OpenSSL,
+  # а он нужен SQLCipher. Без флага сборка падала на поиске openssl.
   # shellcheck disable=SC2086
   cargo build $CARGO_PROFILE_FLAG \
-    --manifest-path "$CRATES/Cargo.toml" -p gasapp-ffi --target "$target"
+    --manifest-path "$CRATES/Cargo.toml" -p gasapp-ffi --target "$target" \
+    --features vendored-openssl
 done
 
 # --- Объединение симуляторных срезов ----------------------------------------
