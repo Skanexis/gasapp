@@ -24,7 +24,7 @@ hmac = { version = "=0.12.1" }
 hkdf = { version = "=0.12.4" }
 aes-gcm = { version = "=0.10.3" }
 x25519-dalek = { version = "=2.0.1", features = ["static_secrets"] }
-curve25519-dalek = { version = "=4.1.3", features = ["zeroize"] }
+curve25519-dalek = { version = "=5.0.0", features = ["zeroize"] }
 ed25519-dalek = { version = "=2.2.0", features = ["zeroize"] }
 thiserror = "2.0"
 ml-kem = { version = "=0.3.2", features = ["zeroize"] }
