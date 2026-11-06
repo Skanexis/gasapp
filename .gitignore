@@ -133,3 +133,9 @@ server/deploy/tls/key.pem
 /mac-report/
 /mac-report.zip
 ios/GasApp/Generated/
+
+# iOS: проект Xcode генерируется из ios/project.yml (XcodeGen), свои
+# настройки сборки и инструменты проверки — не в git
+ios/GasApp.xcodeproj/
+ios/Config/Local.xcconfig
+ios/.build/

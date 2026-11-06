@@ -1,0 +1,10 @@
+// Скопируйте в Local.xcconfig (в git не попадает) и впишите свои значения.
+// Всё, что задано здесь, перекрывает Base.xcconfig.
+
+// Команда Apple Developer: developer.apple.com → Account → Membership → Team ID.
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Настоящие пины — из V:\gasapp\pin-primary.txt и pin-backup.txt.
+// GASAPP_PINS = основной=,запасной=
+
+// GASAPP_SERVER_ONION = адрес.onion:443

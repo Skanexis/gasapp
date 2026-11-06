@@ -863,10 +863,14 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
-    pub fn setting_bool(&self, key: String, default: bool) -> Result<bool, FfiError> {
+    ///
+    /// ⚠️ Параметр — `fallback`, а не `default`: имя переходит в
+    /// заголовок C для Swift, а `default` в C — ключевое слово, и модуль
+    /// gasappFFI не собирался (найдено сборкой слоя iOS на Linux).
+    pub fn setting_bool(&self, key: String, fallback: bool) -> Result<bool, FfiError> {
         let client = self.reader()?;
 
-        guard(|| client.setting_bool(&key, default))
+        guard(|| client.setting_bool(&key, fallback))
     }
 
     /// Записывает булеву настройку приложения.
@@ -885,10 +889,10 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — чтение хранилища не удалось.
-    pub fn setting_int(&self, key: String, default: i64) -> Result<i64, FfiError> {
+    pub fn setting_int(&self, key: String, fallback: i64) -> Result<i64, FfiError> {
         let client = self.reader()?;
 
-        guard(|| client.setting_int(&key, default))
+        guard(|| client.setting_int(&key, fallback))
     }
 
     /// Записывает числовую настройку приложения.

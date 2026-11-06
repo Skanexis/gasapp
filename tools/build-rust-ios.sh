@@ -98,7 +98,11 @@ echo "генерация биндингов Swift"
 rm -rf "$SWIFT_OUT"
 mkdir -p "$SWIFT_OUT"
 
-cargo run --manifest-path "$CRATES/Cargo.toml" -p gasapp-ffi --bin uniffi-bindgen -- \
+# Генератор собирается для самого Mac и тянет те же зависимости ядра
+# (SQLCipher → OpenSSL), а системного OpenSSL в macOS нет — отсюда
+# vendored-openssl и здесь.
+cargo run --manifest-path "$CRATES/Cargo.toml" -p gasapp-ffi --features vendored-openssl \
+  --bin uniffi-bindgen -- \
   generate --library "$BUILD/device/libgasapp.a" \
   --language swift --out-dir "$SWIFT_OUT"
 
