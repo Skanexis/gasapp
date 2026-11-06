@@ -128,3 +128,8 @@ server/deploy/tls/key.pem
 # Комплект развёртывания с адресами машин и его настройки (server/deploy/prepare-bundle.sh)
 /server/deploy-bundle/
 /server/deploy/bundle.conf
+
+# Отчёт проверки на Mac (tools/mac-check.sh) и биндинги Swift
+/mac-report/
+/mac-report.zip
+ios/GasApp/Generated/
