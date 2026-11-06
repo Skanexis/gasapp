@@ -24,7 +24,7 @@ workspace = true
 # качает в разы больше).
 arti-client = { version = "=0.46.0", default-features = false, features = ["tokio", "rustls", "compression", "pt-client", "onion-service-client"] }
 # Тот же tor-rtcompat, что внутри arti-client: тип рантайма клиента.
-tor-rtcompat = { version = "=0.46.0", default-features = false, features = ["tokio", "rustls"] }
+tor-rtcompat = { version = "=0.47.0", default-features = false, features = ["tokio", "rustls"] }
 # Криптопровайдер TLS до узлов Tor. Arti оставляет выбор приложению.
 #
 # ring, а не aws-lc-rs: собирается NDK-компилятором без cmake и NASM.
