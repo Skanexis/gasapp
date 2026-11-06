@@ -1701,9 +1701,9 @@ fun uniffi_gasapp_fn_method_messenger_set_setting_int(`ptr`: Pointer,`key`: Rust
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_set_tor_bridges(`ptr`: Pointer,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_gasapp_fn_method_messenger_setting_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_gasapp_fn_method_messenger_setting_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`fallback`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
-fun uniffi_gasapp_fn_method_messenger_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Long,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_gasapp_fn_method_messenger_setting_int(`ptr`: Pointer,`key`: RustBuffer.ByValue,`fallback`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
 fun uniffi_gasapp_fn_method_messenger_socket_auth_headers(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -2382,10 +2382,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_set_tor_bridges() != 60329.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_setting_bool() != 15461.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_setting_bool() != 49589.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_setting_int() != 34337.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_setting_int() != 23971.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_socket_auth_headers() != 16413.toShort()) {
@@ -4623,8 +4623,12 @@ public interface MessengerInterface {
      * # Errors
      *
      * [`FfiError::Core`] — чтение хранилища не удалось.
+     *
+     * ⚠️ Параметр — `fallback`, а не `default`: имя переходит в
+     * заголовок C для Swift, а `default` в C — ключевое слово, и модуль
+     * gasappFFI не собирался (найдено сборкой слоя iOS на Linux).
      */
-    fun `settingBool`(`key`: kotlin.String, `default`: kotlin.Boolean): kotlin.Boolean
+    fun `settingBool`(`key`: kotlin.String, `fallback`: kotlin.Boolean): kotlin.Boolean
     
     /**
      * Читает числовую настройку приложения.
@@ -4633,7 +4637,7 @@ public interface MessengerInterface {
      *
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
-    fun `settingInt`(`key`: kotlin.String, `default`: kotlin.Long): kotlin.Long
+    fun `settingInt`(`key`: kotlin.String, `fallback`: kotlin.Long): kotlin.Long
     
     /**
      * Заголовки подписи для рукопожатия сокета уведомлений.
@@ -7436,13 +7440,17 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      * # Errors
      *
      * [`FfiError::Core`] — чтение хранилища не удалось.
+     *
+     * ⚠️ Параметр — `fallback`, а не `default`: имя переходит в
+     * заголовок C для Swift, а `default` в C — ключевое слово, и модуль
+     * gasappFFI не собирался (найдено сборкой слоя iOS на Linux).
      */
-    @Throws(FfiException::class)override fun `settingBool`(`key`: kotlin.String, `default`: kotlin.Boolean): kotlin.Boolean {
+    @Throws(FfiException::class)override fun `settingBool`(`key`: kotlin.String, `fallback`: kotlin.Boolean): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_setting_bool(
-        it, FfiConverterString.lower(`key`),FfiConverterBoolean.lower(`default`),_status)
+        it, FfiConverterString.lower(`key`),FfiConverterBoolean.lower(`fallback`),_status)
 }
     }
     )
@@ -7457,12 +7465,12 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
      *
      * [`FfiError::Core`] — чтение хранилища не удалось.
      */
-    @Throws(FfiException::class)override fun `settingInt`(`key`: kotlin.String, `default`: kotlin.Long): kotlin.Long {
+    @Throws(FfiException::class)override fun `settingInt`(`key`: kotlin.String, `fallback`: kotlin.Long): kotlin.Long {
             return FfiConverterLong.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_setting_int(
-        it, FfiConverterString.lower(`key`),FfiConverterLong.lower(`default`),_status)
+        it, FfiConverterString.lower(`key`),FfiConverterLong.lower(`fallback`),_status)
 }
     }
     )

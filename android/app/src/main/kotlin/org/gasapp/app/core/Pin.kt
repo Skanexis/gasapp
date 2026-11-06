@@ -70,7 +70,9 @@ object Pin {
         if (!isAcceptable(pin)) return false
 
         val digits = pin.map { it - '0'.code.toByte() }
-        val steps = digits.zipWithNext { a, b -> b - a }.toSet()
+        // Шаг по модулю 10: 135791 и 789012 «переходят» через 9 → 0 и
+        // без модуля ускользали от правила (найдено тестами iOS).
+        val steps = digits.zipWithNext { a, b -> (b - a + 10) % 10 }.toSet()
 
         // 111111, 123456, 654321, 135791 — шаг один и тот же.
         if (steps.size == 1) return true

@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Общие настройки сборки GasApp для iOS. Попадают в Info.plist
+// (GASAPP_* ниже) и читаются приложением через AppConfig.swift.
+//
+// ⚠️ В xcconfig «//» — начало комментария, поэтому в адресах вместо
+// «https://» пишется «https:/$()/».
+
+// Адрес сервера сообщений.
+GASAPP_SERVER_URL = https:/$()/api.gasapp.chat
+
+// Onion-адрес сервера, «адрес.onion:443»; пусто — без onion.
+GASAPP_SERVER_ONION =
+
+// Сайт с документами (политика, условия, удаление аккаунта).
+GASAPP_DOCS_URL = https:/$()/gasapp.chat
+
+// 🔴 Пины ключа TLS сервера (SPKI SHA-256, base64) через запятую:
+// основной и запасной — те же, что в
+// android/app/src/release/res/xml/network_security_config.xml.
+// Заглушки ниже соединиться не дадут ни с чем (так задумано), а релиз
+// с ними не соберётся (проверка в project.yml).
+GASAPP_PINS = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=,BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+
+// Дата, после которой пины не проверяются (как expiration у Android).
+GASAPP_PIN_EXPIRATION = 2027-12-01
+
+// Команда разработчика Apple (10 символов, developer.apple.com →
+// Membership). Задаётся в Local.xcconfig, не в git.
+DEVELOPMENT_TEAM =
+
+// Свои значения — в Local.xcconfig рядом (в git не попадает).
+#include? "Local.xcconfig"

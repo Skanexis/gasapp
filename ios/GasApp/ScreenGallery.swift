@@ -5,24 +5,26 @@ import SwiftUI
 ///
 /// В обычную сборку не входит: флаг GASAPP_GALLERY задаёт только скрипт
 /// проверки. Экран — из переменной окружения GASAPP_SCREEN, которую
-/// симулятор передаёт как SIMCTL_CHILD_GASAPP_SCREEN.
+/// симулятор передаёт как SIMCTL_CHILD_GASAPP_SCREEN. Без аккаунта
+/// экраны показывают пустые состояния — проверяется вёрстка.
 enum ScreenGallery {
-    static let names = ["ffi", "onboarding", "lock", "chats", "chat"]
+    static let names = ["onboarding", "lock", "chats", "addcontact", "settings", "privacy"]
 
     @ViewBuilder
     static func root() -> some View {
-        switch ProcessInfo.processInfo.environment["GASAPP_SCREEN"] ?? "ffi" {
-        case "onboarding":
-            OnboardingView(onRegister: { _, _ in })
+        switch ProcessInfo.processInfo.environment["GASAPP_SCREEN"] ?? "onboarding" {
         case "lock":
-            LockView(onUnlock: { _ in })
+            LockScreen().gasScreen()
         case "chats":
-            ChatListView(onOpenChat: { _ in }, onNewChat: {}, onSecurityCenter: {})
-        case "chat":
-            ChatView(peerName: "Анна", peerUsername: "anna_k", isVerified: true,
-                     onVerify: {}, onBack: {})
+            ChatListScreen()
+        case "addcontact":
+            NavigationStack { AddContactScreen { _, _ in } }
+        case "settings":
+            NavigationStack { SettingsScreen() }
+        case "privacy":
+            PrivacyCover()
         default:
-            ContentView()
+            OnboardingFlow()
         }
     }
 }

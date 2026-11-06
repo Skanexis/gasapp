@@ -1,42 +1,37 @@
-// swift-tools-version:5.5
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+// swift-tools-version:5.10
+// SPDX-License-Identifier: Apache-2.0
+//
+// Слой приложения без интерфейса (ядро, сеть, ключи) — отдельным
+// пакетом, чтобы его можно было собрать и протестировать вне Xcode:
+// на Linux против Linux-сборки ядра (tools/ios-kit-test.sh) и на Mac.
+//
+// Само приложение собирается проектом Xcode (project.yml) из тех же
+// файлов; интерфейс (SwiftUI) в пакет не входит.
+//
+// Перед сборкой нужны биндинги и библиотека ядра:
+//   GasApp/Generated/gasapp.swift   — uniffi-bindgen
+//   build/headers/module.modulemap  — модуль gasappFFI (+ link "gasapp")
 
 import PackageDescription
 
 let package = Package(
-    name: "GasApp",
-    platforms: [
-        // 🔐 iOS 17, как требует раздел 19.1 плана.
-        //
-        // Стояло .v13 — расхождение в четыре версии системы, найденное
-        // при заполнении чек-листа MASVS (CODE-1). На iOS 13 нет ни
-        // части гарантий Keychain, на которых держится схема ключей
-        // (раздел 7.3), ни Swift 6 со строгой моделью конкурентности,
-        // объявленной в том же разделе 19.1.
-        //
-        // Приложение при этом ставилось бы и выглядело работающим:
-        // заявленные гарантии просто отсутствовали бы, как это было
-        // с minSdk = 21 на Android (раздел 23.5).
-        .iOS(.v17)
-    ],
+    name: "GasAppKit",
+    platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
-        // Products define the executables and libraries a package produces, and make them visible to other packages.
-        .library(
-            name: "GasApp",
-            targets: ["GasApp"]),
-    ],
-    dependencies: [
-        // Dependencies declare other packages that this package depends on.
-        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing.git", from: "1.9.0"),
+        .library(name: "GasAppKit", targets: ["GasAppKit"]),
     ],
     targets: [
-        // Targets are the basic building blocks of a package. A target can define a module or a test suite.
-        // Targets can also depend on other targets in this package, and on products from packages this package depends on.
+        .systemLibrary(name: "gasappFFI", path: "build/headers"),
         .target(
-            name: "GasApp",
-            dependencies: []),
+            name: "GasAppKit",
+            dependencies: ["gasappFFI"],
+            path: "GasApp",
+            sources: ["Core", "Net", "App/AppConfig.swift", "Generated/gasapp.swift"]
+        ),
         .testTarget(
-            name: "GasAppSnapshotTests",
-            dependencies: ["GasApp", .product(name: "SnapshotTesting", package: "swift-snapshot-testing")]),
+            name: "GasAppKitTests",
+            dependencies: ["GasAppKit"],
+            path: "KitTests"
+        ),
     ]
 )

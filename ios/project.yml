@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Проект Xcode — описанием, а не руками: GasApp.xcodeproj собирает
+# XcodeGen (tools/mac-check.sh ставит его сам):
+#
+#     cd ios && xcodegen generate
+#
+# Прежний GasApp.xcodeproj был написан вручную, без Xcode, и не
+# открывался. Сгенерированный в git не кладётся: источник правды — этот
+# файл.
+
+name: GasApp
+
+options:
+  bundleIdPrefix: org.gasapp
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: ru
+
+settings:
+  base:
+    # Swift 5: биндинги UniFFI 0.29 под строгую конкурентность Swift 6
+    # не размечены. Переход на 6 — отдельной правкой, после сборки.
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  GasApp:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    sources:
+      - path: GasApp
+        excludes:
+          - "**/*.md"
+          # Не ресурсы: подключаются настройками ниже. В ресурсах
+          # Info.plist даёт «Multiple commands produce Info.plist».
+          - "Info.plist"
+          - "GasApp.entitlements"
+      - path: Base.lproj/LaunchScreen.storyboard
+    dependencies:
+      # Ядро: статическая библиотека и заголовки модуля gasappFFI
+      # (tools/build-rust-ios.sh). Биндинги Swift — в GasApp/Generated.
+      - framework: GasAppCore.xcframework
+        embed: false
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+      - sdk: CoreFoundation.framework
+      - sdk: libc++.tbd
+      - sdk: libresolv.tbd
+      - sdk: libz.tbd
+      - sdk: libiconv.tbd
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.gasapp.messenger
+        INFOPLIST_FILE: GasApp/Info.plist
+        CODE_SIGN_ENTITLEMENTS: GasApp/GasApp.entitlements
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        # 🔐 Защита исполняемого файла — как у Android-ядра.
+        ENABLE_BITCODE: NO
+        DEAD_CODE_STRIPPING: YES
+    preBuildScripts:
+      - name: "GasApp: релиз не собирается с заглушками"
+        basedOnDependencyAnalysis: false
+        script: |
+          # 🔐 Как проверка релиза в android/app/build.gradle: заглушки
+          # пинов и пустой адрес сервера дали бы приложение, которое
+          # ни с чем не соединится (или соединится с чем угодно).
+          if [ "$CONFIGURATION" = "Release" ]; then
+            case "$GASAPP_PINS" in
+              *AAAAAAAA*|*BBBBBBBB*|"") echo "error: GASAPP_PINS — заглушки (ios/Config/Release.xcconfig)"; exit 1 ;;
+            esac
+            [ -n "$GASAPP_SERVER_URL" ] || { echo "error: не задан GASAPP_SERVER_URL"; exit 1; }
+          fi
+          if [ ! -f "$SRCROOT/GasApp/Generated/gasapp.swift" ]; then
+            echo "error: нет биндингов ядра — запустите tools/build-rust-ios.sh"; exit 1
+          fi
+
+schemes:
+  GasApp:
+    build:
+      targets:
+        GasApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
