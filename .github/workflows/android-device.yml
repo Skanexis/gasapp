@@ -81,6 +81,23 @@ jobs:
           api-level: ${{ matrix.api-level }}
           arch: x86_64
           target: google_apis
+          # Экран как у обычного телефона. Без профиля эмулятор заводится
+          # с крошечным экраном по умолчанию, и нижний ряд клавиатуры PIN
+          # и поля онбординга оказывались за его краем — тесты падали
+          # на «view is not displayed», а не на ошибках приложения.
+          profile: pixel_6
           disable-animations: true
           working-directory: android
           script: ./gradlew --console=plain :app:connectedFossDebugAndroidTest -PgasappAllowUnreleasable=true
+
+      # Отчёт тестов — и при провале: без него видно лишь «5 failed».
+      - name: test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-tests-api${{ matrix.api-level }}
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+          retention-days: 14
+          if-no-files-found: ignore

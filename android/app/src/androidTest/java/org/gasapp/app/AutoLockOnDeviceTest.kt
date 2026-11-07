@@ -54,6 +54,8 @@ class AutoLockOnDeviceTest {
             File(context.filesDir, "gasapp.db").exists(),
         )
 
+        NotificationsAllowed.grant()
+
         Core.unlock(context, TEST_PIN.toByteArray()).apply {
             // Ноль — «запирать сразу после ухода»: самый строгий режим,
             // и тест не ждёт минуту умолчания.

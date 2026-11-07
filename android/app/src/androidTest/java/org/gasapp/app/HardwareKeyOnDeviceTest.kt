@@ -3,6 +3,7 @@
 package org.gasapp.app
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -13,6 +14,7 @@ import org.gasapp.app.core.AppSignature
 import org.gasapp.app.core.Core
 import org.gasapp.app.core.HardwareKey
 import org.gasapp.app.core.KeyAttestation
+import org.gasapp.app.core.TeeKey
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,6 +24,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeFalse
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,13 +75,42 @@ class HardwareKeyOnDeviceTest {
         AccountWipe.wipe(context)
     }
 
+    /**
+     * Ключ, на котором держится база (схема v3, [TeeKey]), заведён
+     * при входе и из Keystore не отдаётся.
+     *
+     * ⚠️ До 2026-11-07 здесь проверялся ключ схемы v2
+     * (`gasapp.storage.kek`), которого у новых аккаунтов нет вовсе:
+     * тест падал на «ключа-обёртки нет», а ключ v3 не проверялся.
+     */
     @Test
-    fun the_wrapping_key_is_not_exportable() {
+    fun the_storage_key_is_not_exportable() {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val entry = store.getEntry(KEK_ALIAS, null) as? KeyStore.SecretKeyEntry
+        val entry = store.getEntry(TEE_ALIAS, null) as? KeyStore.SecretKeyEntry
 
-        assertNotNull("после входа ключа-обёртки в Keystore нет", entry)
-        assertNull("Keystore отдал байты ключа-обёртки", entry!!.secretKey.encoded)
+        assertNotNull("после входа ключа хранилища в Keystore нет", entry)
+        assertNull("Keystore отдал байты ключа хранилища", entry!!.secretKey.encoded)
+    }
+
+    /**
+     * 🔐 Ключ v3 пропал — база не открывается, и новый ключ молча
+     * не появляется (иначе верный PIN давал бы «неверный PIN»).
+     */
+    @Test
+    fun a_lost_storage_key_is_not_silently_recreated() {
+        assertTrue("после входа ключа хранилища нет", TeeKey.exists())
+
+        // Удаляется только ключ — отметка о его создании остаётся,
+        // как после сброса Keystore системой.
+        KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(TEE_ALIAS)
+
+        try {
+            TeeKey.respond(context, ByteArray(32))
+            fail("без ключа Keystore ответ на PIN всё равно получен")
+        } catch (expected: TeeKey.KeyUnavailable) {
+            assertTrue("утрата ключа не названа утратой", expected.lost)
+        }
+        assertFalse("ключ хранилища создан заново молча", TeeKey.exists())
     }
 
     @Test
@@ -114,7 +146,7 @@ class HardwareKeyOnDeviceTest {
 
     @Test
     fun the_system_reports_where_the_key_lives() {
-        val level = HardwareKey.securityLevel()
+        val level = TeeKey.securityLevel()
 
         Log.i(TAG, "ключ хранилища: $level")
         assertNotNull("система не сказала, где лежит ключ хранилища", level)
@@ -125,6 +157,15 @@ class HardwareKeyOnDeviceTest {
         val verdict = KeyAttestation.run()
 
         Log.i(TAG, "аттестация: ${verdict.outcome} ${verdict.reason.orEmpty()}")
+
+        // ⚠️ У образов эмулятора промежуточный сертификат программной
+        // аттестации просрочен (образ API 28 — 2026-11). На телефоне это
+        // провал, и он здесь остаётся провалом; пропускается только
+        // эмулятор и только по этой причине.
+        assumeTrue(
+            "эмулятор: сертификат программной аттестации образа просрочен",
+            !(isEmulator() && verdict.reason.orEmpty().endsWith("вне срока")),
+        )
 
         assertNotEquals(
             "аттестация провалилась: ${verdict.reason}",
@@ -155,6 +196,9 @@ class HardwareKeyOnDeviceTest {
         )
     }
 
+    private fun isEmulator(): Boolean =
+        Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish" || Build.FINGERPRINT.contains("generic")
+
     private fun contains(haystack: ByteArray, needle: ByteArray): Boolean =
         (0..haystack.size - needle.size).any { start ->
             needle.indices.all { haystack[start + it] == needle[it] }
@@ -163,7 +207,7 @@ class HardwareKeyOnDeviceTest {
     private companion object {
         const val TAG = "HardwareKeyOnDevice"
         const val TEST_PIN = "246801"
-        const val KEK_ALIAS = "gasapp.storage.kek"
+        const val TEE_ALIAS = "gasapp_storage_tee_v3"
         const val SECRET_FILE = "gasapp.hw"
     }
 }

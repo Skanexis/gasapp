@@ -56,10 +56,15 @@ class MonospaceOnDeviceTest {
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 )
                 val layout = digits.layout
+                // getLineMax, а не getLineWidth: второй учитывает пробелы
+                // в конце строки, а первая строка кончается переводом строки. На
+                // Android 9 у перевода строки есть ширина (с letterSpacing),
+                // и строки «расходились» на 7 px при одинаковых цифрах.
+                // Видимая ширина — без хвостовых пробелов.
                 assertEquals(
                     "строки safety number разной ширины",
-                    layout.getLineWidth(0),
-                    layout.getLineWidth(1),
+                    layout.getLineMax(0),
+                    layout.getLineMax(1),
                     0.5f,
                 )
             }
