@@ -2,7 +2,7 @@ name: rust
 
 on:
   push:
-    branches: [main]
+    branches: [main, gasapp]
   pull_request:
 
 permissions:
@@ -289,5 +289,28 @@ jobs:
       # vendored-openssl: в SDK iOS и NDK нет системного OpenSSL, а он
       # нужен SQLCipher — без флага ядро под телефоны не собирается
       # (так же собирают tools/build-rust-ios.sh и build-rust-android.sh).
-      - name: build
+      #
+      # iOS: минимальная версия — как у приложения. Без неё rustc
+      # компонует под iOS 10, а C-код собран под версию SDK, и
+      # компоновщик не находит `___chkstk_darwin`.
+      - name: build (iOS)
+        if: contains(matrix.target, 'apple')
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         run: cargo build --manifest-path crates/Cargo.toml --workspace --release --target ${{ matrix.target }} --features gasapp-ffi/vendored-openssl
+
+      # Android: компилятор C берётся из NDK той же версии, что
+      # в android/app/build.gradle (ADR-020), через cargo-ndk — как
+      # в tools/build-rust-android.sh. Голый `cargo build` искал
+      # `aarch64-linux-android-clang` в PATH и падал на ring.
+      - name: install NDK
+        if: contains(matrix.target, 'android')
+        run: |
+          set -euo pipefail
+          ndk=$(sed -n 's/^[[:space:]]*ndkVersion = "\(.*\)"$/\1/p' android/app/build.gradle | head -1)
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
+      - name: build (Android)
+        if: contains(matrix.target, 'android')
+        working-directory: crates
+        run: cargo ndk -t ${{ matrix.target }} -P 28 build --release -p gasapp-ffi --features vendored-openssl

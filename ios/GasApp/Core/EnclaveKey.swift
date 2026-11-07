@@ -143,4 +143,3 @@ enum EnclaveKey {
     nonisolated(unsafe) private static var testKey: [UInt8]?
     #endif
 }
-

@@ -2,6 +2,11 @@
 # See https://pre-commit.com/ for more information
 # See https://pre-commit.com/hooks.html for available hooks
 
+# Сгенерированное и чужое не правим: биндинги UniFFI пересоздаются при
+# каждой сборке ядра (правка исчезла бы), текст лицензии шрифта — как
+# у автора.
+exclude: ^(android/app/src/main/kotlin/uniffi/|ios/GasApp/Generated/|design/fonts/.*\.txt$)
+
 repos:
   # Gitleaks for secret scanning
   - repo: https://github.com/gitleaks/gitleaks
@@ -11,14 +16,19 @@ repos:
         args: [--config=.gitleaks.toml]
 
   # Cargo formatting check
+  #
+  # В корне репозитория нет Cargo.toml — workspace два (crates/ и
+  # server/), и голый `cargo fmt --check` падал на любом .rs. В CI
+  # форматирование проверяет rust.yml, здесь хук пропускается
+  # (SKIP=cargo-fmt-check в security.yml).
   - repo: local
     hooks:
       - id: cargo-fmt-check
         name: cargo fmt --check
-        entry: cargo fmt --check
+        entry: bash -c 'cargo fmt --check --manifest-path crates/Cargo.toml && cargo fmt --check --manifest-path server/Cargo.toml'
         language: system
-        files: \.(rs|toml)$
         types: [rust]
+        pass_filenames: false
 
   # Trailing whitespace fixer
   - repo: https://github.com/pre-commit/pre-commit-hooks

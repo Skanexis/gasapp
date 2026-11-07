@@ -12,6 +12,7 @@
 Второй режим возвращает ненулевой код, если числа разошлись.
 """
 
+import glob
 import io
 import os
 import re
@@ -124,6 +125,11 @@ def check_paths(text, root):
         # Сокращение вида `android/app/.../SomeTest.kt` — указание
         # на файл, а не путь: ищем по имени.
         if os.path.exists(os.path.join(root, quoted)):
+            continue
+
+        # Шаблон вида `docs/legal/privacy-policy*.md` — пара файлов
+        # на двух языках: годится, если нашёлся хотя бы один.
+        if any(ch in quoted for ch in "*?[") and glob.glob(os.path.join(root, quoted)):
             continue
 
         if quoted.rsplit("/", 1)[-1] in names:

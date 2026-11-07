@@ -291,7 +291,7 @@ pub struct CodeRequest {
     pub email: String,
     /// Решение proof-of-work над [`crate::pow::email_code_challenge`].
     pub pow_nonce: u64,
-    /// Окно времени, для которого найдено решение (см. [`challenge`]).
+    /// Окно времени, для которого найдено решение (см. `challenge`).
     pub window: u64,
 }
 

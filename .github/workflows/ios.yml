@@ -22,6 +22,9 @@ name: ios
 
 on:
   push:
+    # Только свои ветки: ветки Dependabot проверяются как пул-реквесты
+    # (rust.yml, security.yml), а гонять ради них macOS незачем.
+    branches: [main, gasapp]
     paths:
       - "ios/**"
       - "crates/**"

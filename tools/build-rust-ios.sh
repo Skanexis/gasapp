@@ -26,6 +26,12 @@ BUILD="$ROOT/ios/build"
 XCFRAMEWORK="$ROOT/ios/GasAppCore.xcframework"
 SWIFT_OUT="$ROOT/ios/GasApp/Generated"
 
+# Минимальная версия iOS — та же, что у приложения (project.yml).
+# Без неё rustc компонует библиотеку под iOS 10, а C-код (zstd,
+# SQLCipher, OpenSSL) собирается под версию SDK — и компоновщик не
+# находит `___chkstk_darwin`, которого в iOS 10 не было.
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
+
 DEVICE_TARGET="aarch64-apple-ios"
 SIM_TARGETS=(aarch64-apple-ios-sim x86_64-apple-ios)
 
