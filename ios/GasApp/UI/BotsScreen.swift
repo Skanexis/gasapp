@@ -106,7 +106,8 @@ struct BotsScreen: View {
             } catch FfiError.InvalidArgument {
                 error = L10n.t("Имя бота: латиница, цифры и _, в конце — bot", "Bot name: Latin letters, digits and _, ending in bot")
             } catch {
-                error = L10n.t("Не получилось: нет связи с сервером либо ботов уже слишком много",
+                // Внутри `catch` имя `error` — пойманная ошибка, поле — через self.
+                self.error = L10n.t("Не получилось: нет связи с сервером либо ботов уже слишком много",
                                "Did not work: no connection to the server, or there are too many bots already")
             }
             working = false
