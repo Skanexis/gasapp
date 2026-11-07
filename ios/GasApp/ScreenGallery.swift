@@ -23,24 +23,33 @@ enum ScreenGallery {
             MainTabs(start: .channels)
         case "contacts":
             MainTabs(start: .contacts)
+        // Вложенные экраны — открытыми из своей вкладки, как у человека:
+        // со стрелкой «назад» и нижней панелью.
         case "backup":
-            NavigationStack { BackupScreen() }
+            MainTabs(start: .settings, pushed: AnyView(BackupScreen()))
         case "security":
-            NavigationStack { SecurityScreen() }
+            MainTabs(start: .settings, pushed: AnyView(SecurityScreen()))
         case "addcontact":
-            NavigationStack { AddContactScreen { _, _ in } }
+            MainTabs(start: .contacts, pushed: AnyView(AddContactScreen { _, _ in }))
         case "settings":
             MainTabs(start: .settings)
         case "privacy":
             PrivacyCover()
         case "network":
-            NavigationStack { NetworkScreen() }
+            MainTabs(start: .settings, pushed: AnyView(NetworkScreen()))
         case "vault":
-            NavigationStack { VaultScreen() }
+            MainTabs(start: .settings, pushed: AnyView(VaultScreen()))
         case "storage":
-            NavigationStack { StorageScreen() }
+            MainTabs(start: .settings, pushed: AnyView(StorageScreen()))
+        // «Мои боты» — лист поверх каналов, как в приложении.
         case "bots":
-            NavigationStack { BotsScreen() }
+            MainTabs(start: .channels)
+                .sheet(isPresented: .constant(true)) {
+                    NavigationStack {
+                        BotsScreen()
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) {} } }
+                    }
+                }
         default:
             OnboardingFlow()
         }

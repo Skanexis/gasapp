@@ -45,9 +45,21 @@ struct AttachmentView: View {
         }
         .task(id: descriptor) { await load() }
         .fullScreenCover(isPresented: $fullScreen) {
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 Color.black.ignoresSafeArea()
-                if let image { Image(uiImage: image).resizable().scaledToFit() }
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                Button { fullScreen = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(.white.opacity(0.18)))
+                }
+                .padding(16)
+                .accessibilityLabel(L10n.t("Закрыть", "Close"))
             }
             .onTapGesture { fullScreen = false }
         }

@@ -10,8 +10,14 @@ struct MainTabs: View {
 
     enum Tab: Hashable { case chats, channels, contacts, settings }
 
-    init(start: Tab = .chats) {
+    /// Экран, уже открытый внутри стартовой вкладки (настройки или
+    /// контакты); в приложении — nil.
+    private let pushed: AnyView?
+    @State private var pushedShown = false
+
+    init(start: Tab = .chats, pushed: AnyView? = nil) {
         _tab = State(initialValue: start)
+        self.pushed = pushed
     }
 
     var body: some View {
@@ -23,10 +29,16 @@ struct MainTabs: View {
                 .tabItem { Label(L10n.t("Каналы", "Channels"), systemImage: "megaphone.fill") }
                 .badge(unreadPosts)
                 .tag(Tab.channels)
-            NavigationStack { ContactsScreen() }
+            NavigationStack {
+                ContactsScreen()
+                    .navigationDestination(isPresented: binding(for: .contacts)) { pushed }
+            }
                 .tabItem { Label(L10n.t("Контакты", "Contacts"), systemImage: "person.2.fill") }
                 .tag(Tab.contacts)
-            NavigationStack { SettingsScreen() }
+            NavigationStack {
+                SettingsScreen()
+                    .navigationDestination(isPresented: binding(for: .settings)) { pushed }
+            }
                 .tabItem { Label(L10n.t("Настройки", "Settings"), systemImage: "gearshape.fill") }
                 .tag(Tab.settings)
         }
@@ -34,6 +46,11 @@ struct MainTabs: View {
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
         .task(id: tab) { await countUnread() }
+        .onAppear { if pushed != nil { pushedShown = true } }
+    }
+
+    private func binding(for owner: Tab) -> Binding<Bool> {
+        Binding(get: { pushedShown && tab == owner && pushed != nil }, set: { pushedShown = $0 })
     }
 
     private func countUnread() async {
