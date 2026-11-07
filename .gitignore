@@ -142,3 +142,6 @@ ios/.build/
 
 # Кеш Python от tools/*.py
 __pycache__/
+
+# Готовые выпуски (tools/release-android.sh) — подписанные APK/AAB.
+/dist/

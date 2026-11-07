@@ -137,8 +137,11 @@ android {
         // не с чем. Релиз переопределяет поле ниже.
         buildConfigField "String", "SIGNING_CERT_SHA256", "\"\""
 
-        versionCode = 1
-        versionName = "1.0"
+        // Версия выпуска — из tools/release.conf (tools/release-android.sh
+        // передаёт её свойствами). Номер обязан расти с каждой выгрузкой
+        // в Google Play.
+        versionCode = (project.findProperty('gasappVersionCode') ?: '1').toString().toInteger()
+        versionName = (project.findProperty('gasappVersionName') ?: '1.0').toString()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -68,9 +68,9 @@
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">gasapp.eu</domain>
 
-        <pin-set expiration="2027-01-01">
-            <pin digest="SHA-256">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</pin>
-            <pin digest="SHA-256">BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=</pin>
+        <pin-set expiration="2027-12-01">
+            <pin digest="SHA-256">MBTjAAasPRzKnp6gIy6c03Yf0VKluvRmF2pfpjwKHpo=</pin>
+            <pin digest="SHA-256">bcrsaCySvCUxMTpgkeRXlcT0X0pXzmyTluBWMja6bEA=</pin>
         </pin-set>
     </domain-config>
 

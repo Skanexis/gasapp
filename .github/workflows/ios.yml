@@ -15,8 +15,7 @@
 #   ASC_KEY_ID      — ключ App Store Connect API: Key ID
 #   ASC_ISSUER_ID   — Issuer ID
 #   ASC_KEY_P8      — содержимое файла AuthKey_….p8 целиком
-#   GASAPP_PINS     — пины сервера через запятую (основной,запасной)
-#   GASAPP_SERVER_ONION — onion-адрес (необязательно)
+# Адрес сервера, onion и пины — не секреты: tools/release.conf.
 
 name: ios
 
@@ -98,21 +97,13 @@ jobs:
       - name: project
         run: |
           brew install xcodegen
-          # 🔐 Настройки релиза — из секретов, не из репозитория.
-          # Пины-заглушки дали бы приложение, которое ни с чем не
-          # соединится: проверка в project.yml такой релиз не соберёт.
-          # ⚠️ В xcconfig «//» — начало комментария, а в base64 пина оно
-          # бывает: без замены на «/$()/» пин молча обрезался бы.
-          {
-            echo "DEVELOPMENT_TEAM = ${APPLE_TEAM_ID}"
-            echo "GASAPP_PINS = $(printf '%s' "${GASAPP_PINS}" | sed 's#//#/$()/#g')"
-            if [ -n "${GASAPP_SERVER_ONION}" ]; then echo "GASAPP_SERVER_ONION = ${GASAPP_SERVER_ONION}"; fi
-          } > ios/Config/Local.xcconfig
+          # Адрес, onion и пины — из tools/release.conf (уже в
+          # ios/Config/Base.xcconfig); из секретов — только команда Apple.
+          python3 tools/apply-release-config.py --check
+          echo "DEVELOPMENT_TEAM = ${APPLE_TEAM_ID}" > ios/Config/Local.xcconfig
           cd ios && xcodegen generate
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GASAPP_PINS: ${{ secrets.GASAPP_PINS }}
-          GASAPP_SERVER_ONION: ${{ secrets.GASAPP_SERVER_ONION }}
 
       - name: archive, sign and upload to TestFlight
         run: |

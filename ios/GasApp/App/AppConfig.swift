@@ -24,7 +24,7 @@ enum AppConfig {
         return onion.isEmpty ? nil : onion
     }
 
-    static var docsURL: URL { URL(string: value("GASAPPDocsURL")) ?? URL(string: "https://gasapp.chat")! }
+    static var docsURL: URL { URL(string: value("GASAPPDocsURL")) ?? URL(string: "https://gasapp.eu")! }
 
     static var pins: PinSet {
         let list = value("GASAPPPins").split(separator: ",").map(String.init)

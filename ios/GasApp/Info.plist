@@ -48,6 +48,10 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Чтобы отправить выбранное фото. Метаданные (место съёмки, устройство) удаляются перед отправкой.</string>
 	<!-- Настройки сборки (ios/Config/*.xcconfig) — читает AppConfig.swift. -->
+	<!-- Экспорт шифрования (docs/store/app-store.md, раздел 2): приложение
+	     шифрует содержимое стандартными алгоритмами. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
 	<key>GASAPPServerURL</key>
 	<string>$(GASAPP_SERVER_URL)</string>
 	<key>GASAPPServerOnion</key>
