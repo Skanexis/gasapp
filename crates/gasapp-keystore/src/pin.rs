@@ -219,20 +219,19 @@ const ENCLAVE_PROBE_DST: &[u8] = b"GASAPP-ENCLAVE-PROBE-V1_P256_XMD:SHA-256_SSWU
 /// [`GasAppError::Malformed`] — соль не той длины;
 /// [`GasAppError::Crypto`] — хеширование в кривую не удалось.
 pub fn enclave_probe(stretched: &[u8; KEY_LEN], salt: &[u8]) -> Result<[u8; ENCLAVE_PROBE_LEN]> {
-    use p256::elliptic_curve::hash2curve::{ExpandMsgXmd, GroupDigest};
-    use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use p256::elliptic_curve::sec1::ToSec1Point;
+    use p256::hash2curve::GroupDigest;
 
     if salt.len() != SALT_LEN {
         return Err(GasAppError::Malformed);
     }
 
-    let point = p256::NistP256::hash_from_bytes::<ExpandMsgXmd<Sha256>>(
-        &[salt, stretched.as_slice()],
-        &[ENCLAVE_PROBE_DST],
-    )
-    .map_err(|_| GasAppError::Crypto)?;
+    // Набор p256 — ровно P256_XMD:SHA-256_SSWU_RO_ (RFC 9380, 8.2).
+    let point =
+        p256::NistP256::hash_from_bytes(&[salt, stretched.as_slice()], &[ENCLAVE_PROBE_DST])
+            .map_err(|_| GasAppError::Crypto)?;
 
-    let encoded = point.to_affine().to_encoded_point(false);
+    let encoded = point.to_affine().to_sec1_point(false);
 
     <[u8; ENCLAVE_PROBE_LEN]>::try_from(encoded.as_bytes()).map_err(|_| GasAppError::Crypto)
 }
@@ -330,9 +329,9 @@ mod tests {
     /// ключа Enclave ответ не посчитать (см. [`enclave_probe`]).
     #[test]
     fn enclave_probe_is_a_hashed_curve_point() {
-        use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+        use p256::elliptic_curve::sec1::{FromSec1Point, ToSec1Point};
         use p256::elliptic_curve::PrimeField;
-        use p256::{AffinePoint, EncodedPoint, ProjectivePoint, Scalar};
+        use p256::{AffinePoint, ProjectivePoint, Scalar, Sec1Point};
 
         let salt = [0x42u8; SALT_LEN];
         let stretched = [0x11u8; KEY_LEN];
@@ -350,9 +349,9 @@ mod tests {
             enclave_probe(&stretched, &[0x43u8; SALT_LEN]).expect("проба")
         );
 
-        let encoded = EncodedPoint::from_bytes(probe).expect("кодировка");
+        let encoded = Sec1Point::from_bytes(probe).expect("кодировка");
         assert!(
-            bool::from(AffinePoint::from_encoded_point(&encoded).is_some()),
+            bool::from(AffinePoint::from_sec1_point(&encoded).is_some()),
             "точка на кривой"
         );
 
@@ -360,10 +359,36 @@ mod tests {
         let scalar = Option::<Scalar>::from(Scalar::from_repr(stretched.into())).expect("скаляр");
         let weak = (ProjectivePoint::GENERATOR * scalar)
             .to_affine()
-            .to_encoded_point(false);
+            .to_sec1_point(false);
         assert_ne!(probe.as_slice(), weak.as_bytes());
 
         assert!(enclave_probe(&stretched, &[0u8; 3]).is_err());
+    }
+
+    /// 🔐 Хеширование в кривую совпадает с эталоном RFC 9380
+    /// (приложение J.1.1, P256_XMD:SHA-256_SSWU_RO_, пустое сообщение):
+    /// смена версии p256 не должна тихо сменить пробу — с другой пробой
+    /// Enclave дал бы другой ответ, и база на телефоне не открылась бы.
+    #[test]
+    fn hash_to_curve_matches_rfc9380() {
+        use p256::elliptic_curve::sec1::ToSec1Point;
+        use p256::hash2curve::GroupDigest;
+
+        let point = p256::NistP256::hash_from_bytes(
+            &[b""],
+            &[b"QUUX-V01-CS02-with-P256_XMD:SHA-256_SSWU_RO_"],
+        )
+        .expect("хеширование")
+        .to_affine()
+        .to_sec1_point(false);
+
+        let expected = hex::decode(concat!(
+            "04",
+            "2c15230b26dbc6fc9a37051158c95b79656e17a1a920b11394ca91c44247d3e4",
+            "8a7a74985cc5c776cdfe4b1f19884970453912e9d31528c060be9ab5c43e8415",
+        ))
+        .expect("hex");
+        assert_eq!(point.as_bytes(), expected.as_slice());
     }
 
     /// Один PIN и одна соль дают один ключ.

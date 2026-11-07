@@ -16,7 +16,7 @@ name: site
 
 on:
   push:
-    branches: [main]
+    branches: [main, gasapp]
     paths: ["docs/**", "tools/build-site.py", ".github/workflows/site.yml"]
   pull_request:
     paths: ["docs/**", "tools/build-site.py", ".github/workflows/site.yml"]
@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4

@@ -120,7 +120,7 @@ deny = [
     # --- Слабые/устаревшие источники случайности ---
     { crate = "rand", reason = "в крипто-коде используем rand_core + OsRng напрямую", wrappers = [
         "arti-client", "tor-basic-utils", "tor-cell", "tor-chanmgr", "tor-circmgr",
-        "tor-dirmgr", "tor-guardmgr", "tor-hscrypto", "tor-key-forge", "tor-keymgr",
+        "tor-dirmgr", "tor-guardmgr", "tor-hsclient", "tor-hscrypto", "tor-key-forge", "tor-keymgr",
         "tor-llcrypto", "tor-netdir", "tor-netdoc", "tor-proto", "tor-relay-selection",
         # RSA узлов Tor (tor-llcrypto → rsa → num-bigint-dig).
         "num-bigint-dig",
@@ -148,6 +148,11 @@ ignore = [
     # paste (через Arti): не поддерживается, уязвимости нет — это
     # макросы времени компиляции, в библиотеку не попадают.
     { id = "RUSTSEC-2024-0436", reason = "paste — только макросы компиляции, через Arti" },
+    # basic-toml (uniffi → askama_derive): не поддерживается, уязвимости
+    # нет. Читает шаблоны генератора биндингов во время компиляции —
+    # процедурный макрос, в библиотеку на телефоне не попадает. Уйдёт
+    # с обновлением UniFFI, где askama на toml.
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml — только макрос компиляции, через UniFFI" },
 ]
 
 # ----------------------------------------------------------------------------

@@ -93,7 +93,7 @@ cargo test --workspace
 cargo deny --manifest-path Cargo.toml check
 ```
 
-**Прекоммит-хуки**  
+**Прекоммит-хуки**
 Для автоматической проверки перед коммитом рекомендуется установить pre-commit framework:
 ```bash
 pip install pre-commit

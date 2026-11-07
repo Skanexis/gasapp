@@ -20,7 +20,7 @@ name: android-device
 
 on:
   push:
-    branches: [main]
+    branches: [main, gasapp]
   schedule:
     - cron: "0 4 * * *"
   workflow_dispatch:

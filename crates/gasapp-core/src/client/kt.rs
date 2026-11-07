@@ -160,7 +160,7 @@ impl<T: Transport> Client<T> {
     /// # Errors
     ///
     /// * [`GasAppError::Network`] — сервер недоступен или цепочка отстала
-    ///   от часов больше чем на [`FRESHNESS_EPOCHS`];
+    ///   от часов больше чем на `FRESHNESS_EPOCHS`;
     /// * [`GasAppError::InvalidSignature`] — 🔐 цепочка не продолжает
     ///   сохранённую (записывается событие `kt_log_forked`).
     pub fn kt_sync(&self, now: Timestamp) -> Result<u64> {

@@ -1,4 +1,4 @@
-Да. Я посмотрел твой UI kit — по архитектуре интерфейса это уже очень похоже именно на **secure messenger**, а не просто обычный чат: у тебя заложены verification/safety number, encryption keys, disappearing messages, trusted devices, encrypted backup, biometric unlock, блокировка скриншотов и Security Center.  
+Да. Я посмотрел твой UI kit — по архитектуре интерфейса это уже очень похоже именно на **secure messenger**, а не просто обычный чат: у тебя заложены verification/safety number, encryption keys, disappearing messages, trusted devices, encrypted backup, biometric unlock, блокировка скриншотов и Security Center.
 
 Если цель — **максимально серьёзный secure messenger**, я бы не делал всё на одном кроссплатформенном языке. Мой выбор:
 
@@ -345,7 +345,7 @@ frequency
 
 # 9. Контакты
 
-Твой UI уже предполагает contacts. 
+Твой UI уже предполагает contacts.
 
 Я бы **не загружал телефонную книгу целиком на сервер**.
 
@@ -485,7 +485,7 @@ OWASP отдельно предупреждает против хранения 
 
 # 13. Backup — самое опасное место
 
-В твоём UI уже есть **Encrypted backup**. 
+В твоём UI уже есть **Encrypted backup**.
 
 Это очень хорошо, но тут нельзя сделать:
 
@@ -571,7 +571,7 @@ Your recovery key protects your encrypted backup.
 
 # 15. Device linking
 
-У тебя уже есть Linked Devices. 
+У тебя уже есть Linked Devices.
 
 Здесь нельзя делать просто:
 
@@ -635,7 +635,7 @@ Trusted devices
 
 Твой UI уже очень правильно предусматривает:
 
-**Verify safety number** и **View encryption keys**. 
+**Verify safety number** и **View encryption keys**.
 
 Я бы оставил это обязательно.
 
@@ -680,7 +680,7 @@ Possible reasons:
 
 # 17. Calls
 
-У тебя уже есть voice/video calls и прямо указано, что calls E2EE. 
+У тебя уже есть voice/video calls и прямо указано, что calls E2EE.
 
 Для звонков я бы делал отдельный security layer:
 
@@ -870,7 +870,7 @@ OWASP MASVS как раз покрывает storage, cryptography, authenticati
 * biometric unlock;
 * screenshot protection;
 * encrypted backup;
-* disappearing messages.  
+* disappearing messages.
 
 Но я бы добавил ещё несколько экранов:
 

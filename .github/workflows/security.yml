@@ -8,7 +8,7 @@ name: security
 
 on:
   push:
-    branches: [main]
+    branches: [main, gasapp]
   pull_request:
   schedule:
     # Ежедневно: новые advisory появляются и без наших коммитов
@@ -433,7 +433,8 @@ jobs:
         with:
           python-version: "3.x"
       - run: pip install pre-commit
-      - run: pre-commit run --all-files
+      # Форматирование Rust проверяет rust.yml своим тулчейном.
+      - run: SKIP=cargo-fmt-check pre-commit run --all-files
 
   # --------------------------------------------------------------------------
   #  AGPL-код не должен попадать в клиентскую сборку (ADR-006)

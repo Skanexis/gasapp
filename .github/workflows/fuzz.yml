@@ -36,6 +36,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # rust-toolchain.toml в корне закрепляет стабильный канал и перебивает
+  # поставленный ниже nightly: cargo-fuzz падал на «-Z only accepted on
+  # the nightly compiler». Переменная окружения главнее файла.
+  RUSTUP_TOOLCHAIN: nightly
 
 jobs:
   # Быстрая проверка: таргеты собираются. Идёт на пул-реквестах.

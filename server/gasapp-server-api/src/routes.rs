@@ -121,7 +121,7 @@ pub struct AppState {
     /// окружения, а не генерируется при старте.
     pub certificate_key: [u8; 32],
 
-    /// Места для одновременных загрузок вложений (см. [`limit_uploads`]).
+    /// Места для одновременных загрузок вложений (см. `limit_uploads`).
     pub upload_slots: Arc<tokio::sync::Semaphore>,
     /// Места для одновременных скачиваний вложений и медиа каналов.
     pub download_slots: Arc<tokio::sync::Semaphore>,
@@ -1562,7 +1562,7 @@ async fn register_push_token(
 
 /// Похож ли токен на токен провайдера.
 ///
-/// * `fcm` — непустой, до [`MAX_PUSH_TOKEN_CHARS`], печатный ASCII;
+/// * `fcm` — непустой, до `MAX_PUSH_TOKEN_CHARS`, печатный ASCII;
 /// * `apns`, `apns-sandbox` (отладочная сборка iOS) — hex из 32 байт
 ///   и больше. 🔐 Строже, чем FCM: токен Apple встаёт в путь запроса
 ///   (`/3/device/<токен>`), и без проверки устройство подставило бы
