@@ -71,13 +71,15 @@ def data_offset(apk: zipfile.ZipFile, info: zipfile.ZipInfo, raw) -> int:
 def check(path: str) -> list[str]:
     problems = []
     checked = 0
+    only_32 = 0
 
     with open(path, "rb") as raw, zipfile.ZipFile(path) as apk:
         for info in apk.infolist():
             parts = info.filename.split("/")
-            if len(parts) != 3 or parts[0] != "lib" or parts[1] not in ABIS_64:
+            if len(parts) != 3 or parts[0] != "lib" or not parts[2].endswith(".so"):
                 continue
-            if not parts[2].endswith(".so"):
+            if parts[1] not in ABIS_64:
+                only_32 += 1
                 continue
 
             checked += 1
@@ -98,8 +100,15 @@ def check(path: str) -> list[str]:
                 if offset % PAGE:
                     problems.append(f"{name}: смещение в APK {offset} не кратно 16 КБ (zipalign -P 16)")
 
+    # APK одной 32-битной архитектуры (разбиение `splits` в build.gradle) —
+    # законный случай: требование 16 КБ к нему не относится. Ошибка — только
+    # APK без нативных библиотек вовсе: значит, проверка смотрит не туда.
+    if checked == 0 and only_32:
+        print(f"{path}: только 32-битные библиотеки ({only_32}) — требование 16 КБ не применяется")
+        return problems
+
     if checked == 0:
-        problems.append("нет ни одной 64-битной библиотеки — проверять нечего")
+        problems.append("нет ни одной нативной библиотеки — проверять нечего")
 
     print(f"{path}: 64-битных библиотек {checked}")
     return problems
