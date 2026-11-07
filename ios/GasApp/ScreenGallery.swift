@@ -8,7 +8,7 @@ import SwiftUI
 /// симулятор передаёт как SIMCTL_CHILD_GASAPP_SCREEN. Без аккаунта
 /// экраны показывают пустые состояния — проверяется вёрстка.
 enum ScreenGallery {
-    static let names = ["onboarding", "lock", "chats", "channels", "contacts", "addcontact", "settings", "backup", "security", "privacy"]
+    static let names = ["onboarding", "lock", "chats", "channels", "contacts", "addcontact", "settings", "backup", "security", "privacy", "network", "vault", "storage", "bots"]
 
     @ViewBuilder
     static func root() -> some View {
@@ -33,6 +33,14 @@ enum ScreenGallery {
             MainTabs(start: .settings)
         case "privacy":
             PrivacyCover()
+        case "network":
+            NavigationStack { NetworkScreen() }
+        case "vault":
+            NavigationStack { VaultScreen() }
+        case "storage":
+            NavigationStack { StorageScreen() }
+        case "bots":
+            NavigationStack { BotsScreen() }
         default:
             OnboardingFlow()
         }
