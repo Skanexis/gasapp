@@ -61,8 +61,13 @@ jobs:
         run: cargo deny --manifest-path crates/Cargo.toml check
 
       - name: cargo-audit
-        # Исключения — те же, что в deny.toml, с причинами там.
-        run: cargo audit --file crates/Cargo.lock --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0436
+        # Исключения — те же, что в deny.toml, с причинами там. Плюс
+        # RUSTSEC-2026-0387 (crypto-bigint 0.5): он есть в Cargo.lock только
+        # через выключенные ECDSA-функции ssh-key-fork-arti (Arti) и не
+        # компилируется (`cargo tree -i crypto-bigint@0.5.5` пуст); наш p256 —
+        # 0.14 на crypto-bigint 0.7. cargo-deny смотрит граф и его не видит,
+        # cargo-audit читает весь Cargo.lock.
+        run: cargo audit --file crates/Cargo.lock --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2026-0387
 
       # 🔐 Сервер тоже: до 2026-09-25 его зависимости не проверялись,
       # и уязвимый rustls (RUSTSEC-2026-0285) прошёл незамеченным.
@@ -70,7 +75,10 @@ jobs:
         run: cargo deny --manifest-path server/Cargo.toml --config server/deny.toml check advisories
 
       - name: cargo-audit (server)
-        run: cargo audit --file server/Cargo.lock --ignore RUSTSEC-2025-0134
+        # RUSTSEC-2023-0071 (rsa, Marvin): rsa в Cargo.lock только через
+        # sqlx-mysql, который sqlx перечисляет, но не собирает — сервер
+        # только на Postgres (`cargo tree -i rsa` пуст).
+        run: cargo audit --file server/Cargo.lock --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071
 
   # --------------------------------------------------------------------------
   #  Правило 1: UI не занимается криптографией
@@ -267,7 +275,9 @@ jobs:
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
-          java-version: "17"
+          # 21, а не 17: MonospaceKeysTest проверяет и Android 16 (sdk 36),
+          # а среде Robolectric для него нужна Java 21.
+          java-version: "21"
 
       - name: unit tests and release lint
         working-directory: android

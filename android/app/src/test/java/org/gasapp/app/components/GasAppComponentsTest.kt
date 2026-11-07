@@ -85,7 +85,7 @@ class GasAppComponentsTest {
      * Размер из разметки действует.
      *
      * Прежде общие метрики ставились после размера и затирали его:
-     * `buttonSize="small"` давал ту же кнопку 48dp, что и без него.
+     * `gasappButtonSize="small"` давал ту же кнопку 48dp, что и без него.
      */
     @Test
     fun `size attribute changes the height`() {

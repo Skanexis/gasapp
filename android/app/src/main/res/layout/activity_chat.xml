@@ -154,7 +154,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/verify_safety_number"
-            app:buttonSize="small"
+            app:gasappButtonSize="small"
             app:buttonVariant="primary" />
 
         <!-- Запрос на переписку: «Принять» и «Отклонить». -->
@@ -173,7 +173,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/request_accept"
-                app:buttonSize="small"
+                app:gasappButtonSize="small"
                 app:buttonVariant="primary" />
 
             <org.gasapp.app.components.GasAppButton
@@ -183,7 +183,7 @@
                 android:layout_marginStart="@dimen/space_s"
                 android:layout_weight="1"
                 android:text="@string/request_decline"
-                app:buttonSize="small"
+                app:gasappButtonSize="small"
                 app:buttonVariant="secondary" />
         </LinearLayout>
     </LinearLayout>

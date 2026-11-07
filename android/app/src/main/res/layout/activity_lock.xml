@@ -107,7 +107,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_m"
         android:text="@string/lock_forgot"
-        app:buttonSize="small"
+        app:gasappButtonSize="small"
         app:buttonVariant="ghost" />
 
 </LinearLayout>

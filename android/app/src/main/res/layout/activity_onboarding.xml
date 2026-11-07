@@ -445,7 +445,7 @@
                     android:layout_marginTop="@dimen/space_s"
                     android:text="@string/onboarding_add_bridge"
                     android:visibility="gone"
-                    app:buttonSize="small"
+                    app:gasappButtonSize="small"
                     app:buttonVariant="secondary" />
 
                 <!--
@@ -689,7 +689,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_m"
                     android:text="@string/onboarding_code_resend"
-                    app:buttonSize="small"
+                    app:gasappButtonSize="small"
                     app:buttonVariant="secondary" />
             </LinearLayout>
         </FrameLayout>
@@ -704,7 +704,7 @@
         android:layout_marginTop="@dimen/space_s"
         android:layout_marginEnd="@dimen/space_l"
         android:text="@string/onboarding_get_started"
-        app:buttonSize="large"
+        app:gasappButtonSize="large"
         app:buttonVariant="primary" />
 
     <!--
@@ -731,7 +731,7 @@
         android:layout_marginEnd="@dimen/space_l"
         android:text="@string/onboarding_next"
         android:visibility="gone"
-        app:buttonSize="large"
+        app:gasappButtonSize="large"
         app:buttonVariant="primary" />
 
     <org.gasapp.app.components.GasAppButton
@@ -743,7 +743,7 @@
         android:layout_marginEnd="@dimen/space_l"
         android:text="@string/onboarding_create"
         android:visibility="gone"
-        app:buttonSize="large"
+        app:gasappButtonSize="large"
         app:buttonVariant="primary" />
 
     <org.gasapp.app.components.GasAppButton
@@ -755,7 +755,7 @@
         android:layout_marginEnd="@dimen/space_l"
         android:text="@string/onboarding_code_confirm"
         android:visibility="gone"
-        app:buttonSize="large"
+        app:gasappButtonSize="large"
         app:buttonVariant="primary" />
 
     <Space

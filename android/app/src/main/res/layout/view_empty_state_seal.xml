@@ -71,7 +71,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_l"
         android:visibility="gone"
-        app:buttonSize="small"
+        app:gasappButtonSize="small"
         app:buttonVariant="primary"
         tools:text="Start a chat"
         tools:visibility="visible" />

@@ -107,10 +107,17 @@ mkdir -p "$SWIFT_OUT"
 # Генератор собирается для самого Mac и тянет те же зависимости ядра
 # (SQLCipher → OpenSSL), а системного OpenSSL в macOS нет — отсюда
 # vendored-openssl и здесь.
-cargo run --manifest-path "$CRATES/Cargo.toml" -p gasapp-ffi --features vendored-openssl \
-  --bin uniffi-bindgen -- \
-  generate --library "$BUILD/device/libgasapp.a" \
-  --language swift --out-dir "$SWIFT_OUT"
+#
+# Запуск из crates/: `uniffi-bindgen` внутри зовёт `cargo metadata`
+# в **текущем** каталоге (как в build-rust-android.sh), и из корня
+# репозитория падал с «could not find Cargo.toml».
+(
+  cd "$CRATES" || exit 1
+  cargo run -p gasapp-ffi --features vendored-openssl \
+    --bin uniffi-bindgen -- \
+    generate --library "$BUILD/device/libgasapp.a" \
+    --language swift --out-dir "$SWIFT_OUT"
+)
 
 # Заголовки уезжают в XCFramework, .swift остаётся в проекте.
 mkdir -p "$BUILD/headers"

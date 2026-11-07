@@ -88,7 +88,7 @@ class GasAppButton @JvmOverloads constructor(
     /**
      * Размер кнопки из UI kit: 40, 48 или 56dp.
      *
-     * Задаётся атрибутом `buttonSize` в разметке или из кода (кнопки
+     * Задаётся атрибутом `gasappButtonSize` в разметке или из кода (кнопки
      * диалога — [Size.Small]).
      */
     var size: Size = Size.Medium
@@ -108,7 +108,7 @@ class GasAppButton @JvmOverloads constructor(
                 ) { Variant.Primary }
 
                 sizeAttr = Size.entries.getOrElse(
-                    typed.getInt(R.styleable.GasAppButton_buttonSize, 0),
+                    typed.getInt(R.styleable.GasAppButton_gasappButtonSize, 0),
                 ) { Size.Medium }
             }
 
@@ -119,7 +119,7 @@ class GasAppButton @JvmOverloads constructor(
         //
         // ⚠️ Порядок важен: сначала общее, потом вариант и размер.
         // Прежде общие метрики ставились последними и затирали
-        // выбранное — `buttonSize="small"` и жирный шрифт опасной
+        // выбранное — `gasappButtonSize="small"` и жирный шрифт опасной
         // кнопки не действовали нигде.
         minWidth = 0
         minimumWidth = 0
@@ -232,7 +232,7 @@ class GasAppButton @JvmOverloads constructor(
         textSize = textSp
     }
 
-    /** Размеры кнопки; порядок совпадает с enum `buttonSize` в attrs.xml. */
+    /** Размеры кнопки; порядок совпадает с enum `gasappButtonSize` в attrs.xml. */
     enum class Size { Medium, Large, Small }
 
     /** Варианты кнопки из UI kit. */

@@ -70,7 +70,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:visibility="gone"
-            app:buttonSize="small"
+            app:gasappButtonSize="small"
             app:buttonVariant="ghost"
             tools:text="Cancel"
             tools:visibility="visible" />
@@ -81,7 +81,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/space_s"
             android:visibility="gone"
-            app:buttonSize="small"
+            app:gasappButtonSize="small"
             app:buttonVariant="primary"
             tools:text="Delete"
             tools:visibility="visible" />

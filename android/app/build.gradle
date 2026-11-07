@@ -476,7 +476,12 @@ dependencies {
     // firebase-messaging — без analytics и crashlytics (правило 7,
     // tools/check-no-telemetry.sh). Автозапуск, аналитика и выгрузка
     // метрик доставки выключены в src/gms/AndroidManifest.xml.
-    gmsImplementation 'com.google.firebase:firebase-messaging:26.0.1'
+    //
+    // ⚠️ 24.1.x, а не 25+: с 25-й версии Firebase собран Kotlin 2.x,
+    // и компилятор проекта (Kotlin 1.9) отказывается читать его классы
+    // («compiled with an incompatible version of Kotlin»). Подниматься —
+    // вместе с переходом проекта на Kotlin 2.
+    gmsImplementation 'com.google.firebase:firebase-messaging:24.1.2'
     //
     // Для foss зависимостей нет и не будет: этот flavor обязан оставаться
     // свободным от проприетарных сервисов (раздел 18.2). Раньше здесь

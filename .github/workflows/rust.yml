@@ -218,6 +218,7 @@ jobs:
           DATABASE_URL=postgres://gasapp:gasapp-dev@localhost:5433/gasapp \
           GASAPP_BIND=127.0.0.1:8443 \
           GASAPP_ALLOW_INSECURE=1 \
+          GASAPP_DEV_EMAIL_CODE=000000 \
             server/target/debug/gasapp-server-api > server.log 2>&1 &
 
           for _ in $(seq 1 30); do
@@ -234,14 +235,25 @@ jobs:
 
       # ⚠️ `--ignored` обязателен: без него набор молча не выполнится,
       # и джоб будет зелёным, ничего не проверив.
+      #
+      # Регистрация требует код из письма: сервер запущен с постоянным
+      # кодом (GASAPP_DEV_EMAIL_CODE, только вместе с ALLOW_INSECURE),
+      # тесты берут его из того же имени. Без него все тесты падали на
+      # EmailCodeRejected.
+      #
+      # Две проверки ручные — им нужен второй человек на устройстве
+      # (GASAPP_PEER), в CI его нет: они пропускаются по имени.
       - name: client against the server
         env:
           GASAPP_SERVER: http://127.0.0.1:8443
+          GASAPP_DEV_EMAIL_CODE: "000000"
         run: |
           set -euo pipefail
 
           output=$(cargo test --manifest-path crates/Cargo.toml \
-            -p gasapp-core --test live_server -- --ignored 2>&1 | tee /dev/stderr)
+            -p gasapp-core --test live_server -- --ignored \
+            --skip talk_to_an_existing_user --skip edits_and_deletes_with_an_existing_user \
+            2>&1 | tee /dev/stderr)
 
           # Проверка проверки: набор из нуля тестов «проходит» всегда.
           if echo "$output" | grep -qE "test result: ok\. 0 passed"; then
@@ -308,7 +320,11 @@ jobs:
         run: |
           set -euo pipefail
           ndk=$(sed -n 's/^[[:space:]]*ndkVersion = "\(.*\)"$/\1/p' android/app/build.gradle | head -1)
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+          # `yes` получает SIGPIPE, когда sdkmanager закрывает ввод, и с
+          # pipefail шаг падал при успешной установке. Итог проверяется
+          # по самому каталогу NDK.
+          (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null || true
+          test -f "$ANDROID_HOME/ndk/$ndk/source.properties"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
       - name: build (Android)
         if: contains(matrix.target, 'android')
