@@ -31,8 +31,8 @@ struct AttachmentView: View {
                     .onTapGesture { fullScreen = true }
             } else if let file {
                 ShareLink(item: AttachmentFile(data: file), preview: SharePreview(L10n.t("Файл", "File"))) {
-                    Label(L10n.t("Файл · \(ByteCountFormatter.string(fromByteCount: Int64(file.count), countStyle: .file))",
-                                 "File · \(ByteCountFormatter.string(fromByteCount: Int64(file.count), countStyle: .file))"),
+                    Label(L10n.t("Файл · \(formatBytes(Int64(file.count)))",
+                                 "File · \(formatBytes(Int64(file.count)))"),
                           systemImage: "doc.fill")
                         .foregroundStyle(GasAppColor.accent)
                 }

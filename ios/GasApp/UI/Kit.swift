@@ -316,3 +316,12 @@ struct EmptyScene: View {
         .padding(.vertical, 48)
     }
 }
+
+/// Размер файла: «0 КБ», а не «Zero KB» (по умолчанию ByteCountFormatter
+/// пишет ноль словом).
+func formatBytes(_ bytes: Int64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    formatter.allowsNonnumericFormatting = false
+    return formatter.string(fromByteCount: bytes)
+}

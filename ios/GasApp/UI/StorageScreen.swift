@@ -43,12 +43,11 @@ struct StorageScreen: View {
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
         .navigationTitle(L10n.t("Место на устройстве", "Storage"))
-        .navigationBarTitleDisplayMode(.inline)
         .task { await measure() }
     }
 
     private func format(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        formatBytes(bytes)
     }
 
     /// Расшифрованные копии вложений (то, что отдавалось «Поделиться»)

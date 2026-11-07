@@ -43,7 +43,6 @@ struct VaultScreen: View {
         }
         .gasScreen()
         .navigationTitle(L10n.t("Хранилище", "Vault"))
-        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if open {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -123,7 +122,7 @@ struct VaultScreen: View {
                         Image(systemName: "doc.fill").foregroundStyle(GasAppColor.accent)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(file.name).foregroundStyle(GasAppColor.textPrimary).lineLimit(2)
-                            Text("\(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)) · \(formatChatTime(file.createdAtMillis))")
+                            Text("\(formatBytes(file.size)) · \(formatChatTime(file.createdAtMillis))")
                                 .font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
                         }
                     }
