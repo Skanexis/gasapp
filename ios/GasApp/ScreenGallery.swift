@@ -15,12 +15,14 @@ enum ScreenGallery {
         switch ProcessInfo.processInfo.environment["GASAPP_SCREEN"] ?? "onboarding" {
         case "lock":
             LockScreen().gasScreen()
+        // Верхние экраны — внутри настоящих вкладок: на снимке видна
+        // нижняя панель, как у человека в приложении.
         case "chats":
-            ChatListScreen()
+            MainTabs(start: .chats)
         case "channels":
-            ChannelsScreen()
+            MainTabs(start: .channels)
         case "contacts":
-            NavigationStack { ContactsScreen() }
+            MainTabs(start: .contacts)
         case "backup":
             NavigationStack { BackupScreen() }
         case "security":
@@ -28,7 +30,7 @@ enum ScreenGallery {
         case "addcontact":
             NavigationStack { AddContactScreen { _, _ in } }
         case "settings":
-            NavigationStack { SettingsScreen() }
+            MainTabs(start: .settings)
         case "privacy":
             PrivacyCover()
         default:

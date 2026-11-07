@@ -24,15 +24,12 @@ struct ChannelsScreen: View {
                         .listRowBackground(GasAppColor.bgBase)
                 }
                 if loaded && channels.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "megaphone.fill").font(.system(size: 40)).foregroundStyle(GasAppColor.accent)
-                        Text(L10n.t("Нет каналов", "No channels"))
-                            .font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundStyle(GasAppColor.textPrimary)
-                        Text(L10n.t("Вступите по ссылке или найдите открытый канал.", "Join by link or find a public channel."))
-                            .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 40)
-                    .listRowBackground(GasAppColor.bgBase).listRowSeparator(.hidden)
+                    EmptyScene(icon: "megaphone.fill",
+                               title: L10n.t("Нет каналов", "No channels"),
+                               text: L10n.t("Вступите по ссылке или найдите открытый канал.",
+                                            "Join by link or find a public channel."),
+                               action: L10n.t("Вступить по ссылке", "Join by link")) { showJoin = true }
+                        .listRowBackground(GasAppColor.bgBase).listRowSeparator(.hidden)
                 }
                 ForEach(channels, id: \.channelId) { channel in
                     NavigationLink {
@@ -53,7 +50,8 @@ struct ChannelsScreen: View {
                         Button(L10n.t("Вступить по ссылке", "Join by link")) { showJoin = true }
                         NavigationLink(L10n.t("Найти открытый", "Find public")) { PublicChannelsScreen() }
                         Button(L10n.t("Создать канал", "Create channel")) { showCreate = true }
-                    } label: { Image(systemName: "plus.circle.fill") }
+                    } label: { Image(systemName: "plus") }
+                    .accessibilityLabel(L10n.t("Каналы: добавить", "Add a channel"))
                 }
             }
             .alert(L10n.t("Ссылка на канал", "Channel link"), isPresented: $showJoin) {
@@ -70,7 +68,7 @@ struct ChannelsScreen: View {
     }
 
     private func reload() async {
-        guard let messenger = try? CoreStore.shared.current() else { return }
+        guard let messenger = try? CoreStore.shared.current() else { loaded = true; return }
         channels = (try? await Background.run { try messenger.channels() }) ?? channels
         loaded = true
     }

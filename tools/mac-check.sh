@@ -209,20 +209,26 @@ if (( app_ok )) && [[ -d "$APP" ]]; then
     if run_step "Установка в симулятор" sim-install.txt xcrun simctl install "$UDID" "$APP"; then
         for screen in $SCREENS; do
             say "экран: $screen"
+            touch "${TMPDIR:-/tmp}/gasapp-launch-$screen"
             SIMCTL_CHILD_GASAPP_SCREEN="$screen" xcrun simctl launch --console-pty \
                 --terminate-running-process "$UDID" "$BUNDLE_ID" > "$OUT/console-$screen.txt" 2>&1 &
             console_pid=$!
             sleep 7
             xcrun simctl io "$UDID" screenshot "$OUT/screens/$screen.png" > /dev/null 2>&1
-            # Жив ли процесс — по его PID: приложение симулятора — обычный
-            # процесс Mac, `simctl launch` печатает его номер первой строкой.
-            # Прежняя проверка через `launchctl list` симулятора давала
-            # «упало» на живых экранах (чаты, контакты — снимки были).
-            app_pid=$(sed -n "s/^${BUNDLE_ID}: \([0-9][0-9]*\).*/\1/p" "$OUT/console-$screen.txt" | head -1)
-            if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
+            # Жив ли процесс. Приложение симулятора — обычный процесс Mac
+            # с путём …/GasApp.app/GasApp; ищем его по пути. PID из вывода
+            # `simctl launch` не годится: это PID запускающего процесса,
+            # и проверка по нему давала «упало» на всех живых экранах
+            # (Codemagic, 2026-11-07); `launchctl list` симулятора — тоже
+            # ненадёжна. «Упало» — только если процесса нет И появился
+            # новый отчёт о падении.
+            marker="${TMPDIR:-/tmp}/gasapp-launch-$screen"
+            if pgrep -f "/GasApp.app/GasApp" > /dev/null 2>&1; then
                 status "Экран «${screen}»" "запущен, снимок screens/$screen.png"
-            else
+            elif find "$HOME/Library/Logs/DiagnosticReports" -name 'GasApp*' -newer "$marker" 2>/dev/null | grep -q .; then
                 status "Экран «${screen}»" "🔴 ПРИЛОЖЕНИЕ УПАЛО — см. console-$screen.txt и crashes/"
+            else
+                status "Экран «${screen}»" "закрылось без отчёта о падении — см. console-$screen.txt и снимок"
             fi
             xcrun simctl terminate "$UDID" "$BUNDLE_ID" > /dev/null 2>&1 || true
             kill "$console_pid" > /dev/null 2>&1 || true

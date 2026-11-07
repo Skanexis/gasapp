@@ -4,9 +4,13 @@ import SwiftUI
 
 /// Главный экран: вкладки — как нижняя панель Android (`BottomNav`).
 struct MainTabs: View {
-    @State private var tab = Tab.chats
+    @State private var tab: Tab
 
     enum Tab: Hashable { case chats, channels, contacts, settings }
+
+    init(start: Tab = .chats) {
+        _tab = State(initialValue: start)
+    }
 
     var body: some View {
         TabView(selection: $tab) {

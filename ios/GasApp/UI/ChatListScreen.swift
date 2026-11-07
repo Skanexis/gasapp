@@ -82,25 +82,17 @@ struct ChatListScreen: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 44)).foregroundStyle(GasAppColor.accent)
-            Text(L10n.t("Пока нет переписок", "No chats yet"))
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .foregroundStyle(GasAppColor.textPrimary)
-            Text(L10n.t("Добавьте контакт по имени, ссылке или QR-коду.",
-                        "Add a contact by username, link or QR code."))
-                .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
-                .multilineTextAlignment(.center)
-            GoldButton(title: L10n.t("Новый чат", "New chat")) { path.append(.addContact) }
-                .frame(maxWidth: 260)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        EmptyScene(icon: "bubble.left.and.bubble.right.fill",
+                   title: L10n.t("Пока нет переписок", "No chats yet"),
+                   text: L10n.t("Добавьте контакт по имени, ссылке или QR-коду.",
+                                "Add a contact by username, link or QR code."),
+                   action: L10n.t("Новый чат", "New chat")) { path.append(.addContact) }
     }
 
     private func reload() async {
-        guard let messenger = try? CoreStore.shared.current() else { return }
+        // Хранилище закрыто (галерея снимков без аккаунта) — пустой список,
+        // а не пустой экран без единого слова.
+        guard let messenger = try? CoreStore.shared.current() else { loaded = true; return }
         let loadedRows: [ChatRowModel] = (try? await Background.run {
             // Собеседник чата — по контакту: имя и отметка сверки.
             let contacts = try messenger.contacts()

@@ -89,10 +89,13 @@ struct OnboardingFlow: View {
         VStack(spacing: 0) {
             // Сцена: ночное небо с туманностями (design/brand), на нём — логотип GAS.
             ZStack {
-                Image("SceneWelcome")
-                    .resizable()
-                    .scaledToFill()
+                // Картинка — в рамке ровно по ширине экрана: scaledToFill без
+                // рамки растягивал всю страницу шире экрана, и карточка с
+                // кнопками упирались в края (снимок на Mac, 2026-11-07).
+                Color.clear
+                    .frame(maxWidth: .infinity)
                     .frame(height: 300)
+                    .overlay { Image("SceneWelcome").resizable().scaledToFill() }
                     .clipped()
                     .accessibilityHidden(true)
                 VStack {

@@ -256,3 +256,63 @@ extension View {
             .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
+
+/// Пустой верхний список (чаты, каналы) — как на Android: карточка ночного
+/// неба 216 × 136 со скруглением 24, золотой жетон 56 с иконкой раздела
+/// на её нижнем краю, заголовок, пояснение и одно действие (DESIGN.md,
+/// «Night scene», «Gold token»).
+struct EmptyScene: View {
+    let icon: String
+    let title: String
+    let text: String
+    var action: String?
+    var onAction: () -> Void = {}
+
+    init(icon: String, title: String, text: String, action: String? = nil, onAction: @escaping () -> Void = {}) {
+        self.icon = icon
+        self.title = title
+        self.text = text
+        self.action = action
+        self.onAction = onAction
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            ZStack(alignment: .bottom) {
+                Color.clear
+                    .frame(width: 216, height: 136)
+                    .overlay { Image("SceneWelcome").resizable().scaledToFill() }
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(GasAppColor.line, lineWidth: 1))
+                ZStack {
+                    Circle().fill(GasAppColor.accentEdge).offset(y: 4)
+                    Circle().fill(GasAppColor.accent)
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(GasAppColor.accentOn)
+                }
+                .frame(width: 56, height: 56)
+                .offset(y: 28)
+            }
+            .padding(.bottom, 34)
+            .accessibilityHidden(true)
+
+            Text(title)
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .foregroundStyle(GasAppColor.textPrimary)
+                .multilineTextAlignment(.center)
+            Text(text)
+                .font(.system(size: 15))
+                .foregroundStyle(GasAppColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let action {
+                GoldButton(title: action, action: onAction)
+                    .frame(maxWidth: 260)
+                    .padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
+    }
+}

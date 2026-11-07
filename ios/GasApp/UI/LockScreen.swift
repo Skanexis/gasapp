@@ -59,10 +59,10 @@ struct LockScreen: View {
         // в фоне до точек PIN, чтобы они не теряли контраст.
         .background(alignment: .top) {
             ZStack(alignment: .bottom) {
-                Image("SceneWelcome")
-                    .resizable()
-                    .scaledToFill()
+                Color.clear
+                    .frame(maxWidth: .infinity)
                     .frame(height: 380)
+                    .overlay { Image("SceneWelcome").resizable().scaledToFill() }
                     .clipped()
                     .opacity(0.85)
                 LinearGradient(colors: [.clear, GasAppColor.bgBase], startPoint: .top, endPoint: .bottom)
