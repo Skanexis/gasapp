@@ -364,17 +364,19 @@ class NightSceneView @JvmOverloads constructor(
     private companion object {
         // Краски сцены. Заданы здесь, а не в палитре: это краски
         // иллюстрации, а не интерфейса, и в токены они не входят.
-        val SKY_TOP = Color.rgb(0x07, 0x0A, 0x26)
-        val SKY_MID = Color.rgb(0x14, 0x1F, 0x66)
-        val SKY_DEEP = Color.rgb(0x10, 0x18, 0x4E)
-        val SKY_HORIZON = Color.rgb(0x2A, 0x3F, 0x9E)
-        val STAR = Color.rgb(0xF5, 0xF6, 0xFF)
+        // Фиолетовое небо — как на иллюстрации приветствия и логотипе GAS
+        // (2026-11-07); прежде небо было синим индиго.
+        val SKY_TOP = Color.rgb(0x0B, 0x06, 0x26)
+        val SKY_MID = Color.rgb(0x22, 0x10, 0x5C)
+        val SKY_DEEP = Color.rgb(0x18, 0x0C, 0x48)
+        val SKY_HORIZON = Color.rgb(0x48, 0x2A, 0xA0)
+        val STAR = Color.rgb(0xF7, 0xF2, 0xFF)
         val MOON_LIGHT = Color.rgb(0xF4, 0xF7, 0xFF)
         val MOON_SHADE = Color.rgb(0xA9, 0xB8, 0xE8)
         val MOON_CRATER = Color.argb(0x38, 0x5C, 0x6E, 0xB0)
-        val MOON_GLOW = Color.argb(0x3D, 0xBF, 0xD0, 0xFF)
-        val FOREST_FAR = Color.rgb(0x12, 0x3D, 0x3A)
-        val FOREST_NEAR = Color.rgb(0x0A, 0x24, 0x22)
+        val MOON_GLOW = Color.argb(0x3D, 0xD4, 0xC2, 0xFF)
+        val FOREST_FAR = Color.rgb(0x1A, 0x2E, 0x3C)
+        val FOREST_NEAR = Color.rgb(0x0C, 0x18, 0x24)
         val GROUND_LIT = Color.rgb(0x2C, 0x7A, 0x2F)
         val GROUND_DARK = Color.rgb(0x0F, 0x33, 0x1C)
 

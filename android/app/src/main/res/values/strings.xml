@@ -136,7 +136,6 @@
 
     <!-- Onboarding -->
     <string name="onboarding_tagline">An end-to-end encrypted messenger. Starting a conversation is protected against future quantum computers too.</string>
-    <string name="onboarding_audit_warning">Not independently audited. Do not rely on it where life or liberty is at stake.</string>
     <string name="onboarding_username_hint">e.g. anna_k</string>
     <string name="onboarding_username_label">Username</string>
     <string name="onboarding_username_helper">Latin letters, digits and _. This is how others will find you.</string>

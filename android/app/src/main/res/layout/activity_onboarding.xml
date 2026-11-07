@@ -100,8 +100,9 @@
                 android:paddingBottom="@dimen/space_l">
 
                 <!--
-                  Сцена GasApp во всю ширину: ночная поляна, на ней —
-                  логотип объёмными буквами (DESIGN.md, «Night Camp»).
+                  Сцена GasApp во всю ширину: ночное небо с туманностями и
+                  ельником (иллюстрация, design/brand/README.md), на нём —
+                  логотип GAS. Низ сцены растворяется в фоне экрана.
                   У страницы нет боковых отступов — они стоят на каждом
                   блоке ниже сцены.
 
@@ -112,11 +113,21 @@
                 -->
                 <FrameLayout
                     android:layout_width="match_parent"
-                    android:layout_height="232dp">
+                    android:layout_height="268dp">
 
-                    <org.gasapp.app.components.NightSceneView
+                    <ImageView
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent" />
+                        android:layout_height="match_parent"
+                        android:importantForAccessibility="no"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/scene_welcome" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="96dp"
+                        android:layout_gravity="bottom"
+                        android:background="@drawable/bg_scene_fade"
+                        android:importantForAccessibility="no" />
 
                     <ImageView
                         android:id="@+id/onboarding_mascot"
@@ -128,13 +139,17 @@
                         android:importantForAccessibility="no"
                         android:visibility="gone" />
 
-                    <org.gasapp.app.components.WordmarkView
+                    <!-- Логотип — заголовок экрана для чтения с экрана. -->
+                    <ImageView
                         android:id="@+id/onboarding_wordmark"
-                        android:layout_width="wrap_content"
+                        android:layout_width="248dp"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:rotation="-4"
-                        app:wordmarkSize="56sp" />
+                        android:accessibilityHeading="true"
+                        android:adjustViewBounds="true"
+                        android:contentDescription="@string/app_name"
+                        android:rotation="-3"
+                        android:src="@drawable/logo_gas" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -188,23 +203,6 @@
                             android:text="@string/onboarding_feature_tor" />
                     </LinearLayout>
 
-                    <!--
-                      🔐 Предупреждение об аудите. Красная рамка и полный кегль:
-                      требование раздела 21 плана.
-                    -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_m"
-                        android:background="@drawable/bg_warning_box"
-                        android:drawablePadding="10dp"
-                        android:fontFamily="@font/inter"
-                        android:padding="14dp"
-                        android:text="@string/onboarding_audit_warning"
-                        android:textColor="@color/status_error"
-                        android:textSize="14sp"
-                        app:drawableStartCompat="@drawable/ic_alert_small"
-                        app:drawableTint="@color/status_error" />
                 </LinearLayout>
             </LinearLayout>
 

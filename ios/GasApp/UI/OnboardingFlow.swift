@@ -47,7 +47,8 @@ struct OnboardingFlow: View {
                 case .code: codeStep
                 }
             }
-            .padding(24)
+            // Приветствие — во всю ширину: сцена без полей, отступы — у блоков под ней.
+            .padding(step == .welcome ? 0 : 24)
         }
         .scrollDismissesKeyboard(.interactively)
         .gasScreen()
@@ -85,31 +86,72 @@ struct OnboardingFlow: View {
     // MARK: - Приветствие
 
     private var welcome: some View {
-        VStack(spacing: 28) {
-            Spacer(minLength: 40)
-            Text("GasApp")
-                .font(.system(size: 52, weight: .black, design: .rounded))
-                .foregroundStyle(GasAppColor.accent)
-                .shadow(color: GasAppColor.accentEdgeDeep, radius: 0, x: 0, y: 4)
-            Text(L10n.t("Переписка, которую видите только вы и собеседник.",
-                        "Messages only you and the other person can read."))
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(GasAppColor.textSecondary)
-                .multilineTextAlignment(.center)
-            Spacer(minLength: 60)
-            GoldButton(title: L10n.t("Начать", "Get started")) { step = .account }
-            OutlineButton(title: L10n.t("У меня есть резервная копия", "I have a backup")) {
-                recovering = true
-                step = .pin
+        VStack(spacing: 0) {
+            // Сцена: ночное небо с туманностями (design/brand), на нём — логотип GAS.
+            ZStack {
+                Image("SceneWelcome")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 300)
+                    .clipped()
+                    .accessibilityHidden(true)
+                VStack {
+                    Spacer()
+                    LinearGradient(colors: [.clear, GasAppColor.bgBase], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 110)
+                }
+                .accessibilityHidden(true)
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 260)
+                    .rotationEffect(.degrees(-3))
+                    .accessibilityLabel("GasApp")
+                    .accessibilityAddTraits(.isHeader)
             }
-            Button(L10n.t("Политика конфиденциальности", "Privacy policy")) {
-                UIApplication.shared.open(AppConfig.docsURL.appendingPathComponent("privacy/"))
+            .frame(height: 300)
+
+            VStack(spacing: 20) {
+                Text(L10n.t("Мессенджер со сквозным шифрованием. Начало переписки защищено и от будущих квантовых компьютеров.",
+                            "An end-to-end encrypted messenger. Starting a conversation is protected against future quantum computers too."))
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(GasAppColor.textSecondary)
+                    .multilineTextAlignment(.center)
+
+                // Три обещания — коротко и без жаргона (как на Android).
+                VStack(alignment: .leading, spacing: 14) {
+                    WelcomePromise(icon: "lock.fill",
+                                   text: L10n.t("Сообщения шифруются на телефоне. Сервер только передаёт их и прочитать не может.",
+                                                "Messages are encrypted on your phone. The server only passes them on and cannot read them."))
+                    WelcomePromise(icon: "person.fill",
+                                   text: L10n.t("Без номера телефона. Аккаунт — это имя и адрес почты; сервер хранит только хеш адреса.",
+                                                "No phone number. An account is a username and an email address — the server keeps only a hash of the address."))
+                    WelcomePromise(icon: "globe",
+                                   text: L10n.t("Tor встроен: включите его — и сервер не увидит ваш IP-адрес.",
+                                                "Tor is built in: turn it on and the server does not see your IP address."))
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(GasAppColor.bgCard, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(GasAppColor.line, lineWidth: 1))
+
+                GoldButton(title: L10n.t("Начать", "Get started")) { step = .account }
+                    .padding(.top, 8)
+                OutlineButton(title: L10n.t("У меня есть резервная копия", "I have a backup")) {
+                    recovering = true
+                    step = .pin
+                }
+                Button(L10n.t("Политика конфиденциальности", "Privacy policy")) {
+                    UIApplication.shared.open(AppConfig.docsURL.appendingPathComponent("privacy/"))
+                }
+                .font(.system(size: 14))
+                .foregroundStyle(GasAppColor.textTertiary)
+                Text(L10n.t("Регистрация — с 16 лет.", "You must be 16 or older."))
+                    .font(.system(size: 13))
+                    .foregroundStyle(GasAppColor.textQuaternary)
             }
-            .font(.system(size: 14))
-            .foregroundStyle(GasAppColor.textTertiary)
-            Text(L10n.t("Регистрация — с 16 лет.", "You must be 16 or older."))
-                .font(.system(size: 13))
-                .foregroundStyle(GasAppColor.textQuaternary)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
     }
 
@@ -374,5 +416,25 @@ struct OnboardingFlow: View {
         return viaTor
             ? L10n.t("Нет связи с сервером через Tor.", "Cannot reach the server via Tor.")
             : L10n.t("Нет связи с сервером. Проверьте интернет.", "Cannot reach the server. Check your connection.")
+    }
+}
+
+/// Одно обещание на приветствии: золотой значок и короткий текст.
+private struct WelcomePromise: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(GasAppColor.accent)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.system(size: 15))
+                .foregroundStyle(GasAppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

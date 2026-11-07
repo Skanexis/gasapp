@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Низ сцены приветствия растворяется в фоне экрана: текст под сценой
+     стоит уже на ровном Night Indigo, а не на звёздах. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="270"
+        android:endColor="@color/bg_base"
+        android:startColor="@android:color/transparent" />
+</shape>

@@ -120,7 +120,6 @@
     <string name="contact_username">@%1$s</string>
     <!-- Онбординг -->
     <string name="onboarding_tagline">Мессенджер со сквозным шифрованием. Начало переписки защищено и от будущих квантовых компьютеров.</string>
-    <string name="onboarding_audit_warning">Не прошёл независимый аудит. Не используйте для защиты жизни и свободы.</string>
     <string name="onboarding_username_hint">например, anna_k</string>
     <string name="onboarding_username_label">Имя пользователя</string>
     <string name="onboarding_username_helper">Латинские буквы, цифры и _. По нему вас найдут собеседники.</string>

@@ -38,15 +38,6 @@ class OnboardingStepsTest {
         }
     }
 
-    private fun textsIn(group: ViewGroup): List<TextView> =
-        (0 until group.childCount).map { group.getChildAt(it) }.flatMap { child ->
-            when (child) {
-                is TextView -> listOf(child)
-                is ViewGroup -> textsIn(child)
-                else -> emptyList()
-            }
-        }
-
     private fun OnboardingActivity.shown(id: Int) = findViewById<View>(id).isShown
 
     private fun OnboardingActivity.click(id: Int) {
@@ -54,18 +45,19 @@ class OnboardingStepsTest {
         shadowOf(Looper.getMainLooper()).idle()
     }
 
+    /**
+     * Приветствие — до любого ввода. Предупреждение об аудите отсюда ушло
+     * (решение владельца 2026-11-07): пределы описаны в политике
+     * конфиденциальности, SECURITY.md и описании в магазине.
+     */
     @Test
-    fun the_audit_warning_comes_before_any_input() = withOnboarding { activity ->
+    fun the_welcome_comes_before_any_input() = withOnboarding { activity ->
         assertTrue(activity.shown(R.id.onboarding_page_welcome))
         assertTrue(activity.shown(R.id.onboarding_start))
         assertTrue(activity.shown(R.id.onboarding_recover))
         assertFalse("поле имени на приветствии", activity.shown(R.id.onboarding_username))
         assertFalse("клавиатура PIN на приветствии", activity.shown(R.id.keypad))
-
-        val warning = activity.getString(R.string.onboarding_audit_warning)
-        val page = activity.findViewById<ViewGroup>(R.id.onboarding_page_welcome)
-        val texts = textsIn(page)
-        assertTrue("предупреждения об аудите нет на первом шаге", texts.any { it.text.toString() == warning })
+        assertTrue("логотипа нет на приветствии", activity.shown(R.id.onboarding_wordmark))
     }
 
     @Test

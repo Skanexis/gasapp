@@ -62,6 +62,9 @@ targets:
         CODE_SIGN_ENTITLEMENTS: GasApp/GasApp.entitlements
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
+        # Значок — один файл 1024 × 1024 (Assets.xcassets/AppIcon), Xcode
+        # нарезает размеры сам.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # 🔐 Защита исполняемого файла — как у Android-ядра.
         ENABLE_BITCODE: NO
         DEAD_CODE_STRIPPING: YES

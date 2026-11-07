@@ -55,6 +55,23 @@ struct LockScreen: View {
             Spacer()
         }
         .padding(.horizontal, 24)
+        // Небо за заголовком, как сцена входа на Android: растворяется
+        // в фоне до точек PIN, чтобы они не теряли контраст.
+        .background(alignment: .top) {
+            ZStack(alignment: .bottom) {
+                Image("SceneWelcome")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 380)
+                    .clipped()
+                    .opacity(0.85)
+                LinearGradient(colors: [.clear, GasAppColor.bgBase], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 220)
+            }
+            .frame(height: 380)
+            .ignoresSafeArea(edges: .top)
+            .accessibilityHidden(true)
+        }
         .gasScreen()
         .onAppear {
             waitLeft = PinAttempts.waitRemaining()

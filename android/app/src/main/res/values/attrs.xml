@@ -55,9 +55,4 @@
         <attr name="sceneRadius" format="dimension" />
     </declare-styleable>
 
-    <!-- Логотип объёмными буквами (components/WordmarkView). -->
-    <declare-styleable name="WordmarkView">
-        <attr name="wordmarkSize" format="dimension" />
-        <attr name="wordmarkText" format="string" />
-    </declare-styleable>
 </resources>

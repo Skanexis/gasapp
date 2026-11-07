@@ -196,14 +196,14 @@ GasApp is a clearing in a pine forest at night: a deep indigo sky full of stars,
 
 The owner's decision is **"game accent", not a full game skin.** The camp is staged where a person arrives or waits — onboarding welcome, lock screen, empty top-level lists — and in the controls that carry the primary action: chunky gold buttons with a darker bottom edge that sink when pressed, a gold floating button, a gold token holding the section icon. Conversations, channel feeds and settings stay calm: same palette, flat surfaces, Inter, no scenery. A person reading a message or changing a security setting is not playing.
 
-Three things are still owed by the owner and have slots waiting: the **mascot** (a transparent PNG shown on the welcome scene), optional raster replacements for the code-drawn scene, and the app icon. `design/art/README.md` lists files, sizes and rules. Until they arrive the app is complete without them.
+The logo, the welcome sky and the app icon arrived on 2026-11-07 (`design/brand/README.md`). One thing is still owed by the owner and has a slot waiting: the **mascot** (a transparent PNG shown on the welcome scene). `design/art/README.md` lists files, sizes and rules; until it arrives the app is complete without it.
 
 **Key Characteristics:**
 - Night-indigo ground in four tonal steps plus a 1dp hairline; never black.
 - One action colour, Camp Gold, with dark-brown text on it; status colours green / orange / red keep their security meaning.
 - Chunky depth on primary actions only: a 4dp darker bottom edge that collapses on press. Everything else is flat.
 - Rubik Black for the wordmark, screen titles and big headings; Rubik Bold for button labels; Inter for everything a person reads; monospace for anything compared character by character.
-- A code-drawn night scene (`NightSceneView`) and a sign-painted wordmark (`WordmarkView`) on entry surfaces only.
+- The GAS logo and a night sky (an illustration on the welcome screen, the code-drawn `NightSceneView` on the lock screen and empty lists) on entry surfaces only.
 - Always dark. Motion skipped entirely when the system disables animations.
 
 ## Colors
@@ -239,7 +239,7 @@ A night-sky palette: blue-violet indigo ground, one gold, three semantic status 
 - **Disabled Text** (#6670AD): disabled controls only; never for readable text.
 
 ### Scene paints (illustration, not tokens)
-Sky #070A26 → #141F66 → #2A3F9E at the horizon; stars #F5F6FF; moon #F4F7FF shading to #A9B8E8 with a soft glow; far firs #123D3A, near firs #0A2422; clearing #2C7A2F darkening to #0F331C. Wordmark fill #FFEE7A → #FFCB2E → #FF9A1F, outline #4A1600, extruded edge #7A2E00.
+Violet sky since 2026-11-07, matching the logo and the welcome illustration: #0B0626 → #22105C → #482AA0 at the horizon; stars #F7F2FF; moon #F4F7FF shading to #A9B8E8 with a soft violet glow; far firs #1A2E3C, near firs #0C1824; clearing #2C7A2F darkening to #0F331C. The interface ground stays Night Indigo: the violet belongs to the sky, not to the chrome.
 
 ### Avatar colours
 Six colours assigned by name hash, drawn as initials over a 16% fill of the same colour. Set in code (`ui/Avatars.kt`), not tokens. They never include green, orange or red.
@@ -274,13 +274,13 @@ Six colours assigned by name hash, drawn as initials over a 16% fill of the same
 
 **The Mono For Verification Rule.** Anything a person compares character by character is monospace, and the style sets both the platform and AppCompat font attributes so the theme font cannot override it.
 
-**The Gradient Belongs To The Wordmark Rule.** The yellow-to-orange fill with a dark outline and an extruded edge exists in exactly one place, `WordmarkView`. Headings and buttons are solid.
+**The Gradient Belongs To The Logo Rule.** The glossy yellow-to-orange letters exist in exactly one place, the GAS logo. Headings and buttons are solid.
 
 ## Layout
 
 Single-column phone layout. Screen margin 16dp (24dp inside onboarding); spacing from the 4 / 8 / 16 / 24 / 32 / 40 / 48 / 64dp scale. List rows 64–72dp; touch targets never below 48dp; type in sp. Dialogs cap at 340dp.
 
-The welcome scene is full-bleed: the page carries no side padding, and each block under the scene sets its own. It is 232dp tall so that, in Russian, the audit warning still starts above the fixed buttons on a 6-inch phone.
+The welcome scene is full-bleed: the page carries no side padding, and each block under the scene sets its own. The audit warning left the welcome screen on 2026-11-07 (owner's decision): the limits are stated in the privacy policy, `SECURITY.md` and the store listing.
 
 The chat list carries a connection strip under the app bar whenever the app is not connected through Tor or a proxy: Gold Dim with a 2dp gold progress line while connecting; Raised Indigo with orange text and a full orange rule for a direct connection or blocked Tor.
 
@@ -309,13 +309,13 @@ Gently rounded, tiered by role: inputs 12dp, buttons 14dp, cards, dialogs, chann
 ### Night scene (signature)
 `components/NightSceneView`: a vertical sky gradient, deterministic stars (the same sky every time), a moon with three craters and a soft glow, two rows of firs and a lit clearing. Geometry is built once per size; a frame is one gradient, at most ninety circles and three paths. Every sixth star twinkles, repainting at most 15 times a second. Options: no moon, sky only, no fade, rounded corners.
 
-- **Welcome:** full-bleed, 232dp, forest and moon, bottom faded into the ground; the wordmark sits in its middle, tilted 4 degrees. When the owner's mascot exists it stands in the clearing and the wordmark moves to the top.
+- **Welcome:** an illustration instead of the code-drawn scene since 2026-11-07 — a violet night sky with stars, purple nebulae and pines along the edges (`scene_welcome`, `SceneWelcome`), full-bleed, 268dp (300pt on iOS), its bottom faded into the ground; the GAS logo sits in the middle, tilted 3 degrees. When the owner's mascot exists it stands in the clearing and the logo moves to the top.
 - **Lock:** sky only, no moon, 420dp behind the title and the seal, settling straight into Night Indigo so the PIN dots keep their contrast.
 - **Empty top-level lists:** a 216 × 136dp scene card with 24dp corners and the gold token overlapping its bottom edge.
 - **Accessibility:** hidden from screen readers; it carries mood only.
 
-### Wordmark
-`components/WordmarkView`: the product name in Rubik 900, drawn in code — extruded Deep Edge layers, a dark outline, a yellow-to-orange fill. Sharp at any density and translated with the string. It is the heading of the welcome screen for screen readers.
+### Logo
+**GAS** in inflated glossy bubble letters — golden-yellow to orange fill, a dark outline, a deep orange-brown extruded edge, white highlights and honey drips (2026-11-07, owner's direction; files and provenance in `design/brand/README.md`). It replaces the code-drawn `WordmarkView`. A raster image (`logo_gas.webp`, `Logo.imageset`) because the gloss and drips cannot be drawn honestly in code; it is not translated — the name is the same in every language. It is the heading of the welcome screen for screen readers ("GasApp").
 
 ### Gold token
 A 56dp gold circle with the lip, holding the section icon in On-Gold Brown. Marks what an empty list is waiting for (a chat, a channel).
@@ -356,8 +356,8 @@ Three steps under a three-segment progress bar: username and email, PIN, the cod
 ### Don't:
 - **Don't** fill a reading surface with gold: no gold bubbles, posts or cards.
 - **Don't** use green, orange or red for anything but their security meaning, and don't place the scene next to a status icon.
-- **Don't** put the night scene, the wordmark or the token inside a conversation, a channel feed, settings or a dialog.
-- **Don't** use gradient or outlined text anywhere but the wordmark.
+- **Don't** put the night scene, the logo or the token inside a conversation, a channel feed, settings or a dialog.
+- **Don't** use gradient or outlined text anywhere: the only glossy lettering is the GAS logo image.
 - **Don't** use pure black as a surface, and don't follow the system light theme; the app is always dark.
 - **Don't** use a "hacker" look: no terminal green, neon cyan on black, glitch, matrix or skull imagery.
 - **Don't** let the playful look promise what the product does not have: no calls, voice, groups or push; no "unbreakable", no implied audit.
