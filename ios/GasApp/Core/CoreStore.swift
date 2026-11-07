@@ -170,7 +170,7 @@ final class CoreStore: @unchecked Sendable {
 
         // 🔐 Истёкшие исчезающие сообщения — сразу: таймер работает,
         // только пока приложение запущено.
-        try? opened.purgeExpired(nowMillis: Self.nowMillis)
+        _ = try? opened.purgeExpired(nowMillis: Self.nowMillis)
 
         maintainPrekeys(opened)
         return opened

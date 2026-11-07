@@ -244,14 +244,16 @@ struct RestoreScreen: View {
                     links.append(try Data(contentsOf: url))
                 }
                 let recover = recovering
+                // Копия, а не var: замыкание уходит в другой поток.
+                let blobs = links
                 let restored = try await Background.run { () -> FfiRestore in
                     if recover {
-                        let back = try messenger.recoverAccount(recoveryKey: entered, links: links,
+                        let back = try messenger.recoverAccount(recoveryKey: entered, links: blobs,
                                                                 nowMillis: CoreStore.nowMillis)
                         CoreStore.shared.rememberDevice(back.account.deviceId)
                         return back.restore
                     }
-                    return try messenger.restoreBackup(recoveryKey: entered, links: links, nowMillis: CoreStore.nowMillis)
+                    return try messenger.restoreBackup(recoveryKey: entered, links: blobs, nowMillis: CoreStore.nowMillis)
                 }
                 if recover { CoreStore.shared.maintainPrekeysNow() }
                 failed = false

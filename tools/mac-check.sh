@@ -215,9 +215,9 @@ if (( app_ok )) && [[ -d "$APP" ]]; then
             sleep 7
             xcrun simctl io "$UDID" screenshot "$OUT/screens/$screen.png" > /dev/null 2>&1
             if xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
-                status "Экран «$screen»" "запущен, снимок screens/$screen.png"
+                status "Экран «${screen}»" "запущен, снимок screens/$screen.png"
             else
-                status "Экран «$screen»" "🔴 ПРИЛОЖЕНИЕ УПАЛО — см. console-$screen.txt и crashes/"
+                status "Экран «${screen}»" "🔴 ПРИЛОЖЕНИЕ УПАЛО — см. console-$screen.txt и crashes/"
             fi
             xcrun simctl terminate "$UDID" "$BUNDLE_ID" > /dev/null 2>&1 || true
             kill "$console_pid" > /dev/null 2>&1 || true
