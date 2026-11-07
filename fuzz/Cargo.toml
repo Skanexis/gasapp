@@ -92,3 +92,9 @@ name = "scrub_attachment"
 path = "fuzz_targets/scrub_attachment.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_channel_inputs"
+path = "fuzz_targets/parse_channel_inputs.rs"
+test = false
+doc = false

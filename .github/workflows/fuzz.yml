@@ -130,6 +130,7 @@ jobs:
           - backup_restore
           - parse_sealed_sender
           - parse_contact_link
+          - parse_channel_inputs
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
