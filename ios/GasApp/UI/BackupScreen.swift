@@ -15,7 +15,10 @@ import UniformTypeIdentifiers
 /// (iCloud Drive или на флешку), а не в приложение: копия на том же
 /// телефоне не переживёт его потерю.
 struct BackupScreen: View {
+    @Environment(AppModel.self) private var model
     @State private var status: FfiBackupStatus?
+    @State private var askPinForNewKey = false
+    @State private var confirmNewKey = false
     @State private var newKey: FfiRecoveryKey?
     @State private var confirmIndex: UInt32 = 0
     @State private var confirmText = ""
@@ -53,6 +56,10 @@ struct BackupScreen: View {
                             .foregroundStyle(GasAppColor.textPrimary)
                         GoldButton(title: L10n.t("Сделать копию", "Back up now"), isLoading: working,
                                    isEnabled: validateRecoveryKey(text: keyInput)) { backup(with: keyInput) }
+                        // Ключ потерян или мог попасть в чужие руки — новая
+                        // цепочка копий под новым ключом (только владельцу).
+                        OutlineButton(title: L10n.t("Создать новый ключ", "Create a new key")) { askPinForNewKey = true }
+                            .disabled(working)
                     }
                 } else {
                     Card {
@@ -79,6 +86,42 @@ struct BackupScreen: View {
             exportFile = nil
         }
         .task { await loadStatus() }
+        .sheet(isPresented: $askPinForNewKey) {
+            PinConfirmSheet(title: L10n.t("Ключ восстановления", "Recovery key")) { pin in
+                Task {
+                    switch await Reauth.verify(pin: pin) {
+                    case .ok: confirmNewKey = true
+                    case .wiped: model.didWipe()
+                    case let .refused(text): message = text
+                    }
+                }
+            }
+        }
+        // ⚠️ Прежние копии остаются под старым ключом — сказать это надо
+        // до, а не после (как на Android).
+        .alert(L10n.t("Создать новый ключ", "Create a new key"), isPresented: $confirmNewKey) {
+            Button(L10n.t("Создать новый", "Create new"), role: .destructive) { startNewKey() }
+            Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.t("Прежние копии останутся зашифрованными старым ключом — перешифровать их приложение не может. Сохраните старый ключ, пока эти копии вам нужны.",
+                        "Earlier backups stay encrypted with the old key — the app cannot re-encrypt them. Keep the old key for as long as you need those backups."))
+        }
+    }
+
+    /// Забыть цепочку копий и начать новую: следующая копия — полная,
+    /// под новым ключом.
+    private func startNewKey() {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            do {
+                try await Background.run { try messenger.forgetBackupChain() }
+                keyInput = ""
+                createKey()
+                await loadStatus()
+            } catch {
+                message = L10n.t("Не удалось начать новую цепочку копий", "Could not start a new backup chain")
+            }
+        }
     }
 
     private func keyCard(_ key: FfiRecoveryKey) -> some View {

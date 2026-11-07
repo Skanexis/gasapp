@@ -51,6 +51,9 @@ struct OnboardingFlow: View {
             .padding(step == .welcome ? 0 : 24)
         }
         .scrollDismissesKeyboard(.interactively)
+        // Небо приветствия — до самого верха, под строкой состояния: иначе
+        // над ним оставалась тёмная полоса (снимок на Mac).
+        .ignoresSafeArea(.container, edges: step == .welcome ? .top : [])
         .gasScreen()
         .onReceive(ticker) { now = $0 }
         .fullScreenCover(isPresented: $showRestore, onDismiss: {
@@ -94,7 +97,7 @@ struct OnboardingFlow: View {
                 // кнопками упирались в края (снимок на Mac, 2026-11-07).
                 Color.clear
                     .frame(maxWidth: .infinity)
-                    .frame(height: 300)
+                    .frame(height: 340)
                     .overlay { Image("SceneWelcome").resizable().scaledToFill() }
                     .clipped()
                     .accessibilityHidden(true)
@@ -112,7 +115,7 @@ struct OnboardingFlow: View {
                     .accessibilityLabel("GasApp")
                     .accessibilityAddTraits(.isHeader)
             }
-            .frame(height: 300)
+            .frame(height: 340)
 
             VStack(spacing: 20) {
                 Text(L10n.t("Мессенджер со сквозным шифрованием. Начало переписки защищено и от будущих квантовых компьютеров.",

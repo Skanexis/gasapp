@@ -251,8 +251,6 @@
     <string name="privacy_section_device">This device</string>
     <string name="privacy_presence">Presence indicators</string>
     <string name="privacy_presence_hint">The other person sees when you have read their messages</string>
-    <string name="privacy_last_seen">Last seen</string>
-    <string name="privacy_last_seen_hint">The other person sees when you were last online</string>
     <string name="privacy_screenshots">Block screenshots</string>
     <string name="privacy_screenshots_hint">Keeps your messages out of screenshots and the recent apps preview</string>
     <string name="privacy_preview">Message text in notifications</string>

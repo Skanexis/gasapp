@@ -59,10 +59,6 @@ class PrivacyActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.privacy_back).setOnClickListener { finish() }
 
         bindPresence()
-        bindLastSeen()
-        // Отметка «был(а) в сети» не собирается и не рассылается:
-        // переключатель без действия скрыт, пока за ним ничего не стоит.
-        findViewById<android.view.View>(R.id.privacy_last_seen).visibility = android.view.View.GONE
         bindScreenshots()
         bindBiometric()
         bindWipe()
@@ -106,16 +102,6 @@ class PrivacyActivity : AppCompatActivity() {
             icon = R.drawable.ic_check,
             checked = readBool(Settings.PRESENCE, default = false),
         ) { wanted -> writeBool(Settings.PRESENCE, wanted) }
-    }
-
-    private fun bindLastSeen() {
-        SettingsToggle.bind(
-            root = findViewById(R.id.privacy_last_seen),
-            label = R.string.privacy_last_seen,
-            hint = R.string.privacy_last_seen_hint,
-            icon = R.drawable.ic_clock,
-            checked = readBool(Settings.LAST_SEEN, default = false),
-        ) { wanted -> writeBool(Settings.LAST_SEEN, wanted) }
     }
 
     /**

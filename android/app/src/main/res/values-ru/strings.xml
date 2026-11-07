@@ -240,8 +240,6 @@
     <string name="privacy_section_device">Это устройство</string>
     <string name="privacy_presence">Индикаторы присутствия</string>
     <string name="privacy_presence_hint">Собеседник увидит, что вы прочитали его сообщения</string>
-    <string name="privacy_last_seen">Время последнего входа</string>
-    <string name="privacy_last_seen_hint">Собеседник увидит, когда вы последний раз были в сети</string>
     <string name="privacy_screenshots">Блокировать снимки экрана</string>
     <string name="privacy_screenshots_hint">Переписка не попадёт в снимки и в переключатель задач</string>
     <string name="privacy_preview">Текст в уведомлениях</string>
