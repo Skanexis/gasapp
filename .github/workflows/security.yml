@@ -28,7 +28,7 @@ jobs:
     name: no committed secrets
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -45,7 +45,7 @@ jobs:
     name: supply chain (deny + audit)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -79,7 +79,7 @@ jobs:
     name: rule 1 — no crypto in UI
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -93,7 +93,7 @@ jobs:
     name: rule 7 — no analytics SDK
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -107,7 +107,7 @@ jobs:
     name: "adr-020 — ndk pins agree"
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -127,7 +127,7 @@ jobs:
     name: "supply chain — gradle wrapper is genuine"
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -145,7 +145,7 @@ jobs:
     name: MASVS summary matches its own rows
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -163,7 +163,7 @@ jobs:
     name: every setting has a reader
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -182,7 +182,7 @@ jobs:
     name: every source file is in the repository
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -200,7 +200,7 @@ jobs:
     name: spec agrees with the implementation
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -218,7 +218,7 @@ jobs:
     name: "18.2 — no Google classes in the foss build"
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -259,7 +259,7 @@ jobs:
     name: android unit tests and lint (both flavors)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -288,7 +288,7 @@ jobs:
     name: translations agree with the default locale
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -306,7 +306,7 @@ jobs:
     name: every layout element has a size
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -324,7 +324,7 @@ jobs:
     name: every FFI export is called by the app
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -343,7 +343,7 @@ jobs:
     name: every security event has a label
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -357,7 +357,7 @@ jobs:
     name: "masvs storage-2 — no secrets in logs"
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -371,7 +371,7 @@ jobs:
     name: unsafe only in gasapp-ffi
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -407,7 +407,7 @@ jobs:
     name: tokens match UI kit
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -424,7 +424,7 @@ jobs:
     name: pre-commit hooks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -443,7 +443,7 @@ jobs:
     name: no AGPL crate in client graph
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.

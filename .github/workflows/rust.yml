@@ -17,7 +17,7 @@ jobs:
     name: fmt · clippy · test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -111,7 +111,7 @@ jobs:
       GASAPP_REQUIRE_DATABASE: "1"
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -184,7 +184,7 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
@@ -266,7 +266,7 @@ jobs:
           - { target: armv7-linux-androideabi, os: ubuntu-24.04 }
           - { target: x86_64-linux-android,    os: ubuntu-24.04 }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 🔐 Токен не остаётся в .git/config: сборка запускает чужой код
           # (build.rs зависимостей, плагины Gradle), и он прочёл бы его оттуда.
