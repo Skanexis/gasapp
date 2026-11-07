@@ -17,9 +17,9 @@ name: site
 on:
   push:
     branches: [main, gasapp]
-    paths: ["docs/**", "tools/build-site.py", "tools/site.css", ".github/workflows/site.yml"]
+    paths: ["docs/**", "tools/build-site.py", "tools/site.css", "tools/site-assets/**", ".github/workflows/site.yml"]
   pull_request:
-    paths: ["docs/**", "tools/build-site.py", "tools/site.css", ".github/workflows/site.yml"]
+    paths: ["docs/**", "tools/build-site.py", "tools/site.css", "tools/site-assets/**", ".github/workflows/site.yml"]
   workflow_dispatch:
 
 permissions:

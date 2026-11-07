@@ -253,12 +253,15 @@ struct ChatScreen: View {
 
     private func setTimer(_ seconds: UInt32) {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        let chat = resolvedChatId
+        let peer = peerUsername
         Task {
-            let done = (try? await Background.run { try messenger.setDisappearingTimer(chatId: chat, seconds: seconds) }) != nil
+            // Таймер общий: уходит собеседнику, и сообщения исчезают у обоих.
+            let done = (try? await Background.run {
+                try messenger.setDisappearingTimer(peerUsername: peer, seconds: seconds, nowMillis: CoreStore.nowMillis)
+            }) != nil
             toast = done
                 ? (seconds == 0 ? L10n.t("Исчезающие сообщения выключены", "Disappearing messages off")
-                                : L10n.t("Новые сообщения будут исчезать", "New messages will disappear"))
+                                : L10n.t("Новые сообщения будут исчезать у вас обоих", "New messages will disappear for both of you"))
                 : L10n.t("Не удалось изменить", "Could not change it")
         }
     }

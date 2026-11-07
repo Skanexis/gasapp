@@ -1701,8 +1701,8 @@ fun uniffi_gasapp_fn_method_messenger_set_channel_muted(`ptr`: Pointer,`channelI
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_set_contact_verified(`ptr`: Pointer,`accountId`: RustBuffer.ByValue,`verified`: Byte,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-fun uniffi_gasapp_fn_method_messenger_set_disappearing_timer(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,`seconds`: Int,uniffi_out_err: UniffiRustCallStatus, 
-): Unit
+fun uniffi_gasapp_fn_method_messenger_set_disappearing_timer(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`seconds`: Int,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_set_pending_registration(`ptr`: Pointer,`username`: RustBuffer.ByValue,`email`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_set_presence_sharing(`ptr`: Pointer,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -2385,7 +2385,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_gasapp_checksum_method_messenger_set_contact_verified() != 44835.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_gasapp_checksum_method_messenger_set_disappearing_timer() != 44620.toShort()) {
+    if (lib.uniffi_gasapp_checksum_method_messenger_set_disappearing_timer() != 65272.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_set_pending_registration() != 39555.toShort()) {
@@ -4576,16 +4576,21 @@ public interface MessengerInterface {
     fun `setContactVerified`(`accountId`: kotlin.String, `verified`: kotlin.Boolean, `nowMillis`: kotlin.Long)
     
     /**
-     * Задаёт таймер исчезающих сообщений для чата.
+     * Задаёт таймер исчезающих сообщений чата с собеседником —
+     * у обоих.
      *
-     * `seconds` равное нулю выключает таймер.
+     * 🔐 Таймер уходит собеседнику под шифрованием, и его телефон
+     * ставит тот же: сообщения исчезают на обоих телефонах. Сначала
+     * отправка, потом своя запись — без сети таймер не меняется ни у
+     * кого. `seconds` равное нулю выключает таймер.
+     *
+     * Возвращает идентификатор чата.
      *
      * # Errors
      *
-     * [`FfiError::InvalidArgument`] — идентификатор чата не разбирается;
-     * [`FfiError::Core`] — запись не удалась.
+     * [`FfiError::Core`] — отправка или запись не удалась, срок больше года.
      */
-    fun `setDisappearingTimer`(`chatId`: kotlin.String, `seconds`: kotlin.UInt)
+    fun `setDisappearingTimer`(`peerUsername`: kotlin.String, `seconds`: kotlin.UInt, `nowMillis`: kotlin.Long): kotlin.String
     
     /**
      * Запоминает имя и адрес незавершённой регистрации — на случай,
@@ -7355,24 +7360,30 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
 
     
     /**
-     * Задаёт таймер исчезающих сообщений для чата.
+     * Задаёт таймер исчезающих сообщений чата с собеседником —
+     * у обоих.
      *
-     * `seconds` равное нулю выключает таймер.
+     * 🔐 Таймер уходит собеседнику под шифрованием, и его телефон
+     * ставит тот же: сообщения исчезают на обоих телефонах. Сначала
+     * отправка, потом своя запись — без сети таймер не меняется ни у
+     * кого. `seconds` равное нулю выключает таймер.
+     *
+     * Возвращает идентификатор чата.
      *
      * # Errors
      *
-     * [`FfiError::InvalidArgument`] — идентификатор чата не разбирается;
-     * [`FfiError::Core`] — запись не удалась.
+     * [`FfiError::Core`] — отправка или запись не удалась, срок больше года.
      */
-    @Throws(FfiException::class)override fun `setDisappearingTimer`(`chatId`: kotlin.String, `seconds`: kotlin.UInt)
-        = 
+    @Throws(FfiException::class)override fun `setDisappearingTimer`(`peerUsername`: kotlin.String, `seconds`: kotlin.UInt, `nowMillis`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_set_disappearing_timer(
-        it, FfiConverterString.lower(`chatId`),FfiConverterUInt.lower(`seconds`),_status)
+        it, FfiConverterString.lower(`peerUsername`),FfiConverterUInt.lower(`seconds`),FfiConverterLong.lower(`nowMillis`),_status)
 }
     }
-    
+    )
+    }
     
 
     

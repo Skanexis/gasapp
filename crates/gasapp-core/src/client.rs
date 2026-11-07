@@ -1262,6 +1262,7 @@ impl<T: Transport> Client<T> {
                     | Content::KtHead { .. }
                     | Content::Keyboard { .. }
                     | Content::Callback { .. }
+                    | Content::DisappearingTimer { .. }
             );
 
             match content {
@@ -1386,6 +1387,13 @@ impl<T: Transport> Client<T> {
                             self.accept_claimed_username(&peer, &name, &chat_id, now)?;
                         }
                     }
+                }
+
+                Content::DisappearingTimer { seconds } => {
+                    // Таймер собеседника становится таймером чата и здесь:
+                    // исчезающие сообщения исчезают у обоих. Уже полученные
+                    // сообщения сохраняют свой срок (`set_disappearing_timer`).
+                    self.storage.set_disappearing_timer(&chat_id, seconds)?;
                 }
 
                 Content::KtHead { epoch, head } => {
@@ -2950,6 +2958,37 @@ impl<T: Transport> Client<T> {
     /// [`GasAppError::Storage`] — запись не удалась.
     pub fn set_disappearing_timer(&self, chat_id: &ChatId, seconds: Option<u32>) -> Result<()> {
         self.storage.set_disappearing_timer(chat_id, seconds)
+    }
+
+    /// Задаёт таймер исчезающих сообщений для обоих собеседников.
+    ///
+    /// 🔐 Таймер общий: собеседник получает его под шифрованием
+    /// ([`Content::DisappearingTimer`]) и ставит у себя тот же, и
+    /// сообщения чата исчезают на обоих телефонах. Сначала отправка,
+    /// потом своя запись: без сети таймер не меняется ни у кого, и
+    /// телефоны не расходятся — у одного «исчезают», у другого нет.
+    ///
+    /// Возвращает чат, в котором сменился таймер.
+    ///
+    /// # Errors
+    ///
+    /// Те же, что у [`Client::send_message`];
+    /// [`GasAppError::Malformed`] — срок больше года.
+    pub fn set_shared_disappearing_timer<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        seconds: Option<u32>,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<ChatId> {
+        let chat_id = self.send_content(
+            peer_username,
+            &Content::DisappearingTimer { seconds },
+            now,
+            rng,
+        )?;
+        self.storage.set_disappearing_timer(&chat_id, seconds)?;
+        Ok(chat_id)
     }
     /// Пробует расшифровать конверт всеми известными сессиями.
     ///

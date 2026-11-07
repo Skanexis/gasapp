@@ -1001,7 +1001,9 @@ class ChatActivity : AppCompatActivity() {
         for ((label, seconds) in DISAPPEARING_OPTIONS) {
             sheet.action(getString(label)) {
                 runAction {
-                    Core.messenger().setDisappearingTimer(chatId, seconds)
+                    // Таймер общий: уходит собеседнику, и сообщения
+                    // исчезают у обоих (ядро: set_shared_disappearing_timer).
+                    Core.messenger().setDisappearingTimer(peerUsername, seconds, System.currentTimeMillis())
                 }
             }
         }

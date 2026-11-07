@@ -79,6 +79,15 @@ const KIND_KEYBOARD: u8 = 10;
 /// Тип содержимого: нажатие кнопки.
 const KIND_CALLBACK: u8 = 11;
 
+/// Тип содержимого: таймер исчезающих сообщений чата.
+const KIND_DISAPPEARING_TIMER: u8 = 12;
+
+/// Наибольший таймер исчезающих сообщений — год.
+///
+/// 🔐 Значение приходит от собеседника. Без предела «таймер» на
+/// сотню лет был бы тем же «выключено», но выглядел бы включённым.
+pub const MAX_DISAPPEARING_SECONDS: u32 = 365 * 24 * 60 * 60;
+
 /// Длина вершины журнала ключей.
 pub const KT_HEAD_LEN: usize = 32;
 
@@ -271,6 +280,20 @@ pub enum Content {
         sender_username: Option<String>,
     },
 
+    /// Таймер исчезающих сообщений, заданный отправителем для чата.
+    ///
+    /// 🔐 Таймер общий для обоих: кто бы его ни поставил, сообщения
+    /// исчезают у обоих собеседников. Прежде таймер жил только на том
+    /// телефоне, где его включили, и собеседник хранил «исчезающую»
+    /// переписку вечно. Как и «удалить у всех», это договорённость,
+    /// а не гарантия: собеседник мог снять экран до исчезновения.
+    ///
+    /// Внутри шифрования: сервер не знает, что таймер сменился.
+    DisappearingTimer {
+        /// Срок жизни сообщения в секундах; `None` — выключено.
+        seconds: Option<u32>,
+    },
+
     /// Вершина журнала ключей, которую видит отправитель (§9.7).
     ///
     /// 🔐 Сверка цепочек между собеседниками. Сервер, показавший кому-то
@@ -416,6 +439,17 @@ impl Content {
                 out.extend_from_slice(target);
                 write_bytes(&mut out, data)?;
             }
+            Self::DisappearingTimer { seconds } => {
+                // Ноль — «выключено»: отдельный флаг был бы лишним
+                // состоянием, которое можно рассогласовать.
+                let value = seconds.unwrap_or(0);
+                if value > MAX_DISAPPEARING_SECONDS || *seconds == Some(0) {
+                    return Err(GasAppError::Malformed);
+                }
+
+                out.push(KIND_DISAPPEARING_TIMER);
+                out.extend_from_slice(&value.to_be_bytes());
+            }
         }
 
         Ok(out)
@@ -516,18 +550,10 @@ impl Content {
                     }
                 },
             },
-            KIND_KT_HEAD => Self::KtHead {
-                epoch: u64::from_be_bytes(
-                    reader
-                        .take_slice(8)?
-                        .try_into()
-                        .map_err(|_| GasAppError::Malformed)?,
-                ),
-                head: reader
-                    .take_slice(KT_HEAD_LEN)?
-                    .try_into()
-                    .map_err(|_| GasAppError::Malformed)?,
-            },
+            KIND_KT_HEAD => {
+                let (epoch, head) = take_kt_head(&mut reader)?;
+                Self::KtHead { epoch, head }
+            }
             KIND_KEYBOARD => {
                 let target = reader.take_id()?;
                 let keyboard = reader.take_blob()?;
@@ -548,6 +574,9 @@ impl Content {
 
                 Self::Callback { target, data }
             }
+            KIND_DISAPPEARING_TIMER => Self::DisappearingTimer {
+                seconds: take_disappearing_seconds(&mut reader)?,
+            },
             _ => return Err(GasAppError::Malformed),
         };
 
@@ -693,6 +722,39 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Эпоха и вершина журнала ключей ([`Content::KtHead`]).
+fn take_kt_head(reader: &mut Reader<'_>) -> Result<(u64, [u8; KT_HEAD_LEN])> {
+    let epoch = u64::from_be_bytes(
+        reader
+            .take_slice(8)?
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?,
+    );
+    let head = reader
+        .take_slice(KT_HEAD_LEN)?
+        .try_into()
+        .map_err(|_| GasAppError::Malformed)?;
+
+    Ok((epoch, head))
+}
+
+/// Срок таймера исчезающих сообщений: ноль — «выключено», больше года —
+/// отказ (значение от собеседника, см. [`MAX_DISAPPEARING_SECONDS`]).
+fn take_disappearing_seconds(reader: &mut Reader<'_>) -> Result<Option<u32>> {
+    let value = u32::from_be_bytes(
+        reader
+            .take_slice(4)?
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?,
+    );
+
+    if value > MAX_DISAPPEARING_SECONDS {
+        return Err(GasAppError::Malformed);
+    }
+
+    Ok((value != 0).then_some(value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -744,6 +806,40 @@ mod tests {
             Content::from_unpadded_bytes(&bytes).expect("читается"),
             old_format
         );
+    }
+
+    /// Таймер переживает кодирование; ноль — «выключено»; срок больше
+    /// года и обрезанное сообщение отвергаются.
+    #[test]
+    fn a_disappearing_timer_round_trips() {
+        for seconds in [None, Some(1), Some(3_600), Some(MAX_DISAPPEARING_SECONDS)] {
+            let content = Content::DisappearingTimer { seconds };
+            let bytes = content.to_bytes().expect("кодирование");
+            assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+        }
+
+        assert!(Content::DisappearingTimer { seconds: Some(0) }
+            .to_bytes()
+            .is_err());
+        assert!(Content::DisappearingTimer {
+            seconds: Some(MAX_DISAPPEARING_SECONDS + 1)
+        }
+        .to_bytes()
+        .is_err());
+
+        let mut too_long = vec![CONTENT_VERSION, KIND_DISAPPEARING_TIMER];
+        too_long.extend_from_slice(&(MAX_DISAPPEARING_SECONDS + 1).to_be_bytes());
+        assert!(Content::from_unpadded_bytes(&too_long).is_err());
+
+        let unpadded = Content::DisappearingTimer { seconds: Some(60) }
+            .to_unpadded_bytes()
+            .expect("без дополнения");
+        for cut in 1..unpadded.len() {
+            assert!(
+                Content::from_unpadded_bytes(unpadded.get(..cut).expect("срез")).is_err(),
+                "обрезка {cut}"
+            );
+        }
     }
 
     fn id(value: u8) -> [u8; MESSAGE_ID_LEN] {

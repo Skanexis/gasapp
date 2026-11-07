@@ -719,26 +719,38 @@ impl Messenger {
         u32::try_from(removed).map_err(|_| FfiError::InvalidArgument)
     }
 
-    /// Задаёт таймер исчезающих сообщений для чата.
+    /// Задаёт таймер исчезающих сообщений чата с собеседником —
+    /// у обоих.
     ///
-    /// `seconds` равное нулю выключает таймер.
+    /// 🔐 Таймер уходит собеседнику под шифрованием, и его телефон
+    /// ставит тот же: сообщения исчезают на обоих телефонах. Сначала
+    /// отправка, потом своя запись — без сети таймер не меняется ни у
+    /// кого. `seconds` равное нулю выключает таймер.
+    ///
+    /// Возвращает идентификатор чата.
     ///
     /// # Errors
     ///
-    /// [`FfiError::InvalidArgument`] — идентификатор чата не разбирается;
-    /// [`FfiError::Core`] — запись не удалась.
-    pub fn set_disappearing_timer(&self, chat_id: String, seconds: u32) -> Result<(), FfiError> {
-        let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
+    /// [`FfiError::Core`] — отправка или запись не удалась, срок больше года.
+    pub fn set_disappearing_timer(
+        &self,
+        peer_username: String,
+        seconds: u32,
+        now_millis: i64,
+    ) -> Result<String, FfiError> {
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
 
         guard(|| {
-            client.set_disappearing_timer(
-                &ChatId::from_uuid(parsed),
+            client.set_shared_disappearing_timer(
+                &peer_username,
                 // Ноль означает «выключить»: отдельный флаг здесь был бы
                 // лишним состоянием, которое можно рассогласовать.
                 if seconds == 0 { None } else { Some(seconds) },
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
             )
         })
+        .map(|chat| chat.as_uuid().to_string())
     }
 }
 
