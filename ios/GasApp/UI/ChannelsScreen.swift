@@ -14,6 +14,9 @@ struct ChannelsScreen: View {
     @State private var joinLink = ""
     @State private var showJoin = false
     @State private var showCreate = false
+    /// Объяснение «нужен премиум» — вместо формы, которую всё равно не
+    /// отправить (сервер отвечает 403 без премиума).
+    @State private var premiumNote: String?
     @State private var message: String?
 
     var body: some View {
@@ -49,7 +52,7 @@ struct ChannelsScreen: View {
                     Menu {
                         Button(L10n.t("Вступить по ссылке", "Join by link")) { showJoin = true }
                         NavigationLink(L10n.t("Найти открытый", "Find public")) { PublicChannelsScreen() }
-                        Button(L10n.t("Создать канал", "Create channel")) { showCreate = true }
+                        Button(L10n.t("Создать канал", "Create channel")) { createOrExplain() }
                     } label: { Image(systemName: "plus") }
                     .accessibilityLabel(L10n.t("Каналы: добавить", "Add a channel"))
                 }
@@ -58,6 +61,13 @@ struct ChannelsScreen: View {
                 TextField("https://…", text: $joinLink)
                 Button(L10n.t("Вступить", "Join")) { join() }
                 Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+            }
+            .alert(L10n.t("Нужен премиум", "Premium needed"), isPresented: Binding(
+                get: { premiumNote != nil }, set: { if !$0 { premiumNote = nil } }
+            )) {
+                Button("OK") { premiumNote = nil }
+            } message: {
+                Text(premiumNote ?? "")
             }
             .sheet(isPresented: $showCreate) {
                 NavigationStack { CreateChannelSheet { Task { await sync() } } }
@@ -71,6 +81,28 @@ struct ChannelsScreen: View {
         guard let messenger = try? CoreStore.shared.current() else { loaded = true; return }
         channels = (try? await Background.run { try messenger.channels() }) ?? channels
         loaded = true
+    }
+
+    /// Как на Android (`ChannelsActivity.createOrExplain`): без премиума —
+    /// объяснение, а не форма. Сначала сохранённый ответ, при «нет» —
+    /// вопрос серверу: премиум могли выдать минуту назад.
+    private func createOrExplain() {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            let premium = (try? await Background.run { () -> Bool in
+                if (try? messenger.premiumCached()) == true { return true }
+                return (try? messenger.refreshPremium(nowMillis: CoreStore.nowMillis)) ?? false
+            }) ?? false
+            if premium {
+                showCreate = true
+            } else {
+                let username = ((try? messenger.ownUsername()) ?? nil) ?? ""
+                premiumNote = L10n.t(
+                    "Создавать каналы и ботов могут аккаунты с премиумом; читать каналы — все. Премиум выдаёт оператор сервера вручную — пришлите ему своё имя: @\(username)",
+                    "Only premium accounts can create channels and bots; reading channels is open to everyone. Premium is granted by the server operator by hand — send them your username: @\(username)"
+                )
+            }
+        }
     }
 
     private func sync() async {
