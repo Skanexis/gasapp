@@ -188,6 +188,8 @@ TEXT = {
         "shot_lock": "GasApp lock screen with a PIN keypad",
         "shot_security": "GasApp security center",
         "shot_contact": "Adding a contact by QR code in GasApp",
+        "shot_chats": "GasApp chats with the bottom navigation",
+        "shot_contacts": "GasApp contacts with your link and QR code",
     },
     "ru": {
         "tagline": "Мессенджер со сквозным шифрованием. Открытый код.",
@@ -268,6 +270,8 @@ TEXT = {
         "shot_lock": "Вход в GasApp по PIN",
         "shot_security": "Центр безопасности GasApp",
         "shot_contact": "Добавление контакта по QR-коду в GasApp",
+        "shot_chats": "Чаты GasApp с нижней панелью",
+        "shot_contacts": "Контакты GasApp: ваша ссылка и QR-код",
     },
 }
 
@@ -695,7 +699,9 @@ def index_page(language, base_url):
         f"{store_badges(text)}"
         f'<p class="hero-note">{html.escape(text["hero_note"])}</p>'
         '<div class="phones">'
-        + shot("lock", text["shot_lock"], "center")
+        + shot("lock", text["shot_lock"], "side left")
+        + shot("chats", text["shot_chats"], "center")
+        + shot("contacts", text["shot_contacts"], "side right")
         + "</div></div></section>"
         f'<div class="wrap"><div class="promises">{promises}</div></div>'
         f'<section id="features" class="section"><div class="wrap split">'
@@ -803,7 +809,7 @@ def build(out, base_url):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(item.read_bytes())
     # Снимки — настоящие, из прогона в симуляторе (tools/mac-check.sh).
-    for screen in ("lock",):
+    for screen in ("lock", "chats", "contacts"):
         if not (assets / "screens" / f"{screen}.webp").exists():
             raise BuildError(f"нет снимка экрана tools/site-assets/screens/{screen}.webp")
 

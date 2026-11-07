@@ -223,6 +223,19 @@ if (( app_ok )) && [[ -d "$APP" ]]; then
             # ненадёжна. «Упало» — только если процесса нет И появился
             # новый отчёт о падении.
             marker="${TMPDIR:-/tmp}/gasapp-launch-$screen"
+            # Первый запуск после загрузки симулятора: система ещё
+            # раскладывает рабочий стол, и приложение не успевало открыться
+            # за 7 секунд — на снимке был рабочий стол (Codemagic,
+            # 2026-11-07). Не открылось и отчёта о падении нет — ещё одна
+            # попытка с ожиданием подольше.
+            if ! pgrep -f "/GasApp.app/GasApp" > /dev/null 2>&1                 && ! find "$HOME/Library/Logs/DiagnosticReports" -name 'GasApp*' -newer "$marker" 2>/dev/null | grep -q .; then
+                kill "$console_pid" > /dev/null 2>&1 || true
+                wait "$console_pid" 2>/dev/null || true
+                SIMCTL_CHILD_GASAPP_SCREEN="$screen" xcrun simctl launch --console-pty                     --terminate-running-process "$UDID" "$BUNDLE_ID" > "$OUT/console-$screen.txt" 2>&1 &
+                console_pid=$!
+                sleep 15
+                xcrun simctl io "$UDID" screenshot "$OUT/screens/$screen.png" > /dev/null 2>&1
+            fi
             if pgrep -f "/GasApp.app/GasApp" > /dev/null 2>&1; then
                 status "Экран «${screen}»" "запущен, снимок screens/$screen.png"
             elif find "$HOME/Library/Logs/DiagnosticReports" -name 'GasApp*' -newer "$marker" 2>/dev/null | grep -q .; then

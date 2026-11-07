@@ -55,6 +55,9 @@ struct LockScreen: View {
             Spacer()
         }
         .padding(.horizontal, 24)
+        // Во всю ширину: иначе экран узок, как клавиатура, и небо за ним
+        // не доставало до краёв (снимок на Mac, 2026-11-07).
+        .frame(maxWidth: .infinity)
         // Небо за заголовком, как сцена входа на Android: растворяется
         // в фоне до точек PIN, чтобы они не теряли контраст.
         .background(alignment: .top) {

@@ -74,7 +74,9 @@ struct ChannelsScreen: View {
     }
 
     private func sync() async {
-        guard let messenger = try? CoreStore.shared.current() else { return }
+        // Хранилище закрыто (галерея снимков) — пустое состояние, а не
+        // пустой экран: reload сам отметит список загруженным.
+        guard let messenger = try? CoreStore.shared.current() else { await reload(); return }
         await reload()
         _ = try? await Background.run { try messenger.syncChannels(nowMillis: CoreStore.nowMillis) }
         // Ответы на заявки в закрытые каналы.
