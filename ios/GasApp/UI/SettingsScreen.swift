@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// Настройки: аккаунт, сеть, защита, документы, удаление аккаунта.
@@ -11,7 +12,6 @@ struct SettingsScreen: View {
     @Environment(AppModel.self) private var model
 
     @State private var username = ""
-    @State private var viaTor = false
     @State private var wipeAfterTen = PinAttempts.wipeEnabled
     @State private var pushEnabled = Push.shared.enabled
     @State private var currentProxy: FfiProxy?
@@ -51,12 +51,12 @@ struct SettingsScreen: View {
                 }
 
                 Section {
-                    Toggle(L10n.t("Через Tor", "Use Tor"), isOn: $viaTor)
-                        .onChange(of: viaTor) { _, value in setTor(value) }
-                    if viaTor && !torStatus.isEmpty {
+                    NavigationLink { NetworkScreen() } label: {
+                        LabeledContent(L10n.t("Подключение", "Connection"), value: proxyName)
+                    }
+                    if currentProxy == .tor && !torStatus.isEmpty {
                         Text(torStatus).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
                     }
-                    NavigationLink(L10n.t("Мосты Tor", "Tor bridges")) { NetworkScreen() }
                 } header: {
                     Text(L10n.t("Сеть", "Network"))
                 } footer: {
@@ -86,6 +86,7 @@ struct SettingsScreen: View {
                            isOn: $wipeAfterTen)
                         .onChange(of: wipeAfterTen) { _, value in PinAttempts.wipeEnabled = value }
                     NavigationLink(L10n.t("Центр безопасности", "Security center")) { SecurityScreen() }
+                    NavigationLink(L10n.t("Хранилище файлов", "File vault")) { VaultScreen() }
                     NavigationLink(L10n.t("Резервная копия", "Backup")) { BackupScreen() }
                     NavigationLink(L10n.t("Восстановить из копии", "Restore from backup")) {
                         RestoreScreen(recovering: false) { Inbox.shared.touch() }
@@ -118,6 +119,12 @@ struct SettingsScreen: View {
 
                 Section {
                     LabeledContent(L10n.t("Версия ядра", "Core version"), value: coreVersion())
+                    LabeledContent(L10n.t("Версия протокола", "Protocol version"), value: String(protocolVersion()))
+                    // Язык приложения выбирается в настройках iOS (как
+                    // «Язык приложения» на Android 13+).
+                    Button(L10n.t("Язык приложения", "App language")) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
                 }
             }
             .listRowBackground(GasAppColor.bgCard)
@@ -141,6 +148,7 @@ struct SettingsScreen: View {
             }
         }
         .task { await load() }
+        .onAppear { Task { await load() } }
         .sheet(isPresented: $askPinForBiometric) {
             PinConfirmSheet(title: L10n.t("PIN для \(Biometric.name)", "PIN for \(Biometric.name)")) { pin in
                 enableBiometric(pin: pin)
@@ -161,7 +169,6 @@ struct SettingsScreen: View {
         }
         username = state?.0 ?? ""
         currentProxy = state?.1
-        viaTor = state?.1 == .tor
         updateTorStatus()
         presence = (try? await Background.run { try messenger.presenceSharingEnabled() }) ?? false
         presenceLoaded = true
@@ -235,22 +242,12 @@ struct SettingsScreen: View {
         }
     }
 
-    private func setTor(_ enabled: Bool) {
-        let mode: FfiProxy = enabled ? .tor : .direct
-        // Значение пришло из базы при открытии экрана, а не от человека:
-        // переключать сеть незачем (у Tor она на это время закрылась бы).
-        guard mode != currentProxy, let messenger = try? CoreStore.shared.current() else { return }
-        Task {
-            // Сеть меняется, только если выбор записан: иначе после
-            // перезапуска база вернула бы прежний режим.
-            guard (try? await Background.run { try messenger.setProxy(proxy: mode) }) != nil else {
-                viaTor = currentProxy == .tor
-                return
-            }
-            currentProxy = mode
-            let bridges = try? await Background.run { try messenger.torBridges() }
-            NetworkController.shared.apply(proxy: mode, bridges: bridges)
-            updateTorStatus()
+    private var proxyName: String {
+        switch currentProxy {
+        case .tor?: return L10n.t("Через Tor", "Via Tor")
+        case .socks5?: return L10n.t("SOCKS5-прокси", "SOCKS5 proxy")
+        case .direct?: return L10n.t("Напрямую", "Direct")
+        case nil: return "—"
         }
     }
 

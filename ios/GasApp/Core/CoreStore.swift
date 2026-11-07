@@ -115,7 +115,13 @@ final class CoreStore: @unchecked Sendable {
         var key = try [UInt8](deriveStorageKeyTee(stretched: Data(stretched), salt: salt, teeMac: Data(response)))
         defer { key.wipe() }
 
-        return try open(key: key)
+        let opened = try open(key: key)
+        // Проверочное значение хранилища файлов — тем же PIN, что открыл
+        // базу (как `Core.establishVaultVerifier` на Android): хранилище
+        // сверяет с ним PIN, а не открывает файлы наугад. Сбой не мешает
+        // войти.
+        try? opened.establishVaultVerifier(pin: Data(pin), salt: salt)
+        return opened
     }
 
     /// 🔐 Ключ базы из PIN — без открытия: только для включения Face ID.
@@ -242,6 +248,7 @@ final class CoreStore: @unchecked Sendable {
         close()
         EnclaveKey.destroy()
         Biometric.disable()
+        VaultFiles.clearOpened()
         try? FileManager.default.removeItem(at: dataDirectory)
         SecureStore.removeAll()
     }

@@ -12,6 +12,14 @@ struct MessageRow: Identifiable, Equatable {
     var status: FfiDeliveryStatus
     /// Описания вложений (адрес, ключ — под сквозным шифрованием).
     var attachments: [Data] = []
+    /// Кнопки бота под сообщением: ряды подписей (`messageButtons`).
+    var buttons: [[ButtonCell]] = []
+}
+
+/// Кнопка бота: подпись и признак ссылки — ссылка не открывается сама.
+struct ButtonCell: Equatable, Hashable {
+    let label: String
+    let isLink: Bool
 }
 
 /// Переписка — аналог `ChatActivity`.
@@ -42,6 +50,8 @@ struct ChatScreen: View {
     @State private var blocked = false
     @State private var showSafety = false
     @State private var confirmReport = false
+    /// Ссылка из кнопки бота — ждёт решения человека.
+    @State private var pendingLink: String?
     @State private var confirmDecline = false
     @State private var toast: String?
     @State private var receiptSentFor: String?
@@ -60,6 +70,9 @@ struct ChatScreen: View {
                             MessageBubble(message: message)
                                 .id(message.id)
                                 .contextMenu { messageMenu(message) }
+                            if !message.buttons.isEmpty {
+                                MessageButtons(rows: message.buttons) { row, column in press(message, row: row, column: column) }
+                            }
                         }
                     }
                     .padding(12)
@@ -119,6 +132,21 @@ struct ChatScreen: View {
         } message: {
             Text(L10n.t("Оператор сервера получит доказательство, что этот аккаунт вам писал, — но не переписку: её у сервера нет. \(title) об этом не узнает.",
                         "The server operator gets proof that this account wrote to you — not your conversation: the server does not have it. \(title) is not told."))
+        }
+        // Ссылка из кнопки — только https (ядро отвергает иные схемы, данные
+        // входа в адресе и подменные буквы); открыть её решает человек,
+        // видя адрес целиком (как на Android).
+        .confirmationDialog(L10n.t("Открыть ссылку?", "Open the link?"), isPresented: Binding(
+            get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }
+        ), titleVisibility: .visible) {
+            Button(L10n.t("Открыть", "Open")) {
+                if let link = pendingLink, let url = URL(string: link), url.scheme == "https" {
+                    UIApplication.shared.open(url)
+                }
+                pendingLink = nil
+            }
+        } message: {
+            Text(pendingLink ?? "")
         }
         .sheet(isPresented: $showSafety, onDismiss: { Task { await refresh() } }) {
             if let contact {
@@ -369,6 +397,7 @@ struct ChatScreen: View {
             var contact: FfiContact?
             var messages: [FfiMessage]
             var attachments: [String: [Data]]
+            var buttons: [String: [[ButtonCell]]]
             var request: FfiChatRequest
             var blocked: Bool
         }
@@ -386,13 +415,18 @@ struct ChatScreen: View {
             // Описания вложений — из локальной базы; сами файлы качаются,
             // только когда сообщение на экране (AttachmentView).
             var attachments: [String: [Data]] = [:]
+            var buttons: [String: [[ButtonCell]]] = [:]
             for message in list {
                 if let descriptors = try? messenger.attachmentsOf(messageId: message.messageId), !descriptors.isEmpty {
                     attachments[message.messageId] = descriptors
                 }
+                // Кнопки бывают только под сообщением собеседника (бота).
+                if !message.outgoing, let rows = try? messenger.messageButtons(messageIdText: message.messageId), !rows.isEmpty {
+                    buttons[message.messageId] = rows.map { $0.map { ButtonCell(label: $0.label, isLink: $0.isLink) } }
+                }
             }
             return Snapshot(chatId: chat, contact: found, messages: list, attachments: attachments,
-                            request: request, blocked: blocked)
+                            buttons: buttons, request: request, blocked: blocked)
         }) else { return }
 
         resolvedChatId = snap.chatId
@@ -400,7 +434,8 @@ struct ChatScreen: View {
         blocked = snap.blocked
         messages = snap.messages.map {
             MessageRow(id: $0.messageId, text: $0.text, timestamp: $0.timestamp, outgoing: $0.outgoing,
-                       status: $0.status, attachments: snap.attachments[$0.messageId] ?? [])
+                       status: $0.status, attachments: snap.attachments[$0.messageId] ?? [],
+                       buttons: snap.buttons[$0.messageId] ?? [])
         }
         // Контакта нет или он не прочитался — ключ не подтверждён:
         // отправку это не откроет, её всё равно решает ядро.
@@ -524,6 +559,29 @@ struct ChatScreen: View {
         }
     }
 
+    /// Кнопка со ссылкой возвращает ссылку и ничего не отправляет; кнопка
+    /// с данными отправляет их автору сообщения. 🔐 Нажатие сообщает боту,
+    /// что человек сейчас у телефона, — как любой ответ.
+    private func press(_ message: MessageRow, row: Int, column: Int) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let id = message.id
+        Task {
+            do {
+                let link = try await Background.run {
+                    try messenger.pressMessageButton(messageIdText: id, row: UInt32(row), column: UInt32(column),
+                                                     nowMillis: CoreStore.nowMillis)
+                }
+                if let link {
+                    pendingLink = link
+                } else {
+                    toast = L10n.t("Отправлено", "Sent")
+                }
+            } catch {
+                toast = L10n.t("Кнопка не сработала", "The button didn’t work")
+            }
+        }
+    }
+
     private func toggleBlock() {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let chat = resolvedChatId
@@ -585,5 +643,35 @@ struct MessageBubble: View {
         case .read: Image(systemName: "checkmark.circle.fill")
         case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(GasAppColor.error)
         }
+    }
+}
+
+/// Ряды кнопок бота под сообщением.
+struct MessageButtons: View {
+    let rows: [[ButtonCell]]
+    let onPress: (Int, Int) -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                HStack(spacing: 6) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { columnIndex, cell in
+                        Button { onPress(rowIndex, columnIndex) } label: {
+                            HStack(spacing: 4) {
+                                Text(cell.label).lineLimit(1)
+                                if cell.isLink { Image(systemName: "arrow.up.right.square").font(.system(size: 12)) }
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(GasAppColor.accent)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(GasAppColor.line, lineWidth: 1))
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 300, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

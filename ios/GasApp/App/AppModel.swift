@@ -94,6 +94,10 @@ final class AppModel {
         case .background:
             coverVisible = true
             backgroundSince = backgroundSince ?? Date()
+            // 🔐 Хранилище файлов закрывается сразу при уходе в фон, не
+            // дожидаясь таймаута (`onBackground`, как на Android).
+            if let messenger = try? CoreStore.shared.current() { try? messenger.onBackground() }
+            VaultFiles.clearOpened()
             scheduleBackgroundLock()
         @unknown default:
             coverVisible = true

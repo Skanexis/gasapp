@@ -2,40 +2,80 @@
 
 import SwiftUI
 
-/// Сеть: мосты Tor — аналог `NetworkActivity`.
+/// Сеть — аналог `NetworkActivity`: режим выхода (напрямую, Tor, свой
+/// SOCKS5-прокси) и мосты Tor.
 ///
 /// Там, где Tor блокируют, нужны мосты. Их можно вставить строками или
 /// запросить у Tor Project (moat) — 🔐 запрос идёт через сам Tor
 /// встроенным транспортом, не напрямую.
+///
+/// 🔐 Сеть мимо Tor — только владельцу (аудит 2026-10-02, A-3): PIN
+/// спрашивается заново. Свой прокси, тихо вписанный тем, кому дали
+/// подержать телефон, узнавал бы адрес и время каждого соединения.
 struct NetworkScreen: View {
+    @Environment(AppModel.self) private var model
+
+    enum Mode: Hashable { case direct, tor, socks }
+
+    @State private var mode: Mode = .tor
+    @State private var saved: FfiProxy?
+    @State private var host = ""
+    @State private var port = ""
     @State private var bridges = ""
     @State private var status = ""
     @State private var message: String?
     @State private var working = false
+    @State private var pending: FfiProxy?
+    @State private var askPin = false
+    @State private var confirmDirect = false
     private let ticker = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Form {
             // Строки — цветом карточек GasApp, а не системным серым.
             Group {
-                Section(L10n.t("Состояние Tor", "Tor status")) {
-                    Text(status).foregroundStyle(GasAppColor.textSecondary)
-                }
                 Section {
-                    TextEditor(text: $bridges)
-                        .frame(minHeight: 140)
-                        .font(.system(size: 12, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    Button(L10n.t("Сохранить мосты", "Save bridges")) { save() }
-                        .disabled(working)
-                    Button(L10n.t("Получить мосты у Tor Project", "Get bridges from Tor Project")) { fetch() }
+                    Picker(L10n.t("Подключение", "Connection"), selection: $mode) {
+                        Text(L10n.t("Через Tor", "Via Tor")).tag(Mode.tor)
+                        Text(L10n.t("SOCKS5-прокси", "SOCKS5 proxy")).tag(Mode.socks)
+                        Text(L10n.t("Напрямую", "Direct")).tag(Mode.direct)
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    if mode == .socks {
+                        TextField(L10n.t("Адрес (хост или IP)", "Address (host or IP)"), text: $host)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .keyboardType(.URL)
+                        TextField(L10n.t("Порт", "Port"), text: $port)
+                            .keyboardType(.numberPad)
+                    }
+                    Button(L10n.t("Сохранить", "Save")) { saveMode() }
                         .disabled(working)
                 } header: {
-                    Text(L10n.t("Мосты", "Bridges"))
+                    Text(L10n.t("Подключение", "Connection"))
                 } footer: {
-                    Text(L10n.t("По строке на мост (obfs4, webtunnel, snowflake). Пусто — прямое подключение к сети Tor.",
-                                "One bridge per line (obfs4, webtunnel, snowflake). Empty — connect to Tor directly."))
+                    Text(hint)
+                }
+                if mode == .tor {
+                    Section(L10n.t("Состояние Tor", "Tor status")) {
+                        Text(status).foregroundStyle(GasAppColor.textSecondary)
+                    }
+                    Section {
+                        TextEditor(text: $bridges)
+                            .frame(minHeight: 140)
+                            .font(.system(size: 12, design: .monospaced))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        Button(L10n.t("Сохранить мосты", "Save bridges")) { save() }
+                            .disabled(working)
+                        Button(L10n.t("Получить мосты у Tor Project", "Get bridges from Tor Project")) { fetch() }
+                            .disabled(working)
+                    } header: {
+                        Text(L10n.t("Мосты", "Bridges"))
+                    } footer: {
+                        Text(L10n.t("По строке на мост (obfs4, webtunnel, snowflake). Пусто — прямое подключение к сети Tor.",
+                                    "One bridge per line (obfs4, webtunnel, snowflake). Empty — connect to Tor directly."))
+                    }
                 }
                 if let message {
                     Section { Text(message).foregroundStyle(GasAppColor.warn) }
@@ -48,13 +88,127 @@ struct NetworkScreen: View {
         .navigationTitle(L10n.t("Сеть", "Network"))
         .task { await load() }
         .onReceive(ticker) { _ in updateStatus() }
+        .sheet(isPresented: $askPin, onDismiss: { if !confirmDirect && !working { pending = nil } }) {
+            PinConfirmSheet(title: L10n.t("Подключение без Tor", "Connect without Tor")) { pin in reauth(pin) }
+        }
+        // 🔐 Прямое соединение отдаёт серверу адрес — только явным
+        // согласием, после которого человек знает, чем платит.
+        .confirmationDialog(L10n.t("Подключаться напрямую?", "Connect directly?"), isPresented: $confirmDirect,
+                            titleVisibility: .visible) {
+            Button(L10n.t("Подключаться напрямую", "Connect directly"), role: .destructive) {
+                if let pending { store(pending) }
+            }
+            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { pending = nil }
+        } message: {
+            Text(L10n.t("Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети. Tor его скрывает.",
+                        "The server will see your IP address: roughly where you are, and which of your accounts share a network. Tor hides it."))
+        }
+    }
+
+    private var hint: String {
+        switch mode {
+        case .tor:
+            return L10n.t("Сервер не видит ваш IP-адрес. Медленнее, чем напрямую.",
+                          "The server doesn’t see your IP address. Slower than direct.")
+        case .socks:
+            return L10n.t("Все запросы и уведомления идут через указанный прокси. Если он недоступен, приложение не подключится — напрямую оно не пойдёт.",
+                          "All requests and notifications go through the proxy you specify. If it is unreachable, the app will not connect — it will not fall back to a direct connection.")
+        case .direct:
+            return L10n.t("Быстрее всего, но сервер видит ваш IP-адрес.",
+                          "Fastest, but the server sees your IP address.")
+        }
     }
 
     private func load() async {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        let lines = (try? await Background.run { try messenger.torBridges() }) ?? []
-        bridges = lines.joined(separator: "\n")
+        let state = try? await Background.run { () -> (FfiProxy, [String]) in
+            (try messenger.proxy(), try messenger.torBridges())
+        }
+        if let current = state?.0 {
+            saved = current
+            switch current {
+            case .direct: mode = .direct
+            case .tor: mode = .tor
+            case let .socks5(h, p):
+                mode = .socks
+                host = h
+                port = String(p)
+            }
+        }
+        bridges = (state?.1 ?? []).joined(separator: "\n")
         updateStatus()
+    }
+
+    /// Режим, выбранный на экране; `nil` — порт неверен.
+    private var selected: FfiProxy? {
+        switch mode {
+        case .direct: return .direct
+        case .tor: return .tor
+        case .socks:
+            guard let number = Int(port.trimmingCharacters(in: .whitespaces)), (1...65_535).contains(number) else { return nil }
+            return .socks5(host: host.trimmingCharacters(in: .whitespaces), port: UInt16(number))
+        }
+    }
+
+    private func saveMode() {
+        // Проверка та же, что в ядре: ошибка в адресе видна до сохранения,
+        // а не отказом сети.
+        guard let choice = selected, validateProxy(proxy: choice) else {
+            message = L10n.t("Адрес или порт указаны неверно. Укажите имя хоста или IP-адрес без схемы и пути; логин и пароль не поддерживаются.",
+                             "The address or port is not valid. Enter a hostname or IP address without a scheme or path; usernames and passwords are not supported.")
+            return
+        }
+        message = nil
+        guard choice != saved else { return }
+        if choice == .tor {
+            store(choice)
+            return
+        }
+        pending = choice
+        askPin = true
+    }
+
+    private func reauth(_ pin: [UInt8]) {
+        working = true
+        Task {
+            let verdict = await Reauth.verify(pin: pin)
+            working = false
+            switch verdict {
+            case .ok:
+                guard let choice = pending else { return }
+                if choice == .direct {
+                    confirmDirect = true
+                } else {
+                    store(choice)
+                }
+            case .wiped:
+                model.didWipe()
+            case let .refused(text):
+                pending = nil
+                message = text
+            }
+        }
+    }
+
+    /// Сеть меняется, только если выбор записан: иначе после перезапуска
+    /// база вернула бы прежний режим.
+    private func store(_ choice: FfiProxy) {
+        pending = nil
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        working = true
+        Task {
+            let ok = (try? await Background.run { try messenger.setProxy(proxy: choice) }) != nil
+            working = false
+            guard ok else {
+                message = L10n.t("Не сохранилось", "Not saved")
+                return
+            }
+            saved = choice
+            let lines = try? await Background.run { try messenger.torBridges() }
+            NetworkController.shared.apply(proxy: choice, bridges: lines)
+            message = L10n.t("Сохранено", "Saved")
+            updateStatus()
+        }
     }
 
     private func updateStatus() {
@@ -80,7 +234,7 @@ struct NetworkScreen: View {
                 message = L10n.t("Не сохранилось", "Not saved")
                 return
             }
-            message = nil
+            message = L10n.t("Мосты сохранены", "Bridges saved")
             // Режим — тот же; Tor перезапускается с новыми мостами.
             let mode = try? await Background.run { try messenger.proxy() }
             NetworkController.shared.apply(proxy: mode, bridges: saved)

@@ -14,6 +14,7 @@ struct ChannelsScreen: View {
     @State private var joinLink = ""
     @State private var showJoin = false
     @State private var showCreate = false
+    @State private var showBots = false
     /// Объяснение «нужен премиум» — вместо формы, которую всё равно не
     /// отправить (сервер отвечает 403 без премиума).
     @State private var premiumNote: String?
@@ -72,7 +73,8 @@ struct ChannelsScreen: View {
                     Menu {
                         Button(L10n.t("Вступить по ссылке", "Join by link")) { showJoin = true }
                         NavigationLink(L10n.t("Найти открытый", "Find public")) { PublicChannelsScreen() }
-                        Button(L10n.t("Создать канал", "Create channel")) { createOrExplain() }
+                        Button(L10n.t("Создать канал", "Create channel")) { createOrExplain { showCreate = true } }
+                        Button(L10n.t("Мои боты", "My bots")) { createOrExplain { showBots = true } }
                     } label: { Image(systemName: "plus") }
                     .accessibilityLabel(L10n.t("Каналы: добавить", "Add a channel"))
                 }
@@ -88,6 +90,12 @@ struct ChannelsScreen: View {
                 Button("OK") { premiumNote = nil }
             } message: {
                 Text(premiumNote ?? "")
+            }
+            .sheet(isPresented: $showBots) {
+                NavigationStack {
+                    BotsScreen()
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { showBots = false } } }
+                }
             }
             .sheet(isPresented: $showCreate) {
                 NavigationStack { CreateChannelSheet { Task { await sync() } } }
@@ -107,7 +115,7 @@ struct ChannelsScreen: View {
     /// Как на Android (`ChannelsActivity.createOrExplain`): без премиума —
     /// объяснение, а не форма. Сначала сохранённый ответ, при «нет» —
     /// вопрос серверу: премиум могли выдать минуту назад.
-    private func createOrExplain() {
+    private func createOrExplain(_ then: @escaping () -> Void) {
         guard let messenger = try? CoreStore.shared.current() else { return }
         Task {
             let premium = (try? await Background.run { () -> Bool in
@@ -115,7 +123,7 @@ struct ChannelsScreen: View {
                 return (try? messenger.refreshPremium(nowMillis: CoreStore.nowMillis)) ?? false
             }) ?? false
             if premium {
-                showCreate = true
+                then()
             } else {
                 let username = ((try? messenger.ownUsername()) ?? nil) ?? ""
                 premiumNote = L10n.t(
