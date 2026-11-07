@@ -700,8 +700,8 @@ def index_page(language, base_url):
         f'<p class="hero-note">{html.escape(text["hero_note"])}</p>'
         '<div class="phones">'
         + shot("lock", text["shot_lock"], "side left")
-        + shot("chats", text["shot_chats"], "center")
-        + shot("contacts", text["shot_contacts"], "side right")
+        + shot("welcome", text["shot_welcome"], "center")
+        + shot("chats", text["shot_chats"], "side right")
         + "</div></div></section>"
         f'<div class="wrap"><div class="promises">{promises}</div></div>'
         f'<section id="features" class="section"><div class="wrap split">'
@@ -809,7 +809,7 @@ def build(out, base_url):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(item.read_bytes())
     # Снимки — настоящие, из прогона в симуляторе (tools/mac-check.sh).
-    for screen in ("lock", "chats", "contacts"):
+    for screen in ("lock", "welcome", "chats"):
         if not (assets / "screens" / f"{screen}.webp").exists():
             raise BuildError(f"нет снимка экрана tools/site-assets/screens/{screen}.webp")
 

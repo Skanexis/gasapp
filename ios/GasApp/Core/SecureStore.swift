@@ -124,6 +124,31 @@ enum PinAttempts {
         SecureStore.set(Int(uptime), for: lastUptimeKey)
     }
 
+    /// 🔐 Засчитывает попытку **до** проверки PIN — как
+    /// `PinAttempts.beginAttempt` на Android (аудит 2026-10-02, A-1).
+    ///
+    /// Прежде неверная попытка записывалась после проверки: убитое во
+    /// время вывода ключа (Argon2 и Secure Enclave — доли секунды)
+    /// приложение не записывало ничего, и PIN перебирался без задержек и
+    /// без стирания. Теперь прерванная проверка остаётся неверной; верный
+    /// PIN снимает её через [reset], непроверенный — через [cancelAttempt].
+    ///
+    /// - Returns: `false`, если запись не удалась — тогда проверять PIN
+    ///   нельзя: проверка без записанной попытки и есть обход.
+    static func beginAttempt(now: Date = Date(), uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        let before = failures
+        recordFailure(now: now, uptime: uptime)
+        return failures == before + 1
+    }
+
+    /// Снимает попытку, начатую [beginAttempt], не трогая прежние: PIN
+    /// не сверялся вовсе (ключ Enclave недоступен, сбой не из-за PIN).
+    /// 🔐 Счётчик возвращается на шаг, а не сбрасывается.
+    static func cancelAttempt() {
+        let current = failures
+        if current > 0 { SecureStore.set(current - 1, for: failuresKey) }
+    }
+
     static func reset() {
         SecureStore.remove(failuresKey)
         SecureStore.remove(lastWallKey)

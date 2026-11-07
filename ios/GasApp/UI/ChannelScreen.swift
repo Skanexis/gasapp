@@ -255,6 +255,8 @@ struct ChannelInfoSheet: View {
     @State private var link: String?
     @State private var qr: FfiQrMatrix?
     @State private var confirmLeave = false
+    @State private var reportReason: UInt8?
+    @State private var reportNote: String?
     @Environment(\.dismiss) private var dismiss
 
     init(channelId: String, onDone: @escaping (Bool) -> Void) {
@@ -284,7 +286,19 @@ struct ChannelInfoSheet: View {
                             get: { channel.muted }, set: { mute($0) }
                         ))
                         if channel.role != .owner {
+                            // Причины — те же номера, что знает сервер (как на Android).
+                            Menu {
+                                ForEach(ChannelReport.reasons, id: \.0) { reason in
+                                    Button(reason.1) { reportReason = reason.0 }
+                                }
+                            } label: {
+                                Label(L10n.t("Пожаловаться на канал", "Report channel"), systemImage: "exclamationmark.bubble")
+                            }
+                            .foregroundStyle(GasAppColor.error)
                             Button(L10n.t("Покинуть канал", "Leave channel"), role: .destructive) { confirmLeave = true }
+                        }
+                        if let reportNote {
+                            Text(reportNote).font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
                         }
                     }
                 }
@@ -295,6 +309,19 @@ struct ChannelInfoSheet: View {
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { onDone(false); dismiss() } } }
         .confirmationDialog(L10n.t("Покинуть канал?", "Leave the channel?"), isPresented: $confirmLeave, titleVisibility: .visible) {
             Button(L10n.t("Покинуть", "Leave"), role: .destructive) { leave() }
+        }
+        // 🔐 Записи канала без публичного имени оператор прочитать не может:
+        // дать ли ему ключ чтения, решает человек, и что получит оператор,
+        // сказано до кнопок (ChannelActivity.confirmReport на Android).
+        .confirmationDialog(L10n.t("Пожаловаться на канал", "Report channel"), isPresented: Binding(
+            get: { reportReason != nil }, set: { if !$0 { reportReason = nil } }
+        ), titleVisibility: .visible) {
+            Button(L10n.t("Отправить с доступом", "Send with access")) { sendReport(shareKey: true) }
+            Button(L10n.t("Только жалоба", "Report only")) { sendReport(shareKey: false) }
+            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { reportReason = nil }
+        } message: {
+            Text(L10n.t("Жалоба уйдёт оператору сервера вместе с именем вашего аккаунта. Записи этого канала оператор прочитать не может — если не дать ему доступ. «Отправить с доступом» приложит к жалобе ссылку канала: оператор сможет открыть его и увидеть, на что вы жалуетесь.",
+                        "The report goes to the server operator together with your account name. The operator cannot read this channel's posts unless you give access. “Send with access” attaches the channel link to the report, so the operator can open the channel and see what you are reporting."))
         }
         .task { await load() }
     }
@@ -317,6 +344,20 @@ struct ChannelInfoSheet: View {
         }
     }
 
+    private func sendReport(shareKey: Bool) {
+        guard let reason = reportReason, let messenger = try? CoreStore.shared.current() else { return }
+        reportReason = nil
+        let id = channelId
+        Task {
+            let sent = (try? await Background.run {
+                try messenger.reportChannel(channelId: id, reason: reason, shareKey: shareKey, nowMillis: CoreStore.nowMillis)
+            }) != nil
+            reportNote = sent
+                ? L10n.t("Жалоба отправлена", "Report sent")
+                : L10n.t("Нет связи с сервером. Попробуйте ещё раз.", "No connection to the server. Try again.")
+        }
+    }
+
     private func leave() {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let id = channelId
@@ -326,4 +367,15 @@ struct ChannelInfoSheet: View {
             dismiss()
         }
     }
+}
+
+/// Причины жалобы на канал: номер, как его знает сервер, и подпись.
+enum ChannelReport {
+    static let reasons: [(UInt8, String)] = [
+        (1, L10n.t("Спам или обман", "Spam or scam")),
+        (2, L10n.t("Незаконное содержимое", "Illegal content")),
+        (3, L10n.t("Угроза безопасности детей", "Child safety concern")),
+        (4, L10n.t("Насилие или ненависть", "Violence or hate")),
+        (5, L10n.t("Другое", "Something else")),
+    ]
 }

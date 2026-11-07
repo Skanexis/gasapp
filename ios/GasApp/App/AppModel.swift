@@ -25,12 +25,12 @@ final class AppModel {
     var autoLockAfter: TimeInterval { TimeInterval(Self.autoLockSeconds) }
 
     /// Время до автоблокировки в фоне (настройки): 0 — сразу. По умолчанию
-    /// 30 секунд. В Keychain значение хранится со сдвигом на 1, чтобы
+    /// 60 секунд — как `Settings.AUTO_LOCK_DEFAULT` на Android. В Keychain значение хранится со сдвигом на 1, чтобы
     /// «не задано» (0) отличалось от «сразу».
     static var autoLockSeconds: Int {
         get {
             let stored = SecureStore.int("autolock.seconds")
-            return stored == 0 ? 30 : stored - 1
+            return stored == 0 ? 60 : stored - 1
         }
         set { SecureStore.set(newValue + 1, for: "autolock.seconds") }
     }

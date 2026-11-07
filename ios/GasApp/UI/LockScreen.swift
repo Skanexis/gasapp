@@ -101,6 +101,15 @@ struct LockScreen: View {
             return
         }
 
+        // 🔐 Попытка записана до проверки: прерванная проверка остаётся
+        // неверной (см. `PinAttempts.beginAttempt`).
+        guard PinAttempts.beginAttempt() else {
+            pin.wipe()
+            error = L10n.t("Не удалось сохранить попытку. Попробуйте ещё раз.",
+                           "Could not save the attempt. Try again.")
+            return
+        }
+
         working = true
         error = nil
 
@@ -133,8 +142,11 @@ struct LockScreen: View {
                 return
             }
 
-            if self.error == nil {
-                PinAttempts.recordFailure()
+            // PIN не сверялся (ошибка выше записана) — попытка снимается:
+            // в счётчик идёт только отказ ядра, то есть неверный PIN.
+            if self.error != nil {
+                PinAttempts.cancelAttempt()
+            } else {
                 if PinAttempts.shouldWipe {
                     model.didWipe()
                     return

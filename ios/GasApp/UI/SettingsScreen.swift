@@ -175,17 +175,49 @@ struct SettingsScreen: View {
 
     /// 🔐 Face ID включается только ключом, который действительно открыл
     /// базу: PIN спрашивается заново и проверяется.
+    ///
+    /// 🔐 Эта сверка — тоже ответ на «верен ли PIN», поэтому она идёт
+    /// через тот же счётчик, что и вход: задержки, запись попытки до
+    /// проверки и стирание после десяти (как `Reauth` на Android). Иначе
+    /// открытое приложение было бы способом перебирать PIN без задержек.
     private func enableBiometric(pin: [UInt8]) {
+        let wait = PinAttempts.waitRemaining()
+        guard wait <= 0 else {
+            biometricOn = false
+            error = L10n.t("Слишком много неверных PIN. Подождите \(Int(wait.rounded(.up))) с.",
+                           "Too many wrong PINs. Wait \(Int(wait.rounded(.up))) s.")
+            return
+        }
+        guard PinAttempts.beginAttempt() else {
+            biometricOn = false
+            error = L10n.t("Не удалось сохранить попытку. Попробуйте ещё раз.", "Could not save the attempt. Try again.")
+            return
+        }
         Task {
-            let done = (try? await Background.run { () -> Bool in
+            // nil — PIN не сверялся (сбой ключа Enclave и т. п.).
+            let verdict = try? await Background.run { () -> Bool in
                 var key = try CoreStore.shared.deriveKey(pin: pin)
                 defer { key.wipe() }
                 guard CoreStore.shared.keyOpensStorage(key) else { return false }
                 try Biometric.enable(key: key)
                 return true
-            }) ?? false
-            biometricOn = done
-            if !done { error = L10n.t("PIN не подошёл — Face ID не включён", "Wrong PIN — Face ID not enabled") }
+            }
+            switch verdict {
+            case true?:
+                PinAttempts.reset()
+                biometricOn = true
+            case false?:
+                biometricOn = false
+                if PinAttempts.shouldWipe {
+                    model.didWipe()
+                    return
+                }
+                error = L10n.t("PIN не подошёл — Face ID не включён", "Wrong PIN — Face ID not enabled")
+            case nil:
+                PinAttempts.cancelAttempt()
+                biometricOn = false
+                error = L10n.t("Не удалось включить Face ID", "Could not enable Face ID")
+            }
         }
     }
 

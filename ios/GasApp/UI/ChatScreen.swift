@@ -41,6 +41,7 @@ struct ChatScreen: View {
     @State private var contact: FfiContact?
     @State private var blocked = false
     @State private var showSafety = false
+    @State private var confirmReport = false
     @State private var confirmDecline = false
     @State private var toast: String?
     @State private var receiptSentFor: String?
@@ -101,11 +102,23 @@ struct ChatScreen: View {
                         }
                     }
                     if !resolvedChatId.isEmpty {
+                        Button(L10n.t("Пожаловаться", "Report"), role: .destructive) { startReport() }
                         Button(blocked ? L10n.t("Разблокировать", "Unblock") : L10n.t("Заблокировать", "Block"),
                                role: blocked ? nil : .destructive) { toggleBlock() }
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
+        }
+        // Жалоба — как на Android (ChatActivity): что получит оператор,
+        // сказано до кнопок; «и заблокировать» — второй вариант.
+        .confirmationDialog(L10n.t("Пожаловаться на \(title)?", "Report \(title)?"),
+                            isPresented: $confirmReport, titleVisibility: .visible) {
+            Button(L10n.t("Пожаловаться и заблокировать", "Report and block"), role: .destructive) { sendReport(alsoBlock: true) }
+            Button(L10n.t("Только пожаловаться", "Report only")) { sendReport(alsoBlock: false) }
+            Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.t("Оператор сервера получит доказательство, что этот аккаунт вам писал, — но не переписку: её у сервера нет. \(title) об этом не узнает.",
+                        "The server operator gets proof that this account wrote to you — not your conversation: the server does not have it. \(title) is not told."))
         }
         .sheet(isPresented: $showSafety, onDismiss: { Task { await refresh() } }) {
             if let contact {
@@ -237,7 +250,7 @@ struct ChatScreen: View {
                 // другие приложения.
                 UIPasteboard.general.setItems([["public.utf8-plain-text": message.text]],
                                               options: [.localOnly: true,
-                                                        .expirationDate: Date().addingTimeInterval(120)])
+                                                        .expirationDate: Date().addingTimeInterval(60)])
             } label: { Label(L10n.t("Копировать", "Copy"), systemImage: "doc.on.doc") }
         }
         if message.outgoing && mode == .open && !message.id.hasPrefix("local-") {
@@ -469,6 +482,45 @@ struct ChatScreen: View {
             _ = try? await Background.run { try messenger.declineChat(chatId: chat, nowMillis: CoreStore.nowMillis) }
             inbox.touch()
             dismiss()
+        }
+    }
+
+    /// 🔐 Жалоба доказывается сертификатом отправителя с его конверта:
+    /// пока собеседник ничего не прислал, доказать нечем (`canReportChat`).
+    private func startReport() {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let chat = resolvedChatId
+        Task {
+            let can = (try? await Background.run { try messenger.canReportChat(chatId: chat) }) ?? false
+            if can {
+                confirmReport = true
+            } else {
+                toast = L10n.t("Пожаловаться можно, когда собеседник вам что-нибудь напишет.",
+                               "You can report once they have sent you a message.")
+            }
+        }
+    }
+
+    private func sendReport(alsoBlock: Bool) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let chat = resolvedChatId
+        let peer = peerUsername
+        Task {
+            do {
+                let recorded = try await Background.run { try messenger.reportChat(chatId: chat, nowMillis: CoreStore.nowMillis) }
+                if alsoBlock {
+                    _ = try? await Background.run {
+                        try messenger.blockChat(chatId: chat, username: peer.isEmpty ? nil : peer, nowMillis: CoreStore.nowMillis)
+                    }
+                    await refresh()
+                }
+                toast = recorded
+                    ? L10n.t("Жалоба отправлена. Спасибо.", "Report sent. Thank you.")
+                    : L10n.t("Вы уже жаловались на этот аккаунт.", "You have already reported this account.")
+            } catch {
+                toast = L10n.t("Жалобу отправить не удалось. Проверьте связь и попробуйте ещё раз.",
+                               "Could not send the report. Check the connection and try again.")
+            }
         }
     }
 
