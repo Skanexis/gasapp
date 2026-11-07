@@ -30,93 +30,97 @@ struct SettingsScreen: View {
 
     var body: some View {
         Form {
-            Section(L10n.t("Аккаунт", "Account")) {
-                LabeledContent(L10n.t("Имя", "Username"), value: username.isEmpty ? "—" : "@\(username)")
-                Button(L10n.t("Заблокировать сейчас", "Lock now")) { model.lock() }
-            }
-
-            Section {
-                Toggle(L10n.t("Уведомления", "Notifications"), isOn: $pushEnabled)
-                    .onChange(of: pushEnabled) { _, value in
-                        Push.shared.enabled = value
-                        Push.shared.sync()
-                    }
-            } header: {
-                Text(L10n.t("Уведомления", "Notifications"))
-            } footer: {
-                Text(L10n.t("Только «Новые сообщения» — без текста и имени. Apple видит лишь, что вам что-то пришло, и когда.",
-                            "Only “New messages” — no text or name. Apple only sees that something arrived, and when."))
-            }
-
-            Section {
-                Toggle(L10n.t("Через Tor", "Use Tor"), isOn: $viaTor)
-                    .onChange(of: viaTor) { _, value in setTor(value) }
-                if viaTor && !torStatus.isEmpty {
-                    Text(torStatus).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
+            // Строки — цветом карточек GasApp, а не системным серым.
+            Group {
+                Section(L10n.t("Аккаунт", "Account")) {
+                    LabeledContent(L10n.t("Имя", "Username"), value: username.isEmpty ? "—" : "@\(username)")
+                    Button(L10n.t("Заблокировать сейчас", "Lock now")) { model.lock() }
                 }
-                NavigationLink(L10n.t("Мосты Tor", "Tor bridges")) { NetworkScreen() }
-            } header: {
-                Text(L10n.t("Сеть", "Network"))
-            } footer: {
-                Text(L10n.t("Напрямую сервер видит ваш IP-адрес. Через Tor — нет, но медленнее.",
-                            "Directly, the server sees your IP address. Via Tor it doesn’t, but it’s slower."))
-            }
 
-            Section {
-                if Biometric.available {
-                    Toggle(L10n.t("Вход по \(Biometric.name)", "Unlock with \(Biometric.name)"), isOn: Binding(
-                        get: { biometricOn },
-                        set: { value in
-                            if value { askPinForBiometric = true } else { Biometric.disable(); biometricOn = false }
+                Section {
+                    Toggle(L10n.t("Уведомления", "Notifications"), isOn: $pushEnabled)
+                        .onChange(of: pushEnabled) { _, value in
+                            Push.shared.enabled = value
+                            Push.shared.sync()
                         }
-                    ))
+                } header: {
+                    Text(L10n.t("Уведомления", "Notifications"))
+                } footer: {
+                    Text(L10n.t("Только «Новые сообщения» — без текста и имени. Apple видит лишь, что вам что-то пришло, и когда.",
+                                "Only “New messages” — no text or name. Apple only sees that something arrived, and when."))
                 }
-                Picker(L10n.t("Автоблокировка", "Auto-lock"), selection: $autoLock) {
-                    Text(L10n.t("Сразу", "Immediately")).tag(0)
-                    Text(L10n.t("Через 30 с", "After 30 s")).tag(30)
-                    Text(L10n.t("Через 1 мин", "After 1 min")).tag(60)
-                    Text(L10n.t("Через 5 мин", "After 5 min")).tag(300)
-                }
-                .onChange(of: autoLock) { _, value in AppModel.autoLockSeconds = value }
-                Toggle(L10n.t("Показывать, что я в сети", "Show when I’m online"), isOn: $presence)
-                    .onChange(of: presence) { _, value in setPresence(value) }
-                Toggle(L10n.t("Стереть всё после 10 неверных PIN", "Erase everything after 10 wrong PINs"),
-                       isOn: $wipeAfterTen)
-                    .onChange(of: wipeAfterTen) { _, value in PinAttempts.wipeEnabled = value }
-                NavigationLink(L10n.t("Центр безопасности", "Security center")) { SecurityScreen() }
-                NavigationLink(L10n.t("Резервная копия", "Backup")) { BackupScreen() }
-                NavigationLink(L10n.t("Восстановить из копии", "Restore from backup")) {
-                    RestoreScreen(recovering: false) { Inbox.shared.touch() }
-                }
-                Button(L10n.t("Выгрузить мои данные", "Export my data")) { exportData() }
-            } header: {
-                Text(L10n.t("Защита", "Security"))
-            } footer: {
-                Text(L10n.t("Защищает от перебора, но ребёнок, играющий с телефоном, может всё стереть.",
-                            "Stops guessing, but a child playing with the phone could erase everything."))
-            }
 
-            Section(L10n.t("Документы", "Documents")) {
-                link(L10n.t("Политика конфиденциальности", "Privacy policy"), "privacy/")
-                link(L10n.t("Условия использования", "Terms of use"), "terms/")
-                link(L10n.t("Правила сообщества", "Community guidelines"), "community-guidelines/")
-                link(L10n.t("Поддержка", "Support"), "support/")
-            }
-
-            Section {
-                Button(role: .destructive) { confirmDelete = true } label: {
-                    if deleting { ProgressView() } else { Text(L10n.t("Удалить аккаунт", "Delete account")) }
+                Section {
+                    Toggle(L10n.t("Через Tor", "Use Tor"), isOn: $viaTor)
+                        .onChange(of: viaTor) { _, value in setTor(value) }
+                    if viaTor && !torStatus.isEmpty {
+                        Text(torStatus).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
+                    }
+                    NavigationLink(L10n.t("Мосты Tor", "Tor bridges")) { NetworkScreen() }
+                } header: {
+                    Text(L10n.t("Сеть", "Network"))
+                } footer: {
+                    Text(L10n.t("Напрямую сервер видит ваш IP-адрес. Через Tor — нет, но медленнее.",
+                                "Directly, the server sees your IP address. Via Tor it doesn’t, but it’s slower."))
                 }
-                .disabled(deleting)
-                if let error { Text(error).foregroundStyle(GasAppColor.error) }
-            } footer: {
-                Text(L10n.t("Аккаунт удаляется на сервере, переписка — с этого телефона. Вернуть нельзя.",
-                            "The account is deleted on the server and messages from this phone. This can’t be undone."))
-            }
 
-            Section {
-                LabeledContent(L10n.t("Версия ядра", "Core version"), value: coreVersion())
+                Section {
+                    if Biometric.available {
+                        Toggle(L10n.t("Вход по \(Biometric.name)", "Unlock with \(Biometric.name)"), isOn: Binding(
+                            get: { biometricOn },
+                            set: { value in
+                                if value { askPinForBiometric = true } else { Biometric.disable(); biometricOn = false }
+                            }
+                        ))
+                    }
+                    Picker(L10n.t("Автоблокировка", "Auto-lock"), selection: $autoLock) {
+                        Text(L10n.t("Сразу", "Immediately")).tag(0)
+                        Text(L10n.t("Через 30 с", "After 30 s")).tag(30)
+                        Text(L10n.t("Через 1 мин", "After 1 min")).tag(60)
+                        Text(L10n.t("Через 5 мин", "After 5 min")).tag(300)
+                    }
+                    .onChange(of: autoLock) { _, value in AppModel.autoLockSeconds = value }
+                    Toggle(L10n.t("Показывать, что я в сети", "Show when I’m online"), isOn: $presence)
+                        .onChange(of: presence) { _, value in setPresence(value) }
+                    Toggle(L10n.t("Стереть всё после 10 неверных PIN", "Erase everything after 10 wrong PINs"),
+                           isOn: $wipeAfterTen)
+                        .onChange(of: wipeAfterTen) { _, value in PinAttempts.wipeEnabled = value }
+                    NavigationLink(L10n.t("Центр безопасности", "Security center")) { SecurityScreen() }
+                    NavigationLink(L10n.t("Резервная копия", "Backup")) { BackupScreen() }
+                    NavigationLink(L10n.t("Восстановить из копии", "Restore from backup")) {
+                        RestoreScreen(recovering: false) { Inbox.shared.touch() }
+                    }
+                    Button(L10n.t("Выгрузить мои данные", "Export my data")) { exportData() }
+                } header: {
+                    Text(L10n.t("Защита", "Security"))
+                } footer: {
+                    Text(L10n.t("Защищает от перебора, но ребёнок, играющий с телефоном, может всё стереть.",
+                                "Stops guessing, but a child playing with the phone could erase everything."))
+                }
+
+                Section(L10n.t("Документы", "Documents")) {
+                    link(L10n.t("Политика конфиденциальности", "Privacy policy"), "privacy/")
+                    link(L10n.t("Условия использования", "Terms of use"), "terms/")
+                    link(L10n.t("Правила сообщества", "Community guidelines"), "community-guidelines/")
+                    link(L10n.t("Поддержка", "Support"), "support/")
+                }
+
+                Section {
+                    Button(role: .destructive) { confirmDelete = true } label: {
+                        if deleting { ProgressView() } else { Text(L10n.t("Удалить аккаунт", "Delete account")) }
+                    }
+                    .disabled(deleting)
+                    if let error { Text(error).foregroundStyle(GasAppColor.error) }
+                } footer: {
+                    Text(L10n.t("Аккаунт удаляется на сервере, переписка — с этого телефона. Вернуть нельзя.",
+                                "The account is deleted on the server and messages from this phone. This can’t be undone."))
+                }
+
+                Section {
+                    LabeledContent(L10n.t("Версия ядра", "Core version"), value: coreVersion())
+                }
             }
+            .listRowBackground(GasAppColor.bgCard)
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())

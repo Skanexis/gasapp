@@ -214,7 +214,12 @@ if (( app_ok )) && [[ -d "$APP" ]]; then
             console_pid=$!
             sleep 7
             xcrun simctl io "$UDID" screenshot "$OUT/screens/$screen.png" > /dev/null 2>&1
-            if xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
+            # Жив ли процесс — по его PID: приложение симулятора — обычный
+            # процесс Mac, `simctl launch` печатает его номер первой строкой.
+            # Прежняя проверка через `launchctl list` симулятора давала
+            # «упало» на живых экранах (чаты, контакты — снимки были).
+            app_pid=$(sed -n "s/^${BUNDLE_ID}: \([0-9][0-9]*\).*/\1/p" "$OUT/console-$screen.txt" | head -1)
+            if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
                 status "Экран «${screen}»" "запущен, снимок screens/$screen.png"
             else
                 status "Экран «${screen}»" "🔴 ПРИЛОЖЕНИЕ УПАЛО — см. console-$screen.txt и crashes/"

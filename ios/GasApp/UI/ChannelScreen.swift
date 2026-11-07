@@ -264,28 +264,32 @@ struct ChannelInfoSheet: View {
 
     var body: some View {
         Form {
-            if let channel {
-                Section {
-                    Text(channel.title).font(.system(size: 20, weight: .bold))
-                    if !channel.description.isEmpty { Text(channel.description).foregroundStyle(GasAppColor.textSecondary) }
-                    LabeledContent(L10n.t("Подписчиков", "Subscribers"), value: "\(channel.subscribers)")
-                    if let handle = channel.handle { LabeledContent(L10n.t("Имя", "Handle"), value: "@\(handle)") }
-                }
-                Section(L10n.t("Пригласить", "Invite")) {
-                    if let qr { QRView(matrix: qr).frame(maxWidth: 220).frame(maxWidth: .infinity) }
-                    if let link {
-                        ShareLink(item: link) { Label(L10n.t("Поделиться ссылкой", "Share link"), systemImage: "square.and.arrow.up") }
+            // Строки — цветом карточек GasApp, а не системным серым.
+            Group {
+                if let channel {
+                    Section {
+                        Text(channel.title).font(.system(size: 20, weight: .bold))
+                        if !channel.description.isEmpty { Text(channel.description).foregroundStyle(GasAppColor.textSecondary) }
+                        LabeledContent(L10n.t("Подписчиков", "Subscribers"), value: "\(channel.subscribers)")
+                        if let handle = channel.handle { LabeledContent(L10n.t("Имя", "Handle"), value: "@\(handle)") }
                     }
-                }
-                Section {
-                    Toggle(L10n.t("Без уведомлений", "Muted"), isOn: Binding(
-                        get: { channel.muted }, set: { mute($0) }
-                    ))
-                    if channel.role != .owner {
-                        Button(L10n.t("Покинуть канал", "Leave channel"), role: .destructive) { confirmLeave = true }
+                    Section(L10n.t("Пригласить", "Invite")) {
+                        if let qr { QRView(matrix: qr).frame(maxWidth: 220).frame(maxWidth: .infinity) }
+                        if let link {
+                            ShareLink(item: link) { Label(L10n.t("Поделиться ссылкой", "Share link"), systemImage: "square.and.arrow.up") }
+                        }
+                    }
+                    Section {
+                        Toggle(L10n.t("Без уведомлений", "Muted"), isOn: Binding(
+                            get: { channel.muted }, set: { mute($0) }
+                        ))
+                        if channel.role != .owner {
+                            Button(L10n.t("Покинуть канал", "Leave channel"), role: .destructive) { confirmLeave = true }
+                        }
                     }
                 }
             }
+            .listRowBackground(GasAppColor.bgCard)
         }
         .navigationTitle(L10n.t("Канал", "Channel"))
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { onDone(false); dismiss() } } }

@@ -16,28 +16,32 @@ struct NetworkScreen: View {
 
     var body: some View {
         Form {
-            Section(L10n.t("Состояние Tor", "Tor status")) {
-                Text(status).foregroundStyle(GasAppColor.textSecondary)
+            // Строки — цветом карточек GasApp, а не системным серым.
+            Group {
+                Section(L10n.t("Состояние Tor", "Tor status")) {
+                    Text(status).foregroundStyle(GasAppColor.textSecondary)
+                }
+                Section {
+                    TextEditor(text: $bridges)
+                        .frame(minHeight: 140)
+                        .font(.system(size: 12, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    Button(L10n.t("Сохранить мосты", "Save bridges")) { save() }
+                        .disabled(working)
+                    Button(L10n.t("Получить мосты у Tor Project", "Get bridges from Tor Project")) { fetch() }
+                        .disabled(working)
+                } header: {
+                    Text(L10n.t("Мосты", "Bridges"))
+                } footer: {
+                    Text(L10n.t("По строке на мост (obfs4, webtunnel, snowflake). Пусто — прямое подключение к сети Tor.",
+                                "One bridge per line (obfs4, webtunnel, snowflake). Empty — connect to Tor directly."))
+                }
+                if let message {
+                    Section { Text(message).foregroundStyle(GasAppColor.warn) }
+                }
             }
-            Section {
-                TextEditor(text: $bridges)
-                    .frame(minHeight: 140)
-                    .font(.system(size: 12, design: .monospaced))
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                Button(L10n.t("Сохранить мосты", "Save bridges")) { save() }
-                    .disabled(working)
-                Button(L10n.t("Получить мосты у Tor Project", "Get bridges from Tor Project")) { fetch() }
-                    .disabled(working)
-            } header: {
-                Text(L10n.t("Мосты", "Bridges"))
-            } footer: {
-                Text(L10n.t("По строке на мост (obfs4, webtunnel, snowflake). Пусто — прямое подключение к сети Tor.",
-                            "One bridge per line (obfs4, webtunnel, snowflake). Empty — connect to Tor directly."))
-            }
-            if let message {
-                Section { Text(message).foregroundStyle(GasAppColor.warn) }
-            }
+            .listRowBackground(GasAppColor.bgCard)
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())

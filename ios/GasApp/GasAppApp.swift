@@ -12,8 +12,13 @@ struct GasAppApp: App {
             #if GASAPP_GALLERY
             // Сборка проверки на Mac (tools/mac-check.sh): экран выбирается
             // переменной GASAPP_SCREEN, чтобы снять снимок каждого.
+            // Тема — как у RootView: без неё системные заголовки и
+            // подписи рисовались как для светлой темы (чёрным по синему),
+            // и снимки расходились с тем, что видит человек.
             ScreenGallery.root()
                 .environment(model)
+                .preferredColorScheme(.dark)
+                .tint(GasAppColor.accent)
             #else
             RootView()
                 .environment(model)
