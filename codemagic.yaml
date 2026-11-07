@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Проверка iOS-приложения на Mac в Codemagic — та же, что `ios.yml` в
+# GitHub Actions: ядро Rust под iOS, проверка типов Swift, проект Xcode,
+# сборка для симулятора и снимок каждого экрана (tools/mac-check.sh).
+#
+# Запуск — вручную: codemagic.io → приложение gasapp → «Start new build»
+# → workflow «iOS check». Отчёт — в артефактах сборки: mac-report.zip
+# (SUMMARY.txt, ошибки Swift и сборки, screens/*.png).
+#
+# Секретов не нужно: сборка для симулятора не подписывается и сервер
+# не трогает.
+
+workflows:
+  ios-check:
+    name: iOS check (simulator)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      xcode: latest
+    cache:
+      cache_paths:
+        - $HOME/.cargo/registry
+        - $HOME/.rustup/toolchains
+    scripts:
+      - name: Rust (версия — из rust-toolchain.toml)
+        script: |
+          set -euo pipefail
+          if ! command -v rustup > /dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+          fi
+          source "$HOME/.cargo/env"
+          channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal
+          rustc --version
+      - name: Проверка на Mac (ядро, Swift, Xcode, симулятор, снимки)
+        script: |
+          source "$HOME/.cargo/env"
+          bash tools/mac-check.sh < /dev/null
+      - name: Итог
+        script: |
+          cat mac-report/SUMMARY.txt
+          ! grep -E "ОШИБКА|УПАЛО|ПРОПУЩЕНО" mac-report/SUMMARY.txt
+    artifacts:
+      - mac-report.zip
