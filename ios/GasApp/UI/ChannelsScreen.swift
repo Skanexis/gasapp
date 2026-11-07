@@ -18,6 +18,8 @@ struct ChannelsScreen: View {
     /// отправить (сервер отвечает 403 без премиума).
     @State private var premiumNote: String?
     @State private var message: String?
+    /// Заявки в закрытые каналы, которые ещё ждут ответа владельца.
+    @State private var pending: [FfiPendingChannelJoin] = []
 
     var body: some View {
         NavigationStack {
@@ -33,6 +35,24 @@ struct ChannelsScreen: View {
                                             "Join by link or find a public channel."),
                                action: L10n.t("Вступить по ссылке", "Join by link")) { showJoin = true }
                         .listRowBackground(GasAppColor.bgBase).listRowSeparator(.hidden)
+                }
+                if !pending.isEmpty {
+                    Section(L10n.t("Заявки ждут ответа", "Requests waiting")) {
+                        ForEach(pending, id: \.channelId) { join in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(L10n.t("Закрытый канал", "Closed channel")).foregroundStyle(GasAppColor.textPrimary)
+                                    Text(L10n.t("отправлена \(formatChatTime(join.requestedAtMillis))",
+                                                "sent \(formatChatTime(join.requestedAtMillis))"))
+                                        .font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                                }
+                                Spacer()
+                                Button(L10n.t("Забыть", "Forget")) { forget(join) }
+                                    .buttonStyle(.borderless).foregroundStyle(GasAppColor.accent)
+                            }
+                            .listRowBackground(GasAppColor.bgBase)
+                        }
+                    }
                 }
                 ForEach(channels, id: \.channelId) { channel in
                     NavigationLink {
@@ -80,6 +100,7 @@ struct ChannelsScreen: View {
     private func reload() async {
         guard let messenger = try? CoreStore.shared.current() else { loaded = true; return }
         channels = (try? await Background.run { try messenger.channels() }) ?? channels
+        pending = (try? await Background.run { try messenger.pendingChannelJoins() }) ?? []
         loaded = true
     }
 
@@ -114,6 +135,17 @@ struct ChannelsScreen: View {
         // Ответы на заявки в закрытые каналы.
         _ = try? await Background.run { try messenger.checkChannelJoins(nowMillis: CoreStore.nowMillis) }
         await reload()
+    }
+
+    /// Забыть заявку: если владелец одобрит её позже, вступить по ней
+    /// уже не выйдет — нужна новая (как на Android).
+    private func forget(_ join: FfiPendingChannelJoin) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let id = join.channelId
+        Task {
+            _ = try? await Background.run { try messenger.forgetChannelJoin(channelId: id) }
+            await reload()
+        }
     }
 
     private func join() {

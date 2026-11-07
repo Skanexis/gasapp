@@ -5,6 +5,8 @@ import SwiftUI
 /// Главный экран: вкладки — как нижняя панель Android (`BottomNav`).
 struct MainTabs: View {
     @State private var tab: Tab
+    /// Непрочитанные записи каналов — число на вкладке, как на Android.
+    @State private var unreadPosts: Int = 0
 
     enum Tab: Hashable { case chats, channels, contacts, settings }
 
@@ -19,6 +21,7 @@ struct MainTabs: View {
                 .tag(Tab.chats)
             ChannelsScreen()
                 .tabItem { Label(L10n.t("Каналы", "Channels"), systemImage: "megaphone.fill") }
+                .badge(unreadPosts)
                 .tag(Tab.channels)
             NavigationStack { ContactsScreen() }
                 .tabItem { Label(L10n.t("Контакты", "Contacts"), systemImage: "person.2.fill") }
@@ -30,5 +33,12 @@ struct MainTabs: View {
         .toolbarBackground(GasAppColor.bgRaised, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
+        .task(id: tab) { await countUnread() }
+    }
+
+    private func countUnread() async {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let count = (try? await Background.run { try messenger.unreadChannelPosts() }) ?? 0
+        unreadPosts = Int(min(count, 999))
     }
 }

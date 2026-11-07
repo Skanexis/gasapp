@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import PhotosUI
 import SwiftUI
 
 /// Канал — аналог `ChannelActivity`: лента записей, реакции, медиа;
@@ -13,7 +14,18 @@ struct ChannelScreen: View {
     @State private var draft = ""
     @State private var sending = false
     @State private var showInfo = false
+    @State private var showManage = false
     @State private var message: String?
+    /// Поиск по сохранённым записям — без сети (`searchChannelPosts`).
+    @State private var query = ""
+    @State private var found: [FfiChannelPost]?
+    @State private var loadingOlder = false
+    @State private var historyEnded = false
+    @State private var editing: FfiChannelPost?
+    @State private var editText = ""
+    @State private var deleting: FfiChannelPost?
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var attached: [Data] = []
     @Environment(\.dismiss) private var dismiss
 
     init(channelId: String, title: String) {
@@ -22,19 +34,35 @@ struct ChannelScreen: View {
     }
 
     private var canPost: Bool { channel?.role == .owner || channel?.role == .admin }
+    /// Править, закреплять и удалять записи сервер разрешает только владельцу.
+    private var isOwner: Bool { channel?.role == .owner }
+    private var shown: [FfiChannelPost] { found ?? posts }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    if posts.isEmpty {
-                        Text(L10n.t("Записей пока нет", "No posts yet"))
+                    if shown.isEmpty {
+                        Text(found == nil ? L10n.t("Записей пока нет", "No posts yet") : L10n.t("Ничего не нашлось", "Nothing found"))
                             .foregroundStyle(GasAppColor.textTertiary).padding(.top, 40)
                     }
-                    ForEach(posts, id: \.seq) { post in
+                    ForEach(shown, id: \.seq) { post in
                         ChannelPostView(channelId: channelId, post: post, pinned: channel?.pinnedSeq == post.seq) { emoji in
                             react(post, emoji)
                         }
+                        .contextMenu { if isOwner { postMenu(post) } }
+                    }
+                    if found == nil && !posts.isEmpty && !historyEnded {
+                        Button {
+                            loadOlder()
+                        } label: {
+                            if loadingOlder {
+                                ProgressView().tint(GasAppColor.accent)
+                            } else {
+                                Text(L10n.t("Показать раньше", "Show earlier")).foregroundStyle(GasAppColor.accent)
+                            }
+                        }
+                        .padding(.vertical, 12)
                     }
                 }
                 .padding(12)
@@ -55,11 +83,41 @@ struct ChannelScreen: View {
         .gasScreen()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: L10n.t("Поиск по каналу", "Search the channel"))
+        .onChange(of: query) { _, text in search(text) }
         .toolbar {
+            if isOwner {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showManage = true } label: { Image(systemName: "slider.horizontal.3") }
+                        .accessibilityLabel(L10n.t("Управление каналом", "Manage the channel"))
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showInfo = true } label: { Image(systemName: "info.circle") }
             }
         }
+        .sheet(isPresented: $showManage, onDismiss: { Task { await reload() } }) {
+            NavigationStack {
+                ChannelManageScreen(channelId: channelId) { Task { await reload() } }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { showManage = false } } }
+            }
+        }
+        .alert(L10n.t("Править запись", "Edit post"), isPresented: Binding(
+            get: { editing != nil }, set: { if !$0 { editing = nil } }
+        )) {
+            TextField(L10n.t("Текст", "Text"), text: $editText, axis: .vertical)
+            Button(L10n.t("Сохранить", "Save")) { saveEdit() }
+            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { editing = nil }
+        }
+        .confirmationDialog(L10n.t("Удалить запись?", "Delete the post?"), isPresented: Binding(
+            get: { deleting != nil }, set: { if !$0 { deleting = nil } }
+        ), titleVisibility: .visible) {
+            Button(L10n.t("Удалить у всех", "Delete for everyone"), role: .destructive) { deletePost() }
+        } message: {
+            Text(L10n.t("Запись и её файлы удалятся с сервера. У тех, кто уже открыл канал, копия может остаться.",
+                        "The post and its files are deleted from the server. People who already opened the channel may still have a copy."))
+        }
+        .onChange(of: photos) { _, items in attach(items) }
         .sheet(isPresented: $showInfo) {
             NavigationStack {
                 ChannelInfoSheet(channelId: channelId) { left in
@@ -70,8 +128,34 @@ struct ChannelScreen: View {
         .task { await sync() }
     }
 
+    @ViewBuilder
+    private func postMenu(_ post: FfiChannelPost) -> some View {
+        Button { editText = post.text; editing = post } label: { Label(L10n.t("Править", "Edit"), systemImage: "pencil") }
+        if channel?.pinnedSeq == post.seq {
+            Button { pin(0) } label: { Label(L10n.t("Открепить", "Unpin"), systemImage: "pin.slash") }
+        } else {
+            Button { pin(post.seq) } label: { Label(L10n.t("Закрепить", "Pin"), systemImage: "pin") }
+        }
+        Button(role: .destructive) { deleting = post } label: { Label(L10n.t("Удалить", "Delete"), systemImage: "trash") }
+    }
+
     private var composer: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 6) {
+            if !attached.isEmpty {
+                HStack {
+                    Label(L10n.t("Фото: \(attached.count)", "Photos: \(attached.count)"), systemImage: "photo.on.rectangle")
+                        .font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
+                    Spacer()
+                    Button(L10n.t("Убрать", "Remove")) { attached = []; photos = [] }
+                        .font(.system(size: 13)).foregroundStyle(GasAppColor.accent)
+                }
+                .padding(.horizontal, 12)
+            }
+            HStack(spacing: 10) {
+            PhotosPicker(selection: $photos, maxSelectionCount: Int(channelPostAttachmentLimit()), matching: .images) {
+                Image(systemName: "photo").font(.system(size: 22)).foregroundStyle(GasAppColor.textSecondary)
+            }
+            .accessibilityLabel(L10n.t("Фото в запись", "Add photos"))
             TextField(L10n.t("Новая запись", "New post"), text: $draft, axis: .vertical)
                 .lineLimit(1...6)
                 .padding(12)
@@ -84,10 +168,97 @@ struct ChannelScreen: View {
                     Image(systemName: "paperplane.circle.fill").font(.system(size: 34)).foregroundStyle(GasAppColor.accent)
                 }
             }
-            .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(sending || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty))
+            }
         }
         .padding(10)
         .background(GasAppColor.bgRaised)
+    }
+
+    /// Фото — без метаданных (тот же пересжатый JPEG, что в чате) и не
+    /// больше предела записи (`channelMediaLimit`).
+    private func attach(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        let limit = Int(channelMediaLimit())
+        Task {
+            var ready: [Data] = []
+            for item in items {
+                if let raw = try? await item.loadTransferable(type: Data.self), let clean = ChatScreen.strippedJPEG(raw) {
+                    if clean.count <= limit {
+                        ready.append(clean)
+                    } else {
+                        message = L10n.t("Фото больше предела записи — пропущено", "A photo is over the post limit — skipped")
+                    }
+                }
+            }
+            attached = ready
+        }
+    }
+
+    private func search(_ text: String) {
+        let query = text.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty, let messenger = try? CoreStore.shared.current() else { found = nil; return }
+        let id = channelId
+        Task {
+            found = (try? await Background.run { try messenger.searchChannelPosts(channelId: id, query: query, limit: 100) }) ?? []
+        }
+    }
+
+    private func loadOlder() {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let id = channelId
+        loadingOlder = true
+        Task {
+            let added = (try? await Background.run { try messenger.loadOlderChannelPosts(channelId: id, nowMillis: CoreStore.nowMillis) }) ?? 0
+            historyEnded = added == 0
+            loadingOlder = false
+            await reload()
+        }
+    }
+
+    private func pin(_ seq: UInt64) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let id = channelId
+        Task {
+            do {
+                channel = try await Background.run { try messenger.pinChannelPost(channelId: id, seq: seq, nowMillis: CoreStore.nowMillis) }
+            } catch {
+                message = L10n.t("Не удалось. Проверьте связь.", "That didn't work. Check the connection.")
+            }
+        }
+    }
+
+    private func saveEdit() {
+        guard let post = editing, let messenger = try? CoreStore.shared.current() else { return }
+        let id = channelId
+        let seq = post.seq
+        let text = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+        editing = nil
+        Task {
+            do {
+                _ = try await Background.run { try messenger.editChannelPost(channelId: id, seq: seq, text: text, nowMillis: CoreStore.nowMillis) }
+                await reload()
+            } catch let error as FfiError {
+                message = ChannelManageScreen.explain(error)
+            } catch {
+                message = L10n.t("Не удалось. Проверьте связь.", "That didn't work. Check the connection.")
+            }
+        }
+    }
+
+    private func deletePost() {
+        guard let post = deleting, let messenger = try? CoreStore.shared.current() else { return }
+        let id = channelId
+        let seq = post.seq
+        deleting = nil
+        Task {
+            do {
+                try await Background.run { try messenger.deleteChannelPost(channelId: id, seq: seq, nowMillis: CoreStore.nowMillis) }
+                await reload()
+            } catch {
+                message = L10n.t("Не удалось удалить. Проверьте связь.", "Couldn't delete. Check the connection.")
+            }
+        }
     }
 
     private func reload() async {
@@ -117,13 +288,18 @@ struct ChannelScreen: View {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let id = channelId
+        let files = attached.map {
+            FfiAttachmentFile(kind: .image, bytes: $0, name: "photo.jpg", description: nil, durationMillis: nil, waveform: nil)
+        }
         sending = true
         Task {
             do {
                 _ = try await Background.run {
-                    try messenger.publishChannelPost(channelId: id, text: text, files: [], nowMillis: CoreStore.nowMillis)
+                    try messenger.publishChannelPost(channelId: id, text: text, files: files, nowMillis: CoreStore.nowMillis)
                 }
                 draft = ""
+                attached = []
+                photos = []
                 message = nil
                 await reload()
             } catch {
@@ -255,6 +431,7 @@ struct ChannelInfoSheet: View {
     @State private var link: String?
     @State private var qr: FfiQrMatrix?
     @State private var confirmLeave = false
+    @State private var showAdminRequest = false
     @State private var reportReason: UInt8?
     @State private var reportNote: String?
     @Environment(\.dismiss) private var dismiss
@@ -285,6 +462,13 @@ struct ChannelInfoSheet: View {
                         Toggle(L10n.t("Без уведомлений", "Muted"), isOn: Binding(
                             get: { channel.muted }, set: { mute($0) }
                         ))
+                        if channel.role == .reader {
+                            Button(L10n.t("Стать администратором", "Become an admin")) { showAdminRequest = true }
+                        } else if channel.role == .adminPending {
+                            Text(L10n.t("Заявка у владельца: ждём, когда он назначит вас администратором.",
+                                        "Request is with the owner: waiting for them to appoint you."))
+                                .font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
+                        }
                         if channel.role != .owner {
                             // Причины — те же номера, что знает сервер (как на Android).
                             Menu {
@@ -322,6 +506,9 @@ struct ChannelInfoSheet: View {
         } message: {
             Text(L10n.t("Жалоба уйдёт оператору сервера вместе с именем вашего аккаунта. Записи этого канала оператор прочитать не может — если не дать ему доступ. «Отправить с доступом» приложит к жалобе ссылку канала: оператор сможет открыть его и увидеть, на что вы жалуетесь.",
                         "The report goes to the server operator together with your account name. The operator cannot read this channel's posts unless you give access. “Send with access” attaches the channel link to the report, so the operator can open the channel and see what you are reporting."))
+        }
+        .sheet(isPresented: $showAdminRequest) {
+            NavigationStack { AdminRequestSheet(channelId: channelId) }
         }
         .task { await load() }
     }
