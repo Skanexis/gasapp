@@ -256,10 +256,12 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
     );
     // 🔐 Видно и число разных сертификатов (S-4): у двух жалоб здесь
     // разные сертификаты.
-    assert!(html.contains("Сертификатов"), "столбца сертификатов нет");
+    // Панель — на английском (редизайн 2026-11-07), строки таблицы
+    // подписаны data-label для узкого экрана.
+    assert!(html.contains("Certificates"), "столбца сертификатов нет");
     assert!(
         html.contains(&format!(
-            "@{spammer}</td><td class=\"num\">2</td><td class=\"num\">2</td>"
+            "@{spammer}</td><td data-label=\"Reporters\" class=\"num\">2</td><td data-label=\"Certificates\" class=\"num\">2</td>"
         )),
         "жалобщики и сертификаты не посчитаны"
     );
@@ -323,7 +325,7 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
 
     let (status, html, _) = send(&state, get("/transparency", &session)).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(html.contains("Аккаунт удалён"));
+    assert!(html.contains("Account deleted"));
     assert!(!html.contains(&spammer), "в отчёте о прозрачности нет имён");
 }
 
@@ -344,12 +346,12 @@ async fn an_account_is_found_by_exact_name_only() {
     let session = login(&state).await;
 
     let (_, html, _) = send(&state, get(&format!("/account?username=@{name}"), &session)).await;
-    assert!(html.contains("Устройств"), "найден по точному имени");
+    assert!(html.contains("Devices"), "найден по точному имени");
 
     let (_, html, _) = send(
         &state,
         get(&format!("/account?username={}", &name[..6]), &session),
     )
     .await;
-    assert!(html.contains("нет."), "по части имени не находится");
+    assert!(html.contains("No account found"), "по части имени не находится");
 }

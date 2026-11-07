@@ -10,7 +10,7 @@
 set -euo pipefail
 
 DOMAIN="${1:?домен моста}"
-EMAIL="${2:?почта для Let's Encrypt и контакта моста}"
+EMAIL="${2:?почта для Let’s Encrypt и контакта моста}"
 NICKNAME="${3:-GasAppBridge$(date +%s | tail -c 5)}"
 
 cd "$(dirname "$0")"

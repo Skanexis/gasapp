@@ -2,7 +2,7 @@
 
 # GasApp Privacy Policy
 
-**Version:** 2026-10-10. This is a translation of
+**Version:** 2026-11-07. This is a translation of
 [`privacy-policy.md`](privacy-policy.md); if the two differ, the Russian
 text is the reference and the difference is a bug — please report it.
 
@@ -22,9 +22,18 @@ text is the reference and the difference is a bug — please report it.
   sent by a mail service, and that service does see the address.
 * We do not log your IP address.
 * There is no analytics, advertising or crash reporting in the app.
-* The only thing that goes to a third party is your email address and
-  the confirmation code: to the mail service that delivers the email.
+* Two things go to third parties: your email address and the
+  confirmation code, to the mail service that delivers the email; and,
+  if notifications are on, a wake-up signal through Apple (iPhone) or
+  Google (Android from Google Play) — **without the text, the sender or
+  even the number of messages**. See [Push notifications](#push-notifications).
 
+> **What changed on 2026-11-07.** Push notifications through Apple
+> (iPhone) and Google (Android from Google Play) were added: before, this
+> policy said there were no Apple or Google services in notifications.
+> What exactly they receive, and how to turn it off, is in "Push
+> notifications".
+>
 > **What changed on 2026-10-07.** Before this version, registration did
 > not ask for an email address and this policy said "we do not ask for
 > an email address". It does now. On the same date the product was
@@ -158,7 +167,7 @@ The full list of what is stored and for how long is in
   all: its rate limiters work on the username and device identifier. The
   load balancer in front of it does see the address — otherwise username
   enumeration could not be stopped — but keeps it only in the rate limiter's
-  memory; access logging is off (`server/deploy/РАЗВЁРТЫВАНИЕ.md`). The
+  memory; access logging is disabled on the load balancer. The
   address never reaches disk or the application servers.
 * **No analytics.** The app contains no third-party analytics, advertising
   or crash-reporting SDK; CI checks this (`tools/check-no-telemetry.sh`).
@@ -167,10 +176,13 @@ The full list of what is stored and for how long is in
 * **We do not request access to contacts, the gallery or the microphone
   "just in case".** Files are picked through the system dialog, which gives
   the app exactly the chosen file and nothing else.
-* **We do not hand data to third parties — with one exception.** The
+* **We do not hand data to third parties — with two exceptions.** The
   email with the confirmation code is sent by a mail service, which
-  receives your email address (see "An email address" above). There is
-  nothing else to hand over.
+  receives your email address (see "An email address" above).
+  Notifications on iPhone and on Android from Google Play are delivered
+  by Apple and Google: they receive a device token and the constant text
+  "New messages" (see "Push notifications"). There is nothing else to
+  hand over.
 
 ## Channels
 
@@ -332,29 +344,50 @@ operator decides or the channel is deleted.
 
 ## Push notifications
 
-There are no Google, Apple or Firebase services in notifications: no third
-party learns when someone writes to you.
+While the app is locked, your messages are encrypted under your PIN and
+there is nothing to read them with. So a notification can only say one
+thing — **"New messages"** — without the text, without the sender and
+without the number of messages. The messages themselves are fetched and
+decrypted when you open the app. How the phone learns that something has
+arrived depends on the build.
 
-**How it works.** While the app is locked, your messages are encrypted
-under your PIN and there is nothing to read them with. So about every 15
-minutes (the phone's system decides when) the app asks the server one
-thing: is anything waiting for this device. It asks with a separate random
-**notification token**, stored on the phone outside the encrypted database;
-the server stores only its hash. The token cannot read or fetch messages —
-it only gets a "yes" or "no".
+**iPhone — through Apple Push Notification service (APNs).** When an
+encrypted message for your device reaches the server, the server asks
+Apple to wake the phone. Apple receives a **device token** (an address of
+the app on this phone that Apple issues) and the same constant
+"New messages" text for every notification. Apple learns that the app on
+this phone received a notification from GasApp, and when — not from whom,
+not what, and not how many. Apple's own terms apply to that data.
 
-If the answer is "yes", the phone shows a **"New messages" notification —
-without the text and without the sender**: there is nothing to decrypt
-them with at that moment. The messages themselves are fetched when you
-open the app.
+**Android from Google Play — through Firebase Cloud Messaging (FCM).**
+The same scheme through Google: Google receives the app's FCM token and
+the constant "New messages" notification, and learns the same as Apple
+above. Only the messaging part of Firebase is included: its analytics,
+automatic start and delivery statistics are turned off
+(`android/app/src/gms/AndroidManifest.xml`), and no other Google SDK is
+in the app. If Google Play services are absent, the app falls back to
+the check described next.
 
-**What the server sees.** From these requests — that the phone is on and
-online, as with any connection. It does not record when they were made.
-On a direct connection it also sees the IP address.
+**Android without Google services (the build without Google Play
+services) — no third party at all.** About every 15 minutes (the phone's
+system decides when) the app asks the server one thing: is anything
+waiting for this device. It asks with a separate random **notification
+token**, stored on the phone outside the encrypted database; the server
+stores only its hash. The token cannot read or fetch messages — it only
+gets a "yes" or "no". With Tor or a proxy this check does not go online:
+a direct request would reveal the address to someone who chose to hide
+it, and new messages then arrive only while the app is open.
 
-**With Tor or a proxy** the background check does not go online: a direct
-request would reveal the address to someone who chose to hide it. New
-messages then arrive only while the app is open.
+**What our server stores and sends.** The provider (Apple or Google) and
+the token, linked to your device, so it knows where to send the signal
+(`push_tokens`). It sends at most one signal per device per minute, does
+not record when it sent them, and drops a token as soon as Apple or
+Google report it invalid. Tokens are not included in server backups.
+
+**With Tor.** Tor hides your IP address from our server, not from Apple
+or Google: they deliver the signal to the phone directly, as they do for
+every app. If you do not want Apple or Google to know when you receive
+messages, turn notifications off.
 
 Notifications are turned off in Settings → Notifications; the server then
 forgets the token. Deleting the account deletes the token together with
@@ -543,5 +576,5 @@ notification mechanism you can trust without relying on us.
 
 ## Contact
 
-`privacy@gasapp.chat` — questions about data.
-`security@gasapp.chat` — vulnerabilities (`SECURITY.md`).
+`privacy@gasapp.eu` — questions about data.
+`security@gasapp.eu` — vulnerabilities (`SECURITY.md`).

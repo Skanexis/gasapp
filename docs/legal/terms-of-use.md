@@ -87,7 +87,7 @@
   саму переписку.
 * Аккаунт или канал, нарушающий условия, может быть удалён без
   предупреждения. Считаете, что мы ошиблись, — напишите на
-  `abuse@gasapp.chat`.
+  `abuse@gasapp.eu`.
 
 ## 7. Открытый код
 
@@ -123,7 +123,7 @@
 
 ## 11. Связь
 
-* Общие и юридические вопросы: `support@gasapp.chat`
-* Жалобы и обжалование: `abuse@gasapp.chat`
-* Данные: `privacy@gasapp.chat`
-* Уязвимости: `security@gasapp.chat`
+* Общие и юридические вопросы: `support@gasapp.eu`
+* Жалобы и обжалование: `abuse@gasapp.eu`
+* Данные: `privacy@gasapp.eu`
+* Уязвимости: `security@gasapp.eu`

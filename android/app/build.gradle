@@ -122,7 +122,7 @@ android {
         // Магазины требуют, чтобы эти страницы открывались из приложения.
         // Релиз обязан задать настоящий адрес: `-PgasappDocsUrl=https://…`.
         buildConfigField "String", "GASAPP_DOCS_URL",
-                "\"${project.findProperty('gasappDocsUrl') ?: 'https://gasapp.chat'}\""
+                "\"${project.findProperty('gasappDocsUrl') ?: 'https://gasapp.eu'}\""
         // Onion-сервис сервера (`адрес.onion:порт`, см.
         // server/deploy/onion): в режиме Tor соединения к серверу идут
         // туда, без выходного узла. Пусто — через выходной узел.

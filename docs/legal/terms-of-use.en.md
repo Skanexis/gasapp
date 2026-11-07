@@ -86,7 +86,7 @@ In particular you must not use GasApp to:
   the reporter — not the conversation itself.
 * We may remove an account or a channel that violates these terms without
   prior notice. If you think we made a mistake, write to
-  `abuse@gasapp.chat`.
+  `abuse@gasapp.eu`.
 
 ## 7. Open source
 
@@ -121,7 +121,7 @@ limited by law, or your rights as a consumer.
 
 ## 11. Contact
 
-* General and legal questions: `support@gasapp.chat`
-* Abuse and appeals: `abuse@gasapp.chat`
-* Privacy: `privacy@gasapp.chat`
-* Security vulnerabilities: `security@gasapp.chat`
+* General and legal questions: `support@gasapp.eu`
+* Abuse and appeals: `abuse@gasapp.eu`
+* Privacy: `privacy@gasapp.eu`
+* Security vulnerabilities: `security@gasapp.eu`

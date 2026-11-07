@@ -66,6 +66,28 @@ send() { printf '%s\n' "$1" | $NOTIFY; }
 # числа: «истекает через 19 дн.», «через 18 дн.» слали бы сообщение
 # каждый день, а «меньше 21 дня» — один раз.
 problems=0
+open_issues=()
+resolved_label() {
+    case "$1" in
+        disk:*) echo "Disk ${1#disk:}" ;;
+        unit:*) echo "Service ${1#unit:}" ;;
+        cert:*) echo "Certificate ${1#cert:}" ;;
+        units-failed) echo "Failed services" ;;
+        ntp) echo "Clock synchronization" ;;
+        reboot) echo "Pending reboot" ;;
+        unattended) echo "Automatic updates" ;;
+        ports) echo "Unexpected ports" ;;
+        binaries) echo "Binary integrity" ;;
+        postgres) echo "Database" ;;
+        backup) echo "Database backups" ;;
+        pin-expiration) echo "App pin set" ;;
+        public:*) echo "Public endpoint ${1#public:}" ;;
+        extra:*) echo "Site ${1#extra:}" ;;
+        extra-backup:*) echo "Backups ${1#extra-backup:}" ;;
+        probe:*) echo "External probe ${1#probe:}" ;;
+        *) echo "$1" ;;
+    esac
+}
 check() {
     local key="$1" problem="$2"
     local file
@@ -75,12 +97,13 @@ check() {
 
     if [[ -n "$problem" ]]; then
         problems=$((problems + 1))
+        open_issues+=("$problem")
         if [[ "$problem" != "$previous" ]]; then
-            send "GasApp: ⚠️ ${problem}"
+            send "⚠️ ${problem}"
         fi
         printf '%s' "$problem" > "$file"
     elif [[ -n "$previous" ]]; then
-        send "GasApp: ✅ решено — ${previous}"
+        send "✅ Resolved: $(resolved_label "$key")"
         rm -f "$file"
     fi
 }
@@ -118,9 +141,9 @@ check_disk() {
         used="${used%\%}"
         [[ "$used" =~ ^[0-9]+$ ]] || continue
         if (( used >= 95 )); then
-            check "disk:${mount}" "диск ${mount} заполнен на 95%+ — база и журнал вот-вот встанут"
+            check "disk:${mount}" "Disk ${mount} is at least 95% full; database and logs may stop"
         elif (( used >= max )); then
-            check "disk:${mount}" "диск ${mount} заполнен больше чем на ${max}%"
+            check "disk:${mount}" "Disk ${mount} is above ${max}% full"
         else
             check "disk:${mount}" ""
         fi
@@ -130,14 +153,14 @@ check_disk() {
 check_units() {
     local failed
     failed="$(systemctl --failed --plain --no-legend 2>/dev/null | awk '{ print $1 }' | sort | tr '\n' ' ')"
-    check "units-failed" "${failed:+упали службы: ${failed% }}"
+    check "units-failed" "${failed:+Failed services: ${failed% }}"
 
     local unit
     for unit in ${GASAPP_UNITS:-}; do
         if systemctl is-active --quiet "$unit"; then
             check "unit:${unit}" ""
         else
-            check "unit:${unit}" "служба ${unit} не работает"
+            check "unit:${unit}" "Service ${unit} is not running"
         fi
     done
 }
@@ -146,17 +169,17 @@ check_time() {
     # Неверные часы ломают проверку подписей запросов и сертификатов.
     local synced
     synced="$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
-    check "ntp" "$([[ "$synced" == "yes" ]] || echo "часы не синхронизированы (NTP)")"
+    check "ntp" "$([[ "$synced" == "yes" ]] || echo "Clock is not synchronized (NTP)")"
 }
 
 check_updates() {
-    check "reboot" "$([[ -f /var/run/reboot-required ]] && echo "нужна перезагрузка после обновления безопасности")"
+    check "reboot" "$([[ -f /var/run/reboot-required ]] && echo "Reboot required after a security update")"
 
     # Автообновления не запускались три дня — сломан apt или таймер.
     local stamp=/var/lib/apt/periodic/unattended-upgrades-stamp
     if [[ -f "$stamp" ]]; then
         local age=$(( ($(date +%s) - $(stat -c %Y "$stamp")) / 86400 ))
-        check "unattended" "$( (( age >= 3 )) && echo "автообновления не запускались больше трёх дней")"
+        check "unattended" "$( (( age >= 3 )) && echo "Automatic updates have not run for over three days")"
     fi
 }
 
@@ -176,7 +199,7 @@ check_ports() {
     done < <(ss -Hlntu 2>/dev/null | awk '{ print $1, $5 }')
 
     unexpected="$(tr ' ' '\n' <<< "$unexpected" | sort -u | tr '\n' ' ' | sed 's/^ *//; s/ *$//')"
-    check "ports" "${unexpected:+слушают неожиданные порты: ${unexpected}}"
+    check "ports" "${unexpected:+Unexpected listening ports: ${unexpected}}"
 }
 
 check_binaries() {
@@ -186,7 +209,7 @@ check_binaries() {
     [[ -r "$sums" ]] || return 0
     local bad
     bad="$(sha256sum --check --quiet "$sums" 2>/dev/null | cut -d: -f1 | tr '\n' ' ')"
-    check "binaries" "${bad:+🔴 изменились файлы: ${bad% } — если это не ваше обновление, это взлом}"
+    check "binaries" "${bad:+🔴 Changed binaries: ${bad% }. If you did not update them, investigate immediately}"
 }
 
 check_ssh_logins() {
@@ -197,7 +220,7 @@ check_ssh_logins() {
 
     local user
     while read -r user; do
-        [[ -n "$user" ]] && send "GasApp: вход по SSH — ${user}"
+        [[ -n "$user" ]] && send "🔐 SSH login: ${user}"
     done < <(journalctl -q -o cat --since "$since" -t sshd -t sshd-session 2>/dev/null \
         | sed -n 's/^Accepted [a-z0-9-]* for \([A-Za-z0-9._-]*\) from .*/\1/p')
 }
@@ -207,9 +230,9 @@ check_certs() {
     # вручную — монитор напоминает за 30 дней.
     local cert left
     for cert in ${GASAPP_WATCH_CERTS:-}; do
-        left="$(cert_days_left "$cert")" || { check "cert:${cert}" "не читается сертификат ${cert}"; continue; }
+        left="$(cert_days_left "$cert")" || { check "cert:${cert}" "Cannot read certificate ${cert}"; continue; }
         if (( left < 30 )); then
-            check "cert:${cert}" "сертификат ${cert} истекает меньше чем через 30 дней — internal-ca.sh"
+            check "cert:${cert}" "Certificate ${cert} expires in under 30 days; run internal-ca.sh"
         else
             check "cert:${cert}" ""
         fi
@@ -226,7 +249,7 @@ probe_public() {
         | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' | head -n 200)"
 
     if [[ -z "$pem" ]]; then
-        check "${key}:up" "публичный вход ${target} не отвечает по TLS"
+        check "${key}:up" "Public endpoint ${target} is not responding over TLS"
         return
     fi
     check "${key}:up" ""
@@ -238,7 +261,7 @@ probe_public() {
     if pin_allowed "$pin"; then
         check "${key}:pin" ""
     else
-        check "${key}:pin" "🔴 ${target} отдаёт ключ НЕ из набора пинов (${pin}) — приложение не подключится"
+        check "${key}:pin" "🔴 ${target} serves a key outside the pin set (${pin}); the app cannot connect"
     fi
 
     local end left
@@ -247,9 +270,9 @@ probe_public() {
     if [[ -z "$left" ]]; then
         check "${key}:expiry" ""
     elif (( left < 7 )); then
-        check "${key}:expiry" "🔴 публичный сертификат истекает меньше чем через 7 дней — gasapp-cert.sh renew --force"
+        check "${key}:expiry" "🔴 Public certificate expires in under 7 days; run gasapp-cert.sh renew --force"
     elif (( left < 21 )); then
-        check "${key}:expiry" "публичный сертификат истекает меньше чем через 21 день — продление не сработало"
+        check "${key}:expiry" "Public certificate expires in under 21 days; renewal failed"
     else
         check "${key}:expiry" ""
     fi
@@ -266,9 +289,9 @@ check_lb() {
         local left
         left="$(days_until "$GASAPP_PIN_EXPIRATION")"
         if [[ -n "$left" ]] && (( left < 30 )); then
-            check "pin-expiration" "🔴 срок набора пинов в приложении — меньше 30 дней; нужен релиз с новой датой"
+            check "pin-expiration" "🔴 App pin set expires in under 30 days; release an app update"
         elif [[ -n "$left" ]] && (( left < 120 )); then
-            check "pin-expiration" "срок набора пинов в приложении — меньше 120 дней; готовьте релиз (cert-pin-rotation.md)"
+            check "pin-expiration" "App pin set expires in under 120 days; prepare an update (cert-pin-rotation.md)"
         else
             check "pin-expiration" ""
         fi
@@ -286,16 +309,79 @@ check_db() {
     if pg_isready -q -h "${GASAPP_PG_SOCKET:-/var/run/postgresql}" 2>/dev/null; then
         check "postgres" ""
     else
-        check "postgres" "🔴 база не отвечает — все узлы без базы"
+        check "postgres" "🔴 Database is not responding; all API nodes are affected"
     fi
 
-    local mark=/var/lib/gasapp-backup/last-success
-    if [[ -r "$mark" ]]; then
-        local hours=$(( ($(date +%s) - $(cat "$mark")) / 3600 ))
-        check "backup" "$( (( hours >= 26 )) && echo "резервной копии нет больше суток")"
+    local mark="${GASAPP_BACKUP_MARKER:-/var/lib/gasapp-backup/last-success}"
+    if [[ -e "$mark" ]]; then
+        # The backup service writes this marker with mode 0600. The monitor
+        # can stat it through the 0755 StateDirectory, but cannot read it.
+        local modified
+        modified="$(stat -c %Y "$mark" 2>/dev/null)" || {
+            check "backup" "Cannot inspect the backup success marker"
+            return
+        }
+        local hours=$(( ($(date +%s) - modified) / 3600 ))
+        check "backup" "$( (( hours >= 26 )) && echo "No successful backup in over 26 hours")"
     else
-        check "backup" "ни одной успешной резервной копии"
+        check "backup" "No successful backup yet"
     fi
+}
+
+# --- Дополнительные сайты на этой машине (например, GAS на поддомене) -------
+#
+# GASAPP_EXTRA_SITES="shop.gasapp.eu=http://127.0.0.1:8790/api/stores"
+#   домен=адрес проверки приложения на петле; через пробел — несколько.
+# Проверяется: приложение отвечает локально, nginx отдаёт HTTPS для этого
+# имени, срок сертификата. Пин НЕ проверяется: у таких сайтов обычный
+# сертификат certbot (ключ меняется при продлении) — probe_public здесь
+# дал бы ложную 🔴-тревогу.
+#
+# GASAPP_EXTRA_BACKUPS="/opt/gas/backups/last-success"
+#   файлы-отметки об успешной копии: тревога, если старше 26 часов.
+#   Каталог копий — 711: монитор видит возраст отметки, но не сами копии.
+
+check_extra_sites() {
+    local entry domain url pem end left
+    for entry in ${GASAPP_EXTRA_SITES:-}; do
+        domain="${entry%%=*}"; url="${entry#*=}"
+        if [[ "$url" == "$entry" ]] || ! curl -fsS -o /dev/null --max-time 8 "$url" 2>/dev/null; then
+            check "extra:${domain}:app" "Site ${domain}: application is not responding locally (container down?)"
+        else
+            check "extra:${domain}:app" ""
+        fi
+
+        pem="$(timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$domain" </dev/null 2>/dev/null \
+            | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' | head -n 200)"
+        if [[ -z "$pem" ]]; then
+            check "extra:${domain}:tls" "Site ${domain}: nginx does not serve HTTPS for this name"
+            continue
+        fi
+        check "extra:${domain}:tls" ""
+
+        end="$(openssl x509 -noout -enddate <<< "$pem" 2>/dev/null | cut -d= -f2)"
+        left="$(days_until "$end")"
+        if [[ -n "$left" ]] && (( left < 7 )); then
+            check "extra:${domain}:expiry" "🔴 Certificate of ${domain} expires in under 7 days; check certbot renew"
+        elif [[ -n "$left" ]] && (( left < 21 )); then
+            check "extra:${domain}:expiry" "Certificate of ${domain} expires in under 21 days; certbot renewal failed"
+        else
+            check "extra:${domain}:expiry" ""
+        fi
+    done
+}
+
+check_extra_backups() {
+    local mark modified hours
+    for mark in ${GASAPP_EXTRA_BACKUPS:-}; do
+        if [[ -e "$mark" ]]; then
+            modified="$(stat -c %Y "$mark" 2>/dev/null)" || { check "extra-backup:${mark}" "Cannot inspect backup marker ${mark}"; continue; }
+            hours=$(( ($(date +%s) - modified) / 3600 ))
+            check "extra-backup:${mark}" "$( (( hours >= 26 )) && echo "No successful backup in over 26 hours (${mark%/*})")"
+        else
+            check "extra-backup:${mark}" "No successful backup yet (${mark%/*})"
+        fi
+    done
 }
 
 # --- Запуск -----------------------------------------------------------------
@@ -311,6 +397,8 @@ check_certs
 
 has_role lb && check_lb
 has_role db && check_db
+check_extra_sites
+check_extra_backups
 
 if [[ -n "${GASAPP_PROBE_PUBLIC:-}" ]]; then
     probe_public "probe" "$GASAPP_PROBE_PUBLIC" "${GASAPP_PROBE_PUBLIC%%:*}"
@@ -322,9 +410,14 @@ today="$(date -u +%F)"
 if [[ "$(date -u +%H)" == "$HEARTBEAT_HOUR" && "$(cat "${STATE}/heartbeat" 2>/dev/null)" != "$today" ]]; then
     echo "$today" > "${STATE}/heartbeat"
     if (( problems == 0 )); then
-        send "GasApp: монитор работает, проблем нет"
+        send "Monitor heartbeat: all checks are healthy"
     else
-        send "GasApp: монитор работает, открытых проблем: ${problems}"
+        summary="Monitor heartbeat: ${problems} open problem(s)"
+        for issue in "${open_issues[@]}"; do
+            (( ${#summary} > 700 )) && break
+            summary+=$'\n'"- ${issue}"
+        done
+        send "$summary"
     fi
 fi
 

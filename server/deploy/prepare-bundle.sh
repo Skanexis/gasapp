@@ -6,7 +6,7 @@
 #     ./prepare-bundle.sh bundle.conf        # → server/deploy-bundle/
 #     ./prepare-bundle.sh bundle.conf /путь  # → в указанный каталог
 #
-# Зачем: внутренние адреса машин и домены вписаны в десяток файлов
+# Зачем: адреса WireGuard машин и домены вписаны в десяток файлов
 # (nginx, Postgres, systemd, монитор). Правка вручную — самый частый
 # источник ошибок: пропущенный адрес выглядит как «всё настроено», а
 # узел не пускают в базу или балансировщик ходит не туда. Здесь адреса
@@ -176,15 +176,15 @@ ${extra}
 EOF
 }
 monitor monitor-vps1.env "lb" "nginx gasapp-server tor@default postfix" \
-    "22 25 80 443 8443 8444" "/etc/gasapp/tls/node.pem" \
+    "22 25 80 443 8443 8444 51820/udp 68/udp" "/etc/gasapp/tls/node.pem" \
 "GASAPP_DOMAIN=${domain}
 GASAPP_PINS_FILE=/etc/gasapp/pins.txt
 GASAPP_PIN_EXPIRATION=${pin_expiration}
 GASAPP_NODES=\"${nodes[*]}\"
 GASAPP_HEALTH_PORT=8443
 GASAPP_INTERNAL_CA=/etc/gasapp/pki/ca.pem"
-monitor monitor-node.env "node" "gasapp-server" "22 8443" "/etc/gasapp/tls/node.pem" ""
-monitor monitor-db.env "db" "postgresql gasapp-admin" "22 5432" "/etc/postgresql/gasapp-tls/db.pem" \
+monitor monitor-node.env "node" "gasapp-server" "22 8443 51820/udp 68/udp" "/etc/gasapp/tls/node.pem" ""
+monitor monitor-db.env "db" "postgresql gasapp-admin" "22 5432 51820/udp 68/udp" "/etc/postgresql/gasapp-tls/db.pem" \
 "GASAPP_PROBE_PUBLIC=${domain}:443
 GASAPP_PINS_FILE=/etc/gasapp/pins.txt"
 
@@ -203,8 +203,7 @@ GASAPP_PINS_FILE=/etc/gasapp/pins.txt"
     echo "server/deploy/pki/internal-ca.sh client gasapp"
     echo
     echo "== Укрепление — на каждой машине, после входа под своим пользователем:"
-    # Релей — только узлам: в частной сети хостера есть и чужие адреса
-    # (его шлюз), им письма с кодом отправлять незачем.
+    # Релей — только узлам WireGuard, а не всей подсети.
     echo "VPS-1 (${lb}):  sudo ~/deploy/hardening/harden-host.sh --role lb,node --admin ВАШ_ПОЛЬЗОВАТЕЛЬ --lb ${lb} --relay-from \"${nodes[*]}\""
     n=1
     for ip in "${nodes[@]:1}"; do

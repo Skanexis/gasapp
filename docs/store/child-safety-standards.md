@@ -2,7 +2,7 @@
 
 # Стандарты безопасности детей — страница для Google Play
 
-Опубликовать по постоянному адресу (`https://gasapp.chat/child-safety/`).
+Опубликовать по постоянному адресу (`https://gasapp.eu/child-safety/`).
 Google Play требует такую страницу от приложений категорий «Социальные»
 и «Знакомства»; для «Связи» — желательна (`google-play.md`, § 8).
 
@@ -33,7 +33,7 @@ on is a report and the account behind it.
 * In the app, a channel: open the channel menu, tap **Report channel** and
   choose "Child safety concern". You can give us access to the channel so
   we can see its posts.
-* By email: `abuse@gasapp.chat`. You may attach screenshots — they are the
+* By email: `abuse@gasapp.eu`. You may attach screenshots — they are the
   only way we can see reported content, because we never hold readable
   messages.
 
@@ -45,7 +45,7 @@ We hand over what the server has, which is limited by design: the
 username, its public keys and the month it was last active (see our data retention
 policy).
 
-**Child safety contact:** `abuse@gasapp.chat`.
+**Child safety contact:** `abuse@gasapp.eu`.
 
 ---
 
@@ -70,7 +70,7 @@ GasApp запрещает сексуальное насилие над деть�
 * В приложении, на канал: меню канала → **Пожаловаться на канал**,
   причина «Угроза безопасности детей». Можно дать нам доступ к каналу,
   чтобы мы увидели его записи.
-* По почте: `abuse@gasapp.chat`. Можно приложить снимки экрана — только так
+* По почте: `abuse@gasapp.eu`. Можно приложить снимки экрана — только так
   мы видим содержимое жалобы: читаемых сообщений у нас нет.
 
 **Что мы делаем.** Жалоба рассматривается в течение 24 часов. Аккаунт,
@@ -81,4 +81,4 @@ GasApp запрещает сексуальное насилие над деть�
 устройству системы: имя пользователя, его открытые ключи и месяц последней активности
 (см. политику хранения данных).
 
-**Контакт по безопасности детей:** `abuse@gasapp.chat`.
+**Контакт по безопасности детей:** `abuse@gasapp.eu`.

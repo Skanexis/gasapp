@@ -59,7 +59,7 @@ license = "Apache-2.0"
 publish = false
 authors = ["The GasApp Authors"]
 repository = "https://github.com/gasapp-messenger/gasapp"
-homepage = "https://gasapp.chat"
+homepage = "https://gasapp.eu"
 
 [workspace.lints]
 # Правила раздела 4.2 плана. Секция была пустой: `clippy.toml` ссылался

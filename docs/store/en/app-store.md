@@ -52,7 +52,7 @@ The app encrypts content (not only HTTPS), so the "authentication only" and
 | France | ✅ Owner's decision, 2026-10-10: **France is excluded from distribution** (App Store Connect → Pricing and Availability → deselect France; Google Play → Production → Countries/regions → remove France). No ANSSI declaration is filed. France can be added back only after a declaration is filed |
 | United States (BIS) | The source code is public → before the first release, one e-mail notice to `crypt@bis.doc.gov` and `enc@nsa.gov` with the repository URL (EAR §742.15(b)). No CCATS is needed for standard algorithms |
 
-Supporting document for any question: `https://gasapp.chat/encryption/`.
+Supporting document for any question: `https://gasapp.eu/encryption/`.
 
 ⚠️ This is not legal advice: check the current EAR and ANSSI rules before
 submitting.
@@ -108,19 +108,20 @@ can read or filter them. Users are protected by:
 - Report a person: contact menu > Report;
 - Report a channel: channel menu > Report channel;
 - Terms of Use and Community Guidelines accepted at sign-up, with zero
-  tolerance for objectionable content: https://gasapp.chat/terms/
+  tolerance for objectionable content: https://gasapp.eu/terms/
 - we review reports within 24 hours and remove offending accounts and
-  channels; contact: abuse@gasapp.chat.
+  channels; contact: abuse@gasapp.eu.
 
 ENCRYPTION
-Standard algorithms only. Details: https://gasapp.chat/encryption/
+Standard algorithms only. Details: https://gasapp.eu/encryption/
 Source code is public: <repository URL>.
 
 ACCOUNT DELETION
 Settings > Privacy > Delete account. Deletion is immediate.
 
 NOT IN THIS VERSION
-No calls, no group chats, no push notifications, no purchases.
+No calls, no group chats, no purchases. Notifications come through Apple
+(APNs) and say only "New messages": no text, no sender.
 ```
 
 The 24-hour line is an operator **commitment**: do not send it without a
@@ -159,5 +160,5 @@ read `abuse@` mailbox and a person on duty.
   screen and in Settings, as on Android.
 * Screenshots: 6.9" (1320 × 2868) required; 13" iPad only if iPad is
   declared.
-* URLs in App Store Connect: Privacy Policy `https://gasapp.chat/privacy/`,
-  Support `https://gasapp.chat/support/`, Marketing — the site root.
+* URLs in App Store Connect: Privacy Policy `https://gasapp.eu/privacy/`,
+  Support `https://gasapp.eu/support/`, Marketing — the site root.

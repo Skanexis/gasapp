@@ -2,7 +2,7 @@
 
 # Тексты листинга — Google Play и App Store
 
-**Редакция:** 2026-10-07. Каждое поле — в своём блоке: копируется в
+**Редакция:** 2026-11-07. Каждое поле — в своём блоке: копируется в
 консоль магазина как есть. Лимиты проверены скриптом
 (`python tools/check-store-listing.py`), длина указана у поля.
 
@@ -11,7 +11,10 @@
 конфиденциальности; строка про отсутствие аудита обязательна, пока аудита
 нет. Постквантовое — только про установление переписки (PQXDH с ML-KEM):
 постквантового храповика в продукте нет (план, раздел «SPQR в продукте
-не работает»). Звонков, голосовых, групп и push нет — так и написано.
+не работает»). Звонков, голосовых и групп нет — так и написано; уведомления
+идут через Apple и Google без текста — так и написано. Строка об аудите —
+спокойная и с отсылкой к политике (решение владельца 2026-11-07), без
+запугивания.
 
 ## Название — решение 2026-10-07: GasApp
 
@@ -109,9 +112,9 @@ TOR ВСТРОЕН
 • удаление аккаунта и выгрузка своих данных прямо из приложения.
 
 ЧЕСТНО О СТАТУСЕ
-GasApp — открытый проект, и он ещё не прошёл независимый аудит безопасности. Не полагайтесь на него там, где на кону жизнь или свобода. Исходный код открыт: каждое утверждение выше можно проверить по нему.
+GasApp — открытый проект: исходный код опубликован, и каждое утверждение выше можно проверить по нему. Независимый аудит безопасности ещё впереди; что защищено и где пределы защиты, честно описано в политике конфиденциальности.
 
-Пока нет звонков, голосовых сообщений и групповых чатов. Уведомления о новых сообщениях — без Google и без текста: телефон сам раз в 15 минут спрашивает сервер, есть ли что-то новое.
+Пока нет звонков, голосовых сообщений и групповых чатов. Уведомления о новых сообщениях — без текста и без отправителя: в версии из Google Play их доставляет Google, в версии без сервисов Google телефон сам раз в 15 минут спрашивает сервер, есть ли что-то новое.
 ```
 
 EN:
@@ -148,9 +151,9 @@ ALSO
 • delete your account or export your data right in the app.
 
 HONEST STATUS
-GasApp is an open-source project and has not yet had an independent security audit. Do not rely on it where life or liberty is at stake. The source code is open: every claim above can be checked against it.
+GasApp is an open-source project: the source code is published, and every claim above can be checked against it. An independent security audit is still ahead; what is protected and where the limits are is described honestly in the privacy policy.
 
-Calls, voice messages and group chats are not available yet. Message notifications work without Google and without the text: about every 15 minutes the phone asks the server whether anything new has arrived.
+Calls, voice messages and group chats are not available yet. Message notifications carry no text and no sender: in the Google Play version Google delivers them; in the version without Google services the phone asks the server about every 15 minutes whether anything new has arrived.
 ```
 
 ### Что нового (≤ 500)
@@ -250,8 +253,8 @@ encrypted,messenger,private,chat,tor,e2ee,secure,channels,privacy,no phone
 
 | Поле | Значение | Статус |
 |---|---|---|
-| Политика конфиденциальности | `https://gasapp.chat/privacy/` — страница из `docs/legal/privacy-policy.md` и `.en.md` | ⚠️ домен и хостинг — решение владельца |
-| Удаление аккаунта (Google Play) | `https://gasapp.chat/account-deletion/` — страница из `account-deletion.md` | ⚠️ то же |
-| Поддержка (App Store — обязательно) | `https://gasapp.chat/support/` или страница проекта | ⚠️ то же |
-| Почта поддержки | `privacy@gasapp.chat`, `security@gasapp.chat` из политики | ⚠️ ящики должны существовать до подачи |
-| Стандарты безопасности детей (Google Play) | `https://gasapp.chat/child-safety/` — `child-safety-standards.md` | ⚠️ то же |
+| Политика конфиденциальности | `https://gasapp.eu/privacy/` — страница из `docs/legal/privacy-policy.md` и `.en.md` | ⚠️ домен и хостинг — решение владельца |
+| Удаление аккаунта (Google Play) | `https://gasapp.eu/account-deletion/` — страница из `account-deletion.md` | ⚠️ то же |
+| Поддержка (App Store — обязательно) | `https://gasapp.eu/support/` или страница проекта | ⚠️ то же |
+| Почта поддержки | `privacy@gasapp.eu`, `security@gasapp.eu` из политики | ⚠️ ящики должны существовать до подачи |
+| Стандарты безопасности детей (Google Play) | `https://gasapp.eu/child-safety/` — `child-safety-standards.md` | ⚠️ то же |

@@ -60,13 +60,13 @@ impl Reason {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Spam => "Спам",
-            Self::Harassment => "Травля, угрозы",
-            Self::Csae => "Насилие над детьми (CSAE)",
-            Self::Impersonation => "Выдаёт себя за другого",
-            Self::Illegal => "Иное незаконное",
-            Self::Other => "Прочее",
-            Self::Unfounded => "Жалобы необоснованны",
+            Self::Spam => "Spam",
+            Self::Harassment => "Harassment or threats",
+            Self::Csae => "Child sexual abuse (CSAE)",
+            Self::Impersonation => "Impersonation",
+            Self::Illegal => "Other illegal content",
+            Self::Other => "Other",
+            Self::Unfounded => "Unfounded reports",
         }
     }
 

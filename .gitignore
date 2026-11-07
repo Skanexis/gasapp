@@ -139,3 +139,6 @@ ios/GasApp/Generated/
 ios/GasApp.xcodeproj/
 ios/Config/Local.xcconfig
 ios/.build/
+
+# Кеш Python от tools/*.py
+__pycache__/

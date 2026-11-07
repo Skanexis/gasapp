@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Собирает публичный сайт документов GasApp из Markdown.
 
-    python tools/build-site.py [--out site] [--base-url https://gasapp.chat]
+    python tools/build-site.py [--out site] [--base-url https://gasapp.eu]
 
 Магазины приложений требуют постоянные общедоступные адреса: политика
 конфиденциальности, условия, правила сообщества, безопасность детей,
@@ -62,6 +62,7 @@ MENU = {
 
 # Та же страница на другом языке.
 TWIN = {
+    "documents/": "ru/documents/",
     "privacy/": "ru/privacy/",
     "terms/": "ru/terms/",
     "community-guidelines/": "ru/community-guidelines/",
@@ -72,64 +73,72 @@ TWIN = {
 }
 TWIN.update({ru: en for en, ru in list(TWIN.items())})
 
-STYLE = """
-:root{--bg:#fbfaf7;--ink:#1b1d22;--soft:#5a6070;--line:#dcd9d0;--accent:#0b5cad;--card:#fff;--code:#f1efe8}
-@media (prefers-color-scheme:dark){:root{--bg:#14161b;--ink:#e9e7e1;--soft:#a2a8b6;--line:#2c313b;--accent:#7db7ff;--card:#1b1e25;--code:#22262f}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header,main,footer{max-width:46rem;margin:0 auto;padding:0 16px}
-header{padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
-header .brand{font-weight:700;font-size:1.15rem;color:var(--ink);text-decoration:none}
-nav{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.92rem}
-nav a{color:var(--soft);text-decoration:none}
-nav a[aria-current]{color:var(--ink);font-weight:600}
-nav a:hover,a:hover{text-decoration:underline}
-main{padding-top:8px;padding-bottom:48px}
-h1{font-size:1.9rem;line-height:1.2;margin:1.4rem 0 .6rem}
-h2{font-size:1.35rem;margin:2rem 0 .5rem;padding-top:.4rem;border-top:1px solid var(--line)}
-h3{font-size:1.1rem;margin:1.5rem 0 .4rem}
-h4{font-size:1rem;margin:1.2rem 0 .3rem}
-a{color:var(--accent)}
-p,ul,ol,blockquote,pre,.table{margin:.7rem 0}
-ul,ol{padding-left:1.4rem}
-li{margin:.25rem 0}
-blockquote{margin-left:0;padding:.2rem 1rem;border-left:4px solid var(--line);color:var(--soft)}
-code{background:var(--code);padding:.1em .3em;border-radius:4px;font:0.9em ui-monospace,Menlo,Consolas,monospace;overflow-wrap:anywhere}
-pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow-x:auto}
-pre code{background:none;padding:0}
-.table{overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:.93rem}
-th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
-th{background:var(--card)}
-hr{border:0;border-top:1px solid var(--line);margin:2rem 0}
-footer{padding-top:16px;padding-bottom:40px;border-top:1px solid var(--line);color:var(--soft);font-size:.88rem}
-.cards{list-style:none;padding:0;display:grid;gap:10px}
-.cards a{display:block;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--ink);font-weight:600}
-"""
+STYLE = (ROOT / "tools/site.css").read_text(encoding="utf-8")
 
 TEXT = {
     "en": {
         "tagline": "Encrypted messenger. Open source.",
         "documents": "Documents",
         "more": "More",
-        "other": "Русский",
-        "footer": "GasApp is open source. This site is generated from the documents in the repository.",
-        "index_title": "GasApp — documents",
-        "index_lead": "GasApp is an end-to-end encrypted messenger with channels. "
-        "These are the documents that describe what it does with your data and what the rules are.",
+        "other": "Russian",
+        "footer": "GasApp · Make space for better conversations.",
+        "index_title": "Make space for better conversations.",
+        "index_lead": "Message the people who matter, share moments and follow channels you love. GasApp brings it together in a private, open-source messenger.",
+        "explore": "Explore GasApp",
+        "security": "Browse documents",
+        "essentials": "Everything you need to connect.",
+        "essentials_lead": "A simple place for messages, channels and more.",
+        "documents_lead": "Find the policies, support pages and technical documents for GasApp.",
+        "policies": "Policies and support",
+        "technical": "Technical details",
+        "home": "Home",
+        "menu": "Menu",
+        "skip": "Skip to content",
+        "on_this_page": "ON THIS PAGE",
+        "document": "GASAPP / DOCUMENTATION",
+        "reading": "min read",
+        "preview_chats": "CHATS",
+        "preview_chat": "Conversation",
+        "preview_channel": "Channels",
+        "preview_name": "Alex",
+        "preview_first": "Hey! Ready for later?",
+        "preview_second": "Absolutely. See you there ✨",
+        "preview_status": "A LITTLE SPACE FOR EVERY CONVERSATION",
+        "features": (("01 / CHAT", "Your conversations", "Keep in touch one to one, with messages and files protected by end-to-end encryption."), ("02 / CHANNELS", "Follow what matters", "Discover channels through a link, QR code or @name. Enjoy posts, reactions and search."), ("03 / YOUR WAY", "More control", "Choose a username, turn on Tor in the app, and keep your files in an encrypted vault.")),
+        "proof": (("Personal chats", "Messages and files together"), ("Channels", "Posts, reactions and discovery"), ("Your account", "A username you choose")),
     },
     "ru": {
         "tagline": "Мессенджер со сквозным шифрованием. Открытый код.",
         "documents": "Документы",
         "more": "Ещё",
         "other": "English",
-        "footer": "Код GasApp открыт. Сайт собран из документов в репозитории.",
-        "index_title": "GasApp — документы",
-        "index_lead": "GasApp — мессенджер со сквозным шифрованием и каналами. "
-        "Здесь документы о том, что он делает с вашими данными и какие действуют правила.",
+        "footer": "GasApp · Больше места для общения.",
+        "index_title": "Больше места для общения.",
+        "index_lead": "Пишите близким, делитесь моментами и читайте интересные каналы. GasApp объединяет всё это в приватном мессенджере с открытым кодом.",
+        "explore": "Возможности GasApp",
+        "security": "Документы",
+        "essentials": "Общаться легко.",
+        "essentials_lead": "Сообщения, каналы и полезные возможности в одном месте.",
+        "documents_lead": "Здесь собраны правила, страницы поддержки и технические документы GasApp.",
+        "policies": "Правила и поддержка",
+        "technical": "Технические подробности",
+        "home": "Главная",
+        "menu": "Меню",
+        "skip": "К содержимому",
+        "on_this_page": "НА ЭТОЙ СТРАНИЦЕ",
+        "document": "GASAPP / ДОКУМЕНТЫ",
+        "reading": "мин чтения",
+        "preview_chats": "ЧАТЫ",
+        "preview_chat": "Разговор",
+        "preview_channel": "Каналы",
+        "preview_name": "Алекс",
+        "preview_first": "Привет! Сегодня увидимся?",
+        "preview_second": "Конечно. До встречи ✨",
+        "preview_status": "МЕСТО ДЛЯ КАЖДОГО РАЗГОВОРА",
+        "features": (("01 / ЧАТ", "Личные разговоры", "Общайтесь один на один: сообщения и файлы защищены сквозным шифрованием."), ("02 / КАНАЛЫ", "Следите за интересным", "Находите каналы по ссылке, QR-коду или @имени. Читайте записи, ставьте реакции и пользуйтесь поиском."), ("03 / ВАШ ВЫБОР", "Больше контроля", "Выберите имя пользователя, включайте Tor в приложении и храните файлы в зашифрованном хранилище.")),
+        "proof": (("Личные чаты", "Сообщения и файлы"), ("Каналы", "Записи, реакции и поиск"), ("Ваш аккаунт", "Имя выбираете вы")),
     },
 }
-
 
 class BuildError(Exception):
     pass
@@ -367,7 +376,41 @@ def shell(page, language, title, body, base_url):
     )
     twin = TWIN.get(page)
     if twin is not None:
-        menu += f'<a href="{up}{twin}" hreflang="{"ru" if language == "en" else "en"}">{text["other"]}</a>'
+        menu += f'<a class="language-link" href="{up}{twin}" hreflang="{"ru" if language == "en" else "en"}">{text["other"]}</a>'
+
+    is_home = page in ("", "ru/")
+    if is_home:
+        home_menu = (
+            f'<a href="#features">{html.escape(text["explore"])}</a>'
+            f'<a href="{up}{"documents/" if language == "en" else "ru/documents/"}">{html.escape(text["documents"])}</a>'
+            f'<a href="{up}{"support/" if language == "en" else "ru/support/"}">{html.escape(PAGES["support/" if language == "en" else "ru/support/"][3])}</a>'
+        )
+        if twin is not None:
+            home_menu += f'<a class="language-link" href="{up}{twin}" hreflang="{"ru" if language == "en" else "en"}">{text["other"]}</a>'
+    else:
+        home_menu = menu
+    if not is_home:
+        word_count = len(re.findall(r"\b[\w'-]+\b", re.sub(r"<[^>]+>", " ", html.unescape(body))))
+        reading_minutes = max(1, (word_count + 219) // 220)
+        headings = re.findall(r'<h2 id="([^"]+)">(.*?)</h2>', body)
+        toc_links = "".join(
+            f'<a href="#{html.escape(anchor)}">{html.escape(html.unescape(re.sub(r"<[^>]+>", "", label)))}</a>'
+            for anchor, label in headings
+        )
+        body = re.sub(r'^<h1\b[^>]*>.*?</h1>\s*', '', body, count=1, flags=re.S)
+        body = (
+            '<div class="document-layout">'
+            f'<details class="mobile-toc"><summary>{text["on_this_page"]}</summary>'
+            f'<nav aria-label="{text["on_this_page"]}">{toc_links}</nav></details>'
+            '<article class="article">'
+            f'<div class="breadcrumbs"><a href="{up}{home}">{text["home"]}</a><span>/</span><span>{html.escape(title)}</span></div>'
+            f'<div class="article-header"><span class="eyebrow">{text["document"]}</span><h1>{html.escape(title)}</h1>'
+            f'<div class="article-meta"><span class="reading-time">◷ {reading_minutes} {text["reading"]}</span>'
+            f'<span>{html.escape(text["tagline"])}</span></div></div><div class="article-body">{body}</div></article>'
+            f'<aside class="toc"><nav aria-label="{text["on_this_page"]}"><b>{text["on_this_page"]}</b>'
+            f'<div class="toc-links">{toc_links}</div><a class="back-link" href="{up}{home}">← {text["home"]}</a>'
+            '</nav></aside></div>'
+        )
 
     canonical = f'<link rel="canonical" href="{base_url.rstrip("/")}/{page}">' if base_url else ""
 
@@ -376,20 +419,23 @@ def shell(page, language, title, body, base_url):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0c1027">
 <title>{html.escape(title)} — GasApp</title>
 <meta name="description" content="{html.escape(title)} — GasApp. {html.escape(text["tagline"])}">
 {canonical}
 <style>{STYLE}</style>
 </head>
 <body>
-<header>
-<a class="brand" href="{up}{home}">GasApp</a>
-<nav aria-label="{text["documents"]}">{menu}</nav>
-</header>
-<main>
+<a class="skip-link" href="#content">{text["skip"]}</a>
+<header class="site-header"><div class="header-inner">
+<a class="brand" href="{up}{home}"><span class="brand-mark">✦</span>GasApp <small>MESSENGER</small></a>
+<nav class="site-nav" aria-label="{text["menu"]}">{home_menu}</nav>
+<details class="mobile-nav"><summary>{text["menu"]}</summary><nav aria-label="{text["documents"]}">{menu}</nav></details>
+</div></header>
+<main id="content">
 {body}
 </main>
-<footer>{text["footer"]}</footer>
+<footer><span>{text["footer"]}</span><a href="{up}{'support/' if language == 'en' else 'ru/support/'}">{PAGES['support/' if language == 'en' else 'ru/support/'][3]}</a></footer>
 </body>
 </html>
 """
@@ -398,26 +444,74 @@ def shell(page, language, title, body, base_url):
 def index_page(language, base_url):
     text = TEXT[language]
     page = "" if language == "en" else "ru/"
-    extra = [item for item, entry in PAGES.items() if entry[2] == language and item not in MENU[language]]
-    # Документы, написанные только на одном языке, видны с обеих страниц.
-    if language == "en":
-        extra += ["ru/data-retention/", "ru/bots/"]
-    else:
-        extra += ["protocol/", "encryption/"]
-
-    def cards(items):
-        prefix = "" if language == "en" else "../"
-        return "".join(
-            f'<li><a href="{prefix}{item}">{html.escape(PAGES[item][3])}</a></li>' for item in items
-        )
-
+    prefix = "" if language == "en" else "../"
+    documents = "documents/" if language == "en" else "ru/documents/"
     body = (
-        f"<h1>{text['index_title']}</h1><p>{text['index_lead']}</p>"
-        f"<h2>{text['documents']}</h2><ul class=\"cards\">{cards(MENU[language])}</ul>"
-        f"<h2>{text['more']}</h2><ul class=\"cards\">{cards(extra)}</ul>"
+        f'<section class="hero"><div><div class="eyebrow">GasApp / {text["tagline"]}</div>'
+        f'<h1>{text["index_title"]}</h1><p>{text["index_lead"]}</p>'
+        f'<div class="hero-actions"><a class="button primary" href="#features">{text["explore"]}</a>'
+        f'<a class="button secondary" href="{prefix}{documents}">{text["security"]}</a></div></div>'
+        '<div class="hero-art" aria-hidden="true"><div class="preview-scene">'
+        '<div class="preview-glow"></div><div class="app-preview">'
+        f'<div class="preview-top"><span class="preview-wordmark">✦ GasApp</span><span class="preview-top-label">{html.escape(text["preview_chat"])}</span></div>'
+        '<div class="preview-main"><div class="preview-side">'
+        f'<span class="preview-side-label">{html.escape(text["preview_chats"])}</span>'
+        f'<div class="preview-person"><span class="preview-avatar">A</span><span><b>{html.escape(text["preview_name"])}</b><small>●</small></span></div>'
+        f'<div class="preview-person preview-person-muted"><span class="preview-avatar">✦</span><span><b>{html.escape(text["preview_channel"])}</b><small>···</small></span></div>'
+        '</div><div class="preview-conversation">'
+        f'<div class="preview-conversation-head"><span class="preview-avatar">A</span><b>{html.escape(text["preview_name"])}</b><span class="preview-dots">•••</span></div>'
+        f'<div class="preview-bubble incoming">{html.escape(text["preview_first"])}</div>'
+        f'<div class="preview-bubble outgoing">{html.escape(text["preview_second"])}</div>'
+        '<div class="preview-compose"><span>＋</span><i></i><span>➤</span></div></div></div></div>'
+        f'<div class="preview-caption"><span>✦</span>{html.escape(text["preview_status"])}</div>'
+        '</div></div></section>'
+        '<div class="proof-strip">'
+        + ''.join(f'<div><b>{html.escape(name)}</b><span>{html.escape(detail)}</span></div>' for name, detail in text['proof'])
+        + '</div>'
+        f'<section id="features" class="home-section"><div class="section-heading"><h2>{text["essentials"]}</h2><p>{text["essentials_lead"]}</p></div>'
+        '<div class="feature-grid">'
+        + ''.join(
+            f'<article class="feature-card"><span class="eyebrow">{html.escape(number)}</span>'
+            f'<h3>{html.escape(title)}</h3><p>{html.escape(description)}</p></article>'
+            for number, title, description in text['features']
+        )
+        + '</div></section>'
     )
+    if language == "en" and re.search(r"[А-Яа-яЁё]", body):
+        raise BuildError("English home page contains untranslated Cyrillic text")
 
     return shell(page, language, text["index_title"], body, base_url)
+
+
+def documents_page(language, base_url):
+    text = TEXT[language]
+    page = "documents/" if language == "en" else "ru/documents/"
+    prefix = "../" * page.count("/")
+    extra = [item for item, entry in PAGES.items() if entry[2] == language and item not in MENU[language]]
+    if language == "ru":
+        extra += ["protocol/", "encryption/"]
+    russian_link_titles = {
+        "protocol/": "Протокол (англ.)",
+        "encryption/": "Что шифруется (англ.)",
+    }
+
+    def label(item):
+        return russian_link_titles.get(item, PAGES[item][3]) if language == "ru" else PAGES[item][3]
+
+    def links(items):
+        return '<div class="document-index-grid">' + "".join(
+            f'<a class="document-index-item" href="{prefix}{item}"><span class="document-index-number">{index:02d}</span>'
+            f'<span>{html.escape(label(item))}</span>'
+            '<span class="document-index-arrow" aria-hidden="true">↗</span></a>'
+            for index, item in enumerate(items, 1)
+        ) + '</div>'
+
+    body = (
+        f'<h1>{html.escape(text["documents"])}</h1><p>{html.escape(text["documents_lead"])}</p>'
+        f'<h2 id="policies">{html.escape(text["policies"])}</h2>{links(MENU[language])}'
+        f'<h2 id="technical">{html.escape(text["technical"])}</h2>{links(extra)}'
+    )
+    return shell(page, language, text["documents"], body, base_url)
 
 
 def build(out, base_url):
@@ -435,6 +529,15 @@ def build(out, base_url):
             text = f"# {title}\n\n" + section_of(text, section)
 
         body = Renderer(source, page, links).render(text)
+        if language == "en":
+            checked_body = body
+            if page == "protocol/":
+                # These two Cyrillic letters illustrate a username homograph.
+                if body.count("аlice") != 1 or body.count("<code>а</code>") != 1:
+                    raise BuildError(f"{source}: protocol homograph example changed")
+                checked_body = body.replace("аlice", "alice").replace("<code>а</code>", "<code>a</code>")
+            if re.search(r"[А-Яа-яЁё]", checked_body):
+                raise BuildError(f"{source}: untranslated Cyrillic text on an English page")
         # 🔴 Заглушка адреса на опубликованной странице — отказ магазина.
         for placeholder in ("<домен>", "<domain>", "&lt;домен&gt;", "&lt;domain&gt;"):
             if placeholder in body:
@@ -447,6 +550,10 @@ def build(out, base_url):
     (out / "index.html").write_text(index_page("en", base_url), encoding="utf-8", newline="\n")
     (out / "ru").mkdir(parents=True, exist_ok=True)
     (out / "ru" / "index.html").write_text(index_page("ru", base_url), encoding="utf-8", newline="\n")
+    for language, page in (("en", "documents/"), ("ru", "ru/documents/")):
+        target = out / page / "index.html"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(documents_page(language, base_url), encoding="utf-8", newline="\n")
 
     # RFC 9116: куда сообщать об уязвимостях.
     well_known = out / ".well-known"
@@ -461,7 +568,7 @@ def build(out, base_url):
     )
     if base_url:
         urls = "".join(
-            f"<url><loc>{base_url.rstrip('/')}/{page}</loc></url>" for page in ["", "ru/", *PAGES]
+            f"<url><loc>{base_url.rstrip('/')}/{page}</loc></url>" for page in ["", "ru/", "documents/", "ru/documents/", *PAGES]
         )
         (out / "sitemap.xml").write_text(
             f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n',
@@ -471,13 +578,13 @@ def build(out, base_url):
     # GitHub Pages: не обрабатывать сайт Jekyll'ом (иначе пропадёт .well-known).
     (out / ".nojekyll").write_text("", encoding="utf-8")
 
-    return len(PAGES) + 2
+    return len(PAGES) + 4
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--out", default="site")
-    parser.add_argument("--base-url", default="https://gasapp.chat")
+    parser.add_argument("--base-url", default="https://gasapp.eu")
     arguments = parser.parse_args()
 
     try:

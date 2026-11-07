@@ -271,6 +271,11 @@ run ufw --force reset > /dev/null
 run ufw default deny incoming
 run ufw default allow outgoing
 run ufw default deny routed
+if [[ -f /etc/wireguard/wg0.conf ]]; then
+    # Four VPS on separate IONOS contracts exchange only WireGuard packets
+    # over public IPs. The role rules below still guard tunneled services.
+    run ufw allow 51820/udp
+fi
 
 if [[ -n "$ssh_from" ]]; then
     for net in $ssh_from; do run ufw allow from "$net" to any port 22 proto tcp; done

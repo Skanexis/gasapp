@@ -70,8 +70,10 @@ mkdir -p "$STATE_DIR"
 umask 077
 
 failed=0
+node_index=0
 
 for node in $NODES; do
+    node_index=$((node_index + 1))
     state_file="${STATE_DIR}/$(echo "$node" | tr -c 'a-zA-Z0-9' '_')"
 
     # --max-time: зависший узел не должен задерживать проверку
@@ -92,17 +94,17 @@ for node in $NODES; do
 
     if body="$(curl -s "${tls[@]}" --max-time 5 "$url" 2>/dev/null)"; then
         if ! grep -q '"database":true' <<< "$body"; then
-            status="не видит базу"
+            status="database unavailable"
         elif ! grep -q '"listener":true' <<< "$body"; then
             # 🔐 Самый коварный отказ: узел отвечает на запросы
             # и принимает сообщения, молча перестав будить клиентов.
             # Снаружи он выглядит здоровым.
-            status="слушатель уведомлений мёртв"
+            status="notification listener is down"
         else
             status="ok"
         fi
     else
-        status="недоступен"
+        status="unreachable"
     fi
 
     previous="$(cat "$state_file" 2>/dev/null || echo "ok")"
@@ -112,7 +114,7 @@ for node in $NODES; do
         # Оповещение о восстановлении: без него дежурный не узнает,
         # что проблема ушла, и будет считать узел мёртвым.
         if [[ "$previous" != "ok" ]]; then
-            echo "GasApp: узел ${node} восстановился" | $NOTIFY
+            echo "✅ API node ${node_index} (${node}) recovered" | $NOTIFY
         fi
 
         continue
@@ -124,7 +126,7 @@ for node in $NODES; do
     # не должен давать шестьдесят одинаковых сообщений — их перестают
     # читать, и следующий настоящий отказ пройдёт незамеченным.
     if [[ "$previous" != "$status" ]]; then
-        echo "GasApp: узел ${node} — ${status}" | $NOTIFY
+        echo "⚠️ API node ${node_index} (${node}): ${status}" | $NOTIFY
     fi
 done
 
@@ -152,9 +154,9 @@ echo "$cluster_status" > "$CLUSTER_STATE"
 
 if [[ "$cluster_status" != "$cluster_previous" ]]; then
     if [[ "$cluster_status" == "down" ]]; then
-        echo "GasApp: ВСЕ узлы (${total}) недоступны — сервис не работает" | $NOTIFY
+        echo "🔴 All ${total} API nodes are down; service is unavailable" | $NOTIFY
     else
-        echo "GasApp: сервис восстановился" | $NOTIFY
+        echo "✅ API service recovered" | $NOTIFY
     fi
 fi
 

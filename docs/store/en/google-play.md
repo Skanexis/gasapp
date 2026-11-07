@@ -2,7 +2,7 @@
 
 # Google Play — answers for Play Console
 
-**Version:** 2026-10-10. Build: flavor `gms`, `applicationId
+**Version:** 2026-10-26. Build: flavor `gms`, `applicationId
 org.gasapp.app.gms`, `targetSdk 36`, `minSdk 28` (Android 9+).
 
 Every answer below was checked against the code on this date
@@ -66,8 +66,14 @@ kept until the account is deleted.
   it. Tor, built into the app, hides it when the user turns it on.
 * **Diagnostics, analytics, crash logs.** No SDK of any kind
   (`tools/check-no-telemetry.sh` in CI).
-* **Push token.** No push yet in any build. When it appears, add "Device or
-  other IDs" for notification delivery and sharing with Google (FCM).
+* **Push token (`gms` build, Google Play).** Declare "Device or other IDs":
+  **collected** (the server stores the FCM token linked to the device) and
+  **shared** with Google (Firebase Cloud Messaging delivers the constant
+  "New messages" signal, with no text or sender). Purpose: "App
+  functionality"; **optional** — turned off in Settings → Notifications.
+  Processed ephemerally? No — kept until notifications are turned off or
+  the account is deleted. The `foss` build sends nothing to Google
+  (see "Push notifications" in the privacy policy).
 
 ### Security practices
 
@@ -148,7 +154,7 @@ SAFETY TOOLS (user-generated content):
 
 NOTES:
 - Messages are end-to-end encrypted; the server cannot read them.
-- Notifications: about every 15 minutes the app checks for new messages and shows "New messages" without the text or sender. With Tor on, messages arrive only while the app is open.
+- Notifications: the Google Play build is woken through Firebase Cloud Messaging and shows "New messages" without the text or sender; the server sends at most one signal per device per minute. On a phone without Google Play services the app checks for new messages about every 15 minutes instead, and with Tor on that check does not run.
 - Account deletion: Settings > Privacy > Delete account (immediate).
 - Tor is optional: Settings > Privacy > Network > Tor (built in).
   It hides the IP address from the server.
@@ -166,14 +172,17 @@ Google requires deletion **in the app and** by a web link.
 
 * **In the app:** Settings → Privacy → Delete account (two confirmations,
   immediate, the app shows what was removed).
-* **Web link:** `https://gasapp.chat/account-deletion/`.
+* **Web link:** `https://gasapp.eu/account-deletion/`.
 
-⚠️ **Review risk.** An account cannot be deleted from the web by design:
+🔴 **Submission blocker.** An account cannot be deleted from the web by design:
 there is no password and no e-mail sign-in — a deletion request is signed by
 the device key. The page explains this honestly and gives two paths:
 deletion in the app, and automatic deletion after 12 months without
-connecting. If review does not accept this, discuss it with Play support
-rather than adding an identity the account does not have.
+connecting. Neither is a web path for submitting a deletion request.
+Google's current guidance explicitly requires a web resource where someone
+who uninstalled the app can request deletion without reinstalling it.
+Do not submit the Data safety deletion answer as compliant until a secure
+request and verification process exists and this page describes it.
 
 ---
 
@@ -198,13 +207,13 @@ does not apply.
 | Requirement | Where it is met |
 |---|---|
 | Users accept terms of use | Sign-up screen links the Terms of Use and Privacy Policy; creating an account is acceptance |
-| Published rules for content | `https://gasapp.chat/community-guidelines/` |
+| Published rules for content | `https://gasapp.eu/community-guidelines/` |
 | In-app reporting of users and content | Contact menu → Report; channel menu → Report channel |
 | Blocking | Contact menu → Block; leave a channel |
 | Ongoing moderation | Operator console (`docs/ops/admin-center.md`): reports reviewed within 24 hours; accounts and channels can be removed |
-| CSAE prohibited in published standards | `https://gasapp.chat/child-safety/` and the Community Guidelines |
+| CSAE prohibited in published standards | `https://gasapp.eu/child-safety/` and the Community Guidelines |
 | CSAM process and legal reporting | Described on the child-safety page (NCMEC / INHOPE) |
-| Child safety point of contact | `abuse@gasapp.chat` — enter it in Play Console → Child safety |
+| Child safety point of contact | `abuse@gasapp.eu` — enter it in Play Console → Child safety |
 
 Limit to state honestly if asked: private messages are end-to-end
 encrypted, so moderation acts on accounts and channels after a report, not
@@ -219,7 +228,7 @@ on message content.
 | Developer account | **Personal** → closed testing with **at least 12 testers for 14 consecutive days** before production access |
 | App registration | The app must be registered in Play Console under a verified developer (requirement in force since 2026-09-30) |
 | Signing | Play App Signing; the upload key is separate and kept by the owner |
-| Format | App Bundle: `./gradlew :app:bundleGmsRelease -PgasappDocsUrl=https://gasapp.chat …` — as its own command. 16 KB page check: `tools/check-16kb-pages.py` |
+| Format | App Bundle: `./gradlew :app:bundleGmsRelease -PgasappDocsUrl=https://gasapp.eu …` — as its own command. 16 KB page check: `tools/check-16kb-pages.py` |
 | Version | `versionCode` grows with every upload; for the beta use `versionName` `0.9.x` |
 | Countries | All except **France** (owner's decision, 2026-10-10: no French encryption declaration is filed) |
 | Production TLS pins | ⚠️ **Blocker:** `release/res/xml/network_security_config.xml` still holds placeholders |

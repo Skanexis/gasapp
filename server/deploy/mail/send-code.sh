@@ -110,23 +110,44 @@ trap 'rm -f "$message"' EXIT
     printf 'To: <%s>\r\n' "$recipient"
     # Только ASCII: заголовок с кириллицей без кодирования RFC 2047
     # почтовые службы отвергают или портят.
-    printf 'Subject: GasApp confirmation code\r\n'
+    printf 'Subject: Your GasApp verification code\r\n'
     printf 'Date: %s\r\n' "$(LC_ALL=C date -R)"
     printf 'MIME-Version: 1.0\r\n'
-    printf 'Content-Type: text/plain; charset=UTF-8\r\n'
-    printf 'Content-Transfer-Encoding: 8bit\r\n'
+    printf 'Content-Type: multipart/alternative; boundary="gasapp-verification"\r\n'
     printf 'Auto-Submitted: auto-generated\r\n'
     printf '\r\n'
-    printf 'Код подтверждения GasApp: %s\r\n' "$code"
-    printf 'Он действует 15 минут. Введите его в приложении.\r\n'
+    printf '%s\r\n' '--gasapp-verification'
+    printf 'Content-Type: text/plain; charset=UTF-8\r\n'
+    printf 'Content-Transfer-Encoding: 7bit\r\n\r\n'
+    printf 'GASAPP  /  ACCOUNT VERIFICATION\r\n'
+    printf '%s\r\n\r\n' '--------------------------------'
+    printf 'Your verification code is: %s\r\n' "$code"
+    printf 'Enter it in GasApp within 15 minutes. Never share this code.\r\n'
     printf '\r\n'
-    printf 'GasApp confirmation code: %s\r\n' "$code"
-    printf 'It is valid for 15 minutes. Enter it in the app.\r\n'
-    printf '\r\n'
-    printf 'Если вы не регистрировались в GasApp, просто не отвечайте на это письмо:\r\n'
-    printf 'без кода аккаунт на ваш адрес не создать.\r\n'
-    printf 'If you did not sign up for GasApp, ignore this email: no account can be\r\n'
-    printf 'created for your address without the code.\r\n'
+    printf 'If you did not request this code, you can safely ignore this email.\r\n'
+    printf 'This is an automated message. Please do not reply.\r\n'
+    printf '\r\n%s\r\n' '--gasapp-verification'
+    printf 'Content-Type: text/html; charset=UTF-8\r\n'
+    printf 'Content-Transfer-Encoding: 7bit\r\n\r\n'
+    while IFS= read -r line; do
+        printf '%s\r\n' "${line//CODE_PLACEHOLDER/$code}"
+    done <<'HTML'
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:32px 12px;background:#0e1238;color:#f5f6ff;font-family:Arial,sans-serif">
+<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:520px;margin:auto;border:1px solid #343e85;border-radius:18px;background:#141a4a"><tr><td style="padding:32px">
+<p style="margin:0 0 30px;color:#ffcb2e;font-size:21px;font-weight:bold;letter-spacing:1px">&#10022; GasApp</p>
+<p style="margin:0 0 8px;color:#c2c8f0;font-size:12px;font-weight:bold;letter-spacing:2px">ACCOUNT VERIFICATION</p>
+<h1 style="margin:0 0 14px;font-size:28px;line-height:1.2;color:#f5f6ff">One step to get started.</h1>
+<p style="margin:0 0 26px;color:#c2c8f0;font-size:16px;line-height:1.6">Enter this code in GasApp to confirm your email address.</p>
+<div style="padding:20px;text-align:center;border:1px solid #343e85;border-radius:12px;background:#1b2259;color:#ffcb2e;font-size:34px;font-weight:bold;letter-spacing:10px">CODE_PLACEHOLDER</div>
+<p style="margin:24px 0 8px;color:#f5f6ff;font-size:14px">Valid for 15 minutes. Never share this code.</p>
+<p style="margin:0;color:#a3abdd;font-size:13px;line-height:1.6">If you did not request it, you can safely ignore this email.</p>
+</td></tr></table>
+<p style="max-width:520px;margin:18px auto 0;text-align:center;color:#a3abdd;font-size:12px">Automated message from GasApp. Please do not reply.</p>
+</body></html>
+HTML
+    printf '\r\n%s\r\n' '--gasapp-verification--'
 } > "$message"
 
 # Двойные кавычки в значениях конфигурации curl экранируются обратной

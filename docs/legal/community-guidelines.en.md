@@ -74,8 +74,8 @@ can be read by the server.
 * We review reports within **24 hours**; child safety reports immediately.
 * We may delete the channel, delete the account, revoke the right to create
   channels and bots, or dismiss the report.
-* Appeals: `abuse@gasapp.chat`.
+* Appeals: `abuse@gasapp.eu`.
 
 ## Contact
 
-`abuse@gasapp.chat` — reports and appeals.
+`abuse@gasapp.eu` — reports and appeals.

@@ -71,9 +71,14 @@ Google Play, а не опечатка.
   сетевое соединение; раскрыто в политике конфиденциальности.
 * **Диагностика, аналитика, журналы сбоев.** Нет ни одного SDK
   (проверка CI `tools/check-no-telemetry.sh`).
-* **Push-токен.** Push пока нет ни в одной сборке. Появится — добавить
-  «Идентификаторы устройства» с целью «доставка уведомлений» и передачу
-  Google (FCM).
+* **Push-токен (сборка `gms`, Google Play).** Отметить «Идентификаторы
+  устройства или другие идентификаторы»: **собираются** (сервер хранит
+  токен FCM, привязанный к устройству) и **передаются** Google (Firebase
+  Cloud Messaging доставляет сигнал «Новые сообщения» без текста и
+  отправителя). Цель — «Функциональность приложения»; **необязательно**:
+  выключается в «Настройки → Уведомления». Обрабатываются временно? Нет —
+  до выключения уведомлений или удаления аккаунта. Сборка `foss`
+  токен Google не получает (раздел «Push-уведомления» политики).
 
 ### Методы защиты
 
@@ -141,7 +146,7 @@ Or install the app on a second device and register a second account.
 
 Notes:
 - Messages are end-to-end encrypted; the server cannot read them.
-- Notifications: about every 15 minutes the app checks for new messages and shows "New messages" without the text or sender. With Tor on, messages arrive only while the app is open.
+- Notifications: the Google Play build is woken through Firebase Cloud Messaging and shows "New messages" without the text or sender; the server sends at most one signal per device per minute. On a phone without Google Play services the app checks for new messages about every 15 minutes instead, and with Tor on that check does not run.
 - Account deletion: Settings > Privacy > Delete account.
 - Tor is optional: Settings > Privacy > Network > Tor (built in).
   It hides the IP address from the server.

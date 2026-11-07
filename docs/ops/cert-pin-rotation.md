@@ -30,7 +30,7 @@ Let's Encrypt, то есть раз в три месяца.
 ```
 server/deploy/compute-pin.sh server/deploy/tls/cert.pem   # из сертификата
 server/deploy/compute-pin.sh --key path/to/backup-key.pem # из ключа без сертификата
-server/deploy/compute-pin.sh --host gasapp.chat:443        # с живого сервера
+server/deploy/compute-pin.sh --host gasapp.eu:443        # с живого сервера
 ```
 
 ## Правило двух пинов
@@ -88,7 +88,7 @@ server/deploy/compute-pin.sh --key backup-key.pem
 ### Релиз N+1 — переключить сервер
 
 1. Развернуть сертификат для `K2` на балансировщике.
-2. Проверить с живого сервера: `compute-pin.sh --host gasapp.chat:443`
+2. Проверить с живого сервера: `compute-pin.sh --host gasapp.eu:443`
    обязан дать пин `K2`.
 3. Убедиться, что клиенты релиза N соединяются: у них `K2` уже
    в запасных.

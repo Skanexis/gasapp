@@ -3,7 +3,7 @@
 # GasApp Support
 
 Both stores require a support address that answers. This page is published
-at `https://gasapp.chat/support/` and linked from the store listings and
+at `https://gasapp.eu/support/` and linked from the store listings and
 from the app (About → Terms and documents → Support).
 
 ---
@@ -14,10 +14,10 @@ from the app (About → Terms and documents → Support).
 
 | What | Where |
 |---|---|
-| Help with the app | `support@gasapp.chat` |
-| Report abuse, appeal a decision | `abuse@gasapp.chat` — or in the app: contact menu → Report, channel menu → Report channel |
-| Privacy and your data | `privacy@gasapp.chat` |
-| Security vulnerabilities | `security@gasapp.chat` |
+| Help with the app | `support@gasapp.eu` |
+| Report abuse, appeal a decision | `abuse@gasapp.eu` — or in the app: contact menu → Report, channel menu → Report channel |
+| Privacy and your data | `privacy@gasapp.eu` |
+| Security vulnerabilities | `security@gasapp.eu` |
 
 We answer within two working days; abuse reports are reviewed within 24
 hours.
@@ -65,10 +65,10 @@ listed in the [Privacy Policy](../legal/privacy-policy.en.md).
 
 | Что | Куда |
 |---|---|
-| Помощь с приложением | `support@gasapp.chat` |
-| Жалоба, обжалование решения | `abuse@gasapp.chat` — или в приложении: меню собеседника → «Пожаловаться», меню канала → «Пожаловаться на канал» |
-| Приватность и ваши данные | `privacy@gasapp.chat` |
-| Уязвимости | `security@gasapp.chat` |
+| Помощь с приложением | `support@gasapp.eu` |
+| Жалоба, обжалование решения | `abuse@gasapp.eu` — или в приложении: меню собеседника → «Пожаловаться», меню канала → «Пожаловаться на канал» |
+| Приватность и ваши данные | `privacy@gasapp.eu` |
+| Уязвимости | `security@gasapp.eu` |
 
 Отвечаем в течение двух рабочих дней; жалобы разбираем за 24 часа.
 

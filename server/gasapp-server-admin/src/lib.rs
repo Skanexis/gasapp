@@ -159,7 +159,9 @@ async fn security_headers(request: Request, next: Next) -> Response {
         ),
     );
     headers.insert(X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    // `no-referrer` makes browsers send `Origin: null` on HTML form POSTs;
+    // our same-origin guard would then reject the admin's own login form.
+    headers.insert(REFERRER_POLICY, HeaderValue::from_static("same-origin"));
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
 
@@ -211,13 +213,13 @@ async fn login_submit(
         }
         Err(LoginError::Wrong) => (
             StatusCode::UNAUTHORIZED,
-            Html(login_html(Some("Неверный токен."))),
+            Html(login_html(Some("Invalid operator token."))),
         )
             .into_response(),
         Err(LoginError::Locked) => (
             StatusCode::TOO_MANY_REQUESTS,
             Html(login_html(Some(
-                "Вход закрыт на 10 минут после серии неверных токенов.",
+                "Too many attempts. Try again in 10 minutes.",
             ))),
         )
             .into_response(),
@@ -253,7 +255,7 @@ async fn summary_page(State(state): State<Arc<AdminState>>, headers: HeaderMap) 
     };
 
     match queries::summary(&state.pool).await {
-        Ok(summary) => Html(layout("Сводка", &csrf, &summary_html(&summary))).into_response(),
+        Ok(summary) => Html(layout("Overview", &csrf, &summary_html(&summary))).into_response(),
         Err(error) => database_error(&error),
     }
 }
@@ -281,10 +283,19 @@ async fn reports_page(
         Err(error) => return database_error(&error),
     };
 
-    let mut body = reports_html(&rows, &csrf, flash.done.as_deref());
+    let mut body = format!(
+        "<div class=\"queue-summary\" aria-label=\"Current report queue\">\
+         <div><span>ACCOUNT CASES</span><b class=\"num\">{}</b><small>Accounts awaiting review</small></div>\
+         <div><span>CHANNEL CASES</span><b class=\"num\">{}</b><small>Channels awaiting review</small></div>\
+         <div class=\"queue-message\"><span>REVIEW STANDARD</span><strong>Evidence before action.</strong>\
+         <small>Compare reports and certificates before making a decision.</small></div></div>",
+        rows.len(),
+        channels.len()
+    );
+    body.push_str(&reports_html(&rows, &csrf, flash.done.as_deref()));
     body.push_str(&channel_reports_html(&channels, &csrf));
 
-    Html(layout("Жалобы", &csrf, &body)).into_response()
+    Html(layout("Reports", &csrf, &body)).into_response()
 }
 
 /// Удаляет канал, на который жаловались.
@@ -359,7 +370,7 @@ async fn account_page(
     };
 
     Html(layout(
-        "Аккаунт",
+        "Account",
         &csrf,
         &account_html(
             wanted.as_deref(),
@@ -376,7 +387,7 @@ async fn transparency_page(State(state): State<Arc<AdminState>>, headers: Header
     };
 
     match queries::transparency(&state.pool).await {
-        Ok(rows) => Html(layout("Прозрачность", &csrf, &transparency_html(&rows))).into_response(),
+        Ok(rows) => Html(layout("Transparency", &csrf, &transparency_html(&rows))).into_response(),
         Err(error) => database_error(&error),
     }
 }
@@ -489,7 +500,7 @@ async fn set_premium(
             tracing::error!(%error, "админ-центр: ошибка базы");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Html("<p>Ошибка базы — подробности в журнале админ-центра.</p>".to_owned()),
+                Html("<p>Database error. See the control center logs.</p>".to_owned()),
             )
                 .into_response()
         }
@@ -501,7 +512,7 @@ fn database_error(error: &sqlx::Error) -> Response {
     tracing::error!(%error, "админ-центр: ошибка базы");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        Html("<p>Ошибка базы — подробности в журнале админ-центра.</p>".to_owned()),
+        Html("<p>Database error. See the control center logs.</p>".to_owned()),
     )
         .into_response()
 }
@@ -531,33 +542,41 @@ pub fn escape(text: &str) -> String {
     out
 }
 
-const STYLE: &str = "
-body{font:15px/1.5 system-ui,sans-serif;margin:0;background:#0f1115;color:#e6e8eb}
-header{display:flex;gap:18px;align-items:center;padding:12px 24px;background:#171a21;border-bottom:1px solid #262b35}
-header b{margin-right:12px}header a{color:#9fb3c8;text-decoration:none}header a:hover{color:#fff}
-header form{margin-left:auto}main{max-width:1000px;margin:24px auto;padding:0 24px}
-h1{font-size:22px}table{border-collapse:collapse;width:100%}
-th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #262b35;vertical-align:top}
-th{color:#9aa4b2;font-weight:500}.num{font-variant-numeric:tabular-nums}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
-.card{background:#171a21;border:1px solid #262b35;border-radius:10px;padding:14px}
-.card span{display:block;color:#9aa4b2;font-size:13px}.card b{font-size:22px}
-.note{color:#9aa4b2;font-size:13px}.flash{background:#15321f;border:1px solid #2f6b43;padding:8px 12px;border-radius:8px}
-button{background:#2b3240;color:#e6e8eb;border:1px solid #3a4352;border-radius:8px;padding:6px 12px;cursor:pointer}
-button.danger{background:#5a1f24;border-color:#8a2f37}input,select{background:#0f1115;color:#e6e8eb;border:1px solid #3a4352;border-radius:8px;padding:6px 8px}
-form.inline{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0}
-";
+const STYLE: &str = include_str!("style.css");
 
 fn layout(title: &str, csrf: &str, body: &str) -> String {
+    let mut nav = String::new();
+    for (label, href, number) in [
+        ("Overview", "/", "01"),
+        ("Reports", "/reports", "02"),
+        ("Account", "/account", "03"),
+        ("Transparency", "/transparency", "04"),
+    ] {
+        let current = if label == title {
+            " aria-current=\"page\""
+        } else {
+            ""
+        };
+        let _ = write!(
+            nav,
+            "<a href=\"{href}\"{current}><span class=\"nav-number\">{number}</span>{label}</a>"
+        );
+    }
     format!(
-        "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">\
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-         <title>{title} · GasApp</title><style>{STYLE}</style></head><body>\
-         <header><b>GasApp · админ-центр</b>\
-         <a href=\"/\">Сводка</a><a href=\"/reports\">Жалобы</a>\
-         <a href=\"/account\">Аккаунт</a><a href=\"/transparency\">Прозрачность</a>\
+         <meta name=\"theme-color\" content=\"#0c1027\">\
+         <title>{title} · GasApp Control</title><style>{STYLE}</style></head><body>\
+         <a class=\"skip-link\" href=\"#content\">Skip to content</a>\
+         <div class=\"app-shell\"><header class=\"sidebar\">\
+         <a class=\"brand\" href=\"/\"><span class=\"brand-mark\">✦</span><span>GasApp<small>CONTROL CENTER</small></span></a>\
+         <p class=\"sidebar-label\">WORKSPACE</p><nav aria-label=\"Main navigation\">{nav}</nav>\
+         <div class=\"sidebar-foot\"><span class=\"private-pill\">● Private operator access</span>\
          <form method=\"post\" action=\"/logout\"><input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-         <button>Выйти</button></form></header><main><h1>{title}</h1>{body}</main></body></html>",
+         <button class=\"sign-out\">Sign out →</button></form></div></header>\
+         <main id=\"content\" class=\"workspace\"><div class=\"page-head\"><div>\
+         <span class=\"eyebrow\">OPERATIONS / {title}</span><h1>{title}</h1></div>\
+         <span class=\"access-badge\">● OPERATOR SESSION</span></div>{body}</main></div></body></html>",
         title = escape(title),
         csrf = escape(csrf),
     )
@@ -565,19 +584,28 @@ fn layout(title: &str, csrf: &str, body: &str) -> String {
 
 fn login_html(error: Option<&str>) -> String {
     let error = error
-        .map(|text| format!("<p class=\"flash\">{}</p>", escape(text)))
+        .map(|text| {
+            format!(
+                "<p class=\"flash error\" role=\"alert\">{}</p>",
+                escape(text)
+            )
+        })
         .unwrap_or_default();
 
     format!(
-        "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">\
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-         <title>Вход · GasApp</title><style>{STYLE}</style></head><body><main>\
-         <h1>GasApp · админ-центр</h1>{error}\
-         <form method=\"post\" action=\"/login\" class=\"inline\">\
-         <input type=\"password\" name=\"token\" placeholder=\"Токен оператора\" autocomplete=\"off\" required>\
-         <button>Войти</button></form>\
-         <p class=\"note\">Доступ только с этой машины — через SSH-туннель или onion.</p>\
-         </main></body></html>"
+         <meta name=\"theme-color\" content=\"#0c1027\">\
+         <title>Sign in · GasApp Control</title><style>{STYLE}</style></head><body><main class=\"login\">\
+         <section class=\"login-panel\"><div class=\"login-brand\"><span class=\"brand-mark\">✦</span>GasApp <span>CONTROL</span></div>\
+         <div class=\"eyebrow\">PRIVATE OPERATOR ACCESS</div>\
+         <h1>Welcome back.</h1><p>Sign in to review reports and manage your service.</p>{error}\
+         <form method=\"post\" action=\"/login\">\
+         <label for=\"token\">Operator token</label>\
+         <input id=\"token\" type=\"password\" name=\"token\" autocomplete=\"off\" required>\
+         <button>Sign in securely →</button></form>\
+         <p class=\"note\">Access this page through your SSH tunnel or private onion service.</p>\
+         </section></main></body></html>"
     )
 }
 
@@ -587,38 +615,51 @@ fn bytes(size: i64) -> String {
     const GIB: i64 = 1024 * MIB;
 
     let (unit, name) = if size >= GIB {
-        (GIB, "ГБ")
+        (GIB, "GB")
     } else {
-        (MIB, "МБ")
+        (MIB, "MB")
     };
     let tenths = size.saturating_mul(10).checked_div(unit).unwrap_or(0);
     let whole = tenths.checked_div(10).unwrap_or(0);
     let fraction = tenths.checked_rem(10).unwrap_or(0);
 
-    format!("{whole},{fraction} {name}")
+    format!("{whole}.{fraction} {name}")
 }
 
 fn summary_html(summary: &queries::Summary) -> String {
     let cards = [
-        ("Аккаунтов", summary.accounts.to_string()),
-        ("Устройств", summary.devices.to_string()),
-        ("Конвертов в очереди", summary.envelopes.to_string()),
-        ("Вложений", summary.attachments.to_string()),
-        ("Место вложений", bytes(summary.attachments_bytes)),
-        ("Размер базы", bytes(summary.database_bytes)),
+        ("Accounts", summary.accounts.to_string()),
+        ("Devices", summary.devices.to_string()),
+        ("Queued envelopes", summary.envelopes.to_string()),
+        ("Attachments", summary.attachments.to_string()),
+        ("Attachment storage", bytes(summary.attachments_bytes)),
+        ("Database size", bytes(summary.database_bytes)),
+        ("Reported accounts", summary.reported_accounts.to_string()),
         (
-            "Аккаунтов с жалобами",
-            summary.reported_accounts.to_string(),
-        ),
-        (
-            "Эпоха журнала ключей",
+            "Key log epoch",
             summary
                 .kt_epoch
                 .map_or_else(|| "—".to_owned(), |epoch| epoch.to_string()),
         ),
     ];
 
-    let mut html = String::from("<div class=\"grid\">");
+    let queue_title = if summary.reported_accounts == 0 {
+        "No account reports waiting".to_owned()
+    } else if summary.reported_accounts == 1 {
+        "1 reported account to review".to_owned()
+    } else {
+        format!("{} reported accounts to review", summary.reported_accounts)
+    };
+    let mut html = format!(
+        "<section class=\"overview-showcase\"><div class=\"overview-copy\">\
+         <span class=\"eyebrow\">YOUR NEXT ACTION</span><h2>{queue_title}</h2>\
+         <p>Open the report queue to review account and channel cases. Channel reports are tracked separately.</p>\
+         <a class=\"action-link\" href=\"/reports\">Review reports <span aria-hidden=\"true\">↗</span></a>\
+         </div><div class=\"overview-actions\"><span>QUICK ACCESS</span>\
+         <a href=\"/account\">Find an account <span aria-hidden=\"true\">↗</span></a>\
+         <a href=\"/transparency\">View transparency <span aria-hidden=\"true\">↗</span></a>\
+         </div></section><div class=\"section-title\"><h2>Service snapshot</h2><span>LIVE DATABASE TOTALS</span></div><div class=\"grid\">"
+    );
     for (label, value) in cards {
         let _ = write!(
             html,
@@ -628,8 +669,7 @@ fn summary_html(summary: &queries::Summary) -> String {
         );
     }
     html.push_str(
-        "</div><p class=\"note\">Здесь только числа. Переписки, адресов, истории \
-         входов и связей «кто кому пишет» у сервера нет — и админ-центр их не видит.</p>",
+        "</div><p class=\"note\">Operational totals only. The server does not retain readable conversations, email addresses, login history or a social graph, so this view cannot show them.</p>",
     );
 
     html
@@ -658,9 +698,9 @@ fn delete_form(account_id: Uuid, csrf: &str) -> String {
     format!(
         "<form class=\"inline\" method=\"post\" action=\"/accounts/{account_id}/delete\">\
          <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-         <select name=\"reason\">{options}</select>\
-         <label><input type=\"checkbox\" name=\"confirm\" value=\"yes\" required> необратимо</label>\
-         <button class=\"danger\">Удалить аккаунт</button></form>",
+         <select name=\"reason\" aria-label=\"Reason for deletion\">{options}</select>\
+         <label><input type=\"checkbox\" name=\"confirm\" value=\"yes\" required> I understand this cannot be undone</label>\
+         <button class=\"danger\">Confirm deletion</button></form>",
         csrf = escape(csrf),
         options = reason_options(Some(Reason::Spam)),
     )
@@ -670,42 +710,40 @@ fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str
     let mut html = String::new();
 
     match done {
-        Some("deleted") => html.push_str("<p class=\"flash\">Аккаунт удалён.</p>"),
-        Some("dismissed") => html.push_str("<p class=\"flash\">Жалобы отклонены.</p>"),
-        Some("channel_deleted") => html.push_str("<p class=\"flash\">Канал удалён.</p>"),
+        Some("deleted") => html.push_str("<p class=\"flash\" role=\"status\">Account deleted.</p>"),
+        Some("dismissed") => {
+            html.push_str("<p class=\"flash\" role=\"status\">Reports dismissed.</p>");
+        }
+        Some("channel_deleted") => {
+            html.push_str("<p class=\"flash\" role=\"status\">Channel deleted.</p>");
+        }
         _ => {}
     }
 
     html.push_str(
-        "<p class=\"note\">Каждая жалоба доказана сертификатом отправителя, подписанным \
-         сервером: пожаловаться можно только на того, кто действительно писал. \
-         Переписки в жалобе нет. Срок реакции — 24 часа; CSAE — сразу и с сообщением в \
-         компетентные органы (docs/ops/admin-center.md).</p>\
-         <p class=\"note\">⚠️ Сертификат предъявительский: получивший одно сообщение \
-         может пожаловаться с десятка своих аккаунтов. Смотрите на число <b>разных \
-         сертификатов</b>: настоящий спам приходит многим и в разные сутки, накрутка \
-         одним сообщением — одним сертификатом. Удалять только по числу жалобщиков \
-         нельзя.</p>",
+        "<div class=\"guidance\"><p>Each account report includes a server-signed sender certificate. It proves that the reported account sent a message, without exposing the conversation. Review within 24 hours; escalate child safety reports immediately under the operator policy.</p>\
+         <p><strong>Review carefully.</strong> A bearer certificate can be reused by multiple accounts. Compare distinct certificates and reporting dates before taking action; reporter count alone is not evidence of widespread abuse.</p></div>\
+         <h2>Reported accounts</h2>",
     );
 
     if rows.is_empty() {
-        html.push_str("<p>Жалоб нет.</p>");
+        html.push_str("<p class=\"empty-state\">No account reports are waiting for review.</p>");
         return html;
     }
 
     html.push_str(
-        "<table><tr><th>Аккаунт</th><th class=\"num\">Жалобщиков</th>\
-         <th class=\"num\">Сертификатов</th>\
-         <th>Первая / последняя</th><th>Активен</th><th>Решение</th></tr>",
+        "<div class=\"table-scroll reports-table\"><table><thead><tr><th>Account</th><th class=\"num\">Reporters</th>\
+         <th class=\"num\">Certificates</th>\
+         <th>First / latest report</th><th>Last active</th><th>Actions</th></tr></thead><tbody>",
     );
     for row in rows {
         let _ = write!(
             html,
-            "<tr><td>@{name}</td><td class=\"num\">{reporters}</td>\
-             <td class=\"num\">{certificates}</td><td>{first}<br>{last}</td><td>{active}</td><td>{delete}\
+            "<tr><td data-label=\"Account\">@{name}</td><td data-label=\"Reporters\" class=\"num\">{reporters}</td>\
+             <td data-label=\"Certificates\" class=\"num\">{certificates}</td><td data-label=\"First / latest\">{first}<br>{last}</td><td data-label=\"Last active\">{active}</td><td data-label=\"Actions\"><div class=\"row-actions\">\
              <form class=\"inline\" method=\"post\" action=\"/accounts/{id}/dismiss\">\
              <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-             <button>Отклонить жалобы</button></form></td></tr>",
+             <button>Dismiss reports</button></form><details class=\"destructive-action\"><summary>Delete account</summary>{delete}</details></div></td></tr>",
             name = escape(&row.username),
             reporters = row.reporters,
             certificates = row.certificates,
@@ -717,7 +755,7 @@ fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str
             csrf = escape(csrf),
         );
     }
-    html.push_str("</table>");
+    html.push_str("</tbody></table></div>");
 
     html
 }
@@ -729,24 +767,19 @@ fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str
 /// приложении, и видно, на что жалуются.
 fn channel_reports_html(rows: &[queries::ReportedChannel], csrf: &str) -> String {
     let mut html = String::from(
-        "<h2>Каналы</h2>\
-         <p class=\"note\">На канал жалуется любой аккаунт; доказательства отправителя, \
-         как у переписки, здесь нет. Канал с публичным именем сервер читает сам; у \
-         остальных записи видны только по ссылке, если её приложил жалобщик, — \
-         откройте её в приложении. Жалобы на безопасность детей — сразу и с сообщением \
-         в компетентные органы (docs/ops/admin-center.md). Удаление канала необратимо; \
-         аккаунт владельца удаляется отдельно.</p>",
+        "<h2>Reported channels</h2>\
+         <p class=\"note\">Any account can report a channel; these reports do not include sender proof. Review linked posts in the app where a reporter supplied a link. Escalate child safety reports immediately. Deleting a channel cannot be undone and does not delete its owner.</p>",
     );
 
     if rows.is_empty() {
-        html.push_str("<p>Жалоб на каналы нет.</p>");
+        html.push_str("<p class=\"empty-state\">No channel reports are waiting for review.</p>");
         return html;
     }
 
     html.push_str(
-        "<table><tr><th>Канал</th><th>Владелец</th><th class=\"num\">Жалобщиков</th>\
-         <th class=\"num\">Безопасность детей</th><th>Последняя</th><th>Ссылка</th>\
-         <th>Решение</th></tr>",
+        "<div class=\"table-scroll reports-table\"><table><thead><tr><th>Channel</th><th>Owner</th><th class=\"num\">Reporters</th>\
+         <th class=\"num\">Child safety</th><th>Latest report</th><th>Link</th>\
+         <th>Actions</th></tr></thead><tbody>",
     );
     for row in rows {
         let name = row
@@ -756,15 +789,15 @@ fn channel_reports_html(rows: &[queries::ReportedChannel], csrf: &str) -> String
 
         let _ = write!(
             html,
-            "<tr><td>{name}</td><td>@{owner}</td><td class=\"num\">{reporters}</td>\
-             <td class=\"num\">{child}</td><td>{last}</td><td><code>{link}</code></td><td>\
-             <form class=\"inline\" method=\"post\" action=\"/channels/{id}/delete\">\
-             <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-             <label><input type=\"checkbox\" name=\"confirm\" value=\"yes\" required> необратимо</label>\
-             <button class=\"danger\">Удалить канал</button></form>\
+            "<tr><td data-label=\"Channel\">{name}</td><td data-label=\"Owner\">@{owner}</td><td data-label=\"Reporters\" class=\"num\">{reporters}</td>\
+             <td data-label=\"Child safety\" class=\"num\">{child}</td><td data-label=\"Latest report\">{last}</td><td data-label=\"Link\"><code>{link}</code></td><td data-label=\"Actions\"><div class=\"row-actions\">\
              <form class=\"inline\" method=\"post\" action=\"/channels/{id}/dismiss\">\
              <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-             <button>Отклонить жалобы</button></form></td></tr>",
+             <button>Dismiss reports</button></form><details class=\"destructive-action\"><summary>Delete channel</summary>\
+             <form class=\"inline\" method=\"post\" action=\"/channels/{id}/delete\">\
+             <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
+             <label><input type=\"checkbox\" name=\"confirm\" value=\"yes\" required> I understand this cannot be undone</label>\
+             <button class=\"danger\">Confirm deletion</button></form></details></div></td></tr>",
             name = escape(&name),
             owner = escape(&row.owner),
             reporters = row.reporters,
@@ -775,16 +808,16 @@ fn channel_reports_html(rows: &[queries::ReportedChannel], csrf: &str) -> String
             csrf = escape(csrf),
         );
     }
-    html.push_str("</table>");
+    html.push_str("</tbody></table></div>");
 
     html
 }
 
 fn premium_form(card: &queries::AccountCard, csrf: &str) -> String {
     let (state, value, action) = if card.premium {
-        ("есть", "off", "Снять премиум и удалить ботов")
+        ("Enabled", "off", "Revoke premium and remove bots")
     } else {
-        ("нет", "on", "Выдать премиум")
+        ("Not enabled", "on", "Grant premium")
     };
 
     format!(
@@ -801,31 +834,34 @@ fn premium_form(card: &queries::AccountCard, csrf: &str) -> String {
 
 fn account_html(wanted: Option<&str>, card: Option<&queries::AccountCard>, csrf: &str) -> String {
     let mut html = format!(
-        "<form class=\"inline\" method=\"get\" action=\"/account\">\
-         <input name=\"username\" placeholder=\"точное имя\" value=\"{}\" required>\
-         <button>Найти</button></form>\
-         <p class=\"note\">Только по точному имени: перечня пользователей здесь нет — \
-         это был бы каталог людей, которого сервер выдавать не должен.</p>",
+        "<form class=\"lookup\" method=\"get\" action=\"/account\">\
+         <input name=\"username\" aria-label=\"Exact username\" placeholder=\"Exact username\" value=\"{}\" required>\
+         <button>Find account</button></form>\
+         <p class=\"note\">Search by exact username only. There is no browsable directory of accounts.</p>",
         escape(wanted.unwrap_or_default())
     );
 
     match (wanted, card) {
         (Some(name), None) => {
-            let _ = write!(html, "<p>Аккаунта @{} нет.</p>", escape(name));
+            let _ = write!(
+                html,
+                "<p class=\"empty-state\">No account found for @{}.</p>",
+                escape(name)
+            );
         }
         (Some(_), Some(card)) => {
             let _ = write!(
                 html,
-                "<table><tr><th>Аккаунт</th><td>@{name}</td></tr>\
-                 <tr><th>Активен</th><td>{active}</td></tr>\
-                 <tr><th>Устройств</th><td class=\"num\">{devices}</td></tr>\
-                 <tr><th>Жалобщиков</th><td class=\"num\">{reporters}</td></tr>\
-                 <tr><th>Сертификатов</th><td class=\"num\">{certificates}</td></tr>\
-                 <tr><th>Премиум</th><td>{premium}</td></tr>\
-                 <tr><th>Каналов</th><td class=\"num\">{channels}</td></tr>\
-                 <tr><th>Ботов</th><td class=\"num\">{bots}</td></tr>\
-                 <tr><th>Бот аккаунта</th><td>{owner}</td></tr>\
-                 <tr><th>Решение</th><td>{delete}</td></tr></table>",
+                "<div class=\"table-scroll detail-table\"><table><tbody><tr><th>Account</th><td>@{name}</td></tr>\
+                 <tr><th>Last active</th><td>{active}</td></tr>\
+                 <tr><th>Devices</th><td class=\"num\">{devices}</td></tr>\
+                 <tr><th>Reporters</th><td class=\"num\">{reporters}</td></tr>\
+                 <tr><th>Certificates</th><td class=\"num\">{certificates}</td></tr>\
+                 <tr><th>Premium</th><td>{premium}</td></tr>\
+                 <tr><th>Channels</th><td class=\"num\">{channels}</td></tr>\
+                 <tr><th>Bots</th><td class=\"num\">{bots}</td></tr>\
+                 <tr><th>Bot owner</th><td>{owner}</td></tr>\
+                 <tr><th>Actions</th><td>{delete}</td></tr></tbody></table></div>",
                 name = escape(&card.username),
                 active = escape(&card.active_month),
                 devices = card.devices,
@@ -854,23 +890,22 @@ fn account_html(wanted: Option<&str>, card: Option<&queries::AccountCard>, csrf:
 
 fn transparency_html(rows: &[queries::TransparencyRow]) -> String {
     let mut html = String::from(
-        "<p class=\"note\">Все действия оператора — без имён. Эти числа можно \
-         публиковать как отчёт о прозрачности.</p>",
+        "<p class=\"note\">Operator actions are grouped without names. These totals can be published in a transparency report.</p>",
     );
 
     if rows.is_empty() {
-        html.push_str("<p>Действий ещё не было.</p>");
+        html.push_str("<p class=\"empty-state\">No moderation actions have been recorded yet.</p>");
         return html;
     }
 
     html.push_str(
-        "<table><tr><th>Месяц</th><th>Действие</th><th>Причина</th>\
-         <th class=\"num\">Сколько</th><th class=\"num\">Жалобщиков</th></tr>",
+        "<div class=\"table-scroll\"><table><thead><tr><th>Month</th><th>Action</th><th>Reason</th>\
+         <th class=\"num\">Count</th><th class=\"num\">Reporters</th></tr></thead><tbody>",
     );
     for row in rows {
         let action = match row.action.as_str() {
-            "account_deleted" => "Аккаунт удалён",
-            "reports_dismissed" => "Жалобы отклонены",
+            "account_deleted" => "Account deleted",
+            "reports_dismissed" => "Reports dismissed",
             other => other,
         };
         let reason: &str = match Reason::parse(&row.reason) {
@@ -887,7 +922,7 @@ fn transparency_html(rows: &[queries::TransparencyRow]) -> String {
             row.reporters,
         );
     }
-    html.push_str("</table>");
+    html.push_str("</tbody></table></div>");
 
     html
 }
@@ -895,6 +930,50 @@ fn transparency_html(rows: &[queries::TransparencyRow]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::{header, Request};
+    use sqlx::postgres::PgPoolOptions;
+    use tower::ServiceExt;
+
+    /// В браузере `no-referrer` превращает Origin формы POST в `null`.
+    /// Вход должен сохранить свой Origin, не передавая Referer чужим сайтам.
+    #[tokio::test]
+    async fn login_form_uses_same_origin_referrer_policy() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/gasapp")
+            .expect("URL базы");
+        let auth = Auth::from_hash_hex(&auth::token_hash_hex("a long test token for admin login"))
+            .expect("хеш токена");
+        let app = router(Arc::new(AdminState { pool, auth }));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/login")
+                    .header(header::HOST, "127.0.0.1:8480")
+                    .body(Body::empty())
+                    .expect("запрос"),
+            )
+            .await
+            .expect("ответ");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[REFERRER_POLICY], "same-origin");
+
+        // Чужой (или непрозрачный) Origin всё ещё отвергается до разбора формы.
+        let response = app
+            .oneshot(
+                Request::post("/login")
+                    .header(header::HOST, "127.0.0.1:8480")
+                    .header(header::ORIGIN, "null")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from("diagnostic=1"))
+                    .expect("запрос"),
+            )
+            .await
+            .expect("ответ");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 
     /// 🔐 Только петля и onion: имя чужого сайта, переназначенное
     /// на 127.0.0.1, не проходит (аудит 2026-10-02, S-5).
@@ -941,5 +1020,94 @@ mod tests {
             assert_eq!(Reason::parse(reason.code()), Some(reason));
         }
         assert_eq!(Reason::parse("drop table"), None);
+    }
+
+    #[test]
+    fn operator_pages_use_english_labels_and_page_navigation() {
+        let login = login_html(None);
+        assert!(login.contains("<html lang=\"en\">"));
+        assert!(login.contains("Operator token"));
+
+        let overview = layout("Overview", "test-csrf", "<p>Body</p>");
+        assert!(overview.contains("<html lang=\"en\">"));
+        assert!(overview.contains("aria-current=\"page\""));
+        assert!(overview.contains("Skip to content"));
+        assert!(overview.contains("name=\"csrf\" value=\"test-csrf\""));
+
+        let reports = reports_html(&[], "test-csrf", None);
+        assert!(reports.contains("No account reports"));
+        let channels = channel_reports_html(&[], "test-csrf");
+        assert!(channels.contains("No channel reports"));
+        let overview = summary_html(&queries::Summary {
+            reported_accounts: 3,
+            ..queries::Summary::default()
+        });
+        assert!(overview.contains("3 reported accounts to review"));
+        assert!(overview.contains("href=\"/reports\""));
+        for reason in Reason::FOR_DELETION {
+            assert!(reason.label().is_ascii());
+        }
+    }
+
+    #[test]
+    fn operator_content_has_no_untranslated_cyrillic() {
+        let account = queries::AccountCard {
+            account_id: Uuid::nil(),
+            username: "alice".to_owned(),
+            active_month: "2026-10".to_owned(),
+            devices: 2,
+            reporters: 1,
+            certificates: 1,
+            premium: false,
+            channels: 0,
+            bots: 0,
+            bot_owner: None,
+        };
+        let report = queries::ReportedAccount {
+            account_id: Uuid::nil(),
+            username: "alice".to_owned(),
+            active_month: "2026-10".to_owned(),
+            reporters: 1,
+            certificates: 1,
+            first_report: "2026-10-01".to_owned(),
+            last_report: "2026-10-02".to_owned(),
+        };
+        let channel = queries::ReportedChannel {
+            channel_id: Uuid::nil(),
+            handle: Some("updates".to_owned()),
+            owner: "alice".to_owned(),
+            reporters: 1,
+            child_safety: 0,
+            link: None,
+            last_report: "2026-10-02".to_owned(),
+        };
+        let action = queries::TransparencyRow {
+            month: "2026-10".to_owned(),
+            action: "account_deleted".to_owned(),
+            reason: "spam".to_owned(),
+            count: 1,
+            reporters: 1,
+        };
+        let pages = [
+            login_html(Some("Invalid operator token.")),
+            summary_html(&queries::Summary::default()),
+            reports_html(&[report], "csrf", Some("deleted")),
+            channel_reports_html(&[channel], "csrf"),
+            account_html(Some("alice"), Some(&account), "csrf"),
+            transparency_html(&[action]),
+        ];
+        assert!(pages[2].contains("<details class=\"destructive-action\">"));
+        assert!(pages[2].contains("name=\"confirm\" value=\"yes\" required"));
+        assert!(pages[2].contains("class=\"table-scroll reports-table\""));
+        assert!(pages[2].contains("data-label=\"Account\""));
+        assert!(pages[3].contains("<details class=\"destructive-action\">"));
+        assert!(pages[3].contains("data-label=\"Channel\""));
+        for page in pages {
+            assert!(
+                page.chars()
+                    .all(|ch| !('\u{0400}'..='\u{04ff}').contains(&ch)),
+                "operator page contains untranslated Cyrillic"
+            );
+        }
     }
 }

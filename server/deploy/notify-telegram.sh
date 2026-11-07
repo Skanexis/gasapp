@@ -3,7 +3,7 @@
 #
 # Оповещение в Telegram: текст — на stdin.
 #
-#     echo "GasApp: проверка" | /opt/gasapp/notify-telegram.sh
+#     echo "GasApp alert test" | /opt/gasapp/notify-telegram.sh
 #
 # Подходит в GASAPP_NOTIFY_CMD для check-nodes.sh, gasapp-monitor.sh
 # и `gasapp-server-admin watch-reports`.
@@ -63,8 +63,12 @@ value_of() {
 text="$(head -c 1000)"
 [[ -n "$text" ]] || exit 0
 
-# Чтобы по сообщению было понятно, с какой машины оно пришло.
-text="[$(hostname -s)] ${text}"
+# A configured machine label is unambiguous even when every IONOS VPS is
+# called "ubuntu". The file is public configuration, never a secret.
+label_file="${GASAPP_NODE_LABEL_FILE:-/etc/gasapp/node-label}"
+label="$(head -n1 "$label_file" 2>/dev/null || hostname -s)"
+[[ "$label" =~ ^[A-Za-z0-9_-]{1,40}$ ]] || label="$(hostname -s)"
+text="[GasApp / ${label}] ${text}"
 
 file="$(credential_file)"
 if [[ ! -r "$file" ]]; then
@@ -108,5 +112,5 @@ for attempt in 1 2 3; do
 done
 
 # Не ушло — в журнал, чтобы оповещение не пропало совсем.
-logger -t gasapp-notify -- "не доставлено в Telegram: ${text}"
+logger -t gasapp-notify -- "Telegram delivery failed: ${text}"
 exit 1

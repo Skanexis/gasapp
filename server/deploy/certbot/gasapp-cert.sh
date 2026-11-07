@@ -59,7 +59,7 @@ notify() {
     fi
 }
 
-die() { notify "GasApp: сертификат — $1"; exit 1; }
+die() { notify "⚠️ API certificate: $1"; exit 1; }
 
 pin_of_key() {
     openssl pkey -in "$1" -pubout -outform der \
@@ -78,12 +78,12 @@ pin_allowed() {
 }
 
 need_domain() {
-    [[ "${GASAPP_DOMAIN:-}" =~ ^[A-Za-z0-9.-]+$ ]] || die "не задан GASAPP_DOMAIN в /etc/gasapp/cert.env"
-    [[ -n "${GASAPP_ACME_EMAIL:-}" ]] || die "не задан GASAPP_ACME_EMAIL в /etc/gasapp/cert.env"
+    [[ "${GASAPP_DOMAIN:-}" =~ ^[A-Za-z0-9.-]+$ ]] || die "GASAPP_DOMAIN is missing from /etc/gasapp/cert.env"
+    [[ -n "${GASAPP_ACME_EMAIL:-}" ]] || die "GASAPP_ACME_EMAIL is missing from /etc/gasapp/cert.env"
 }
 
 reload_nginx() {
-    nginx -t -q || die "nginx -t не прошёл — nginx НЕ перезагружен"
+    nginx -t -q || die "nginx -t failed; nginx was not reloaded"
     systemctl reload nginx
 }
 
@@ -120,13 +120,13 @@ cmd_bootstrap() {
 # Выпуск сертификата на ключ $KEY.
 issue() {
     need_domain
-    [[ -f "$KEY" ]] || die "нет ключа ${KEY} — сначала bootstrap"
+    [[ -f "$KEY" ]] || die "Key ${KEY} is missing; run bootstrap first"
 
     local pin
     pin="$(pin_of_key "$KEY")"
     # Проверка ДО выпуска: незачем просить сертификат, который всё равно
     # не будет установлен.
-    pin_allowed "$pin" || die "🔴 ключ ${KEY} (${pin}) не в наборе пинов ${PINS} — выпуск отменён"
+    pin_allowed "$pin" || die "🔴 Key ${KEY} (${pin}) is outside pin set ${PINS}; issuance cancelled"
 
     local work
     work="$(mktemp -d)"
@@ -144,17 +144,17 @@ issue() {
         --chain-path "${work}/chain.pem" \
         --fullchain-path "${work}/fullchain.pem" \
         --quiet \
-        || die "certbot не выпустил сертификат для ${GASAPP_DOMAIN}"
+        || die "certbot could not issue a certificate for ${GASAPP_DOMAIN}"
 
     [[ "$(pin_of_cert "${work}/fullchain.pem")" == "$pin" ]] \
-        || die "выпущенный сертификат не от ключа ${KEY} — не установлен"
+        || die "Issued certificate does not match key ${KEY}; not installed"
 
     cp "${work}/fullchain.pem" "${DEST}/.fullchain.pem.new"
     chmod 644 "${DEST}/.fullchain.pem.new"
     mv -f "${DEST}/.fullchain.pem.new" "$CHAIN"
     reload_nginx
 
-    notify "GasApp: сертификат выпущен, пин совпадает, действует до $(openssl x509 -in "$CHAIN" -noout -enddate | cut -d= -f2)"
+    notify "✅ API certificate issued; pin verified; valid until $(openssl x509 -in "$CHAIN" -noout -enddate | cut -d= -f2)"
 }
 
 cmd_renew() {
@@ -168,11 +168,11 @@ cmd_renew() {
 
 cmd_switch_key() {
     local new="${1:?файл запасного ключа}"
-    [[ -r "$new" ]] || die "нет файла ${new}"
+    [[ -r "$new" ]] || die "Key file ${new} is missing"
 
     local pin
     pin="$(pin_of_key "$new")"
-    pin_allowed "$pin" || die "🔴 ключ ${new} (${pin}) не в наборе пинов — переход отменён"
+    pin_allowed "$pin" || die "🔴 Key ${new} (${pin}) is outside the pin set; switch cancelled"
 
     umask 077
     if [[ -f "$KEY" ]]; then
@@ -184,7 +184,7 @@ cmd_switch_key() {
     chmod 600 "$KEY"
 
     issue
-    notify "GasApp: 🔴 балансировщик переведён на запасной ключ (${pin}). Дальше — новый запасной ключ и внеочередной релиз: docs/ops/cert-pin-rotation.md"
+    notify "🔴 Load balancer switched to the backup key (${pin}). Generate a new backup key and release an app update: docs/ops/cert-pin-rotation.md"
 }
 
 cmd_status() {

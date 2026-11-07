@@ -6,7 +6,7 @@
 # Использование:
 #   server/deploy/compute-pin.sh server/deploy/tls/cert.pem
 #   server/deploy/compute-pin.sh --key server/deploy/tls/backup-key.pem
-#   server/deploy/compute-pin.sh --host gasapp.chat:443
+#   server/deploy/compute-pin.sh --host api.gasapp.eu:443
 #
 # # 🔐 Что именно пинится
 #

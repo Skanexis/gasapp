@@ -213,7 +213,7 @@ async fn watch_reports() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let text = format!("GasApp: новых жалоб — {fresh}. Админ-центр → Жалобы.\n");
+    let text = format!("⚠️ {fresh} new report(s). Open GasApp Control → Reports.\n");
 
     match std::env::var("GASAPP_NOTIFY_CMD") {
         Ok(command) if !command.trim().is_empty() => {
