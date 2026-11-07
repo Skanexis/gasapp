@@ -29,7 +29,6 @@ object BottomNav {
     enum class Tab(val viewId: Int, val screen: Class<out Activity>) {
         Chats(R.id.nav_chats, org.gasapp.app.ChatListActivity::class.java),
         Channels(R.id.nav_channels, org.gasapp.app.ChannelsActivity::class.java),
-        Calls(R.id.nav_calls, org.gasapp.app.CallsActivity::class.java),
         Contacts(R.id.nav_contacts, org.gasapp.app.ContactsActivity::class.java),
         Settings(R.id.nav_settings, org.gasapp.app.SettingsActivity::class.java),
     }

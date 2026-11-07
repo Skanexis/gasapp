@@ -171,10 +171,6 @@
             android:exported="false" />
 
         <activity
-            android:name=".CallsActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".PrivacyActivity"
             android:exported="false" />
 

@@ -88,7 +88,6 @@
     <string name="chat_unverified_state">Ключ не сверен — сверить</string>
     <!-- Нижняя навигация -->
     <string name="nav_chats">Чаты</string>
-    <string name="nav_calls">Звонки</string>
     <string name="nav_contacts">Контакты</string>
     <string name="nav_settings">Настройки</string>
     <string name="new_chat">Новый чат</string>
@@ -195,12 +194,6 @@
     <string name="contact_profile_key">Identity-ключ</string>
 
     <!-- Журнал звонков. -->
-    <string name="calls_filter_all">Все</string>
-    <string name="calls_filter_missed">Пропущенные</string>
-    <string name="calls_empty">Звонков в этой версии нет</string>
-    <string name="calls_empty_title">Звонков пока нет</string>
-    <string name="calls_encrypted_note">Когда звонки появятся, они будут защищены сквозным шифрованием, как переписка</string>
-    <string name="call_back">Позвонить</string>
     <string name="call_incoming">Входящий · %1$s</string>
     <string name="call_outgoing">Исходящий · %1$s</string>
     <string name="call_missed">Пропущенный · %1$s</string>

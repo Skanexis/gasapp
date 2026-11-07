@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Нижняя навигация: Chats / Channels / Contacts / Settings (Calls скрыта).
+  Нижняя навигация: Chats / Channels / Contacts / Settings.
 
   Размеры перенесены из UI kit дословно: иконка 21dp, подпись 10sp,
   отступ снизу 16dp под системную полосу жестов.
@@ -41,33 +41,6 @@
             style="@style/GasAppNavLabel"
             android:text="@string/nav_chats"
             android:textColor="@color/accent_base" />
-    </LinearLayout>
-
-    <!--
-      Звонков в продукте нет — и вкладка их не обещает. Четверть
-      навигации ради «Звонков в этой версии нет» учила искать то, чего
-      нет. Экран (`CallsActivity`) остаётся: вкладка вернётся вместе
-      со звонками.
-    -->
-    <LinearLayout
-        android:id="@+id/nav_calls"
-        style="@style/GasAppNavItem"
-        android:visibility="gone">
-
-        <ImageView
-            android:layout_width="56dp"
-            android:layout_height="30dp"
-            android:paddingStart="17dp"
-            android:paddingTop="4dp"
-            android:paddingEnd="17dp"
-            android:paddingBottom="4dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_phone"
-            app:tint="@color/text_tertiary" />
-
-        <TextView
-            style="@style/GasAppNavLabel"
-            android:text="@string/nav_calls" />
     </LinearLayout>
 
     <!-- Каналы: ленты, которые человек читает или ведёт. -->
