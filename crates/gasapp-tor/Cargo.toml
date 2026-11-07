@@ -39,7 +39,7 @@ webpki-roots = "1"
 # Ответ moat (свежие мосты от Tor Project, см. `moat.rs`).
 serde_json = "1.0"
 sha2.workspace = true
-base64 = "0.22"
+base64 = "0.23"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 thiserror.workspace = true
 # Пароль моста (см. `socks::Credentials`).
