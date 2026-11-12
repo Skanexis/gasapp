@@ -3,7 +3,7 @@
 # GasApp Community Guidelines
 
 **Effective date:** 12 November 2026. **Version:** 2026-11-12.
-[Русская версия](community-guidelines.md).
+[Russian version](community-guidelines.md).
 If the translation and this English text differ, the English text
 prevails.
 

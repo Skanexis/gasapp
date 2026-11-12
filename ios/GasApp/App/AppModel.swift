@@ -17,6 +17,19 @@ final class AppModel {
     }
 
     private(set) var phase: Phase
+
+    /// Ссылка на контакт, с которой открыли приложение (Universal Link
+    /// или `gasapp://contact/…`). Ждёт, пока откроется список чатов: там
+    /// человек подтверждает, добавлять ли контакт. До PIN и регистрации
+    /// она просто лежит здесь.
+    var pendingContactLink: String?
+
+    /// Приложение открыли по ссылке.
+    func openURL(_ url: URL) {
+        if let link = ContactLinks.appLink(from: url.absoluteString) {
+            pendingContactLink = link
+        }
+    }
     /// Шторка поверх содержимого, пока приложение не активно: снимок для
     /// переключателя приложений не покажет переписку.
     var coverVisible = false

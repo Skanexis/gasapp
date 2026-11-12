@@ -3,7 +3,7 @@
 # GasApp Terms of Service
 
 **Effective date:** 12 November 2026. **Version:** 2026-11-12.
-[Русская версия](terms-of-use.md). If the
+[Russian version](terms-of-use.md). If the
 translation and this English text differ, the English text prevails.
 
 Welcome to GasApp. These Terms of Service ("**Terms**") govern your use

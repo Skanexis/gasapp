@@ -19,6 +19,7 @@
 
 import argparse
 import html
+import json
 import pathlib
 import re
 import sys
@@ -75,6 +76,9 @@ TWIN.update({ru: en for en, ru in list(TWIN.items())})
 
 STYLE = (ROOT / "tools/site.css").read_text(encoding="utf-8")
 ASSETS_SOURCE = ROOT / "tools/site-assets"
+
+# Приложение iPhone для Universal Links: Team ID и Bundle ID (ios/project.yml).
+IOS_APP_ID = "5W8C3K79N4.org.gasapp.messenger"
 
 # Значки — нарисованные SVG одной толщины (24 × 24, обводка 1.75), а не
 # символы шрифта: на разных системах те выглядят по-разному.
@@ -818,6 +822,28 @@ def build(out, base_url):
     well_known.mkdir(parents=True, exist_ok=True)
     security = (ROOT / "docs/security/security.txt").read_text(encoding="utf-8")
     (well_known / "security.txt").write_text(security, encoding="utf-8", newline="\n")
+
+    # Ссылки на контакт https://gasapp.eu/add/#… — страница для тех, у кого
+    # GasApp нет, и файл, по которому iPhone открывает их сразу в
+    # приложении (Universal Links). Ключ в ссылке — после «#», на сервер
+    # он не попадает (tools/site-add/add.js).
+    add = out / "add"
+    add.mkdir(parents=True, exist_ok=True)
+    for name in ("index.html", "add.js"):
+        (add / name).write_bytes((ROOT / "tools/site-add" / name).read_bytes())
+    association = {
+        "applinks": {
+            "details": [
+                {
+                    "appIDs": [IOS_APP_ID],
+                    "components": [{"/": "/add/*", "comment": "contact link"}, {"/": "/add"}],
+                }
+            ]
+        }
+    }
+    (well_known / "apple-app-site-association").write_text(
+        json.dumps(association, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
 
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\n" + (f"Sitemap: {base_url.rstrip('/')}/sitemap.xml\n" if base_url else ""),

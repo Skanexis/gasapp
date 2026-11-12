@@ -38,6 +38,20 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Ссылки на контакт: схема gasapp://contact/… — для кнопки «Открыть
+	     в GasApp» на странице https://gasapp.eu/add/. Ссылка только
+	     открывает вопрос «Добавить контакт?» (ChatListScreen). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>org.gasapp.messenger.contact</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>gasapp</string>
+			</array>
+		</dict>
+	</array>
 	<!-- Камера — только для сканирования QR контакта и safety number. -->
 	<key>NSCameraUsageDescription</key>
 	<string>The camera is used to scan a contact’s QR code or a safety number. Camera images are not sent anywhere.</string>

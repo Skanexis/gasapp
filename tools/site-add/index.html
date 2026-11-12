@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0F2E">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Add contact — GasApp</title>
+<meta property="og:title" content="Message me on GasApp">
+<meta property="og:description" content="An end-to-end encrypted messenger. Open the link to add me.">
+<meta property="og:image" content="https://gasapp.eu/assets/og-image.jpg">
+<link rel="icon" type="image/png" sizes="64x64" href="../assets/favicon-64.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<style>
+@font-face{font-family:Rubik;font-weight:900;font-display:swap;src:url(../assets/fonts/rubik_black.woff2) format("woff2")}
+@font-face{font-family:Rubik;font-weight:700;font-display:swap;src:url(../assets/fonts/rubik_bold.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:400;font-display:swap;src:url(../assets/fonts/inter_regular.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:600;font-display:swap;src:url(../assets/fonts/inter_semibold.woff2) format("woff2")}
+:root{--bg:#0b0f2e;--card:rgba(20,26,74,.86);--line:#343e85;--text:#f5f6ff;--muted:#c2c8f0;--dim:#8f98d6;--gold:#ffcb2e;--gold2:#ff9f1c;--brown:#8a3414}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;min-height:100vh;color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  background:linear-gradient(180deg,rgba(11,15,46,0) 0,rgba(11,15,46,.35) 220px,var(--bg) 520px),url(../assets/gas-sky-960.webp) center top/960px auto no-repeat,var(--bg)}
+main{max-width:440px;margin:0 auto;padding:max(28px,env(safe-area-inset-top)) 16px 40px;text-align:center}
+.logo{width:150px;height:auto;display:block;margin:0 auto 8px;filter:drop-shadow(0 6px 18px rgba(255,159,28,.35))}
+.card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:28px;padding:62px 20px 24px;margin-top:84px;
+  box-shadow:0 20px 50px rgba(0,0,0,.45);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.avatar{position:absolute;left:50%;top:-46px;transform:translateX(-50%);width:92px;height:92px;border-radius:26px;
+  border:3px solid var(--gold);box-shadow:0 8px 24px rgba(0,0,0,.5);background:#141a4a}
+h1{font-family:Rubik,Inter,sans-serif;font-weight:900;font-size:27px;line-height:1.2;margin:0 0 6px;letter-spacing:.2px}
+.name{display:inline-block;margin:4px 0 14px;padding:6px 14px;border-radius:999px;background:rgba(255,203,46,.12);border:1px solid rgba(255,203,46,.45);
+  color:var(--gold);font-family:Rubik,Inter,sans-serif;font-weight:700;font-size:17px;word-break:break-word}
+.lead{color:var(--muted);font-size:15.5px;line-height:1.55;margin:0 0 22px}
+.open{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:17px 18px;border-radius:18px;text-decoration:none;
+  font-family:Rubik,Inter,sans-serif;font-weight:900;font-size:18px;color:#2a1200;background:linear-gradient(180deg,#ffd84d,var(--gold) 45%,var(--gold2));
+  box-shadow:0 5px 0 var(--brown),0 12px 28px rgba(255,159,28,.35);transition:transform .08s,box-shadow .08s}
+.open:active{transform:translateY(4px);box-shadow:0 1px 0 var(--brown),0 6px 16px rgba(255,159,28,.3)}
+.open svg{width:22px;height:22px;flex:none}
+.divider{display:flex;align-items:center;gap:12px;margin:26px 0 14px;color:var(--dim);font-size:13px;font-weight:600}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.stores{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.store{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:14px;background:#000;border:1px solid #4a4f6e;color:#fff;text-decoration:none;text-align:left;min-height:54px}
+.store:active{background:#14162a}
+.store svg{width:24px;height:24px;flex:none}
+.store small{display:block;font-size:10.5px;line-height:1.1;opacity:.85;font-weight:600}
+.store b{display:block;font-family:Rubik,Inter,sans-serif;font-weight:700;font-size:15.5px;line-height:1.15;white-space:nowrap}
+.copy{display:inline-flex;align-items:center;gap:8px;margin:18px auto 0;padding:10px 16px;border-radius:999px;border:1px solid var(--line);
+  background:transparent;color:var(--muted);font:600 14px Inter,sans-serif;cursor:pointer}
+.copy svg{width:16px;height:16px}
+.copy.done{color:var(--gold);border-color:rgba(255,203,46,.6)}
+.hint{font-size:13px;color:var(--dim);line-height:1.5;margin:14px 0 0}
+.hidden{display:none!important}
+.bad h1{margin-top:4px}
+footer{margin-top:24px;font-size:12.5px;color:var(--dim);line-height:1.6}
+footer svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+footer a{color:var(--gold);text-decoration:none}
+</style>
+</head>
+<body>
+<main>
+
+<div class="card" id="ok">
+<img class="avatar" src="../assets/app-icon.webp" width="92" height="92" alt="GasApp">
+<h1 id="title">Message me on GasApp</h1>
+<div id="who" class="hidden"><span class="name" id="name"></span></div>
+<p class="lead" id="lead">Open this link in GasApp to add me. It carries my key, so nobody can stand in between.</p>
+
+<a class="open" id="open-btn" href="#">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8.5 8.5 0 0 1-12.4 7.6L3 21l1.4-5.4A8.5 8.5 0 1 1 21 12z"/></svg>
+<span id="open">Open in GasApp</span>
+</a>
+
+<div class="divider"><span id="no-app">Don’t have GasApp yet?</span></div>
+<div class="stores">
+<a class="store" href="https://apps.apple.com/app/id6833851369">
+<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.36 1.93-3.5 2.02-3.55-1.1-1.61-2.81-1.83-3.42-1.85-1.45-.15-2.84.86-3.58.86-.75 0-1.88-.84-3.09-.82-1.59.02-3.06.93-3.88 2.35-1.66 2.87-.42 7.12 1.19 9.45.79 1.14 1.73 2.42 2.96 2.37 1.19-.05 1.64-.77 3.08-.77 1.43 0 1.84.77 3.1.74 1.28-.02 2.09-1.16 2.87-2.31.9-1.32 1.27-2.6 1.3-2.67-.03-.01-2.5-.96-2.55-3.8zM14.02 5.66c.65-.8 1.1-1.9.98-3-.95.04-2.1.64-2.77 1.43-.6.7-1.14 1.83-1 2.9 1.06.09 2.14-.53 2.79-1.33z"/></svg>
+<span><small id="as-small">Download on the</small><b>App Store</b></span>
+</a>
+<a class="store" href="https://play.google.com/store/apps/details?id=org.gasapp.app.gms">
+<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#00d7fe" d="M3.6 2.3c-.3.3-.4.8-.4 1.4v16.6c0 .6.1 1.1.4 1.4l9.2-9.7z"/><path fill="#ffce00" d="M16 15.3l-3.2-3.3L16 8.7l3.7 2.1c1 .6 1 1.6 0 2.2z"/><path fill="#ff3a44" d="M16 15.3l-3.2-3.3-9.2 9.7c.4.4 1 .4 1.7 0z"/><path fill="#00f076" d="M16 8.7L5.3 2.3c-.7-.4-1.3-.4-1.7 0l9.2 9.7z"/></svg>
+<span><small id="gp-small">Get it on</small><b>Google Play</b></span>
+</a>
+</div>
+<p class="hint" id="android-hint">Then open this link again — or copy it, tap “New chat” in GasApp and paste it.</p>
+<button class="copy" id="copy" type="button">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/></svg>
+<span id="copy-label">Copy link</span>
+</button>
+</div>
+
+<div class="card bad hidden" id="bad">
+<img class="avatar" src="../assets/app-icon.webp" width="92" height="92" alt="">
+<h1 id="bad-title">This link is incomplete</h1>
+<p class="lead" id="bad-text">Part of it got lost on the way. Ask the person to send their GasApp link again.</p>
+<a class="open" href="/"><span>gasapp.eu</span></a>
+</div>
+
+<footer>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span id="privacy">The key comes after “#” in the address — it never reaches our server.</span><br>
+<a href="/privacy/" id="policy">Privacy Policy</a>
+</footer>
+</main>
+<script src="add.js"></script>
+</body>
+</html>

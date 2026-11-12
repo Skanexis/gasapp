@@ -115,7 +115,8 @@ struct AddContactScreen: View {
 
     private func addFromLink(_ uri: String) {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        let text = uri.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Вставили https://gasapp.eu/add/#… — ядру нужен вид gasapp://contact/….
+        let text = ContactLinks.appLink(from: uri) ?? uri.trimmingCharacters(in: .whitespacesAndNewlines)
         working = true
         error = nil
         Task {

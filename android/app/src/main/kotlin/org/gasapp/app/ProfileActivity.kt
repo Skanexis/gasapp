@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.gasapp.app.components.GasAppButton
 import org.gasapp.app.components.GasAppToast
+import org.gasapp.app.core.ContactLinks
 import org.gasapp.app.core.Core
 import org.gasapp.app.core.SecureClipboard
 import org.gasapp.app.core.SecureWindow
@@ -151,7 +152,7 @@ class ProfileActivity : AppCompatActivity() {
             Intent.createChooser(
                 Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.profile_share_link_text, link)),
+                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.profile_share_link_text, ContactLinks.webLink(link))),
                 getString(R.string.profile_share_link),
             ),
         )

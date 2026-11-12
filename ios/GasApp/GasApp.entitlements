@@ -11,5 +11,13 @@
 	     (ios/Config/*.xcconfig). -->
 	<key>aps-environment</key>
 	<string>$(GASAPP_APS_ENVIRONMENT)</string>
+	<!-- Universal Links: https://gasapp.eu/add/#… открывает приложение.
+	     Требует возможности Associated Domains у App ID и профиля,
+	     выпущенного после её включения (ВЫПУСК-ПРИЛОЖЕНИЯ.md, 2.6). Файл
+	     для Apple — https://gasapp.eu/.well-known/apple-app-site-association. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:gasapp.eu</string>
+	</array>
 </dict>
 </plist>

@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.gasapp.app.components.GasAppButton
 import org.gasapp.app.components.GasAppTextField
+import org.gasapp.app.core.ContactLinks
 import org.gasapp.app.core.Core
 import org.gasapp.app.core.SecureWindow
 import uniffi.gasapp.FfiContact
@@ -102,7 +103,8 @@ class AddContactActivity : AppCompatActivity() {
         // текстом. Так добавляют бота — его не встретить, чтобы
         // отсканировать код, а ссылку публикует его автор.
         val raw = input.text?.toString().orEmpty().trim()
-        if (raw.startsWith(CONTACT_LINK_PREFIX)) return addScanned(raw)
+        // И https://gasapp.eu/add/#… — так ссылку отправляют люди.
+        ContactLinks.appLink(raw)?.let { return addScanned(it) }
 
         // Каноничная форма: «@Bob» находит «bob», двойник с кириллицей
         // не находит никого.
@@ -159,11 +161,6 @@ class AddContactActivity : AppCompatActivity() {
                 .onSuccess(::showAdded)
                 .onFailure { showStatus(getString(R.string.add_contact_scan_invalid), ok = false) }
         }
-    }
-
-    private companion object {
-        /** Начало ссылки-контакта — как её печатает ядро. */
-        const val CONTACT_LINK_PREFIX = "gasapp://contact/"
     }
 
     private fun showAdded(contact: FfiContact) {

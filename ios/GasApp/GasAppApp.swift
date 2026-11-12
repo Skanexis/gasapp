@@ -52,6 +52,12 @@ struct RootView: View {
         }
         .preferredColorScheme(.dark)
         .tint(GasAppColor.accent)
+        // Ссылки на контакт: Universal Link https://gasapp.eu/add/#… и
+        // схема gasapp://contact/… (кнопка на странице сайта).
+        .onOpenURL { model.openURL($0) }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { model.openURL(url) }
+        }
     }
 }
 

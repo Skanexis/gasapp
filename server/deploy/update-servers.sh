@@ -93,9 +93,27 @@ if (( do_site )); then
         die "сайт не собрался: $(tail -3 "$out/build.log" | tr '\n' ' ')"
     ok "собран: $(tail -1 "$out/build.log")"
     rsync -a --delete "$out/site/" gasapp-lb:site/
+    rsync -a "$DEPLOY/nginx/site.conf" gasapp-lb:site-nginx.conf
     echo "  Пароль ops на gasapp-lb (sudo):"
-    ssh -t gasapp-lb 'sudo rsync -a --delete --chown=root:root --chmod=D755,F644 ~/site/ /var/www/gasapp-site/ && sudo nginx -t -q && sudo systemctl reload-or-restart nginx' ||
+    # Настройки nginx для сайта (страница /add, файл для Apple) — с
+    # откатом: не прошла проверка nginx -t — возвращается прежний файл,
+    # и сайт продолжает работать как был.
+    ssh -t gasapp-lb 'set -e
+        sudo rsync -a --delete --chown=root:root --chmod=D755,F644 ~/site/ /var/www/gasapp-site/
+        conf=/etc/nginx/conf.d/site.conf
+        sudo cp -p "$conf" "$conf.before-update" 2> /dev/null || true
+        sudo install -m 644 ~/site-nginx.conf "$conf"
+        if ! sudo nginx -t -q; then
+            sudo mv "$conf.before-update" "$conf"
+            echo "  ✘ новые настройки nginx не прошли проверку — вернул прежние"
+            exit 1
+        fi
+        sudo rm -f "$conf.before-update"
+        sudo systemctl reload-or-restart nginx' ||
         die "сайт не установился на gasapp-lb"
+    aasa="$(curl -fsS "$SITE_URL/.well-known/apple-app-site-association" | python3 -c 'import json,sys; print(json.load(sys.stdin)["applinks"]["details"][0]["appIDs"][0])' 2> /dev/null || true)"
+    [[ -n "$aasa" ]] && ok "файл ссылок для iPhone отдаётся ($aasa)" ||
+        echo "  ⚠ $SITE_URL/.well-known/apple-app-site-association не отдаётся как JSON — ссылки на iPhone не откроют приложение"
     want="$(sha256sum < "$out/site/index.html" | cut -d' ' -f1)"
     have="$(curl -fsS "$SITE_URL/" | sha256sum | cut -d' ' -f1)"
     rm -rf "$out"

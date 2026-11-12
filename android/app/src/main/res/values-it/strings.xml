@@ -122,11 +122,10 @@
     <string name="profile_share_link_hint">Il link contiene la tua chiave, come il codice QR: chi lo incolla in «Nuova chat» può scriverti subito. Invialo tramite un canale di cui ti fidi.</string>
     <string name="profile_share_link_text">Scrivimi su GasApp
 
-1. Scarica GasApp: https://gasapp.eu
-2. In GasApp tocca «Nuova chat» e incolla questo link:
+Apri questo link per aggiungermi:
 %1$s
 
-Il link contiene la mia chiave: nessuno può mettersi in mezzo.</string>
+Non hai GasApp? Il link ti mostra dove scaricarla.</string>
     <string name="profile_copied">Nome utente copiato</string>
     <string name="add_contact_key_changed">«%1$s» era già nei tuoi contatti con una chiave diversa. Può essere una reinstallazione, oppure un impostore. Confronta i numeri di sicurezza di persona prima di scrivergli.</string>
     <string name="add_contact_own_link">Questo è il tuo codice: mostralo alla persona con cui vuoi parlare</string>

@@ -117,10 +117,11 @@ struct ProfileSheet: View {
     /// инструкция для того, у кого GasApp ещё нет.
     static func shareText(username: String?, link: String) -> String {
         let name = username.map { "@\($0)" } ?? ""
+        let shared = ContactLinks.webLink(from: link)
         return L10n.t(
-            "Пишите мне в GasApp \(name)\n\n1. Установите GasApp: https://gasapp.eu\n2. В GasApp нажмите «Новый чат» и вставьте эту ссылку:\n\(link)\n\nВ ссылке мой ключ — посредник между нами не встанет.",
-            "Message me on GasApp \(name)\n\n1. Get GasApp: https://gasapp.eu\n2. In GasApp, tap “New chat” and paste this link:\n\(link)\n\nThe link carries my key, so nobody can stand in between.",
-            "Scrivimi su GasApp \(name)\n\n1. Scarica GasApp: https://gasapp.eu\n2. In GasApp tocca «Nuova chat» e incolla questo link:\n\(link)\n\nIl link contiene la mia chiave: nessuno può mettersi in mezzo.")
+            "Пишите мне в GasApp \(name)\n\nОткройте ссылку — и я в ваших контактах:\n\(shared)\n\nНет GasApp? По ссылке будет, где его скачать.",
+            "Message me on GasApp \(name)\n\nOpen this link to add me:\n\(shared)\n\nNo GasApp yet? The link shows where to get it.",
+            "Scrivimi su GasApp \(name)\n\nApri questo link per aggiungermi:\n\(shared)\n\nNon hai GasApp? Il link ti mostra dove scaricarla.")
     }
 
     var body: some View {

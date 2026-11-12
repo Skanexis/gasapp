@@ -20,6 +20,10 @@ struct ChatListScreen: View {
     @State private var rows: [ChatRowModel] = []
     @State private var loaded = false
     @State private var path: [Route] = []
+    /// Ссылка на контакт, которую человек должен подтвердить.
+    @State private var incomingLink: String?
+    @State private var incomingName: String?
+    @State private var linkError: String?
 
     enum Route: Hashable {
         case chat(ChatRowModel)
@@ -78,7 +82,63 @@ struct ChatListScreen: View {
             .gasScreen()
         }
         .task { inbox.start(); await reload() }
+        .onChange(of: model.pendingContactLink, initial: true) { _, link in
+            guard let link else { return }
+            model.pendingContactLink = nil
+            if let parsed = try? parseContactLink(uri: link) {
+                incomingName = parsed.displayName
+                incomingLink = link
+            } else {
+                linkError = L10n.t("Ссылка повреждена или неполная.", "The link is damaged or incomplete.",
+                                   "Il link è danneggiato o incompleto.")
+            }
+        }
+        // 🔐 Ссылка ничего не добавляет сама: сначала — вопрос. Имя в
+        // ссылке предложил её автор, оно ничем не подтверждено.
+        .alert(L10n.t("Добавить контакт?", "Add this contact?", "Aggiungere il contatto?"),
+               isPresented: Binding(get: { incomingLink != nil }, set: { if !$0 { incomingLink = nil } })) {
+            Button(L10n.t("Добавить", "Add", "Aggiungi")) {
+                if let link = incomingLink { addIncoming(link) }
+                incomingLink = nil
+            }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) { incomingLink = nil }
+        } message: {
+            Text(incomingMessage)
+        }
+        .alert(L10n.t("Не получилось", "Didn’t work", "Non ha funzionato"),
+               isPresented: Binding(get: { linkError != nil }, set: { if !$0 { linkError = nil } })) {
+            Button("OK", role: .cancel) { linkError = nil }
+        } message: {
+            Text(linkError ?? "")
+        }
         .onChange(of: inbox.revision) { _, _ in Task { await reload() } }
+    }
+
+    private var incomingMessage: String {
+        let named = incomingName.map { L10n.t("Ссылка называет: \($0).\n\n", "The link says: \($0).\n\n", "Il link indica: \($0).\n\n") } ?? ""
+        return named + L10n.t(
+            "В ссылке ключ этого человека: писать можно сразу, без доверия серверу. Добавляйте, только если ссылку прислал тот, кого вы знаете.",
+            "The link carries this person’s key, so you can write right away without trusting the server. Add it only if someone you know sent it.",
+            "Il link contiene la chiave di questa persona: puoi scrivere subito senza fidarti del server. Aggiungilo solo se te l’ha inviato qualcuno che conosci.")
+    }
+
+    private func addIncoming(_ uri: String) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            do {
+                let contact = try await Background.run {
+                    try messenger.addContactFromLink(uri: uri, nowMillis: CoreStore.nowMillis)
+                }
+                let name = contact.username ?? ""
+                path = [.chat(ChatRowModel(id: contact.chatId ?? "", name: name, preview: "", time: "",
+                                           verified: false, isRequest: false, peerUsername: name))]
+                await reload()
+            } catch {
+                linkError = L10n.t("Контакт не добавлен: ссылка не подошла или нет связи с сервером.",
+                                   "The contact was not added: the link didn’t work or there is no connection.",
+                                   "Contatto non aggiunto: il link non ha funzionato o non c’è connessione.")
+            }
+        }
     }
 
     private var emptyState: some View {

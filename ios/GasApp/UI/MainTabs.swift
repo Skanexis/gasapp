@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Главный экран: вкладки — как нижняя панель Android (`BottomNav`).
 struct MainTabs: View {
+    @Environment(AppModel.self) private var model
     @State private var tab: Tab
     /// Непрочитанные записи каналов — число на вкладке, как на Android.
     @State private var unreadPosts: Int = 0
@@ -46,6 +47,10 @@ struct MainTabs: View {
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
         .task(id: tab) { await countUnread() }
+        // Открыли по ссылке на контакт — к чатам: там подтверждение.
+        .onChange(of: model.pendingContactLink, initial: true) { _, link in
+            if link != nil { tab = .chats }
+        }
         .onAppear { if pushed != nil { pushedShown = true } }
     }
 
