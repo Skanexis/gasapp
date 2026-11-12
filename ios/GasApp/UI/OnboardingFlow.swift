@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import SwiftUI
+import UIKit
 
 /// Регистрация — тот же порядок, что `OnboardingActivity`:
 /// приветствие → имя и почта → PIN (дважды) и выбор сети → база
@@ -32,6 +33,11 @@ struct OnboardingFlow: View {
     @State private var working = false
     @State private var stage = ""
     @State private var resendAt = Date.distantPast
+    /// Письмо с кодом отправляется прямо сейчас (кнопка «ещё раз»).
+    @State private var resending = false
+    @State private var codeNote: String?
+    /// Когда начался текущий долгий запрос — для «… N с» на кнопке.
+    @State private var startedAt: Date?
     @State private var now = Date()
     /// Возвращение аккаунта из копии: имя и почта не нужны — они в копии.
     @State private var recovering = false
@@ -370,24 +376,52 @@ struct OnboardingFlow: View {
                                          "We sent 6 digits to \(email). Check spam too.", "Abbiamo inviato 6 cifre a \(email). Controlla anche lo spam."))
             Field(title: L10n.t("Код", "Code", "Codice"), text: $code, placeholder: "123456",
                   error: codeError, keyboard: .numberPad, contentType: .oneTimeCode)
-            GoldButton(title: L10n.t("Подтвердить", "Confirm", "Conferma"), isLoading: working,
-                       isEnabled: code.filter(\.isNumber).count == 6) { confirmCode() }
+            GoldButton(title: working
+                           ? L10n.t("Проверяем код… \(elapsed) с", "Checking the code… \(elapsed) s", "Verifica del codice… \(elapsed) s")
+                           : L10n.t("Подтвердить", "Confirm", "Conferma"),
+                       isEnabled: !working && !resending && code.filter(\.isNumber).count == 6) { confirmCode() }
+            if (working || resending) && elapsed >= 15 {
+                // Ожидание — штатное состояние (PRODUCT.md): говорим, что
+                // происходит, а не крутим колесо молча.
+                Text(L10n.t("Сервер отвечает медленно. Подождите — запрос не потерялся; если через минуту ответа не будет, появится ошибка.",
+                            "The server is slow to answer. Please wait — the request is not lost; if there is no answer within a minute, you’ll see an error.",
+                            "Il server risponde lentamente. Attendi: la richiesta non è persa; se entro un minuto non arriva risposta, vedrai un errore."))
+                    .font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary)
+                    .transition(.opacity)
+            }
+            if let codeNote {
+                Label(codeNote, systemImage: "checkmark.circle.fill")
+                    .font(GasFont.text(14, .semibold)).foregroundStyle(GasAppColor.ok)
+                    .transition(.opacity)
+            }
             OutlineButton(
-                title: now < resendAt
+                title: resending
+                    ? L10n.t("Отправляем письмо… \(elapsed) с", "Sending the email… \(elapsed) s", "Invio dell’email… \(elapsed) s")
+                    : now < resendAt
                     ? L10n.t("Отправить ещё раз через \(Int(resendAt.timeIntervalSince(now)) + 1) с",
                              "Resend in \(Int(resendAt.timeIntervalSince(now)) + 1) s", "Nuovo invio tra \(Int(resendAt.timeIntervalSince(now)) + 1) s")
                     : L10n.t("Отправить код ещё раз", "Resend code", "Invia di nuovo il codice"),
-                isEnabled: now >= resendAt && !working
+                isEnabled: now >= resendAt && !working && !resending
             ) { resend() }
         }
     }
 
+    /// Секунды с начала текущего долгого запроса.
+    private var elapsed: Int {
+        guard let startedAt else { return 0 }
+        return max(0, Int(now.timeIntervalSince(startedAt)))
+    }
+
     private func confirmCode() {
+        // Повторное нажатие, пока идёт первый запрос, не шлёт второй.
+        guard !working else { return }
         let digits = code.filter(\.isNumber)
         let name = username
         let address = email.trimmingCharacters(in: .whitespaces)
         working = true
+        startedAt = Date()
         codeError = nil
+        codeNote = nil
 
         Task {
             do {
@@ -399,9 +433,13 @@ struct OnboardingFlow: View {
                 CoreStore.shared.rememberDevice(account.deviceId)
                 CoreStore.shared.maintainPrekeysNow()
                 working = false
+                startedAt = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 model.didUnlock()
             } catch {
                 working = false
+                startedAt = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
                 switch error as? FfiError {
                 case .EmailCodeRejected:
                     codeError = L10n.t("Код не подошёл или истёк", "Wrong or expired code", "Codice errato o scaduto")
@@ -419,16 +457,29 @@ struct OnboardingFlow: View {
     }
 
     private func resend() {
+        guard !resending, !working else { return }
         let address = email.trimmingCharacters(in: .whitespaces)
+        resending = true
+        startedAt = Date()
+        codeError = nil
+        codeNote = nil
         Task {
             do {
                 let messenger = try CoreStore.shared.current()
                 try await Background.run { try messenger.requestEmailCode(email: address) }
                 resendAt = Date().addingTimeInterval(60)
-                codeError = nil
+                code = ""
+                codeNote = L10n.t("Новый код отправлен. Прежний больше не действует.",
+                                  "A new code is on its way. The previous one no longer works.",
+                                  "Un nuovo codice è in arrivo. Il precedente non funziona più.")
             } catch {
-                codeError = L10n.t("Не удалось отправить письмо", "Could not send the email", "Impossibile inviare l’email")
+                codeError = L10n.t("Письмо не ушло. Проверьте интернет; новый код можно просить раз в минуту.",
+                                   "The email was not sent. Check your connection; a new code can be requested once a minute.",
+                                   "L’email non è partita. Controlla la connessione; un nuovo codice si può chiedere una volta al minuto.")
+                resendAt = Date().addingTimeInterval(30)
             }
+            resending = false
+            startedAt = nil
         }
     }
 

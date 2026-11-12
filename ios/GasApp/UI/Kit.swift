@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import SwiftUI
+import UIKit
 
 // Набор элементов интерфейса — тот же визуальный мир, что у Android:
 // ночное небо, золотая «объёмная» кнопка с тёмной кромкой, карточки.
