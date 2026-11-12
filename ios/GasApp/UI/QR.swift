@@ -11,6 +11,12 @@ import VisionKit
 struct QRView: View {
     let matrix: FfiQrMatrix
 
+    /// Тёмные модули — ночное небо GasApp, «зрачки» углов — коричневый
+    /// контур логотипа. Оба тёмные: сканеру нужен контраст с белым, а
+    /// не чёрный цвет.
+    private static let ink = Color(red: 0.055, green: 0.071, blue: 0.22)
+    private static let eye = Color(red: 0.54, green: 0.20, blue: 0.08)
+
     var body: some View {
         Canvas { context, size in
             let count = Int(matrix.size)
@@ -18,16 +24,33 @@ struct QRView: View {
             // Тихая зона — четыре модуля с каждой стороны.
             let cell = min(size.width, size.height) / CGFloat(count + 8)
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+
+            func isFinder(_ row: Int, _ column: Int) -> Bool {
+                (row < 7 && column < 7) || (row < 7 && column >= count - 7) || (row >= count - 7 && column < 7)
+            }
+            // Модули — скруглённые квадраты чуть меньше клетки: код
+            // остаётся читаемым, но выглядит мягче обычной «сетки».
+            let inset = cell * 0.06
             for row in 0..<count {
-                for column in 0..<count where matrix.modules[row * count + column] {
-                    let rect = CGRect(x: CGFloat(column + 4) * cell, y: CGFloat(row + 4) * cell,
-                                      width: cell + 0.5, height: cell + 0.5)
-                    context.fill(Path(rect), with: .color(.black))
+                for column in 0..<count where matrix.modules[row * count + column] && !isFinder(row, column) {
+                    let rect = CGRect(x: CGFloat(column + 4) * cell + inset, y: CGFloat(row + 4) * cell + inset,
+                                      width: cell - inset * 2, height: cell - inset * 2)
+                    context.fill(Path(roundedRect: rect, cornerRadius: cell * 0.32), with: .color(Self.ink))
                 }
+            }
+            // Три угловых «глаза»: кольцо 7×7 и зрачок 3×3, скруглённые.
+            for (row, column) in [(0, 0), (0, count - 7), (count - 7, 0)] {
+                let origin = CGPoint(x: CGFloat(column + 4) * cell, y: CGFloat(row + 4) * cell)
+                let outer = CGRect(origin: origin, size: CGSize(width: cell * 7, height: cell * 7))
+                var ring = Path(roundedRect: outer, cornerRadius: cell * 2)
+                ring.addPath(Path(roundedRect: outer.insetBy(dx: cell, dy: cell), cornerRadius: cell * 1.3))
+                context.fill(ring, with: .color(Self.ink), style: FillStyle(eoFill: true))
+                context.fill(Path(roundedRect: outer.insetBy(dx: cell * 2, dy: cell * 2), cornerRadius: cell * 0.9),
+                             with: .color(Self.eye))
             }
         }
         .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
         .accessibilityLabel(L10n.t("QR-код", "QR code", "Codice QR"))
     }
 }

@@ -147,7 +147,13 @@
     <string name="profile_share">Поделиться именем</string>
     <string name="profile_share_link">Поделиться ссылкой-контактом</string>
     <string name="profile_share_link_hint">Ссылка несёт ваш ключ, как и QR-код: тот, кто вставит её в «Новый чат», сможет писать вам сразу. Отправляйте её каналом, которому доверяете.</string>
-    <string name="profile_share_link_text">Напишите мне в GasApp. Вставьте эту ссылку в «Новый чат»:\n%1$s</string>
+    <string name="profile_share_link_text">Пишите мне в GasApp
+
+1. Установите GasApp: https://gasapp.eu
+2. В GasApp нажмите «Новый чат» и вставьте эту ссылку:
+%1$s
+
+В ссылке мой ключ — посредник между нами не встанет.</string>
     <string name="profile_copied">Имя скопировано</string>
 
     <!-- Добавление контакта: по @имени или QR. -->

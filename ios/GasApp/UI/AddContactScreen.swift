@@ -22,6 +22,7 @@ struct AddContactScreen: View {
     @State private var working = false
     @State private var ownLink: String?
     @State private var ownQR: FfiQrMatrix?
+    @State private var ownName: String?
     @State private var scanning = false
 
     var body: some View {
@@ -57,10 +58,13 @@ struct AddContactScreen: View {
                     Text(L10n.t("Ваш контакт", "Your contact", "Il tuo contatto")).font(.system(size: 17, weight: .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
                     if let ownQR {
-                        QRView(matrix: ownQR).frame(maxWidth: 240).frame(maxWidth: .infinity)
+                        QRView(matrix: ownQR)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 22).fill(.white))
+                            .frame(maxWidth: 240).frame(maxWidth: .infinity)
                     }
                     if let ownLink {
-                        ShareLink(item: ownLink) {
+                        ShareLink(item: ProfileSheet.shareText(username: ownName, link: ownLink)) {
                             Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up")
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(GasAppColor.accent)
@@ -80,6 +84,7 @@ struct AddContactScreen: View {
 
     private func loadOwn() async {
         guard let messenger = try? CoreStore.shared.current() else { return }
+        ownName = (try? messenger.ownUsername()) ?? nil
         if let own = try? await Background.run({ () -> (String, FfiQrMatrix) in
             let uri = try messenger.ownContactLink()
             return (uri, try contactLinkQr(uri: uri))

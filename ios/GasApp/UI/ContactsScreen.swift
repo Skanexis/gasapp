@@ -112,17 +112,47 @@ struct ProfileSheet: View {
 
     init(username: String) { self.username = username }
 
+    /// Текст «поделиться»: не голая ссылка `gasapp://…`, которую
+    /// мессенджеры не делают кликабельной и не объясняют, а короткая
+    /// инструкция для того, у кого GasApp ещё нет.
+    static func shareText(username: String?, link: String) -> String {
+        let name = username.map { "@\($0)" } ?? ""
+        return L10n.t(
+            "Пишите мне в GasApp \(name)\n\n1. Установите GasApp: https://gasapp.eu\n2. В GasApp нажмите «Новый чат» и вставьте эту ссылку:\n\(link)\n\nВ ссылке мой ключ — посредник между нами не встанет.",
+            "Message me on GasApp \(name)\n\n1. Get GasApp: https://gasapp.eu\n2. In GasApp, tap “New chat” and paste this link:\n\(link)\n\nThe link carries my key, so nobody can stand in between.",
+            "Scrivimi su GasApp \(name)\n\n1. Scarica GasApp: https://gasapp.eu\n2. In GasApp tocca «Nuova chat» e incolla questo link:\n\(link)\n\nIl link contiene la mia chiave: nessuno può mettersi in mezzo.")
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                Text("@\(username)").font(.system(size: 26, weight: .heavy, design: .rounded))
-                    .foregroundStyle(GasAppColor.textPrimary)
-                if let qr { QRView(matrix: qr).frame(maxWidth: 260) }
+                // Карточка-визитка: логотип, QR в белой рамке, имя.
+                VStack(spacing: 14) {
+                    Image("Logo").resizable().scaledToFit().frame(width: 110)
+                        .accessibilityHidden(true)
+                    if let qr {
+                        QRView(matrix: qr)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 24).fill(.white))
+                            .frame(maxWidth: 270)
+                    } else {
+                        ProgressView().tint(GasAppColor.accent).frame(height: 270)
+                    }
+                    Text("@\(username)").font(.system(size: 24, weight: .heavy, design: .rounded))
+                        .foregroundStyle(GasAppColor.textPrimary)
+                    Text(L10n.t("Сканируйте в GasApp", "Scan in GasApp", "Scansiona in GasApp"))
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(GasAppColor.textTertiary)
+                }
+                .padding(.vertical, 22).padding(.horizontal, 18)
+                .frame(maxWidth: .infinity)
+                .background(RoundedRectangle(cornerRadius: 28).fill(GasAppColor.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: 28).stroke(GasAppColor.accent.opacity(0.6), lineWidth: 2))
+
                 Text(L10n.t("Покажите этот код собеседнику: по нему он добавит вас вместе с вашим ключом — без доверия серверу.",
                             "Show this code: it adds you together with your key — without trusting the server.", "Mostra questo codice: ti aggiunge insieme alla tua chiave, senza doversi fidare del server."))
                     .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
                 if let link {
-                    ShareLink(item: link) {
+                    ShareLink(item: Self.shareText(username: username, link: link)) {
                         Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up")
                             .font(.system(size: 16, weight: .bold)).foregroundStyle(GasAppColor.accent)
                     }
