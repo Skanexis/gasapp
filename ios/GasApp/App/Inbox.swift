@@ -41,13 +41,25 @@ final class Inbox {
     func receiveOnce() async {
         guard let device = CoreStore.shared.deviceId,
               let messenger = try? CoreStore.shared.current() else { return }
+        let network = NetworkController.shared
+        network.ensureRoute()
+        // Tor ещё подключается — так и сказать, а не «Нет связи»: запрос
+        // всё равно не ушёл бы (маршрут закрыт).
+        if network.isConnectingTor {
+            let percent = network.torStatus.percent
+            lastError = L10n.t("Подключение к Tor… \(percent)%", "Connecting to Tor… \(percent)%",
+                               "Connessione a Tor… \(percent)%")
+            return
+        }
         do {
             let received = try await Background.run {
                 try messenger.receiveMessages(deviceId: device, nowMillis: CoreStore.nowMillis)
             }
+            network.requestSucceeded()
             lastError = nil
             if received > 0 { revision += 1 }
         } catch {
+            network.requestFailed()
             lastError = ClockCheck.off
                 ? L10n.t("Неверное время на телефоне", "Phone clock is wrong", "L’orologio del telefono è sbagliato")
                 : L10n.t("Нет связи с сервером", "No connection", "Nessuna connessione")

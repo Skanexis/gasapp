@@ -88,6 +88,13 @@ final class AppModel {
             if let since = backgroundSince, Date().timeIntervalSince(since) > autoLockAfter, phase == .unlocked {
                 lock()
             }
+            if let since = backgroundSince, phase == .unlocked {
+                // Порт моста Tor не переживает фон — поднять заново и сразу
+                // забрать очередь (NetworkController, «Почему Tor
+                // перезапускается после фона»).
+                NetworkController.shared.didReturnToForeground(afterSeconds: Date().timeIntervalSince(since))
+                Task { await Inbox.shared.receiveOnce() }
+            }
             backgroundSince = nil
         case .inactive:
             coverVisible = true
