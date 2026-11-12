@@ -108,11 +108,23 @@ workflows:
             # Apple, когда ключ API получает 403 «Content Provider ID»
             # на сертификатах и профилях.
             echo "Подпись: готовые сертификат и профиль из переменных"
-            printf '%s' "$IOS_DIST_P12" | base64 --decode > /tmp/dist.p12
-            keychain add-certificates --certificate /tmp/dist.p12               --certificate-password "${IOS_DIST_P12_PASSWORD:-}"
+            # Пробелы и переносы строк, попавшие при вставке, убираем.
+            P12_PW="$(printf '%s' "${IOS_DIST_P12_PASSWORD:-}" | tr -d '[:space:]')"
+            printf '%s' "$IOS_DIST_P12" | tr -d '[:space:]' | base64 --decode > /tmp/dist.p12
+            printf '%s' "$IOS_APPSTORE_PROFILE" | tr -d '[:space:]' | base64 --decode > /tmp/gasapp.mobileprovision
+            # Короткие отпечатки (не секреты) — сравнить с тем, что на флешке.
+            echo "  сертификат .p12: $(shasum -a 256 /tmp/dist.p12 | cut -c1-12)"
+            echo "  пароль: ${#P12_PW} знаков, отпечаток $(printf '%s' "$P12_PW" | shasum -a 256 | cut -c1-8)"
+            echo "  профиль: $(shasum -a 256 /tmp/gasapp.mobileprovision | cut -c1-12)"
+            export P12_PW
+            if ! openssl pkcs12 -in /tmp/dist.p12 -passin env:P12_PW -noout 2> /dev/null; then
+              echo "⚠ openssl не открыл .p12 этим паролем — вероятно, IOS_DIST_P12_PASSWORD"
+              echo "  или IOS_DIST_P12 вставлены не целиком. Сравните отпечатки выше с флешкой."
+            fi
+            keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$P12_PW"
             rm -f /tmp/dist.p12
             mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-            printf '%s' "$IOS_APPSTORE_PROFILE" | base64 --decode               > "$HOME/Library/MobileDevice/Provisioning Profiles/gasapp-appstore.mobileprovision"
+            mv /tmp/gasapp.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/gasapp-appstore.mobileprovision"
           else
             # Обычный путь: ключ API сам создаёт сертификат (из
             # CERTIFICATE_PRIVATE_KEY — один и тот же каждый раз) и профиль.
