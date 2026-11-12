@@ -94,7 +94,7 @@ if (( do_site )); then
     ok "собран: $(tail -1 "$out/build.log")"
     rsync -a --delete "$out/site/" gasapp-lb:site/
     echo "  Пароль ops на gasapp-lb (sudo):"
-    ssh -t gasapp-lb 'sudo rsync -a --delete --chown=root:root --chmod=D755,F644 ~/site/ /var/www/gasapp-site/ && sudo nginx -t -q && sudo systemctl reload nginx' ||
+    ssh -t gasapp-lb 'sudo rsync -a --delete --chown=root:root --chmod=D755,F644 ~/site/ /var/www/gasapp-site/ && sudo nginx -t -q && sudo systemctl reload-or-restart nginx' ||
         die "сайт не установился на gasapp-lb"
     want="$(sha256sum < "$out/site/index.html" | cut -d' ' -f1)"
     have="$(curl -fsS "$SITE_URL/" | sha256sum | cut -d' ' -f1)"
