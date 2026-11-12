@@ -101,18 +101,27 @@ workflows:
       - name: Подпись (сертификат и профиль App Store)
         script: |
           set -euo pipefail
-          # Инструменты Codemagic говорят с App Store Connect напрямую
-          # ключом API: сами создают сертификат «Apple Distribution» (из
-          # CERTIFICATE_PRIVATE_KEY — один и тот же каждый раз, поэтому
-          # новых сертификатов не плодится) и профиль App Store.
-          export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
-          export APP_STORE_CONNECT_KEY_IDENTIFIER="$ASC_KEY_ID"
-          export APP_STORE_CONNECT_PRIVATE_KEY="$ASC_KEY_P8"
           keychain initialize
-          app-store-connect fetch-signing-files org.gasapp.messenger \
-            --type IOS_APP_STORE --create \
-            --certificate-key "$CERTIFICATE_PRIVATE_KEY"
-          keychain add-certificates
+          if [ -n "${IOS_DIST_P12:-}" ] && [ -n "${IOS_APPSTORE_PROFILE:-}" ]; then
+            # Готовые сертификат и профиль, сделанные вручную на
+            # developer.apple.com (ВЫПУСК-ПРИЛОЖЕНИЯ.md, 2.6): обход сбоя
+            # Apple, когда ключ API получает 403 «Content Provider ID»
+            # на сертификатах и профилях.
+            echo "Подпись: готовые сертификат и профиль из переменных"
+            printf '%s' "$IOS_DIST_P12" | base64 --decode > /tmp/dist.p12
+            keychain add-certificates --certificate /tmp/dist.p12               --certificate-password "${IOS_DIST_P12_PASSWORD:-}"
+            rm -f /tmp/dist.p12
+            mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+            printf '%s' "$IOS_APPSTORE_PROFILE" | base64 --decode               > "$HOME/Library/MobileDevice/Provisioning Profiles/gasapp-appstore.mobileprovision"
+          else
+            # Обычный путь: ключ API сам создаёт сертификат (из
+            # CERTIFICATE_PRIVATE_KEY — один и тот же каждый раз) и профиль.
+            export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
+            export APP_STORE_CONNECT_KEY_IDENTIFIER="$ASC_KEY_ID"
+            export APP_STORE_CONNECT_PRIVATE_KEY="$ASC_KEY_P8"
+            app-store-connect fetch-signing-files org.gasapp.messenger               --type IOS_APP_STORE --create               --certificate-key "$CERTIFICATE_PRIVATE_KEY"
+            keychain add-certificates
+          fi
           xcode-project use-profiles --project ios/GasApp.xcodeproj
       - name: Сборка и выгрузка в TestFlight
         script: |
