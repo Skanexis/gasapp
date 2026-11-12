@@ -128,19 +128,52 @@ struct BackupScreen: View {
         Card {
             Text(L10n.t("Ваш ключ восстановления", "Your recovery key", "La tua chiave di recupero")).font(.system(size: 17, weight: .bold))
                 .foregroundStyle(GasAppColor.textPrimary)
-            Text(key.display)
-                .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                .foregroundStyle(GasAppColor.accent)
-                .textSelection(.disabled)
-            Text(L10n.t("Запишите на бумагу. Не фотографируйте и не храните в заметках. Показывается один раз.",
-                        "Write it on paper. Don’t photograph it or keep it in notes. Shown once.", "Scrivila su carta. Non fotografarla e non salvarla nelle note. Viene mostrata una sola volta."))
-                .font(.system(size: 13)).foregroundStyle(GasAppColor.warn)
-            Field(title: L10n.t("Проверка: группа № \(confirmIndex + 1)", "Check: group #\(confirmIndex + 1)", "Verifica: gruppo n. \(confirmIndex + 1)"),
+            Text(L10n.t("1. Перепишите на бумагу все группы по порядку. Не фотографируйте и не делайте снимок экрана: ключ показывается один раз.",
+                        "1. Copy every group onto paper, in order. Don’t photograph it or take a screenshot: the key is shown only once.",
+                        "1. Copia su carta tutti i gruppi, in ordine. Non fotografarla e non fare screenshot: la chiave viene mostrata una sola volta."))
+                .font(.system(size: 14)).foregroundStyle(GasAppColor.warn)
+            // Группы с номерами: «группа № 7» однозначна. Раньше ключ шёл
+            // одной строкой с приставкой GASAPP, и её считали первой
+            // группой (снимок с iPhone, 2026-11-12).
+            let groups = Self.groups(of: key.display)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+                ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                    let asked = UInt32(index) == confirmIndex
+                    VStack(spacing: 2) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(asked ? GasAppColor.accent : GasAppColor.textTertiary)
+                        Text(group)
+                            .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(GasAppColor.textPrimary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(GasAppColor.bgBase))
+                    .overlay(RoundedRectangle(cornerRadius: 10)
+                        .stroke(asked ? GasAppColor.accent : GasAppColor.line, lineWidth: asked ? 2 : 1))
+                }
+            }
+            .textSelection(.disabled)
+            .accessibilityElement(children: .combine)
+            Text(L10n.t("2. Проверка: по своей записи введите группу № \(confirmIndex + 1) — она обведена.",
+                        "2. Check: from your paper, type group #\(confirmIndex + 1) — the one outlined.",
+                        "2. Verifica: dal tuo foglio, digita il gruppo n. \(confirmIndex + 1), quello evidenziato."))
+                .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
+            Field(title: L10n.t("Группа № \(confirmIndex + 1)", "Group #\(confirmIndex + 1)", "Gruppo n. \(confirmIndex + 1)"),
                   text: $confirmText, error: confirmError)
             GoldButton(title: L10n.t("Проверить и сделать копию", "Check and back up", "Verifica ed esegui backup"), isLoading: working) {
                 confirm(key)
             }
         }
+    }
+
+    /// Группы ключа без приставки `GASAPP-` — в той нумерации, в которой
+    /// их сверяет ядро (`checkRecoveryKeyGroup`).
+    static func groups(of display: String) -> [String] {
+        let parts = display.split(separator: "-").map(String.init)
+        if let first = parts.first, first.uppercased() == "GASAPP" { return Array(parts.dropFirst()) }
+        return parts
     }
 
     private func loadStatus() async {

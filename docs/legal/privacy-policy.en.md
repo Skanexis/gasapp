@@ -2,8 +2,8 @@
 
 # GasApp Privacy Policy
 
-**Version:** 2026-11-07. This is a translation of
-[`privacy-policy.md`](privacy-policy.md); if the two differ, the Russian
+**Version:** 2026-11-12. This is a translation of
+[the Russian text](privacy-policy.md); if the two differ, the Russian
 text is the reference and the difference is a bug — please report it.
 
 > ⚠️ **GasApp has not been released and has not had an independent audit.**
@@ -28,6 +28,12 @@ text is the reference and the difference is a bug — please report it.
   Google (Android from Google Play) — **without the text, the sender or
   even the number of messages**. See [Push notifications](#push-notifications).
 
+> **What changed on 2026-11-12.** Nothing about what is collected. Added:
+> who the controller is, the legal bases for processing, the list of
+> service providers and where data is stored, how we handle requests from
+> authorities, and the full list of your rights under the GDPR, including
+> the right to complain to the Garante.
+>
 > **What changed on 2026-11-07.** Push notifications through Apple
 > (iPhone) and Google (Android from Google Play) were added: before, this
 > policy said there were no Apple or Google services in notifications.
@@ -38,6 +44,20 @@ text is the reference and the difference is a bug — please report it.
 > not ask for an email address and this policy said "we do not ask for
 > an email address". It does now. On the same date the product was
 > renamed from AEGIS to GasApp, and channels were added.
+
+## Who is responsible for your data
+
+The controller of personal data processed by the official GasApp service
+(`gasapp.eu`) is **Maxim Verdes**, an individual developer based in Italy.
+Contact for all privacy matters: `privacy@gasapp.eu`. We have not
+appointed a data protection officer, as the law does not require one for
+a service of this size; `privacy@gasapp.eu` is read by the controller
+directly.
+
+This policy is written to meet the EU General Data Protection Regulation
+(GDPR) and Italian data protection law. It applies to the apps, the
+website and the server we operate. A server run by someone else has its
+own operator and policy.
 
 ## What you need to use GasApp
 
@@ -456,14 +476,74 @@ server sees it; with the built-in Tor it does not — see
 
 **Calls.** There are no calls in this version.
 
+## Why we process data (legal bases)
+
+| What | Why | Legal basis (GDPR) |
+|---|---|---|
+| Username, public keys, devices, undelivered encrypted envelopes, month of last activity | To run your account and deliver messages | Performance of the contract — our [Terms of Service](terms-of-use.en.md) (Art. 6(1)(b)) |
+| Email address and confirmation code (address only until the email is sent; a keyed hash afterwards) | To confirm the account and keep one account per address, which limits spam and abuse | Performance of the contract and our legitimate interest in preventing abuse (Art. 6(1)(b) and (f)) |
+| Push notification token | To wake your phone when something arrives, if you turn notifications on | Performance of the contract (Art. 6(1)(b)); you can turn it off at any time |
+| Reports, the proof attached to them, moderation decisions | To keep the service safe and enforce the rules | Legitimate interest (Art. 6(1)(f)) and, where applicable, legal obligations (Art. 6(1)(c)) |
+| Emails you send to our addresses | To answer you | Legitimate interest (Art. 6(1)(f)) |
+| Information we must preserve or disclose by law | To comply with the law, including reports of child sexual abuse | Legal obligation (Art. 6(1)(c)) |
+
+We do not use your data for advertising, profiling or automated
+decision-making, we do not sell it, and we do not share it with anyone
+except the providers listed below.
+
+## Service providers and international transfers
+
+We use a small number of providers, each only for one purpose. They act
+as our processors or as independent controllers for their own services.
+
+| Provider | What it does | What it receives |
+|---|---|---|
+| IONOS SE (Germany) | Hosts our servers | Everything the server stores, as described in this policy — encrypted where stated |
+| Mailjet (Sinch Email, France) | Sends the confirmation code email | Your email address and the code, at registration |
+| Zoho Corporation (EU data centre) | Receives email sent to our `@gasapp.eu` addresses | The emails you send us |
+| Apple (APNs), iPhone only | Delivers the wake-up notification | A device token and the constant text "New messages" |
+| Google (Firebase Cloud Messaging), Android from Google Play only | Delivers the wake-up notification | An app token and the constant text "New messages" |
+
+Our servers and the providers' services we use are located in the
+European Union, except Apple and Google push delivery, which they operate
+globally. Where data is transferred outside the European Economic Area,
+it is protected by the European Commission's adequacy decision for the
+EU–U.S. Data Privacy Framework or by Standard Contractual Clauses, as
+offered by these providers.
+
+The Tor network, if you turn it on, is not our provider: we send it
+nothing about you; it only carries your connection.
+
+## Requests from authorities
+
+We disclose data only in response to a legally valid request that
+complies with applicable law, and we check each request. Because of how
+GasApp is built, we cannot hand over message content, contact lists,
+conversation lists or IP address logs: we do not have them. What we
+could provide is what the server stores — for example, that a username
+exists, its public keys and the month it was last active. Where the law
+allows, we will tell the affected user.
+
 ## Your rights and how to exercise them
+
+Under the GDPR you have the right to **access** your data, to have it
+**rectified** or **erased**, to **restrict** or **object to** its
+processing, and to **data portability**. Most of these you can exercise
+yourself in the app, because almost everything is on your device:
 
 | Right | How |
 |---|---|
-| Learn what is stored about you | Listed in the data retention policy; there is nothing beyond it |
+| Learn what is stored about you | Listed in the data retention policy; there is nothing beyond it. Or ask `privacy@gasapp.eu` |
 | Delete your messages | In the app, locally; they are not on the server |
-| Delete your account | Settings → Privacy → Delete account — see below |
-| Take your data with you | Settings → Privacy → Export my data — see below |
+| Delete your account (erasure) | Settings → Privacy → Delete account — see below |
+| Take your data with you (portability) | Settings → Privacy → Export my data — see below |
+| Object to or restrict processing | Write to `privacy@gasapp.eu` |
+| Lodge a complaint | With your local data protection authority — in Italy, the [Garante per la protezione dei dati personali](https://www.garanteprivacy.it/) |
+
+⚠️ Because we keep no email address, password or phone number, we can
+act on a request sent by email only if you can prove that the account is
+yours — normally from the app itself. We will answer within **one
+month**.
 
 ### Data export
 
@@ -563,18 +643,20 @@ plainly.
 
 ## Where the data is stored
 
-On the server run by the operator of an instance. For the official
-instance, the hosting location will be stated here before release 1.0.
-GasApp is distributed under AGPL-3.0, and anyone can run their own
-instance — its operator's policy then replaces this one.
+The official service runs on servers hosted by IONOS in the European
+Union (see "Service providers and international transfers"). GasApp is
+distributed under AGPL-3.0, and anyone can run their own instance — its
+operator's policy then applies instead of this one.
 
 ## Changes
 
-Material changes are published in the repository with the version date.
-The history of edits is visible in the `git log` of this file — a
-notification mechanism you can trust without relying on us.
+We will publish any change to this policy at this address with its new
+version date and, for material changes, inform you in the app before
+they take effect. The full history of edits is also visible in the
+`git log` of this file — a record you can check without relying on us.
 
 ## Contact
 
-`privacy@gasapp.eu` — questions about data.
-`security@gasapp.eu` — vulnerabilities (`SECURITY.md`).
+`privacy@gasapp.eu` — questions about your data and requests under the
+GDPR.
+`security@gasapp.eu` — security vulnerabilities.
