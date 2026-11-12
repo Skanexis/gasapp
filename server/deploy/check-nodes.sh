@@ -94,17 +94,17 @@ for node in $NODES; do
 
     if body="$(curl -s "${tls[@]}" --max-time 5 "$url" 2>/dev/null)"; then
         if ! grep -q '"database":true' <<< "$body"; then
-            status="database unavailable"
+            status="не видит базу данных"
         elif ! grep -q '"listener":true' <<< "$body"; then
             # 🔐 Самый коварный отказ: узел отвечает на запросы
             # и принимает сообщения, молча перестав будить клиентов.
             # Снаружи он выглядит здоровым.
-            status="notification listener is down"
+            status="не будит клиентов: остановлен слушатель уведомлений"
         else
             status="ok"
         fi
     else
-        status="unreachable"
+        status="недоступен"
     fi
 
     previous="$(cat "$state_file" 2>/dev/null || echo "ok")"
@@ -114,7 +114,7 @@ for node in $NODES; do
         # Оповещение о восстановлении: без него дежурный не узнает,
         # что проблема ушла, и будет считать узел мёртвым.
         if [[ "$previous" != "ok" ]]; then
-            echo "✅ API node ${node_index} (${node}) recovered" | $NOTIFY
+            echo "✅ Узел API ${node_index} (${node}) снова работает" | $NOTIFY
         fi
 
         continue
@@ -126,7 +126,7 @@ for node in $NODES; do
     # не должен давать шестьдесят одинаковых сообщений — их перестают
     # читать, и следующий настоящий отказ пройдёт незамеченным.
     if [[ "$previous" != "$status" ]]; then
-        echo "⚠️ API node ${node_index} (${node}): ${status}" | $NOTIFY
+        echo "⚠️ Узел API ${node_index} (${node}): ${status}" | $NOTIFY
     fi
 done
 
@@ -154,9 +154,9 @@ echo "$cluster_status" > "$CLUSTER_STATE"
 
 if [[ "$cluster_status" != "$cluster_previous" ]]; then
     if [[ "$cluster_status" == "down" ]]; then
-        echo "🔴 All ${total} API nodes are down; service is unavailable" | $NOTIFY
+        echo "🔴 Все узлы API (${total}) недоступны: сервис не работает" | $NOTIFY
     else
-        echo "✅ API service recovered" | $NOTIFY
+        echo "✅ Сервис API снова работает" | $NOTIFY
     fi
 fi
 

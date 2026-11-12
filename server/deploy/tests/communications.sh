@@ -57,11 +57,11 @@ PATH="$work:$PATH" GASAPP_MONITOR_STATE="$work/monitor-state" \
     GASAPP_NOTIFY_CMD="$work/capture-alert" GASAPP_ROLES="" GASAPP_DISK_MAX=100 \
     GASAPP_HEARTBEAT_HOUR="$(date -u +%H)" HEARTBEAT_CAPTURE="$work/heartbeat" \
     bash "$deploy/monitor/gasapp-monitor.sh"
-grep -q 'Monitor heartbeat: ' "$work/heartbeat"
-grep -q -- '- Clock is not synchronized (NTP)' "$work/heartbeat"
+grep -q 'Монитор работает, открытых проблем: ' "$work/heartbeat"
+grep -q -- '- Часы не синхронизированы (NTP)' "$work/heartbeat"
 
 mkdir -p "$work/old-state"
-printf 'часы не синхронизированы (NTP)' > "$work/old-state/check-ntp_"
+printf 'OLD-STATE-TEXT clock drift' > "$work/old-state/check-ntp_"
 cat > "$work/timedatectl" <<'MOCK'
 #!/usr/bin/env bash
 echo yes
@@ -70,9 +70,9 @@ PATH="$work:$PATH" GASAPP_MONITOR_STATE="$work/old-state" \
     GASAPP_NOTIFY_CMD="$work/capture-alert" GASAPP_ROLES="" GASAPP_DISK_MAX=100 \
     HEARTBEAT_CAPTURE="$work/recovered-alerts" \
     bash "$deploy/monitor/gasapp-monitor.sh"
-grep -q 'Resolved: Clock synchronization' "$work/recovered-alerts"
-if grep -q 'часы' "$work/recovered-alerts"; then
-    echo 'A legacy Russian state value leaked into Telegram text' >&2
+grep -q 'Решено: Синхронизация часов' "$work/recovered-alerts"
+if grep -q 'OLD-STATE-TEXT' "$work/recovered-alerts"; then
+    echo 'A stored problem text leaked into the resolved message' >&2
     exit 1
 fi
 
@@ -87,7 +87,7 @@ PATH="$work:$PATH" GASAPP_MONITOR_STATE="$work/db-state-fresh" \
     GASAPP_NOTIFY_CMD="$work/capture-alert" GASAPP_ROLES="db" GASAPP_DISK_MAX=100 \
     GASAPP_BACKUP_MARKER="$work/backup-marker" HEARTBEAT_CAPTURE="$work/db-fresh-alerts" \
     bash "$deploy/monitor/gasapp-monitor.sh"
-if grep -q 'No successful backup' "$work/db-fresh-alerts"; then
+if grep -q 'Нет успешной копии' "$work/db-fresh-alerts"; then
     echo 'A fresh, unreadable backup marker was reported as missing' >&2
     exit 1
 fi
@@ -97,6 +97,6 @@ PATH="$work:$PATH" GASAPP_MONITOR_STATE="$work/db-state-old" \
     GASAPP_NOTIFY_CMD="$work/capture-alert" GASAPP_ROLES="db" GASAPP_DISK_MAX=100 \
     GASAPP_BACKUP_MARKER="$work/backup-marker" HEARTBEAT_CAPTURE="$work/db-old-alerts" \
     bash "$deploy/monitor/gasapp-monitor.sh"
-grep -q 'No successful backup in over 26 hours' "$work/db-old-alerts"
+grep -q 'Нет успешной копии больше 26 часов' "$work/db-old-alerts"
 
 echo 'Communications checks passed'
