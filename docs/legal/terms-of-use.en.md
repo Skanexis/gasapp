@@ -17,8 +17,8 @@ do not use the Service.
 
 ## 1. Who we are
 
-The Service is provided by **Maxim Verdes**, an individual developer
-based in Italy ("**GasApp**", "**we**", "**us**"). You can reach us at the
+The Service is provided by the **independent developer of GasApp**, a
+private individual based in Italy ("**GasApp**", "**we**", "**us**"). You can reach us at the
 addresses in section 19. We are the controller of the limited personal
 data described in the Privacy Policy.
 

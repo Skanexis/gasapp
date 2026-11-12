@@ -48,7 +48,8 @@ text is the reference and the difference is a bug — please report it.
 ## Who is responsible for your data
 
 The controller of personal data processed by the official GasApp service
-(`gasapp.eu`) is **Maxim Verdes**, an individual developer based in Italy.
+(`gasapp.eu`) is the **independent developer of GasApp**, a private
+individual based in Italy.
 Contact for all privacy matters: `privacy@gasapp.eu`. We have not
 appointed a data protection officer, as the law does not require one for
 a service of this size; `privacy@gasapp.eu` is read by the controller
