@@ -45,6 +45,33 @@ ok "скрипты монитора обновлены (тексты опове�
 if [[ -f /opt/gasapp/mail/send-code.sh && -f "$kit/mail/send-code.sh" ]]; then
     install -m 755 "$kit/mail/send-code.sh" /opt/gasapp/mail/send-code.sh
     ok "письмо с кодом обновлено (английское, оформленное)"
+
+    # Службе сервера можно запускать только перечисленное в ExecPaths.
+    # На части узлов стоял прежний юнит без сценария письма: сервер
+    # отвечал «программа отправки писем не запустилась: Permission
+    # denied», и регистрация через этот узел не проходила (2026-11-13).
+    # Дополнение (drop-in) не трогает сам юнит узла: ExecPaths из него
+    # добавляются к тем, что уже есть.
+    chmod 755 /opt/gasapp /opt/gasapp/mail
+    mail_dropin=/etc/systemd/system/gasapp-server.service.d/20-gasapp-mail.conf
+    mail_want='[Unit]
+# GasApp: служба запускает сценарий письма с кодом (GASAPP_EMAIL_CMD)
+# и ровно те программы, что ему нужны.
+[Service]
+ExecPaths=/opt/gasapp/mail/send-code.sh /usr/bin/bash /usr/bin/env /usr/bin/curl /usr/bin/grep /usr/bin/mktemp /usr/bin/date /usr/bin/rm
+'
+    if [[ "$(cat "$mail_dropin" 2> /dev/null)" != "$mail_want" ]]; then
+        install -d -m 755 "${mail_dropin%/*}"
+        printf '%s' "$mail_want" > "$mail_dropin"
+        systemctl daemon-reload
+        systemctl restart gasapp-server && ok "служба сервера может запускать письмо с кодом — перезапущена" ||
+            bad "служба сервера не перезапустилась: journalctl -u gasapp-server -n 30"
+    fi
+    if runuser -u gasapp -- test -x /opt/gasapp/mail/send-code.sh 2> /dev/null; then
+        ok "пользователь службы может запустить письмо с кодом"
+    else
+        bad "пользователь gasapp не может запустить /opt/gasapp/mail/send-code.sh — проверьте права"
+    fi
 fi
 
 # --- 2. DHCP IONOS ------------------------------------------------------------
