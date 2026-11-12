@@ -36,12 +36,37 @@ esac
 # shellcheck disable=SC1090
 [[ -f ~/.gasapp-env ]] && source ~/.gasapp-env
 
+# --- Одно подключение на машину ----------------------------------------------
+#
+# 🔐 На VPS-1 брандмауэр пускает не больше шести новых подключений SSH
+# за 30 секунд (ufw limit, шаг 13), а ко внутренним машинам ходят через
+# него же. Поэтому все команды идут через одно постоянное подключение к
+# каждой машине (ControlMaster): без этого скрипт упирался в лимит.
+SSHCFG="$(mktemp)"
+CMDIR="$(mktemp -d)"
+cat > "$SSHCFG" << EOF
+Host *
+    ControlMaster auto
+    ControlPath ${CMDIR}/%C
+    ControlPersist 15m
+Include ~/.ssh/config
+EOF
+cleanup() {
+    for h in "${HOSTS[@]}"; do command ssh -F "$SSHCFG" -O exit "$h" > /dev/null 2>&1 || true; done
+    rm -rf "$SSHCFG" "$CMDIR"
+    [[ -n "${AGENT_STARTED:-}" ]] && ssh-agent -k > /dev/null 2>&1
+    return 0
+}
+trap cleanup EXIT
+ssh() { command ssh -F "$SSHCFG" "$@"; }
+rsync() { command rsync -e "ssh -F $SSHCFG" "$@"; }
+
 # --- Ключ SSH: фраза один раз на весь запуск ---------------------------------
 
 say "Ключ SSH"
 if ! ssh-add -l > /dev/null 2>&1; then
     eval "$(ssh-agent -s)" > /dev/null
-    trap 'ssh-agent -k > /dev/null 2>&1' EXIT
+    AGENT_STARTED=1
     key="$(ssh -G gasapp-lb | awk '/^identityfile / {print $2; exit}')"
     key="${key/#\~/$HOME}"
     echo "  Фраза ключа SSH (Bitwarden: «SSH: фраза ключа») — спросится один раз:"
@@ -50,7 +75,12 @@ fi
 ok "ключ загружен"
 
 for h in "${HOSTS[@]}"; do
-    ssh -o BatchMode=yes -o ConnectTimeout=15 "$h" true 2> /dev/null || die "нет связи с $h (проверьте интернет и шаг 23.1 — вход через VPS-1)"
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=15 "$h" true 2> /dev/null; then
+        # Отказ может быть от лимита после прошлого запуска — ждём и пробуем ещё.
+        echo "  $h не ответил — жду 40 секунд (лимит подключений) и пробую ещё раз…"
+        sleep 40
+        ssh -o BatchMode=yes -o ConnectTimeout=15 "$h" true 2> /dev/null || die "нет связи с $h (проверьте интернет и шаг 23.1 — вход через VPS-1)"
+    fi
 done
 ok "связь со всеми четырьмя машинами"
 
