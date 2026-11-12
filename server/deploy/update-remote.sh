@@ -72,6 +72,32 @@ if [[ " $roles " != *" lb "* ]]; then
     fi
 fi
 
+# --- 3б. Службы ждут WireGuard -------------------------------------------------
+#
+# nginx, PostgreSQL, Postfix и сервер API слушают внутренний адрес 10.0.0.x,
+# который появляется только с WireGuard. При загрузке они стартовали раньше
+# него и падали: «bind() to 10.0.0.2:8444 failed (Cannot assign requested
+# address)» — после любой перезагрузки VPS-1 сайт и API лежали, пока
+# nginx не перезапустят руками (2026-11-12).
+
+if [[ -f /etc/wireguard/wg0.conf ]]; then
+    fixed=""
+    for unit in nginx postgresql@ postfix@ gasapp-server gasapp-admin; do
+        systemctl cat "${unit}.service" > /dev/null 2>&1 || continue
+        dir="/etc/systemd/system/${unit}.service.d"
+        install -d -m 755 "$dir"
+        printf '[Unit]
+# GasApp: внутренний адрес 10.0.0.x появляется с WireGuard.
+Wants=wg-quick@wg0.service
+After=wg-quick@wg0.service
+' > "$dir/10-gasapp-wireguard.conf"
+        fixed="${fixed} ${unit%@}"
+    done
+    systemctl enable --quiet wg-quick@wg0.service 2> /dev/null || true
+    systemctl daemon-reload
+    [[ -n "$fixed" ]] && ok "после перезагрузки службы ждут WireGuard:${fixed}"
+fi
+
 # --- 4. Программы и контрольные суммы ----------------------------------------
 
 expected="$kit/expected-sums.txt"
