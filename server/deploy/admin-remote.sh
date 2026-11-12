@@ -12,14 +12,16 @@ sudo -v
 cd "$kit"
 sha256sum --check --quiet expected-sum || { bad "сумма программы не совпала с вашей сборкой — не ставлю"; exit 1; }
 
+# Проверки — до того, как что-то менять на сервере.
+sudo test -s /etc/gasapp/credentials/admin_database_url ||
+    { bad "нет /etc/gasapp/credentials/admin_database_url — сделайте шаг 20.1 инструкции"; exit 1; }
+
 # Атомарная замена: служба никогда не видит недописанный файл.
 sudo install -m 755 gasapp-server-admin /usr/local/bin/gasapp-server-admin.new
 sudo mv /usr/local/bin/gasapp-server-admin.new /usr/local/bin/gasapp-server-admin
 sudo install -m 644 gasapp-admin.service gasapp-reports.service gasapp-reports.timer /etc/systemd/system/
 ok "программа и службы на месте"
 
-[[ -s /etc/gasapp/credentials/admin_database_url ]] ||
-    { bad "нет /etc/gasapp/credentials/admin_database_url — сделайте шаг 20.1 инструкции"; exit 1; }
 
 token_file=/etc/gasapp/credentials/admin_token_sha256
 change=n
