@@ -12,7 +12,7 @@
 # и сервер не трогает.
 #
 # ios-testflight — релиз: подпись и выгрузка в TestFlight. Нужна группа
-# переменных «app_store» (Codemagic → Teams → Global variables, см.
+# переменных «app_store» (Codemagic → gasapp → App settings → Environment variables, см.
 # ВЫПУСК-ПРИЛОЖЕНИЯ.md, часть «iOS»):
 #   APPLE_TEAM_ID  — Team ID (10 символов)
 #   ASC_KEY_ID     — ключ App Store Connect API: Key ID
@@ -73,7 +73,7 @@ workflows:
             [ -n "${!v:-}" ] || missing="$missing $v"
           done
           if [ -n "$missing" ]; then
-            echo "Нет переменных:$missing — Codemagic → Teams → Global variables → группа app_store (ВЫПУСК-ПРИЛОЖЕНИЯ.md)"
+            echo "Нет переменных:$missing — Codemagic → gasapp → App settings → Environment variables → группа app_store (ВЫПУСК-ПРИЛОЖЕНИЯ.md)"
             exit 1
           fi
       - name: Настройки выпуска совпадают с tools/release.conf
