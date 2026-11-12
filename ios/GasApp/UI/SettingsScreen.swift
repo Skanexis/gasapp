@@ -30,6 +30,7 @@ struct SettingsScreen: View {
     @State private var reauth: ReauthStep?
     @State private var confirmWipe = false
     @State private var confirmExport = false
+    @State private var premium = false
 
     /// 🔐 Действия только для владельца (аудит 2026-10-02, A-3; как
     /// `Reauth.require` на Android): включать защиту можно сразу,
@@ -62,51 +63,85 @@ struct SettingsScreen: View {
 
     var body: some View {
         Form {
-            // Строки — цветом карточек GasApp, а не системным серым.
-            Group {
-                Section(L10n.t("Аккаунт", "Account", "Account")) {
-                    LabeledContent(L10n.t("Имя", "Username", "Nome utente"), value: username.isEmpty ? "—" : "@\(username)")
-                    Button(L10n.t("Заблокировать сейчас", "Lock now", "Blocca ora")) { model.lock() }
-                }
-
-                Section {
-                    Toggle(L10n.t("Уведомления", "Notifications", "Notifiche"), isOn: $pushEnabled)
-                        .onChange(of: pushEnabled) { _, value in
-                            Push.shared.enabled = value
-                            Push.shared.sync()
+            // Профиль — карточкой сверху, как в системных настройках.
+            Section {
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.3), Color(red: 1, green: 0.62, blue: 0.11)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Text(initials).font(.system(size: 30, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Color(red: 0.16, green: 0.07, blue: 0))
+                    }
+                    .frame(width: 84, height: 84)
+                    .overlay(Circle().stroke(Color(red: 0.54, green: 0.2, blue: 0.08), lineWidth: 3))
+                    .accessibilityHidden(true)
+                    Text(username.isEmpty ? "—" : "@\(username)")
+                        .font(.system(size: 24, weight: .heavy, design: .rounded))
+                        .foregroundStyle(GasAppColor.textPrimary)
+                    if premium {
+                        Label(L10n.t("Премиум", "Premium", "Premium"), systemImage: "crown.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(GasAppColor.accent)
+                            .padding(.horizontal, 12).padding(.vertical, 5)
+                            .background(Capsule().fill(GasAppColor.accent.opacity(0.14)))
+                    }
+                    HStack(spacing: 10) {
+                        NavigationLink { ProfileSheet(username: username) } label: {
+                            Label(L10n.t("Моя ссылка и QR", "My link and QR", "Il mio link e QR"), systemImage: "qrcode")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(GasAppColor.bgRaised))
                         }
-                } header: {
-                    Text(L10n.t("Уведомления", "Notifications", "Notifiche"))
-                } footer: {
-                    Text(L10n.t("Только «Новые сообщения» — без текста и имени. Apple видит лишь, что вам что-то пришло, и когда.",
-                                "Only “New messages” — no text or name. Apple only sees that something arrived, and when.", "Solo «Nuovi messaggi», senza testo né nome. Apple vede solo che è arrivato qualcosa e quando."))
+                        Button { model.lock() } label: {
+                            Label(L10n.t("Заблокировать", "Lock", "Blocca"), systemImage: "lock.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(GasAppColor.bgRaised))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(GasAppColor.accent)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .listRowBackground(GasAppColor.bgCard)
 
+            Group {
                 Section {
                     NavigationLink { NetworkScreen() } label: {
-                        LabeledContent(L10n.t("Подключение", "Connection", "Connessione"), value: proxyName)
+                        SettingRow(icon: "network", color: .blue, title: L10n.t("Подключение", "Connection", "Connessione"),
+                                   value: proxyName, detail: currentProxy == .tor ? torStatus : nil)
                     }
-                    if currentProxy == .tor && !torStatus.isEmpty {
-                        Text(torStatus).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
+                    Toggle(isOn: $pushEnabled) {
+                        SettingRow(icon: "bell.badge.fill", color: .red, title: L10n.t("Уведомления", "Notifications", "Notifiche"))
+                    }
+                    .onChange(of: pushEnabled) { _, value in
+                        Push.shared.enabled = value
+                        Push.shared.sync()
                     }
                 } header: {
-                    Text(L10n.t("Сеть", "Network", "Rete"))
+                    Text(L10n.t("Связь", "Connection", "Connessione"))
                 } footer: {
-                    Text(L10n.t("Напрямую сервер видит ваш IP-адрес. Через Tor — нет, но медленнее.",
-                                "Directly, the server sees your IP address. Via Tor it doesn’t, but it’s slower.", "In modalità diretta il server vede il tuo indirizzo IP. Tramite Tor no, ma è più lento."))
+                    Text(L10n.t("Уведомление — только «Новые сообщения», без текста и имени. Напрямую сервер видит ваш IP-адрес, через Tor — нет.",
+                                "A notification only says “New messages” — no text or name. Directly, the server sees your IP address; via Tor it doesn’t.",
+                                "La notifica dice solo «Nuovi messaggi», senza testo né nome. In modalità diretta il server vede il tuo indirizzo IP, tramite Tor no."))
                 }
 
                 Section {
                     if Biometric.available {
-                        Toggle(L10n.t("Вход по \(Biometric.name)", "Unlock with \(Biometric.name)", "Sblocca con \(Biometric.name)"), isOn: Binding(
+                        Toggle(isOn: Binding(
                             get: { biometricOn },
                             set: { value in
                                 if value { askPinForBiometric = true } else { Biometric.disable(); biometricOn = false }
                             }
-                        ))
+                        )) {
+                            SettingRow(icon: "faceid", color: .green, title: L10n.t("Вход по \(Biometric.name)", "Unlock with \(Biometric.name)", "Sblocca con \(Biometric.name)"))
+                        }
                     }
                     // Дольше — слабее: удлинить срок можно только по PIN.
-                    Picker(L10n.t("Автоблокировка", "Auto-lock", "Blocco automatico"), selection: Binding(
+                    Picker(selection: Binding(
                         get: { autoLock },
                         set: { value in
                             if value > autoLock {
@@ -121,29 +156,59 @@ struct SettingsScreen: View {
                         Text(L10n.t("Через 30 с", "After 30 s", "Dopo 30 s")).tag(30)
                         Text(L10n.t("Через 1 мин", "After 1 min", "Dopo 1 min")).tag(60)
                         Text(L10n.t("Через 5 мин", "After 5 min", "Dopo 5 min")).tag(300)
+                    } label: {
+                        SettingRow(icon: "lock.rotation", color: .indigo, title: L10n.t("Автоблокировка", "Auto-lock", "Blocco automatico"))
                     }
-                    Toggle(L10n.t("Показывать, что я в сети", "Show when I’m online", "Mostra quando sono online"), isOn: $presence)
-                        .onChange(of: presence) { _, value in setPresence(value) }
+                    Toggle(isOn: $presence) {
+                        SettingRow(icon: "eye.fill", color: .teal, title: L10n.t("Показывать, что я в сети", "Show when I’m online", "Mostra quando sono online"))
+                    }
+                    .onChange(of: presence) { _, value in setPresence(value) }
                     // Включение — через подтверждение, выключение — по PIN:
                     // иначе стирание выключали бы перед подбором PIN.
-                    Toggle(L10n.t("Стереть всё после 10 неверных PIN", "Erase everything after 10 wrong PINs", "Cancella tutto dopo 10 PIN errati"),
-                           isOn: Binding(
-                               get: { wipeAfterTen },
-                               set: { value in if value { confirmWipe = true } else { reauth = .disableWipe } }
-                           ))
-                    NavigationLink(L10n.t("Центр безопасности", "Security center", "Centro sicurezza")) { SecurityScreen() }
-                    NavigationLink(L10n.t("Хранилище файлов", "File vault", "Cassaforte file")) { VaultScreen() }
-                    NavigationLink(L10n.t("Место на устройстве", "Storage", "Spazio")) { StorageScreen() }
-                    NavigationLink(L10n.t("Резервная копия", "Backup", "Backup")) { BackupScreen() }
-                    NavigationLink(L10n.t("Восстановить из копии", "Restore from backup", "Ripristina da backup")) {
-                        RestoreScreen(recovering: false) { Inbox.shared.touch() }
+                    Toggle(isOn: Binding(
+                        get: { wipeAfterTen },
+                        set: { value in if value { confirmWipe = true } else { reauth = .disableWipe } }
+                    )) {
+                        SettingRow(icon: "trash.fill", color: .red, title: L10n.t("Стереть всё после 10 неверных PIN", "Erase everything after 10 wrong PINs", "Cancella tutto dopo 10 PIN errati"))
                     }
-                    Button(L10n.t("Выгрузить мои данные", "Export my data", "Esporta i miei dati")) { reauth = .export }
+                    NavigationLink { SecurityScreen() } label: {
+                        SettingRow(icon: "checkmark.shield.fill", color: .orange, title: L10n.t("Центр безопасности", "Security center", "Centro sicurezza"))
+                    }
+                    NavigationLink { VaultScreen() } label: {
+                        SettingRow(icon: "lock.square.stack.fill", color: .purple, title: L10n.t("Хранилище файлов", "File vault", "Cassaforte file"))
+                    }
                 } header: {
                     Text(L10n.t("Защита", "Security", "Sicurezza"))
                 } footer: {
-                    Text(L10n.t("Защищает от перебора, но ребёнок, играющий с телефоном, может всё стереть.",
-                                "Stops guessing, but a child playing with the phone could erase everything.", "Ferma i tentativi, ma un bambino che gioca con il telefono potrebbe cancellare tutto."))
+                    Text(L10n.t("Стирание защищает от перебора, но ребёнок, играющий с телефоном, может всё стереть.",
+                                "Erasing stops guessing, but a child playing with the phone could erase everything.",
+                                "La cancellazione ferma i tentativi, ma un bambino che gioca con il telefono potrebbe cancellare tutto."))
+                }
+
+                Section {
+                    NavigationLink { BotsScreen() } label: {
+                        SettingRow(icon: "cpu.fill", color: .mint, title: L10n.t("Мои боты", "My bots", "I miei bot"),
+                                   value: premium ? nil : L10n.t("Премиум", "Premium", "Premium"))
+                    }
+                } header: {
+                    Text(L10n.t("Боты", "Bots", "Bot"))
+                }
+
+                Section {
+                    NavigationLink { BackupScreen() } label: {
+                        SettingRow(icon: "externaldrive.fill", color: .blue, title: L10n.t("Резервная копия", "Backup", "Backup"))
+                    }
+                    NavigationLink { RestoreScreen(recovering: false) { Inbox.shared.touch() } } label: {
+                        SettingRow(icon: "arrow.counterclockwise", color: .cyan, title: L10n.t("Восстановить из копии", "Restore from backup", "Ripristina da backup"))
+                    }
+                    NavigationLink { StorageScreen() } label: {
+                        SettingRow(icon: "internaldrive.fill", color: .gray, title: L10n.t("Место на устройстве", "Storage", "Spazio"))
+                    }
+                    Button { reauth = .export } label: {
+                        SettingRow(icon: "square.and.arrow.up.fill", color: .brown, title: L10n.t("Выгрузить мои данные", "Export my data", "Esporta i miei dati"))
+                    }
+                } header: {
+                    Text(L10n.t("Данные", "Data", "Dati"))
                 }
 
                 // Как `DevicesActivity` на Android: только это устройство —
@@ -151,7 +216,7 @@ struct SettingsScreen: View {
                 // только здесь и на сервер не уходит.
                 Section {
                     HStack(spacing: 12) {
-                        Image(systemName: "iphone").foregroundStyle(GasAppColor.accent)
+                        SettingIcon(name: "iphone", color: .gray)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(UIDevice.current.model).foregroundStyle(GasAppColor.textPrimary)
                             Text("ID \(CoreStore.shared.deviceId.map { String($0.prefix(8)) } ?? "—")")
@@ -170,32 +235,39 @@ struct SettingsScreen: View {
                                 "Every linked device can read all of your messages. Device linking will come with multi-device sync; for now, your account works only on this device.", "Ogni dispositivo collegato può leggere tutti i tuoi messaggi. Il collegamento dei dispositivi arriverà con la sincronizzazione multi-dispositivo; per ora il tuo account funziona solo su questo dispositivo."))
                 }
 
-                Section(L10n.t("Документы", "Documents", "Documenti")) {
-                    link(L10n.t("Политика конфиденциальности", "Privacy policy", "Informativa sulla privacy"), "privacy/")
-                    link(L10n.t("Условия использования", "Terms of use", "Termini d’uso"), "terms/")
-                    link(L10n.t("Правила сообщества", "Community guidelines", "Linee guida della community"), "community-guidelines/")
-                    link(L10n.t("Поддержка", "Support", "Assistenza"), "support/")
+                Section {
+                    link(icon: "hand.raised.fill", color: .blue, L10n.t("Политика конфиденциальности", "Privacy policy", "Informativa sulla privacy"), "privacy/")
+                    link(icon: "doc.text.fill", color: .gray, L10n.t("Условия использования", "Terms of use", "Termini d’uso"), "terms/")
+                    link(icon: "person.3.fill", color: .orange, L10n.t("Правила сообщества", "Community guidelines", "Linee guida della community"), "community-guidelines/")
+                    link(icon: "questionmark.bubble.fill", color: .green, L10n.t("Поддержка", "Support", "Assistenza"), "support/")
+                    // Язык приложения выбирается в настройках iOS (как
+                    // «Язык приложения» на Android 13+).
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    } label: {
+                        SettingRow(icon: "globe", color: .blue, title: L10n.t("Язык приложения", "App language", "Lingua dell’app"), external: true)
+                    }
+                } header: {
+                    Text(L10n.t("О приложении", "About", "Informazioni"))
+                } footer: {
+                    Text("GasApp · \(L10n.t("ядро", "core", "core")) \(coreVersion()) · \(L10n.t("протокол", "protocol", "protocollo")) \(protocolVersion())")
                 }
 
                 Section {
                     Button(role: .destructive) { reauth = .delete } label: {
-                        if deleting { ProgressView() } else { Text(L10n.t("Удалить аккаунт", "Delete account", "Elimina account")) }
+                        HStack {
+                            Spacer()
+                            if deleting { ProgressView() } else {
+                                Text(L10n.t("Удалить аккаунт", "Delete account", "Elimina account")).fontWeight(.semibold)
+                            }
+                            Spacer()
+                        }
                     }
                     .disabled(deleting)
                     if let error { Text(error).foregroundStyle(GasAppColor.error) }
                 } footer: {
                     Text(L10n.t("Аккаунт удаляется на сервере, переписка — с этого телефона. Вернуть нельзя.",
                                 "The account is deleted on the server and messages from this phone. This can’t be undone.", "L’account viene eliminato dal server e i messaggi da questo telefono. Non si può annullare."))
-                }
-
-                Section {
-                    LabeledContent(L10n.t("Версия ядра", "Core version", "Versione del core"), value: coreVersion())
-                    LabeledContent(L10n.t("Версия протокола", "Protocol version", "Versione del protocollo"), value: String(protocolVersion()))
-                    // Язык приложения выбирается в настройках iOS (как
-                    // «Язык приложения» на Android 13+).
-                    Button(L10n.t("Язык приложения", "App language", "Lingua dell’app")) {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                    }
                 }
             }
             .listRowBackground(GasAppColor.bgCard)
@@ -250,8 +322,15 @@ struct SettingsScreen: View {
                       defaultFilename: "gasapp-my-data.json") { _ in exportDocument = nil }
     }
 
-    private func link(_ title: String, _ path: String) -> some View {
-        Link(title, destination: AppConfig.docsURL.appendingPathComponent(path))
+    private func link(icon: String, color: Color, _ title: String, _ path: String) -> some View {
+        Link(destination: AppConfig.docsURL.appendingPathComponent(path)) {
+            SettingRow(icon: icon, color: color, title: title, external: true)
+        }
+    }
+
+    private var initials: String {
+        let letters = username.filter { $0.isLetter }.prefix(2)
+        return letters.isEmpty ? "G" : letters.uppercased()
     }
 
     private func load() async {
@@ -264,6 +343,7 @@ struct SettingsScreen: View {
         updateTorStatus()
         presence = (try? await Background.run { try messenger.presenceSharingEnabled() }) ?? false
         presenceLoaded = true
+        premium = (try? await Background.run { try messenger.premiumCached() }) ?? false
     }
 
     private func passReauth(_ step: ReauthStep, pin: [UInt8]) {
@@ -393,5 +473,49 @@ struct SettingsScreen: View {
     private func finishDeletion() {
         deletion = nil
         model.didWipe()
+    }
+}
+
+/// Строка настроек: цветной значок, название, значение справа.
+struct SettingRow: View {
+    let icon: String
+    let color: Color
+    let title: String
+    var value: String?
+    var detail: String?
+    var external = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingIcon(name: icon, color: color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundStyle(GasAppColor.textPrimary)
+                if let detail, !detail.isEmpty {
+                    Text(detail).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                }
+            }
+            Spacer(minLength: 8)
+            if let value { Text(value).foregroundStyle(GasAppColor.textTertiary) }
+            if external {
+                Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(GasAppColor.textTertiary)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// Значок строки настроек — белый символ на цветной плашке.
+struct SettingIcon: View {
+    let name: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: name)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(RoundedRectangle(cornerRadius: 8).fill(color.gradient))
+            .accessibilityHidden(true)
     }
 }

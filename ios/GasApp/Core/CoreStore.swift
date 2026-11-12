@@ -98,13 +98,19 @@ final class CoreStore: @unchecked Sendable {
     /// Открытая база не возвращается как есть: вход — это проверка PIN,
     /// и проверяет её только открытие базы этим PIN.
     func unlock(pin: [UInt8]) throws -> Messenger {
-        lock.lock(); defer { lock.unlock() }
-        close()
+        // Под блокировкой — только быстрое: соль. Растяжка PIN (Argon2,
+        // 256 МиБ, секунды) — без неё: прежде блокировку держала и она, и
+        // любой экран, спросивший хранилище (`current()`, приём каждые
+        // 4 секунды), замирал вместе с главным потоком — интерфейс
+        // «тормозил», а при уходе в фон iOS могла снять приложение.
+        let (creating, salt): (Bool, Data) = try {
+            lock.lock(); defer { lock.unlock() }
+            // Новая база — только если её ещё нет: тогда и ключ Enclave
+            // заводится впервые.
+            let creating = !hasAccount
+            return (creating, try self.salt(create: creating))
+        }()
 
-        // Новая база — только если её ещё нет: тогда и ключ Enclave
-        // заводится впервые.
-        let creating = !hasAccount
-        let salt = try salt(create: creating)
         var stretched = try [UInt8](deriveStorageKey(pin: Data(pin), salt: salt))
         defer { stretched.wipe() }
 
@@ -115,20 +121,27 @@ final class CoreStore: @unchecked Sendable {
         var key = try [UInt8](deriveStorageKeyTee(stretched: Data(stretched), salt: salt, teeMac: Data(response)))
         defer { key.wipe() }
 
-        let opened = try open(key: key)
+        let opened: Messenger = try {
+            lock.lock(); defer { lock.unlock() }
+            close()
+            return try open(key: key)
+        }()
         // Проверочное значение хранилища файлов — тем же PIN, что открыл
         // базу (как `Core.establishVaultVerifier` на Android): хранилище
         // сверяет с ним PIN, а не открывает файлы наугад. Сбой не мешает
-        // войти.
+        // войти. Тоже долгое — тоже без блокировки.
         try? opened.establishVaultVerifier(pin: Data(pin), salt: salt)
         return opened
     }
 
     /// 🔐 Ключ базы из PIN — без открытия: только для включения Face ID.
     /// Других вызывающих быть не должно (см. `Core.deriveKey` на Android).
+    /// Растяжка — без блокировки хранилища (см. `unlock(pin:)`).
     func deriveKey(pin: [UInt8]) throws -> [UInt8] {
-        lock.lock(); defer { lock.unlock() }
-        let salt = try salt(create: false)
+        let salt: Data = try {
+            lock.lock(); defer { lock.unlock() }
+            return try self.salt(create: false)
+        }()
         var stretched = try [UInt8](deriveStorageKey(pin: Data(pin), salt: salt))
         defer { stretched.wipe() }
         let probe = try enclaveProbePoint(stretched: Data(stretched), salt: salt)

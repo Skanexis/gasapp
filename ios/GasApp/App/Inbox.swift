@@ -42,7 +42,8 @@ final class Inbox {
         guard let device = CoreStore.shared.deviceId,
               let messenger = try? CoreStore.shared.current() else { return }
         let network = NetworkController.shared
-        network.ensureRoute()
+        // Ядро спрашивается в фоне: см. NetworkController.cached.
+        _ = try? await Background.run { network.ensureRoute() }
         // Tor ещё подключается — так и сказать, а не «Нет связи»: запрос
         // всё равно не ушёл бы (маршрут закрыт).
         if network.isConnectingTor {

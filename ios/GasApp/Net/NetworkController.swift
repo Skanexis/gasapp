@@ -28,6 +28,15 @@ final class NetworkController: @unchecked Sendable {
     /// Ожидание готовности Tor: одно на запуск, прежнее отменяется.
     private var waiter: Task<Void, Never>?
     private var failuresInRow = 0
+    /// Последнее известное состояние Tor. Экраны читают его, а не ядро:
+    /// `embeddedTorStatus()` ждёт ту же блокировку, что держит запуск Tor
+    /// (секунды), и вызов с главного потока замораживал интерфейс.
+    private var cached = NetworkController.stopped
+
+    private static let stopped = FfiTorStatus(
+        running: false, ready: false, percent: 0, stalled: false, port: 0, isolatedPort: 0,
+        bridges: false, socksUsername: "", socksPassword: ""
+    )
 
     private init() {}
 
@@ -53,12 +62,22 @@ final class NetworkController: @unchecked Sendable {
             NetworkRoute.current = .closed
             // Заново, если Tor уже работал: после блокировки база
             // открывается снова, а порт моста мог умереть в фоне.
-            startTorLocked(restart: embeddedTorStatus().running)
+            startTorLocked(restart: cached.running)
         }
     }
 
-    /// Состояние встроенного Tor (для экрана сети и регистрации).
-    var torStatus: FfiTorStatus { embeddedTorStatus() }
+    /// Состояние встроенного Tor (для экрана сети и регистрации) — без
+    /// ожидания: последнее, что узнал фоновый опрос.
+    var torStatus: FfiTorStatus {
+        lock.lock(); defer { lock.unlock() }
+        return cached
+    }
+
+    private func refresh() -> FfiTorStatus {
+        let status = embeddedTorStatus()
+        lock.lock(); cached = status; lock.unlock()
+        return status
+    }
 
     /// Выбран Tor, а маршрут ещё закрыт — подключается.
     var isConnectingTor: Bool {
@@ -77,10 +96,15 @@ final class NetworkController: @unchecked Sendable {
 
     /// Перед каждым приёмом: открыть маршрут, если Tor готов, а ожидание
     /// уже закончилось, и поднять Tor, если он упал.
+    /// ⚠️ Звать не с главного потока: спрашивает ядро (см. `cached`).
     func ensureRoute() {
+        lock.lock()
+        let wantsTor: Bool = { if case .tor = mode ?? .direct { return true }; return false }()
+        lock.unlock()
+        guard wantsTor else { return }
+        let status = refresh()
         lock.lock(); defer { lock.unlock() }
         guard case .tor = mode ?? .direct else { return }
-        let status = embeddedTorStatus()
         if !status.running {
             NetworkRoute.current = .closed
             startTorLocked(restart: false)
@@ -104,7 +128,7 @@ final class NetworkController: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard case .tor = mode ?? .direct else { return }
         failuresInRow += 1
-        guard failuresInRow >= 3, embeddedTorStatus().ready else { return }
+        guard failuresInRow >= 3, cached.ready else { return }
         failuresInRow = 0
         NetworkRoute.current = .closed
         startTorLocked(restart: true)
@@ -114,7 +138,7 @@ final class NetworkController: @unchecked Sendable {
     func awaitTor(timeout: TimeInterval, progress: @escaping @Sendable (FfiTorStatus) -> Void) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline, !Task.isCancelled {
-            let status = embeddedTorStatus()
+            let status = refresh()
             progress(status)
             if status.ready {
                 lock.lock(); routeThroughTor(status); lock.unlock()
@@ -152,6 +176,7 @@ final class NetworkController: @unchecked Sendable {
             // работающий; после фона он нужен заново — отсюда stop.
             if restart { stopEmbeddedTor() }
             _ = try? startEmbeddedTor(settings: settings)
+            _ = self?.refresh()
             // Без предела по времени: с мостами подключение бывает долгим,
             // а прежний предел в 10 минут оставлял маршрут закрытым навсегда.
             _ = await self?.awaitTor(timeout: 365 * 24 * 3600) { _ in }

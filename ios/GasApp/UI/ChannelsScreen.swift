@@ -15,6 +15,7 @@ struct ChannelsScreen: View {
     @State private var showJoin = false
     @State private var showCreate = false
     @State private var showBots = false
+    @State private var showPublic = false
     /// Объяснение «нужен премиум» — вместо формы, которую всё равно не
     /// отправить (сервер отвечает 403 без премиума).
     @State private var premiumNote: String?
@@ -72,7 +73,9 @@ struct ChannelsScreen: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button(L10n.t("Вступить по ссылке", "Join by link", "Entra tramite link")) { showJoin = true }
-                        NavigationLink(L10n.t("Найти открытый", "Find public", "Trova pubblici")) { PublicChannelsScreen() }
+                        // Переход — через состояние: NavigationLink внутри Menu
+                        // в iOS часто не срабатывает.
+                        Button(L10n.t("Найти открытый", "Find public", "Trova pubblici")) { showPublic = true }
                         Button(L10n.t("Создать канал", "Create channel", "Crea canale")) { createOrExplain { showCreate = true } }
                         Button(L10n.t("Мои боты", "My bots", "I miei bot")) { createOrExplain { showBots = true } }
                     } label: { Image(systemName: "plus") }
@@ -91,6 +94,7 @@ struct ChannelsScreen: View {
             } message: {
                 Text(premiumNote ?? "")
             }
+            .navigationDestination(isPresented: $showPublic) { PublicChannelsScreen() }
             .sheet(isPresented: $showBots) {
                 NavigationStack {
                     BotsScreen()

@@ -29,6 +29,10 @@ struct ChannelManageScreen: View {
     @State private var adminLabel = ""
     @State private var avatarItem: PhotosPickerItem?
     @State private var confirmPublic = false
+    @State private var confirmClose = false
+    /// Ошибка действия — всплывающим окном: строка вверху формы была
+    /// за пределами экрана, и казалось, что кнопка не работает.
+    @State private var failure: String?
     @State private var removing: FfiChannelMember?
     @State private var note: String?
     @State private var working = false
@@ -41,10 +45,6 @@ struct ChannelManageScreen: View {
     var body: some View {
         Form {
             Group {
-                if let note {
-                    Section { Text(note).font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary) }
-                }
-
                 Section(L10n.t("Канал", "Channel", "Canale")) {
                     TextField(L10n.t("Название", "Title", "Titolo"), text: $title)
                     TextField(L10n.t("Описание", "Description", "Descrizione"), text: $about, axis: .vertical).lineLimit(2...6)
@@ -83,9 +83,28 @@ struct ChannelManageScreen: View {
                 }
 
                 Section {
-                    Toggle(L10n.t("Вступление по заявке", "Join by request", "Ingresso su richiesta"), isOn: Binding(
-                        get: { channel?.closed == true }, set: { setClosed($0) }
-                    ))
+                    if channel?.closed == true {
+                        Label(L10n.t("Вступление — по заявке", "Joining is by request", "Si entra su richiesta"),
+                              systemImage: "lock.fill")
+                            .foregroundStyle(GasAppColor.ok)
+                    } else {
+                        // Закрыть можно один раз: открытым канал уже не
+                        // сделать (ядро, setChannelClosed) — поэтому кнопка
+                        // с подтверждением, а не переключатель туда-обратно.
+                        Button {
+                            if channel?.handle != nil {
+                                failure = L10n.t("Сначала уберите публичное имя: по @имени сервер раздаёт ссылку с ключом чтения, поэтому такой канал закрыть нельзя.",
+                                                 "Remove the public name first: by its @name the server hands out a link with the read key, so such a channel cannot be closed.",
+                                                 "Rimuovi prima il nome pubblico: tramite il suo @nome il server distribuisce un link con la chiave di lettura, quindi un canale così non si può chiudere.")
+                            } else {
+                                confirmClose = true
+                            }
+                        } label: {
+                            Label(L10n.t("Сделать вступление по заявке", "Make joining by request", "Rendi l’ingresso su richiesta"),
+                                  systemImage: "lock")
+                        }
+                        .disabled(working || channel == nil)
+                    }
                     ForEach(requests, id: \.accountId) { request in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -175,6 +194,29 @@ struct ChannelManageScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
+        // Итог действия — плашкой снизу, сама исчезает: видна, где бы ни
+        // была прокрутка.
+        .overlay(alignment: .bottom) {
+            if let note {
+                Label(note, systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(GasAppColor.textPrimary)
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .background(Capsule().fill(GasAppColor.bgRaised))
+                    .overlay(Capsule().stroke(GasAppColor.ok.opacity(0.6), lineWidth: 1))
+                    .padding(.bottom, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .overlay {
+            if working {
+                ProgressView().tint(GasAppColor.accent)
+                    .padding(18)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(GasAppColor.bgRaised.opacity(0.95)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: note)
+        .animation(.easeInOut(duration: 0.2), value: working)
         .navigationTitle(L10n.t("Управление", "Manage", "Gestisci"))
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(L10n.t("Сделать канал публичным?", "Make the channel public?", "Rendere pubblico il canale?"),
@@ -183,6 +225,20 @@ struct ChannelManageScreen: View {
         } message: {
             Text(L10n.t("Сервер получит ключ чтения и сможет читать этот канал, его записи и файлы. Вернуть канал в закрытые можно, но знание сервера назад не забрать.",
                         "The server receives the read key and will be able to read this channel, its posts and files. You can make it private again, but that knowledge cannot be taken back.", "Il server riceve la chiave di lettura e potrà leggere questo canale, i suoi post e i file. Puoi renderlo di nuovo privato, ma ciò che il server ha visto non si può cancellare."))
+        }
+        .confirmationDialog(L10n.t("Закрыть канал?", "Close the channel?", "Chiudere il canale?"),
+                            isPresented: $confirmClose, titleVisibility: .visible) {
+            Button(L10n.t("Закрыть", "Close", "Chiudi"), role: .destructive) { setClosed(true) }
+        } message: {
+            Text(L10n.t("В закрытый канал вступают по заявке: вы одобряете каждого. Ключ канала сразу сменится — по старой ссылке новые записи не откроются; нынешние подписчики остаются. Сделать канал снова открытым нельзя.",
+                        "A closed channel is joined by request: you approve each person. The channel key changes at once, so the old link no longer opens new posts; current subscribers stay. A closed channel cannot be made open again.",
+                        "In un canale chiuso si entra su richiesta: approvi ogni persona. La chiave del canale cambia subito, quindi il vecchio link non apre più i nuovi post; gli iscritti attuali restano. Un canale chiuso non può tornare aperto."))
+        }
+        .alert(L10n.t("Не получилось", "Didn’t work", "Non ha funzionato"),
+               isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK", role: .cancel) { failure = nil }
+        } message: {
+            Text(failure ?? "")
         }
         .confirmationDialog(L10n.t("Удалить подписчика?", "Remove the subscriber?", "Rimuovere l’iscritto?"), isPresented: Binding(
             get: { removing != nil }, set: { if !$0 { removing = nil } }
@@ -241,10 +297,14 @@ struct ChannelManageScreen: View {
                 try await Background.run { try action(messenger) }
                 note = done
                 onChanged()
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    if note == done { note = nil }
+                }
             } catch let error as FfiError {
-                note = Self.explain(error)
+                failure = Self.explain(error)
             } catch {
-                note = L10n.t("Не получилось. Попробуйте ещё раз.", "That didn’t work. Try again.", "Non ha funzionato. Riprova.")
+                failure = L10n.t("Не получилось. Попробуйте ещё раз.", "That didn’t work. Try again.", "Non ha funzionato. Riprova.")
             }
             working = false
             await load()
