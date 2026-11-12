@@ -1,2 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "Base.xcconfig"
+
+// Сервер пушей Apple: development — для сборок из Xcode, production —
+// TestFlight и App Store (подпись профилем App Store требует его).
+GASAPP_APS_ENVIRONMENT = production

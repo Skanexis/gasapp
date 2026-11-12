@@ -18,6 +18,7 @@
 #   ASC_KEY_ID     — ключ App Store Connect API: Key ID
 #   ASC_ISSUER_ID  — Issuer ID
 #   ASC_KEY_P8     — содержимое AuthKey_….p8 целиком (Secure)
+#   CERTIFICATE_PRIVATE_KEY — V:\gasapp\apple\ios-distribution-key.pem целиком
 # Адрес сервера, onion и пины — из tools/release.conf (не секрет).
 
 workflows:
@@ -69,7 +70,7 @@ workflows:
       - name: Секреты Apple на месте
         script: |
           missing=""
-          for v in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+          for v in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 CERTIFICATE_PRIVATE_KEY; do
             [ -n "${!v:-}" ] || missing="$missing $v"
           done
           if [ -n "$missing" ]; then
@@ -97,34 +98,36 @@ workflows:
           command -v xcodegen > /dev/null 2>&1 || brew install xcodegen
           echo "DEVELOPMENT_TEAM = ${APPLE_TEAM_ID}" > ios/Config/Local.xcconfig
           cd ios && xcodegen generate
-      - name: Сборка, подпись и выгрузка в TestFlight
+      - name: Подпись (сертификат и профиль App Store)
         script: |
           set -euo pipefail
-          KEY="$CM_BUILD_DIR/AuthKey.p8"
-          printf '%s\n' "$ASC_KEY_P8" > "$KEY"
-          trap 'rm -f "$KEY"' EXIT
-          # Подпись — автоматическая через ключ API: сертификат и профиль
-          # Xcode создаёт и обновляет сам (ключу нужна роль Admin).
-          AUTH=(-allowProvisioningUpdates
-                -authenticationKeyPath "$KEY"
-                -authenticationKeyID "$ASC_KEY_ID"
-                -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          # Инструменты Codemagic говорят с App Store Connect напрямую
+          # ключом API: сами создают сертификат «Apple Distribution» (из
+          # CERTIFICATE_PRIVATE_KEY — один и тот же каждый раз, поэтому
+          # новых сертификатов не плодится) и профиль App Store.
+          export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
+          export APP_STORE_CONNECT_KEY_IDENTIFIER="$ASC_KEY_ID"
+          export APP_STORE_CONNECT_PRIVATE_KEY="$ASC_KEY_P8"
+          keychain initialize
+          app-store-connect fetch-signing-files org.gasapp.messenger \
+            --type IOS_APP_STORE --create \
+            --certificate-key "$CERTIFICATE_PRIVATE_KEY"
+          keychain add-certificates
+          xcode-project use-profiles --project ios/GasApp.xcodeproj
+      - name: Сборка и выгрузка в TestFlight
+        script: |
+          set -euo pipefail
+          export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
+          export APP_STORE_CONNECT_KEY_IDENTIFIER="$ASC_KEY_ID"
+          export APP_STORE_CONNECT_PRIVATE_KEY="$ASC_KEY_P8"
           # Номер сборки — дата и время (ГГММДДЧЧММ, UTC): растёт сам, и
           # App Store Connect не отвергнет его как повтор.
           BUILD=$(date -u +%y%m%d%H%M)
           echo "Номер сборки: $BUILD"
-          xcodebuild archive -project ios/GasApp.xcodeproj -scheme GasApp             -configuration Release -destination 'generic/platform=iOS'             -archivePath "$CM_BUILD_DIR/GasApp.xcarchive"             CURRENT_PROJECT_VERSION="$BUILD" "${AUTH[@]}" | tail -40
-          test -d "$CM_BUILD_DIR/GasApp.xcarchive" || { echo "архив не собрался"; exit 1; }
-          cat > "$CM_BUILD_DIR/ExportOptions.plist" <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
-            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>manageAppVersionAndBuildNumber</key><false/>
-          </dict></plist>
-          EOF
-          xcodebuild -exportArchive -archivePath "$CM_BUILD_DIR/GasApp.xcarchive"             -exportOptionsPlist "$CM_BUILD_DIR/ExportOptions.plist"             -exportPath "$CM_BUILD_DIR/export" "${AUTH[@]}" | tail -40
+          xcode-project build-ipa --project ios/GasApp.xcodeproj --scheme GasApp \
+            --archive-xcargs "CURRENT_PROJECT_VERSION=$BUILD"
+          app-store-connect publish --path build/ios/ipa/*.ipa
           echo "✅ Выгружено. Через 10–30 минут сборка $BUILD появится в App Store Connect → TestFlight."
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log

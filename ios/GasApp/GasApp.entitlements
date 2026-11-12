@@ -6,10 +6,10 @@
 	     (Data Protection: класс Complete). База и соль — тоже. -->
 	<key>com.apple.developer.default-data-protection</key>
 	<string>NSFileProtectionComplete</string>
-	<!-- Пустые пуш-уведомления (App/Push.swift). «development» — для
-	     сборки из Xcode; при выгрузке в TestFlight/App Store Xcode сам
-	     ставит «production». -->
+	<!-- Пустые пуш-уведомления (App/Push.swift). Окружение — из настроек сборки:
+	     Debug — development, Release (TestFlight, App Store) — production
+	     (ios/Config/*.xcconfig). -->
 	<key>aps-environment</key>
-	<string>development</string>
+	<string>$(GASAPP_APS_ENVIRONMENT)</string>
 </dict>
 </plist>
