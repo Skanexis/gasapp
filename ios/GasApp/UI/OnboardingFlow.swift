@@ -24,6 +24,8 @@ struct OnboardingFlow: View {
     @State private var pin: [UInt8] = []
     @State private var firstPin: [UInt8] = []
     @State private var pinError: String?
+    /// Ошибка шага PIN — сбой связи, а не сам PIN: другой заголовок.
+    @State private var pinErrorIsNetwork = false
 
     @State private var code = ""
     @State private var codeError: String?
@@ -251,7 +253,10 @@ struct OnboardingFlow: View {
                                  "Six digits. It unlocks your messages on this phone. A PIN cannot be recovered.", "Sei cifre. Sblocca i tuoi messaggi su questo telefono. Il PIN non si può recuperare.")
             )
             if let pinError {
-                Banner(title: L10n.t("PIN не подходит", "PIN not accepted", "PIN non accettato"), message: pinError, tone: .error)
+                Banner(title: pinErrorIsNetwork
+                       ? L10n.t("Аккаунт не создан", "Account not created", "Account non creato")
+                       : L10n.t("PIN не подходит", "PIN not accepted", "PIN non accettato"),
+                       message: pinError, tone: .error)
             }
             if working {
                 VStack(spacing: 10) {
@@ -282,6 +287,7 @@ struct OnboardingFlow: View {
         var entered = pin
         pin.wipe(); pin = []
         pinError = nil
+        pinErrorIsNetwork = false
 
         if step == .pin {
             guard PinPolicy.isAcceptable(entered) else { entered.wipe(); return }
@@ -348,6 +354,7 @@ struct OnboardingFlow: View {
                     step = .account
                     emailError = L10n.t("Почта не принята", "Email not accepted", "Email non accettata")
                 } else {
+                    pinErrorIsNetwork = true
                     pinError = Self.message(for: error, viaTor: tor)
                 }
             }
@@ -448,6 +455,7 @@ struct OnboardingFlow: View {
                 CoreStore.shared.wipe()
                 working = false
                 step = .pin
+                pinErrorIsNetwork = true
                 pinError = Self.message(for: error, viaTor: tor)
             }
         }
