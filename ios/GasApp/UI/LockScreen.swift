@@ -25,7 +25,7 @@ struct LockScreen: View {
                 Image(systemName: "lock.shield.fill")
                     .font(.system(size: 52, weight: .bold))
                     .foregroundStyle(GasAppColor.accent)
-                Text(L10n.t("Введите PIN", "Enter PIN"))
+                Text(L10n.t("Введите PIN", "Enter PIN", "Inserisci il PIN"))
                     .font(.system(size: 26, weight: .heavy, design: .rounded))
                     .foregroundStyle(GasAppColor.textPrimary)
                 Text(status)
@@ -86,10 +86,10 @@ struct LockScreen: View {
     private var status: String {
         if waitLeft > 0 {
             return L10n.t("Слишком много попыток. Подождите \(Self.format(waitLeft))",
-                          "Too many attempts. Wait \(Self.format(waitLeft))")
+                          "Too many attempts. Wait \(Self.format(waitLeft))", "Troppi tentativi. Attendi \(Self.format(waitLeft))")
         }
         if let error { return error }
-        return L10n.t("PIN нужен, чтобы открыть переписку", "Your PIN unlocks your messages")
+        return L10n.t("PIN нужен, чтобы открыть переписку", "Your PIN unlocks your messages", "Il PIN sblocca i tuoi messaggi")
     }
 
     private func submit() {
@@ -106,7 +106,7 @@ struct LockScreen: View {
         guard PinAttempts.beginAttempt() else {
             pin.wipe()
             error = L10n.t("Не удалось сохранить попытку. Попробуйте ещё раз.",
-                           "Could not save the attempt. Try again.")
+                           "Could not save the attempt. Try again.", "Impossibile salvare il tentativo. Riprova.")
             return
         }
 
@@ -122,7 +122,7 @@ struct LockScreen: View {
                 // 🔐 Ключа Enclave нет (приложение восстановили из копии
                 // на другой телефон): эта база здесь не откроется ничем.
                 self.error = L10n.t("Ключ устройства недоступен. Базу на этом телефоне открыть нельзя.",
-                                    "Device key unavailable. This database cannot be opened on this phone.")
+                                    "Device key unavailable. This database cannot be opened on this phone.", "Chiave del dispositivo non disponibile. Questo database non si può aprire su questo telefono.")
             } catch is FfiError {
                 // Ядро не открыло базу этим ключом — неверный PIN. Только
                 // это идёт в счётчик попыток (ниже).
@@ -131,7 +131,7 @@ struct LockScreen: View {
                 // 🔐 в счётчик неверных попыток не идёт — иначе вёл бы
                 // к стиранию данных.
                 self.error = L10n.t("Не удалось открыть базу. Попробуйте ещё раз.",
-                                    "Could not open the database. Try again.")
+                                    "Could not open the database. Try again.", "Impossibile aprire il database. Riprova.")
             }
             pin.wipe()
             working = false
@@ -154,8 +154,8 @@ struct LockScreen: View {
                 let left = PinDelays.wipeAfter - PinAttempts.failures
                 self.error = PinAttempts.wipeEnabled && left > 0
                     ? L10n.t("Неверный PIN. До стирания данных: \(left)",
-                             "Wrong PIN. Attempts before wipe: \(left)")
-                    : L10n.t("Неверный PIN", "Wrong PIN")
+                             "Wrong PIN. Attempts before wipe: \(left)", "PIN errato. Tentativi prima della cancellazione: \(left)")
+                    : L10n.t("Неверный PIN", "Wrong PIN", "PIN errato")
             }
             waitLeft = PinAttempts.waitRemaining()
         }
@@ -168,7 +168,7 @@ struct LockScreen: View {
         Task {
             do {
                 let messenger = try await Background.run { () -> Messenger in
-                    var key = try Biometric.key(reason: L10n.t("Открыть переписку", "Unlock your messages"))
+                    var key = try Biometric.key(reason: L10n.t("Открыть переписку", "Unlock your messages", "Sblocca i tuoi messaggi"))
                     defer { key.wipe() }
                     return try CoreStore.shared.unlock(key: key)
                 }
@@ -210,9 +210,9 @@ struct LockScreen: View {
     static func format(_ seconds: TimeInterval) -> String {
         let total = Int(seconds.rounded(.up))
         if total >= 3600 {
-            return L10n.t("\(total / 3600) ч \((total % 3600) / 60) мин", "\(total / 3600) h \((total % 3600) / 60) min")
+            return L10n.t("\(total / 3600) ч \((total % 3600) / 60) мин", "\(total / 3600) h \((total % 3600) / 60) min", "\(total / 3600) h \((total % 3600) / 60) min")
         }
         if total >= 60 { return "\(total / 60):\(String(format: "%02d", total % 60))" }
-        return L10n.t("\(total) с", "\(total) s")
+        return L10n.t("\(total) с", "\(total) s", "\(total) s")
     }
 }

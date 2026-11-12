@@ -21,13 +21,13 @@ struct SafetyNumberScreen: View {
     @State private var result: (String, Banner.Tone)?
     @Environment(\.dismiss) private var dismiss
 
-    private var name: String { contact.username ?? L10n.t("собеседник", "contact") }
+    private var name: String { contact.username ?? L10n.t("собеседник", "contact", "contatto") }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
                 Text(L10n.t("Сравните этот код с кодом на телефоне \(name). Совпадает — между вами никого нет.",
-                            "Compare this code with the one on \(name)’s phone. If they match, nobody is in between."))
+                            "Compare this code with the one on \(name)’s phone. If they match, nobody is in between.", "Confronta questo codice con quello sul telefono di \(name). Se coincidono, non c’è nessuno in mezzo."))
                     .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
                     .multilineTextAlignment(.center)
 
@@ -41,27 +41,27 @@ struct SafetyNumberScreen: View {
                     .accessibilityLabel(digits)
 
                 if let result {
-                    Banner(title: result.1 == .ok ? L10n.t("Совпадает", "Match") : L10n.t("Не совпадает", "Mismatch"),
+                    Banner(title: result.1 == .ok ? L10n.t("Совпадает", "Match", "Coincide") : L10n.t("Не совпадает", "Mismatch", "Non coincide"),
                            message: result.0, tone: result.1)
                 }
 
-                OutlineButton(title: L10n.t("Сканировать код собеседника", "Scan their code")) { scanning = true }
+                OutlineButton(title: L10n.t("Сканировать код собеседника", "Scan their code", "Scansiona il suo codice")) { scanning = true }
 
                 if verified {
-                    Label(L10n.t("Сверен лично", "Verified in person"), systemImage: "checkmark.seal.fill")
+                    Label(L10n.t("Сверен лично", "Verified in person", "Verificato di persona"), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(GasAppColor.ok).font(.system(size: 16, weight: .bold))
-                    OutlineButton(title: L10n.t("Снять отметку", "Clear verification")) { setVerified(false) }
+                    OutlineButton(title: L10n.t("Снять отметку", "Clear verification", "Annulla verifica")) { setVerified(false) }
                 } else {
-                    GoldButton(title: L10n.t("Коды совпадают — отметить", "Codes match — mark verified")) { setVerified(true) }
+                    GoldButton(title: L10n.t("Коды совпадают — отметить", "Codes match — mark verified", "I codici coincidono: segna come verificato")) { setVerified(true) }
                 }
             }
             .padding(20)
         }
         .gasScreen()
-        .navigationTitle(L10n.t("Код безопасности", "Safety number"))
+        .navigationTitle(L10n.t("Код безопасности", "Safety number", "Numero di sicurezza"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) { dismiss() } }
         }
         .sheet(isPresented: $scanning) { QRScanner { compare($0) } }
         .task { await load() }
@@ -98,12 +98,12 @@ struct SafetyNumberScreen: View {
     private func compare(_ scanned: String) {
         // Сравниваются только цифры: QR несёт тот же код без пробелов.
         if scanned.filter(\.isNumber) == digits.filter(\.isNumber), !digits.isEmpty {
-            result = (L10n.t("Коды одинаковые.", "The codes are identical."), .ok)
+            result = (L10n.t("Коды одинаковые.", "The codes are identical.", "I codici sono identici."), .ok)
             setVerified(true)
         } else {
             // 🔐 Несовпадение — повод не писать, пока не выяснится почему.
             result = (L10n.t("Это может быть подмена. Не пишите важного, пока не выясните.",
-                             "This may be an impersonation. Don’t send anything important until you know why."), .error)
+                             "This may be an impersonation. Don’t send anything important until you know why.", "Potrebbe essere un furto d’identità. Non inviare nulla di importante finché non sai perché."), .error)
         }
     }
 

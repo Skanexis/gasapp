@@ -103,20 +103,20 @@ struct ChatScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     if contact != nil {
-                        Button(L10n.t("Код безопасности", "Safety number")) { showSafety = true }
+                        Button(L10n.t("Код безопасности", "Safety number", "Numero di sicurezza")) { showSafety = true }
                     }
                     if !resolvedChatId.isEmpty {
                         // Исчезающие сообщения: ядро стирает их у обоих по сроку.
-                        Menu(L10n.t("Исчезающие сообщения", "Disappearing messages")) {
-                            Button(L10n.t("Выключить", "Off")) { setTimer(0) }
-                            Button(L10n.t("Через час", "After 1 hour")) { setTimer(3600) }
-                            Button(L10n.t("Через сутки", "After 1 day")) { setTimer(86_400) }
-                            Button(L10n.t("Через неделю", "After 1 week")) { setTimer(604_800) }
+                        Menu(L10n.t("Исчезающие сообщения", "Disappearing messages", "Messaggi effimeri")) {
+                            Button(L10n.t("Выключить", "Off", "Disattivati")) { setTimer(0) }
+                            Button(L10n.t("Через час", "After 1 hour", "Dopo 1 ora")) { setTimer(3600) }
+                            Button(L10n.t("Через сутки", "After 1 day", "Dopo 1 giorno")) { setTimer(86_400) }
+                            Button(L10n.t("Через неделю", "After 1 week", "Dopo 1 settimana")) { setTimer(604_800) }
                         }
                     }
                     if !resolvedChatId.isEmpty {
-                        Button(L10n.t("Пожаловаться", "Report"), role: .destructive) { startReport() }
-                        Button(blocked ? L10n.t("Разблокировать", "Unblock") : L10n.t("Заблокировать", "Block"),
+                        Button(L10n.t("Пожаловаться", "Report", "Segnala"), role: .destructive) { startReport() }
+                        Button(blocked ? L10n.t("Разблокировать", "Unblock", "Sblocca") : L10n.t("Заблокировать", "Block", "Blocca"),
                                role: blocked ? nil : .destructive) { toggleBlock() }
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
@@ -124,22 +124,22 @@ struct ChatScreen: View {
         }
         // Жалоба — как на Android (ChatActivity): что получит оператор,
         // сказано до кнопок; «и заблокировать» — второй вариант.
-        .confirmationDialog(L10n.t("Пожаловаться на \(title)?", "Report \(title)?"),
+        .confirmationDialog(L10n.t("Пожаловаться на \(title)?", "Report \(title)?", "Segnalare \(title)?"),
                             isPresented: $confirmReport, titleVisibility: .visible) {
-            Button(L10n.t("Пожаловаться и заблокировать", "Report and block"), role: .destructive) { sendReport(alsoBlock: true) }
-            Button(L10n.t("Только пожаловаться", "Report only")) { sendReport(alsoBlock: false) }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+            Button(L10n.t("Пожаловаться и заблокировать", "Report and block", "Segnala e blocca"), role: .destructive) { sendReport(alsoBlock: true) }
+            Button(L10n.t("Только пожаловаться", "Report only", "Solo segnalazione")) { sendReport(alsoBlock: false) }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) {}
         } message: {
             Text(L10n.t("Оператор сервера получит доказательство, что этот аккаунт вам писал, — но не переписку: её у сервера нет. \(title) об этом не узнает.",
-                        "The server operator gets proof that this account wrote to you — not your conversation: the server does not have it. \(title) is not told."))
+                        "The server operator gets proof that this account wrote to you — not your conversation: the server does not have it. \(title) is not told.", "L’operatore del server riceve la prova che questo account ti ha scritto, non la vostra conversazione: il server non ce l’ha. \(title) non viene avvisato."))
         }
         // Ссылка из кнопки — только https (ядро отвергает иные схемы, данные
         // входа в адресе и подменные буквы); открыть её решает человек,
         // видя адрес целиком (как на Android).
-        .confirmationDialog(L10n.t("Открыть ссылку?", "Open the link?"), isPresented: Binding(
+        .confirmationDialog(L10n.t("Открыть ссылку?", "Open the link?", "Aprire il link?"), isPresented: Binding(
             get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }
         ), titleVisibility: .visible) {
-            Button(L10n.t("Открыть", "Open")) {
+            Button(L10n.t("Открыть", "Open", "Apri")) {
                 if let link = pendingLink, let url = URL(string: link), url.scheme == "https" {
                     UIApplication.shared.open(url)
                 }
@@ -153,19 +153,19 @@ struct ChatScreen: View {
                 NavigationStack { SafetyNumberScreen(contact: contact) }
             }
         }
-        .confirmationDialog(L10n.t("Отклонить запрос?", "Decline request?"), isPresented: $confirmDecline,
+        .confirmationDialog(L10n.t("Отклонить запрос?", "Decline request?", "Rifiutare la richiesta?"), isPresented: $confirmDecline,
                             titleVisibility: .visible) {
-            Button(L10n.t("Отклонить и удалить", "Decline and delete"), role: .destructive) { decline() }
+            Button(L10n.t("Отклонить и удалить", "Decline and delete", "Rifiuta ed elimina"), role: .destructive) { decline() }
         } message: {
             Text(L10n.t("Переписка удалится. Собеседник не узнает даже того, что вы её видели.",
-                        "The chat is deleted. The sender won’t even learn you saw it."))
+                        "The chat is deleted. The sender won’t even learn you saw it.", "La chat viene eliminata. Il mittente non saprà nemmeno che l’hai vista."))
         }
-        .alert(L10n.t("Изменить сообщение", "Edit message"), isPresented: Binding(
+        .alert(L10n.t("Изменить сообщение", "Edit message", "Modifica messaggio"), isPresented: Binding(
             get: { editing != nil }, set: { if !$0 { editing = nil } }
         )) {
-            TextField(L10n.t("Текст", "Text"), text: $editText)
-            Button(L10n.t("Сохранить", "Save")) { saveEdit() }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { editing = nil }
+            TextField(L10n.t("Текст", "Text", "Testo"), text: $editText)
+            Button(L10n.t("Сохранить", "Save", "Salva")) { saveEdit() }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) { editing = nil }
         }
         .task {
             resolvedChatId = chatId
@@ -178,9 +178,9 @@ struct ChatScreen: View {
     // MARK: - Состояние
 
     private var verificationLabel: (String, Color) {
-        if contact?.verified == true { return (L10n.t("сверен лично", "verified in person"), GasAppColor.ok) }
-        if contact?.ktConfirmed == true { return (L10n.t("ключ подтверждён журналом", "key confirmed by log"), GasAppColor.accent) }
-        return (L10n.t("не сверен", "not verified"), GasAppColor.textTertiary)
+        if contact?.verified == true { return (L10n.t("сверен лично", "verified in person", "verificato di persona"), GasAppColor.ok) }
+        if contact?.ktConfirmed == true { return (L10n.t("ключ подтверждён журналом", "key confirmed by log", "chiave confermata dal registro"), GasAppColor.accent) }
+        return (L10n.t("не сверен", "not verified", "non verificato"), GasAppColor.textTertiary)
     }
 
     @ViewBuilder
@@ -189,36 +189,36 @@ struct ChatScreen: View {
         case .open:
             EmptyView()
         case .blocked:
-            panel(Banner(title: L10n.t("\(title) заблокирован", "\(title) is blocked"),
-                         message: L10n.t("Вы не получаете его сообщений.", "You don’t receive their messages."), tone: .info)) {
-                OutlineButton(title: L10n.t("Разблокировать", "Unblock")) { toggleBlock() }
+            panel(Banner(title: L10n.t("\(title) заблокирован", "\(title) is blocked", "\(title) è bloccato"),
+                         message: L10n.t("Вы не получаете его сообщений.", "You don’t receive their messages.", "Non ricevi i suoi messaggi."), tone: .info)) {
+                OutlineButton(title: L10n.t("Разблокировать", "Unblock", "Sblocca")) { toggleBlock() }
             }
         case .chooseKey:
-            panel(Banner(title: L10n.t("Ключ собеседника сменился", "Their key changed"),
+            panel(Banner(title: L10n.t("Ключ собеседника сменился", "Their key changed", "La sua chiave è cambiata"),
                          message: L10n.t("Новый телефон — или кто-то выдаёт себя за \(title). Сверьте код безопасности.",
-                                         "A new phone — or someone pretending to be \(title). Compare the safety number."),
+                                         "A new phone — or someone pretending to be \(title). Compare the safety number.", "Un nuovo telefono, oppure qualcuno che si spaccia per \(title). Confronta il numero di sicurezza."),
                          tone: .error)) {
-                GoldButton(title: L10n.t("Сверить код", "Compare safety number")) { showSafety = true }
+                GoldButton(title: L10n.t("Сверить код", "Compare safety number", "Confronta il numero di sicurezza")) { showSafety = true }
             }
         case .confirmKey:
-            panel(Banner(title: L10n.t("Ключ ещё не подтверждён", "Key not confirmed yet"),
+            panel(Banner(title: L10n.t("Ключ ещё не подтверждён", "Key not confirmed yet", "Chiave non ancora confermata"),
                          message: L10n.t("Его назвал только сервер. Сверьте код безопасности с \(title) или добавьте по его ссылке/QR.",
-                                         "Only the server named it. Compare the safety number with \(title) or add them by their link/QR."))) {
-                GoldButton(title: L10n.t("Сверить код", "Compare safety number")) { showSafety = true }
+                                         "Only the server named it. Compare the safety number with \(title) or add them by their link/QR.", "L’ha indicata solo il server. Confronta il numero di sicurezza con \(title) o aggiungilo tramite il suo link/QR."))) {
+                GoldButton(title: L10n.t("Сверить код", "Compare safety number", "Confronta il numero di sicurezza")) { showSafety = true }
             }
         case .request:
-            panel(Banner(title: L10n.t("\(title) хочет написать вам", "\(title) wants to message you"),
+            panel(Banner(title: L10n.t("\(title) хочет написать вам", "\(title) wants to message you", "\(title) vuole scriverti"),
                          message: L10n.t("Пока вы не примете запрос, собеседник не узнает, что вы прочли.",
-                                         "Until you accept, they won’t know you read it."), tone: .info)) {
+                                         "Until you accept, they won’t know you read it.", "Finché non accetti, non saprà che hai letto."), tone: .info)) {
                 HStack(spacing: 10) {
-                    OutlineButton(title: L10n.t("Отклонить", "Decline"), tone: GasAppColor.error) { confirmDecline = true }
-                    GoldButton(title: L10n.t("Принять", "Accept")) { accept() }
+                    OutlineButton(title: L10n.t("Отклонить", "Decline", "Rifiuta"), tone: GasAppColor.error) { confirmDecline = true }
+                    GoldButton(title: L10n.t("Принять", "Accept", "Accetta")) { accept() }
                 }
             }
         case .replaced:
-            panel(Banner(title: L10n.t("Аккаунт заменён", "Account replaced"),
+            panel(Banner(title: L10n.t("Аккаунт заменён", "Account replaced", "Account sostituito"),
                          message: L10n.t("Это имя теперь у другого аккаунта. Писать сюда нельзя.",
-                                         "This username now belongs to another account."), tone: .error)) { EmptyView() }
+                                         "This username now belongs to another account.", "Questo nome utente ora appartiene a un altro account."), tone: .error)) { EmptyView() }
         }
     }
 
@@ -242,11 +242,11 @@ struct ChatScreen: View {
                 }
             }
             .disabled(sendingPhoto)
-            .accessibilityLabel(L10n.t("Отправить фото", "Send a photo"))
+            .accessibilityLabel(L10n.t("Отправить фото", "Send a photo", "Invia una foto"))
             .onChange(of: photo) { _, item in
                 if let item { sendPhoto(item) }
             }
-            TextField(L10n.t("Сообщение", "Message"), text: $draft, axis: .vertical)
+            TextField(L10n.t("Сообщение", "Message", "Messaggio"), text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 18).fill(GasAppColor.bgCard))
@@ -256,7 +256,7 @@ struct ChatScreen: View {
                     .foregroundStyle(canSend ? GasAppColor.accent : GasAppColor.textQuaternary)
             }
             .disabled(!canSend)
-            .accessibilityLabel(L10n.t("Отправить", "Send"))
+            .accessibilityLabel(L10n.t("Отправить", "Send", "Invia"))
         }
         .padding(10)
         .background(GasAppColor.bgRaised)
@@ -279,15 +279,15 @@ struct ChatScreen: View {
                 UIPasteboard.general.setItems([["public.utf8-plain-text": message.text]],
                                               options: [.localOnly: true,
                                                         .expirationDate: Date().addingTimeInterval(60)])
-            } label: { Label(L10n.t("Копировать", "Copy"), systemImage: "doc.on.doc") }
+            } label: { Label(L10n.t("Копировать", "Copy", "Copia"), systemImage: "doc.on.doc") }
         }
         if message.outgoing && mode == .open && !message.id.hasPrefix("local-") {
             Button {
                 editing = message
                 editText = message.text
-            } label: { Label(L10n.t("Изменить", "Edit"), systemImage: "pencil") }
+            } label: { Label(L10n.t("Изменить", "Edit", "Modifica"), systemImage: "pencil") }
             Button(role: .destructive) { deleteForEveryone(message) } label: {
-                Label(L10n.t("Удалить у всех", "Delete for everyone"), systemImage: "trash")
+                Label(L10n.t("Удалить у всех", "Delete for everyone", "Elimina per tutti"), systemImage: "trash")
             }
         }
     }
@@ -301,9 +301,9 @@ struct ChatScreen: View {
                 try messenger.setDisappearingTimer(peerUsername: peer, seconds: seconds, nowMillis: CoreStore.nowMillis)
             }) != nil
             toast = done
-                ? (seconds == 0 ? L10n.t("Исчезающие сообщения выключены", "Disappearing messages off")
-                                : L10n.t("Новые сообщения будут исчезать у вас обоих", "New messages will disappear for both of you"))
-                : L10n.t("Не удалось изменить", "Could not change it")
+                ? (seconds == 0 ? L10n.t("Исчезающие сообщения выключены", "Disappearing messages off", "Messaggi effimeri disattivati")
+                                : L10n.t("Новые сообщения будут исчезать у вас обоих", "New messages will disappear for both of you", "I nuovi messaggi spariranno per entrambi"))
+                : L10n.t("Не удалось изменить", "Could not change it", "Impossibile modificarlo")
         }
     }
 
@@ -318,7 +318,7 @@ struct ChatScreen: View {
                 try messenger.editMessage(peerUsername: peer, targetMessageId: target.id, text: text,
                                           nowMillis: CoreStore.nowMillis)
             }) == nil {
-                toast = L10n.t("Не удалось изменить", "Could not edit")
+                toast = L10n.t("Не удалось изменить", "Could not edit", "Impossibile modificare")
             }
             await refresh()
         }
@@ -332,7 +332,7 @@ struct ChatScreen: View {
                 try messenger.deleteForEveryone(peerUsername: peer, targetMessageId: message.id,
                                                 nowMillis: CoreStore.nowMillis)
             }) == nil {
-                toast = L10n.t("Не удалось удалить", "Could not delete")
+                toast = L10n.t("Не удалось удалить", "Could not delete", "Impossibile eliminare")
             }
             await refresh()
         }
@@ -353,7 +353,7 @@ struct ChatScreen: View {
             guard let raw = try? await item.loadTransferable(type: Data.self),
                   let clean = Self.strippedJPEG(raw)
             else {
-                toast = L10n.t("Фото не открылось", "Could not open the photo")
+                toast = L10n.t("Фото не открылось", "Could not open the photo", "Impossibile aprire la foto")
                 return
             }
             let file = FfiAttachmentFile(kind: .image, bytes: clean, name: "photo.jpg", description: nil,
@@ -366,7 +366,7 @@ struct ChatScreen: View {
                 inbox.touch()
                 await refresh()
             } catch {
-                toast = L10n.t("Фото не отправлено", "Photo not sent")
+                toast = L10n.t("Фото не отправлено", "Photo not sent", "Foto non inviata")
             }
         }
     }
@@ -487,7 +487,7 @@ struct ChatScreen: View {
                     // 🔐 Ядро отвергло ключ: текст возвращается в поле —
                     // он не ушёл никуда.
                     draft = text
-                    toast = L10n.t("Сначала сверьте код безопасности", "Compare the safety number first")
+                    toast = L10n.t("Сначала сверьте код безопасности", "Compare the safety number first", "Prima confronta il numero di sicurezza")
                     await refresh()
                 default:
                     // Крест, а не молчание: «отправленное», но не ушедшее
@@ -495,7 +495,7 @@ struct ChatScreen: View {
                     var failed = local
                     failed.status = .failed
                     messages.append(failed)
-                    toast = L10n.t("Не отправлено — нет связи", "Not sent — no connection")
+                    toast = L10n.t("Не отправлено — нет связи", "Not sent — no connection", "Non inviato: nessuna connessione")
                 }
             }
         }
@@ -531,7 +531,7 @@ struct ChatScreen: View {
                 confirmReport = true
             } else {
                 toast = L10n.t("Пожаловаться можно, когда собеседник вам что-нибудь напишет.",
-                               "You can report once they have sent you a message.")
+                               "You can report once they have sent you a message.", "Puoi segnalare dopo che ti ha inviato un messaggio.")
             }
         }
     }
@@ -550,11 +550,11 @@ struct ChatScreen: View {
                     await refresh()
                 }
                 toast = recorded
-                    ? L10n.t("Жалоба отправлена. Спасибо.", "Report sent. Thank you.")
-                    : L10n.t("Вы уже жаловались на этот аккаунт.", "You have already reported this account.")
+                    ? L10n.t("Жалоба отправлена. Спасибо.", "Report sent. Thank you.", "Segnalazione inviata. Grazie.")
+                    : L10n.t("Вы уже жаловались на этот аккаунт.", "You have already reported this account.", "Hai già segnalato questo account.")
             } catch {
                 toast = L10n.t("Жалобу отправить не удалось. Проверьте связь и попробуйте ещё раз.",
-                               "Could not send the report. Check the connection and try again.")
+                               "Could not send the report. Check the connection and try again.", "Impossibile inviare la segnalazione. Controlla la connessione e riprova.")
             }
         }
     }
@@ -574,10 +574,10 @@ struct ChatScreen: View {
                 if let link {
                     pendingLink = link
                 } else {
-                    toast = L10n.t("Отправлено", "Sent")
+                    toast = L10n.t("Отправлено", "Sent", "Inviato")
                 }
             } catch {
-                toast = L10n.t("Кнопка не сработала", "The button didn’t work")
+                toast = L10n.t("Кнопка не сработала", "The button didn’t work", "Il pulsante non ha funzionato")
             }
         }
     }

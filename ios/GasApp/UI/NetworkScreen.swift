@@ -35,29 +35,29 @@ struct NetworkScreen: View {
             // Строки — цветом карточек GasApp, а не системным серым.
             Group {
                 Section {
-                    Picker(L10n.t("Подключение", "Connection"), selection: $mode) {
-                        Text(L10n.t("Через Tor", "Via Tor")).tag(Mode.tor)
-                        Text(L10n.t("SOCKS5-прокси", "SOCKS5 proxy")).tag(Mode.socks)
-                        Text(L10n.t("Напрямую", "Direct")).tag(Mode.direct)
+                    Picker(L10n.t("Подключение", "Connection", "Connessione"), selection: $mode) {
+                        Text(L10n.t("Через Tor", "Via Tor", "Tramite Tor")).tag(Mode.tor)
+                        Text(L10n.t("SOCKS5-прокси", "SOCKS5 proxy", "Proxy SOCKS5")).tag(Mode.socks)
+                        Text(L10n.t("Напрямую", "Direct", "Diretta")).tag(Mode.direct)
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
                     if mode == .socks {
-                        TextField(L10n.t("Адрес (хост или IP)", "Address (host or IP)"), text: $host)
+                        TextField(L10n.t("Адрес (хост или IP)", "Address (host or IP)", "Indirizzo (host o IP)"), text: $host)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .keyboardType(.URL)
-                        TextField(L10n.t("Порт", "Port"), text: $port)
+                        TextField(L10n.t("Порт", "Port", "Porta"), text: $port)
                             .keyboardType(.numberPad)
                     }
-                    Button(L10n.t("Сохранить", "Save")) { saveMode() }
+                    Button(L10n.t("Сохранить", "Save", "Salva")) { saveMode() }
                         .disabled(working)
                 } header: {
-                    Text(L10n.t("Подключение", "Connection"))
+                    Text(L10n.t("Подключение", "Connection", "Connessione"))
                 } footer: {
                     Text(hint)
                 }
                 if mode == .tor {
-                    Section(L10n.t("Состояние Tor", "Tor status")) {
+                    Section(L10n.t("Состояние Tor", "Tor status", "Stato di Tor")) {
                         Text(status).foregroundStyle(GasAppColor.textSecondary)
                     }
                     Section {
@@ -66,15 +66,15 @@ struct NetworkScreen: View {
                             .font(.system(size: 12, design: .monospaced))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                        Button(L10n.t("Сохранить мосты", "Save bridges")) { save() }
+                        Button(L10n.t("Сохранить мосты", "Save bridges", "Salva bridge")) { save() }
                             .disabled(working)
-                        Button(L10n.t("Получить мосты у Tor Project", "Get bridges from Tor Project")) { fetch() }
+                        Button(L10n.t("Получить мосты у Tor Project", "Get bridges from Tor Project", "Ottieni bridge da Tor Project")) { fetch() }
                             .disabled(working)
                     } header: {
-                        Text(L10n.t("Мосты", "Bridges"))
+                        Text(L10n.t("Мосты", "Bridges", "Bridge"))
                     } footer: {
                         Text(L10n.t("По строке на мост (obfs4, webtunnel, snowflake). Пусто — прямое подключение к сети Tor.",
-                                    "One bridge per line (obfs4, webtunnel, snowflake). Empty — connect to Tor directly."))
+                                    "One bridge per line (obfs4, webtunnel, snowflake). Empty — connect to Tor directly.", "Un bridge per riga (obfs4, webtunnel, snowflake). Vuoto: connessione diretta a Tor."))
                     }
                 }
                 if let message {
@@ -85,23 +85,23 @@ struct NetworkScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
-        .navigationTitle(L10n.t("Сеть", "Network"))
+        .navigationTitle(L10n.t("Сеть", "Network", "Rete"))
         .task { await load() }
         .onReceive(ticker) { _ in updateStatus() }
         .sheet(isPresented: $askPin, onDismiss: { if !confirmDirect && !working { pending = nil } }) {
-            PinConfirmSheet(title: L10n.t("Подключение без Tor", "Connect without Tor")) { pin in reauth(pin) }
+            PinConfirmSheet(title: L10n.t("Подключение без Tor", "Connect without Tor", "Connetti senza Tor")) { pin in reauth(pin) }
         }
         // 🔐 Прямое соединение отдаёт серверу адрес — только явным
         // согласием, после которого человек знает, чем платит.
-        .confirmationDialog(L10n.t("Подключаться напрямую?", "Connect directly?"), isPresented: $confirmDirect,
+        .confirmationDialog(L10n.t("Подключаться напрямую?", "Connect directly?", "Connettersi direttamente?"), isPresented: $confirmDirect,
                             titleVisibility: .visible) {
-            Button(L10n.t("Подключаться напрямую", "Connect directly"), role: .destructive) {
+            Button(L10n.t("Подключаться напрямую", "Connect directly", "Connetti direttamente"), role: .destructive) {
                 if let pending { store(pending) }
             }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { pending = nil }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) { pending = nil }
         } message: {
             Text(L10n.t("Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети. Tor его скрывает.",
-                        "The server will see your IP address: roughly where you are, and which of your accounts share a network. Tor hides it."))
+                        "The server will see your IP address: roughly where you are, and which of your accounts share a network. Tor hides it.", "Il server vedrà il tuo indirizzo IP: più o meno dove ti trovi e quali dei tuoi account condividono una rete. Tor lo nasconde."))
         }
     }
 
@@ -109,13 +109,13 @@ struct NetworkScreen: View {
         switch mode {
         case .tor:
             return L10n.t("Сервер не видит ваш IP-адрес. Медленнее, чем напрямую.",
-                          "The server doesn’t see your IP address. Slower than direct.")
+                          "The server doesn’t see your IP address. Slower than direct.", "Il server non vede il tuo indirizzo IP. Più lento della connessione diretta.")
         case .socks:
             return L10n.t("Все запросы и уведомления идут через указанный прокси. Если он недоступен, приложение не подключится — напрямую оно не пойдёт.",
-                          "All requests and notifications go through the proxy you specify. If it is unreachable, the app will not connect — it will not fall back to a direct connection.")
+                          "All requests and notifications go through the proxy you specify. If it is unreachable, the app will not connect — it will not fall back to a direct connection.", "Tutte le richieste e le notifiche passano dal proxy indicato. Se non è raggiungibile, l’app non si connette: non ripiega su una connessione diretta.")
         case .direct:
             return L10n.t("Быстрее всего, но сервер видит ваш IP-адрес.",
-                          "Fastest, but the server sees your IP address.")
+                          "Fastest, but the server sees your IP address.", "La più veloce, ma il server vede il tuo indirizzo IP.")
         }
     }
 
@@ -155,7 +155,7 @@ struct NetworkScreen: View {
         // а не отказом сети.
         guard let choice = selected, validateProxy(proxy: choice) else {
             message = L10n.t("Адрес или порт указаны неверно. Укажите имя хоста или IP-адрес без схемы и пути; логин и пароль не поддерживаются.",
-                             "The address or port is not valid. Enter a hostname or IP address without a scheme or path; usernames and passwords are not supported.")
+                             "The address or port is not valid. Enter a hostname or IP address without a scheme or path; usernames and passwords are not supported.", "L’indirizzo o la porta non sono validi. Inserisci un nome host o un indirizzo IP senza schema né percorso; nome utente e password non sono supportati.")
             return
         }
         message = nil
@@ -200,30 +200,30 @@ struct NetworkScreen: View {
             let ok = (try? await Background.run { try messenger.setProxy(proxy: choice) }) != nil
             working = false
             guard ok else {
-                message = L10n.t("Не сохранилось", "Not saved")
+                message = L10n.t("Не сохранилось", "Not saved", "Non salvato")
                 return
             }
             saved = choice
             let lines = try? await Background.run { try messenger.torBridges() }
             NetworkController.shared.apply(proxy: choice, bridges: lines)
-            message = L10n.t("Сохранено", "Saved")
+            message = L10n.t("Сохранено", "Saved", "Salvato")
             updateStatus()
         }
     }
 
     private func updateStatus() {
         let tor = NetworkController.shared.torStatus
-        status = !tor.running ? L10n.t("Не используется (напрямую)", "Not in use (direct)")
-            : tor.ready ? L10n.t("Подключён\(tor.bridges ? " через мосты" : "")", "Connected\(tor.bridges ? " via bridges" : "")")
-            : tor.stalled ? L10n.t("Не подключается — возможно, Tor заблокирован. Нужны мосты.", "Stuck — Tor may be blocked. Add bridges.")
-            : L10n.t("Подключается… \(tor.percent)%", "Connecting… \(tor.percent)%")
+        status = !tor.running ? L10n.t("Не используется (напрямую)", "Not in use (direct)", "Non in uso (diretta)")
+            : tor.ready ? L10n.t("Подключён\(tor.bridges ? " через мосты" : "")", "Connected\(tor.bridges ? " via bridges" : "")", "Connesso\(tor.bridges ? " tramite bridge" : "")")
+            : tor.stalled ? L10n.t("Не подключается — возможно, Tor заблокирован. Нужны мосты.", "Stuck — Tor may be blocked. Add bridges.", "Bloccato: Tor potrebbe essere bloccato. Aggiungi dei bridge.")
+            : L10n.t("Подключается… \(tor.percent)%", "Connecting… \(tor.percent)%", "Connessione… \(tor.percent)%")
     }
 
     private func save() {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let text = bridges
         guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || validateTorBridges(text: text) else {
-            message = L10n.t("Строка моста не разбирается", "A bridge line can’t be parsed")
+            message = L10n.t("Строка моста не разбирается", "A bridge line can’t be parsed", "Una riga di bridge non è valida")
             return
         }
         working = true
@@ -231,10 +231,10 @@ struct NetworkScreen: View {
             let saved = try? await Background.run { try messenger.setTorBridges(text: text) }
             working = false
             guard let saved else {
-                message = L10n.t("Не сохранилось", "Not saved")
+                message = L10n.t("Не сохранилось", "Not saved", "Non salvato")
                 return
             }
-            message = L10n.t("Мосты сохранены", "Bridges saved")
+            message = L10n.t("Мосты сохранены", "Bridges saved", "Bridge salvati")
             // Режим — тот же; Tor перезапускается с новыми мостами.
             let mode = try? await Background.run { try messenger.proxy() }
             NetworkController.shared.apply(proxy: mode, bridges: saved)
@@ -243,15 +243,15 @@ struct NetworkScreen: View {
 
     private func fetch() {
         working = true
-        message = L10n.t("Запрашиваем мосты…", "Requesting bridges…")
+        message = L10n.t("Запрашиваем мосты…", "Requesting bridges…", "Richiesta dei bridge…")
         Task {
             let got = try? await Background.run { try fetchTorBridges(country: nil) }
             working = false
             if let got, !got.isEmpty {
                 bridges = got.joined(separator: "\n")
-                message = L10n.t("Мосты получены — сохраните их.", "Bridges received — save them.")
+                message = L10n.t("Мосты получены — сохраните их.", "Bridges received — save them.", "Bridge ricevuti: salvali.")
             } else {
-                message = L10n.t("Не удалось получить мосты", "Could not get bridges")
+                message = L10n.t("Не удалось получить мосты", "Could not get bridges", "Impossibile ottenere i bridge")
             }
         }
     }
@@ -266,20 +266,20 @@ struct SecurityScreen: View {
     var body: some View {
         List {
             if let report {
-                Section(L10n.t("Проверено \(report.passed) из \(report.total)", "Passed \(report.passed) of \(report.total)")) {
-                    row(L10n.t("Ключ восстановления создан", "Recovery key created"), report.recoveryKeyCreated)
-                    row(L10n.t("Копия не старше недели", "Backup within a week"), report.backupRecent)
-                    row(L10n.t("Отправитель скрыт (sealed sender)", "Sender hidden (sealed sender)"), report.sealedSenderEnabled)
-                    row(L10n.t("Адрес скрыт (Tor или прокси)", "IP hidden (Tor or proxy)"), report.addressHidden)
-                    row(L10n.t("Все контакты сверены", "All contacts verified"), report.unverifiedContacts == 0,
+                Section(L10n.t("Проверено \(report.passed) из \(report.total)", "Passed \(report.passed) of \(report.total)", "Superati \(report.passed) su \(report.total)")) {
+                    row(L10n.t("Ключ восстановления создан", "Recovery key created", "Chiave di recupero creata"), report.recoveryKeyCreated)
+                    row(L10n.t("Копия не старше недели", "Backup within a week", "Backup entro una settimana"), report.backupRecent)
+                    row(L10n.t("Отправитель скрыт (sealed sender)", "Sender hidden (sealed sender)", "Mittente nascosto (sealed sender)"), report.sealedSenderEnabled)
+                    row(L10n.t("Адрес скрыт (Tor или прокси)", "IP hidden (Tor or proxy)", "IP nascosto (Tor o proxy)"), report.addressHidden)
+                    row(L10n.t("Все контакты сверены", "All contacts verified", "Tutti i contatti verificati"), report.unverifiedContacts == 0,
                         detail: report.unverifiedContacts > 0
-                            ? L10n.t("не сверено: \(report.unverifiedContacts)", "unverified: \(report.unverifiedContacts)") : nil)
+                            ? L10n.t("не сверено: \(report.unverifiedContacts)", "unverified: \(report.unverifiedContacts)", "non verificati: \(report.unverifiedContacts)") : nil)
                 }
                 .listRowBackground(GasAppColor.bgCard)
             }
-            Section(L10n.t("События", "Events")) {
+            Section(L10n.t("События", "Events", "Eventi")) {
                 if events.isEmpty {
-                    Text(L10n.t("Событий нет", "No events")).foregroundStyle(GasAppColor.textTertiary)
+                    Text(L10n.t("Событий нет", "No events", "Nessun evento")).foregroundStyle(GasAppColor.textTertiary)
                 }
                 ForEach(Array(events.enumerated()), id: \.offset) { _, event in
                     VStack(alignment: .leading, spacing: 2) {
@@ -295,7 +295,7 @@ struct SecurityScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
-        .navigationTitle(L10n.t("Безопасность", "Security"))
+        .navigationTitle(L10n.t("Безопасность", "Security", "Sicurezza"))
         .task {
             guard let messenger = try? CoreStore.shared.current() else { return }
             let state = try? await Background.run { () -> (FfiSecurityReport, [FfiSecurityEvent]) in

@@ -38,17 +38,32 @@ struct OnboardingFlow: View {
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                switch step {
-                case .welcome: welcome
-                case .account: account
-                case .pin, .confirmPin: pinStep
-                case .code: codeStep
+        GeometryReader { screen in
+            ScrollView {
+                VStack(spacing: 24) {
+                    if canGoBack {
+                        Button(action: goBack) {
+                            Label(L10n.t("Назад", "Back", "Indietro"), systemImage: "chevron.left")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(GasAppColor.accent)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    switch step {
+                    case .welcome: welcome
+                    case .account: account
+                    case .pin, .confirmPin: pinStep
+                    case .code: codeStep
+                    }
                 }
+                // Приветствие — во всю ширину: сцена без полей, отступы — у блоков под ней.
+                .padding(step == .welcome ? 0 : 24)
+                // PIN — на всю высоту экрана: клавиатура посередине, Tor
+                // внизу. Раньше всё жалось к верху, а низ пустовал
+                // (снимок с iPhone 15 Pro, 2026-11-12). На маленьком
+                // экране высота не мешает: остаётся прокрутка.
+                .frame(minHeight: isPinStep ? screen.size.height : nil, alignment: .top)
             }
-            // Приветствие — во всю ширину: сцена без полей, отступы — у блоков под ней.
-            .padding(step == .welcome ? 0 : 24)
         }
         .scrollDismissesKeyboard(.interactively)
         // Небо приветствия — до самого верха, под строкой состояния: иначе
@@ -71,7 +86,7 @@ struct OnboardingFlow: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(L10n.t("Отмена", "Cancel")) { showRestore = false }
+                        Button(L10n.t("Отмена", "Cancel", "Annulla")) { showRestore = false }
                     }
                 }
             }
@@ -119,7 +134,7 @@ struct OnboardingFlow: View {
 
             VStack(spacing: 20) {
                 Text(L10n.t("Мессенджер со сквозным шифрованием. Начало переписки защищено и от будущих квантовых компьютеров.",
-                            "An end-to-end encrypted messenger. Starting a conversation is protected against future quantum computers too."))
+                            "An end-to-end encrypted messenger. Starting a conversation is protected against future quantum computers too.", "Un messenger con cifratura end-to-end. L’avvio di una conversazione è protetto anche dai futuri computer quantistici."))
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(GasAppColor.textSecondary)
                     .multilineTextAlignment(.center)
@@ -128,31 +143,31 @@ struct OnboardingFlow: View {
                 VStack(alignment: .leading, spacing: 14) {
                     WelcomePromise(icon: "lock.fill",
                                    text: L10n.t("Сообщения шифруются на телефоне. Сервер только передаёт их и прочитать не может.",
-                                                "Messages are encrypted on your phone. The server only passes them on and cannot read them."))
+                                                "Messages are encrypted on your phone. The server only passes them on and cannot read them.", "I messaggi vengono cifrati sul tuo telefono. Il server li inoltra soltanto e non può leggerli."))
                     WelcomePromise(icon: "person.fill",
                                    text: L10n.t("Без номера телефона. Аккаунт — это имя и адрес почты; сервер хранит только хеш адреса.",
-                                                "No phone number. An account is a username and an email address — the server keeps only a hash of the address."))
+                                                "No phone number. An account is a username and an email address — the server keeps only a hash of the address.", "Nessun numero di telefono. Un account è un nome utente e un indirizzo email: il server conserva solo un hash dell’indirizzo."))
                     WelcomePromise(icon: "globe",
                                    text: L10n.t("Tor встроен: включите его — и сервер не увидит ваш IP-адрес.",
-                                                "Tor is built in: turn it on and the server does not see your IP address."))
+                                                "Tor is built in: turn it on and the server does not see your IP address.", "Tor è integrato: attivalo e il server non vede il tuo indirizzo IP."))
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(GasAppColor.bgCard, in: RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(GasAppColor.line, lineWidth: 1))
 
-                GoldButton(title: L10n.t("Начать", "Get started")) { step = .account }
+                GoldButton(title: L10n.t("Начать", "Get started", "Inizia")) { step = .account }
                     .padding(.top, 8)
-                OutlineButton(title: L10n.t("У меня есть резервная копия", "I have a backup")) {
+                OutlineButton(title: L10n.t("У меня есть резервная копия", "I have a backup", "Ho un backup")) {
                     recovering = true
                     step = .pin
                 }
-                Button(L10n.t("Политика конфиденциальности", "Privacy policy")) {
+                Button(L10n.t("Политика конфиденциальности", "Privacy policy", "Informativa sulla privacy")) {
                     UIApplication.shared.open(AppConfig.docsURL.appendingPathComponent("privacy/"))
                 }
                 .font(.system(size: 14))
                 .foregroundStyle(GasAppColor.textTertiary)
-                Text(L10n.t("Регистрация — с 16 лет.", "You must be 16 or older."))
+                Text(L10n.t("Регистрация — с 16 лет.", "You must be 16 or older.", "Devi avere almeno 16 anni."))
                     .font(.system(size: 13))
                     .foregroundStyle(GasAppColor.textQuaternary)
             }
@@ -165,15 +180,15 @@ struct OnboardingFlow: View {
 
     private var account: some View {
         VStack(alignment: .leading, spacing: 20) {
-            ScreenTitle(text: L10n.t("Аккаунт", "Account"),
+            ScreenTitle(text: L10n.t("Аккаунт", "Account", "Account"),
                         subtitle: L10n.t("Имя увидят те, кому вы напишете. Почта нужна только для кода и не хранится на сервере.",
-                                         "People you message see your name. Email is only for the code and is not stored on the server."))
-            Field(title: L10n.t("Имя пользователя", "Username"), text: $username,
+                                         "People you message see your name. Email is only for the code and is not stored on the server.", "Le persone a cui scrivi vedono il tuo nome. L’email serve solo per il codice e non viene salvata sul server."))
+            Field(title: L10n.t("Имя пользователя", "Username", "Nome utente"), text: $username,
                   placeholder: "anna_k", error: usernameError, contentType: .username)
-            Field(title: L10n.t("Почта", "Email"), text: $email,
+            Field(title: L10n.t("Почта", "Email", "Email"), text: $email,
                   placeholder: "you@example.org", error: emailError,
                   keyboard: .emailAddress, contentType: .emailAddress)
-            GoldButton(title: L10n.t("Дальше", "Next")) { checkAccount() }
+            GoldButton(title: L10n.t("Дальше", "Next", "Avanti")) { checkAccount() }
         }
     }
 
@@ -183,16 +198,47 @@ struct OnboardingFlow: View {
         // Имя — в каноническом виде ядра (регистр, пробелы): то же, что
         // увидит сервер и что найдут другие.
         guard let canonical = try? canonicalUsername(raw: username) else {
-            usernameError = L10n.t("3–32 символа: латиница, цифры, «_».", "3–32 characters: letters, digits, “_”.")
+            usernameError = L10n.t("3–32 символа: латиница, цифры, «_».", "3–32 characters: letters, digits, “_”.", "3–32 caratteri: lettere, cifre, «_».")
             return
         }
         username = canonical
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         guard trimmed.contains("@"), trimmed.contains(".") else {
-            emailError = L10n.t("Похоже, это не адрес почты", "That doesn’t look like an email")
+            emailError = L10n.t("Похоже, это не адрес почты", "That doesn’t look like an email", "Non sembra un indirizzo email")
             return
         }
         step = .pin
+    }
+
+    // MARK: - Назад
+
+    private var isPinStep: Bool { step == .pin || step == .confirmPin }
+
+    /// Назад — до того, как открыта база: на шаге кода аккаунт уже
+    /// создаётся, и возврат идёт через ошибки этого шага.
+    private var canGoBack: Bool {
+        !working && (step == .account || isPinStep)
+    }
+
+    private func goBack() {
+        pinError = nil
+        pin.wipe(); pin = []
+        switch step {
+        case .account:
+            step = .welcome
+        case .pin:
+            if recovering {
+                recovering = false
+                step = .welcome
+            } else {
+                step = .account
+            }
+        case .confirmPin:
+            firstPin.wipe(); firstPin = []
+            step = .pin
+        default:
+            break
+        }
     }
 
     // MARK: - PIN
@@ -200,12 +246,12 @@ struct OnboardingFlow: View {
     private var pinStep: some View {
         VStack(spacing: 22) {
             ScreenTitle(
-                text: step == .pin ? L10n.t("Придумайте PIN", "Create a PIN") : L10n.t("Повторите PIN", "Repeat the PIN"),
+                text: step == .pin ? L10n.t("Придумайте PIN", "Create a PIN", "Crea un PIN") : L10n.t("Повторите PIN", "Repeat the PIN", "Ripeti il PIN"),
                 subtitle: L10n.t("Шесть цифр. Им открывается переписка на этом телефоне. Восстановить PIN нельзя.",
-                                 "Six digits. It unlocks your messages on this phone. A PIN cannot be recovered.")
+                                 "Six digits. It unlocks your messages on this phone. A PIN cannot be recovered.", "Sei cifre. Sblocca i tuoi messaggi su questo telefono. Il PIN non si può recuperare.")
             )
             if let pinError {
-                Banner(title: L10n.t("PIN не подходит", "PIN not accepted"), message: pinError, tone: .error)
+                Banner(title: L10n.t("PIN не подходит", "PIN not accepted", "PIN non accettato"), message: pinError, tone: .error)
             }
             if working {
                 VStack(spacing: 10) {
@@ -214,14 +260,16 @@ struct OnboardingFlow: View {
                 }
                 .frame(height: 80)
             }
+            Spacer(minLength: 8)
             PinPad(digits: $pin, isEnabled: !working) { pinEntered() }
+            Spacer(minLength: 8)
 
             if step == .pin {
                 Toggle(isOn: $viaTor) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.t("Через Tor", "Use Tor")).foregroundStyle(GasAppColor.textPrimary)
+                        Text(L10n.t("Через Tor", "Use Tor", "Usa Tor")).foregroundStyle(GasAppColor.textPrimary)
                         Text(L10n.t("Скрывает ваш адрес от сервера. Медленнее.",
-                                    "Hides your address from the server. Slower."))
+                                    "Hides your address from the server. Slower.", "Nasconde il tuo indirizzo al server. Più lento."))
                             .font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
                     }
                 }
@@ -240,7 +288,7 @@ struct OnboardingFlow: View {
             guard !PinPolicy.isTooSimple(entered) else {
                 entered.wipe()
                 pinError = L10n.t("Такой PIN подбирают первым. Выберите другой.",
-                                  "PINs like this are guessed first. Choose another.")
+                                  "PINs like this are guessed first. Choose another.", "PIN come questo vengono indovinati per primi. Scegline un altro.")
                 return
             }
             firstPin = entered
@@ -251,7 +299,7 @@ struct OnboardingFlow: View {
         // Повтор: совпал ли с первым.
         guard entered == firstPin else {
             entered.wipe(); firstPin.wipe(); firstPin = []
-            pinError = L10n.t("PIN не совпали. Придумайте заново.", "PINs did not match. Try again.")
+            pinError = L10n.t("PIN не совпали. Придумайте заново.", "PINs did not match. Try again.", "I PIN non coincidono. Riprova.")
             step = .pin
             return
         }
@@ -267,23 +315,23 @@ struct OnboardingFlow: View {
 
         Task {
             do {
-                stage = L10n.t("Создаём ключи…", "Creating keys…")
+                stage = L10n.t("Создаём ключи…", "Creating keys…", "Creazione delle chiavi…")
                 // Выбор сети — до открытия базы: его применит CoreStore.open.
                 CoreStore.shared.pendingProxy = tor ? .tor : .direct
                 let copy = pin
                 let messenger = try await Background.run { try CoreStore.shared.unlock(pin: copy) }
 
                 if tor {
-                    stage = L10n.t("Подключаемся к Tor…", "Connecting to Tor…")
+                    stage = L10n.t("Подключаемся к Tor…", "Connecting to Tor…", "Connessione a Tor…")
                     let ready = await NetworkController.shared.awaitTor(timeout: 180) { status in
                         Task { @MainActor in
-                            stage = L10n.t("Подключаемся к Tor… \(status.percent)%", "Connecting to Tor… \(status.percent)%")
+                            stage = L10n.t("Подключаемся к Tor… \(status.percent)%", "Connecting to Tor… \(status.percent)%", "Connessione a Tor… \(status.percent)%")
                         }
                     }
                     guard ready else { throw OnboardingFailure.torNotReady }
                 }
 
-                stage = L10n.t("Отправляем письмо с кодом…", "Sending the code…")
+                stage = L10n.t("Отправляем письмо с кодом…", "Sending the code…", "Invio del codice…")
                 try await Background.run {
                     try messenger.setPendingRegistration(username: name, email: address)
                     try messenger.requestEmailCode(email: address)
@@ -298,7 +346,7 @@ struct OnboardingFlow: View {
                 step = .pin
                 if case .InvalidEmail = error as? FfiError {
                     step = .account
-                    emailError = L10n.t("Почта не принята", "Email not accepted")
+                    emailError = L10n.t("Почта не принята", "Email not accepted", "Email non accettata")
                 } else {
                     pinError = Self.message(for: error, viaTor: tor)
                 }
@@ -310,18 +358,18 @@ struct OnboardingFlow: View {
 
     private var codeStep: some View {
         VStack(alignment: .leading, spacing: 20) {
-            ScreenTitle(text: L10n.t("Код из письма", "Code from email"),
+            ScreenTitle(text: L10n.t("Код из письма", "Code from email", "Codice dall’email"),
                         subtitle: L10n.t("Мы отправили 6 цифр на \(email). Проверьте и «Спам».",
-                                         "We sent 6 digits to \(email). Check spam too."))
-            Field(title: L10n.t("Код", "Code"), text: $code, placeholder: "123456",
+                                         "We sent 6 digits to \(email). Check spam too.", "Abbiamo inviato 6 cifre a \(email). Controlla anche lo spam."))
+            Field(title: L10n.t("Код", "Code", "Codice"), text: $code, placeholder: "123456",
                   error: codeError, keyboard: .numberPad, contentType: .oneTimeCode)
-            GoldButton(title: L10n.t("Подтвердить", "Confirm"), isLoading: working,
+            GoldButton(title: L10n.t("Подтвердить", "Confirm", "Conferma"), isLoading: working,
                        isEnabled: code.filter(\.isNumber).count == 6) { confirmCode() }
             OutlineButton(
                 title: now < resendAt
                     ? L10n.t("Отправить ещё раз через \(Int(resendAt.timeIntervalSince(now)) + 1) с",
-                             "Resend in \(Int(resendAt.timeIntervalSince(now)) + 1) s")
-                    : L10n.t("Отправить код ещё раз", "Resend code"),
+                             "Resend in \(Int(resendAt.timeIntervalSince(now)) + 1) s", "Nuovo invio tra \(Int(resendAt.timeIntervalSince(now)) + 1) s")
+                    : L10n.t("Отправить код ещё раз", "Resend code", "Invia di nuovo il codice"),
                 isEnabled: now >= resendAt && !working
             ) { resend() }
         }
@@ -349,13 +397,13 @@ struct OnboardingFlow: View {
                 working = false
                 switch error as? FfiError {
                 case .EmailCodeRejected:
-                    codeError = L10n.t("Код не подошёл или истёк", "Wrong or expired code")
+                    codeError = L10n.t("Код не подошёл или истёк", "Wrong or expired code", "Codice errato o scaduto")
                 case .UsernameTaken:
                     step = .account
-                    usernameError = L10n.t("Это имя занято", "That username is taken")
+                    usernameError = L10n.t("Это имя занято", "That username is taken", "Questo nome utente è già in uso")
                 case .EmailTaken:
                     step = .account
-                    emailError = L10n.t("На эту почту уже есть аккаунт", "This email already has an account")
+                    emailError = L10n.t("На эту почту уже есть аккаунт", "This email already has an account", "Questa email ha già un account")
                 default:
                     codeError = Self.message(for: error, viaTor: viaTor)
                 }
@@ -372,7 +420,7 @@ struct OnboardingFlow: View {
                 resendAt = Date().addingTimeInterval(60)
                 codeError = nil
             } catch {
-                codeError = L10n.t("Не удалось отправить письмо", "Could not send the email")
+                codeError = L10n.t("Не удалось отправить письмо", "Could not send the email", "Impossibile inviare l’email")
             }
         }
     }
@@ -384,12 +432,12 @@ struct OnboardingFlow: View {
         let tor = viaTor
         Task {
             do {
-                stage = L10n.t("Создаём ключи…", "Creating keys…")
+                stage = L10n.t("Создаём ключи…", "Creating keys…", "Creazione delle chiavi…")
                 CoreStore.shared.pendingProxy = tor ? .tor : .direct
                 let copy = pin
                 _ = try await Background.run { try CoreStore.shared.unlock(pin: copy) }
                 if tor {
-                    stage = L10n.t("Подключаемся к Tor…", "Connecting to Tor…")
+                    stage = L10n.t("Подключаемся к Tor…", "Connecting to Tor…", "Connessione a Tor…")
                     guard await NetworkController.shared.awaitTor(timeout: 180, progress: { _ in }) else {
                         throw OnboardingFailure.torNotReady
                     }
@@ -410,18 +458,18 @@ struct OnboardingFlow: View {
     static func message(for error: Error, viaTor: Bool) -> String {
         if case .torNotReady = error as? OnboardingFailure {
             return L10n.t("Tor не подключился. Попробуйте ещё раз или без Tor.",
-                          "Tor did not connect. Try again or without Tor.")
+                          "Tor did not connect. Try again or without Tor.", "Tor non si è connesso. Riprova o continua senza Tor.")
         }
         if ClockCheck.off {
             return L10n.t("На телефоне неверное время — сервер не принимает запросы.",
-                          "Your phone’s clock is wrong — the server rejects requests.")
+                          "Your phone’s clock is wrong — the server rejects requests.", "L’orologio del telefono è sbagliato: il server rifiuta le richieste.")
         }
         if case .unavailable = error as? EnclaveKey.Failure {
-            return L10n.t("Ключ устройства недоступен.", "Device key unavailable.")
+            return L10n.t("Ключ устройства недоступен.", "Device key unavailable.", "Chiave del dispositivo non disponibile.")
         }
         return viaTor
-            ? L10n.t("Нет связи с сервером через Tor.", "Cannot reach the server via Tor.")
-            : L10n.t("Нет связи с сервером. Проверьте интернет.", "Cannot reach the server. Check your connection.")
+            ? L10n.t("Нет связи с сервером через Tor.", "Cannot reach the server via Tor.", "Impossibile raggiungere il server tramite Tor.")
+            : L10n.t("Нет связи с сервером. Проверьте интернет.", "Cannot reach the server. Check your connection.", "Impossibile raggiungere il server. Controlla la connessione.")
     }
 }
 

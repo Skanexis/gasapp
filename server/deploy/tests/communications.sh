@@ -29,7 +29,7 @@ grep -aq 'Content-Type: multipart/alternative' "$work/message"
 grep -aq 'Content-Type: text/plain' "$work/message"
 grep -aq 'Content-Type: text/html' "$work/message"
 grep -aq 'Your verification code is: 123456' "$work/message"
-grep -aq '>123456</div>' "$work/message"
+grep -aq '>123456</td>' "$work/message"
 grep -aq 'Auto-Submitted: auto-generated' "$work/message"
 if grep -aq 'Код подтверждения' "$work/message"; then
     echo 'Russian text remained in the verification email' >&2

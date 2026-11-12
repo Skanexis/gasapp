@@ -53,9 +53,9 @@ struct SettingsScreen: View {
 
         var title: String {
             switch self {
-            case .disableWipe, .autoLock: return L10n.t("Отключение защиты", "Turn off a protection")
-            case .export: return L10n.t("Выгрузка переписки", "Export your messages")
-            case .delete: return L10n.t("Удаление аккаунта", "Delete account")
+            case .disableWipe, .autoLock: return L10n.t("Отключение защиты", "Turn off a protection", "Disattivare una protezione")
+            case .export: return L10n.t("Выгрузка переписки", "Export your messages", "Esporta i tuoi messaggi")
+            case .delete: return L10n.t("Удаление аккаунта", "Delete account", "Elimina account")
             }
         }
     }
@@ -64,41 +64,41 @@ struct SettingsScreen: View {
         Form {
             // Строки — цветом карточек GasApp, а не системным серым.
             Group {
-                Section(L10n.t("Аккаунт", "Account")) {
-                    LabeledContent(L10n.t("Имя", "Username"), value: username.isEmpty ? "—" : "@\(username)")
-                    Button(L10n.t("Заблокировать сейчас", "Lock now")) { model.lock() }
+                Section(L10n.t("Аккаунт", "Account", "Account")) {
+                    LabeledContent(L10n.t("Имя", "Username", "Nome utente"), value: username.isEmpty ? "—" : "@\(username)")
+                    Button(L10n.t("Заблокировать сейчас", "Lock now", "Blocca ora")) { model.lock() }
                 }
 
                 Section {
-                    Toggle(L10n.t("Уведомления", "Notifications"), isOn: $pushEnabled)
+                    Toggle(L10n.t("Уведомления", "Notifications", "Notifiche"), isOn: $pushEnabled)
                         .onChange(of: pushEnabled) { _, value in
                             Push.shared.enabled = value
                             Push.shared.sync()
                         }
                 } header: {
-                    Text(L10n.t("Уведомления", "Notifications"))
+                    Text(L10n.t("Уведомления", "Notifications", "Notifiche"))
                 } footer: {
                     Text(L10n.t("Только «Новые сообщения» — без текста и имени. Apple видит лишь, что вам что-то пришло, и когда.",
-                                "Only “New messages” — no text or name. Apple only sees that something arrived, and when."))
+                                "Only “New messages” — no text or name. Apple only sees that something arrived, and when.", "Solo «Nuovi messaggi», senza testo né nome. Apple vede solo che è arrivato qualcosa e quando."))
                 }
 
                 Section {
                     NavigationLink { NetworkScreen() } label: {
-                        LabeledContent(L10n.t("Подключение", "Connection"), value: proxyName)
+                        LabeledContent(L10n.t("Подключение", "Connection", "Connessione"), value: proxyName)
                     }
                     if currentProxy == .tor && !torStatus.isEmpty {
                         Text(torStatus).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
                     }
                 } header: {
-                    Text(L10n.t("Сеть", "Network"))
+                    Text(L10n.t("Сеть", "Network", "Rete"))
                 } footer: {
                     Text(L10n.t("Напрямую сервер видит ваш IP-адрес. Через Tor — нет, но медленнее.",
-                                "Directly, the server sees your IP address. Via Tor it doesn’t, but it’s slower."))
+                                "Directly, the server sees your IP address. Via Tor it doesn’t, but it’s slower.", "In modalità diretta il server vede il tuo indirizzo IP. Tramite Tor no, ma è più lento."))
                 }
 
                 Section {
                     if Biometric.available {
-                        Toggle(L10n.t("Вход по \(Biometric.name)", "Unlock with \(Biometric.name)"), isOn: Binding(
+                        Toggle(L10n.t("Вход по \(Biometric.name)", "Unlock with \(Biometric.name)", "Sblocca con \(Biometric.name)"), isOn: Binding(
                             get: { biometricOn },
                             set: { value in
                                 if value { askPinForBiometric = true } else { Biometric.disable(); biometricOn = false }
@@ -106,7 +106,7 @@ struct SettingsScreen: View {
                         ))
                     }
                     // Дольше — слабее: удлинить срок можно только по PIN.
-                    Picker(L10n.t("Автоблокировка", "Auto-lock"), selection: Binding(
+                    Picker(L10n.t("Автоблокировка", "Auto-lock", "Blocco automatico"), selection: Binding(
                         get: { autoLock },
                         set: { value in
                             if value > autoLock {
@@ -117,33 +117,33 @@ struct SettingsScreen: View {
                             }
                         }
                     )) {
-                        Text(L10n.t("Сразу", "Immediately")).tag(0)
-                        Text(L10n.t("Через 30 с", "After 30 s")).tag(30)
-                        Text(L10n.t("Через 1 мин", "After 1 min")).tag(60)
-                        Text(L10n.t("Через 5 мин", "After 5 min")).tag(300)
+                        Text(L10n.t("Сразу", "Immediately", "Subito")).tag(0)
+                        Text(L10n.t("Через 30 с", "After 30 s", "Dopo 30 s")).tag(30)
+                        Text(L10n.t("Через 1 мин", "After 1 min", "Dopo 1 min")).tag(60)
+                        Text(L10n.t("Через 5 мин", "After 5 min", "Dopo 5 min")).tag(300)
                     }
-                    Toggle(L10n.t("Показывать, что я в сети", "Show when I’m online"), isOn: $presence)
+                    Toggle(L10n.t("Показывать, что я в сети", "Show when I’m online", "Mostra quando sono online"), isOn: $presence)
                         .onChange(of: presence) { _, value in setPresence(value) }
                     // Включение — через подтверждение, выключение — по PIN:
                     // иначе стирание выключали бы перед подбором PIN.
-                    Toggle(L10n.t("Стереть всё после 10 неверных PIN", "Erase everything after 10 wrong PINs"),
+                    Toggle(L10n.t("Стереть всё после 10 неверных PIN", "Erase everything after 10 wrong PINs", "Cancella tutto dopo 10 PIN errati"),
                            isOn: Binding(
                                get: { wipeAfterTen },
                                set: { value in if value { confirmWipe = true } else { reauth = .disableWipe } }
                            ))
-                    NavigationLink(L10n.t("Центр безопасности", "Security center")) { SecurityScreen() }
-                    NavigationLink(L10n.t("Хранилище файлов", "File vault")) { VaultScreen() }
-                    NavigationLink(L10n.t("Место на устройстве", "Storage")) { StorageScreen() }
-                    NavigationLink(L10n.t("Резервная копия", "Backup")) { BackupScreen() }
-                    NavigationLink(L10n.t("Восстановить из копии", "Restore from backup")) {
+                    NavigationLink(L10n.t("Центр безопасности", "Security center", "Centro sicurezza")) { SecurityScreen() }
+                    NavigationLink(L10n.t("Хранилище файлов", "File vault", "Cassaforte file")) { VaultScreen() }
+                    NavigationLink(L10n.t("Место на устройстве", "Storage", "Spazio")) { StorageScreen() }
+                    NavigationLink(L10n.t("Резервная копия", "Backup", "Backup")) { BackupScreen() }
+                    NavigationLink(L10n.t("Восстановить из копии", "Restore from backup", "Ripristina da backup")) {
                         RestoreScreen(recovering: false) { Inbox.shared.touch() }
                     }
-                    Button(L10n.t("Выгрузить мои данные", "Export my data")) { reauth = .export }
+                    Button(L10n.t("Выгрузить мои данные", "Export my data", "Esporta i miei dati")) { reauth = .export }
                 } header: {
-                    Text(L10n.t("Защита", "Security"))
+                    Text(L10n.t("Защита", "Security", "Sicurezza"))
                 } footer: {
                     Text(L10n.t("Защищает от перебора, но ребёнок, играющий с телефоном, может всё стереть.",
-                                "Stops guessing, but a child playing with the phone could erase everything."))
+                                "Stops guessing, but a child playing with the phone could erase everything.", "Ferma i tentativi, ma un bambino che gioca con il telefono potrebbe cancellare tutto."))
                 }
 
                 // Как `DevicesActivity` на Android: только это устройство —
@@ -158,42 +158,42 @@ struct SettingsScreen: View {
                                 .font(.system(size: 12, design: .monospaced)).foregroundStyle(GasAppColor.textTertiary)
                         }
                         Spacer()
-                        Text(L10n.t("Это устройство", "This device"))
+                        Text(L10n.t("Это устройство", "This device", "Questo dispositivo"))
                             .font(.system(size: 11, weight: .semibold)).foregroundStyle(GasAppColor.ok)
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(Capsule().fill(GasAppColor.ok.opacity(0.15)))
                     }
                 } header: {
-                    Text(L10n.t("Связанные устройства", "Linked devices"))
+                    Text(L10n.t("Связанные устройства", "Linked devices", "Dispositivi collegati"))
                 } footer: {
                     Text(L10n.t("Каждое связанное устройство читает переписку целиком. Связывание появится вместе с синхронизацией между устройствами; пока аккаунт доступен только отсюда.",
-                                "Every linked device can read all of your messages. Device linking will come with multi-device sync; for now, your account works only on this device."))
+                                "Every linked device can read all of your messages. Device linking will come with multi-device sync; for now, your account works only on this device.", "Ogni dispositivo collegato può leggere tutti i tuoi messaggi. Il collegamento dei dispositivi arriverà con la sincronizzazione multi-dispositivo; per ora il tuo account funziona solo su questo dispositivo."))
                 }
 
-                Section(L10n.t("Документы", "Documents")) {
-                    link(L10n.t("Политика конфиденциальности", "Privacy policy"), "privacy/")
-                    link(L10n.t("Условия использования", "Terms of use"), "terms/")
-                    link(L10n.t("Правила сообщества", "Community guidelines"), "community-guidelines/")
-                    link(L10n.t("Поддержка", "Support"), "support/")
+                Section(L10n.t("Документы", "Documents", "Documenti")) {
+                    link(L10n.t("Политика конфиденциальности", "Privacy policy", "Informativa sulla privacy"), "privacy/")
+                    link(L10n.t("Условия использования", "Terms of use", "Termini d’uso"), "terms/")
+                    link(L10n.t("Правила сообщества", "Community guidelines", "Linee guida della community"), "community-guidelines/")
+                    link(L10n.t("Поддержка", "Support", "Assistenza"), "support/")
                 }
 
                 Section {
                     Button(role: .destructive) { reauth = .delete } label: {
-                        if deleting { ProgressView() } else { Text(L10n.t("Удалить аккаунт", "Delete account")) }
+                        if deleting { ProgressView() } else { Text(L10n.t("Удалить аккаунт", "Delete account", "Elimina account")) }
                     }
                     .disabled(deleting)
                     if let error { Text(error).foregroundStyle(GasAppColor.error) }
                 } footer: {
                     Text(L10n.t("Аккаунт удаляется на сервере, переписка — с этого телефона. Вернуть нельзя.",
-                                "The account is deleted on the server and messages from this phone. This can’t be undone."))
+                                "The account is deleted on the server and messages from this phone. This can’t be undone.", "L’account viene eliminato dal server e i messaggi da questo telefono. Non si può annullare."))
                 }
 
                 Section {
-                    LabeledContent(L10n.t("Версия ядра", "Core version"), value: coreVersion())
-                    LabeledContent(L10n.t("Версия протокола", "Protocol version"), value: String(protocolVersion()))
+                    LabeledContent(L10n.t("Версия ядра", "Core version", "Versione del core"), value: coreVersion())
+                    LabeledContent(L10n.t("Версия протокола", "Protocol version", "Versione del protocollo"), value: String(protocolVersion()))
                     // Язык приложения выбирается в настройках iOS (как
                     // «Язык приложения» на Android 13+).
-                    Button(L10n.t("Язык приложения", "App language")) {
+                    Button(L10n.t("Язык приложения", "App language", "Lingua dell’app")) {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                     }
                 }
@@ -202,33 +202,33 @@ struct SettingsScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
-        .navigationTitle(L10n.t("Настройки", "Settings"))
-        .confirmationDialog(L10n.t("Удалить аккаунт навсегда?", "Delete the account forever?"),
+        .navigationTitle(L10n.t("Настройки", "Settings", "Impostazioni"))
+        .confirmationDialog(L10n.t("Удалить аккаунт навсегда?", "Delete the account forever?", "Eliminare l’account per sempre?"),
                             isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button(L10n.t("Удалить", "Delete"), role: .destructive) { deleteAccount() }
+            Button(L10n.t("Удалить", "Delete", "Elimina"), role: .destructive) { deleteAccount() }
         } message: {
-            Text(L10n.t("С сервера исчезнут имя, ключи и недоставленные сообщения, а с устройства — вся переписка, контакты и файлы.\n\nЧего это не сделает: сообщения, которые уже дошли, останутся у собеседников, а присланные вам файлы пролежат на сервере до конца своего тридцатидневного срока. Имя освободится, и его сможет занять кто угодно — выдать себя за вас он не сможет: ключ будет другим, и ваши собеседники получат предупреждение.", "Your username, keys and any undelivered messages will be removed from the server, and this device will be wiped — every conversation, contact and file.\n\nWhat this does not do: messages already delivered stay on your contacts’ devices, and files sent to you stay on the server until they expire after 30 days. Your username becomes available for anyone else to take — they cannot pose as you, because their key would be different and your contacts would be warned."))
+            Text(L10n.t("С сервера исчезнут имя, ключи и недоставленные сообщения, а с устройства — вся переписка, контакты и файлы.\n\nЧего это не сделает: сообщения, которые уже дошли, останутся у собеседников, а присланные вам файлы пролежат на сервере до конца своего тридцатидневного срока. Имя освободится, и его сможет занять кто угодно — выдать себя за вас он не сможет: ключ будет другим, и ваши собеседники получат предупреждение.", "Your username, keys and any undelivered messages will be removed from the server, and this device will be wiped — every conversation, contact and file.\n\nWhat this does not do: messages already delivered stay on your contacts’ devices, and files sent to you stay on the server until they expire after 30 days. Your username becomes available for anyone else to take — they cannot pose as you, because their key would be different and your contacts would be warned.", "Il tuo nome utente, le chiavi e i messaggi non consegnati verranno rimossi dal server, e questo dispositivo verrà cancellato: ogni conversazione, contatto e file.\n\nCosa non fa: i messaggi già consegnati restano sui dispositivi dei tuoi contatti, e i file inviati a te restano sul server finché non scadono dopo 30 giorni. Il tuo nome utente diventa disponibile per chiunque: non potranno spacciarsi per te, perché la loro chiave sarebbe diversa e i tuoi contatti verrebbero avvisati."))
         }
         .sheet(item: $reauth) { step in
             PinConfirmSheet(title: step.title) { pin in passReauth(step, pin: pin) }
         }
-        .alert(L10n.t("Стирать данные после 10 неверных PIN?", "Erase data after 10 wrong PINs?"), isPresented: $confirmWipe) {
-            Button(L10n.t("Включить", "Turn on"), role: .destructive) {
+        .alert(L10n.t("Стирать данные после 10 неверных PIN?", "Erase data after 10 wrong PINs?", "Cancellare i dati dopo 10 PIN errati?"), isPresented: $confirmWipe) {
+            Button(L10n.t("Включить", "Turn on", "Attiva"), role: .destructive) {
                 PinAttempts.wipeEnabled = true
                 wipeAfterTen = true
             }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) {}
         } message: {
-            Text(L10n.t("После десяти неверных PIN подряд вся переписка, контакты и файлы хранилища на этом телефоне будут стёрты — в том числе если их наберёт ребёнок или карман. Без ключа восстановления вернуть их не сможет никто, и мы тоже.", "After ten wrong PINs in a row, all messages, contacts and vault files on this phone are erased — including when a child or a pocket types them. Without a recovery key they cannot be brought back, not even by us."))
+            Text(L10n.t("После десяти неверных PIN подряд вся переписка, контакты и файлы хранилища на этом телефоне будут стёрты — в том числе если их наберёт ребёнок или карман. Без ключа восстановления вернуть их не сможет никто, и мы тоже.", "After ten wrong PINs in a row, all messages, contacts and vault files on this phone are erased — including when a child or a pocket types them. Without a recovery key they cannot be brought back, not even by us.", "Dopo dieci PIN errati di fila, tutti i messaggi, i contatti e i file della cassaforte su questo telefono vengono cancellati, anche se a digitarli è un bambino o una tasca. Senza una chiave di recupero non si possono recuperare, nemmeno da noi."))
         }
         // ⚠️ Файл не зашифрован — человек узнаёт это до выбора места.
-        .alert(L10n.t("Выгрузить ваши данные?", "Export your data?"), isPresented: $confirmExport) {
-            Button(L10n.t("Выбрать, куда сохранить", "Choose where to save")) { exportData() }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+        .alert(L10n.t("Выгрузить ваши данные?", "Export your data?", "Esportare i tuoi dati?"), isPresented: $confirmExport) {
+            Button(L10n.t("Выбрать, куда сохранить", "Choose where to save", "Scegli dove salvare")) { exportData() }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) {}
         } message: {
-            Text(L10n.t("Вы получите файл JSON с именем пользователя, контактами, перепиской и настройками.\n\n⚠️ Файл НЕ зашифрован. Любой, кто его получит, прочтёт всю переписку. Сохраняйте туда, где распоряжаетесь вы, и удаляйте, когда он больше не нужен.\n\nКлючей в файле нет, поэтому восстановить из него аккаунт нельзя — для этого есть резервная копия.", "You will get a JSON file with your username, contacts, conversations and settings.\n\n⚠️ The file is NOT encrypted. Anyone who gets it can read every message in it. Save it somewhere you control, and delete it when you are done.\n\nKeys are never included, so this file cannot restore your account — use a backup for that."))
+            Text(L10n.t("Вы получите файл JSON с именем пользователя, контактами, перепиской и настройками.\n\n⚠️ Файл НЕ зашифрован. Любой, кто его получит, прочтёт всю переписку. Сохраняйте туда, где распоряжаетесь вы, и удаляйте, когда он больше не нужен.\n\nКлючей в файле нет, поэтому восстановить из него аккаунт нельзя — для этого есть резервная копия.", "You will get a JSON file with your username, contacts, conversations and settings.\n\n⚠️ The file is NOT encrypted. Anyone who gets it can read every message in it. Save it somewhere you control, and delete it when you are done.\n\nKeys are never included, so this file cannot restore your account — use a backup for that.", "Otterrai un file JSON con nome utente, contatti, conversazioni e impostazioni.\n\n⚠️ Il file NON è cifrato. Chiunque lo ottenga può leggere ogni messaggio che contiene. Salvalo in un posto che controlli ed eliminalo quando hai finito.\n\nLe chiavi non sono mai incluse, quindi questo file non può ripristinare il tuo account: per quello usa un backup."))
         }
-        .alert(L10n.t("Аккаунт удалён", "Account deleted"), isPresented: Binding(
+        .alert(L10n.t("Аккаунт удалён", "Account deleted", "Account eliminato"), isPresented: Binding(
             get: { deletion != nil }, set: { if !$0 { finishDeletion() } }
         )) {
             Button("OK") { finishDeletion() }
@@ -236,13 +236,13 @@ struct SettingsScreen: View {
             // 🔐 Числа, а не просто «готово»: проверить потом уже нечем.
             if let deletion {
                 Text(L10n.t("Устройств: \(deletion.devices), недоставленных сообщений: \(deletion.envelopes), вложений: \(deletion.attachments).",
-                            "Devices: \(deletion.devices), undelivered messages: \(deletion.envelopes), attachments: \(deletion.attachments)."))
+                            "Devices: \(deletion.devices), undelivered messages: \(deletion.envelopes), attachments: \(deletion.attachments).", "Dispositivi: \(deletion.devices), messaggi non consegnati: \(deletion.envelopes), allegati: \(deletion.attachments)."))
             }
         }
         .task { await load() }
         .onAppear { Task { await load() } }
         .sheet(isPresented: $askPinForBiometric) {
-            PinConfirmSheet(title: L10n.t("PIN для \(Biometric.name)", "PIN for \(Biometric.name)")) { pin in
+            PinConfirmSheet(title: L10n.t("PIN для \(Biometric.name)", "PIN for \(Biometric.name)", "PIN per \(Biometric.name)")) { pin in
                 enableBiometric(pin: pin)
             }
         }
@@ -309,12 +309,12 @@ struct SettingsScreen: View {
         guard wait <= 0 else {
             biometricOn = false
             error = L10n.t("Слишком много неверных PIN. Подождите \(Int(wait.rounded(.up))) с.",
-                           "Too many wrong PINs. Wait \(Int(wait.rounded(.up))) s.")
+                           "Too many wrong PINs. Wait \(Int(wait.rounded(.up))) s.", "Troppi PIN errati. Attendi \(Int(wait.rounded(.up))) s.")
             return
         }
         guard PinAttempts.beginAttempt() else {
             biometricOn = false
-            error = L10n.t("Не удалось сохранить попытку. Попробуйте ещё раз.", "Could not save the attempt. Try again.")
+            error = L10n.t("Не удалось сохранить попытку. Попробуйте ещё раз.", "Could not save the attempt. Try again.", "Impossibile salvare il tentativo. Riprova.")
             return
         }
         Task {
@@ -336,11 +336,11 @@ struct SettingsScreen: View {
                     model.didWipe()
                     return
                 }
-                error = L10n.t("PIN не подошёл — Face ID не включён", "Wrong PIN — Face ID not enabled")
+                error = L10n.t("PIN не подошёл — Face ID не включён", "Wrong PIN — Face ID not enabled", "PIN errato: Face ID non attivato")
             case nil:
                 PinAttempts.cancelAttempt()
                 biometricOn = false
-                error = L10n.t("Не удалось включить Face ID", "Could not enable Face ID")
+                error = L10n.t("Не удалось включить Face ID", "Could not enable Face ID", "Impossibile attivare Face ID")
             }
         }
     }
@@ -351,7 +351,7 @@ struct SettingsScreen: View {
         guard let messenger = try? CoreStore.shared.current() else { return }
         Task {
             guard let json = try? await Background.run({ try messenger.exportData(nowMillis: CoreStore.nowMillis) }) else {
-                error = L10n.t("Не удалось выгрузить данные", "Could not export data")
+                error = L10n.t("Не удалось выгрузить данные", "Could not export data", "Impossibile esportare i dati")
                 return
             }
             exportDocument = BackupDocument(data: Data(json.utf8), name: "gasapp-my-data.json")
@@ -361,9 +361,9 @@ struct SettingsScreen: View {
 
     private var proxyName: String {
         switch currentProxy {
-        case .tor?: return L10n.t("Через Tor", "Via Tor")
-        case .socks5?: return L10n.t("SOCKS5-прокси", "SOCKS5 proxy")
-        case .direct?: return L10n.t("Напрямую", "Direct")
+        case .tor?: return L10n.t("Через Tor", "Via Tor", "Tramite Tor")
+        case .socks5?: return L10n.t("SOCKS5-прокси", "SOCKS5 proxy", "Proxy SOCKS5")
+        case .direct?: return L10n.t("Напрямую", "Direct", "Diretta")
         case nil: return "—"
         }
     }
@@ -371,8 +371,8 @@ struct SettingsScreen: View {
     private func updateTorStatus() {
         let status = NetworkController.shared.torStatus
         torStatus = status.ready
-            ? L10n.t("Tor подключён", "Tor connected")
-            : L10n.t("Tor подключается… \(status.percent)%", "Tor connecting… \(status.percent)%")
+            ? L10n.t("Tor подключён", "Tor connected", "Tor connesso")
+            : L10n.t("Tor подключается… \(status.percent)%", "Tor connecting… \(status.percent)%", "Connessione a Tor… \(status.percent)%")
     }
 
     private func deleteAccount() {
@@ -383,7 +383,7 @@ struct SettingsScreen: View {
             do {
                 deletion = try await Background.run { try messenger.deleteAccount(nowMillis: CoreStore.nowMillis) }
             } catch {
-                self.error = L10n.t("Нет связи с сервером — аккаунт не удалён.", "No connection — the account was not deleted.")
+                self.error = L10n.t("Нет связи с сервером — аккаунт не удалён.", "No connection — the account was not deleted.", "Nessuna connessione: l’account non è stato eliminato.")
             }
             deleting = false
         }

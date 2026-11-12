@@ -27,7 +27,7 @@ struct PinConfirmSheet: View {
                 dismiss()
                 onPin(pin)
             }
-            Button(L10n.t("Отмена", "Cancel")) { dismiss() }
+            Button(L10n.t("Отмена", "Cancel", "Annulla")) { dismiss() }
                 .foregroundStyle(GasAppColor.textTertiary)
             Spacer()
         }
@@ -57,10 +57,10 @@ enum Reauth {
         let wait = PinAttempts.waitRemaining()
         guard wait <= 0 else {
             return .refused(L10n.t("Слишком много неверных PIN. Подождите \(Int(wait.rounded(.up))) с.",
-                                   "Too many wrong PINs. Wait \(Int(wait.rounded(.up))) s."))
+                                   "Too many wrong PINs. Wait \(Int(wait.rounded(.up))) s.", "Troppi PIN errati. Attendi \(Int(wait.rounded(.up))) s."))
         }
         guard PinAttempts.beginAttempt() else {
-            return .refused(L10n.t("Не удалось сохранить попытку. Попробуйте ещё раз.", "Could not save the attempt. Try again."))
+            return .refused(L10n.t("Не удалось сохранить попытку. Попробуйте ещё раз.", "Could not save the attempt. Try again.", "Impossibile salvare il tentativo. Riprova."))
         }
         let copy = pin
         // nil — PIN не сверялся (сбой ключа Enclave и т. п.).
@@ -75,10 +75,10 @@ enum Reauth {
             return .ok
         case false?:
             if PinAttempts.shouldWipe { return .wiped }
-            return .refused(L10n.t("PIN не подошёл", "Wrong PIN"))
+            return .refused(L10n.t("PIN не подошёл", "Wrong PIN", "PIN errato"))
         case nil:
             PinAttempts.cancelAttempt()
-            return .refused(L10n.t("Не удалось проверить PIN", "Could not check the PIN"))
+            return .refused(L10n.t("Не удалось проверить PIN", "Could not check the PIN", "Impossibile verificare il PIN"))
         }
     }
 }

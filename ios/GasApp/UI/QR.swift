@@ -28,7 +28,7 @@ struct QRView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .accessibilityLabel(L10n.t("QR-код", "QR code"))
+        .accessibilityLabel(L10n.t("QR-код", "QR code", "Codice QR"))
     }
 }
 
@@ -59,11 +59,11 @@ struct QRScanner: View {
                 unavailable
                 #endif
             }
-            .navigationTitle(L10n.t("Сканировать", "Scan"))
+            .navigationTitle(L10n.t("Сканировать", "Scan", "Scansiona"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.t("Закрыть", "Close")) { dismiss() }
+                    Button(L10n.t("Закрыть", "Close", "Chiudi")) { dismiss() }
                 }
             }
         }
@@ -71,7 +71,7 @@ struct QRScanner: View {
 
     private var unavailable: some View {
         Text(L10n.t("Камера недоступна. Разрешите доступ в Настройках или вставьте ссылку.",
-                    "Camera unavailable. Allow access in Settings or paste the link."))
+                    "Camera unavailable. Allow access in Settings or paste the link.", "Fotocamera non disponibile. Consenti l’accesso nelle Impostazioni o incolla il link."))
             .foregroundStyle(GasAppColor.textSecondary)
             .multilineTextAlignment(.center)
             .padding(32)

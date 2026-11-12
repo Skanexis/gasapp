@@ -40,13 +40,13 @@
 	<false/>
 	<!-- Камера — только для сканирования QR контакта и safety number. -->
 	<key>NSCameraUsageDescription</key>
-	<string>Камера нужна, чтобы сканировать QR-код контакта или кода безопасности. Снимки никуда не отправляются.</string>
+	<string>The camera is used to scan a contact’s QR code or a safety number. Camera images are not sent anywhere.</string>
 	<!-- Face ID — только чтобы открыть переписку вместо PIN (по желанию). -->
 	<key>NSFaceIDUsageDescription</key>
-	<string>Face ID открывает переписку вместо PIN. Включается в настройках.</string>
+	<string>Face ID unlocks your messages instead of the PIN. Turn it on in Settings.</string>
 	<!-- Фото — только то, что вы выбрали для отправки. -->
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Чтобы отправить выбранное фото. Метаданные (место съёмки, устройство) удаляются перед отправкой.</string>
+	<string>To send the photo you choose. Metadata (location, device) is removed before sending.</string>
 	<!-- Настройки сборки (ios/Config/*.xcconfig) — читает AppConfig.swift. -->
 	<!-- Экспорт шифрования (docs/store/app-store.md, раздел 2): ключа
 	     ITSAppUsesNonExemptEncryption здесь НЕТ намеренно. С YES и без кода

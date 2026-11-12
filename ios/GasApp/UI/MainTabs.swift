@@ -23,23 +23,23 @@ struct MainTabs: View {
     var body: some View {
         TabView(selection: $tab) {
             ChatListScreen()
-                .tabItem { Label(L10n.t("Чаты", "Chats"), systemImage: "bubble.left.and.bubble.right.fill") }
+                .tabItem { Label(L10n.t("Чаты", "Chats", "Chat"), systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(Tab.chats)
             ChannelsScreen()
-                .tabItem { Label(L10n.t("Каналы", "Channels"), systemImage: "megaphone.fill") }
+                .tabItem { Label(L10n.t("Каналы", "Channels", "Canali"), systemImage: "megaphone.fill") }
                 .badge(unreadPosts)
                 .tag(Tab.channels)
             NavigationStack {
                 ContactsScreen()
                     .navigationDestination(isPresented: binding(for: .contacts)) { pushed }
             }
-                .tabItem { Label(L10n.t("Контакты", "Contacts"), systemImage: "person.2.fill") }
+                .tabItem { Label(L10n.t("Контакты", "Contacts", "Contatti"), systemImage: "person.2.fill") }
                 .tag(Tab.contacts)
             NavigationStack {
                 SettingsScreen()
                     .navigationDestination(isPresented: binding(for: .settings)) { pushed }
             }
-                .tabItem { Label(L10n.t("Настройки", "Settings"), systemImage: "gearshape.fill") }
+                .tabItem { Label(L10n.t("Настройки", "Settings", "Impostazioni"), systemImage: "gearshape.fill") }
                 .tag(Tab.settings)
         }
         .toolbarBackground(GasAppColor.bgRaised, for: .tabBar)

@@ -53,15 +53,15 @@ struct ChatListScreen: View {
                 await inbox.receiveOnce()
                 await reload()
             }
-            .navigationTitle(L10n.t("Чаты", "Chats"))
+            .navigationTitle(L10n.t("Чаты", "Chats", "Chat"))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { path.append(.search) } label: { Image(systemName: "magnifyingglass") }
-                        .accessibilityLabel(L10n.t("Поиск", "Search"))
+                        .accessibilityLabel(L10n.t("Поиск", "Search", "Cerca"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { path.append(.addContact) } label: { Image(systemName: "square.and.pencil") }
-                        .accessibilityLabel(L10n.t("Новый чат", "New chat"))
+                        .accessibilityLabel(L10n.t("Новый чат", "New chat", "Nuova chat"))
                 }
             }
             .navigationDestination(for: Route.self) { route in
@@ -83,10 +83,10 @@ struct ChatListScreen: View {
 
     private var emptyState: some View {
         EmptyScene(icon: "bubble.left.and.bubble.right.fill",
-                   title: L10n.t("Пока нет переписок", "No chats yet"),
+                   title: L10n.t("Пока нет переписок", "No chats yet", "Ancora nessuna chat"),
                    text: L10n.t("Добавьте контакт по имени, ссылке или QR-коду.",
-                                "Add a contact by username, link or QR code."),
-                   action: L10n.t("Новый чат", "New chat")) { path.append(.addContact) }
+                                "Add a contact by username, link or QR code.", "Aggiungi un contatto tramite nome utente, link o codice QR."),
+                   action: L10n.t("Новый чат", "New chat", "Nuova chat")) { path.append(.addContact) }
     }
 
     private func reload() async {
@@ -147,12 +147,12 @@ struct ChatRowView: View {
                     // 🔐 Зелёная отметка — только у лично сверенных.
                     if row.verified {
                         Image(systemName: "checkmark.seal.fill").foregroundStyle(GasAppColor.ok).font(.system(size: 13))
-                            .accessibilityLabel(L10n.t("Сверен", "Verified"))
+                            .accessibilityLabel(L10n.t("Сверен", "Verified", "Verificato"))
                     }
                     Spacer()
                     Text(row.time).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
                 }
-                Text(row.isRequest ? L10n.t("Запрос на переписку", "Message request") : row.preview)
+                Text(row.isRequest ? L10n.t("Запрос на переписку", "Message request", "Richiesta di messaggio") : row.preview)
                     .font(.system(size: 15))
                     .foregroundStyle(row.isRequest ? GasAppColor.warn : GasAppColor.textSecondary)
                     .lineLimit(1)

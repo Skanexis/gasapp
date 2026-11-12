@@ -28,40 +28,40 @@ struct AddContactScreen: View {
         ScrollView {
             VStack(spacing: 18) {
                 Card {
-                    Text(L10n.t("По имени", "By username")).font(.system(size: 17, weight: .bold))
+                    Text(L10n.t("По имени", "By username", "Per nome utente")).font(.system(size: 17, weight: .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
-                    Field(title: L10n.t("Имя пользователя", "Username"), text: $username, placeholder: "anna_k")
-                    GoldButton(title: L10n.t("Найти", "Find"), isLoading: working,
+                    Field(title: L10n.t("Имя пользователя", "Username", "Nome utente"), text: $username, placeholder: "anna_k")
+                    GoldButton(title: L10n.t("Найти", "Find", "Cerca"), isLoading: working,
                                isEnabled: !username.isEmpty) { discover() }
                 }
 
                 Card {
-                    Text(L10n.t("По ссылке или QR", "By link or QR")).font(.system(size: 17, weight: .bold))
+                    Text(L10n.t("По ссылке или QR", "By link or QR", "Tramite link o QR")).font(.system(size: 17, weight: .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
                     Text(L10n.t("Надёжнее всего: в ссылке — ключ самого собеседника.",
-                                "Most secure: the link carries the person’s own key."))
+                                "Most secure: the link carries the person’s own key.", "Il più sicuro: il link contiene la chiave della persona stessa."))
                         .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
-                    Field(title: L10n.t("Ссылка", "Link"), text: $link, placeholder: "gasapp://…")
+                    Field(title: L10n.t("Ссылка", "Link", "Link"), text: $link, placeholder: "gasapp://…")
                     HStack(spacing: 10) {
-                        OutlineButton(title: L10n.t("Сканировать QR", "Scan QR")) { scanning = true }
-                        GoldButton(title: L10n.t("Добавить", "Add"), isLoading: working,
+                        OutlineButton(title: L10n.t("Сканировать QR", "Scan QR", "Scansiona QR")) { scanning = true }
+                        GoldButton(title: L10n.t("Добавить", "Add", "Aggiungi"), isLoading: working,
                                    isEnabled: !link.isEmpty) { addFromLink(link) }
                     }
                 }
 
                 if let error {
-                    Banner(title: L10n.t("Не получилось", "Didn’t work"), message: error, tone: .error)
+                    Banner(title: L10n.t("Не получилось", "Didn’t work", "Non ha funzionato"), message: error, tone: .error)
                 }
 
                 Card {
-                    Text(L10n.t("Ваш контакт", "Your contact")).font(.system(size: 17, weight: .bold))
+                    Text(L10n.t("Ваш контакт", "Your contact", "Il tuo contatto")).font(.system(size: 17, weight: .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
                     if let ownQR {
                         QRView(matrix: ownQR).frame(maxWidth: 240).frame(maxWidth: .infinity)
                     }
                     if let ownLink {
                         ShareLink(item: ownLink) {
-                            Label(L10n.t("Поделиться ссылкой", "Share link"), systemImage: "square.and.arrow.up")
+                            Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up")
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(GasAppColor.accent)
                         }
@@ -71,7 +71,7 @@ struct AddContactScreen: View {
             .padding(16)
         }
         .gasScreen()
-        .navigationTitle(L10n.t("Новый чат", "New chat"))
+        .navigationTitle(L10n.t("Новый чат", "New chat", "Nuova chat"))
         .sheet(isPresented: $scanning) {
             QRScanner { code in link = code; addFromLink(code) }
         }
@@ -103,7 +103,7 @@ struct AddContactScreen: View {
                 onAdded(contact.username ?? name, contact.chatId)
             } catch {
                 working = false
-                self.error = L10n.t("Такого имени нет или нет связи.", "No such username, or no connection.")
+                self.error = L10n.t("Такого имени нет или нет связи.", "No such username, or no connection.", "Nome utente inesistente o nessuna connessione.")
             }
         }
     }
@@ -122,7 +122,7 @@ struct AddContactScreen: View {
                 onAdded(contact.username ?? "", contact.chatId)
             } catch {
                 working = false
-                self.error = L10n.t("Ссылка не подошла.", "The link didn’t work.")
+                self.error = L10n.t("Ссылка не подошла.", "The link didn’t work.", "Il link non ha funzionato.")
             }
         }
     }

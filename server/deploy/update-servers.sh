@@ -120,6 +120,7 @@ if (( do_monitor )); then
         say "$h"
         rsync -a "$DEPLOY/notify-telegram.sh" "$DEPLOY/check-nodes.sh" "$DEPLOY/update-remote.sh" "$h:deploy/"
         rsync -a "$DEPLOY/monitor/gasapp-monitor.sh" "$h:deploy/monitor/"
+        rsync -a "$DEPLOY/mail/send-code.sh" "$h:deploy/mail/"
         rsync -a "$sums" "$h:deploy/expected-sums.txt"
         echo "  Пароль ops на $h (sudo):"
         ssh -t "$h" 'sudo bash ~/deploy/update-remote.sh '"$h"' ~/deploy' || echo "  ⚠ на $h что-то не так — см. выше"

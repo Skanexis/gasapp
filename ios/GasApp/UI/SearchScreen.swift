@@ -15,7 +15,7 @@ struct SearchScreen: View {
     var body: some View {
         List {
             if searched && hits.isEmpty {
-                Text(L10n.t("Ничего не найдено", "Nothing found"))
+                Text(L10n.t("Ничего не найдено", "Nothing found", "Nessun risultato"))
                     .foregroundStyle(GasAppColor.textTertiary)
                     .listRowBackground(GasAppColor.bgBase)
             }
@@ -42,9 +42,9 @@ struct SearchScreen: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
-                    prompt: L10n.t("Слово из переписки", "A word from your messages"))
+                    prompt: L10n.t("Слово из переписки", "A word from your messages", "Una parola dai tuoi messaggi"))
         .onSubmit(of: .search) { Task { await run() } }
-        .navigationTitle(L10n.t("Поиск", "Search"))
+        .navigationTitle(L10n.t("Поиск", "Search", "Cerca"))
         .gasScreen()
     }
 

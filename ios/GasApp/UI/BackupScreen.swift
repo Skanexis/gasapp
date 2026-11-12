@@ -34,11 +34,11 @@ struct BackupScreen: View {
             VStack(spacing: 16) {
                 if let status {
                     Card {
-                        Text(status.configured ? L10n.t("Копии включены", "Backups are on")
-                                               : L10n.t("Копий ещё нет", "No backups yet"))
+                        Text(status.configured ? L10n.t("Копии включены", "Backups are on", "I backup sono attivi")
+                                               : L10n.t("Копий ещё нет", "No backups yet", "Ancora nessun backup"))
                             .font(.system(size: 17, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
                         if let last = status.lastBackupAtMillis {
-                            Text(L10n.t("Последняя: \(formatChatTime(last))", "Last: \(formatChatTime(last))"))
+                            Text(L10n.t("Последняя: \(formatChatTime(last))", "Last: \(formatChatTime(last))", "Ultimo: \(formatChatTime(last))"))
                                 .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
                         }
                     }
@@ -48,46 +48,46 @@ struct BackupScreen: View {
                     keyCard(newKey)
                 } else if status?.configured == true {
                     Card {
-                        Text(L10n.t("Ключ восстановления", "Recovery key")).font(.system(size: 17, weight: .bold))
+                        Text(L10n.t("Ключ восстановления", "Recovery key", "Chiave di recupero")).font(.system(size: 17, weight: .bold))
                             .foregroundStyle(GasAppColor.textPrimary)
-                        SecureField(L10n.t("Введите ключ", "Enter the key"), text: $keyInput)
+                        SecureField(L10n.t("Введите ключ", "Enter the key", "Inserisci la chiave"), text: $keyInput)
                             .textInputAutocapitalization(.characters).autocorrectionDisabled()
                             .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgRaised))
                             .foregroundStyle(GasAppColor.textPrimary)
-                        GoldButton(title: L10n.t("Сделать копию", "Back up now"), isLoading: working,
+                        GoldButton(title: L10n.t("Сделать копию", "Back up now", "Esegui backup ora"), isLoading: working,
                                    isEnabled: validateRecoveryKey(text: keyInput)) { backup(with: keyInput) }
                         // Ключ потерян или мог попасть в чужие руки — новая
                         // цепочка копий под новым ключом (только владельцу).
-                        OutlineButton(title: L10n.t("Создать новый ключ", "Create a new key")) { askPinForNewKey = true }
+                        OutlineButton(title: L10n.t("Создать новый ключ", "Create a new key", "Crea una nuova chiave")) { askPinForNewKey = true }
                             .disabled(working)
                     }
                 } else {
                     Card {
                         Text(L10n.t("Если телефон потеряется, переписку и аккаунт вернёт копия. Её открывает ключ восстановления — запишите его на бумагу и храните отдельно от телефона.",
-                                    "If you lose your phone, a backup brings back your account and messages. It opens with a recovery key — write it on paper and keep it away from the phone."))
+                                    "If you lose your phone, a backup brings back your account and messages. It opens with a recovery key — write it on paper and keep it away from the phone.", "Se perdi il telefono, un backup ti restituisce account e messaggi. Si apre con una chiave di recupero: scrivila su carta e conservala lontano dal telefono."))
                             .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
-                        GoldButton(title: L10n.t("Создать ключ", "Create a key")) { createKey() }
+                        GoldButton(title: L10n.t("Создать ключ", "Create a key", "Crea una chiave")) { createKey() }
                     }
                 }
 
                 if let message {
-                    Banner(title: L10n.t("Копия", "Backup"), message: message, tone: .info)
+                    Banner(title: L10n.t("Копия", "Backup", "Backup"), message: message, tone: .info)
                 }
             }
             .padding(16)
         }
         .gasScreen()
-        .navigationTitle(L10n.t("Резервная копия", "Backup"))
+        .navigationTitle(L10n.t("Резервная копия", "Backup", "Backup"))
         .fileExporter(isPresented: $exporting, document: exportFile, contentType: .data,
                       defaultFilename: exportFile?.name) { result in
             if case .success = result {
-                message = L10n.t("Файл сохранён. Храните все файлы копий вместе.", "Saved. Keep all backup files together.")
+                message = L10n.t("Файл сохранён. Храните все файлы копий вместе.", "Saved. Keep all backup files together.", "Salvato. Tieni tutti i file di backup insieme.")
             }
             exportFile = nil
         }
         .task { await loadStatus() }
         .sheet(isPresented: $askPinForNewKey) {
-            PinConfirmSheet(title: L10n.t("Ключ восстановления", "Recovery key")) { pin in
+            PinConfirmSheet(title: L10n.t("Ключ восстановления", "Recovery key", "Chiave di recupero")) { pin in
                 Task {
                     switch await Reauth.verify(pin: pin) {
                     case .ok: confirmNewKey = true
@@ -99,12 +99,12 @@ struct BackupScreen: View {
         }
         // ⚠️ Прежние копии остаются под старым ключом — сказать это надо
         // до, а не после (как на Android).
-        .alert(L10n.t("Создать новый ключ", "Create a new key"), isPresented: $confirmNewKey) {
-            Button(L10n.t("Создать новый", "Create new"), role: .destructive) { startNewKey() }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+        .alert(L10n.t("Создать новый ключ", "Create a new key", "Crea una nuova chiave"), isPresented: $confirmNewKey) {
+            Button(L10n.t("Создать новый", "Create new", "Crea nuova"), role: .destructive) { startNewKey() }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) {}
         } message: {
             Text(L10n.t("Прежние копии останутся зашифрованными старым ключом — перешифровать их приложение не может. Сохраните старый ключ, пока эти копии вам нужны.",
-                        "Earlier backups stay encrypted with the old key — the app cannot re-encrypt them. Keep the old key for as long as you need those backups."))
+                        "Earlier backups stay encrypted with the old key — the app cannot re-encrypt them. Keep the old key for as long as you need those backups.", "I backup precedenti restano cifrati con la vecchia chiave: l’app non può cifrarli di nuovo. Conserva la vecchia chiave finché ti servono quei backup."))
         }
     }
 
@@ -119,25 +119,25 @@ struct BackupScreen: View {
                 createKey()
                 await loadStatus()
             } catch {
-                message = L10n.t("Не удалось начать новую цепочку копий", "Could not start a new backup chain")
+                message = L10n.t("Не удалось начать новую цепочку копий", "Could not start a new backup chain", "Impossibile avviare una nuova catena di backup")
             }
         }
     }
 
     private func keyCard(_ key: FfiRecoveryKey) -> some View {
         Card {
-            Text(L10n.t("Ваш ключ восстановления", "Your recovery key")).font(.system(size: 17, weight: .bold))
+            Text(L10n.t("Ваш ключ восстановления", "Your recovery key", "La tua chiave di recupero")).font(.system(size: 17, weight: .bold))
                 .foregroundStyle(GasAppColor.textPrimary)
             Text(key.display)
                 .font(.system(size: 18, weight: .semibold, design: .monospaced))
                 .foregroundStyle(GasAppColor.accent)
                 .textSelection(.disabled)
             Text(L10n.t("Запишите на бумагу. Не фотографируйте и не храните в заметках. Показывается один раз.",
-                        "Write it on paper. Don’t photograph it or keep it in notes. Shown once."))
+                        "Write it on paper. Don’t photograph it or keep it in notes. Shown once.", "Scrivila su carta. Non fotografarla e non salvarla nelle note. Viene mostrata una sola volta."))
                 .font(.system(size: 13)).foregroundStyle(GasAppColor.warn)
-            Field(title: L10n.t("Проверка: группа № \(confirmIndex + 1)", "Check: group #\(confirmIndex + 1)"),
+            Field(title: L10n.t("Проверка: группа № \(confirmIndex + 1)", "Check: group #\(confirmIndex + 1)", "Verifica: gruppo n. \(confirmIndex + 1)"),
                   text: $confirmText, error: confirmError)
-            GoldButton(title: L10n.t("Проверить и сделать копию", "Check and back up"), isLoading: working) {
+            GoldButton(title: L10n.t("Проверить и сделать копию", "Check and back up", "Verifica ed esegui backup"), isLoading: working) {
                 confirm(key)
             }
         }
@@ -158,7 +158,7 @@ struct BackupScreen: View {
     /// «записал», иначе копия окажется под ключом, которого ни у кого нет.
     private func confirm(_ key: FfiRecoveryKey) {
         guard (try? checkRecoveryKeyGroup(text: key.display, index: confirmIndex, entered: confirmText)) == true else {
-            confirmError = L10n.t("Не совпадает — проверьте запись", "Doesn’t match — check what you wrote")
+            confirmError = L10n.t("Не совпадает — проверьте запись", "Doesn’t match — check what you wrote", "Non corrisponde: controlla cosa hai scritto")
             return
         }
         confirmError = nil
@@ -182,11 +182,11 @@ struct BackupScreen: View {
                                             name: "gasapp-backup-\(stamp)-\(String(format: "%04u", made.generation)).gasappbk")
                 exporting = true
                 message = made.isFull
-                    ? L10n.t("Полная копия готова — сохраните файл.", "Full backup ready — save the file.")
-                    : L10n.t("Добавка к копии готова — сохраните её рядом с прежними.", "Incremental backup ready — save it next to the earlier ones.")
+                    ? L10n.t("Полная копия готова — сохраните файл.", "Full backup ready — save the file.", "Backup completo pronto: salva il file.")
+                    : L10n.t("Добавка к копии готова — сохраните её рядом с прежними.", "Incremental backup ready — save it next to the earlier ones.", "Backup incrementale pronto: salvalo accanto ai precedenti.")
                 await loadStatus()
             } catch {
-                message = L10n.t("Копия не сделана: ключ не тот или не хватило места.", "Backup failed: wrong key or not enough space.")
+                message = L10n.t("Копия не сделана: ключ не тот или не хватило места.", "Backup failed: wrong key or not enough space.", "Backup non riuscito: chiave errata o spazio insufficiente.")
             }
             working = false
         }
@@ -238,27 +238,27 @@ struct RestoreScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                ScreenTitle(text: recovering ? L10n.t("Вернуть аккаунт", "Restore account")
-                                             : L10n.t("Восстановить из копии", "Restore from backup"),
+                ScreenTitle(text: recovering ? L10n.t("Вернуть аккаунт", "Restore account", "Ripristina account")
+                                             : L10n.t("Восстановить из копии", "Restore from backup", "Ripristina da backup"),
                             subtitle: L10n.t("Выберите все файлы копии (полный и добавки) и введите ключ восстановления.",
-                                             "Pick all backup files (full and incremental) and enter the recovery key."))
-                OutlineButton(title: files.isEmpty ? L10n.t("Выбрать файлы", "Pick files")
-                                                   : L10n.t("Файлов: \(files.count)", "Files: \(files.count)")) {
+                                             "Pick all backup files (full and incremental) and enter the recovery key.", "Seleziona tutti i file di backup (completo e incrementali) e inserisci la chiave di recupero."))
+                OutlineButton(title: files.isEmpty ? L10n.t("Выбрать файлы", "Pick files", "Seleziona file")
+                                                   : L10n.t("Файлов: \(files.count)", "Files: \(files.count)", "File: \(files.count)")) {
                     picking = true
                 }
-                SecureField(L10n.t("Ключ восстановления", "Recovery key"), text: $key)
+                SecureField(L10n.t("Ключ восстановления", "Recovery key", "Chiave di recupero"), text: $key)
                     .textInputAutocapitalization(.characters).autocorrectionDisabled()
                     .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgRaised))
                     .foregroundStyle(GasAppColor.textPrimary)
                 if !key.isEmpty && !validateRecoveryKey(text: key) {
-                    Text(L10n.t("В ключе опечатка", "The key has a typo")).font(.system(size: 13)).foregroundStyle(GasAppColor.error)
+                    Text(L10n.t("В ключе опечатка", "The key has a typo", "La chiave contiene un errore")).font(.system(size: 13)).foregroundStyle(GasAppColor.error)
                 }
-                GoldButton(title: L10n.t("Восстановить", "Restore"), isLoading: working,
+                GoldButton(title: L10n.t("Восстановить", "Restore", "Ripristina"), isLoading: working,
                            isEnabled: !files.isEmpty && validateRecoveryKey(text: key)) { restore() }
                 if let result {
-                    Banner(title: failed ? L10n.t("Не получилось", "Failed") : L10n.t("Готово", "Done"),
+                    Banner(title: failed ? L10n.t("Не получилось", "Failed", "Non riuscito") : L10n.t("Готово", "Done", "Fatto"),
                            message: result, tone: failed ? .error : .ok)
-                    if !failed { GoldButton(title: L10n.t("Продолжить", "Continue")) { onDone() } }
+                    if !failed { GoldButton(title: L10n.t("Продолжить", "Continue", "Continua")) { onDone() } }
                 }
             }
             .padding(20)
@@ -303,11 +303,11 @@ struct RestoreScreen: View {
                 // 🔐 Смена ключа безопасности — сказать прямо: собеседники
                 // увидят её и должны сверить код заново.
                 result = L10n.t("Восстановлено записей: \(restored.applied). Ключ безопасности сменился — попросите собеседников сверить код заново.",
-                                "Restored \(restored.applied) records. Your safety number changed — ask contacts to verify again.")
+                                "Restored \(restored.applied) records. Your safety number changed — ask contacts to verify again.", "Record ripristinati: \(restored.applied). Il tuo numero di sicurezza è cambiato: chiedi ai contatti di verificarlo di nuovo.")
             } catch {
                 failed = true
                 result = L10n.t("Ключ не тот, файлы не по порядку или цепочка неполная.",
-                                "Wrong key, files out of order, or the chain is incomplete.")
+                                "Wrong key, files out of order, or the chain is incomplete.", "Chiave errata, file in ordine sbagliato o catena incompleta.")
             }
             working = false
         }

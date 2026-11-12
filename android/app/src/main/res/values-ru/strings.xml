@@ -306,7 +306,7 @@
     <string name="appearance_theme_value">Тёмное</string>
     <string name="appearance_theme_note">Приложение нарисовано под тёмный фон. Светлая тема означала бы вторую палитру и вторую возможность ошибиться в том, каким цветом показано состояние безопасности, — поэтому её нет.</string>
     <string name="appearance_language">Язык</string>
-    <string name="appearance_language_note">По умолчанию — английский. Также доступен русский.</string>
+    <string name="appearance_language_note">По умолчанию — английский. Также доступны русский и итальянский.</string>
 
     <!-- Хранилище. -->
     <string name="settings_storage">Хранилище</string>

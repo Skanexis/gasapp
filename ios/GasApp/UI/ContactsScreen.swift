@@ -20,7 +20,7 @@ struct ContactsScreen: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(username.isEmpty ? "—" : "@\(username)")
                                 .font(.system(size: 17, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
-                            Text(L10n.t("Моя ссылка и QR-код", "My link and QR code"))
+                            Text(L10n.t("Моя ссылка и QR-код", "My link and QR code", "Il mio link e codice QR"))
                                 .font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
                         }
                     }
@@ -28,9 +28,9 @@ struct ContactsScreen: View {
             }
             .listRowBackground(GasAppColor.bgCard)
 
-            Section(L10n.t("Контакты", "Contacts")) {
+            Section(L10n.t("Контакты", "Contacts", "Contatti")) {
                 if contacts.isEmpty {
-                    Text(L10n.t("Пока никого", "No one yet")).foregroundStyle(GasAppColor.textTertiary)
+                    Text(L10n.t("Пока никого", "No one yet", "Ancora nessuno")).foregroundStyle(GasAppColor.textTertiary)
                 }
                 ForEach(contacts, id: \.accountId) { contact in
                     let name = contact.username ?? String(contact.accountId.prefix(8))
@@ -53,12 +53,12 @@ struct ContactsScreen: View {
             .listRowBackground(GasAppColor.bgCard)
 
             if !blocked.isEmpty {
-                Section(L10n.t("Заблокированные", "Blocked")) {
+                Section(L10n.t("Заблокированные", "Blocked", "Bloccati")) {
                     ForEach(blocked, id: \.chatId) { chat in
                         HStack {
                             Text(chat.username ?? String(chat.chatId.prefix(8))).foregroundStyle(GasAppColor.textSecondary)
                             Spacer()
-                            Button(L10n.t("Разблокировать", "Unblock")) { unblock(chat.chatId) }
+                            Button(L10n.t("Разблокировать", "Unblock", "Sblocca")) { unblock(chat.chatId) }
                                 .font(.system(size: 14, weight: .semibold))
                         }
                     }
@@ -68,13 +68,13 @@ struct ContactsScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
-        .navigationTitle(L10n.t("Контакты", "Contacts"))
+        .navigationTitle(L10n.t("Контакты", "Contacts", "Contatti"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink {
                     AddContactScreen { _, _ in Task { await reload() } }
                 } label: { Image(systemName: "person.badge.plus") }
-                .accessibilityLabel(L10n.t("Добавить контакт", "Add contact"))
+                .accessibilityLabel(L10n.t("Добавить контакт", "Add contact", "Aggiungi contatto"))
             }
         }
         .sheet(isPresented: $showProfile) { NavigationStack { ProfileSheet(username: username) } }
@@ -119,11 +119,11 @@ struct ProfileSheet: View {
                     .foregroundStyle(GasAppColor.textPrimary)
                 if let qr { QRView(matrix: qr).frame(maxWidth: 260) }
                 Text(L10n.t("Покажите этот код собеседнику: по нему он добавит вас вместе с вашим ключом — без доверия серверу.",
-                            "Show this code: it adds you together with your key — without trusting the server."))
+                            "Show this code: it adds you together with your key — without trusting the server.", "Mostra questo codice: ti aggiunge insieme alla tua chiave, senza doversi fidare del server."))
                     .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
                 if let link {
                     ShareLink(item: link) {
-                        Label(L10n.t("Поделиться ссылкой", "Share link"), systemImage: "square.and.arrow.up")
+                        Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up")
                             .font(.system(size: 16, weight: .bold)).foregroundStyle(GasAppColor.accent)
                     }
                 }
@@ -131,7 +131,7 @@ struct ProfileSheet: View {
             .padding(24)
         }
         .gasScreen()
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { dismiss() } } }
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) { dismiss() } } }
         .task {
             guard let messenger = try? CoreStore.shared.current() else { return }
             if let own = try? await Background.run({ () -> (String, FfiQrMatrix) in

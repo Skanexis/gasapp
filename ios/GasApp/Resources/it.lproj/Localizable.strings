@@ -1,0 +1,2 @@
+/* Notifica push vuota: il server invia solo questa chiave. */
+"PUSH_NEW_MESSAGE" = "Nuovi messaggi";

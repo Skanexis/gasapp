@@ -133,18 +133,33 @@ trap 'rm -f "$message"' EXIT
         printf '%s\r\n' "${line//CODE_PLACEHOLDER/$code}"
     done <<'HTML'
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:32px 12px;background:#0e1238;color:#f5f6ff;font-family:Arial,sans-serif">
-<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:520px;margin:auto;border:1px solid #343e85;border-radius:18px;background:#141a4a"><tr><td style="padding:32px">
-<p style="margin:0 0 30px;color:#ffcb2e;font-size:21px;font-weight:bold;letter-spacing:1px">&#10022; GasApp</p>
-<p style="margin:0 0 8px;color:#c2c8f0;font-size:12px;font-weight:bold;letter-spacing:2px">ACCOUNT VERIFICATION</p>
-<h1 style="margin:0 0 14px;font-size:28px;line-height:1.2;color:#f5f6ff">One step to get started.</h1>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>GasApp verification code</title></head>
+<body style="margin:0;padding:0;background:#0b0f2e;color:#f5f6ff;font-family:Arial,Helvetica,sans-serif">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#0b0f2e">Your code is valid for 15 minutes. Never share it with anyone.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0f2e"><tr><td align="center" style="padding:36px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px">
+<tr><td align="center" style="padding:0 0 22px">
+<span style="font-family:'Arial Black',Arial,sans-serif;font-size:46px;font-weight:900;line-height:1;letter-spacing:2px;color:#ffcb2e;text-shadow:3px 3px 0 #8a3414,-1px -1px 0 #8a3414,1px -1px 0 #8a3414,-1px 1px 0 #8a3414">GAS</span>
+<div style="margin-top:6px;color:#8f98d6;font-size:11px;font-weight:bold;letter-spacing:4px">MESSENGER</div>
+</td></tr>
+<tr><td style="border:1px solid #343e85;border-radius:20px;background:#141a4a;padding:34px 30px">
+<p style="margin:0 0 10px;color:#ffcb2e;font-size:12px;font-weight:bold;letter-spacing:3px">ACCOUNT VERIFICATION</p>
+<h1 style="margin:0 0 14px;font-size:27px;line-height:1.25;color:#f5f6ff">One step to get started</h1>
 <p style="margin:0 0 26px;color:#c2c8f0;font-size:16px;line-height:1.6">Enter this code in GasApp to confirm your email address.</p>
-<div style="padding:20px;text-align:center;border:1px solid #343e85;border-radius:12px;background:#1b2259;color:#ffcb2e;font-size:34px;font-weight:bold;letter-spacing:10px">CODE_PLACEHOLDER</div>
-<p style="margin:24px 0 8px;color:#f5f6ff;font-size:14px">Valid for 15 minutes. Never share this code.</p>
-<p style="margin:0;color:#a3abdd;font-size:13px;line-height:1.6">If you did not request it, you can safely ignore this email.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+<td align="center" style="padding:22px 10px 22px 22px;border:2px solid #ffcb2e;border-radius:14px;background:#1b2259;color:#ffcb2e;font-family:'Courier New',monospace;font-size:38px;font-weight:bold;letter-spacing:12px">CODE_PLACEHOLDER</td>
+</tr></table>
+<p style="margin:24px 0 6px;color:#f5f6ff;font-size:15px">&#9201; Valid for <b>15 minutes</b>.</p>
+<p style="margin:0 0 6px;color:#f5f6ff;font-size:15px">&#128274; Never share this code. GasApp will never ask you for it.</p>
+<p style="margin:18px 0 0;padding-top:18px;border-top:1px solid #2a3374;color:#a3abdd;font-size:13px;line-height:1.6">Didn&#8217;t request a code? Someone may have typed your address by mistake. You can safely ignore this email &#8212; no account is created without the code.</p>
+</td></tr>
+<tr><td align="center" style="padding:20px 0 0;color:#7c85c4;font-size:12px;line-height:1.6">
+Automated message from GasApp &#183; please do not reply<br>
+<a href="https://gasapp.eu" style="color:#ffcb2e;text-decoration:none">gasapp.eu</a>
+</td></tr>
+</table>
 </td></tr></table>
-<p style="max-width:520px;margin:18px auto 0;text-align:center;color:#a3abdd;font-size:12px">Automated message from GasApp. Please do not reply.</p>
 </body></html>
 HTML
     printf '\r\n%s\r\n' '--gasapp-verification--'

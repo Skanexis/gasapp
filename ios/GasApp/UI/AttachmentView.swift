@@ -30,14 +30,14 @@ struct AttachmentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .onTapGesture { fullScreen = true }
             } else if let file {
-                ShareLink(item: AttachmentFile(data: file), preview: SharePreview(L10n.t("Файл", "File"))) {
+                ShareLink(item: AttachmentFile(data: file), preview: SharePreview(L10n.t("Файл", "File", "File"))) {
                     Label(L10n.t("Файл · \(formatBytes(Int64(file.count)))",
-                                 "File · \(formatBytes(Int64(file.count)))"),
+                                 "File · \(formatBytes(Int64(file.count)))", "File · \(formatBytes(Int64(file.count)))"),
                           systemImage: "doc.fill")
                         .foregroundStyle(GasAppColor.accent)
                 }
             } else if failed {
-                Label(L10n.t("Вложение недоступно", "Attachment unavailable"), systemImage: "exclamationmark.triangle")
+                Label(L10n.t("Вложение недоступно", "Attachment unavailable", "Allegato non disponibile"), systemImage: "exclamationmark.triangle")
                     .font(.system(size: 13)).foregroundStyle(GasAppColor.warn)
             } else {
                 ProgressView().tint(GasAppColor.accent).frame(width: 120, height: 80)
@@ -59,7 +59,7 @@ struct AttachmentView: View {
                         .background(Circle().fill(.white.opacity(0.18)))
                 }
                 .padding(16)
-                .accessibilityLabel(L10n.t("Закрыть", "Close"))
+                .accessibilityLabel(L10n.t("Закрыть", "Close", "Chiudi"))
             }
             .onTapGesture { fullScreen = false }
         }

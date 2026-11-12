@@ -31,24 +31,24 @@ struct ChannelsScreen: View {
                 }
                 if loaded && channels.isEmpty {
                     EmptyScene(icon: "megaphone.fill",
-                               title: L10n.t("Нет каналов", "No channels"),
+                               title: L10n.t("Нет каналов", "No channels", "Nessun canale"),
                                text: L10n.t("Вступите по ссылке или найдите открытый канал.",
-                                            "Join by link or find a public channel."),
-                               action: L10n.t("Вступить по ссылке", "Join by link")) { showJoin = true }
+                                            "Join by link or find a public channel.", "Entra tramite link o trova un canale pubblico."),
+                               action: L10n.t("Вступить по ссылке", "Join by link", "Entra tramite link")) { showJoin = true }
                         .listRowBackground(GasAppColor.bgBase).listRowSeparator(.hidden)
                 }
                 if !pending.isEmpty {
-                    Section(L10n.t("Заявки ждут ответа", "Requests waiting")) {
+                    Section(L10n.t("Заявки ждут ответа", "Requests waiting", "Richieste in attesa")) {
                         ForEach(pending, id: \.channelId) { join in
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(L10n.t("Закрытый канал", "Closed channel")).foregroundStyle(GasAppColor.textPrimary)
+                                    Text(L10n.t("Закрытый канал", "Closed channel", "Canale chiuso")).foregroundStyle(GasAppColor.textPrimary)
                                     Text(L10n.t("отправлена \(formatChatTime(join.requestedAtMillis))",
-                                                "sent \(formatChatTime(join.requestedAtMillis))"))
+                                                "sent \(formatChatTime(join.requestedAtMillis))", "inviata \(formatChatTime(join.requestedAtMillis))"))
                                         .font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
                                 }
                                 Spacer()
-                                Button(L10n.t("Забыть", "Forget")) { forget(join) }
+                                Button(L10n.t("Забыть", "Forget", "Dimentica")) { forget(join) }
                                     .buttonStyle(.borderless).foregroundStyle(GasAppColor.accent)
                             }
                             .listRowBackground(GasAppColor.bgBase)
@@ -67,24 +67,24 @@ struct ChannelsScreen: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .refreshable { await sync() }
-            .navigationTitle(L10n.t("Каналы", "Channels"))
+            .navigationTitle(L10n.t("Каналы", "Channels", "Canali"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button(L10n.t("Вступить по ссылке", "Join by link")) { showJoin = true }
-                        NavigationLink(L10n.t("Найти открытый", "Find public")) { PublicChannelsScreen() }
-                        Button(L10n.t("Создать канал", "Create channel")) { createOrExplain { showCreate = true } }
-                        Button(L10n.t("Мои боты", "My bots")) { createOrExplain { showBots = true } }
+                        Button(L10n.t("Вступить по ссылке", "Join by link", "Entra tramite link")) { showJoin = true }
+                        NavigationLink(L10n.t("Найти открытый", "Find public", "Trova pubblici")) { PublicChannelsScreen() }
+                        Button(L10n.t("Создать канал", "Create channel", "Crea canale")) { createOrExplain { showCreate = true } }
+                        Button(L10n.t("Мои боты", "My bots", "I miei bot")) { createOrExplain { showBots = true } }
                     } label: { Image(systemName: "plus") }
-                    .accessibilityLabel(L10n.t("Каналы: добавить", "Add a channel"))
+                    .accessibilityLabel(L10n.t("Каналы: добавить", "Add a channel", "Aggiungi un canale"))
                 }
             }
-            .alert(L10n.t("Ссылка на канал", "Channel link"), isPresented: $showJoin) {
+            .alert(L10n.t("Ссылка на канал", "Channel link", "Link del canale"), isPresented: $showJoin) {
                 TextField("https://…", text: $joinLink)
-                Button(L10n.t("Вступить", "Join")) { join() }
-                Button(L10n.t("Отмена", "Cancel"), role: .cancel) {}
+                Button(L10n.t("Вступить", "Join", "Entra")) { join() }
+                Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) {}
             }
-            .alert(L10n.t("Нужен премиум", "Premium needed"), isPresented: Binding(
+            .alert(L10n.t("Нужен премиум", "Premium needed", "Serve premium"), isPresented: Binding(
                 get: { premiumNote != nil }, set: { if !$0 { premiumNote = nil } }
             )) {
                 Button("OK") { premiumNote = nil }
@@ -94,7 +94,7 @@ struct ChannelsScreen: View {
             .sheet(isPresented: $showBots) {
                 NavigationStack {
                     BotsScreen()
-                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { showBots = false } } }
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) { showBots = false } } }
                 }
             }
             .sheet(isPresented: $showCreate) {
@@ -128,7 +128,7 @@ struct ChannelsScreen: View {
                 let username = ((try? messenger.ownUsername()) ?? nil) ?? ""
                 premiumNote = L10n.t(
                     "Создавать каналы и ботов могут аккаунты с премиумом; читать каналы — все. Премиум выдаёт оператор сервера вручную — пришлите ему своё имя: @\(username)",
-                    "Only premium accounts can create channels and bots; reading channels is open to everyone. Premium is granted by the server operator by hand — send them your username: @\(username)"
+                    "Only premium accounts can create channels and bots; reading channels is open to everyone. Premium is granted by the server operator by hand — send them your username: @\(username)", "Solo gli account premium possono creare canali e bot; leggere i canali è aperto a tutti. Il premium viene concesso a mano dall’operatore del server: inviagli il tuo nome utente: @\(username)"
                 )
             }
         }
@@ -165,17 +165,17 @@ struct ChannelsScreen: View {
                 if isChannelJoinLink(text: link) {
                     // Закрытый канал: заявка, владелец решает.
                     try await Background.run { try messenger.requestChannelJoin(link: link, nowMillis: CoreStore.nowMillis) }
-                    message = L10n.t("Заявка отправлена владельцу канала", "Request sent to the channel owner")
+                    message = L10n.t("Заявка отправлена владельцу канала", "Request sent to the channel owner", "Richiesta inviata al proprietario del canale")
                 } else if isChannelLink(text: link) {
                     _ = try await Background.run { try messenger.joinChannel(link: link, nowMillis: CoreStore.nowMillis) }
                     message = nil
                 } else {
-                    message = L10n.t("Это не ссылка на канал", "That isn’t a channel link")
+                    message = L10n.t("Это не ссылка на канал", "That isn’t a channel link", "Questo non è un link di un canale")
                     return
                 }
                 await sync()
             } catch {
-                message = L10n.t("Не удалось вступить", "Could not join")
+                message = L10n.t("Не удалось вступить", "Could not join", "Impossibile entrare")
             }
         }
     }
@@ -241,7 +241,7 @@ struct PublicChannelsScreen: View {
                     if preview.joined {
                         Image(systemName: "checkmark").foregroundStyle(GasAppColor.ok)
                     } else {
-                        Button(L10n.t("Вступить", "Join")) { join(preview) }.buttonStyle(.borderedProminent)
+                        Button(L10n.t("Вступить", "Join", "Entra")) { join(preview) }.buttonStyle(.borderedProminent)
                     }
                 }
                 .listRowBackground(GasAppColor.bgBase)
@@ -251,7 +251,7 @@ struct PublicChannelsScreen: View {
         .scrollContentBackground(.hidden)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
         .onSubmit(of: .search) { search() }
-        .navigationTitle(L10n.t("Открытые каналы", "Public channels"))
+        .navigationTitle(L10n.t("Открытые каналы", "Public channels", "Canali pubblici"))
         .gasScreen()
     }
 
@@ -265,7 +265,7 @@ struct PublicChannelsScreen: View {
             } else {
                 results = (try? await Background.run { try messenger.searchPublicChannels(query: text) }) ?? []
             }
-            message = results.isEmpty ? L10n.t("Ничего не найдено", "Nothing found") : nil
+            message = results.isEmpty ? L10n.t("Ничего не найдено", "Nothing found", "Nessun risultato") : nil
         }
     }
 
@@ -276,7 +276,7 @@ struct PublicChannelsScreen: View {
             if (try? await Background.run { try messenger.joinChannel(link: link, nowMillis: CoreStore.nowMillis) }) != nil {
                 search()
             } else {
-                message = L10n.t("Не удалось вступить", "Could not join")
+                message = L10n.t("Не удалось вступить", "Could not join", "Impossibile entrare")
             }
         }
     }
@@ -296,17 +296,17 @@ struct CreateChannelSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Field(title: L10n.t("Название", "Title"), text: $title)
-                Field(title: L10n.t("Описание", "Description"), text: $about)
-                if let error { Banner(title: L10n.t("Не создан", "Not created"), message: error, tone: .warn) }
-                GoldButton(title: L10n.t("Создать", "Create"), isLoading: working,
+                Field(title: L10n.t("Название", "Title", "Titolo"), text: $title)
+                Field(title: L10n.t("Описание", "Description", "Descrizione"), text: $about)
+                if let error { Banner(title: L10n.t("Не создан", "Not created", "Non creato"), message: error, tone: .warn) }
+                GoldButton(title: L10n.t("Создать", "Create", "Crea"), isLoading: working,
                            isEnabled: !title.trimmingCharacters(in: .whitespaces).isEmpty) { create() }
             }
             .padding(20)
         }
         .gasScreen()
-        .navigationTitle(L10n.t("Новый канал", "New channel"))
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.t("Отмена", "Cancel")) { dismiss() } } }
+        .navigationTitle(L10n.t("Новый канал", "New channel", "Nuovo canale"))
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.t("Отмена", "Cancel", "Annulla")) { dismiss() } } }
     }
 
     private func create() {
@@ -328,9 +328,9 @@ struct CreateChannelSheet: View {
                 let username = ((try? messenger.ownUsername()) ?? nil) ?? ""
                 if case .PremiumRequired = error as? FfiError {
                     self.error = L10n.t("Создавать каналы можно с премиумом. Его выдаёт оператор вручную — сообщите своё имя: @\(username).",
-                                        "Creating channels needs premium. The operator grants it manually — send your username: @\(username).")
+                                        "Creating channels needs premium. The operator grants it manually — send your username: @\(username).", "Per creare canali serve il premium. L’operatore lo concede a mano: invia il tuo nome utente: @\(username).")
                 } else {
-                    self.error = L10n.t("Нет связи с сервером", "No connection")
+                    self.error = L10n.t("Нет связи с сервером", "No connection", "Nessuna connessione")
                 }
             }
         }

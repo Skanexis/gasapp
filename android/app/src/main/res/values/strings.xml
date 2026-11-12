@@ -316,7 +316,7 @@
     <string name="appearance_theme_value">Dark</string>
     <string name="appearance_theme_note">The app is designed for a dark background. A light theme would mean a second palette and a second chance to get the color of a security state wrong — so there isn\'t one.</string>
     <string name="appearance_language">Language</string>
-    <string name="appearance_language_note">English is the default. Russian is also available.</string>
+    <string name="appearance_language_note">English is the default. Russian and Italian are also available.</string>
 
     <!-- Storage -->
     <string name="settings_storage">Storage</string>

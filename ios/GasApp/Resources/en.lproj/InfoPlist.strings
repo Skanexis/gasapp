@@ -1,0 +1,4 @@
+/* iOS permission prompts in English (the same as Info.plist). */
+"NSCameraUsageDescription" = "The camera is used to scan a contact’s QR code or a safety number. Camera images are not sent anywhere.";
+"NSFaceIDUsageDescription" = "Face ID unlocks your messages instead of the PIN. Turn it on in Settings.";
+"NSPhotoLibraryUsageDescription" = "To send the photo you choose. Metadata (location, device) is removed before sending.";

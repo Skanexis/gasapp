@@ -200,7 +200,7 @@ struct PinPad: View {
                 }
             }
             .accessibilityLabel(L10n.t("Введено цифр: \(digits.count) из \(length)",
-                                       "Digits entered: \(digits.count) of \(length)"))
+                                       "Digits entered: \(digits.count) of \(length)", "Cifre inserite: \(digits.count) su \(length)"))
 
             VStack(spacing: 14) {
                 ForEach(rows, id: \.self) { row in
@@ -231,7 +231,7 @@ struct PinPad: View {
                     .background(Circle().fill(GasAppColor.bgCard))
                     .overlay(Circle().stroke(GasAppColor.line, lineWidth: 1))
             }
-            .accessibilityLabel(key == "⌫" ? L10n.t("Стереть", "Delete") : key)
+            .accessibilityLabel(key == "⌫" ? L10n.t("Стереть", "Delete", "Elimina") : key)
         }
     }
 

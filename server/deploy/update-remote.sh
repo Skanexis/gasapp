@@ -39,6 +39,14 @@ install -m 755 "$kit/check-nodes.sh" /opt/gasapp/check-nodes.sh
 install -m 755 "$kit/monitor/gasapp-monitor.sh" /opt/gasapp/monitor/gasapp-monitor.sh
 ok "скрипты монитора обновлены (тексты оповещений — по-русски)"
 
+# Письмо с кодом — только там, где оно уже стоит (узлы API): на других
+# машинах его нет и не должно быть. Без этого шага на серверах оставалась
+# первая, русская текстовая версия письма (2026-11-12).
+if [[ -f /opt/gasapp/mail/send-code.sh && -f "$kit/mail/send-code.sh" ]]; then
+    install -m 755 "$kit/mail/send-code.sh" /opt/gasapp/mail/send-code.sh
+    ok "письмо с кодом обновлено (английское, оформленное)"
+fi
+
 # --- 2. DHCP IONOS ------------------------------------------------------------
 
 if ss -Hlunp 'sport = :68' 2>/dev/null | grep -Eq 'systemd-network|dhclient|dhcpcd'; then

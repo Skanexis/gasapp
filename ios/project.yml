@@ -16,7 +16,7 @@ options:
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
-  developmentLanguage: ru
+  developmentLanguage: en
 
 settings:
   base:

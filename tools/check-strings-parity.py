@@ -33,7 +33,7 @@ RES = os.path.join("android", "app", "src", "main", "res")
 
 # Язык по умолчанию — первый; с ним сравниваются остальные.
 DEFAULT = "values"
-TRANSLATIONS = ["values-ru"]
+TRANSLATIONS = ["values-ru", "values-it"]
 
 # Ниже этого числа строк каталог считается ненайденным, а не пустым.
 MIN_STRINGS = 100

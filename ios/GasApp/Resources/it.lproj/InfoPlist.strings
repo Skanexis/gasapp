@@ -1,0 +1,4 @@
+/* Richieste di accesso di iOS in italiano (predefinite in inglese, in Info.plist). */
+"NSCameraUsageDescription" = "La fotocamera serve per scansionare il codice QR di un contatto o un numero di sicurezza. Le immagini della fotocamera non vengono inviate da nessuna parte.";
+"NSFaceIDUsageDescription" = "Face ID sblocca i tuoi messaggi al posto del PIN. Si attiva nelle Impostazioni.";
+"NSPhotoLibraryUsageDescription" = "Per inviare la foto che scegli. I metadati (luogo, dispositivo) vengono rimossi prima dell’invio.";

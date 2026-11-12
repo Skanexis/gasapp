@@ -16,33 +16,33 @@ struct StorageScreen: View {
     var body: some View {
         Form {
             Group {
-                Section(L10n.t("Занято", "Usage")) {
-                    LabeledContent(L10n.t("Сообщения", "Messages"), value: format(database))
-                    LabeledContent(L10n.t("Вложения", "Attachments"), value: format(cache))
+                Section(L10n.t("Занято", "Usage", "Utilizzo")) {
+                    LabeledContent(L10n.t("Сообщения", "Messages", "Messaggi"), value: format(database))
+                    LabeledContent(L10n.t("Вложения", "Attachments", "Allegati"), value: format(cache))
                 }
                 Section {
                     // Отдельным действием, хотя чистка идёт и при открытии
                     // базы: включивший исчезающие сообщения вправе
                     // убедиться, что они исчезли, не дожидаясь перезапуска.
-                    Button(L10n.t("Удалить истёкшие сообщения", "Delete expired messages"), role: .destructive) { purge() }
+                    Button(L10n.t("Удалить истёкшие сообщения", "Delete expired messages", "Elimina i messaggi scaduti"), role: .destructive) { purge() }
                         .disabled(working)
-                    Button(L10n.t("Очистить загруженные файлы", "Clear downloaded files"), role: .destructive) { clearCache() }
+                    Button(L10n.t("Очистить загруженные файлы", "Clear downloaded files", "Cancella i file scaricati"), role: .destructive) { clearCache() }
                         .disabled(working)
                     if let message {
                         Text(message).foregroundStyle(GasAppColor.ok)
                     }
                 } header: {
-                    Text(L10n.t("Очистка", "Cleanup"))
+                    Text(L10n.t("Очистка", "Cleanup", "Pulizia"))
                 } footer: {
                     Text(L10n.t("Удаление необратимо: сервер копий не хранит, и восстановить стёртое будет неоткуда.",
-                                "Deletion cannot be undone: the server keeps no copies, so there is nothing to restore from."))
+                                "Deletion cannot be undone: the server keeps no copies, so there is nothing to restore from.", "L’eliminazione non si può annullare: il server non conserva copie, quindi non c’è nulla da cui ripristinare."))
                 }
             }
             .listRowBackground(GasAppColor.bgCard)
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
-        .navigationTitle(L10n.t("Место на устройстве", "Storage"))
+        .navigationTitle(L10n.t("Место на устройстве", "Storage", "Spazio"))
         .task { await measure() }
     }
 
@@ -91,7 +91,7 @@ struct StorageScreen: View {
         Task {
             let removed = (try? await Background.run { try messenger.purgeExpired(nowMillis: CoreStore.nowMillis) }) ?? 0
             working = false
-            message = L10n.t("Удалено сообщений: \(removed)", "Messages deleted: \(removed)")
+            message = L10n.t("Удалено сообщений: \(removed)", "Messages deleted: \(removed)", "Messaggi eliminati: \(removed)")
             await measure()
         }
     }
@@ -108,7 +108,7 @@ struct StorageScreen: View {
                 }
             }.value
             working = false
-            message = L10n.t("Загруженные файлы удалены", "Downloaded files deleted")
+            message = L10n.t("Загруженные файлы удалены", "Downloaded files deleted", "File scaricati eliminati")
             await measure()
         }
     }

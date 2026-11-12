@@ -43,7 +43,7 @@ struct ChannelScreen: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     if shown.isEmpty {
-                        Text(found == nil ? L10n.t("Записей пока нет", "No posts yet") : L10n.t("Ничего не нашлось", "Nothing found"))
+                        Text(found == nil ? L10n.t("Записей пока нет", "No posts yet", "Ancora nessun post") : L10n.t("Ничего не нашлось", "Nothing found", "Nessun risultato"))
                             .foregroundStyle(GasAppColor.textTertiary).padding(.top, 40)
                     }
                     ForEach(shown, id: \.seq) { post in
@@ -59,7 +59,7 @@ struct ChannelScreen: View {
                             if loadingOlder {
                                 ProgressView().tint(GasAppColor.accent)
                             } else {
-                                Text(L10n.t("Показать раньше", "Show earlier")).foregroundStyle(GasAppColor.accent)
+                                Text(L10n.t("Показать раньше", "Show earlier", "Mostra precedenti")).foregroundStyle(GasAppColor.accent)
                             }
                         }
                         .padding(.vertical, 12)
@@ -73,9 +73,9 @@ struct ChannelScreen: View {
                 Text(message).font(.system(size: 13)).foregroundStyle(GasAppColor.warn).padding(6)
             }
             if channel?.keyMissing == true {
-                Banner(title: L10n.t("Нет ключа канала", "Channel key missing"),
+                Banner(title: L10n.t("Нет ключа канала", "Channel key missing", "Manca la chiave del canale"),
                        message: L10n.t("Новые записи не прочитать: попросите у владельца новую ссылку.",
-                                       "New posts can’t be read: ask the owner for a new link."), tone: .warn)
+                                       "New posts can’t be read: ask the owner for a new link.", "I nuovi post non si possono leggere: chiedi un nuovo link al proprietario."), tone: .warn)
                     .padding(12)
             }
             if canPost { composer }
@@ -83,13 +83,13 @@ struct ChannelScreen: View {
         .gasScreen()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: L10n.t("Поиск по каналу", "Search the channel"))
+        .searchable(text: $query, prompt: L10n.t("Поиск по каналу", "Search the channel", "Cerca nel canale"))
         .onChange(of: query) { _, text in search(text) }
         .toolbar {
             if isOwner {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showManage = true } label: { Image(systemName: "slider.horizontal.3") }
-                        .accessibilityLabel(L10n.t("Управление каналом", "Manage the channel"))
+                        .accessibilityLabel(L10n.t("Управление каналом", "Manage the channel", "Gestisci il canale"))
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -99,23 +99,23 @@ struct ChannelScreen: View {
         .sheet(isPresented: $showManage, onDismiss: { Task { await reload() } }) {
             NavigationStack {
                 ChannelManageScreen(channelId: channelId) { Task { await reload() } }
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { showManage = false } } }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) { showManage = false } } }
             }
         }
-        .alert(L10n.t("Править запись", "Edit post"), isPresented: Binding(
+        .alert(L10n.t("Править запись", "Edit post", "Modifica post"), isPresented: Binding(
             get: { editing != nil }, set: { if !$0 { editing = nil } }
         )) {
-            TextField(L10n.t("Текст", "Text"), text: $editText, axis: .vertical)
-            Button(L10n.t("Сохранить", "Save")) { saveEdit() }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { editing = nil }
+            TextField(L10n.t("Текст", "Text", "Testo"), text: $editText, axis: .vertical)
+            Button(L10n.t("Сохранить", "Save", "Salva")) { saveEdit() }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) { editing = nil }
         }
-        .confirmationDialog(L10n.t("Удалить запись?", "Delete the post?"), isPresented: Binding(
+        .confirmationDialog(L10n.t("Удалить запись?", "Delete the post?", "Eliminare il post?"), isPresented: Binding(
             get: { deleting != nil }, set: { if !$0 { deleting = nil } }
         ), titleVisibility: .visible) {
-            Button(L10n.t("Удалить у всех", "Delete for everyone"), role: .destructive) { deletePost() }
+            Button(L10n.t("Удалить у всех", "Delete for everyone", "Elimina per tutti"), role: .destructive) { deletePost() }
         } message: {
             Text(L10n.t("Запись и её файлы удалятся с сервера. У тех, кто уже открыл канал, копия может остаться.",
-                        "The post and its files are deleted from the server. People who already opened the channel may still have a copy."))
+                        "The post and its files are deleted from the server. People who already opened the channel may still have a copy.", "Il post e i suoi file vengono eliminati dal server. Chi ha già aperto il canale potrebbe averne ancora una copia."))
         }
         .onChange(of: photos) { _, items in attach(items) }
         .sheet(isPresented: $showInfo) {
@@ -130,23 +130,23 @@ struct ChannelScreen: View {
 
     @ViewBuilder
     private func postMenu(_ post: FfiChannelPost) -> some View {
-        Button { editText = post.text; editing = post } label: { Label(L10n.t("Править", "Edit"), systemImage: "pencil") }
+        Button { editText = post.text; editing = post } label: { Label(L10n.t("Править", "Edit", "Modifica"), systemImage: "pencil") }
         if channel?.pinnedSeq == post.seq {
-            Button { pin(0) } label: { Label(L10n.t("Открепить", "Unpin"), systemImage: "pin.slash") }
+            Button { pin(0) } label: { Label(L10n.t("Открепить", "Unpin", "Sblocca"), systemImage: "pin.slash") }
         } else {
-            Button { pin(post.seq) } label: { Label(L10n.t("Закрепить", "Pin"), systemImage: "pin") }
+            Button { pin(post.seq) } label: { Label(L10n.t("Закрепить", "Pin", "Fissa"), systemImage: "pin") }
         }
-        Button(role: .destructive) { deleting = post } label: { Label(L10n.t("Удалить", "Delete"), systemImage: "trash") }
+        Button(role: .destructive) { deleting = post } label: { Label(L10n.t("Удалить", "Delete", "Elimina"), systemImage: "trash") }
     }
 
     private var composer: some View {
         VStack(spacing: 6) {
             if !attached.isEmpty {
                 HStack {
-                    Label(L10n.t("Фото: \(attached.count)", "Photos: \(attached.count)"), systemImage: "photo.on.rectangle")
+                    Label(L10n.t("Фото: \(attached.count)", "Photos: \(attached.count)", "Foto: \(attached.count)"), systemImage: "photo.on.rectangle")
                         .font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
                     Spacer()
-                    Button(L10n.t("Убрать", "Remove")) { attached = []; photos = [] }
+                    Button(L10n.t("Убрать", "Remove", "Rimuovi")) { attached = []; photos = [] }
                         .font(.system(size: 13)).foregroundStyle(GasAppColor.accent)
                 }
                 .padding(.horizontal, 12)
@@ -155,8 +155,8 @@ struct ChannelScreen: View {
             PhotosPicker(selection: $photos, maxSelectionCount: Int(channelPostAttachmentLimit()), matching: .images) {
                 Image(systemName: "photo").font(.system(size: 22)).foregroundStyle(GasAppColor.textSecondary)
             }
-            .accessibilityLabel(L10n.t("Фото в запись", "Add photos"))
-            TextField(L10n.t("Новая запись", "New post"), text: $draft, axis: .vertical)
+            .accessibilityLabel(L10n.t("Фото в запись", "Add photos", "Aggiungi foto"))
+            TextField(L10n.t("Новая запись", "New post", "Nuovo post"), text: $draft, axis: .vertical)
                 .lineLimit(1...6)
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 18).fill(GasAppColor.bgCard))
@@ -187,7 +187,7 @@ struct ChannelScreen: View {
                     if clean.count <= limit {
                         ready.append(clean)
                     } else {
-                        message = L10n.t("Фото больше предела записи — пропущено", "A photo is over the post limit — skipped")
+                        message = L10n.t("Фото больше предела записи — пропущено", "A photo is over the post limit — skipped", "Una foto supera il limite del post: saltata")
                     }
                 }
             }
@@ -223,7 +223,7 @@ struct ChannelScreen: View {
             do {
                 channel = try await Background.run { try messenger.pinChannelPost(channelId: id, seq: seq, nowMillis: CoreStore.nowMillis) }
             } catch {
-                message = L10n.t("Не удалось. Проверьте связь.", "That didn't work. Check the connection.")
+                message = L10n.t("Не удалось. Проверьте связь.", "That didn't work. Check the connection.", "Non ha funzionato. Controlla la connessione.")
             }
         }
     }
@@ -241,7 +241,7 @@ struct ChannelScreen: View {
             } catch let error as FfiError {
                 message = ChannelManageScreen.explain(error)
             } catch {
-                message = L10n.t("Не удалось. Проверьте связь.", "That didn't work. Check the connection.")
+                message = L10n.t("Не удалось. Проверьте связь.", "That didn't work. Check the connection.", "Non ha funzionato. Controlla la connessione.")
             }
         }
     }
@@ -256,7 +256,7 @@ struct ChannelScreen: View {
                 try await Background.run { try messenger.deleteChannelPost(channelId: id, seq: seq, nowMillis: CoreStore.nowMillis) }
                 await reload()
             } catch {
-                message = L10n.t("Не удалось удалить. Проверьте связь.", "Couldn't delete. Check the connection.")
+                message = L10n.t("Не удалось удалить. Проверьте связь.", "Couldn't delete. Check the connection.", "Impossibile eliminare. Controlla la connessione.")
             }
         }
     }
@@ -303,7 +303,7 @@ struct ChannelScreen: View {
                 message = nil
                 await reload()
             } catch {
-                message = L10n.t("Не опубликовано", "Not published")
+                message = L10n.t("Не опубликовано", "Not published", "Non pubblicato")
             }
             sending = false
         }
@@ -340,7 +340,7 @@ struct ChannelPostView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if pinned {
-                Label(L10n.t("Закреплено", "Pinned"), systemImage: "pin.fill")
+                Label(L10n.t("Закреплено", "Pinned", "Fissato"), systemImage: "pin.fill")
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(GasAppColor.accent)
             }
             ForEach(Array(post.attachments.enumerated()), id: \.offset) { _, attachment in
@@ -369,7 +369,7 @@ struct ChannelPostView: View {
                 Label("\(post.views)", systemImage: "eye").font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
                 Text(formatChatTime(post.createdAtMillis)).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
                 if post.editedAtMillis != nil {
-                    Text(L10n.t("изм.", "edited")).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                    Text(L10n.t("изм.", "edited", "modificato")).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
                 }
             }
         }
@@ -395,7 +395,7 @@ struct ChannelMediaView: View {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
             } else if failed || attachment.kind != .image {
-                Label(attachment.name ?? L10n.t("Вложение", "Attachment"), systemImage: "doc.fill")
+                Label(attachment.name ?? L10n.t("Вложение", "Attachment", "Allegato"), systemImage: "doc.fill")
                     .foregroundStyle(GasAppColor.textSecondary)
             } else {
                 ProgressView().tint(GasAppColor.accent).frame(height: 120)
@@ -449,24 +449,24 @@ struct ChannelInfoSheet: View {
                     Section {
                         Text(channel.title).font(.system(size: 20, weight: .bold))
                         if !channel.description.isEmpty { Text(channel.description).foregroundStyle(GasAppColor.textSecondary) }
-                        LabeledContent(L10n.t("Подписчиков", "Subscribers"), value: "\(channel.subscribers)")
-                        if let handle = channel.handle { LabeledContent(L10n.t("Имя", "Handle"), value: "@\(handle)") }
+                        LabeledContent(L10n.t("Подписчиков", "Subscribers", "Iscritti"), value: "\(channel.subscribers)")
+                        if let handle = channel.handle { LabeledContent(L10n.t("Имя", "Handle", "Nome"), value: "@\(handle)") }
                     }
-                    Section(L10n.t("Пригласить", "Invite")) {
+                    Section(L10n.t("Пригласить", "Invite", "Invita")) {
                         if let qr { QRView(matrix: qr).frame(maxWidth: 220).frame(maxWidth: .infinity) }
                         if let link {
-                            ShareLink(item: link) { Label(L10n.t("Поделиться ссылкой", "Share link"), systemImage: "square.and.arrow.up") }
+                            ShareLink(item: link) { Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up") }
                         }
                     }
                     Section {
-                        Toggle(L10n.t("Без уведомлений", "Muted"), isOn: Binding(
+                        Toggle(L10n.t("Без уведомлений", "Muted", "Silenziato"), isOn: Binding(
                             get: { channel.muted }, set: { mute($0) }
                         ))
                         if channel.role == .reader {
-                            Button(L10n.t("Стать администратором", "Become an admin")) { showAdminRequest = true }
+                            Button(L10n.t("Стать администратором", "Become an admin", "Diventa admin")) { showAdminRequest = true }
                         } else if channel.role == .adminPending {
                             Text(L10n.t("Заявка у владельца: ждём, когда он назначит вас администратором.",
-                                        "Request is with the owner: waiting for them to appoint you."))
+                                        "Request is with the owner: waiting for them to appoint you.", "La richiesta è presso il proprietario: in attesa che ti nomini."))
                                 .font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
                         }
                         if channel.role != .owner {
@@ -476,10 +476,10 @@ struct ChannelInfoSheet: View {
                                     Button(reason.1) { reportReason = reason.0 }
                                 }
                             } label: {
-                                Label(L10n.t("Пожаловаться на канал", "Report channel"), systemImage: "exclamationmark.bubble")
+                                Label(L10n.t("Пожаловаться на канал", "Report channel", "Segnala canale"), systemImage: "exclamationmark.bubble")
                             }
                             .foregroundStyle(GasAppColor.error)
-                            Button(L10n.t("Покинуть канал", "Leave channel"), role: .destructive) { confirmLeave = true }
+                            Button(L10n.t("Покинуть канал", "Leave channel", "Lascia il canale"), role: .destructive) { confirmLeave = true }
                         }
                         if let reportNote {
                             Text(reportNote).font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
@@ -489,23 +489,23 @@ struct ChannelInfoSheet: View {
             }
             .listRowBackground(GasAppColor.bgCard)
         }
-        .navigationTitle(L10n.t("Канал", "Channel"))
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) { onDone(false); dismiss() } } }
-        .confirmationDialog(L10n.t("Покинуть канал?", "Leave the channel?"), isPresented: $confirmLeave, titleVisibility: .visible) {
-            Button(L10n.t("Покинуть", "Leave"), role: .destructive) { leave() }
+        .navigationTitle(L10n.t("Канал", "Channel", "Canale"))
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) { onDone(false); dismiss() } } }
+        .confirmationDialog(L10n.t("Покинуть канал?", "Leave the channel?", "Lasciare il canale?"), isPresented: $confirmLeave, titleVisibility: .visible) {
+            Button(L10n.t("Покинуть", "Leave", "Lascia"), role: .destructive) { leave() }
         }
         // 🔐 Записи канала без публичного имени оператор прочитать не может:
         // дать ли ему ключ чтения, решает человек, и что получит оператор,
         // сказано до кнопок (ChannelActivity.confirmReport на Android).
-        .confirmationDialog(L10n.t("Пожаловаться на канал", "Report channel"), isPresented: Binding(
+        .confirmationDialog(L10n.t("Пожаловаться на канал", "Report channel", "Segnala canale"), isPresented: Binding(
             get: { reportReason != nil }, set: { if !$0 { reportReason = nil } }
         ), titleVisibility: .visible) {
-            Button(L10n.t("Отправить с доступом", "Send with access")) { sendReport(shareKey: true) }
-            Button(L10n.t("Только жалоба", "Report only")) { sendReport(shareKey: false) }
-            Button(L10n.t("Отмена", "Cancel"), role: .cancel) { reportReason = nil }
+            Button(L10n.t("Отправить с доступом", "Send with access", "Invia con accesso")) { sendReport(shareKey: true) }
+            Button(L10n.t("Только жалоба", "Report only", "Solo segnalazione")) { sendReport(shareKey: false) }
+            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) { reportReason = nil }
         } message: {
             Text(L10n.t("Жалоба уйдёт оператору сервера вместе с именем вашего аккаунта. Записи этого канала оператор прочитать не может — если не дать ему доступ. «Отправить с доступом» приложит к жалобе ссылку канала: оператор сможет открыть его и увидеть, на что вы жалуетесь.",
-                        "The report goes to the server operator together with your account name. The operator cannot read this channel's posts unless you give access. “Send with access” attaches the channel link to the report, so the operator can open the channel and see what you are reporting."))
+                        "The report goes to the server operator together with your account name. The operator cannot read this channel's posts unless you give access. “Send with access” attaches the channel link to the report, so the operator can open the channel and see what you are reporting.", "La segnalazione arriva all’operatore del server insieme al nome del tuo account. L’operatore non può leggere i post di questo canale se non gli dai accesso. «Invia con accesso» allega il link del canale alla segnalazione, così l’operatore può aprire il canale e vedere cosa segnali."))
         }
         .sheet(isPresented: $showAdminRequest) {
             NavigationStack { AdminRequestSheet(channelId: channelId) }
@@ -540,8 +540,8 @@ struct ChannelInfoSheet: View {
                 try messenger.reportChannel(channelId: id, reason: reason, shareKey: shareKey, nowMillis: CoreStore.nowMillis)
             }) != nil
             reportNote = sent
-                ? L10n.t("Жалоба отправлена", "Report sent")
-                : L10n.t("Нет связи с сервером. Попробуйте ещё раз.", "No connection to the server. Try again.")
+                ? L10n.t("Жалоба отправлена", "Report sent", "Segnalazione inviata")
+                : L10n.t("Нет связи с сервером. Попробуйте ещё раз.", "No connection to the server. Try again.", "Nessuna connessione al server. Riprova.")
         }
     }
 
@@ -559,10 +559,10 @@ struct ChannelInfoSheet: View {
 /// Причины жалобы на канал: номер, как его знает сервер, и подпись.
 enum ChannelReport {
     static let reasons: [(UInt8, String)] = [
-        (1, L10n.t("Спам или обман", "Spam or scam")),
-        (2, L10n.t("Незаконное содержимое", "Illegal content")),
-        (3, L10n.t("Угроза безопасности детей", "Child safety concern")),
-        (4, L10n.t("Насилие или ненависть", "Violence or hate")),
-        (5, L10n.t("Другое", "Something else")),
+        (1, L10n.t("Спам или обман", "Spam or scam", "Spam o truffa")),
+        (2, L10n.t("Незаконное содержимое", "Illegal content", "Contenuti illegali")),
+        (3, L10n.t("Угроза безопасности детей", "Child safety concern", "Sicurezza dei minori")),
+        (4, L10n.t("Насилие или ненависть", "Violence or hate", "Violenza o odio")),
+        (5, L10n.t("Другое", "Something else", "Altro")),
     ]
 }

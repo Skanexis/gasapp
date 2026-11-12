@@ -49,8 +49,8 @@ final class Inbox {
             if received > 0 { revision += 1 }
         } catch {
             lastError = ClockCheck.off
-                ? L10n.t("Неверное время на телефоне", "Phone clock is wrong")
-                : L10n.t("Нет связи с сервером", "No connection")
+                ? L10n.t("Неверное время на телефоне", "Phone clock is wrong", "L’orologio del telefono è sbagliato")
+                : L10n.t("Нет связи с сервером", "No connection", "Nessuna connessione")
         }
     }
 

@@ -47,7 +47,7 @@ enum ScreenGallery {
                 .sheet(isPresented: .constant(true)) {
                     NavigationStack {
                         BotsScreen()
-                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done")) {} } }
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) {} } }
                     }
                 }
         default:
