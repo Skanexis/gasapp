@@ -119,6 +119,21 @@ final class PlatformTransport: HttpTransport, @unchecked Sendable {
     private static let sessionLock = NSLock()
     nonisolated(unsafe) private static var shared: (route: NetworkRoute, session: URLSession)?
 
+    /// Сбросить соединения — после возврата приложения из фона.
+    ///
+    /// Пока приложение приостановлено, iOS обрывает его сокеты, а общая
+    /// сессия держит соединение HTTP/2 к серверу. Первый запрос после
+    /// возврата шёл в мёртвое соединение и висел до таймаута либо падал
+    /// «нет связи»: так выглядели «Отправить код ещё раз» и «Подтвердить»
+    /// после похода в Почту за кодом (2026-11-13). Новая сессия открывает
+    /// новое соединение сразу.
+    static func resetConnections() {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        shared?.session.invalidateAndCancel()
+        shared = nil
+    }
+
     /// Сессия текущего маршрута. 🔐 Сменился маршрут (Tor ↔ напрямую) —
     /// прежняя сессия закрывается: её соединения шли бы старым путём.
     private func sharedSession(route: NetworkRoute, config: URLSessionConfiguration, host: String) -> URLSession {

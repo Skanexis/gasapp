@@ -55,6 +55,9 @@ enum NetworkRoute: Equatable, Sendable {
         case .closed:
             return nil
         case .direct:
+            // Напрямую сервер отвечает за доли секунды: 20 с без ответа —
+            // уже сбой, а не медленная сеть (через Tor — 45 с, см. выше).
+            config.timeoutIntervalForRequest = 20
             return config
         case let .socks(host, port):
             return Self.apply(socks: host, port: port, credentials: nil, to: config)

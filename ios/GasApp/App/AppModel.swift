@@ -98,6 +98,8 @@ final class AppModel {
         switch scene {
         case .active:
             coverVisible = false
+            // Соединения не пережили фон — новые при первом запросе.
+            if backgroundSince != nil { PlatformTransport.resetConnections() }
             if let since = backgroundSince, Date().timeIntervalSince(since) > autoLockAfter, phase == .unlocked {
                 lock()
             }
