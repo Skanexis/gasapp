@@ -19,9 +19,9 @@ struct ContactsScreen: View {
                         Image(systemName: "qrcode").font(.system(size: 26)).foregroundStyle(GasAppColor.accent)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(username.isEmpty ? "—" : "@\(username)")
-                                .font(.system(size: 17, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
+                                .font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
                             Text(L10n.t("Моя ссылка и QR-код", "My link and QR code", "Il mio link e codice QR"))
-                                .font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
+                                .font(GasFont.text(13)).foregroundStyle(GasAppColor.textTertiary)
                         }
                     }
                 }
@@ -59,7 +59,7 @@ struct ContactsScreen: View {
                             Text(chat.username ?? String(chat.chatId.prefix(8))).foregroundStyle(GasAppColor.textSecondary)
                             Spacer()
                             Button(L10n.t("Разблокировать", "Unblock", "Sblocca")) { unblock(chat.chatId) }
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(GasFont.text(14, .semibold))
                         }
                     }
                 }
@@ -139,10 +139,10 @@ struct ProfileSheet: View {
                     } else {
                         ProgressView().tint(GasAppColor.accent).frame(height: 270)
                     }
-                    Text("@\(username)").font(.system(size: 24, weight: .heavy, design: .rounded))
+                    Text("@\(username)").font(GasFont.display(24))
                         .foregroundStyle(GasAppColor.textPrimary)
                     Text(L10n.t("Сканируйте в GasApp", "Scan in GasApp", "Scansiona in GasApp"))
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(GasAppColor.textTertiary)
+                        .font(GasFont.text(13, .semibold)).foregroundStyle(GasAppColor.textTertiary)
                 }
                 .padding(.vertical, 22).padding(.horizontal, 18)
                 .frame(maxWidth: .infinity)
@@ -151,11 +151,11 @@ struct ProfileSheet: View {
 
                 Text(L10n.t("Покажите этот код собеседнику: по нему он добавит вас вместе с вашим ключом — без доверия серверу.",
                             "Show this code: it adds you together with your key — without trusting the server.", "Mostra questo codice: ti aggiunge insieme alla tua chiave, senza doversi fidare del server."))
-                    .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
+                    .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
                 if let link {
                     ShareLink(item: Self.shareText(username: username, link: link)) {
                         Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up")
-                            .font(.system(size: 16, weight: .bold)).foregroundStyle(GasAppColor.accent)
+                            .font(GasFont.text(16, .bold)).foregroundStyle(GasAppColor.accent)
                     }
                 }
             }

@@ -17,7 +17,7 @@ struct PinConfirmSheet: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Text(title).font(.system(size: 22, weight: .heavy, design: .rounded))
+            Text(title).font(GasFont.display(22))
                 .foregroundStyle(GasAppColor.textPrimary)
                 .padding(.top, 32)
             PinPad(digits: $digits) {

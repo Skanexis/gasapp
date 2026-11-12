@@ -38,6 +38,18 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Шрифты Night Camp (DESIGN.md): Rubik — вывески, заголовки,
+	     кнопки; Inter — всё, что читают. Те же начертания, что на Android
+	     (res/font), с собственными именами: у исходных файлов имя одно на
+	     все начертания, и iOS зарегистрировала бы только первое. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>GasAppRubik-Black.ttf</string>
+		<string>GasAppRubik-Bold.ttf</string>
+		<string>GasAppInter-Regular.ttf</string>
+		<string>GasAppInter-SemiBold.ttf</string>
+		<string>GasAppInter-Bold.ttf</string>
+	</array>
 	<!-- Ссылки на контакт: схема gasapp://contact/… — для кнопки «Открыть
 	     в GasApp» на странице https://gasapp.eu/add/. Ссылка только
 	     открывает вопрос «Добавить контакт?» (ChatListScreen). -->

@@ -28,7 +28,7 @@ struct SafetyNumberScreen: View {
             VStack(spacing: 18) {
                 Text(L10n.t("Сравните этот код с кодом на телефоне \(name). Совпадает — между вами никого нет.",
                             "Compare this code with the one on \(name)’s phone. If they match, nobody is in between.", "Confronta questo codice con quello sul telefono di \(name). Se coincidono, non c’è nessuno in mezzo."))
-                    .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
+                    .font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary)
                     .multilineTextAlignment(.center)
 
                 if let qr { QRView(matrix: qr).frame(maxWidth: 240) }
@@ -49,7 +49,7 @@ struct SafetyNumberScreen: View {
 
                 if verified {
                     Label(L10n.t("Сверен лично", "Verified in person", "Verificato di persona"), systemImage: "checkmark.seal.fill")
-                        .foregroundStyle(GasAppColor.ok).font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(GasAppColor.ok).font(GasFont.text(16, .bold))
                     OutlineButton(title: L10n.t("Снять отметку", "Clear verification", "Annulla verifica")) { setVerified(false) }
                 } else {
                     GoldButton(title: L10n.t("Коды совпадают — отметить", "Codes match — mark verified", "I codici coincidono: segna come verificato")) { setVerified(true) }

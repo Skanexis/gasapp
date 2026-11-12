@@ -283,11 +283,11 @@ struct SecurityScreen: View {
                 }
                 ForEach(Array(events.enumerated()), id: \.offset) { _, event in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(event.eventType).font(.system(size: 15, weight: .semibold)).foregroundStyle(GasAppColor.textPrimary)
+                        Text(event.eventType).font(GasFont.text(15, .semibold)).foregroundStyle(GasAppColor.textPrimary)
                         if !event.details.isEmpty {
-                            Text(event.details).font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
+                            Text(event.details).font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary)
                         }
-                        Text(formatChatTime(event.timestampMillis)).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                        Text(formatChatTime(event.timestampMillis)).font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
                     }
                 }
             }
@@ -312,7 +312,7 @@ struct SecurityScreen: View {
                 .foregroundStyle(ok ? GasAppColor.ok : GasAppColor.warn)
             VStack(alignment: .leading) {
                 Text(title).foregroundStyle(GasAppColor.textPrimary)
-                if let detail { Text(detail).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary) }
+                if let detail { Text(detail).font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary) }
             }
         }
     }

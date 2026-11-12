@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import PhotosUI
 import SwiftUI
+import UIKit
 
 /// Каналы — аналог `ChannelsActivity`: свои и подписки, вступление по
 /// ссылке, поиск открытых, создание (право на создание — премиум,
@@ -16,6 +18,9 @@ struct ChannelsScreen: View {
     @State private var showCreate = false
     @State private var showBots = false
     @State private var showPublic = false
+    @State private var opened: OpenedChannel?
+
+    struct OpenedChannel: Hashable { let id: String; let title: String }
     /// Объяснение «нужен премиум» — вместо формы, которую всё равно не
     /// отправить (сервер отвечает 403 без премиума).
     @State private var premiumNote: String?
@@ -27,7 +32,7 @@ struct ChannelsScreen: View {
         NavigationStack {
             List {
                 if let message {
-                    Text(message).font(.system(size: 13)).foregroundStyle(GasAppColor.warn)
+                    Text(message).font(GasFont.text(13)).foregroundStyle(GasAppColor.warn)
                         .listRowBackground(GasAppColor.bgBase)
                 }
                 if loaded && channels.isEmpty {
@@ -46,7 +51,7 @@ struct ChannelsScreen: View {
                                     Text(L10n.t("Закрытый канал", "Closed channel", "Canale chiuso")).foregroundStyle(GasAppColor.textPrimary)
                                     Text(L10n.t("отправлена \(formatChatTime(join.requestedAtMillis))",
                                                 "sent \(formatChatTime(join.requestedAtMillis))", "inviata \(formatChatTime(join.requestedAtMillis))"))
-                                        .font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                                        .font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
                                 }
                                 Spacer()
                                 Button(L10n.t("Забыть", "Forget", "Dimentica")) { forget(join) }
@@ -95,6 +100,9 @@ struct ChannelsScreen: View {
                 Text(premiumNote ?? "")
             }
             .navigationDestination(isPresented: $showPublic) { PublicChannelsScreen() }
+            .navigationDestination(item: $opened) { channel in
+                ChannelScreen(channelId: channel.id, title: channel.title)
+            }
             .sheet(isPresented: $showBots) {
                 NavigationStack {
                     BotsScreen()
@@ -102,7 +110,16 @@ struct ChannelsScreen: View {
                 }
             }
             .sheet(isPresented: $showCreate) {
-                NavigationStack { CreateChannelSheet { Task { await sync() } } }
+                NavigationStack {
+                    CreateChannelSheet { channel in
+                        Task {
+                            await sync()
+                            // Новый канал — сразу открыть: первое, что делают
+                            // с каналом, — пишут в него.
+                            opened = OpenedChannel(id: channel.channelId, title: channel.title)
+                        }
+                    }
+                }
             }
             .gasScreen()
         }
@@ -190,31 +207,20 @@ struct ChannelRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Group {
-                if let data = channel.avatar, let image = UIImage(data: data) {
-                    Image(uiImage: image).resizable().scaledToFill()
-                } else {
-                    Text(String(channel.title.prefix(1)).uppercased())
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
-                        .foregroundStyle(GasAppColor.accent)
-                }
-            }
-            .frame(width: 48, height: 48)
-            .background(Circle().fill(GasAppColor.bgCard))
-            .clipShape(Circle())
+            Avatar(name: channel.title, size: 52, image: channel.avatar.flatMap { UIImage(data: $0) })
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(channel.title).font(.system(size: 17, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
+                    Text(channel.title).font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
                     if channel.closed { Image(systemName: "lock.fill").font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary) }
                     if channel.muted { Image(systemName: "bell.slash.fill").font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary) }
                     Spacer()
                     if channel.unread > 0 {
-                        Text("\(channel.unread)").font(.system(size: 12, weight: .bold))
+                        Text("\(channel.unread)").font(GasFont.text(12, .bold))
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(Capsule().fill(GasAppColor.accent)).foregroundStyle(GasAppColor.accentOn)
                     }
                 }
-                Text(channel.lastPost ?? channel.description).font(.system(size: 14))
+                Text(channel.lastPost ?? channel.description).font(GasFont.text(14))
                     .foregroundStyle(GasAppColor.textSecondary).lineLimit(1)
             }
         }
@@ -234,11 +240,11 @@ struct PublicChannelsScreen: View {
             ForEach(results, id: \.channelId) { preview in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(preview.title).font(.system(size: 16, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
-                        Text("@\(preview.handle) · \(preview.subscribers)").font(.system(size: 13))
+                        Text(preview.title).font(GasFont.text(16, .bold)).foregroundStyle(GasAppColor.textPrimary)
+                        Text("@\(preview.handle) · \(preview.subscribers)").font(GasFont.text(13))
                             .foregroundStyle(GasAppColor.textTertiary)
                         if !preview.description.isEmpty {
-                            Text(preview.description).font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary).lineLimit(2)
+                            Text(preview.description).font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary).lineLimit(2)
                         }
                     }
                     Spacer()
@@ -288,47 +294,281 @@ struct PublicChannelsScreen: View {
 
 /// Новый канал. Право — премиум (выдаёт оператор вручную).
 struct CreateChannelSheet: View {
-    let onCreated: () -> Void
+    /// Создан — канал, чтобы сразу его открыть.
+    let onCreated: (FfiChannel) -> Void
+
+    enum Access: CaseIterable { case link, request, publicName }
+
     @State private var title = ""
     @State private var about = ""
+    @State private var access: Access = .link
+    @State private var handle = ""
+    @State private var avatar: Data?
+    @State private var avatarItem: PhotosPickerItem?
     @State private var working = false
+    @State private var stage = ""
     @State private var error: String?
+    @FocusState private var focus: FocusField?
     @Environment(\.dismiss) private var dismiss
 
-    init(onCreated: @escaping () -> Void) { self.onCreated = onCreated }
+    enum FocusField { case title, about, handle }
+
+    private static let titleLimit = 64
+    private static let aboutLimit = 500
+
+    init(onCreated: @escaping (FfiChannel) -> Void) { self.onCreated = onCreated }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Field(title: L10n.t("Название", "Title", "Titolo"), text: $title)
-                Field(title: L10n.t("Описание", "Description", "Descrizione"), text: $about)
-                if let error { Banner(title: L10n.t("Не создан", "Not created", "Non creato"), message: error, tone: .warn) }
-                GoldButton(title: L10n.t("Создать", "Create", "Crea"), isLoading: working,
-                           isEnabled: !title.trimmingCharacters(in: .whitespaces).isEmpty) { create() }
+            VStack(alignment: .leading, spacing: 22) {
+                preview
+
+                // Аватар и название — в одной строке, как в списке каналов.
+                HStack(alignment: .center, spacing: 14) {
+                    PhotosPicker(selection: $avatarItem, matching: .images) {
+                        ZStack(alignment: .bottomTrailing) {
+                            Avatar(name: cleanTitle.isEmpty ? "?" : cleanTitle, size: 64,
+                                   image: avatar.flatMap { UIImage(data: $0) })
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(GasAppColor.accentOn)
+                                .frame(width: 24, height: 24)
+                                .background(Circle().fill(GasAppColor.accent))
+                                .overlay(Circle().stroke(GasAppColor.bgBase, lineWidth: 2))
+                        }
+                    }
+                    .accessibilityLabel(L10n.t("Выбрать фото", "Choose photo", "Scegli foto"))
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField(L10n.t("Название канала", "Channel title", "Titolo del canale"), text: $title)
+                            .font(GasFont.text(18, .semibold))
+                            .focused($focus, equals: .title)
+                            .submitLabel(.next)
+                            .onSubmit { focus = .about }
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .stroke(focus == .title ? GasAppColor.accent : GasAppColor.line, lineWidth: 1))
+                        counter(cleanTitle.count, Self.titleLimit)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField(L10n.t("О чём канал (необязательно)", "What the channel is about (optional)", "Di cosa parla il canale (facoltativo)"),
+                              text: $about, axis: .vertical)
+                        .font(GasFont.text(16))
+                        .lineLimit(3...8)
+                        .focused($focus, equals: .about)
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(focus == .about ? GasAppColor.accent : GasAppColor.line, lineWidth: 1))
+                    counter(about.count, Self.aboutLimit)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L10n.t("Кто может читать", "Who can read", "Chi può leggere"))
+                        .font(GasFont.text(13, .semibold))
+                        .foregroundStyle(GasAppColor.textTertiary)
+                    accessCard(.link, icon: "link",
+                               title: L10n.t("Все, у кого есть ссылка", "Anyone with the link", "Chiunque abbia il link"),
+                               text: L10n.t("Сервер хранит записи зашифрованными и прочитать их не может.",
+                                            "The server stores the posts encrypted and cannot read them.",
+                                            "Il server conserva i post cifrati e non può leggerli."))
+                    accessCard(.request, icon: "lock.fill",
+                               title: L10n.t("Только по заявке", "By request only", "Solo su richiesta"),
+                               text: L10n.t("Вы одобряете каждого. Сделать канал снова открытым будет нельзя.",
+                                            "You approve each person. The channel can’t be made open again later.",
+                                            "Approvi ogni persona. In seguito il canale non potrà tornare aperto."))
+                    accessCard(.publicName, icon: "at",
+                               title: L10n.t("Публичный, с @именем", "Public, with an @name", "Pubblico, con un @nome"),
+                               text: L10n.t("Канал находят поиском. Сервер получает ключ чтения и может читать записи — но не подделать их.",
+                                            "People find it by search. The server gets the read key and can read posts — but not forge them.",
+                                            "Si trova con la ricerca. Il server riceve la chiave di lettura e può leggere i post, ma non falsificarli."))
+                    if access == .publicName {
+                        HStack(spacing: 4) {
+                            Text("@").font(GasFont.text(17, .semibold)).foregroundStyle(GasAppColor.textTertiary)
+                            TextField(L10n.t("имя_канала", "channel_name", "nome_canale"), text: $handle)
+                                .font(GasFont.text(17))
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .focused($focus, equals: .handle)
+                        }
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(handleValid || handle.isEmpty ? GasAppColor.line : GasAppColor.error, lineWidth: 1))
+                        Text(L10n.t("3–32 знака: латиница, цифры и _, начинается с буквы.",
+                                    "3–32 characters: Latin letters, digits and _, starting with a letter.",
+                                    "3–32 caratteri: lettere latine, cifre e _, iniziando con una lettera."))
+                            .font(GasFont.text(12))
+                            .foregroundStyle(handleValid || handle.isEmpty ? GasAppColor.textTertiary : GasAppColor.error)
+                            .transition(.opacity)
+                    }
+                }
+
+                if let error {
+                    Banner(title: L10n.t("Не создан", "Not created", "Non creato"), message: error, tone: .warn)
+                        .transition(.opacity)
+                }
+
+                GoldButton(title: working && !stage.isEmpty ? stage : L10n.t("Создать канал", "Create channel", "Crea canale"),
+                           isLoading: working && stage.isEmpty, isEnabled: canCreate) { create() }
             }
             .padding(20)
+            .animation(.easeInOut(duration: 0.2), value: access)
+            .animation(.easeInOut(duration: 0.2), value: error)
         }
+        .scrollDismissesKeyboard(.interactively)
         .gasScreen()
         .navigationTitle(L10n.t("Новый канал", "New channel", "Nuovo canale"))
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.t("Отмена", "Cancel", "Annulla")) { dismiss() } } }
+        .interactiveDismissDisabled(working)
+        .onAppear { focus = .title }
+        .onChange(of: avatarItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let raw = try? await item.loadTransferable(type: Data.self), let clean = ChatScreen.strippedJPEG(raw) {
+                    avatar = clean
+                }
+                avatarItem = nil
+            }
+        }
+    }
+
+    /// Как канал будет выглядеть в списке — пока человек пишет.
+    private var preview: some View {
+        HStack(spacing: 12) {
+            Avatar(name: cleanTitle.isEmpty ? "?" : cleanTitle, size: 48, image: avatar.flatMap { UIImage(data: $0) })
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(cleanTitle.isEmpty ? L10n.t("Название канала", "Channel title", "Titolo del canale") : cleanTitle)
+                        .font(GasFont.text(16, .bold))
+                        .foregroundStyle(cleanTitle.isEmpty ? GasAppColor.textTertiary : GasAppColor.textPrimary)
+                        .lineLimit(1)
+                    if access == .request {
+                        Image(systemName: "lock.fill").font(.system(size: 11)).foregroundStyle(GasAppColor.textTertiary)
+                    }
+                }
+                Text(previewSubtitle)
+                    .font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16).fill(GasAppColor.bgRaised))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(GasAppColor.line, lineWidth: 1))
+        .accessibilityHidden(true)
+    }
+
+    private var previewSubtitle: String {
+        if access == .publicName, !handle.isEmpty { return "@\(handle.lowercased())" }
+        let text = about.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? L10n.t("Ещё нет записей", "No posts yet", "Ancora nessun post") : text
+    }
+
+    private func accessCard(_ value: Access, icon: String, title: String, text: String) -> some View {
+        let selected = access == value
+        return Button {
+            access = value
+            if value == .publicName { focus = .handle }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(selected ? GasAppColor.accentOn : GasAppColor.accent)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(selected ? GasAppColor.accent : GasAppColor.accent.opacity(0.14)))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(GasFont.text(15, .semibold)).foregroundStyle(GasAppColor.textPrimary)
+                    Text(text).font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(selected ? GasAppColor.accent : GasAppColor.line)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(GasAppColor.bgCard))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .stroke(selected ? GasAppColor.accent.opacity(0.7) : GasAppColor.line, lineWidth: selected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func counter(_ count: Int, _ limit: Int) -> some View {
+        Text("\(count) / \(limit)")
+            .font(GasFont.text(12))
+            .monospacedDigit()
+            .foregroundStyle(count > limit ? GasAppColor.error : GasAppColor.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private var cleanTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var handleValid: Bool { canonicalChannelHandle(text: handle) != nil }
+
+    private var canCreate: Bool {
+        !cleanTitle.isEmpty && cleanTitle.count <= Self.titleLimit && about.count <= Self.aboutLimit
+            && (access != .publicName || handleValid)
     }
 
     private func create() {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        let name = title.trimmingCharacters(in: .whitespaces)
-        let text = about
+        let name = cleanTitle
+        let text = about.trimmingCharacters(in: .whitespacesAndNewlines)
+        let picture = avatar
+        let mode = access
+        let publicName = mode == .publicName ? canonicalChannelHandle(text: handle) : nil
         working = true
+        error = nil
+        focus = nil
         Task {
             do {
                 _ = try await Background.run { try messenger.refreshPremium(nowMillis: CoreStore.nowMillis) }
-                _ = try await Background.run {
+                stage = L10n.t("Создаю канал…", "Creating the channel…", "Creazione del canale…")
+                var channel = try await Background.run {
                     try messenger.createChannel(title: name, description: text, nowMillis: CoreStore.nowMillis)
                 }
+                let id = channel.channelId
+                // Дальше — по шагу; сбой шага не отменяет созданный канал:
+                // его можно доделать в «Управлении».
+                var unfinished: [String] = []
+                if let picture {
+                    stage = L10n.t("Ставлю аватар…", "Setting the picture…", "Imposto l’immagine…")
+                    if let updated = try? await Background.run({ try messenger.setChannelAvatar(channelId: id, image: picture, nowMillis: CoreStore.nowMillis) }) {
+                        channel = updated
+                    } else {
+                        unfinished.append(L10n.t("аватар", "picture", "immagine"))
+                    }
+                }
+                switch mode {
+                case .link:
+                    break
+                case .request:
+                    stage = L10n.t("Закрываю канал…", "Closing the channel…", "Chiudo il canale…")
+                    if let updated = try? await Background.run({ try messenger.setChannelClosed(channelId: id, closed: true, nowMillis: CoreStore.nowMillis) }) {
+                        channel = updated
+                    } else {
+                        unfinished.append(L10n.t("вступление по заявке", "join by request", "ingresso su richiesta"))
+                    }
+                case .publicName:
+                    stage = L10n.t("Публикую @имя…", "Publishing the @name…", "Pubblico il @nome…")
+                    if let updated = try? await Background.run({ try messenger.setChannelHandle(channelId: id, handle: publicName, nowMillis: CoreStore.nowMillis) }) {
+                        channel = updated
+                    } else {
+                        unfinished.append(L10n.t("публичное имя (занято или нет связи)", "public name (taken or no connection)", "nome pubblico (in uso o nessuna connessione)"))
+                    }
+                }
                 working = false
-                onCreated()
+                stage = ""
+                UINotificationFeedbackGenerator().notificationOccurred(unfinished.isEmpty ? .success : .warning)
+                onCreated(channel)
                 dismiss()
             } catch {
                 working = false
+                stage = ""
                 let username = ((try? messenger.ownUsername()) ?? nil) ?? ""
                 if case .PremiumRequired = error as? FfiError {
                     self.error = L10n.t("Создавать каналы можно с премиумом. Его выдаёт оператор вручную — сообщите своё имя: @\(username).",

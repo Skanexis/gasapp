@@ -30,6 +30,7 @@ struct ChannelManageScreen: View {
     @State private var avatarItem: PhotosPickerItem?
     @State private var confirmPublic = false
     @State private var confirmClose = false
+    @State private var link: String?
     /// Ошибка действия — всплывающим окном: строка вверху формы была
     /// за пределами экрана, и казалось, что кнопка не работает.
     @State private var failure: String?
@@ -44,136 +45,222 @@ struct ChannelManageScreen: View {
 
     var body: some View {
         Form {
-            Group {
-                Section(L10n.t("Канал", "Channel", "Canale")) {
-                    TextField(L10n.t("Название", "Title", "Titolo"), text: $title)
-                    TextField(L10n.t("Описание", "Description", "Descrizione"), text: $about, axis: .vertical).lineLimit(2...6)
-                    Button(L10n.t("Сохранить", "Save", "Salva")) { saveInfo() }
-                        .disabled(working || title.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-
-                Section(L10n.t("Аватар", "Avatar", "Avatar")) {
-                    if let data = channel?.avatar, let image = UIImage(data: data) {
-                        Image(uiImage: image).resizable().scaledToFill()
-                            .frame(width: 72, height: 72).clipShape(Circle())
-                    }
+            // Шапка: как канал видят читатели, и главное о нём одной строкой.
+            Section {
+                VStack(spacing: 10) {
                     PhotosPicker(selection: $avatarItem, matching: .images) {
-                        Label(L10n.t("Выбрать фото", "Choose photo", "Scegli foto"), systemImage: "photo")
+                        ZStack(alignment: .bottomTrailing) {
+                            Avatar(name: channel?.title ?? title, size: 84,
+                                   image: channel?.avatar.flatMap { UIImage(data: $0) })
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(GasAppColor.accentOn)
+                                .frame(width: 28, height: 28)
+                                .background(Circle().fill(GasAppColor.accent))
+                                .overlay(Circle().stroke(GasAppColor.bgCard, lineWidth: 2))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.t("Выбрать фото", "Choose photo", "Scegli foto"))
+                    Text(channel?.title ?? title)
+                        .font(GasFont.display(22)).foregroundStyle(GasAppColor.textPrimary)
+                        .multilineTextAlignment(.center)
+                    HStack(spacing: 8) {
+                        modePill
+                        Text(subscribersLabel).font(GasFont.text(13)).foregroundStyle(GasAppColor.textTertiary)
                     }
                     if channel?.avatar != nil {
                         Button(L10n.t("Убрать аватар", "Remove avatar", "Rimuovi avatar"), role: .destructive) { setAvatar(nil) }
+                            .font(GasFont.text(14)).buttonStyle(.borderless)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .listRowBackground(GasAppColor.bgCard)
+
+            Group {
+                // Сначала — то, что ждёт решения владельца.
+                if channel?.closed == true, !requests.isEmpty {
+                    Section {
+                        ForEach(requests, id: \.accountId) { request in
+                            HStack(spacing: 12) {
+                                Avatar(name: request.username, size: 40)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("@\(request.username)").font(GasFont.text(16, .semibold)).foregroundStyle(GasAppColor.textPrimary)
+                                    Text(requestHint(request)).font(GasFont.text(12))
+                                        .foregroundStyle(request.knownContact ? GasAppColor.ok : GasAppColor.textTertiary)
+                                }
+                                Spacer()
+                                Button { answer(request, approve: false) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(GasAppColor.error)
+                                        .frame(width: 36, height: 36)
+                                        .background(Circle().fill(GasAppColor.error.opacity(0.14)))
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel(L10n.t("Отклонить", "Decline", "Rifiuta"))
+                                Button { answer(request, approve: true) } label: {
+                                    Image(systemName: "checkmark").font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(GasAppColor.accentOn)
+                                        .frame(width: 36, height: 36)
+                                        .background(Circle().fill(GasAppColor.ok))
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel(L10n.t("Принять", "Approve", "Approva"))
+                            }
+                        }
+                    } header: {
+                        Text(L10n.t("Заявки ждут: \(requests.count)", "Requests waiting: \(requests.count)", "Richieste in attesa: \(requests.count)"))
+                    } footer: {
+                        Text(L10n.t("Принятый получает ключ чтения канала — забрать его обратно нельзя.",
+                                    "Whoever you approve gets the channel read key — it cannot be taken back.",
+                                    "Chi approvi riceve la chiave di lettura del canale e non si può revocare."))
                     }
                 }
 
+                Section {
+                    TextField(L10n.t("Название", "Title", "Titolo"), text: $title)
+                        .font(GasFont.text(17, .semibold))
+                    TextField(L10n.t("Описание", "Description", "Descrizione"), text: $about, axis: .vertical)
+                        .lineLimit(2...6)
+                    if infoChanged {
+                        Button {
+                            saveInfo()
+                        } label: {
+                            Label(L10n.t("Сохранить", "Save", "Salva"), systemImage: "checkmark")
+                                .font(GasFont.text(16, .semibold))
+                        }
+                        .disabled(working || title.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .transition(.opacity)
+                    }
+                } header: {
+                    Text(L10n.t("Канал", "Channel", "Canale"))
+                }
+
+                // Доступ: текущее состояние — и только подходящие к нему действия.
                 Section {
                     if let current = channel?.handle {
                         LabeledContent(L10n.t("Публичное имя", "Public name", "Nome pubblico"), value: "@\(current)")
-                        Button(L10n.t("Сделать непубличным", "Make it private", "Rendilo privato")) { setHandle(nil) }
-                    } else {
-                        TextField(L10n.t("имя_канала", "channel_name", "nome_canale"), text: $handle)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Button(L10n.t("Сделать публичным", "Make it public", "Rendilo pubblico")) { confirmPublic = true }
-                            .disabled(handle.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                } header: {
-                    Text(L10n.t("Публичный канал", "Public channel", "Canale pubblico"))
-                } footer: {
-                    Text(L10n.t("Публичный канал находят по @имени. Для этого сервер получает ссылку канала — и с ней ключ чтения: сервер сможет читать записи. Подделать ваши записи он не сможет.",
-                                "A public channel can be found by its @name. For that the server receives the channel link — and with it the read key: the server will be able to read the posts. It still cannot forge your posts.", "Un canale pubblico si trova tramite il suo @nome. Per questo il server riceve il link del canale e con esso la chiave di lettura: il server potrà leggere i post. Non potrà comunque falsificare i tuoi post."))
-                }
-
-                Section {
-                    if channel?.closed == true {
-                        Label(L10n.t("Вступление — по заявке", "Joining is by request", "Si entra su richiesta"),
-                              systemImage: "lock.fill")
+                        Button(L10n.t("Убрать публичное имя", "Remove the public name", "Rimuovi il nome pubblico")) { setHandle(nil) }
+                    } else if channel?.closed == true {
+                        Label(L10n.t("Вступление — по заявке", "Joining is by request", "Si entra su richiesta"), systemImage: "lock.fill")
                             .foregroundStyle(GasAppColor.ok)
                     } else {
-                        // Закрыть можно один раз: открытым канал уже не
-                        // сделать (ядро, setChannelClosed) — поэтому кнопка
-                        // с подтверждением, а не переключатель туда-обратно.
-                        Button {
-                            if channel?.handle != nil {
-                                failure = L10n.t("Сначала уберите публичное имя: по @имени сервер раздаёт ссылку с ключом чтения, поэтому такой канал закрыть нельзя.",
-                                                 "Remove the public name first: by its @name the server hands out a link with the read key, so such a channel cannot be closed.",
-                                                 "Rimuovi prima il nome pubblico: tramite il suo @nome il server distribuisce un link con la chiave di lettura, quindi un canale così non si può chiudere.")
-                            } else {
-                                confirmClose = true
+                        if let link {
+                            HStack {
+                                Label(L10n.t("Ссылка канала", "Channel link", "Link del canale"), systemImage: "link")
+                                Spacer()
+                                ShareLink(item: link) { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless)
                             }
+                        }
+                        HStack(spacing: 4) {
+                            Text("@").foregroundStyle(GasAppColor.textTertiary)
+                            TextField(L10n.t("имя_канала", "channel_name", "nome_canale"), text: $handle)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            if !handle.isEmpty {
+                                Button(L10n.t("Сделать публичным", "Make it public", "Rendilo pubblico")) { confirmPublic = true }
+                                    .font(GasFont.text(14, .semibold))
+                                    .buttonStyle(.borderless)
+                                    .disabled(canonicalChannelHandle(text: handle) == nil)
+                            }
+                        }
+                        Button {
+                            confirmClose = true
                         } label: {
                             Label(L10n.t("Сделать вступление по заявке", "Make joining by request", "Rendi l’ingresso su richiesta"),
                                   systemImage: "lock")
                         }
                         .disabled(working || channel == nil)
                     }
-                    ForEach(requests, id: \.accountId) { request in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("@\(request.username)").foregroundStyle(GasAppColor.textPrimary)
-                                Text(requestHint(request)).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
-                            }
-                            Spacer()
-                            Button(L10n.t("Принять", "Approve", "Approva")) { answer(request, approve: true) }
-                                .buttonStyle(.borderless).foregroundStyle(GasAppColor.ok)
-                            Button(L10n.t("Отклонить", "Decline", "Rifiuta")) { answer(request, approve: false) }
-                                .buttonStyle(.borderless).foregroundStyle(GasAppColor.error)
-                        }
-                    }
                 } header: {
-                    Text(L10n.t("Закрытый канал", "Closed channel", "Canale chiuso"))
+                    Text(L10n.t("Доступ", "Access", "Accesso"))
                 } footer: {
-                    Text(L10n.t("По ссылке-приглашению человек присылает заявку, а вступает — когда вы её примете.",
-                                "With an invite link a person sends a request and joins once you approve it.", "Con un link di invito una persona invia una richiesta ed entra quando la approvi."))
+                    Text(accessFooter)
                 }
 
-                Section(L10n.t("Приглашения", "Invites", "Inviti")) {
-                    ForEach(invites, id: \.self) { link in
-                        HStack {
-                            Text(link).font(.system(size: 13, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                            Spacer()
-                            ShareLink(item: link) { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless)
-                            Button { revoke(link) } label: { Image(systemName: "xmark.circle") }
-                                .buttonStyle(.borderless).foregroundStyle(GasAppColor.error)
+                if channel?.closed == true {
+                    Section {
+                        ForEach(invites, id: \.self) { link in
+                            HStack {
+                                Text(link).font(.system(size: 13, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                                Spacer()
+                                ShareLink(item: link) { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(L10n.t("Отозвать", "Revoke", "Revoca"), role: .destructive) { revoke(link) }
+                            }
                         }
+                        Button { createInvite() } label: {
+                            Label(L10n.t("Новое приглашение", "New invite", "Nuovo invito"), systemImage: "plus")
+                        }
+                    } header: {
+                        Text(L10n.t("Приглашения", "Invites", "Inviti"))
+                    } footer: {
+                        Text(L10n.t("По ссылке-приглашению человек присылает заявку, а вступает — когда вы её примете. Свайп влево — отозвать.",
+                                    "With an invite link a person sends a request and joins once you approve it. Swipe left to revoke.",
+                                    "Con un link di invito una persona invia una richiesta ed entra quando la approvi. Scorri a sinistra per revocare."))
                     }
-                    Button(L10n.t("Новое приглашение", "New invite", "Nuovo invito")) { createInvite() }
                 }
 
                 Section {
                     ForEach(admins, id: \.verifyKey) { admin in
-                        HStack {
+                        HStack(spacing: 12) {
+                            Avatar(name: admin.label.isEmpty ? "A" : admin.label, size: 36)
                             Text(admin.label.isEmpty ? L10n.t("Администратор", "Admin", "Admin") : admin.label)
                             if !admin.active {
-                                Text(L10n.t("ждёт", "pending", "in attesa")).font(.system(size: 12)).foregroundStyle(GasAppColor.warn)
+                                Text(L10n.t("ждёт", "pending", "in attesa")).font(GasFont.text(12)).foregroundStyle(GasAppColor.warn)
                             }
                             Spacer()
-                            Button { removeAdmin(admin) } label: { Image(systemName: "minus.circle") }
-                                .buttonStyle(.borderless).foregroundStyle(GasAppColor.error)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(L10n.t("Снять", "Remove", "Rimuovi"), role: .destructive) { removeAdmin(admin) }
                         }
                     }
-                    TextField(L10n.t("Заявка администратора", "Admin request", "Richiesta di admin"), text: $adminRequest, axis: .vertical)
-                        .font(.system(size: 13, design: .monospaced)).lineLimit(1...3)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    TextField(L10n.t("Имя для вас", "Name for you", "Nome per te"), text: $adminLabel)
-                    Button(L10n.t("Назначить", "Appoint", "Nomina")) { addAdmin() }
-                        .disabled(!isChannelAdminRequest(text: adminRequest))
+                    HStack {
+                        TextField(L10n.t("Заявка администратора", "Admin request", "Richiesta di admin"), text: $adminRequest, axis: .vertical)
+                            .font(.system(size: 13, design: .monospaced)).lineLimit(1...3)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        Button {
+                            if let text = UIPasteboard.general.string { adminRequest = text }
+                        } label: { Image(systemName: "doc.on.clipboard") }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(L10n.t("Вставить", "Paste", "Incolla"))
+                    }
+                    if isChannelAdminRequest(text: adminRequest) {
+                        TextField(L10n.t("Имя для вас", "Name for you", "Nome per te"), text: $adminLabel)
+                        Button { addAdmin() } label: {
+                            Label(L10n.t("Назначить", "Appoint", "Nomina"), systemImage: "person.badge.plus")
+                                .font(GasFont.text(16, .semibold))
+                        }
+                    }
                 } header: {
                     Text(L10n.t("Администраторы", "Admins", "Admin"))
                 } footer: {
-                    Text(L10n.t("Администратор публикует записи. Заявку он берёт в сведениях канала и присылает вам.",
-                                "An admin can publish posts. They get the request in the channel info and send it to you.", "Un admin può pubblicare post. Trova la richiesta nelle informazioni del canale e te la invia."))
+                    Text(L10n.t("Администратор публикует записи. Заявку он берёт в сведениях канала и присылает вам. Свайп влево — снять.",
+                                "An admin can publish posts. They get the request in the channel info and send it to you. Swipe left to remove.",
+                                "Un admin può pubblicare post. Trova la richiesta nelle informazioni del canale e te la invia. Scorri a sinistra per rimuoverlo."))
                 }
 
-                Section(L10n.t("Подписчики", "Subscribers", "Iscritti")) {
+                Section {
                     if subscribers.isEmpty {
                         Text(L10n.t("Пока никого", "No one yet", "Ancora nessuno")).foregroundStyle(GasAppColor.textTertiary)
                     }
                     ForEach(subscribers, id: \.accountId) { member in
-                        HStack {
+                        HStack(spacing: 12) {
+                            Avatar(name: member.username, size: 36)
                             Text("@\(member.username)")
                             Spacer()
-                            Button(L10n.t("Удалить", "Remove", "Rimuovi"), role: .destructive) { removing = member }
-                                .buttonStyle(.borderless)
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button(L10n.t("Удалить", "Remove", "Rimuovi"), role: .destructive) { removing = member }
+                        }
+                    }
+                } header: {
+                    Text(L10n.t("Подписчики", "Subscribers", "Iscritti") + (subscribers.isEmpty ? "" : " · \(subscribers.count)"))
+                } footer: {
+                    if !subscribers.isEmpty {
+                        Text(L10n.t("Свайп влево — удалить подписчика.", "Swipe left to remove a subscriber.", "Scorri a sinistra per rimuovere un iscritto."))
                     }
                 }
 
@@ -199,7 +286,7 @@ struct ChannelManageScreen: View {
         .overlay(alignment: .bottom) {
             if let note {
                 Label(note, systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(GasFont.text(15, .semibold))
                     .foregroundStyle(GasAppColor.textPrimary)
                     .padding(.horizontal, 18).padding(.vertical, 12)
                     .background(Capsule().fill(GasAppColor.bgRaised))
@@ -216,6 +303,8 @@ struct ChannelManageScreen: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: note)
+        .animation(.easeInOut(duration: 0.2), value: infoChanged)
+        .animation(.easeInOut(duration: 0.2), value: requests.count)
         .animation(.easeInOut(duration: 0.2), value: working)
         .navigationTitle(L10n.t("Управление", "Manage", "Gestisci"))
         .navigationBarTitleDisplayMode(.inline)
@@ -260,6 +349,47 @@ struct ChannelManageScreen: View {
         .task { await load() }
     }
 
+    private var infoChanged: Bool {
+        guard let channel else { return false }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines) != channel.title
+            || about.trimmingCharacters(in: .whitespacesAndNewlines) != channel.description
+    }
+
+    private var subscribersLabel: String {
+        let count = channel?.subscribers ?? UInt64(subscribers.count)
+        return L10n.t("подписчиков: \(count)", "subscribers: \(count)", "iscritti: \(count)")
+    }
+
+    @ViewBuilder
+    private var modePill: some View {
+        let (text, icon, color): (String, String, Color) = {
+            if channel?.handle != nil { return (L10n.t("Публичный", "Public", "Pubblico"), "at", GasAppColor.info) }
+            if channel?.closed == true { return (L10n.t("По заявке", "By request", "Su richiesta"), "lock.fill", GasAppColor.ok) }
+            return (L10n.t("По ссылке", "By link", "Tramite link"), "link", GasAppColor.accent)
+        }()
+        Label(text, systemImage: icon)
+            .font(GasFont.text(12, .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Capsule().fill(color.opacity(0.14)))
+    }
+
+    private var accessFooter: String {
+        if channel?.handle != nil {
+            return L10n.t("Публичный канал находят по @имени. Сервер получил ключ чтения и может читать записи — но не подделать их. Закрыть такой канал можно, только убрав имя.",
+                          "A public channel is found by its @name. The server has the read key and can read posts — but not forge them. To close it, remove the name first.",
+                          "Un canale pubblico si trova tramite il suo @nome. Il server ha la chiave di lettura e può leggere i post, ma non falsificarli. Per chiuderlo, rimuovi prima il nome.")
+        }
+        if channel?.closed == true {
+            return L10n.t("Закрытый канал: вступают по заявке, сервер отдаёт записи только участникам. Открытым его уже не сделать.",
+                          "Closed channel: people join by request, and the server gives posts only to members. It can’t be made open again.",
+                          "Canale chiuso: si entra su richiesta e il server fornisce i post solo ai membri. Non può tornare aperto.")
+        }
+        return L10n.t("Сейчас канал читает любой, у кого есть ссылка. Можно дать ему @имя для поиска или сделать вступление по заявке — но не то и другое сразу.",
+                      "Right now anyone with the link can read the channel. You can give it an @name for search or make joining by request — but not both.",
+                      "Ora chiunque abbia il link può leggere il canale. Puoi dargli un @nome per la ricerca o rendere l’ingresso su richiesta, ma non entrambe le cose.")
+    }
+
     private func requestHint(_ request: FfiChannelJoinRequest) -> String {
         if request.knownContact { return L10n.t("в ваших контактах", "in your contacts", "nei tuoi contatti") }
         if request.inKeyLog { return L10n.t("ключ в журнале ключей", "key is in the key log", "la chiave è nel registro delle chiavi") }
@@ -278,6 +408,7 @@ struct ChannelManageScreen: View {
             about = fresh.description
         }
         invites = (try? await Background.run { try messenger.channelInvites(channelId: id) }) ?? []
+        link = try? await Background.run { try messenger.channelLink(channelId: id) }
         admins = (try? await Background.run { try messenger.channelAdmins(channelId: id) }) ?? []
         if channel?.closed == true {
             requests = (try? await Background.run { try messenger.channelJoinRequests(channelId: id, nowMillis: now) }) ?? []
@@ -430,7 +561,7 @@ struct AdminRequestSheet: View {
             VStack(spacing: 16) {
                 Text(L10n.t("Покажите этот код владельцу канала или отправьте ему строку. Секретов в ней нет, но она называет владельцу ваше устройство.",
                             "Show this code to the channel owner or send them the text. It has no secrets, but it names your device to the owner.", "Mostra questo codice al proprietario del canale o inviagli il testo. Non contiene segreti, ma indica al proprietario il tuo dispositivo."))
-                    .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
+                    .font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
                 if let qr { QRView(matrix: qr).frame(maxWidth: 260) }
                 if let request {
                     Text(request).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)

@@ -81,14 +81,14 @@ struct VaultScreen: View {
                     .padding(.top, 24)
                 Text(count == 0 ? L10n.t("Хранилище пусто", "The vault is empty", "La cassaforte è vuota")
                                 : L10n.t("Файлов в хранилище: \(count)", "Files in the vault: \(count)", "File nella cassaforte: \(count)"))
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .font(GasFont.display(20))
                     .foregroundStyle(GasAppColor.textPrimary)
                 Text(L10n.t("Файлы открываются PIN ещё раз — даже в открытом приложении.",
                             "Files open with your PIN again — even when the app is unlocked.", "I file si aprono di nuovo con il PIN, anche quando l’app è sbloccata."))
-                    .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
+                    .font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary)
                     .multilineTextAlignment(.center)
                 if let status {
-                    Text(status).font(.system(size: 14)).foregroundStyle(GasAppColor.error)
+                    Text(status).font(GasFont.text(14)).foregroundStyle(GasAppColor.error)
                         .multilineTextAlignment(.center)
                 }
                 if working {
@@ -105,7 +105,7 @@ struct VaultScreen: View {
     private var openView: some View {
         List {
             if let status {
-                Text(status).font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
+                Text(status).font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
                     .listRowBackground(GasAppColor.bgBase)
             }
             if files.isEmpty {
@@ -123,7 +123,7 @@ struct VaultScreen: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(file.name).foregroundStyle(GasAppColor.textPrimary).lineLimit(2)
                             Text("\(formatBytes(file.size)) · \(formatChatTime(file.createdAtMillis))")
-                                .font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                                .font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
                         }
                     }
                 }

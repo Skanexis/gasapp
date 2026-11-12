@@ -29,7 +29,7 @@ struct AddContactScreen: View {
         ScrollView {
             VStack(spacing: 18) {
                 Card {
-                    Text(L10n.t("По имени", "By username", "Per nome utente")).font(.system(size: 17, weight: .bold))
+                    Text(L10n.t("По имени", "By username", "Per nome utente")).font(GasFont.text(17, .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
                     Field(title: L10n.t("Имя пользователя", "Username", "Nome utente"), text: $username, placeholder: "anna_k")
                     GoldButton(title: L10n.t("Найти", "Find", "Cerca"), isLoading: working,
@@ -37,11 +37,11 @@ struct AddContactScreen: View {
                 }
 
                 Card {
-                    Text(L10n.t("По ссылке или QR", "By link or QR", "Tramite link o QR")).font(.system(size: 17, weight: .bold))
+                    Text(L10n.t("По ссылке или QR", "By link or QR", "Tramite link o QR")).font(GasFont.text(17, .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
                     Text(L10n.t("Надёжнее всего: в ссылке — ключ самого собеседника.",
                                 "Most secure: the link carries the person’s own key.", "Il più sicuro: il link contiene la chiave della persona stessa."))
-                        .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
+                        .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
                     Field(title: L10n.t("Ссылка", "Link", "Link"), text: $link, placeholder: "gasapp://…")
                     HStack(spacing: 10) {
                         OutlineButton(title: L10n.t("Сканировать QR", "Scan QR", "Scansiona QR")) { scanning = true }
@@ -55,7 +55,7 @@ struct AddContactScreen: View {
                 }
 
                 Card {
-                    Text(L10n.t("Ваш контакт", "Your contact", "Il tuo contatto")).font(.system(size: 17, weight: .bold))
+                    Text(L10n.t("Ваш контакт", "Your contact", "Il tuo contatto")).font(GasFont.text(17, .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
                     if let ownQR {
                         QRView(matrix: ownQR)
@@ -66,7 +66,7 @@ struct AddContactScreen: View {
                     if let ownLink {
                         ShareLink(item: ProfileSheet.shareText(username: ownName, link: ownLink)) {
                             Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up")
-                                .font(.system(size: 16, weight: .bold))
+                                .font(GasFont.text(16, .bold))
                                 .foregroundStyle(GasAppColor.accent)
                         }
                     }

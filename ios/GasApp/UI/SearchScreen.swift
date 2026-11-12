@@ -27,12 +27,12 @@ struct SearchScreen: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(names[hit.chatId] ?? String(hit.chatId.prefix(8)))
-                                .font(.system(size: 15, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
+                                .font(GasFont.text(15, .bold)).foregroundStyle(GasAppColor.textPrimary)
                             Spacer()
                             Text(formatChatTime(hit.message.timestamp))
-                                .font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                                .font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
                         }
-                        Text(hit.message.text).font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
+                        Text(hit.message.text).font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary)
                             .lineLimit(2)
                     }
                 }

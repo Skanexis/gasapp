@@ -2,6 +2,7 @@
 
 import PhotosUI
 import SwiftUI
+import UIKit
 
 /// Сообщение на экране: из ядра или только что набранное (ещё не ушло).
 struct MessageRow: Identifiable, Equatable {
@@ -65,25 +66,34 @@ struct ChatScreen: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(messages) { message in
+                    LazyVStack(spacing: 6) {
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                            if index == 0 || !Calendar.current.isDate(Self.date(of: message), inSameDayAs: Self.date(of: messages[index - 1])) {
+                                DaySeparator(date: Self.date(of: message))
+                            }
                             MessageBubble(message: message)
                                 .id(message.id)
                                 .contextMenu { messageMenu(message) }
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                             if !message.buttons.isEmpty {
                                 MessageButtons(rows: message.buttons) { row, column in press(message, row: row, column: column) }
                             }
                         }
                     }
-                    .padding(12)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
+                // Переписка открывается на последнем сообщении, а не сверху.
+                .defaultScrollAnchor(.bottom)
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: messages.count) { _, _ in
-                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                    guard let last = messages.last else { return }
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
 
             if let toast {
-                Text(toast).font(.system(size: 13, weight: .semibold)).foregroundStyle(GasAppColor.warn)
+                Text(toast).font(GasFont.text(13, .semibold)).foregroundStyle(GasAppColor.warn)
                     .padding(.vertical, 6)
             }
 
@@ -96,8 +106,8 @@ struct ChatScreen: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
-                    Text(title).font(.system(size: 17, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
-                    Text(verificationLabel.0).font(.system(size: 11, weight: .semibold)).foregroundStyle(verificationLabel.1)
+                    Text(title).font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
+                    Text(verificationLabel.0).font(GasFont.text(11, .semibold)).foregroundStyle(verificationLabel.1)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -247,21 +257,37 @@ struct ChatScreen: View {
                 if let item { sendPhoto(item) }
             }
             TextField(L10n.t("Сообщение", "Message", "Messaggio"), text: $draft, axis: .vertical)
-                .lineLimit(1...5)
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 18).fill(GasAppColor.bgCard))
+                .font(GasFont.text(16))
+                .lineLimit(1...6)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(GasAppColor.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(canSend ? GasAppColor.accent.opacity(0.4) : GasAppColor.line, lineWidth: 1))
                 .foregroundStyle(GasAppColor.textPrimary)
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 34))
-                    .foregroundStyle(canSend ? GasAppColor.accent : GasAppColor.textQuaternary)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                send()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(canSend ? GasAppColor.accentOn : GasAppColor.textTertiary)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(canSend ? GasAppColor.accent : GasAppColor.bgCard))
+                    .scaleEffect(canSend ? 1 : 0.92)
             }
             .disabled(!canSend)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: canSend)
             .accessibilityLabel(L10n.t("Отправить", "Send", "Invia"))
         }
-        .padding(10)
+        .padding(.horizontal, 10).padding(.vertical, 8)
         .background(GasAppColor.bgRaised)
+        .overlay(alignment: .top) { Rectangle().fill(GasAppColor.line).frame(height: 1) }
         .disabled(mode != .open)
         .opacity(mode == .open ? 1 : 0.4)
+    }
+
+    static func date(of message: MessageRow) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(message.timestamp) / 1000)
     }
 
     private var canSend: Bool {
@@ -605,32 +631,44 @@ struct MessageBubble: View {
 
     var body: some View {
         HStack {
-            if message.outgoing { Spacer(minLength: 50) }
-            VStack(alignment: .trailing, spacing: 4) {
+            if message.outgoing { Spacer(minLength: 56) }
+            VStack(alignment: .trailing, spacing: 3) {
                 ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, descriptor in
                     AttachmentView(descriptor: descriptor)
                 }
                 if !message.text.isEmpty {
+                    // Пузырь — по тексту, а не во всю ширину: прежде
+                    // .frame(maxWidth: .infinity) растягивал даже «ок».
                     Text(message.text)
-                        .font(.system(size: 16))
+                        .font(GasFont.text(16))
                         .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingText : GasAppColor.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .textSelection(.enabled)
                 }
                 HStack(spacing: 4) {
                     Text(formatChatTime(message.timestamp))
                     if message.outgoing { statusIcon }
                 }
-                .font(.system(size: 11))
+                .font(GasFont.text(11))
                 .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingMeta : GasAppColor.textTertiary)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(message.outgoing ? GasAppColor.bubbleOutgoing : GasAppColor.bgCard)
+                // Хвостик — угол 6 со стороны говорящего (DESIGN.md).
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 16,
+                    bottomLeadingRadius: message.outgoing ? 16 : 6,
+                    bottomTrailingRadius: message.outgoing ? 6 : 16,
+                    topTrailingRadius: 16,
+                    style: .continuous
+                )
+                .fill(message.outgoing ? GasAppColor.bubbleOutgoing : GasAppColor.bgCard)
             )
+            .frame(maxWidth: 320, alignment: message.outgoing ? .trailing : .leading)
             .fixedSize(horizontal: false, vertical: true)
-            if !message.outgoing { Spacer(minLength: 50) }
+            if !message.outgoing { Spacer(minLength: 56) }
         }
     }
 
@@ -643,6 +681,29 @@ struct MessageBubble: View {
         case .read: Image(systemName: "checkmark.circle.fill")
         case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(GasAppColor.error)
         }
+    }
+}
+
+/// Разделитель дней в переписке: «Сегодня», «Вчера» или дата.
+struct DaySeparator: View {
+    let date: Date
+
+    var body: some View {
+        Text(label)
+            .font(GasFont.text(12, .semibold))
+            .foregroundStyle(GasAppColor.textSecondary)
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            .background(Capsule().fill(GasAppColor.bgRaised))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var label: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return L10n.t("Сегодня", "Today", "Oggi") }
+        if calendar.isDateInYesterday(date) { return L10n.t("Вчера", "Yesterday", "Ieri") }
+        return date.formatted(.dateTime.day().month(.wide))
     }
 }
 
@@ -661,7 +722,7 @@ struct MessageButtons: View {
                                 Text(cell.label).lineLimit(1)
                                 if cell.isLink { Image(systemName: "arrow.up.right.square").font(.system(size: 12)) }
                             }
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(GasFont.text(14, .semibold))
                             .foregroundStyle(GasAppColor.accent)
                             .frame(maxWidth: .infinity, minHeight: 40)
                             .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))

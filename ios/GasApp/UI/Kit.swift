@@ -19,7 +19,7 @@ struct GoldButton: View {
                     ProgressView().tint(GasAppColor.accentOn)
                 } else {
                     Text(title)
-                        .font(.system(size: 17, weight: .heavy, design: .rounded))
+                        .font(GasFont.sign(17))
                         .foregroundStyle(GasAppColor.accentOn)
                 }
             }
@@ -64,7 +64,7 @@ struct OutlineButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(GasFont.sign(16))
                 .foregroundStyle(tone)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(
@@ -106,14 +106,14 @@ struct Field: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(GasFont.text(13, .semibold))
                 .foregroundStyle(GasAppColor.textSecondary)
             TextField(placeholder, text: $text)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(keyboard)
                 .textContentType(contentType)
-                .font(.system(size: 17))
+                .font(GasFont.text(17))
                 .foregroundStyle(GasAppColor.textPrimary)
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgRaised))
@@ -123,7 +123,7 @@ struct Field: View {
                 )
             if let error {
                 Text(error)
-                    .font(.system(size: 13))
+                    .font(GasFont.text(13))
                     .foregroundStyle(GasAppColor.error)
             }
         }
@@ -149,8 +149,8 @@ struct Banner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 15, weight: .bold)).foregroundStyle(color)
-            Text(message).font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
+            Text(title).font(GasFont.text(15, .bold)).foregroundStyle(color)
+            Text(message).font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -167,11 +167,11 @@ struct ScreenTitle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(text)
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .font(GasFont.display(30))
                 .foregroundStyle(GasAppColor.textPrimary)
             if let subtitle {
                 Text(subtitle)
-                    .font(.system(size: 16))
+                    .font(GasFont.text(16))
                     .foregroundStyle(GasAppColor.textSecondary)
             }
         }
@@ -225,7 +225,7 @@ struct PinPad: View {
                 press(key)
             } label: {
                 Text(key)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(GasFont.sign(30))
                     .foregroundStyle(GasAppColor.textPrimary)
                     .frame(width: 76, height: 76)
                     .background(Circle().fill(GasAppColor.bgCard))
@@ -298,11 +298,11 @@ struct EmptyScene: View {
             .accessibilityHidden(true)
 
             Text(title)
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .font(GasFont.display(22))
                 .foregroundStyle(GasAppColor.textPrimary)
                 .multilineTextAlignment(.center)
             Text(text)
-                .font(.system(size: 15))
+                .font(GasFont.text(15))
                 .foregroundStyle(GasAppColor.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -324,4 +324,58 @@ func formatBytes(_ bytes: Int64) -> String {
     formatter.countStyle = .file
     formatter.allowsNonnumericFormatting = false
     return formatter.string(fromByteCount: bytes)
+}
+
+/// Аватар по имени — как `paintAvatar` на Android: инициалы цветом из
+/// шести пастельных тонов поверх заливки того же цвета (16 %). Цвет
+/// выбирается тем же хешем (`String.hashCode` Java), что на Android: один
+/// человек — один цвет на обеих платформах. Зелёного, красного и
+/// оранжевого среди тонов нет — цвет собеседника не читается как
+/// состояние защиты.
+struct Avatar: View {
+    let name: String
+    var size: CGFloat = 48
+    var image: UIImage?
+
+    private static let inks: [Color] = [
+        Color(red: 1.0, green: 0.796, blue: 0.180),   // #FFCB2E
+        Color(red: 0.369, green: 0.827, blue: 0.788), // #5ED3C9
+        Color(red: 0.961, green: 0.604, blue: 0.722), // #F59AB8
+        Color(red: 0.961, green: 0.690, blue: 0.541), // #F5B08A
+        Color(red: 0.769, green: 0.663, blue: 1.0),   // #C4A9FF
+        Color(red: 0.498, green: 0.769, blue: 0.961), // #7FC4F5
+    ]
+
+    var body: some View {
+        let ink = Self.ink(for: name)
+        ZStack {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Circle().fill(ink.opacity(0.16))
+                Text(Self.initials(of: name))
+                    .font(GasFont.display(size * 0.38))
+                    .foregroundStyle(ink)
+                    .minimumScaleFactor(0.6)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .accessibilityHidden(true)
+    }
+
+    static func ink(for name: String) -> Color {
+        // Java String.hashCode: h = 31·h + UTF-16, с переполнением Int32.
+        var hash: Int32 = 0
+        for unit in name.utf16 { hash = hash &* 31 &+ Int32(unit) }
+        let index = ((Int(hash) % inks.count) + inks.count) % inks.count
+        return inks[index]
+    }
+
+    static func initials(of name: String) -> String {
+        let parts = name.split(whereSeparator: { $0 == " " || $0 == "_" })
+        if parts.count >= 2, let a = parts[0].first, let b = parts[1].first { return "\(a)\(b)".uppercased() }
+        if let first = parts.first { return String(first.prefix(2)).uppercased() }
+        return "?"
+    }
 }

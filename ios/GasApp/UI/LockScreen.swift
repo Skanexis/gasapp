@@ -26,10 +26,10 @@ struct LockScreen: View {
                     .font(.system(size: 52, weight: .bold))
                     .foregroundStyle(GasAppColor.accent)
                 Text(L10n.t("Введите PIN", "Enter PIN", "Inserisci il PIN"))
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                    .font(GasFont.display(26))
                     .foregroundStyle(GasAppColor.textPrimary)
                 Text(status)
-                    .font(.system(size: 15))
+                    .font(GasFont.text(15))
                     .foregroundStyle(error == nil ? GasAppColor.textSecondary : GasAppColor.error)
                     .multilineTextAlignment(.center)
                     .frame(minHeight: 40)
@@ -46,7 +46,7 @@ struct LockScreen: View {
                     unlockWithBiometric()
                 } label: {
                     Label(Biometric.name, systemImage: Biometric.name == "Touch ID" ? "touchid" : "faceid")
-                        .font(.system(size: 17, weight: .bold))
+                        .font(GasFont.text(17, .bold))
                         .foregroundStyle(GasAppColor.accent)
                 }
                 .disabled(working)

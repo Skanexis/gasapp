@@ -36,7 +36,7 @@ struct ChatListScreen: View {
             List {
                 if let error = inbox.lastError {
                     Text(error)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(GasFont.text(13, .semibold))
                         .foregroundStyle(GasAppColor.warn)
                         .listRowBackground(GasAppColor.bgBase)
                 }
@@ -194,30 +194,26 @@ struct ChatRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(GasAppColor.bgCard)
-                .overlay(Text(String(row.name.prefix(1)).uppercased())
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
-                    .foregroundStyle(GasAppColor.accent))
-                .overlay(Circle().stroke(GasAppColor.line, lineWidth: 1))
-                .frame(width: 48, height: 48)
+            Avatar(name: row.peerUsername.isEmpty ? row.name : row.peerUsername, size: 52)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(row.name).font(.system(size: 17, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
+                    Text(row.name).font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
                     // 🔐 Зелёная отметка — только у лично сверенных.
                     if row.verified {
                         Image(systemName: "checkmark.seal.fill").foregroundStyle(GasAppColor.ok).font(.system(size: 13))
                             .accessibilityLabel(L10n.t("Сверен", "Verified", "Verificato"))
                     }
                     Spacer()
-                    Text(row.time).font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
+                    Text(row.time).font(GasFont.text(13)).foregroundStyle(GasAppColor.textTertiary)
                 }
                 Text(row.isRequest ? L10n.t("Запрос на переписку", "Message request", "Richiesta di messaggio") : row.preview)
-                    .font(.system(size: 15))
+                    .font(GasFont.text(15, row.isRequest ? .semibold : .regular))
                     .foregroundStyle(row.isRequest ? GasAppColor.warn : GasAppColor.textSecondary)
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }

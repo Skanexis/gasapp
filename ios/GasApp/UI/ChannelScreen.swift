@@ -70,7 +70,7 @@ struct ChannelScreen: View {
             .refreshable { await sync() }
 
             if let message {
-                Text(message).font(.system(size: 13)).foregroundStyle(GasAppColor.warn).padding(6)
+                Text(message).font(GasFont.text(13)).foregroundStyle(GasAppColor.warn).padding(6)
             }
             if channel?.keyMissing == true {
                 Banner(title: L10n.t("Нет ключа канала", "Channel key missing", "Manca la chiave del canale"),
@@ -144,10 +144,10 @@ struct ChannelScreen: View {
             if !attached.isEmpty {
                 HStack {
                     Label(L10n.t("Фото: \(attached.count)", "Photos: \(attached.count)", "Foto: \(attached.count)"), systemImage: "photo.on.rectangle")
-                        .font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
+                        .font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary)
                     Spacer()
                     Button(L10n.t("Убрать", "Remove", "Rimuovi")) { attached = []; photos = [] }
-                        .font(.system(size: 13)).foregroundStyle(GasAppColor.accent)
+                        .font(GasFont.text(13)).foregroundStyle(GasAppColor.accent)
                 }
                 .padding(.horizontal, 12)
             }
@@ -341,19 +341,19 @@ struct ChannelPostView: View {
         VStack(alignment: .leading, spacing: 8) {
             if pinned {
                 Label(L10n.t("Закреплено", "Pinned", "Fissato"), systemImage: "pin.fill")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(GasAppColor.accent)
+                    .font(GasFont.text(12, .semibold)).foregroundStyle(GasAppColor.accent)
             }
             ForEach(Array(post.attachments.enumerated()), id: \.offset) { _, attachment in
                 ChannelMediaView(channelId: channelId, attachment: attachment)
             }
             if !post.text.isEmpty {
-                Text(post.text).font(.system(size: 16)).foregroundStyle(GasAppColor.textPrimary)
+                Text(post.text).font(GasFont.text(16)).foregroundStyle(GasAppColor.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 6) {
                 ForEach(post.reactions, id: \.emoji) { reaction in
                     Button { onReact(reaction.emoji) } label: {
-                        Text("\(reaction.emoji) \(reaction.count)").font(.system(size: 13))
+                        Text("\(reaction.emoji) \(reaction.count)").font(GasFont.text(13))
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(Capsule().fill(post.myReaction == reaction.emoji ? GasAppColor.accentDim : GasAppColor.bgHover))
                     }
@@ -366,10 +366,10 @@ struct ChannelPostView: View {
                     Image(systemName: "face.smiling").foregroundStyle(GasAppColor.textTertiary)
                 }
                 Spacer()
-                Label("\(post.views)", systemImage: "eye").font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
-                Text(formatChatTime(post.createdAtMillis)).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                Label("\(post.views)", systemImage: "eye").font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
+                Text(formatChatTime(post.createdAtMillis)).font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
                 if post.editedAtMillis != nil {
-                    Text(L10n.t("изм.", "edited", "modificato")).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                    Text(L10n.t("изм.", "edited", "modificato")).font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
                 }
             }
         }
@@ -447,7 +447,7 @@ struct ChannelInfoSheet: View {
             Group {
                 if let channel {
                     Section {
-                        Text(channel.title).font(.system(size: 20, weight: .bold))
+                        Text(channel.title).font(GasFont.text(20, .bold))
                         if !channel.description.isEmpty { Text(channel.description).foregroundStyle(GasAppColor.textSecondary) }
                         LabeledContent(L10n.t("Подписчиков", "Subscribers", "Iscritti"), value: "\(channel.subscribers)")
                         if let handle = channel.handle { LabeledContent(L10n.t("Имя", "Handle", "Nome"), value: "@\(handle)") }
@@ -467,7 +467,7 @@ struct ChannelInfoSheet: View {
                         } else if channel.role == .adminPending {
                             Text(L10n.t("Заявка у владельца: ждём, когда он назначит вас администратором.",
                                         "Request is with the owner: waiting for them to appoint you.", "La richiesta è presso il proprietario: in attesa che ti nomini."))
-                                .font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
+                                .font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary)
                         }
                         if channel.role != .owner {
                             // Причины — те же номера, что знает сервер (как на Android).
@@ -482,7 +482,7 @@ struct ChannelInfoSheet: View {
                             Button(L10n.t("Покинуть канал", "Leave channel", "Lascia il canale"), role: .destructive) { confirmLeave = true }
                         }
                         if let reportNote {
-                            Text(reportNote).font(.system(size: 13)).foregroundStyle(GasAppColor.textSecondary)
+                            Text(reportNote).font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary)
                         }
                     }
                 }

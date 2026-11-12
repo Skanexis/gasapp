@@ -44,7 +44,7 @@ struct OnboardingFlow: View {
                     if canGoBack {
                         Button(action: goBack) {
                             Label(L10n.t("Назад", "Back", "Indietro"), systemImage: "chevron.left")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(GasFont.text(17, .semibold))
                                 .foregroundStyle(GasAppColor.accent)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,7 +135,7 @@ struct OnboardingFlow: View {
             VStack(spacing: 20) {
                 Text(L10n.t("Мессенджер со сквозным шифрованием. Начало переписки защищено и от будущих квантовых компьютеров.",
                             "An end-to-end encrypted messenger. Starting a conversation is protected against future quantum computers too.", "Un messenger con cifratura end-to-end. L’avvio di una conversazione è protetto anche dai futuri computer quantistici."))
-                    .font(.system(size: 17, weight: .medium))
+                    .font(GasFont.text(17, .medium))
                     .foregroundStyle(GasAppColor.textSecondary)
                     .multilineTextAlignment(.center)
 
@@ -165,10 +165,10 @@ struct OnboardingFlow: View {
                 Button(L10n.t("Политика конфиденциальности", "Privacy policy", "Informativa sulla privacy")) {
                     UIApplication.shared.open(AppConfig.docsURL.appendingPathComponent("privacy/"))
                 }
-                .font(.system(size: 14))
+                .font(GasFont.text(14))
                 .foregroundStyle(GasAppColor.textTertiary)
                 Text(L10n.t("Регистрация — с 16 лет.", "You must be 16 or older.", "Devi avere almeno 16 anni."))
-                    .font(.system(size: 13))
+                    .font(GasFont.text(13))
                     .foregroundStyle(GasAppColor.textQuaternary)
             }
             .padding(.horizontal, 24)
@@ -256,7 +256,7 @@ struct OnboardingFlow: View {
             if working {
                 VStack(spacing: 10) {
                     ProgressView().tint(GasAppColor.accent)
-                    Text(stage).font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
+                    Text(stage).font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary)
                 }
                 .frame(height: 80)
             }
@@ -270,7 +270,7 @@ struct OnboardingFlow: View {
                         Text(L10n.t("Через Tor", "Use Tor", "Usa Tor")).foregroundStyle(GasAppColor.textPrimary)
                         Text(L10n.t("Скрывает ваш адрес от сервера. Медленнее.",
                                     "Hides your address from the server. Slower.", "Nasconde il tuo indirizzo al server. Più lento."))
-                            .font(.system(size: 13)).foregroundStyle(GasAppColor.textTertiary)
+                            .font(GasFont.text(13)).foregroundStyle(GasAppColor.textTertiary)
                     }
                 }
                 .tint(GasAppColor.accent)
@@ -486,7 +486,7 @@ private struct WelcomePromise: View {
                 .frame(width: 22)
                 .accessibilityHidden(true)
             Text(text)
-                .font(.system(size: 15))
+                .font(GasFont.text(15))
                 .foregroundStyle(GasAppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }

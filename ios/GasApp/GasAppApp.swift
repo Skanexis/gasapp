@@ -7,6 +7,10 @@ struct GasAppApp: App {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        GasFont.applyToSystemBars()
+    }
+
     var body: some Scene {
         WindowGroup {
             #if GASAPP_GALLERY
@@ -52,6 +56,9 @@ struct RootView: View {
         }
         .preferredColorScheme(.dark)
         .tint(GasAppColor.accent)
+        // Текст без своего шрифта (строки списков и форм, кнопки,
+        // переключатели) — Inter, как на Android.
+        .font(GasFont.text(17))
         // Ссылки на контакт: Universal Link https://gasapp.eu/add/#… и
         // схема gasapp://contact/… (кнопка на странице сайта).
         .onOpenURL { model.openURL($0) }
@@ -70,7 +77,7 @@ struct PrivacyCover: View {
                     .font(.system(size: 44, weight: .bold))
                     .foregroundStyle(GasAppColor.accent)
                 Text("GasApp")
-                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .font(GasFont.display(28))
                     .foregroundStyle(GasAppColor.textPrimary)
             }
         }

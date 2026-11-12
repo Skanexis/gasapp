@@ -38,7 +38,7 @@ struct AttachmentView: View {
                 }
             } else if failed {
                 Label(L10n.t("Вложение недоступно", "Attachment unavailable", "Allegato non disponibile"), systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 13)).foregroundStyle(GasAppColor.warn)
+                    .font(GasFont.text(13)).foregroundStyle(GasAppColor.warn)
             } else {
                 ProgressView().tint(GasAppColor.accent).frame(width: 120, height: 80)
             }

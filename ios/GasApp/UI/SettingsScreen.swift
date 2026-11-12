@@ -70,18 +70,18 @@ struct SettingsScreen: View {
                         Circle()
                             .fill(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.3), Color(red: 1, green: 0.62, blue: 0.11)],
                                                  startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Text(initials).font(.system(size: 30, weight: .heavy, design: .rounded))
+                        Text(initials).font(GasFont.display(30))
                             .foregroundStyle(Color(red: 0.16, green: 0.07, blue: 0))
                     }
                     .frame(width: 84, height: 84)
                     .overlay(Circle().stroke(Color(red: 0.54, green: 0.2, blue: 0.08), lineWidth: 3))
                     .accessibilityHidden(true)
                     Text(username.isEmpty ? "—" : "@\(username)")
-                        .font(.system(size: 24, weight: .heavy, design: .rounded))
+                        .font(GasFont.display(24))
                         .foregroundStyle(GasAppColor.textPrimary)
                     if premium {
                         Label(L10n.t("Премиум", "Premium", "Premium"), systemImage: "crown.fill")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(GasFont.text(13, .bold))
                             .foregroundStyle(GasAppColor.accent)
                             .padding(.horizontal, 12).padding(.vertical, 5)
                             .background(Capsule().fill(GasAppColor.accent.opacity(0.14)))
@@ -89,13 +89,13 @@ struct SettingsScreen: View {
                     HStack(spacing: 10) {
                         NavigationLink { ProfileSheet(username: username) } label: {
                             Label(L10n.t("Моя ссылка и QR", "My link and QR", "Il mio link e QR"), systemImage: "qrcode")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(GasFont.text(15, .semibold))
                                 .frame(maxWidth: .infinity).padding(.vertical, 11)
                                 .background(RoundedRectangle(cornerRadius: 14).fill(GasAppColor.bgRaised))
                         }
                         Button { model.lock() } label: {
                             Label(L10n.t("Заблокировать", "Lock", "Blocca"), systemImage: "lock.fill")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(GasFont.text(15, .semibold))
                                 .frame(maxWidth: .infinity).padding(.vertical, 11)
                                 .background(RoundedRectangle(cornerRadius: 14).fill(GasAppColor.bgRaised))
                         }
@@ -224,7 +224,7 @@ struct SettingsScreen: View {
                         }
                         Spacer()
                         Text(L10n.t("Это устройство", "This device", "Questo dispositivo"))
-                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(GasAppColor.ok)
+                            .font(GasFont.text(11, .semibold)).foregroundStyle(GasAppColor.ok)
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(Capsule().fill(GasAppColor.ok.opacity(0.15)))
                     }
@@ -491,7 +491,7 @@ struct SettingRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).foregroundStyle(GasAppColor.textPrimary)
                 if let detail, !detail.isEmpty {
-                    Text(detail).font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                    Text(detail).font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
                 }
             }
             Spacer(minLength: 8)

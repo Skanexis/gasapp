@@ -36,10 +36,10 @@ struct BackupScreen: View {
                     Card {
                         Text(status.configured ? L10n.t("Копии включены", "Backups are on", "I backup sono attivi")
                                                : L10n.t("Копий ещё нет", "No backups yet", "Ancora nessun backup"))
-                            .font(.system(size: 17, weight: .bold)).foregroundStyle(GasAppColor.textPrimary)
+                            .font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
                         if let last = status.lastBackupAtMillis {
                             Text(L10n.t("Последняя: \(formatChatTime(last))", "Last: \(formatChatTime(last))", "Ultimo: \(formatChatTime(last))"))
-                                .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
+                                .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
                         }
                     }
                 }
@@ -48,7 +48,7 @@ struct BackupScreen: View {
                     keyCard(newKey)
                 } else if status?.configured == true {
                     Card {
-                        Text(L10n.t("Ключ восстановления", "Recovery key", "Chiave di recupero")).font(.system(size: 17, weight: .bold))
+                        Text(L10n.t("Ключ восстановления", "Recovery key", "Chiave di recupero")).font(GasFont.text(17, .bold))
                             .foregroundStyle(GasAppColor.textPrimary)
                         SecureField(L10n.t("Введите ключ", "Enter the key", "Inserisci la chiave"), text: $keyInput)
                             .textInputAutocapitalization(.characters).autocorrectionDisabled()
@@ -65,7 +65,7 @@ struct BackupScreen: View {
                     Card {
                         Text(L10n.t("Если телефон потеряется, переписку и аккаунт вернёт копия. Её открывает ключ восстановления — запишите его на бумагу и храните отдельно от телефона.",
                                     "If you lose your phone, a backup brings back your account and messages. It opens with a recovery key — write it on paper and keep it away from the phone.", "Se perdi il telefono, un backup ti restituisce account e messaggi. Si apre con una chiave di recupero: scrivila su carta e conservala lontano dal telefono."))
-                            .font(.system(size: 15)).foregroundStyle(GasAppColor.textSecondary)
+                            .font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary)
                         GoldButton(title: L10n.t("Создать ключ", "Create a key", "Crea una chiave")) { createKey() }
                     }
                 }
@@ -126,12 +126,12 @@ struct BackupScreen: View {
 
     private func keyCard(_ key: FfiRecoveryKey) -> some View {
         Card {
-            Text(L10n.t("Ваш ключ восстановления", "Your recovery key", "La tua chiave di recupero")).font(.system(size: 17, weight: .bold))
+            Text(L10n.t("Ваш ключ восстановления", "Your recovery key", "La tua chiave di recupero")).font(GasFont.text(17, .bold))
                 .foregroundStyle(GasAppColor.textPrimary)
             Text(L10n.t("1. Перепишите на бумагу все группы по порядку. Не фотографируйте и не делайте снимок экрана: ключ показывается один раз.",
                         "1. Copy every group onto paper, in order. Don’t photograph it or take a screenshot: the key is shown only once.",
                         "1. Copia su carta tutti i gruppi, in ordine. Non fotografarla e non fare screenshot: la chiave viene mostrata una sola volta."))
-                .font(.system(size: 14)).foregroundStyle(GasAppColor.warn)
+                .font(GasFont.text(14)).foregroundStyle(GasAppColor.warn)
             // Группы с номерами: «группа № 7» однозначна. Раньше ключ шёл
             // одной строкой с приставкой GASAPP, и её считали первой
             // группой (снимок с iPhone, 2026-11-12).
@@ -141,7 +141,7 @@ struct BackupScreen: View {
                     let asked = UInt32(index) == confirmIndex
                     VStack(spacing: 2) {
                         Text("\(index + 1)")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(GasFont.text(11, .bold))
                             .foregroundStyle(asked ? GasAppColor.accent : GasAppColor.textTertiary)
                         Text(group)
                             .font(.system(size: 18, weight: .semibold, design: .monospaced))
@@ -159,7 +159,7 @@ struct BackupScreen: View {
             Text(L10n.t("2. Проверка: по своей записи введите группу № \(confirmIndex + 1) — она обведена.",
                         "2. Check: from your paper, type group #\(confirmIndex + 1) — the one outlined.",
                         "2. Verifica: dal tuo foglio, digita il gruppo n. \(confirmIndex + 1), quello evidenziato."))
-                .font(.system(size: 14)).foregroundStyle(GasAppColor.textSecondary)
+                .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
             Field(title: L10n.t("Группа № \(confirmIndex + 1)", "Group #\(confirmIndex + 1)", "Gruppo n. \(confirmIndex + 1)"),
                   text: $confirmText, error: confirmError)
             GoldButton(title: L10n.t("Проверить и сделать копию", "Check and back up", "Verifica ed esegui backup"), isLoading: working) {
@@ -284,7 +284,7 @@ struct RestoreScreen: View {
                     .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgRaised))
                     .foregroundStyle(GasAppColor.textPrimary)
                 if !key.isEmpty && !validateRecoveryKey(text: key) {
-                    Text(L10n.t("В ключе опечатка", "The key has a typo", "La chiave contiene un errore")).font(.system(size: 13)).foregroundStyle(GasAppColor.error)
+                    Text(L10n.t("В ключе опечатка", "The key has a typo", "La chiave contiene un errore")).font(GasFont.text(13)).foregroundStyle(GasAppColor.error)
                 }
                 GoldButton(title: L10n.t("Восстановить", "Restore", "Ripristina"), isLoading: working,
                            isEnabled: !files.isEmpty && validateRecoveryKey(text: key)) { restore() }
