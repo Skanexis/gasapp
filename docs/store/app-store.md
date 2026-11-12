@@ -57,7 +57,7 @@ Tracking: **No**. App Tracking Transparency не нужен.
 
 | Место | Ответ |
 |---|---|
-| `Info.plist` | `ITSAppUsesNonExemptEncryption = YES` |
+| `Info.plist` | ключа `ITSAppUsesNonExemptEncryption` **нет**: с `YES` без кода документа Apple отклоняет загрузку (ITMS-90592). Ответы — в TestFlight → «Missing Compliance» у каждой сборки; если Apple выдаст код документа — вписать `ITSEncryptionExportComplianceCode` и вернуть `YES` |
 | «Uses encryption?» | Yes |
 | «Proprietary or non-standard algorithms?» | **No** — только стандартные: X25519, ML-KEM (FIPS 203), AES-256-GCM, ChaCha20-Poly1305, SHA-2, HKDF, Argon2 |
 | Документы для Apple | Не нужны при стандартных алгоритмах (CCATS — только для нестандартных) |

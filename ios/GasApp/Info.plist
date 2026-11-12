@@ -48,10 +48,11 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Чтобы отправить выбранное фото. Метаданные (место съёмки, устройство) удаляются перед отправкой.</string>
 	<!-- Настройки сборки (ios/Config/*.xcconfig) — читает AppConfig.swift. -->
-	<!-- Экспорт шифрования (docs/store/app-store.md, раздел 2): приложение
-	     шифрует содержимое стандартными алгоритмами. -->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
+	<!-- Экспорт шифрования (docs/store/app-store.md, раздел 2): ключа
+	     ITSAppUsesNonExemptEncryption здесь НЕТ намеренно. С YES и без кода
+	     документа Apple отклоняет загрузку (ITMS-90592, 2026-11-12); без
+	     ключа ответы даются в App Store Connect → TestFlight → «Missing
+	     Compliance». Код появится, только если Apple выдаст документ. -->
 	<key>GASAPPServerURL</key>
 	<string>$(GASAPP_SERVER_URL)</string>
 	<key>GASAPPServerOnion</key>

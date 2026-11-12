@@ -45,7 +45,7 @@ The app encrypts content (not only HTTPS), so the "authentication only" and
 
 | Where | Answer |
 |---|---|
-| `Info.plist` | `ITSAppUsesNonExemptEncryption = YES` |
+| `Info.plist` | **no** `ITSAppUsesNonExemptEncryption` key: `YES` without a documentation code makes Apple reject the upload (ITMS-90592). Answer in TestFlight → "Missing Compliance" per build; if Apple issues a documentation code, add `ITSEncryptionExportComplianceCode` and set `YES` |
 | Uses encryption? | Yes |
 | Proprietary or non-standard algorithms? | **No** — standard only: X25519, Ed25519, ML-KEM-1024 (FIPS 203), ML-DSA-65 (FIPS 204), AES-256-GCM, XChaCha20-Poly1305, SHA-2, HKDF, Argon2id |
 | Standard algorithms **not provided by the OS** | **Yes** (the Rust core implements them). App Store Connect asks for a French encryption declaration only if the app is distributed in France — it is not, see the next row |
