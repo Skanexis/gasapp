@@ -136,7 +136,11 @@ local_port=$REMOTE_PORT
 while ss -Hlnt "sport = :$local_port" 2> /dev/null | grep -q .; do local_port=$((local_port + 1)); done
 
 # 🔐 -L 127.0.0.1:… — туннель открыт только для этого ПК, не для сети.
-ssh -N -o ExitOnForwardFailure=yes -L "127.0.0.1:${local_port}:127.0.0.1:${REMOTE_PORT}" "$HOST" &
+# Своё подключение, а не общее: через общее (ControlMaster) команда
+# сразу возвращалась, скрипт считал туннель закрытым и выходил — браузер
+# открывался и терял связь. ServerAliveInterval — чтобы обрыв сети не
+# оставлял «висящий» туннель.
+command ssh -F "$SSHCFG" -o ControlMaster=no -o ControlPath=none     -o ExitOnForwardFailure=yes -o ServerAliveInterval=30     -N -L "127.0.0.1:${local_port}:127.0.0.1:${REMOTE_PORT}" "$HOST" &
 TUNNEL_PID=$!
 
 url="http://127.0.0.1:${local_port}/login"
@@ -165,4 +169,6 @@ cat << EOF
  недоступна. Сессия в браузере сама истечёт через 30 минут простоя.
 ────────────────────────────────────────────────────────────────────
 EOF
-wait "$TUNNEL_PID" || true
+# Держать, пока жив туннель; Ctrl+C — выход (trap выше закроет его).
+while kill -0 "$TUNNEL_PID" 2> /dev/null; do sleep 1; done
+echo "  Туннель закрылся (обрыв сети?). Открыть снова: bash $DEPLOY/admin.sh"
