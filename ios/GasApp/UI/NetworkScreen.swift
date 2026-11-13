@@ -205,7 +205,9 @@ struct NetworkScreen: View {
             }
             saved = choice
             let lines = try? await Background.run { try messenger.torBridges() }
-            NetworkController.shared.apply(proxy: choice, bridges: lines)
+            // Не из главного потока: смена режима останавливает или
+            // запускает Tor, а это вызовы ядра.
+            _ = try? await Background.run { NetworkController.shared.apply(proxy: choice, bridges: lines) }
             message = L10n.t("Сохранено", "Saved", "Salvato")
             updateStatus()
         }
@@ -237,7 +239,7 @@ struct NetworkScreen: View {
             message = L10n.t("Мосты сохранены", "Bridges saved", "Bridge salvati")
             // Режим — тот же; Tor перезапускается с новыми мостами.
             let mode = try? await Background.run { try messenger.proxy() }
-            NetworkController.shared.apply(proxy: mode, bridges: saved)
+            _ = try? await Background.run { NetworkController.shared.apply(proxy: mode, bridges: saved) }
         }
     }
 

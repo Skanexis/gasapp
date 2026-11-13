@@ -83,6 +83,9 @@ const SQLCIPHER_CIPHER_PRAGMAS: &[&str] = &[
     "PRAGMA cipher_memory_security = ON;",
 ];
 
+/// Сколько разобранных запросов держит соединение (см. `Storage::open`).
+const STATEMENT_CACHE_SIZE: usize = 96;
+
 /// PRAGMA уровня `SQLite`, не связанные с ключом.
 ///
 /// Применяются после установки ключа и параметров шифра.
@@ -453,6 +456,13 @@ impl Storage {
         for pragma in SQLITE_PRAGMAS {
             connection.execute_batch(pragma).map_err(storage_error)?;
         }
+
+        // Разобранные запросы запоминаются (`prepare_cached`): интерфейс
+        // повторяет одни и те же чтения сотнями — вложения каждого
+        // сообщения, настройки, состояние чата, — и разбор текста SQL
+        // на каждый вызов стоил больше самого чтения. Запросов в ядре
+        // больше шестнадцати (умолчание кеша), отсюда запас.
+        connection.set_prepared_statement_cache_capacity(STATEMENT_CACHE_SIZE);
 
         // Создаем таблицы, если они еще не существуют
         Self::create_tables(&connection)?;
@@ -1362,6 +1372,8 @@ impl Storage {
             )
             .map_err(storage_error)?;
 
+        Self::create_indexes(connection)?;
+
         // Append-only журнал безопасности
         connection
             .execute(
@@ -1427,6 +1439,41 @@ impl Storage {
             .map_err(storage_error)?;
 
         Ok(())
+    }
+
+    /// Индексы под запросы интерфейса.
+    ///
+    /// До них индексов в базе не было вовсе, кроме первичных ключей:
+    ///
+    /// * окно переписки (`load_messages`) просматривало сообщения **всех**
+    ///   чатов и сортировало найденное — а список чатов делает это для
+    ///   каждого чата на каждое обновление;
+    /// * вложения сообщения (`load_attachments`) искались перебором всей
+    ///   таблицы, и экран переписки делает это для каждого сообщения —
+    ///   квадратичная работа, растущая вместе с перепиской;
+    /// * чистка исчезающих сообщений при каждом открытии базы читала
+    ///   всю таблицу ради, как правило, нуля строк.
+    ///
+    /// `IF NOT EXISTS`: функция выполняется при каждом открытии, а на
+    /// базе прежней версии индексы строятся один раз — при первом.
+    ///
+    /// 🔐 Индекс повторяет столбцы таблицы (чат, время) внутри той же
+    /// зашифрованной базы: нового открытого текста не появляется, а
+    /// удаление строки убирает и её запись в индексе (`secure_delete`
+    /// действует и на страницы индексов).
+    fn create_indexes(connection: &Connection) -> Result<()> {
+        connection
+            .execute_batch(
+                "
+            CREATE INDEX IF NOT EXISTS messages_by_chat_time
+                ON messages (chat_id, timestamp);
+            CREATE INDEX IF NOT EXISTS attachments_by_message
+                ON attachments (message_id);
+            CREATE INDEX IF NOT EXISTS messages_by_expiry
+                ON messages (expires_at) WHERE expires_at IS NOT NULL;
+            ",
+            )
+            .map_err(storage_error)
     }
 
     /// Создаёт таблицы резервного копирования и File Vault (M6).
@@ -1689,7 +1736,7 @@ impl Storage {
     pub fn get_account_id(&self) -> Result<Option<AccountId>> {
         let conn = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut stmt = conn
-            .prepare("SELECT account_id FROM account WHERE id = 1")
+            .prepare_cached("SELECT account_id FROM account WHERE id = 1")
             .map_err(storage_error)?;
         let mut rows = stmt
             .query_map([], |row| row.get::<_, Vec<u8>>(0))
@@ -1766,7 +1813,7 @@ impl Storage {
     pub fn load_own_keys(&self) -> Result<Option<OwnKeys>> {
         let conn = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "
                 SELECT identity_private, identity_public, prekey_secrets,
                        device_id, username
@@ -1801,7 +1848,7 @@ impl Storage {
     pub fn list_chats(&self, limit: u32) -> Result<Vec<ChatSummaryRow>> {
         let conn = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "
                 SELECT chat_id, last_activity
                 FROM chat_states
@@ -1881,7 +1928,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare("SELECT chat_id FROM sessions ORDER BY updated_at DESC LIMIT ?")
+            .prepare_cached("SELECT chat_id FROM sessions ORDER BY updated_at DESC LIMIT ?")
             .map_err(storage_error)?;
 
         let rows = statement
@@ -1905,7 +1952,7 @@ impl Storage {
     pub fn load_session(&self, chat_id: &ChatId) -> Result<Option<SessionState>> {
         let conn = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut stmt = conn
-            .prepare("SELECT state FROM sessions WHERE chat_id = ?")
+            .prepare_cached("SELECT state FROM sessions WHERE chat_id = ?")
             .map_err(storage_error)?;
         let mut rows = stmt
             .query_map(params![chat_id.as_bytes()], |row| row.get::<_, Vec<u8>>(0))
@@ -2058,7 +2105,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare("SELECT 1 FROM accepted_initial WHERE base_key = ?")
+            .prepare_cached("SELECT 1 FROM accepted_initial WHERE base_key = ?")
             .map_err(storage_error)?;
 
         statement.exists(params![base_key]).map_err(storage_error)
@@ -2106,7 +2153,7 @@ impl Storage {
 
         let stale: Vec<Vec<u8>> = {
             let mut statement = transaction
-                .prepare("SELECT base_key, signed_pre_key FROM accepted_initial")
+                .prepare_cached("SELECT base_key, signed_pre_key FROM accepted_initial")
                 .map_err(storage_error)?;
 
             let rows = statement
@@ -2199,7 +2246,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare("SELECT chat_id, sender_id FROM messages WHERE message_id = ?")
+            .prepare_cached("SELECT chat_id, sender_id FROM messages WHERE message_id = ?")
             .map_err(storage_error)?;
 
         let mut rows = statement
@@ -2288,7 +2335,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare(
+            .prepare_cached(
                 "
             SELECT message_id, chat_id, sender_id, timestamp, content,
                    status, message_type, expires_at
@@ -2442,7 +2489,7 @@ impl Storage {
         let pattern = format!("%{escaped}%");
 
         let mut statement = conn
-            .prepare(
+            .prepare_cached(
                 "
             SELECT message_id, chat_id, sender_id, timestamp, content,
                    status, message_type, expires_at
@@ -2506,11 +2553,8 @@ impl Storage {
         let conn = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let value: Option<i64> = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?",
-                params![key],
-                |row| row.get(0),
-            )
+            .prepare_cached("SELECT value FROM settings WHERE key = ?")
+            .and_then(|mut statement| statement.query_row(params![key], |row| row.get(0)))
             .ok();
 
         Ok(value.map_or(default, |raw| raw == 1))
@@ -2542,11 +2586,8 @@ impl Storage {
         let conn = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let value: Option<i64> = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?",
-                params![key],
-                |row| row.get(0),
-            )
+            .prepare_cached("SELECT value FROM settings WHERE key = ?")
+            .and_then(|mut statement| statement.query_row(params![key], |row| row.get(0)))
             .ok();
 
         Ok(value.unwrap_or(default))
@@ -2568,7 +2609,7 @@ impl Storage {
         let conn = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = conn
-            .prepare("SELECT key, value FROM settings ORDER BY key")
+            .prepare_cached("SELECT key, value FROM settings ORDER BY key")
             .map_err(storage_error)?;
 
         let rows = statement
@@ -2974,7 +3015,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare(
+            .prepare_cached(
                 "
                 SELECT
                     c.account_id,
@@ -3082,7 +3123,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare(
+            .prepare_cached(
                 "
                 SELECT c.account_id, c.identity_key,
                        (v.account_id IS NOT NULL OR c.confirmed_by_link = 1
@@ -3173,7 +3214,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare("SELECT identity_key FROM known_contacts WHERE account_id = ?")
+            .prepare_cached("SELECT identity_key FROM known_contacts WHERE account_id = ?")
             .map_err(storage_error)?;
 
         let mut rows = statement
@@ -3208,7 +3249,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare("SELECT identity_key FROM known_contacts WHERE username = ?")
+            .prepare_cached("SELECT identity_key FROM known_contacts WHERE username = ?")
             .map_err(storage_error)?;
 
         let mut rows = statement
@@ -3342,7 +3383,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare("SELECT disappearing_timer FROM chat_states WHERE chat_id = ?")
+            .prepare_cached("SELECT disappearing_timer FROM chat_states WHERE chat_id = ?")
             .map_err(storage_error)?;
 
         let mut rows = statement
@@ -3402,7 +3443,7 @@ impl Storage {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
 
         let mut statement = connection
-            .prepare(
+            .prepare_cached(
                 "
             SELECT message_id, attachment_type, description, size, created_at,
                    descriptor
@@ -4236,6 +4277,48 @@ mod tests {
     /// Регрессионный тест на засев версии. Пока таблица не ограничивала себя
     /// одной строкой, каждое открытие базы добавляло новую запись, и версия
     /// схемы начинала зависеть от того, какую из них вернёт выборка.
+    /// Запросы интерфейса идут по индексам, а не перебором таблицы.
+    ///
+    /// Проверяется план запроса, а не скорость: без индекса окно
+    /// переписки просматривало сообщения всех чатов, а вложения
+    /// искались перебором на каждое сообщение.
+    #[test]
+    fn interface_queries_use_indexes() {
+        let key = test_key();
+        let (storage, _dir, _path) = open_temp(&key);
+        let connection = storage.connection.lock().unwrap();
+
+        let plan = |sql: &str| -> String {
+            let mut statement = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap();
+            let steps: Vec<String> = statement
+                .query_map([], |row| row.get::<_, String>(3))
+                .unwrap()
+                .map(|step| step.unwrap())
+                .collect();
+            steps.join(" | ")
+        };
+
+        let window = plan(
+            "SELECT message_id FROM messages WHERE chat_id = x'00'
+             ORDER BY timestamp DESC, rowid DESC LIMIT 5",
+        );
+        assert!(window.contains("messages_by_chat_time"), "{window}");
+        assert!(
+            !window.contains("TEMP B-TREE"),
+            "окно переписки не должно сортироваться отдельно: {window}"
+        );
+
+        let attachments = plan("SELECT id FROM attachments WHERE message_id = x'00'");
+        assert!(attachments.contains("attachments_by_message"), "{attachments}");
+
+        let expired = plan(
+            "SELECT message_id FROM messages WHERE expires_at IS NOT NULL AND expires_at <= 5",
+        );
+        assert!(expired.contains("messages_by_expiry"), "{expired}");
+    }
+
     #[test]
     fn schema_version_row_is_unique_across_reopens() {
         let key = test_key();

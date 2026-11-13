@@ -1608,6 +1608,53 @@ async fn unregister_push_token(
 /// 🔐 Требует подпись устройства: конверты зашифрованы, но их выдача
 /// удаляет их из очереди — без проверки любой лишал бы адресата
 /// переписки, просто запросив её первым.
+/// Устройства, чья активность уже отмечена в базе за текущие сутки.
+///
+/// Только в памяти процесса и только на сутки (UTC): после перезапуска
+/// или смены суток отметка ставится заново — запрос в базу сам ничего
+/// не меняет, если месяц уже отмечен. Второй узел ведёт свой набор.
+type ActivityDay = (u64, std::collections::HashSet<Uuid>);
+
+static ACTIVITY_NOTED: std::sync::OnceLock<Mutex<ActivityDay>> = std::sync::OnceLock::new();
+
+/// Номер текущих суток от начала эпохи (UTC).
+fn activity_day() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs().checked_div(86_400).unwrap_or(0))
+}
+
+/// Отмечена ли уже активность устройства за сегодня.
+fn activity_noted_today(device_id: Uuid) -> bool {
+    let today = activity_day();
+
+    ACTIVITY_NOTED
+        .get_or_init(|| Mutex::new((today, std::collections::HashSet::new())))
+        .lock()
+        // Отравленный замок — считаем, что не отмечена: лишний запрос
+        // в базу безвреден, пропущенная отметка — нет.
+        .is_ok_and(|noted| noted.0 == today && noted.1.contains(&device_id))
+}
+
+/// Запоминает, что активность устройства за сегодня отмечена в базе.
+fn note_activity_today(device_id: Uuid) {
+    let today = activity_day();
+
+    let Ok(mut noted) = ACTIVITY_NOTED
+        .get_or_init(|| Mutex::new((today, std::collections::HashSet::new())))
+        .lock()
+    else {
+        return;
+    };
+
+    // Новые сутки — набор начинается заново: он не растёт без конца.
+    if noted.0 != today {
+        *noted = (today, std::collections::HashSet::new());
+    }
+
+    noted.1.insert(device_id);
+}
+
 async fn fetch_messages(
     State(state): State<Arc<AppState>>,
     device: crate::authz::AuthenticatedDevice,
@@ -1620,7 +1667,15 @@ async fn fetch_messages(
     // Активность аккаунта — месяцем (миграция 0011): год без входа
     // удаляет аккаунт и освобождает имя. Приложение забирает очередь
     // при каждом открытии, так что этого места достаточно.
-    repo::touch_account_activity(&state.pool, device_id).await?;
+    //
+    // Раз в сутки на устройство, а не на каждый запрос: клиент
+    // опрашивает очередь каждые несколько секунд, и отметка, которая
+    // меняется раз в месяц, стоила базе отдельного запроса на каждый
+    // такой опрос.
+    if !activity_noted_today(device_id) {
+        repo::touch_account_activity(&state.pool, device_id).await?;
+        note_activity_today(device_id);
+    }
 
     let envelopes = repo::fetch_envelopes(&state.pool, device_id, 100).await?;
 

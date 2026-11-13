@@ -109,7 +109,7 @@ impl Storage {
     pub fn blocked_chats(&self) -> Result<Vec<BlockedChat>> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut statement = connection
-            .prepare(
+            .prepare_cached(
                 "SELECT chat_id, username, blocked_at FROM blocked_chats
                  ORDER BY blocked_at DESC",
             )

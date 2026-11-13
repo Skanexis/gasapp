@@ -176,15 +176,21 @@ enum ClockCheck {
         return abs(skew) > 300
     }
 
-    static func observe(_ header: String?) {
-        guard let header else { return }
+    /// Разбор заголовка `Date`. Один на всё приложение: прежде он
+    /// создавался заново на каждый ответ сервера. Используется под `lock`.
+    private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "GMT")
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-        guard let server = formatter.date(from: header) else { return }
+        return formatter
+    }()
+
+    static func observe(_ header: String?) {
+        guard let header else { return }
         lock.lock()
+        defer { lock.unlock() }
+        guard let server = formatter.date(from: header) else { return }
         skew = Date().timeIntervalSince(server)
-        lock.unlock()
     }
 }

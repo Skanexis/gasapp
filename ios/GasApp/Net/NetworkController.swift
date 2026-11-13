@@ -56,20 +56,21 @@ final class NetworkController: @unchecked Sendable {
     /// Применяет режим из базы. `nil` (база не читается) — Tor: отказ
     /// в безопасную сторону, как умолчание ядра.
     func apply(proxy: FfiProxy?, bridges: [String]?) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         let chosen = proxy ?? .tor
         mode = chosen
         self.bridges = Self.clean(bridges)
         failuresInRow = 0
 
+        var stopTor = false
         switch chosen {
         case .direct:
             waiter?.cancel(); waiter = nil
-            stopEmbeddedTor()
+            stopTor = true
             NetworkRoute.current = .direct
         case let .socks5(host, port):
             waiter?.cancel(); waiter = nil
-            stopEmbeddedTor()
+            stopTor = true
             NetworkRoute.current = .socks(host: host, port: port)
         case .tor:
             NetworkRoute.current = .closed
@@ -77,6 +78,13 @@ final class NetworkController: @unchecked Sendable {
             // открывается снова, а порт моста мог умереть в фоне.
             startTorLocked(restart: cached.running ? .ifDead : .no)
         }
+        lock.unlock()
+
+        // Остановка Tor — уже без замка: она ждёт ядро, а этот же замок
+        // каждую секунду берёт главный поток (полоса подключения читает
+        // `torStatus`) — интерфейс замирал на всё время остановки.
+        // Маршрут к этому моменту уже переключён.
+        if stopTor { stopEmbeddedTor() }
     }
 
     /// Состояние встроенного Tor (для экрана сети и регистрации) — без

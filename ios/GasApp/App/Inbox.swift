@@ -28,7 +28,16 @@ final class Inbox {
     /// быстро.
     private var interval: Double = Inbox.fastInterval
     private static let fastInterval: Double = 4
+    /// Потолок паузы в затишье. С пуш-уведомлениями он выше: о новом
+    /// сообщении открытому приложению сообщает сам пуш
+    /// (`Push.willPresent` зовёт `hurry()`), и опрос остаётся страховкой.
+    /// Каждый пустой опрос — подписанный запрос и чтение базы на
+    /// сервере; втрое реже в затишье — втрое меньше такой работы.
     private static let slowInterval: Double = 20
+    private static let slowIntervalWithPush: Double = 45
+    private var ceiling: Double {
+        Push.shared.isRegistered ? Self.slowIntervalWithPush : Self.slowInterval
+    }
     /// Будильник для ожидающего цикла: «опроси сейчас».
     private var wake: CheckedContinuation<Void, Never>?
 
@@ -115,10 +124,14 @@ final class Inbox {
                 revision += 1
                 interval = Self.fastInterval
             } else {
-                interval = min(Self.slowInterval, interval * 1.5)
+                interval = min(ceiling, interval * 1.5)
             }
         } catch {
             network.requestFailed()
+            // Сбой — тоже повод реже: прежде при недоступном сервере
+            // опрос шёл каждые четыре секунды без конца — и батарея, и
+            // сервер, которому и так плохо, получали поток повторов.
+            interval = min(Self.slowInterval, interval * 1.5)
             lastError = ClockCheck.off
                 ? L10n.t("Неверное время на телефоне", "Phone clock is wrong", "L’orologio del telefono è sbagliato")
                 : L10n.t("Нет связи с сервером", "No connection", "Nessuna connessione")

@@ -97,7 +97,7 @@ impl Storage {
     pub fn kt_epochs_between(&self, from: u64, to: u64) -> Result<Vec<u64>> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut statement = connection
-            .prepare("SELECT epoch FROM kt_heads WHERE epoch BETWEEN ?1 AND ?2 ORDER BY epoch")
+            .prepare_cached("SELECT epoch FROM kt_heads WHERE epoch BETWEEN ?1 AND ?2 ORDER BY epoch")
             .map_err(storage_error)?;
         let rows = statement
             .query_map(params![epoch_sql(from)?, epoch_sql(to)?], |row| {

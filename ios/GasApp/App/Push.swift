@@ -23,7 +23,10 @@ final class Push: NSObject, UNUserNotificationCenterDelegate {
     /// Включены ли уведомления (по умолчанию — да; выключаются в настройках).
     var enabled: Bool {
         get { SecureStore.int(Self.enabledKey) != 2 }
-        set { SecureStore.set(newValue ? 1 : 2, for: Self.enabledKey) }
+        set {
+            SecureStore.set(newValue ? 1 : 2, for: Self.enabledKey)
+            registeredCache = nil
+        }
     }
 
     private var pendingToken: String?
@@ -52,12 +55,28 @@ final class Push: NSObject, UNUserNotificationCenterDelegate {
         guard let messenger = try? CoreStore.shared.current() else { return }
         Task.detached(priority: .userInitiated) {
             if (try? messenger.unregisterPushToken(nowMillis: CoreStore.nowMillis)) != nil {
-                await MainActor.run { SecureStore.set(0, for: Push.registeredKey) }
+                await MainActor.run {
+                    SecureStore.set(0, for: Push.registeredKey)
+                    Push.shared.registeredCache = nil
+                }
             }
         }
     }
 
     private static let registeredKey = "push.registered"
+
+    /// Назван ли серверу токен: тогда о новом сообщении сообщит пуш,
+    /// и опрос сервера в затишье может быть реже (`Inbox`).
+    /// Ответ запоминается: спрашивает его опрос сервера, из главного
+    /// потока, а за ним — два чтения Keychain.
+    var isRegistered: Bool {
+        if let registeredCache { return registeredCache }
+        let value = enabled && SecureStore.int(Self.registeredKey) == 1
+        registeredCache = value
+        return value
+    }
+
+    private var registeredCache: Bool?
 
     /// Токен от Apple → серверу (за подписью устройства).
     func didRegister(token: Data) {
@@ -78,7 +97,10 @@ final class Push: NSObject, UNUserNotificationCenterDelegate {
         #endif
         Task.detached(priority: .userInitiated) {
             if (try? messenger.registerPushToken(provider: provider, token: hex, nowMillis: CoreStore.nowMillis)) != nil {
-                await MainActor.run { SecureStore.set(1, for: Push.registeredKey) }
+                await MainActor.run {
+                    SecureStore.set(1, for: Push.registeredKey)
+                    Push.shared.registeredCache = nil
+                }
             }
         }
     }
@@ -90,6 +112,9 @@ final class Push: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        // Пуш при открытом приложении — сигнал «на сервере новое»:
+        // очередь забирается сейчас, а не по расписанию опроса.
+        Task { @MainActor in Inbox.shared.hurry() }
         completionHandler([])
     }
 

@@ -481,7 +481,7 @@ impl Storage {
     pub fn channels(&self) -> Result<Vec<StoredChannel>> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut statement = connection
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "SELECT {CHANNEL_COLUMNS} FROM channels
                   ORDER BY COALESCE(
                       (SELECT max(created_at) FROM channel_posts p
@@ -693,7 +693,7 @@ impl Storage {
     pub fn channel_invites(&self, channel_id: &[u8; 16]) -> Result<Vec<[u8; 16]>> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut statement = connection
-            .prepare(
+            .prepare_cached(
                 "SELECT invite FROM channel_invites
                   WHERE channel_id = ? ORDER BY created_at DESC, invite",
             )
@@ -741,7 +741,7 @@ impl Storage {
     pub fn pending_joins(&self) -> Result<Vec<PendingJoin>> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let mut statement = connection
-            .prepare(
+            .prepare_cached(
                 "SELECT channel_id, verify_key, invite, secret, requested_at
                    FROM channel_pending_joins ORDER BY requested_at DESC, channel_id",
             )
@@ -1270,7 +1270,7 @@ impl Storage {
 
     fn query_posts(&self, sql: &str, params: impl rusqlite::Params) -> Result<Vec<StoredPost>> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
-        let mut statement = connection.prepare(sql).map_err(storage_error)?;
+        let mut statement = connection.prepare_cached(sql).map_err(storage_error)?;
 
         let rows = statement
             .query_map(params, post_from_row)
@@ -1395,7 +1395,7 @@ fn read_admin_labels(
     channel_id: &[u8; 16],
 ) -> Result<Vec<([u8; 32], String)>> {
     let mut statement = connection
-        .prepare(
+        .prepare_cached(
             "SELECT verify_key, label FROM channel_admin_labels
               WHERE channel_id = ? ORDER BY label",
         )
@@ -1420,7 +1420,7 @@ pub(crate) fn read_channels_for_backup(
     connection: &rusqlite::Connection,
 ) -> Result<Vec<ChannelBackupRow>> {
     let mut statement = connection
-        .prepare(
+        .prepare_cached(
             "SELECT channel_id, secret, verify_key, signing_key, title, muted, joined_at
                FROM channels ORDER BY joined_at, channel_id",
         )

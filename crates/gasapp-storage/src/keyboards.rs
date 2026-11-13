@@ -184,7 +184,7 @@ impl Storage {
 
         let rows: Vec<(Vec<u8>, Vec<u8>, Vec<u8>, i64)> = {
             let mut statement = transaction
-                .prepare(
+                .prepare_cached(
                     "SELECT chat_id, message_id, data, received_at
                        FROM button_callbacks ORDER BY id",
                 )
