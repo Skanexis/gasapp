@@ -22,19 +22,55 @@ final class Inbox {
 
     private var loop: Task<Void, Never>?
 
+    /// Пауза между опросами. 🔋 Растёт, пока ничего не приходит: каждые
+    /// 4 секунды без конца — это радио телефона, не засыпающее ни на миг.
+    /// Новое сообщение, действие человека, возврат в приложение — снова
+    /// быстро.
+    private var interval: Double = Inbox.fastInterval
+    private static let fastInterval: Double = 4
+    private static let slowInterval: Double = 20
+    /// Будильник для ожидающего цикла: «опроси сейчас».
+    private var wake: CheckedContinuation<Void, Never>?
+
     func start() {
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.receiveOnce()
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard let self else { return }
+                await self.receiveOnce()
+                await self.pause()
             }
         }
+    }
+
+    /// Ждать текущий интервал — или раньше, если позвали `hurry()`.
+    private func pause() async {
+        let seconds = interval
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            wake = continuation
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                self?.fire()
+            }
+        }
+    }
+
+    private func fire() {
+        wake?.resume()
+        wake = nil
+    }
+
+    /// Опросить сейчас и вернуться к частому опросу: человек что-то
+    /// сделал или приложение снова на экране.
+    func hurry() {
+        interval = Self.fastInterval
+        fire()
     }
 
     func stop() {
         loop?.cancel()
         loop = nil
+        fire()
     }
 
     /// Забрать очередь сейчас (потянули список вниз, открыли чат).
@@ -58,7 +94,12 @@ final class Inbox {
             }
             network.requestSucceeded()
             lastError = nil
-            if received > 0 { revision += 1 }
+            if received > 0 {
+                revision += 1
+                interval = Self.fastInterval
+            } else {
+                interval = min(Self.slowInterval, interval * 1.5)
+            }
         } catch {
             network.requestFailed()
             lastError = ClockCheck.off
@@ -68,5 +109,8 @@ final class Inbox {
     }
 
     /// Что-то поменялось локально (отправили, приняли запрос).
-    func touch() { revision += 1 }
+    func touch() {
+        revision += 1
+        hurry()
+    }
 }

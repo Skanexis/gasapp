@@ -72,6 +72,7 @@ struct ChannelsScreen: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .safeAreaInset(edge: .top, spacing: 0) { ConnectionStrip() }
             .refreshable { await sync() }
             .navigationTitle(L10n.t("Каналы", "Channels", "Canali"))
             .toolbar {

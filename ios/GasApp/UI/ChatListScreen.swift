@@ -34,12 +34,6 @@ struct ChatListScreen: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                if let error = inbox.lastError {
-                    Text(error)
-                        .font(GasFont.text(13, .semibold))
-                        .foregroundStyle(GasAppColor.warn)
-                        .listRowBackground(GasAppColor.bgBase)
-                }
                 if loaded && rows.isEmpty {
                     emptyState
                         .listRowBackground(GasAppColor.bgBase)
@@ -53,6 +47,8 @@ struct ChatListScreen: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            // Состояние подключения — полосой под заголовком (DESIGN.md).
+            .safeAreaInset(edge: .top, spacing: 0) { ConnectionStrip() }
             .refreshable {
                 await inbox.receiveOnce()
                 await reload()

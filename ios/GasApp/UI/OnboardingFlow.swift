@@ -276,15 +276,7 @@ struct OnboardingFlow: View {
             Spacer(minLength: 8)
 
             if step == .pin {
-                Toggle(isOn: $viaTor) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.t("Через Tor", "Use Tor", "Usa Tor")).foregroundStyle(GasAppColor.textPrimary)
-                        Text(L10n.t("Скрывает ваш адрес от сервера. Медленнее.",
-                                    "Hides your address from the server. Slower.", "Nasconde il tuo indirizzo al server. Più lento."))
-                            .font(GasFont.text(13)).foregroundStyle(GasAppColor.textTertiary)
-                    }
-                }
-                .tint(GasAppColor.accent)
+                TorChoiceCard(isOn: $viaTor)
             }
         }
     }
@@ -549,5 +541,74 @@ private struct WelcomePromise: View {
                 .foregroundStyle(GasAppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// Выбор Tor на регистрации — заметной карточкой, а не строкой внизу:
+/// от него зависит, увидит ли сервер адрес человека (PRODUCT.md,
+/// принцип 1 — выбор осознанный).
+struct TorChoiceCard: View {
+    @Binding var isOn: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.75)) { isOn.toggle() }
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(isOn ? GasAppColor.accent : GasAppColor.bgHover)
+                        .shadow(color: isOn ? GasAppColor.accent.opacity(0.55) : .clear, radius: 12, y: 2)
+                    Image(systemName: isOn ? "shield.lefthalf.filled" : "shield.slash")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(isOn ? GasAppColor.accentOn : GasAppColor.textTertiary)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .frame(width: 50, height: 50)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.t("Через Tor", "Use Tor", "Usa Tor"))
+                        .font(GasFont.sign(17))
+                        .foregroundStyle(GasAppColor.textPrimary)
+                    HStack(spacing: 5) {
+                        Image(systemName: isOn ? "eye.slash.fill" : "eye.fill").font(.system(size: 11, weight: .bold))
+                        Text(isOn
+                             ? L10n.t("IP скрыт от сервера · медленнее", "IP hidden from the server · slower", "IP nascosto al server · più lento")
+                             : L10n.t("Сервер увидит ваш IP", "The server will see your IP", "Il server vedrà il tuo IP"))
+                            .font(GasFont.text(13, .semibold))
+                    }
+                    .foregroundStyle(isOn ? GasAppColor.ok : GasAppColor.warn)
+                }
+                Spacer(minLength: 8)
+
+                // Переключатель в стиле приложения: золото, а не системный зелёный.
+                ZStack(alignment: isOn ? .trailing : .leading) {
+                    Capsule().fill(isOn ? GasAppColor.accent : GasAppColor.bgHover)
+                        .overlay(Capsule().stroke(isOn ? GasAppColor.accentEdge : GasAppColor.line, lineWidth: 1))
+                    Circle().fill(isOn ? GasAppColor.accentOn : GasAppColor.textTertiary)
+                        .padding(4)
+                }
+                .frame(width: 54, height: 32)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isOn
+                          ? AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x22105C), Color(hex: 0x1B2259)],
+                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                          : AnyShapeStyle(GasAppColor.bgCard))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isOn ? GasAppColor.accent.opacity(0.7) : GasAppColor.line, lineWidth: isOn ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.t("Через Tor", "Use Tor", "Usa Tor"))
+        .accessibilityValue(isOn ? L10n.t("Включено", "On", "Attivo") : L10n.t("Выключено", "Off", "Disattivo"))
+        .accessibilityAddTraits(.isButton)
     }
 }

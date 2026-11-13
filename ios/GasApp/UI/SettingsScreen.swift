@@ -111,8 +111,11 @@ struct SettingsScreen: View {
             Group {
                 Section {
                     NavigationLink { NetworkScreen() } label: {
-                        SettingRow(icon: "network", color: .blue, title: L10n.t("Подключение", "Connection", "Connessione"),
-                                   value: proxyName, detail: currentProxy == .tor ? torStatus : nil)
+                        HStack {
+                            SettingRow(icon: "network", color: .blue, title: L10n.t("Подключение", "Connection", "Connessione"),
+                                       detail: proxyName)
+                            ConnectionBadge()
+                        }
                     }
                     Toggle(isOn: $pushEnabled) {
                         SettingRow(icon: "bell.badge.fill", color: .red, title: L10n.t("Уведомления", "Notifications", "Notifiche"))

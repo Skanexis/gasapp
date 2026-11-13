@@ -108,13 +108,16 @@ final class AppModel {
                 // забрать очередь (NetworkController, «Почему Tor
                 // перезапускается после фона»).
                 NetworkController.shared.didReturnToForeground(afterSeconds: Date().timeIntervalSince(since))
-                Task { await Inbox.shared.receiveOnce() }
+                Inbox.shared.hurry()
+                ConnectionStatus.shared.start()
             }
             backgroundSince = nil
         case .inactive:
             coverVisible = true
         case .background:
             coverVisible = true
+            // 🔋 В фоне полосе подключения обновляться незачем.
+            ConnectionStatus.shared.stop()
             backgroundSince = backgroundSince ?? Date()
             // 🔐 Хранилище файлов закрывается сразу при уходе в фон, не
             // дожидаясь таймаута (`onBackground`, как на Android).

@@ -79,6 +79,12 @@ final class NetworkController: @unchecked Sendable {
         return status
     }
 
+    /// Применённый режим сети; nil — база ещё не открыта.
+    var currentMode: FfiProxy? {
+        lock.lock(); defer { lock.unlock() }
+        return mode
+    }
+
     /// Выбран Tor, а маршрут ещё закрыт — подключается.
     var isConnectingTor: Bool {
         lock.lock(); defer { lock.unlock() }
