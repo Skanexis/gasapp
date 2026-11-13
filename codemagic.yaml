@@ -141,22 +141,40 @@ workflows:
           export APP_STORE_CONNECT_ISSUER_ID="$ASC_ISSUER_ID"
           export APP_STORE_CONNECT_KEY_IDENTIFIER="$ASC_KEY_ID"
           export APP_STORE_CONNECT_PRIVATE_KEY="$ASC_KEY_P8"
+          # altool из Xcode 26 не находит приложение по Bundle ID сам
+          # («Cannot determine the Apple ID from Bundle ID … (19)») —
+          # известная ошибка Apple (форум разработчиков, тред 803105).
+          # Обход, который советует Apple: передать числовой Apple ID
+          # приложения (--apple-id). Он берётся тем же ключом API из
+          # App Store Connect — до сборки, чтобы не ждать её зря; вручную
+          # его можно задать переменной ASC_APP_ID.
+          APP_ID="$(printf '%s' "${ASC_APP_ID:-}" | tr -dc '0-9')"
+          if [ -z "$APP_ID" ]; then
+            APP_ID="$(app-store-connect apps list --bundle-id-identifier org.gasapp.messenger \
+                --strict-match-identifier --json 2> /tmp/apps-list.err |
+              python3 -c 'import json, sys
+          data = json.load(sys.stdin)
+          items = data if isinstance(data, list) else data.get("data", [data])
+          ids = [str(item.get("id", "")) for item in items if isinstance(item, dict)]
+          print(next((i for i in ids if i.isdigit()), ""))' || true)"
+          fi
+          if [ -z "$APP_ID" ]; then
+            cat /tmp/apps-list.err 2> /dev/null || true
+            echo "✘ В App Store Connect не найдено приложение с Bundle ID org.gasapp.messenger."
+            echo "  Проверьте: App Store Connect → Apps — есть ли GasApp (iOS) с этим Bundle ID;"
+            echo "  ключ API ($ASC_KEY_ID) — из той же команды и с ролью App Manager;"
+            echo "  Business → нет ли непринятых соглашений Apple."
+            echo "  Либо задайте ASC_APP_ID — число из App Information → Apple ID."
+            exit 1
+          fi
+          echo "Apple ID приложения в App Store Connect: $APP_ID"
+          export APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS="--apple-id $APP_ID"
           # Номер сборки — дата и время (ГГММДДЧЧММ, UTC): растёт сам, и
           # App Store Connect не отвергнет его как повтор.
           BUILD=$(date -u +%y%m%d%H%M)
           echo "Номер сборки: $BUILD"
           xcode-project build-ipa --project ios/GasApp.xcodeproj --scheme GasApp \
             --archive-xcargs "CURRENT_PROJECT_VERSION=$BUILD"
-          # altool из Xcode 26 не всегда находит приложение по Bundle ID
-          # («Cannot determine the Apple ID from Bundle ID … (19)»).
-          # Обход по совету Codemagic: числовой Apple ID приложения
-          # (переменная ASC_APP_ID, App Store Connect → приложение →
-          # App Information → Apple ID), а без него — прежний altool.
-          if [ -n "${ASC_APP_ID:-}" ]; then
-            export APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS="--apple-id $(printf '%s' "$ASC_APP_ID" | tr -dc '0-9')"
-          else
-            export APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS="--use-old-altool"
-          fi
           app-store-connect publish --path build/ios/ipa/*.ipa
           echo "✅ Выгружено. Через 10–30 минут сборка $BUILD появится в App Store Connect → TestFlight."
     artifacts:
