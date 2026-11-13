@@ -116,7 +116,20 @@ async fn serve() -> Result<(), Box<dyn Error>> {
     // блокировкой sqlx — кто бы ни запустился первым.
     sqlx::migrate!("../migrations").run(&pool).await?;
 
-    let app = router(Arc::new(AdminState { pool, auth }));
+    // 🔐 Ключ улик к жалобам — в учётных данных службы; в базу уходит
+    // только открытый. Нет ключа — узлы улик не принимают.
+    let evidence = gasapp_server_db::runtime::secret("GASAPP_EVIDENCE_KEY")
+        .and_then(|hex| gasapp_server_admin::cases::EvidenceKey::from_hex(&hex));
+    if evidence.is_none() {
+        tracing::warn!("GASAPP_EVIDENCE_KEY не задан: улики к жалобам не принимаются");
+    }
+    gasapp_server_admin::cases::publish_key(&pool, evidence.as_ref()).await?;
+
+    let app = router(Arc::new(AdminState {
+        pool,
+        auth,
+        evidence,
+    }));
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(address = %bind, "админ-центр GasApp слушает петлю");
     axum::serve(listener, app).await?;

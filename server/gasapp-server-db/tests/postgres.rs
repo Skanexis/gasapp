@@ -540,6 +540,7 @@ async fn reports_about_an_account_are_hour_aligned_and_leave_with_it() {
             reported_device,
             complainant_device,
             &key(),
+            None,
         )
         .await
         .unwrap(),

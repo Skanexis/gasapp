@@ -2004,6 +2004,7 @@ impl Transport for FakeServer {
                         200,
                         serde_json::to_string(&SealedReportResponse {
                             recorded,
+                            evidence_stored: false,
                             total_reporters,
                         })
                         .unwrap_or_default(),

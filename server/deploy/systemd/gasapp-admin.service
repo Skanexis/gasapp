@@ -32,6 +32,9 @@ Environment=NO_COLOR=1
 EnvironmentFile=-/etc/gasapp/admin.env
 LoadCredential=database_url:/etc/gasapp/credentials/admin_database_url
 LoadCredential=gasapp_admin_token_sha256:/etc/gasapp/credentials/admin_token_sha256
+# Ключ улик к жалобам (X25519): ими владеет только админ-центр, узлы
+# видят лишь шифр. Создаётся admin.sh --install.
+LoadCredential=gasapp_evidence_key:/etc/gasapp/credentials/evidence_key
 
 ProtectSystem=strict
 ProtectHome=yes

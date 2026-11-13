@@ -108,6 +108,24 @@ pub struct FfiAccountDeletion {
     pub attachments: u64,
 }
 
+/// Сообщение обидчика, приложенное к жалобе.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiReportQuote {
+    /// Время сообщения, миллисекунды Unix.
+    pub sent_at_millis: i64,
+    /// Текст.
+    pub text: String,
+}
+
+/// Итог жалобы с уликами.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiReportOutcome {
+    /// Учтена ли жалоба (повторная — нет).
+    pub recorded: bool,
+    /// Приняты ли улики.
+    pub evidence_stored: bool,
+}
+
 /// Что сделало обслуживание предключей.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiPreKeyMaintenance {
@@ -667,6 +685,54 @@ impl Messenger {
         let outcome = guard(|| client.report_chat(&chat, Timestamp::from_millis(now_millis)))?;
 
         Ok(outcome.recorded)
+    }
+
+    /// 🔐 Жалоба с причиной и уликами. Улики — сообщения обидчика и
+    /// скриншоты (JPEG без метаданных), которые жалобщик решил показать;
+    /// они запечатываются здесь ключом оператора, сервер хранит шифр.
+    ///
+    /// `reason`: 1 спам или мошенничество, 2 незаконное, 3 безопасность
+    /// детей, 4 травля или угрозы, 5 другое, 6 выдаёт себя за другого.
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Self::report_chat`]; [`FfiError::Core`] — причина вне
+    /// 1–6, сообщений больше 10, скриншотов больше 5 или они велики.
+    pub fn report_chat_with_evidence(
+        &self,
+        chat_id: String,
+        reason: u8,
+        quotes: Vec<FfiReportQuote>,
+        images: Vec<Vec<u8>>,
+        now_millis: i64,
+    ) -> Result<FfiReportOutcome, FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let evidence = gasapp_protocol::report_evidence::Evidence {
+            quotes: quotes
+                .into_iter()
+                .map(|quote| gasapp_protocol::report_evidence::Quote {
+                    sent_at_millis: quote.sent_at_millis,
+                    text: quote.text,
+                })
+                .collect(),
+            images,
+        };
+
+        let outcome = guard(|| {
+            client.report_chat_with_evidence(
+                &chat,
+                Some(reason),
+                &evidence,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })?;
+
+        Ok(FfiReportOutcome {
+            recorded: outcome.recorded,
+            evidence_stored: outcome.evidence_stored,
+        })
     }
 
     /// Возвращает сообщения чата.

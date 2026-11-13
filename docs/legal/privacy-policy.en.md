@@ -348,8 +348,18 @@ signed by the server itself: you can only report someone who actually
 wrote to you. **Your conversation is not sent** — the server does not have
 it. The reported person is not told.
 
-In the admin center the operator sees the reported account's username and
-the **number** of distinct reporters — not who they are. A report is kept
+You pick a **reason** (for example spam or harassment); it is stored with
+the report. You may also choose to attach **evidence**: that person's
+latest messages to you and up to five screenshots. Evidence is optional
+and only what you select is sent. 🔐 It is encrypted on your phone with a
+key that only the operator's admin center holds: the servers it passes
+through and the database it is stored in see only ciphertext. Location
+and device details are removed from screenshots. Evidence is deleted when
+the operator decides on the report, and in any case after 30 days.
+
+In the admin center the operator sees the reported account's username,
+the **number** of distinct reporters — not who they are — the reasons, and
+the evidence reporters chose to attach. A report is kept
 while both accounts exist, or until the operator decides. The decision
 (deleting the account or dismissing the reports) is recorded in the
 operator log **without the username**: what was done, why, and how many

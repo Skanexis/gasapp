@@ -261,6 +261,21 @@ pub struct CertificateResponse {
 pub struct SealedReportRequest {
     /// Сертификат отправителя, извлечённый из конверта, hex.
     pub certificate: String,
+    /// Причина: 1 спам или мошенничество, 2 незаконное, 3 безопасность
+    /// детей, 4 травля или угрозы, 5 другое, 6 выдаёт себя за другого.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<u8>,
+    /// Улики, запечатанные ключом оператора
+    /// (`gasapp_protocol::report_evidence`), hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+}
+
+/// Открытый ключ оператора для улик к жалобам.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportKeyResponse {
+    /// X25519, hex; `None` — сервер улик не принимает.
+    pub key: Option<String>,
 }
 
 /// Ответ на жалобу.
@@ -268,6 +283,9 @@ pub struct SealedReportRequest {
 pub struct SealedReportResponse {
     /// Учтена ли жалоба.
     pub recorded: bool,
+    /// Приняты ли улики (старый сервер поля не знает — `false`).
+    #[serde(default)]
+    pub evidence_stored: bool,
     /// Сколько разных людей пожаловались на этот аккаунт.
     pub total_reporters: i64,
 }

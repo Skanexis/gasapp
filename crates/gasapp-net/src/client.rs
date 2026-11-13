@@ -1476,6 +1476,15 @@ impl<T: Transport> ApiClient<T> {
         parse(&response)
     }
 
+    /// Ключ оператора для улик к жалобам.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] при сбое соединения.
+    pub fn report_evidence_key(&self) -> Result<crate::api::ReportKeyResponse> {
+        parse(&self.send(Method::Get, "/v1/sealed/report-key".to_owned(), None)?)
+    }
+
     /// Забирает ожидающие конверты.
     ///
     /// # Errors

@@ -47,6 +47,7 @@ pub mod pqxdh;
 pub mod prekeys;
 pub mod protocol_engine;
 pub mod qr;
+pub mod report_evidence;
 pub mod sealed_sender;
 pub mod sender_key;
 pub mod spqr;

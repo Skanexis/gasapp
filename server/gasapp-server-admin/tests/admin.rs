@@ -49,6 +49,7 @@ async fn state() -> Option<Arc<AdminState>> {
     Some(Arc::new(AdminState {
         pool,
         auth: Auth::from_hash_hex(&token_hash_hex(TOKEN)).expect("хеш"),
+        evidence: None,
     }))
 }
 
@@ -241,6 +242,7 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
             spam_device,
             complainant,
             &[index; 32],
+            Some(1),
         )
         .await
         .expect("жалоба");
@@ -260,11 +262,11 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
     // подписаны data-label для узкого экрана.
     assert!(html.contains("Certificates"), "столбца сертификатов нет");
     assert!(
-        html.contains(&format!(
-            "@{spammer}</td><td data-label=\"Reporters\" class=\"num\">2</td><td data-label=\"Certificates\" class=\"num\">2</td>"
-        )),
-        "жалобщики и сертификаты не посчитаны"
+        html.contains(&format!("href=\"/reports/account/{spam_account}\"")),
+        "дело открывается со своей страницы"
     );
+
+    let html = case_page_counts_signals(&state, &session, spam_account).await;
 
     let csrf = csrf_of(&html);
 
@@ -329,6 +331,26 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
     assert!(!html.contains(&spammer), "в отчёте о прозрачности нет имён");
 }
 
+/// Дело: двое независимых жалобщиков, два сертификата, причина — спам.
+async fn case_page_counts_signals(state: &Arc<AdminState>, session: &str, spam_account: Uuid) -> String {
+    let (status, html, _) = send(
+        state,
+        get(&format!("/reports/account/{spam_account}"), session),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        html.contains("2 independent reporters"),
+        "независимые жалобщики не посчитаны"
+    );
+    assert!(html.contains("Spam or scam"), "причины нет");
+    assert!(
+        html.contains("<option value=\"spam\" selected>"),
+        "решение не подсказано по причине"
+    );
+    html
+}
+
 /// Поиск — только по точному имени; неизвестное имя — «нет».
 #[tokio::test]
 async fn an_account_is_found_by_exact_name_only() {
@@ -353,5 +375,8 @@ async fn an_account_is_found_by_exact_name_only() {
         get(&format!("/account?username={}", &name[..6]), &session),
     )
     .await;
-    assert!(html.contains("No account found"), "по части имени не находится");
+    assert!(
+        html.contains("No account found"),
+        "по части имени не находится"
+    );
 }

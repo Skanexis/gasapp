@@ -1231,12 +1231,13 @@ pub async fn record_sealed_sender_report(
     reported_device: Uuid,
     complainant_device: Uuid,
     certificate_hash: &[u8; 32],
+    reason: Option<i16>,
 ) -> Result<bool, RepoError> {
     let result = sqlx::query(
         "
         INSERT INTO sealed_sender_reports
-            (report_id, reported_account, reported_device, complainant_device, certificate_hash)
-        VALUES ($1, $2, $3, $4, $5)
+            (report_id, reported_account, reported_device, complainant_device, certificate_hash, reason)
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (complainant_device, reported_device) DO NOTHING
         ",
     )
@@ -1245,10 +1246,72 @@ pub async fn record_sealed_sender_report(
     .bind(reported_device)
     .bind(complainant_device)
     .bind(certificate_hash.as_slice())
+    .bind(reason)
     .execute(pool)
     .await?;
 
-    Ok(result.rows_affected() > 0)
+    let recorded = result.rows_affected() > 0;
+
+    // Повторная жалоба может уточнить причину, если её не было.
+    if !recorded && reason.is_some() {
+        sqlx::query(
+            "UPDATE sealed_sender_reports SET reason = $3
+              WHERE complainant_device = $1 AND reported_device = $2 AND reason IS NULL",
+        )
+        .bind(complainant_device)
+        .bind(reported_device)
+        .bind(reason)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(recorded)
+}
+
+/// Открытый ключ админ-центра для улик (миграция 0030); `None` —
+/// админ-центр ключа не завёл, улики не принимаются.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn report_evidence_key(pool: &PgPool) -> Result<Option<Vec<u8>>, RepoError> {
+    let key: Option<Option<Vec<u8>>> =
+        sqlx::query_scalar("SELECT evidence_key FROM admin_state WHERE id = 1")
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(key.flatten())
+}
+
+/// Сохраняет запечатанные улики жалобщика (повторные заменяют
+/// прежние) и удаляет улики старше 30 дней.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn store_report_evidence(
+    pool: &PgPool,
+    reported_account: Uuid,
+    complainant_device: Uuid,
+    sealed: &[u8],
+) -> Result<(), RepoError> {
+    sqlx::query("DELETE FROM report_evidence WHERE created_at < now() - interval '30 days'")
+        .execute(pool)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO report_evidence (reported_account, complainant_device, sealed)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (reported_account, complainant_device)
+         DO UPDATE SET sealed = EXCLUDED.sealed, created_at = date_trunc('hour', now())",
+    )
+    .bind(reported_account)
+    .bind(complainant_device)
+    .bind(sealed)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 /// Сколько разных людей пожаловались на аккаунт.

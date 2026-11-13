@@ -16,7 +16,8 @@
 //! * **сводка** — числа, ни одного имени;
 //! * **жалобы** — имя аккаунта, на который пожаловались, число **разных**
 //!   жалобщиков (не они сами), время жалоб с точностью до часа, месяц
-//!   создания аккаунта;
+//!   создания аккаунта, причины и улики, которые жалобщики сами решили
+//!   показать (зашифрованы ключом админ-центра, `cases`);
 //! * **аккаунт** — поиск только по точному имени: перечня пользователей
 //!   нет и не будет;
 //! * **прозрачность** — сколько действий, за что, по месяцам, без имён.
@@ -30,6 +31,7 @@
 //! или onion-сервис. Вход — токеном оператора (`auth`).
 
 pub mod auth;
+pub mod cases;
 mod icons;
 pub mod insights;
 pub mod push;
@@ -62,6 +64,8 @@ pub struct AdminState {
     pub pool: PgPool,
     /// Вход и сессии.
     pub auth: Auth,
+    /// Ключ улик к жалобам; `None` — улики не принимаются и не читаются.
+    pub evidence: Option<cases::EvidenceKey>,
 }
 
 /// Маршруты админ-центра.
@@ -69,6 +73,7 @@ pub fn router(state: Arc<AdminState>) -> Router {
     let protected = Router::new()
         .route("/", get(summary_page))
         .route("/reports", get(reports_page))
+        .route("/reports/account/:id", get(case_page))
         .route("/accounts", get(accounts_page))
         .route("/channels", get(channels_page))
         .route("/account", get(account_page))
@@ -383,7 +388,11 @@ async fn reports_page(
         return Redirect::to("/login").into_response();
     };
 
-    let rows = match queries::reported_accounts(&state.pool).await {
+    // Улики не живут дольше 30 дней (миграция 0030).
+    if let Err(error) = cases::purge_old_evidence(&state.pool).await {
+        return database_error(&error);
+    }
+    let rows = match cases::queue(&state.pool).await {
         Ok(rows) => rows,
         Err(error) => return database_error(&error),
     };
@@ -392,19 +401,30 @@ async fn reports_page(
         Err(error) => return database_error(&error),
     };
 
-    let mut body = format!(
-        "<div class=\"queue-summary\" aria-label=\"Current report queue\">\
-         <div><span>ACCOUNT CASES</span><b class=\"num\">{}</b><small>Accounts awaiting review</small></div>\
-         <div><span>CHANNEL CASES</span><b class=\"num\">{}</b><small>Channels awaiting review</small></div>\
-         <div class=\"queue-message\"><span>REVIEW STANDARD</span><strong>Evidence before action.</strong>\
-         <small>Compare reports and certificates before making a decision.</small></div></div>",
-        rows.len(),
-        channels.len()
-    );
-    body.push_str(&reports_html(&rows, &csrf, flash.done.as_deref()));
+    let mut body = cases::queue_html(&rows, channels.len(), flash.done.as_deref());
     body.push_str(&channel_reports_html(&channels, &csrf));
 
     Html(layout("Reports", &csrf, &body)).into_response()
+}
+
+/// Дело по аккаунту: сигналы, причины, улики, решение.
+async fn case_page(
+    State(state): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(account_id): Path<Uuid>,
+) -> Response {
+    let Some((_, csrf)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+
+    match cases::case(&state.pool, account_id).await {
+        Ok(Some(case)) => {
+            let body = cases::case_html(&case, state.evidence.as_ref(), &csrf);
+            Html(layout("Reports", &csrf, &body)).into_response()
+        }
+        Ok(None) => Redirect::to("/reports").into_response(),
+        Err(error) => database_error(&error),
+    }
 }
 
 /// Удаляет канал, на который жаловались.
@@ -808,60 +828,6 @@ fn delete_form(account_id: Uuid, csrf: &str) -> String {
     )
 }
 
-fn reports_html(rows: &[queries::ReportedAccount], csrf: &str, done: Option<&str>) -> String {
-    let mut html = String::new();
-
-    match done {
-        Some("deleted") => html.push_str("<p class=\"flash\" role=\"status\">Account deleted.</p>"),
-        Some("dismissed") => {
-            html.push_str("<p class=\"flash\" role=\"status\">Reports dismissed.</p>");
-        }
-        Some("channel_deleted") => {
-            html.push_str("<p class=\"flash\" role=\"status\">Channel deleted.</p>");
-        }
-        _ => {}
-    }
-
-    html.push_str(
-        "<div class=\"guidance\"><p>Each account report includes a server-signed sender certificate. It proves that the reported account sent a message, without exposing the conversation. Review within 24 hours; escalate child safety reports immediately under the operator policy.</p>\
-         <p><strong>Review carefully.</strong> A bearer certificate can be reused by multiple accounts. Compare distinct certificates and reporting dates before taking action; reporter count alone is not evidence of widespread abuse.</p></div>\
-         <h2>Reported accounts</h2>",
-    );
-
-    if rows.is_empty() {
-        html.push_str("<p class=\"empty-state\">No account reports are waiting for review.</p>");
-        return html;
-    }
-
-    html.push_str(
-        "<div class=\"table-scroll reports-table\"><table><thead><tr><th>Account</th><th class=\"num\">Reporters</th>\
-         <th class=\"num\">Certificates</th>\
-         <th>First / latest report</th><th>Last active</th><th>Actions</th></tr></thead><tbody>",
-    );
-    for row in rows {
-        let _ = write!(
-            html,
-            "<tr><td data-label=\"Account\">@{name}</td><td data-label=\"Reporters\" class=\"num\">{reporters}</td>\
-             <td data-label=\"Certificates\" class=\"num\">{certificates}</td><td data-label=\"First / latest\">{first}<br>{last}</td><td data-label=\"Last active\">{active}</td><td data-label=\"Actions\"><div class=\"row-actions\">\
-             <form class=\"inline\" method=\"post\" action=\"/accounts/{id}/dismiss\">\
-             <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-             <button>Dismiss reports</button></form><details class=\"destructive-action\"><summary>Delete account</summary>{delete}</details></div></td></tr>",
-            name = escape(&row.username),
-            reporters = row.reporters,
-            certificates = row.certificates,
-            first = escape(&row.first_report),
-            last = escape(&row.last_report),
-            active = escape(&row.active_month),
-            delete = delete_form(row.account_id, csrf),
-            id = row.account_id,
-            csrf = escape(csrf),
-        );
-    }
-    html.push_str("</tbody></table></div>");
-
-    html
-}
-
 /// Жалобы на каналы.
 ///
 /// 🔐 Записи канала без публичного имени сервер не читает. Ссылка в
@@ -1046,7 +1012,11 @@ mod tests {
             .expect("URL базы");
         let auth = Auth::from_hash_hex(&auth::token_hash_hex("a long test token for admin login"))
             .expect("хеш токена");
-        let app = router(Arc::new(AdminState { pool, auth }));
+        let app = router(Arc::new(AdminState {
+            pool,
+            auth,
+            evidence: None,
+        }));
 
         let response = app
             .clone()
@@ -1136,7 +1106,7 @@ mod tests {
         assert!(overview.contains("Skip to content"));
         assert!(overview.contains("name=\"csrf\" value=\"test-csrf\""));
 
-        let reports = reports_html(&[], "test-csrf", None);
+        let reports = cases::queue_html(&[], 0, None);
         assert!(reports.contains("No account reports"));
         let channels = channel_reports_html(&[], "test-csrf");
         assert!(channels.contains("No channel reports"));
@@ -1169,14 +1139,16 @@ mod tests {
             bots: 0,
             bot_owner: None,
         };
-        let report = queries::ReportedAccount {
+        let report = cases::CaseRow {
             account_id: Uuid::nil(),
             username: "alice".to_owned(),
-            active_month: "2026-10".to_owned(),
-            reporters: 1,
-            certificates: 1,
-            first_report: "2026-10-01".to_owned(),
             last_report: "2026-10-02".to_owned(),
+            signals: cases::Signals {
+                reporters: 1,
+                certificates: 1,
+                reports: 1,
+                ..cases::Signals::default()
+            },
         };
         let channel = queries::ReportedChannel {
             channel_id: Uuid::nil(),
@@ -1197,15 +1169,13 @@ mod tests {
         let pages = [
             login_html(Some("Invalid operator token.")),
             insights::dashboard_html(&insights::Dashboard::default(), bytes),
-            reports_html(&[report], "csrf", Some("deleted")),
+            cases::queue_html(&[report], 1, Some("deleted")),
             channel_reports_html(&[channel], "csrf"),
             account_html(Some("alice"), Some(&account), "csrf"),
             transparency_html(&[action]),
         ];
-        assert!(pages[2].contains("<details class=\"destructive-action\">"));
-        assert!(pages[2].contains("name=\"confirm\" value=\"yes\" required"));
-        assert!(pages[2].contains("class=\"table-scroll reports-table\""));
-        assert!(pages[2].contains("data-label=\"Account\""));
+        assert!(pages[2].contains("href=\"/reports/account/"));
+        assert!(pages[2].contains("Account deleted"));
         assert!(pages[3].contains("<details class=\"destructive-action\">"));
         assert!(pages[3].contains("data-label=\"Channel\""));
         for page in pages {

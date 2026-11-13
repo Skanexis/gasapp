@@ -50,7 +50,8 @@ struct ChatScreen: View {
     @State private var contact: FfiContact?
     @State private var blocked = false
     @State private var showSafety = false
-    @State private var confirmReport = false
+    @State private var showProfile = false
+    @State private var showReport = false
     /// Ссылка из кнопки бота — ждёт решения человека.
     @State private var pendingLink: String?
     @State private var confirmDecline = false
@@ -74,6 +75,7 @@ struct ChatScreen: View {
                             MessageBubble(message: message)
                                 .id(message.id)
                                 .contextMenu { messageMenu(message) }
+                                .onTapGesture { if message.status == .failed { retry(message) } }
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                             if !message.buttons.isEmpty {
                                 MessageButtons(rows: message.buttons) { row, column in press(message, row: row, column: column) }
@@ -105,10 +107,18 @@ struct ChatScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text(title).font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
-                    Text(verificationLabel.0).font(GasFont.text(11, .semibold)).foregroundStyle(verificationLabel.1)
+                // Нажатие на имя — профиль собеседника, как в любом мессенджере.
+                Button { showProfile = true } label: {
+                    HStack(spacing: 8) {
+                        Avatar(name: peerUsername.isEmpty ? title : peerUsername, size: 30)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(title).font(GasFont.text(16, .bold)).foregroundStyle(GasAppColor.textPrimary)
+                            Text(verificationLabel.0).font(GasFont.text(11, .semibold)).foregroundStyle(verificationLabel.1)
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint(L10n.t("Открыть профиль", "Open profile", "Apri il profilo"))
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -132,17 +142,6 @@ struct ChatScreen: View {
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
-        // Жалоба — как на Android (ChatActivity): что получит оператор,
-        // сказано до кнопок; «и заблокировать» — второй вариант.
-        .confirmationDialog(L10n.t("Пожаловаться на \(title)?", "Report \(title)?", "Segnalare \(title)?"),
-                            isPresented: $confirmReport, titleVisibility: .visible) {
-            Button(L10n.t("Пожаловаться и заблокировать", "Report and block", "Segnala e blocca"), role: .destructive) { sendReport(alsoBlock: true) }
-            Button(L10n.t("Только пожаловаться", "Report only", "Solo segnalazione")) { sendReport(alsoBlock: false) }
-            Button(L10n.t("Отмена", "Cancel", "Annulla"), role: .cancel) {}
-        } message: {
-            Text(L10n.t("Оператор сервера получит доказательство, что этот аккаунт вам писал, — но не переписку: её у сервера нет. \(title) об этом не узнает.",
-                        "The server operator gets proof that this account wrote to you — not your conversation: the server does not have it. \(title) is not told.", "L’operatore del server riceve la prova che questo account ti ha scritto, non la vostra conversazione: il server non ce l’ha. \(title) non viene avvisato."))
-        }
         // Ссылка из кнопки — только https (ядро отвергает иные схемы, данные
         // входа в адресе и подменные буквы); открыть её решает человек,
         // видя адрес целиком (как на Android).
@@ -157,6 +156,14 @@ struct ChatScreen: View {
             }
         } message: {
             Text(pendingLink ?? "")
+        }
+        .sheet(isPresented: $showProfile) { profileSheet }
+        .sheet(isPresented: $showReport) {
+            ReportSheet(username: peerUsername.isEmpty ? title : peerUsername,
+                        theirMessages: messages.filter { !$0.outgoing && !$0.text.isEmpty }.suffix(5).map { $0 }) { report in
+                showReport = false
+                sendReport(report)
+            }
         }
         .sheet(isPresented: $showSafety, onDismiss: { Task { await refresh() } }) {
             if let contact {
@@ -298,6 +305,18 @@ struct ChatScreen: View {
 
     @ViewBuilder
     private func messageMenu(_ message: MessageRow) -> some View {
+        if message.outgoing {
+            // Статус словами — то, что значки говорят знаками.
+            Text(MessageBubble.statusText(message.status))
+        }
+        if message.status == .failed {
+            Button { retry(message) } label: {
+                Label(L10n.t("Отправить ещё раз", "Send again", "Invia di nuovo"), systemImage: "arrow.clockwise")
+            }
+            Button(role: .destructive) { messages.removeAll { $0.id == message.id } } label: {
+                Label(L10n.t("Убрать", "Remove", "Rimuovi"), systemImage: "trash")
+            }
+        }
         if !message.text.isEmpty {
             Button {
                 // 🔐 Только локально и с истечением: буфер обмена видят
@@ -487,10 +506,24 @@ struct ChatScreen: View {
         }
     }
 
+    /// Не ушедшее — ещё раз: ядро повтора не знает, поэтому это новая
+    /// отправка того же текста, а неудачная строка убирается.
+    private func retry(_ message: MessageRow) {
+        guard message.status == .failed, !message.text.isEmpty else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        messages.removeAll { $0.id == message.id }
+        send(text: message.text)
+    }
+
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let messenger = try? CoreStore.shared.current() else { return }
+        guard !text.isEmpty else { return }
         draft = ""
+        send(text: text)
+    }
+
+    private func send(text: String) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
         toast = nil
 
         // «Отправляется», а не «отправлено»: на сервер оно ещё не ушло.
@@ -548,13 +581,23 @@ struct ChatScreen: View {
 
     /// 🔐 Жалоба доказывается сертификатом отправителя с его конверта:
     /// пока собеседник ничего не прислал, доказать нечем (`canReportChat`).
+    /// Новое окно — после того как закроется профиль: SwiftUI не
+    /// показывает второе окно, пока первое ещё уезжает.
+    private func presentAfterSheet(_ show: @escaping () -> Void) async {
+        if showProfile {
+            showProfile = false
+            try? await Task.sleep(for: .milliseconds(450))
+        }
+        show()
+    }
+
     private func startReport() {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let chat = resolvedChatId
         Task {
             let can = (try? await Background.run { try messenger.canReportChat(chatId: chat) }) ?? false
             if can {
-                confirmReport = true
+                await presentAfterSheet { showReport = true }
             } else {
                 toast = L10n.t("Пожаловаться можно, когда собеседник вам что-нибудь напишет.",
                                "You can report once they have sent you a message.", "Puoi segnalare dopo che ti ha inviato un messaggio.")
@@ -562,22 +605,41 @@ struct ChatScreen: View {
         }
     }
 
-    private func sendReport(alsoBlock: Bool) {
+    /// 🔐 Жалоба уходит с сертификатом отправителя (доказательство, что
+    /// он вам писал), причиной и — если человек так решил — уликами,
+    /// которые ядро шифрует здесь ключом админ-центра.
+    private func sendReport(_ report: ReportDraft) {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let chat = resolvedChatId
         let peer = peerUsername
+        let alsoBlock = report.alsoBlock
+        toast = L10n.t("Отправляем жалобу…", "Sending the report…", "Invio della segnalazione…")
         Task {
             do {
-                let recorded = try await Background.run { try messenger.reportChat(chatId: chat, nowMillis: CoreStore.nowMillis) }
+                let outcome = try await Background.run {
+                    try messenger.reportChatWithEvidence(chatId: chat, reason: report.reason, quotes: report.quotes,
+                                                         images: report.images, nowMillis: CoreStore.nowMillis)
+                }
+                let recorded = outcome.recorded
+                let evidenceLost = report.hasEvidence && !outcome.evidenceStored
                 if alsoBlock {
                     _ = try? await Background.run {
                         try messenger.blockChat(chatId: chat, username: peer.isEmpty ? nil : peer, nowMillis: CoreStore.nowMillis)
                     }
                     await refresh()
                 }
-                toast = recorded
-                    ? L10n.t("Жалоба отправлена. Спасибо.", "Report sent. Thank you.", "Segnalazione inviata. Grazie.")
-                    : L10n.t("Вы уже жаловались на этот аккаунт.", "You have already reported this account.", "Hai già segnalato questo account.")
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                if evidenceLost {
+                    toast = L10n.t("Жалоба отправлена, но сервер сейчас не принимает вложения.",
+                                   "Report sent, but the server is not accepting attachments right now.",
+                                   "Segnalazione inviata, ma ora il server non accetta allegati.")
+                } else if recorded {
+                    toast = L10n.t("Жалоба отправлена. Спасибо.", "Report sent. Thank you.", "Segnalazione inviata. Grazie.")
+                } else {
+                    toast = report.hasEvidence
+                        ? L10n.t("Вы уже жаловались — вложения добавлены к жалобе.", "You had already reported — the attachments were added.", "Avevi già segnalato: gli allegati sono stati aggiunti.")
+                        : L10n.t("Вы уже жаловались на этот аккаунт.", "You have already reported this account.", "Hai già segnalato questo account.")
+                }
             } catch {
                 toast = L10n.t("Жалобу отправить не удалось. Проверьте связь и попробуйте ещё раз.",
                                "Could not send the report. Check the connection and try again.", "Impossibile inviare la segnalazione. Controlla la connessione e riprova.")
@@ -606,6 +668,83 @@ struct ChatScreen: View {
                 toast = L10n.t("Кнопка не сработала", "The button didn’t work", "Il pulsante non ha funzionato")
             }
         }
+    }
+
+    // MARK: - Профиль собеседника
+
+    private var profileSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(spacing: 10) {
+                        Avatar(name: peerUsername.isEmpty ? title : peerUsername, size: 92)
+                        Text(peerUsername.isEmpty ? title : "@\(peerUsername)")
+                            .font(GasFont.display(24)).foregroundStyle(GasAppColor.textPrimary)
+                        Label(verificationLabel.0, systemImage: contact?.verified == true ? "checkmark.seal.fill" : "key.fill")
+                            .font(GasFont.text(13, .semibold)).foregroundStyle(verificationLabel.1)
+                            .padding(.horizontal, 12).padding(.vertical, 5)
+                            .background(Capsule().fill(verificationLabel.1.opacity(0.14)))
+                        if blocked {
+                            Label(L10n.t("Заблокирован", "Blocked", "Bloccato"), systemImage: "hand.raised.fill")
+                                .font(GasFont.text(13, .semibold)).foregroundStyle(GasAppColor.error)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .listRowBackground(Color.clear)
+                }
+
+                Section {
+                    Button { Task { await presentAfterSheet { showSafety = true } } } label: {
+                        SettingRow(icon: "checkmark.shield.fill", color: .green,
+                                   title: L10n.t("Код безопасности", "Safety number", "Numero di sicurezza"),
+                                   detail: L10n.t("Сверьте лично — и никто не встанет между вами",
+                                                  "Compare in person — then nobody can stand in between",
+                                                  "Confrontalo di persona: nessuno potrà mettersi in mezzo"))
+                    }
+                    .disabled(contact == nil)
+                    Menu {
+                        Button(L10n.t("Выключить", "Off", "Disattivati")) { setTimer(0) }
+                        Button(L10n.t("Через час", "After 1 hour", "Dopo 1 ora")) { setTimer(3600) }
+                        Button(L10n.t("Через сутки", "After 1 day", "Dopo 1 giorno")) { setTimer(86_400) }
+                        Button(L10n.t("Через неделю", "After 1 week", "Dopo 1 settimana")) { setTimer(604_800) }
+                    } label: {
+                        SettingRow(icon: "timer", color: .purple,
+                                   title: L10n.t("Исчезающие сообщения", "Disappearing messages", "Messaggi effimeri"))
+                    }
+                    .disabled(resolvedChatId.isEmpty)
+                }
+
+                Section {
+                    Button { toggleBlock() } label: {
+                        SettingRow(icon: blocked ? "hand.raised.slash.fill" : "hand.raised.fill", color: .orange,
+                                   title: blocked ? L10n.t("Разблокировать", "Unblock", "Sblocca")
+                                                  : L10n.t("Заблокировать", "Block", "Blocca"))
+                    }
+                    Button { startReport() } label: {
+                        SettingRow(icon: "flag.fill", color: .red,
+                                   title: L10n.t("Пожаловаться", "Report", "Segnala"),
+                                   detail: L10n.t("Можно приложить скриншоты", "You can attach screenshots", "Puoi allegare screenshot"))
+                    }
+                } footer: {
+                    Text(L10n.t("Собеседник не узнает о блокировке и жалобе.",
+                                "They are not told about a block or a report.",
+                                "Non viene avvisato di blocchi o segnalazioni."))
+                }
+                .disabled(resolvedChatId.isEmpty)
+            }
+            .listRowBackground(GasAppColor.bgCard)
+            .scrollContentBackground(.hidden)
+            .background(GasAppColor.bgBase.ignoresSafeArea())
+            .navigationTitle(L10n.t("Профиль", "Profile", "Profilo"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.t("Готово", "Done", "Fatto")) { showProfile = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     private func toggleBlock() {
@@ -648,6 +787,10 @@ struct MessageBubble: View {
                     Text(formatChatTime(message.timestamp))
                     if message.outgoing { statusIcon }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(message.outgoing
+                    ? "\(formatChatTime(message.timestamp)), \(Self.statusText(message.status))"
+                    : formatChatTime(message.timestamp))
                 .font(GasFont.text(11))
                 .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingMeta : GasAppColor.textTertiary)
             }
@@ -667,18 +810,44 @@ struct MessageBubble: View {
             )
             .frame(maxWidth: 320, alignment: message.outgoing ? .trailing : .leading)
             .fixedSize(horizontal: false, vertical: true)
+            .overlay(alignment: .bottomTrailing) {
+                if message.status == .failed {
+                    Text(L10n.t("Не отправлено · нажмите, чтобы повторить", "Not sent · tap to retry", "Non inviato · tocca per riprovare"))
+                        .font(GasFont.text(11, .semibold)).foregroundStyle(GasAppColor.error)
+                        .fixedSize()
+                        .offset(y: 18)
+                }
+            }
+            .padding(.bottom, message.status == .failed ? 18 : 0)
             if !message.outgoing { Spacer(minLength: 56) }
         }
     }
 
+    /// Статус значком: часы — уходит; одна галочка — на сервере; две —
+    /// дошло до телефона; две золотые — прочитано; красный — не ушло.
     @ViewBuilder
     private var statusIcon: some View {
         switch message.status {
-        case .pending: Image(systemName: "clock")
-        case .sent: Image(systemName: "checkmark")
-        case .delivered: Image(systemName: "checkmark.circle")
-        case .read: Image(systemName: "checkmark.circle.fill")
-        case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(GasAppColor.error)
+        case .pending:
+            Image(systemName: "clock").symbolEffect(.pulse, options: .repeating)
+        case .sent:
+            Image(systemName: "checkmark")
+        case .delivered:
+            DoubleCheck()
+        case .read:
+            DoubleCheck().foregroundStyle(GasAppColor.accent)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(GasAppColor.error)
+        }
+    }
+
+    static func statusText(_ status: FfiDeliveryStatus) -> String {
+        switch status {
+        case .pending: L10n.t("Отправляется…", "Sending…", "Invio…")
+        case .sent: L10n.t("Отправлено на сервер", "Sent to the server", "Inviato al server")
+        case .delivered: L10n.t("Доставлено", "Delivered", "Consegnato")
+        case .read: L10n.t("Прочитано", "Read", "Letto")
+        case .failed: L10n.t("Не отправлено", "Not sent", "Non inviato")
         }
     }
 }
@@ -733,5 +902,228 @@ struct MessageButtons: View {
         }
         .frame(maxWidth: 300, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Две галочки — «дошло до телефона».
+struct DoubleCheck: View {
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Image(systemName: "checkmark")
+            Image(systemName: "checkmark").offset(x: 5)
+        }
+        .padding(.trailing, 5)
+    }
+}
+
+// MARK: - Жалоба с уликами
+
+/// Что человек решил отправить с жалобой.
+struct ReportDraft {
+    let reason: UInt8
+    let alsoBlock: Bool
+    let quotes: [FfiReportQuote]
+    let images: [Data]
+
+    var hasEvidence: Bool { !quotes.isEmpty || !images.isEmpty }
+}
+
+/// Жалоба: причина, «заодно заблокировать», последние сообщения
+/// обидчика и скриншоты.
+///
+/// 🔐 Сервер получает сертификат отправителя (что этот аккаунт вам
+/// писал) и причину. Сообщения и скриншоты — только если человек их
+/// оставил: ядро шифрует их на телефоне ключом админ-центра
+/// (`report_evidence`), узлы и база видят шифр. Метаданные снимков
+/// стираются (`ChatScreen.strippedJPEG`), снимки ужимаются.
+struct ReportSheet: View {
+    let username: String
+    let theirMessages: [MessageRow]
+    let onSend: (ReportDraft) -> Void
+
+    @State private var reason: UInt8 = 1
+    @State private var alsoBlock = true
+    @State private var attachMessages = true
+    @State private var picks: [PhotosPickerItem] = []
+    @State private var images: [Data] = []
+    @State private var loading = false
+    @Environment(\.dismiss) private var dismiss
+
+    struct Reason: Identifiable {
+        let id: UInt8
+        let icon: String
+        let label: String
+    }
+
+    /// Коды — как у сервера (миграция 0030).
+    private var reasons: [Reason] {
+        [(1, "exclamationmark.bubble", L10n.t("Спам или мошенничество", "Spam or scam", "Spam o truffa")),
+         (4, "hand.raised", L10n.t("Травля или угрозы", "Harassment or threats", "Molestie o minacce")),
+         (6, "person.crop.circle.badge.questionmark", L10n.t("Выдаёт себя за другого", "Impersonation", "Furto d’identità")),
+         (2, "exclamationmark.triangle", L10n.t("Незаконное содержимое", "Illegal content", "Contenuti illegali")),
+         (3, "figure.and.child.holdinghands", L10n.t("Безопасность детей", "Child safety", "Sicurezza dei minori")),
+         (5, "ellipsis.circle", L10n.t("Другое", "Something else", "Altro"))]
+            .map { Reason(id: $0.0, icon: $0.1, label: $0.2) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(reasons) { item in
+                        let code = item.id
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            reason = code
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: item.icon).frame(width: 24)
+                                    .foregroundStyle(code == 3 ? GasAppColor.error : GasAppColor.accent)
+                                Text(item.label).foregroundStyle(GasAppColor.textPrimary)
+                                Spacer()
+                                if reason == code {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(GasAppColor.accent)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text(L10n.t("Что случилось", "What happened", "Cosa è successo"))
+                }
+
+                Section {
+                    Toggle(isOn: $attachMessages) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.t("Приложить его сообщения", "Attach their messages", "Allega i suoi messaggi"))
+                            Text(theirMessages.isEmpty
+                                 ? L10n.t("Сообщений от него нет", "No messages from them", "Nessun messaggio da lui")
+                                 : L10n.t("Последние: \(theirMessages.count)", "Latest: \(theirMessages.count)", "Ultimi: \(theirMessages.count)"))
+                                .font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
+                        }
+                    }
+                    .tint(GasAppColor.accent)
+                    .disabled(theirMessages.isEmpty)
+
+                    PhotosPicker(selection: $picks, maxSelectionCount: 5, matching: .images) {
+                        HStack {
+                            Label(images.isEmpty ? L10n.t("Приложить скриншоты", "Attach screenshots", "Allega screenshot")
+                                                 : L10n.t("Скриншотов: \(images.count)", "Screenshots: \(images.count)", "Screenshot: \(images.count)"),
+                                  systemImage: "photo.on.rectangle.angled")
+                            Spacer()
+                            if loading { ProgressView() }
+                        }
+                    }
+                    if !images.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(images.indices, id: \.self) { index in
+                                    if let image = UIImage(data: images[index]) {
+                                        Image(uiImage: image).resizable().scaledToFill()
+                                            .frame(width: 64, height: 110)
+                                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                                            .overlay(alignment: .topTrailing) {
+                                                Button {
+                                                    images.remove(at: index)
+                                                } label: {
+                                                    Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette)
+                                                        .foregroundStyle(.white, .black.opacity(0.6))
+                                                }
+                                                .padding(3)
+                                                .accessibilityLabel(L10n.t("Убрать", "Remove", "Rimuovi"))
+                                            }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                } header: {
+                    Text(L10n.t("Доказательства", "Evidence", "Prove"))
+                } footer: {
+                    Label(L10n.t("Шифруются на этом телефоне так, что открыть их может только модератор GasApp. Сервер и его база видят лишь шифр. Удаляются после решения или через 30 дней. Место съёмки и модель телефона из снимков стираются.",
+                                 "Encrypted on this phone so that only the GasApp moderator can open them. The server and its database see only ciphertext. Deleted after a decision or within 30 days. Location and device details are removed from screenshots.",
+                                 "Cifrate su questo telefono: solo il moderatore di GasApp può aprirle. Il server e il suo database vedono solo dati cifrati. Eliminate dopo la decisione o entro 30 giorni. Posizione e dati del telefono vengono rimossi dagli screenshot."),
+                          systemImage: "lock.fill")
+                        .font(GasFont.text(12))
+                }
+
+                Section {
+                    Toggle(L10n.t("Заодно заблокировать", "Also block", "Blocca anche"), isOn: $alsoBlock)
+                        .tint(GasAppColor.accent)
+                } footer: {
+                    Text(L10n.t("Сервер получит доказательство, что @\(username) вам писал. @\(username) о жалобе не узнает.",
+                                "The server gets proof that @\(username) wrote to you. @\(username) is not told about the report.",
+                                "Il server riceve la prova che @\(username) ti ha scritto. @\(username) non viene avvisato."))
+                }
+            }
+            .listRowBackground(GasAppColor.bgCard)
+            .scrollContentBackground(.hidden)
+            .background(GasAppColor.bgBase.ignoresSafeArea())
+            .navigationTitle(L10n.t("Жалоба на @\(username)", "Report @\(username)", "Segnala @\(username)"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.t("Отмена", "Cancel", "Annulla")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.t("Отправить", "Send", "Invia")) { send() }
+                        .fontWeight(.bold)
+                        .disabled(loading)
+                }
+            }
+            .onChange(of: picks) { _, items in
+                loading = true
+                Task {
+                    var loaded: [Data] = []
+                    for item in items {
+                        if let raw = try? await item.loadTransferable(type: Data.self),
+                           let small = Self.evidenceJPEG(raw) {
+                            loaded.append(small)
+                        }
+                    }
+                    images = loaded
+                    loading = false
+                }
+            }
+        }
+    }
+
+    private func send() {
+        let quotes = attachMessages
+            ? theirMessages.map { FfiReportQuote(sentAtMillis: $0.timestamp, text: Self.clipped($0.text)) }
+            : []
+        onSend(ReportDraft(reason: reason, alsoBlock: alsoBlock, quotes: quotes, images: images))
+    }
+
+    /// Не длиннее 4096 байт UTF-8 — предел ядра.
+    static func clipped(_ text: String) -> String {
+        var out = ""
+        for character in text {
+            if out.utf8.count + String(character).utf8.count > 4000 { break }
+            out.append(character)
+        }
+        return out
+    }
+
+    /// Скриншот для улик: без метаданных, до 1280 точек и до 380 КБ —
+    /// пять штук помещаются в одну жалобу.
+    static func evidenceJPEG(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let longest = max(image.size.width, image.size.height)
+        let scale = longest > 1280 ? 1280 / longest : 1
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let redrawn = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        for quality in [0.7, 0.55, 0.4, 0.3] {
+            if let jpeg = redrawn.jpegData(compressionQuality: quality), jpeg.count <= 380 * 1024 {
+                return jpeg
+            }
+        }
+        return nil
     }
 }

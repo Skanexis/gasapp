@@ -797,6 +797,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/sealed/access/:device_id", put(publish_sealed_access))
         .route("/v1/sealed/certificate/:device_id", get(issue_certificate))
         .route("/v1/sealed/report/:device_id", post(report_sealed_sender))
+        .route("/v1/sealed/report-key", get(report_evidence_key))
         // Уведомления о новых конвертах.
         //
         // По сокету уходит только слово «envelope» — сам конверт
@@ -1883,13 +1884,31 @@ pub struct SealedSendRequest {
 pub struct SealedReportRequest {
     /// Сертификат отправителя, извлечённый получателем из конверта, hex.
     pub certificate: String,
+    /// Причина, 1–6 (миграция 0030).
+    #[serde(default)]
+    pub reason: Option<u8>,
+    /// Улики, запечатанные ключом админ-центра, hex.
+    #[serde(default)]
+    pub evidence: Option<String>,
 }
+
+/// Ключ админ-центра для улик к жалобам.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportKeyResponse {
+    /// X25519, hex; `None` — улики не принимаются.
+    pub key: Option<String>,
+}
+
+/// Предел запечатанных улик (`gasapp_protocol::report_evidence`).
+const MAX_REPORT_EVIDENCE_BYTES: usize = 1_900 * 1024;
 
 /// Ответ на жалобу.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SealedReportResponse {
     /// Учтена ли жалоба (повторная от того же жалобщика — нет).
     pub recorded: bool,
+    /// Приняты ли улики.
+    pub evidence_stored: bool,
     /// Сколько разных людей пожаловались на этот аккаунт.
     pub total_reporters: i64,
 }
@@ -2131,20 +2150,67 @@ async fn report_sealed_sender(
         sha2::Sha256::digest(&raw).into()
     };
 
+    let reason = match request.reason {
+        None => None,
+        Some(code @ 1..=6) => Some(i16::from(code)),
+        Some(_) => return Err(ApiError::BadRequest),
+    };
+
+    // 🔐 Улики сервер прочитать не может: это шифр для админ-центра.
+    // Проверяется только форма — заголовок и размер, — и то, что ключ
+    // админ-центра вообще заведён (без него вскрыть их некому).
+    let evidence = match request.evidence.as_deref() {
+        None => None,
+        Some(encoded) => {
+            if encoded.len() > MAX_REPORT_EVIDENCE_BYTES.saturating_mul(2) {
+                return Err(ApiError::BadRequest);
+            }
+            let sealed = decode_hex(encoded)?;
+            if sealed.len() < 64 || !sealed.starts_with(b"GRE1") {
+                return Err(ApiError::BadRequest);
+            }
+            Some(sealed)
+        }
+    };
+
     let recorded = repo::record_sealed_sender_report(
         &state.pool,
         reported_account,
         reported_device,
         device_id,
         &certificate_hash,
+        reason,
     )
     .await?;
+
+    let evidence_stored = match evidence {
+        Some(sealed) if repo::report_evidence_key(&state.pool).await?.is_some() => {
+            repo::store_report_evidence(&state.pool, reported_account, device_id, &sealed).await?;
+            true
+        }
+        _ => false,
+    };
 
     let total_reporters = repo::sealed_sender_report_count(&state.pool, reported_account).await?;
 
     Ok(Json(SealedReportResponse {
         recorded,
+        evidence_stored,
         total_reporters,
+    }))
+}
+
+/// Открытый ключ админ-центра для улик к жалобам.
+///
+/// Без аутентификации: ключ открытый, а спрашивать его будет только
+/// тот, кто жалуется, — подпись связала бы запрос с устройством.
+async fn report_evidence_key(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ReportKeyResponse>, ApiError> {
+    let key = repo::report_evidence_key(&state.pool).await?;
+
+    Ok(Json(ReportKeyResponse {
+        key: key.map(hex::encode),
     }))
 }
 

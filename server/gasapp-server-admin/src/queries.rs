@@ -376,6 +376,12 @@ pub async fn dismiss_reports(pool: &PgPool, account_id: Uuid) -> Result<i64, sql
         .execute(&mut *tx)
         .await?;
 
+    // Улики уходят вместе с жалобами: дело закрыто — хранить их незачем.
+    sqlx::query("DELETE FROM report_evidence WHERE reported_account = $1")
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?;
+
     if reporters > 0 {
         sqlx::query(
             "INSERT INTO admin_actions (action, reason, reporters)

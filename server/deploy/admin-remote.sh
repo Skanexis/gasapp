@@ -39,6 +39,18 @@ if ! sudo test -s "$token_file" || [[ "$change" == [yYдД]* ]]; then
     ok "токен записан (на сервере — только его хеш)"
 fi
 
+# 🔐 Ключ улик к жалобам: телефоны шифруют им сообщения и скриншоты,
+# которые жалобщик решил показать. Создаётся один раз и только здесь;
+# в базу уходит лишь открытый ключ. Потеря ключа — потеря улик за
+# последние 30 дней, не больше: копии в Bitwarden не нужно.
+evidence_file=/etc/gasapp/credentials/evidence_key
+if ! sudo test -s "$evidence_file"; then
+    openssl rand -hex 32 | sudo install -m 600 /dev/stdin "$evidence_file"
+    ok "ключ улик к жалобам создан"
+else
+    ok "ключ улик к жалобам на месте"
+fi
+
 sudo systemctl daemon-reload
 sudo systemctl enable --quiet gasapp-admin
 sudo systemctl restart gasapp-admin

@@ -2265,3 +2265,101 @@ async fn uploads_wait_for_a_free_slot() {
 
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 }
+
+/// Жалоба с причиной и уликами (миграция 0030).
+///
+/// 🔐 Улики — шифр для админ-центра: сервер проверяет только форму и
+/// то, что ключ админ-центра заведён; без ключа улики не хранятся, а
+/// жалоба всё равно учитывается.
+#[tokio::test]
+async fn a_report_carries_a_reason_and_sealed_evidence() {
+    let state = require_state!();
+    let (spammer, spammer_key) = register_signing_device(&state, &unique_name("rep_a"), 41).await;
+    let (victim, victim_key) = register_signing_device(&state, &unique_name("rep_b"), 42).await;
+
+    let (status, issued) = call_signed_json(
+        &state,
+        &spammer_key,
+        "GET",
+        &format!("/v1/sealed/certificate/{spammer}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let certificate = issued["certificate"].as_str().unwrap().to_owned();
+    let report = format!("/v1/sealed/report/{victim}");
+    let mut sealed = b"GRE1".to_vec();
+    sealed.extend_from_slice(&[7u8; 80]);
+    let evidence = hex::encode(&sealed);
+
+    // Причина вне 1–6 и улики не того формата — отказ.
+    for body in [
+        serde_json::json!({ "certificate": certificate, "reason": 9 }),
+        serde_json::json!({ "certificate": certificate, "evidence": hex::encode([1u8; 80]) }),
+    ] {
+        let (status, _) = call_signed_json(&state, &victim_key, "POST", &report, Some(body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    sqlx::query("UPDATE admin_state SET evidence_key = NULL WHERE id = 1")
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let (status, body) = call_signed_json(
+        &state,
+        &victim_key,
+        "POST",
+        &report,
+        Some(serde_json::json!({ "certificate": certificate, "reason": 1, "evidence": evidence })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["recorded"], true);
+    assert_eq!(body["evidence_stored"], false, "без ключа админ-центра улики не хранятся");
+
+    // Админ-центр завёл ключ — узел отдаёт его и принимает улики.
+    sqlx::query("UPDATE admin_state SET evidence_key = $1 WHERE id = 1")
+        .bind(vec![9u8; 32])
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let (status, key) = call(&state, "GET", "/v1/sealed/report-key", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(key["key"], hex::encode([9u8; 32]));
+
+    let (status, body) = call_signed_json(
+        &state,
+        &victim_key,
+        "POST",
+        &report,
+        Some(serde_json::json!({ "certificate": certificate, "reason": 4, "evidence": evidence })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["recorded"], false, "повторная жалоба не считается второй");
+    assert_eq!(body["evidence_stored"], true);
+
+    let account: Uuid = sqlx::query_scalar("SELECT account_id FROM devices WHERE device_id = $1")
+        .bind(spammer)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    let stored: Vec<u8> = sqlx::query_scalar("SELECT sealed FROM report_evidence WHERE reported_account = $1")
+        .bind(account)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, sealed);
+    let reason: Option<i16> =
+        sqlx::query_scalar("SELECT reason FROM sealed_sender_reports WHERE reported_account = $1")
+            .bind(account)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(reason, Some(1), "причина первой жалобы не переписывается");
+
+    sqlx::query("UPDATE admin_state SET evidence_key = NULL WHERE id = 1")
+        .execute(&state.pool)
+        .await
+        .unwrap();
+}
