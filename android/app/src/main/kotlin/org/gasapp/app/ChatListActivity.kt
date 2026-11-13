@@ -265,7 +265,9 @@ class ChatListActivity : AppCompatActivity() {
         // Сначала — то, что уже лежит на устройстве: это миллисекунды.
         // Очередь с сервера забирается следом и список не задерживает.
         showLocal()
-        syncChats()
+        // Сервер не спрашивается, если сокет и так слушает с последнего
+        // приёма: переход между экранами — не повод для запроса.
+        if (!NotificationHub.caughtUp()) syncChats()
 
         NotificationHub.subscribe(onEnvelope)
     }
@@ -319,9 +321,11 @@ class ChatListActivity : AppCompatActivity() {
                 do {
                     syncAgain = false
 
-                    withContext(Dispatchers.IO) {
-                        runCatching { Core.messenger().receiveMessages(device, System.currentTimeMillis()) }
+                    val startedAt = android.os.SystemClock.elapsedRealtime()
+                    val fetched = withContext(Dispatchers.IO) {
+                        runCatching { Core.messenger().receiveMessages(device, System.currentTimeMillis()) }.isSuccess
                     }
+                    if (fetched) NotificationHub.fetched(startedAt)
 
                     // Перечитывается всегда, а не только при новых
                     // сообщениях: приём меняет и статусы, и запросы.

@@ -12,6 +12,8 @@ struct ChannelScreen: View {
     @State private var channel: FfiChannel?
     @State private var posts: [FfiChannelPost] = []
     @State private var draft = ""
+    /// Идущий поиск: новый отменяет прежний.
+    @State private var searchTask: Task<Void, Never>?
     @State private var sending = false
     @State private var showInfo = false
     @State private var showManage = false
@@ -197,10 +199,19 @@ struct ChannelScreen: View {
 
     private func search(_ text: String) {
         let query = text.trimmingCharacters(in: .whitespaces)
+        searchTask?.cancel()
         guard !query.isEmpty, let messenger = try? CoreStore.shared.current() else { found = nil; return }
         let id = channelId
-        Task {
-            found = (try? await Background.run { try messenger.searchChannelPosts(channelId: id, query: query, limit: 100) }) ?? []
+        // Поиск — после паузы в наборе и один за раз. Прежде каждая буква
+        // запускала свой проход по всем записям канала: они шли друг за
+        // другом в ядре, задерживали остальные чтения экрана, а ответы
+        // приходили не по порядку.
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            let hits = (try? await Background.run { try messenger.searchChannelPosts(channelId: id, query: query, limit: 100) }) ?? []
+            guard !Task.isCancelled else { return }
+            found = hits
         }
     }
 

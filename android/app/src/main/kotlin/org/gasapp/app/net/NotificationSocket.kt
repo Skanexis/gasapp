@@ -82,6 +82,15 @@ class NotificationSocket(
     private var socket: Socket? = null
     private var worker: Thread? = null
 
+    /**
+     * С какого момента (`SystemClock.elapsedRealtime`) сокет подключён
+     * и слушает; `0` — не подключён. По нему [NotificationHub] решает,
+     * можно ли не спрашивать сервер лишний раз.
+     */
+    @Volatile
+    var connectedSince: Long = 0L
+        private set
+
     /** Открывает соединение в фоновом потоке. */
     fun connect() {
         closedByUs = false
@@ -91,6 +100,7 @@ class NotificationSocket(
 
             while (!closedByUs) {
                 val clean = runCatching { runSession() }.isSuccess
+                connectedSince = 0L
 
                 if (closedByUs) {
                     break
@@ -122,6 +132,7 @@ class NotificationSocket(
      */
     fun close() {
         closedByUs = true
+        connectedSince = 0L
         runCatching { socket?.close() }
         socket = null
         worker?.interrupt()
@@ -182,6 +193,7 @@ class NotificationSocket(
         val input = connection.getInputStream()
 
         handshake(output, input, uri.host, port)
+        connectedSince = android.os.SystemClock.elapsedRealtime()
         readFrames(input, output)
     }
 

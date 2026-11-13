@@ -426,7 +426,9 @@ class ChatActivity : AppCompatActivity() {
         resolvePeerUsername()
         refreshSendMode()
         reload()
-        fetchIncoming()
+        // Сервер не спрашивается, если сокет и так слушает с последнего
+        // приёма (см. NotificationHub.caughtUp).
+        if (!NotificationHub.caughtUp()) fetchIncoming()
 
         // Уведомления вместо опроса: сообщение появляется, как только
         // сервер поставил конверт в очередь, а не когда пользователь
@@ -891,12 +893,15 @@ class ChatActivity : AppCompatActivity() {
                 do {
                     fetchAgain = false
 
-                    val received = withContext(Dispatchers.IO) {
+                    val startedAt = android.os.SystemClock.elapsedRealtime()
+                    val outcome = withContext(Dispatchers.IO) {
                         runCatching {
                             Core.messenger()
                                 .receiveMessages(device, System.currentTimeMillis())
-                        }.getOrDefault(0u)
+                        }
                     }
+                    if (outcome.isSuccess) NotificationHub.fetched(startedAt)
+                    val received = outcome.getOrDefault(0u)
 
                     // По уведомлению сервера экран перечитывается всегда: пришедшее
                     // могло быть не сообщением, а кнопками бота под уже показанным

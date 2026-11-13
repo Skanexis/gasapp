@@ -44,6 +44,41 @@ object NotificationHub {
 
     private val closeTask = Runnable { closeNow() }
 
+    /** Когда начался последний удавшийся приём очереди (`elapsedRealtime`). */
+    private var fetchedAt = 0L
+
+    /** Когда уведомление пришло, а слушать было некому; `0` — не было. */
+    private var missedAt = 0L
+
+    /**
+     * Можно ли не забирать очередь при показе экрана.
+     *
+     * Каждый экран при показе спрашивал сервер: открыл чат, вернулся,
+     * открыл другой — три подписанных запроса за несколько секунд, и
+     * все три почти всегда пустые. Если сокет слушает дольше, чем
+     * прошло с последнего приёма, и ни одно уведомление не потеряно,
+     * нового на сервере нет: о нём сказал бы сокет.
+     *
+     * Только в пределах [FRESH_MS]: соединение через Tor умирает и
+     * молча, а запрос при показе экрана — страховка от этого.
+     */
+    fun caughtUp(): Boolean {
+        val since = socket?.connectedSince ?: 0L
+        val now = android.os.SystemClock.elapsedRealtime()
+
+        // Приём должен начаться после подключения сокета и после
+        // последнего потерянного уведомления: только тогда он их покрыл.
+        return since != 0L && fetchedAt >= since && fetchedAt > missedAt && now - fetchedAt < FRESH_MS
+    }
+
+    /** Очередь забрана; [startedAt] — когда запрос начался (`elapsedRealtime`). */
+    fun fetched(startedAt: Long) {
+        fetchedAt = startedAt
+    }
+
+    /** Сколько последнему приёму верят без нового запроса. */
+    private const val FRESH_MS = 30_000L
+
     /**
      * Подписывает экран на уведомления о новых конвертах.
      *
@@ -81,6 +116,8 @@ object NotificationHub {
     }
 
     private fun dispatch() {
+        if (listeners.isEmpty()) missedAt = android.os.SystemClock.elapsedRealtime()
+
         // Копия: подписчик вправе отписаться из своего же вызова.
         for (listener in listeners.toList()) listener()
     }
