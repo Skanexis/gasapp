@@ -661,7 +661,16 @@ const STYLE: &str = include_str!("style.css");
 
 fn layout(title: &str, csrf: &str, body: &str) -> String {
     let groups: [(&str, &[(&str, &str, &str)]); 3] = [
-        ("Monitor", &[("Overview", "/", "layout-dashboard"), ("Health", "/health", "heart-rate-monitor")]),
+        (
+            "Monitor",
+            &[
+                ("Overview", "/", "layout-dashboard"),
+                ("Health", "/health", "heart-rate-monitor"),
+                // Beszel (server/deploy/beszel.sh): тем же туннелем, что и
+                // админ-центр, — admin.sh пробрасывает 8090.
+                ("Servers", "http://127.0.0.1:8090/", "server"),
+            ],
+        ),
         (
             "Moderation",
             &[
@@ -689,10 +698,17 @@ fn layout(title: &str, csrf: &str, body: &str) -> String {
                 ("", "")
             };
             let shown = if *label == "Account" { "Find account" } else { label };
+            // Внешняя страница (Beszel) — в новой вкладке, без Referer.
+            let (external, arrow) = if href.starts_with("http") {
+                (" target=\"_blank\" rel=\"noopener noreferrer\"", icon("external-link"))
+            } else {
+                ("", String::new())
+            };
             let _ = write!(
                 nav,
-                "<li class=\"nav-item{active}\"><a class=\"nav-link\" href=\"{href}\"{current}>\
-                 <span class=\"nav-link-icon\">{}</span><span class=\"nav-link-title\">{shown}</span></a></li>",
+                "<li class=\"nav-item{active}\"><a class=\"nav-link\" href=\"{href}\"{current}{external}>\
+                 <span class=\"nav-link-icon\">{}</span><span class=\"nav-link-title\">{shown}</span>\
+                 <span class=\"ms-auto text-secondary\">{arrow}</span></a></li>",
                 icon(glyph)
             );
         }

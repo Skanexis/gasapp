@@ -86,9 +86,12 @@ if [[ "$mode" == install ]]; then
     # Всегда свежая сборка из последнего коммита: прежде бралась старая
     # программа из ~/gasapp, и новое оформление не доезжало до базы.
     build_root="${REPO:-$ROOT}"
-    if [[ -n "${REPO:-}" && -d "$REPO/.git" ]]; then
+    if [[ -n "${REPO:-}" && -d "$REPO" && "$REPO" != "$ROOT" ]]; then
+        # Так же, как велит инструкция (шаг 4): копия Ubuntu обновляется
+        # из папки Windows, а не через git — её история с Windows не
+        # обязана совпадать, и git pull спотыкался.
         echo "  Обновляю копию проекта в $REPO…"
-        git -C "$REPO" pull --ff-only --quiet || die "не удалось обновить $REPO (git pull) — есть свои правки?"
+        command rsync -rlt --exclude=.git --exclude=server/target             --exclude=crates/target --exclude=fuzz/target --exclude=android/app/build             --exclude=.gradle --exclude=node_modules --exclude=server/deploy-bundle             "$ROOT/" "$REPO/" || die "не удалось обновить $REPO"
     fi
     echo "  Собираю админ-центр (первый раз 5–15 минут, потом быстрее)…"
     (cd "$build_root/server" && cargo build --release --locked -j 2 -p gasapp-server-admin) ||
@@ -140,7 +143,17 @@ while ss -Hlnt "sport = :$local_port" 2> /dev/null | grep -q .; do local_port=$(
 # сразу возвращалась, скрипт считал туннель закрытым и выходил — браузер
 # открывался и терял связь. ServerAliveInterval — чтобы обрыв сети не
 # оставлял «висящий» туннель.
-command ssh -F "$SSHCFG" -o ControlMaster=no -o ControlPath=none     -o ExitOnForwardFailure=yes -o ServerAliveInterval=30     -N -L "127.0.0.1:${local_port}:127.0.0.1:${REMOTE_PORT}" "$HOST" &
+# Мониторинг Beszel (beszel.sh) — тем же туннелем, если он стоит.
+forwards=(-L "127.0.0.1:${local_port}:127.0.0.1:${REMOTE_PORT}")
+beszel=""
+if [[ "$(ssh "$HOST" 'systemctl is-active beszel-hub' 2> /dev/null)" == active ]] &&
+    ! ss -Hlnt 'sport = :8090' 2> /dev/null | grep -q .; then
+    forwards+=(-L "127.0.0.1:8090:127.0.0.1:8090")
+    beszel="http://127.0.0.1:8090"
+fi
+command ssh -F "$SSHCFG" -o ControlMaster=no -o ControlPath=none \
+    -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+    -N "${forwards[@]}" "$HOST" &
 TUNNEL_PID=$!
 
 url="http://127.0.0.1:${local_port}/login"
@@ -163,6 +176,7 @@ cat << EOF
 ────────────────────────────────────────────────────────────────────
  Браузер открыт: $url
  Токен — Bitwarden, запись «GasApp: токен админ-центра».
+ Мониторинг серверов (Beszel): ${beszel:-не установлен — bash $DEPLOY/beszel.sh}
  Пять неверных токенов подряд закрывают вход на 10 минут.
 
  Закончили — Ctrl+C здесь: туннель закроется, панель станет
