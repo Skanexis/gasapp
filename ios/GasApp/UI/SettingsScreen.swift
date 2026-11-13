@@ -188,13 +188,15 @@ struct SettingsScreen: View {
                                 "La cancellazione ferma i tentativi, ma un bambino che gioca con il telefono potrebbe cancellare tutto."))
                 }
 
-                Section {
-                    NavigationLink { BotsScreen() } label: {
-                        SettingRow(icon: "cpu.fill", color: .mint, title: L10n.t("Мои боты", "My bots", "I miei bot"),
-                                   value: premium ? nil : L10n.t("Премиум", "Premium", "Premium"))
+                // Боты — только у премиума: без него сервер их не создаст.
+                if premium {
+                    Section {
+                        NavigationLink { BotsScreen() } label: {
+                            SettingRow(icon: "cpu.fill", color: .mint, title: L10n.t("Мои боты", "My bots", "I miei bot"))
+                        }
+                    } header: {
+                        Text(L10n.t("Боты", "Bots", "Bot"))
                     }
-                } header: {
-                    Text(L10n.t("Боты", "Bots", "Bot"))
                 }
 
                 Section {

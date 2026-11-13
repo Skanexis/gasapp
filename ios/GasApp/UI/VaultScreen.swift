@@ -43,6 +43,9 @@ struct VaultScreen: View {
         }
         .gasScreen()
         .navigationTitle(L10n.t("Хранилище", "Vault", "Cassaforte"))
+        // Заголовок — в строке навигации, а не огромным над экраном:
+        // клавиатура PIN помещается целиком, без прокрутки.
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if open {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -74,11 +77,11 @@ struct VaultScreen: View {
 
     private var sealedView: some View {
         ScrollView {
-            VStack(spacing: 22) {
+            VStack(spacing: 14) {
                 Image(systemName: "lock.doc.fill")
-                    .font(.system(size: 44, weight: .bold))
+                    .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(GasAppColor.accent)
-                    .padding(.top, 24)
+                    .padding(.top, 4)
                 Text(count == 0 ? L10n.t("Хранилище пусто", "The vault is empty", "La cassaforte è vuota")
                                 : L10n.t("Файлов в хранилище: \(count)", "Files in the vault: \(count)", "File nella cassaforte: \(count)"))
                     .font(GasFont.display(20))
@@ -95,8 +98,9 @@ struct VaultScreen: View {
                     ProgressView().tint(GasAppColor.accent).frame(height: 40)
                 }
                 PinPad(digits: $digits, isEnabled: !working) { unlock() }
+                    .padding(.top, 8)
             }
-            .padding(24)
+            .padding(.horizontal, 24).padding(.vertical, 12)
         }
     }
 

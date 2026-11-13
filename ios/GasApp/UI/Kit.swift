@@ -20,11 +20,11 @@ struct GoldButton: View {
                     ProgressView().tint(GasAppColor.accentOn)
                 } else {
                     Text(title)
-                        .font(GasFont.sign(17))
+                        .font(GasFont.sign(16))
                         .foregroundStyle(GasAppColor.accentOn)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 54)
+            .frame(maxWidth: .infinity, minHeight: 50)
         }
         .buttonStyle(GoldButtonStyle())
         .disabled(!isEnabled || isLoading)
@@ -36,21 +36,23 @@ struct GoldButton: View {
 struct GoldButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
+        // Сдержаннее прежнего: кромка 3 вместо 4, обводка тоньше, угол 14
+        // (DESIGN.md: кнопка 14) — та же «объёмная» кнопка, но спокойнее.
         return configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(pressed ? GasAppColor.accentPressed : GasAppColor.accent)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(GasAppColor.accentEdgeDeep, lineWidth: 2)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(GasAppColor.accentEdgeDeep.opacity(0.6), lineWidth: 1)
             )
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(GasAppColor.accentEdge)
-                    .offset(y: pressed ? 1 : 4)
+                    .offset(y: pressed ? 1 : 3)
             )
-            .offset(y: pressed ? 3 : 0)
+            .offset(y: pressed ? 2 : 0)
             .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }

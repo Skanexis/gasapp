@@ -18,6 +18,8 @@ struct ChannelsScreen: View {
     @State private var showCreate = false
     @State private var showBots = false
     @State private var showPublic = false
+    /// Премиум — по сохранённому ответу сервера: без него ботов не показываем.
+    @State private var premium = false
     @State private var opened: OpenedChannel?
 
     struct OpenedChannel: Hashable { let id: String; let title: String }
@@ -83,7 +85,9 @@ struct ChannelsScreen: View {
                         // в iOS часто не срабатывает.
                         Button(L10n.t("Найти открытый", "Find public", "Trova pubblici")) { showPublic = true }
                         Button(L10n.t("Создать канал", "Create channel", "Crea canale")) { createOrExplain { showCreate = true } }
-                        Button(L10n.t("Мои боты", "My bots", "I miei bot")) { createOrExplain { showBots = true } }
+                        if premium {
+                            Button(L10n.t("Мои боты", "My bots", "I miei bot")) { showBots = true }
+                        }
                     } label: { Image(systemName: "plus") }
                     .accessibilityLabel(L10n.t("Каналы: добавить", "Add a channel", "Aggiungi un canale"))
                 }
@@ -129,6 +133,7 @@ struct ChannelsScreen: View {
 
     private func reload() async {
         guard let messenger = try? CoreStore.shared.current() else { loaded = true; return }
+        premium = (try? await Background.run { try messenger.premiumCached() }) ?? false
         channels = (try? await Background.run { try messenger.channels() }) ?? channels
         pending = (try? await Background.run { try messenger.pendingChannelJoins() }) ?? []
         loaded = true
