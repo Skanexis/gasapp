@@ -30,6 +30,8 @@
 //! или onion-сервис. Вход — токеном оператора (`auth`).
 
 pub mod auth;
+mod icons;
+pub mod insights;
 pub mod push;
 pub mod queries;
 
@@ -67,7 +69,11 @@ pub fn router(state: Arc<AdminState>) -> Router {
     let protected = Router::new()
         .route("/", get(summary_page))
         .route("/reports", get(reports_page))
+        .route("/accounts", get(accounts_page))
+        .route("/channels", get(channels_page))
         .route("/account", get(account_page))
+        .route("/journal", get(journal_page))
+        .route("/health", get(health_page))
         .route("/transparency", get(transparency_page))
         .route("/accounts/:id/delete", post(delete_account))
         .route("/accounts/:id/dismiss", post(dismiss_reports))
@@ -82,6 +88,7 @@ pub fn router(state: Arc<AdminState>) -> Router {
 
     Router::new()
         .route("/login", get(login_page).post(login_submit))
+        .route("/assets/tabler.min.css", get(tabler_css))
         .merge(protected)
         .layer(middleware::from_fn(same_origin))
         .layer(middleware::from_fn(security_headers))
@@ -147,6 +154,29 @@ pub fn host_allowed(host: &str) -> bool {
 
 /// 🔐 Заголовки на каждый ответ: без скриптов, без встраивания, без
 /// кеша и без утечки адреса в Referer.
+/// Tabler 1.7.1 (MIT) — в самой программе: админ-центр не ходит в
+/// интернет и не грузит чужого (assets/README.md).
+const TABLER_CSS: &str = include_str!("../assets/tabler.min.css");
+
+async fn tabler_css() -> Response {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        TABLER_CSS,
+    )
+        .into_response()
+}
+
+/// Иконка Tabler Icons (MIT) — встроенный SVG, без загрузки.
+#[must_use]
+pub fn icon(name: &str) -> String {
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"icon\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" \
+         fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
+         aria-hidden=\"true\">{}</svg>",
+        icons::inner(name)
+    )
+}
+
 async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
@@ -154,7 +184,7 @@ async fn security_headers(request: Request, next: Next) -> Response {
     headers.insert(
         CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(
-            "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; \
+            "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src data:; form-action 'self'; \
              frame-ancestors 'none'; base-uri 'none'",
         ),
     );
@@ -254,8 +284,87 @@ async fn summary_page(State(state): State<Arc<AdminState>>, headers: HeaderMap) 
         return Redirect::to("/login").into_response();
     };
 
-    match queries::summary(&state.pool).await {
-        Ok(summary) => Html(layout("Overview", &csrf, &summary_html(&summary))).into_response(),
+    match insights::dashboard(&state.pool).await {
+        Ok(dashboard) => {
+            Html(layout("Overview", &csrf, &insights::dashboard_html(&dashboard, bytes))).into_response()
+        }
+        Err(error) => database_error(&error),
+    }
+}
+
+#[derive(Deserialize)]
+struct ListQuery {
+    view: Option<String>,
+    q: Option<String>,
+    page: Option<i64>,
+}
+
+async fn accounts_page(
+    State(state): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Query(list): Query<ListQuery>,
+) -> Response {
+    let Some((_, csrf)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let view = insights::AccountView::parse(list.view.as_deref());
+    let query = list.q.unwrap_or_default();
+    let page = list.page.unwrap_or(0).clamp(0, 10_000);
+
+    match insights::accounts(&state.pool, view, &query, page).await {
+        Ok((rows, more)) => Html(layout(
+            "Accounts",
+            &csrf,
+            &insights::accounts_html(&rows, view, &query, page, more, &csrf),
+        ))
+        .into_response(),
+        Err(error) => database_error(&error),
+    }
+}
+
+async fn channels_page(
+    State(state): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Query(list): Query<ListQuery>,
+) -> Response {
+    let Some((_, csrf)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let view = insights::ChannelView::parse(list.view.as_deref());
+    let query = list.q.unwrap_or_default();
+    let page = list.page.unwrap_or(0).clamp(0, 10_000);
+
+    match insights::channels(&state.pool, view, &query, page).await {
+        Ok((rows, more)) => Html(layout(
+            "Channels",
+            &csrf,
+            &insights::channels_html(&rows, view, &query, page, more),
+        ))
+        .into_response(),
+        Err(error) => database_error(&error),
+    }
+}
+
+fn reason_label(code: &str) -> String {
+    Reason::parse(code).map_or_else(|| code.to_owned(), |reason| reason.label().to_owned())
+}
+
+async fn journal_page(State(state): State<Arc<AdminState>>, headers: HeaderMap) -> Response {
+    let Some((_, csrf)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    match insights::journal(&state.pool).await {
+        Ok(rows) => Html(layout("Journal", &csrf, &insights::journal_html(&rows, reason_label))).into_response(),
+        Err(error) => database_error(&error),
+    }
+}
+
+async fn health_page(State(state): State<Arc<AdminState>>, headers: HeaderMap) -> Response {
+    let Some((_, csrf)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    match insights::health(&state.pool).await {
+        Ok(health) => Html(layout("Health", &csrf, &insights::health_html(&health, bytes))).into_response(),
         Err(error) => database_error(&error),
     }
 }
@@ -459,6 +568,8 @@ struct PremiumForm {
     username: String,
     /// `on` — выдать, иначе снять.
     premium: String,
+    /// Откуда пришли: вид списка аккаунтов — вернуться туда же.
+    back: Option<String>,
 }
 
 /// Выдаёт или снимает премиум — право создавать каналы.
@@ -490,7 +601,11 @@ async fn set_premium(
                 .chars()
                 .all(|symbol| symbol.is_ascii_alphanumeric() || symbol == '_');
 
-            if safe {
+            if let Some(back) = form.back.as_deref() {
+                // Вид — только из известного набора: в адрес без кодирования.
+                let view = insights::AccountView::parse(Some(back));
+                Redirect::to(&format!("/accounts?view={}", view.code())).into_response()
+            } else if safe {
                 Redirect::to(&format!("/account?username={name}")).into_response()
             } else {
                 Redirect::to("/account").into_response()
@@ -545,38 +660,61 @@ pub fn escape(text: &str) -> String {
 const STYLE: &str = include_str!("style.css");
 
 fn layout(title: &str, csrf: &str, body: &str) -> String {
+    let groups: [(&str, &[(&str, &str, &str)]); 3] = [
+        ("Monitor", &[("Overview", "/", "layout-dashboard"), ("Health", "/health", "heart-rate-monitor")]),
+        (
+            "Moderation",
+            &[
+                ("Reports", "/reports", "flag"),
+                ("Journal", "/journal", "list-details"),
+                ("Transparency", "/transparency", "report-analytics"),
+            ],
+        ),
+        (
+            "Directory",
+            &[
+                ("Accounts", "/accounts", "users"),
+                ("Channels", "/channels", "broadcast"),
+                ("Account", "/account", "user-search"),
+            ],
+        ),
+    ];
     let mut nav = String::new();
-    for (label, href, number) in [
-        ("Overview", "/", "01"),
-        ("Reports", "/reports", "02"),
-        ("Account", "/account", "03"),
-        ("Transparency", "/transparency", "04"),
-    ] {
-        let current = if label == title {
-            " aria-current=\"page\""
-        } else {
-            ""
-        };
-        let _ = write!(
-            nav,
-            "<a href=\"{href}\"{current}><span class=\"nav-number\">{number}</span>{label}</a>"
-        );
+    for (group, items) in groups {
+        let _ = write!(nav, "<li class=\"nav-group\">{group}</li>");
+        for (label, href, glyph) in items {
+            let (active, current) = if *label == title {
+                (" active", " aria-current=\"page\"")
+            } else {
+                ("", "")
+            };
+            let shown = if *label == "Account" { "Find account" } else { label };
+            let _ = write!(
+                nav,
+                "<li class=\"nav-item{active}\"><a class=\"nav-link\" href=\"{href}\"{current}>\
+                 <span class=\"nav-link-icon\">{}</span><span class=\"nav-link-title\">{shown}</span></a></li>",
+                icon(glyph)
+            );
+        }
     }
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+        "<!doctype html><html lang=\"en\" data-bs-theme=\"dark\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-         <meta name=\"theme-color\" content=\"#0c1027\">\
-         <title>{title} · GasApp Control</title><style>{STYLE}</style></head><body>\
+         <meta name=\"theme-color\" content=\"#0b0f2e\">\
+         <title>{title} · GasApp Control</title>\
+         <link rel=\"stylesheet\" href=\"/assets/tabler.min.css\"><style>{STYLE}</style></head><body>\
          <a class=\"skip-link\" href=\"#content\">Skip to content</a>\
-         <div class=\"app-shell\"><header class=\"sidebar\">\
-         <a class=\"brand\" href=\"/\"><span class=\"brand-mark\">✦</span><span>GasApp<small>CONTROL CENTER</small></span></a>\
-         <p class=\"sidebar-label\">WORKSPACE</p><nav aria-label=\"Main navigation\">{nav}</nav>\
-         <div class=\"sidebar-foot\"><span class=\"private-pill\">● Private operator access</span>\
-         <form method=\"post\" action=\"/logout\"><input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-         <button class=\"sign-out\">Sign out →</button></form></div></header>\
-         <main id=\"content\" class=\"workspace\"><div class=\"page-head\"><div>\
-         <span class=\"eyebrow\">OPERATIONS / {title}</span><h1>{title}</h1></div>\
-         <span class=\"access-badge\">● OPERATOR SESSION</span></div>{body}</main></div></body></html>",
+         <div class=\"page\"><aside class=\"navbar navbar-vertical navbar-expand-lg\" data-bs-theme=\"dark\">\
+         <div class=\"container-fluid\"><div class=\"navbar-brand py-3\"><a class=\"brand\" href=\"/\">\
+         <span class=\"brand-mark\">GAS</span><span><b>GasApp</b><small>Control center</small></span></a></div>\
+         <div class=\"navbar-collapse\" id=\"sidebar-menu\"><ul class=\"navbar-nav pt-lg-2\">{nav}</ul>\
+         <div class=\"mt-auto px-3 py-3 border-top\"><span class=\"private-pill\">Private operator access</span>\
+         <form method=\"post\" action=\"/logout\" class=\"mt-2\"><input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
+         <button class=\"sign-out\">Sign out →</button></form></div></div></div></aside>\
+         <div class=\"page-wrapper\"><div class=\"page-header d-print-none\"><div class=\"container-xl\">\
+         <h2 class=\"page-title\">{title}</h2></div></div>\
+         <div class=\"page-body\"><main id=\"content\" class=\"container-xl workspace-legacy\">{body}</main></div></div></div>\
+         </body></html>",
         title = escape(title),
         csrf = escape(csrf),
     )
@@ -584,28 +722,25 @@ fn layout(title: &str, csrf: &str, body: &str) -> String {
 
 fn login_html(error: Option<&str>) -> String {
     let error = error
-        .map(|text| {
-            format!(
-                "<p class=\"flash error\" role=\"alert\">{}</p>",
-                escape(text)
-            )
-        })
+        .map(|text| format!("<div class=\"alert alert-danger\" role=\"alert\">{}</div>", escape(text)))
         .unwrap_or_default();
 
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+        "<!doctype html><html lang=\"en\" data-bs-theme=\"dark\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-         <meta name=\"theme-color\" content=\"#0c1027\">\
-         <title>Sign in · GasApp Control</title><style>{STYLE}</style></head><body><main class=\"login\">\
-         <section class=\"login-panel\"><div class=\"login-brand\"><span class=\"brand-mark\">✦</span>GasApp <span>CONTROL</span></div>\
-         <div class=\"eyebrow\">PRIVATE OPERATOR ACCESS</div>\
-         <h1>Welcome back.</h1><p>Sign in to review reports and manage your service.</p>{error}\
-         <form method=\"post\" action=\"/login\">\
-         <label for=\"token\">Operator token</label>\
-         <input id=\"token\" type=\"password\" name=\"token\" autocomplete=\"off\" required>\
-         <button>Sign in securely →</button></form>\
-         <p class=\"note\">Access this page through your SSH tunnel or private onion service.</p>\
-         </section></main></body></html>"
+         <meta name=\"theme-color\" content=\"#0b0f2e\">\
+         <title>Sign in · GasApp Control</title>\
+         <link rel=\"stylesheet\" href=\"/assets/tabler.min.css\"><style>{STYLE}</style></head><body>\
+         <main class=\"login\"><div class=\"login-panel\"><div class=\"text-center mb-4\"><span class=\"brand\" style=\"justify-content:center\">\
+         <span class=\"brand-mark\">GAS</span><span class=\"text-start\"><b>GasApp</b><small>Control center</small></span></span></div>\
+         <div class=\"card card-md\"><div class=\"card-body\"><h1 class=\"h2 text-center mb-2\">Welcome back</h1>\
+         <p class=\"text-secondary text-center mb-4\">Sign in to review reports and manage your service.</p>{error}\
+         <form method=\"post\" action=\"/login\"><label class=\"form-label\" for=\"token\">Operator token</label>\
+         <input class=\"form-control\" id=\"token\" type=\"password\" name=\"token\" autocomplete=\"off\" required>\
+         <button class=\"btn btn-primary w-100 mt-3\">{lock} Sign in securely</button></form></div>\
+         <div class=\"card-footer text-secondary small\">Access this page only through your SSH tunnel or private onion service.</div></div>\
+         </div></main></body></html>",
+        lock = icon("lock"),
     )
 }
 
@@ -624,55 +759,6 @@ fn bytes(size: i64) -> String {
     let fraction = tenths.checked_rem(10).unwrap_or(0);
 
     format!("{whole}.{fraction} {name}")
-}
-
-fn summary_html(summary: &queries::Summary) -> String {
-    let cards = [
-        ("Accounts", summary.accounts.to_string()),
-        ("Devices", summary.devices.to_string()),
-        ("Queued envelopes", summary.envelopes.to_string()),
-        ("Attachments", summary.attachments.to_string()),
-        ("Attachment storage", bytes(summary.attachments_bytes)),
-        ("Database size", bytes(summary.database_bytes)),
-        ("Reported accounts", summary.reported_accounts.to_string()),
-        (
-            "Key log epoch",
-            summary
-                .kt_epoch
-                .map_or_else(|| "—".to_owned(), |epoch| epoch.to_string()),
-        ),
-    ];
-
-    let queue_title = if summary.reported_accounts == 0 {
-        "No account reports waiting".to_owned()
-    } else if summary.reported_accounts == 1 {
-        "1 reported account to review".to_owned()
-    } else {
-        format!("{} reported accounts to review", summary.reported_accounts)
-    };
-    let mut html = format!(
-        "<section class=\"overview-showcase\"><div class=\"overview-copy\">\
-         <span class=\"eyebrow\">YOUR NEXT ACTION</span><h2>{queue_title}</h2>\
-         <p>Open the report queue to review account and channel cases. Channel reports are tracked separately.</p>\
-         <a class=\"action-link\" href=\"/reports\">Review reports <span aria-hidden=\"true\">↗</span></a>\
-         </div><div class=\"overview-actions\"><span>QUICK ACCESS</span>\
-         <a href=\"/account\">Find an account <span aria-hidden=\"true\">↗</span></a>\
-         <a href=\"/transparency\">View transparency <span aria-hidden=\"true\">↗</span></a>\
-         </div></section><div class=\"section-title\"><h2>Service snapshot</h2><span>LIVE DATABASE TOTALS</span></div><div class=\"grid\">"
-    );
-    for (label, value) in cards {
-        let _ = write!(
-            html,
-            "<div class=\"card\"><span>{}</span><b class=\"num\">{}</b></div>",
-            escape(label),
-            escape(&value)
-        );
-    }
-    html.push_str(
-        "</div><p class=\"note\">Operational totals only. The server does not retain readable conversations, email addresses, login history or a social graph, so this view cannot show them.</p>",
-    );
-
-    html
 }
 
 fn reason_options(selected: Option<Reason>) -> String {
@@ -1025,11 +1111,11 @@ mod tests {
     #[test]
     fn operator_pages_use_english_labels_and_page_navigation() {
         let login = login_html(None);
-        assert!(login.contains("<html lang=\"en\">"));
+        assert!(login.contains("<html lang=\"en\""));
         assert!(login.contains("Operator token"));
 
         let overview = layout("Overview", "test-csrf", "<p>Body</p>");
-        assert!(overview.contains("<html lang=\"en\">"));
+        assert!(overview.contains("<html lang=\"en\""));
         assert!(overview.contains("aria-current=\"page\""));
         assert!(overview.contains("Skip to content"));
         assert!(overview.contains("name=\"csrf\" value=\"test-csrf\""));
@@ -1038,11 +1124,15 @@ mod tests {
         assert!(reports.contains("No account reports"));
         let channels = channel_reports_html(&[], "test-csrf");
         assert!(channels.contains("No channel reports"));
-        let overview = summary_html(&queries::Summary {
-            reported_accounts: 3,
-            ..queries::Summary::default()
-        });
-        assert!(overview.contains("3 reported accounts to review"));
+        let overview = insights::dashboard_html(
+            &insights::Dashboard {
+                reported_accounts: 2,
+                reported_channels: 1,
+                ..insights::Dashboard::default()
+            },
+            bytes,
+        );
+        assert!(overview.contains("3 cases waiting for review"));
         assert!(overview.contains("href=\"/reports\""));
         for reason in Reason::FOR_DELETION {
             assert!(reason.label().is_ascii());
@@ -1090,7 +1180,7 @@ mod tests {
         };
         let pages = [
             login_html(Some("Invalid operator token.")),
-            summary_html(&queries::Summary::default()),
+            insights::dashboard_html(&insights::Dashboard::default(), bytes),
             reports_html(&[report], "csrf", Some("deleted")),
             channel_reports_html(&[channel], "csrf"),
             account_html(Some("alice"), Some(&account), "csrf"),
@@ -1108,6 +1198,52 @@ mod tests {
                     .all(|ch| !('\u{0400}'..='\u{04ff}').contains(&ch)),
                 "operator page contains untranslated Cyrillic"
             );
+        }
+    }
+
+    /// Предпросмотр страниц с примерными данными: `ADMIN_PREVIEW_DIR=путь
+    /// cargo test -p gasapp-server-admin preview` пишет HTML туда.
+    /// Без переменной — ничего не делает.
+    #[test]
+    fn preview_pages() {
+        let Ok(dir) = std::env::var("ADMIN_PREVIEW_DIR") else { return };
+        let dashboard = insights::Dashboard {
+            accounts: 1284, bots: 12, premium: 37, active_this_month: 642, active_last_month: 211,
+            dormant: 431, channels: 96, public_channels: 21, closed_channels: 14, posts: 5120,
+            subscriptions: 8803, reported_accounts: 2, reported_channels: 1, devices: 1284,
+            envelopes: 318, oldest_envelope_hours: Some(9), attachments: 702,
+            attachments_bytes: 3_400_000_000, database_bytes: 912_000_000, kt_epoch: Some(4410),
+            activity: vec![("2026-06".into(), 40), ("2026-07".into(), 88), ("2026-08".into(), 120),
+                           ("2026-09".into(), 203), ("2026-10".into(), 211), ("2026-11".into(), 642)],
+        };
+        let accounts = vec![
+            insights::AccountRow { account_id: Uuid::nil(), username: "anna_k".into(), active_month: "2026-11".into(),
+                premium: true, bot: false, devices: 1, channels: 3, reporters: 0 },
+            insights::AccountRow { account_id: Uuid::nil(), username: "news_bot".into(), active_month: "2026-11".into(),
+                premium: false, bot: true, devices: 1, channels: 0, reporters: 0 },
+            insights::AccountRow { account_id: Uuid::nil(), username: "spammer42".into(), active_month: "2026-10".into(),
+                premium: false, bot: false, devices: 1, channels: 0, reporters: 4 },
+        ];
+        let channels = vec![
+            insights::ChannelRow { channel_id: Uuid::nil(), handle: Some("gas_news".into()), owner: "anna_k".into(),
+                closed: false, created: "2026-10-12".into(), subscribers: 3120, posts: 214, reports: 0 },
+            insights::ChannelRow { channel_id: Uuid::nil(), handle: None, owner: "mark".into(),
+                closed: true, created: "2026-11-02".into(), subscribers: 48, posts: 12, reports: 1 },
+        ];
+        let health = insights::Health { version: "16.4".into(), uptime: "12 d 4 h".into(), connections: 9,
+            database_bytes: 912_000_000, envelopes: 318, oldest_envelope_hours: Some(9),
+            tables: vec![("attachments".into(), 3_400_000_000), ("envelopes".into(), 220_000_000)] };
+        let journal = vec![insights::JournalRow { hour: "2026-11-12 21:00".into(), action: "account_deleted".into(),
+            reason: "spam".into(), reporters: 4 }];
+        let pages = [
+            ("overview", layout("Overview", "c", &insights::dashboard_html(&dashboard, bytes))),
+            ("accounts", layout("Accounts", "c", &insights::accounts_html(&accounts, insights::AccountView::All, "", 0, true, "c"))),
+            ("channels", layout("Channels", "c", &insights::channels_html(&channels, insights::ChannelView::All, "", 0, false))),
+            ("health", layout("Health", "c", &insights::health_html(&health, bytes))),
+            ("journal", layout("Journal", "c", &insights::journal_html(&journal, reason_label))),
+        ];
+        for (name, html) in pages {
+            let _ = std::fs::write(format!("{dir}/{name}.html"), html);
         }
     }
 }
