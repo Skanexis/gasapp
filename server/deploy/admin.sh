@@ -83,17 +83,17 @@ ssh -o BatchMode=yes -o ConnectTimeout=20 "$HOST" true 2> /dev/null ||
 
 if [[ "$mode" == install ]]; then
     say "Программа админ-центра"
-    binary=""
-    for candidate in "${REPO:-}/server/target/release/gasapp-server-admin" "$ROOT/server/target/release/gasapp-server-admin"; do
-        [[ -x "$candidate" ]] && { binary="$candidate"; break; }
-    done
-    if [[ -z "$binary" ]]; then
-        build="${REPO:-$ROOT}/server"
-        echo "  Собранной программы нет — собираю в $build (5–15 минут)…"
-        (cd "$build" && cargo build --release --locked -j 2 -p gasapp-server-admin) ||
-            die "сборка не удалась — см. сообщения cargo выше"
-        binary="$build/target/release/gasapp-server-admin"
+    # Всегда свежая сборка из последнего коммита: прежде бралась старая
+    # программа из ~/gasapp, и новое оформление не доезжало до базы.
+    build_root="${REPO:-$ROOT}"
+    if [[ -n "${REPO:-}" && -d "$REPO/.git" ]]; then
+        echo "  Обновляю копию проекта в $REPO…"
+        git -C "$REPO" pull --ff-only --quiet || die "не удалось обновить $REPO (git pull) — есть свои правки?"
     fi
+    echo "  Собираю админ-центр (первый раз 5–15 минут, потом быстрее)…"
+    (cd "$build_root/server" && cargo build --release --locked -j 2 -p gasapp-server-admin) ||
+        die "сборка не удалась — см. сообщения cargo выше"
+    binary="$build_root/server/target/release/gasapp-server-admin"
     sum="$(sha256sum "$binary" | cut -d' ' -f1)"
     ok "программа: ${binary} (${sum:0:16}…)"
 
