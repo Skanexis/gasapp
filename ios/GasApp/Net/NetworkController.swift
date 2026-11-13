@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import Darwin
 import Foundation
 
 /// Применяет выбранный режим сети: напрямую, SOCKS или встроенный Tor
@@ -40,6 +41,18 @@ final class NetworkController: @unchecked Sendable {
 
     private init() {}
 
+    /// Как поднимать Tor заново.
+    enum Restart {
+        /// Не трогать работающий: только запустить, если не запущен.
+        case no
+        /// Перезапустить, лишь если порт моста не отвечает (`portAlive`).
+        /// ⚡ После фона порт обычно жив — тогда Tor не строит цепочки
+        /// заново, и связь есть сразу, а не через секунды.
+        case ifDead
+        /// Перезапустить в любом случае: порт отвечает, а запросы — нет.
+        case force
+    }
+
     /// Применяет режим из базы. `nil` (база не читается) — Tor: отказ
     /// в безопасную сторону, как умолчание ядра.
     func apply(proxy: FfiProxy?, bridges: [String]?) {
@@ -62,7 +75,7 @@ final class NetworkController: @unchecked Sendable {
             NetworkRoute.current = .closed
             // Заново, если Tor уже работал: после блокировки база
             // открывается снова, а порт моста мог умереть в фоне.
-            startTorLocked(restart: cached.running)
+            startTorLocked(restart: cached.running ? .ifDead : .no)
         }
     }
 
@@ -96,8 +109,9 @@ final class NetworkController: @unchecked Sendable {
     func didReturnToForeground(afterSeconds seconds: TimeInterval) {
         lock.lock(); defer { lock.unlock() }
         guard case .tor = mode ?? .direct, seconds >= 3 else { return }
-        NetworkRoute.current = .closed
-        startTorLocked(restart: true)
+        // Маршрут не закрываем заранее: если порт жив, он и остаётся
+        // открытым, и первый запрос уходит без ожидания.
+        startTorLocked(restart: .ifDead)
     }
 
     /// Перед каждым приёмом: открыть маршрут, если Tor готов, а ожидание
@@ -113,7 +127,7 @@ final class NetworkController: @unchecked Sendable {
         guard case .tor = mode ?? .direct else { return }
         if !status.running {
             NetworkRoute.current = .closed
-            startTorLocked(restart: false)
+            startTorLocked(restart: .no)
         } else if status.ready, NetworkRoute.current == .closed {
             routeThroughTor(status)
         } else if !status.ready, isTorRoute {
@@ -137,7 +151,7 @@ final class NetworkController: @unchecked Sendable {
         guard failuresInRow >= 3, cached.ready else { return }
         failuresInRow = 0
         NetworkRoute.current = .closed
-        startTorLocked(restart: true)
+        startTorLocked(restart: .force)
     }
 
     /// Ждёт готовности Tor не дольше `timeout` секунд.
@@ -157,7 +171,7 @@ final class NetworkController: @unchecked Sendable {
 
     // MARK: - Внутреннее (под `lock`)
 
-    private func startTorLocked(restart: Bool) {
+    private func startTorLocked(restart: Restart) {
         guard let server = AppConfig.serverURL, let host = server.host else { return }
 
         let base = CoreStore.shared.dataDirectory.appendingPathComponent("tor", isDirectory: true)
@@ -179,8 +193,24 @@ final class NetworkController: @unchecked Sendable {
         waiter?.cancel()
         waiter = Task.detached(priority: .userInitiated) { [weak self] in
             // С теми же мостами ядро не перезапускает Tor, а отдаёт
-            // работающий; после фона он нужен заново — отсюда stop.
-            if restart { stopEmbeddedTor() }
+            // работающий; заново — только когда он и правда мёртв.
+            switch restart {
+            case .no:
+                break
+            case .ifDead:
+                let status = embeddedTorStatus()
+                if status.running, status.ready, NetworkController.portAlive(status.port) {
+                    // Жив — только открыть маршрут (если закрыт) и прогреть.
+                    _ = await self?.awaitTor(timeout: 5) { _ in }
+                    return
+                }
+                // Мёртв — закрыть маршрут, пока поднимается новый: иначе
+                // запросы шли бы в пустой порт.
+                NetworkRoute.current = .closed
+                stopEmbeddedTor()
+            case .force:
+                stopEmbeddedTor()
+            }
             _ = try? startEmbeddedTor(settings: settings)
             _ = self?.refresh()
             // Без предела по времени: с мостами подключение бывает долгим,
@@ -196,7 +226,40 @@ final class NetworkController: @unchecked Sendable {
         }
     }
 
+    /// Отвечает ли мост Tor на 127.0.0.1 — локальная проверка за доли
+    /// секунды. iOS может забрать слушающий сокет у приостановленного
+    /// приложения; тогда — перезапуск.
+    static func portAlive(_ port: UInt16) -> Bool {
+        guard port > 0 else { return false }
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        let flags = fcntl(fd, F_GETFL, 0)
+        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        if result == 0 { return true }
+        guard errno == EINPROGRESS else { return false }
+
+        var poller = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+        guard poll(&poller, 1, 500) == 1 else { return false }
+        var error: Int32 = 0
+        var length = socklen_t(MemoryLayout<Int32>.size)
+        getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length)
+        return error == 0
+    }
+
     private func routeThroughTor(_ status: FfiTorStatus) {
+        let wasClosed = NetworkRoute.current == .closed
         // Пока ждали Tor, человек мог выбрать прямое соединение — тогда
         // маршрут уже не закрыт, и Tor его не перехватывает.
         guard case .tor = mode ?? .direct else { return }
@@ -205,6 +268,11 @@ final class NetworkController: @unchecked Sendable {
             port: status.port, isolatedPort: status.isolatedPort,
             username: status.socksUsername, password: status.socksPassword
         )
+        if wasClosed {
+            // ⚡ Прогрев: сразу запрос — цепочка и соединение с сервером
+            // строятся сейчас, а не тогда, когда человек нажмёт «Отправить».
+            Task { @MainActor in Inbox.shared.hurry() }
+        }
     }
 
     private var isTorRoute: Bool {
