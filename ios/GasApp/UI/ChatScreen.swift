@@ -643,7 +643,6 @@ struct MessageBubble: View {
                         .font(GasFont.text(16))
                         .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingText : GasAppColor.textPrimary)
                         .multilineTextAlignment(.leading)
-                        .textSelection(.enabled)
                 }
                 HStack(spacing: 4) {
                     Text(formatChatTime(message.timestamp))
