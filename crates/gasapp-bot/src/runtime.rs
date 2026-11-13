@@ -691,6 +691,7 @@ fn code_of(error: &GasAppError) -> &'static str {
         GasAppError::IdentityChanged => "identity_changed",
         GasAppError::InvalidSignature => "invalid_signature",
         GasAppError::Storage => "storage",
+        GasAppError::AccountRestricted => "account_restricted",
         _ => "error",
     }
 }

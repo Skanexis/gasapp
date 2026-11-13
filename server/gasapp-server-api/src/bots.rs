@@ -50,10 +50,17 @@ pub struct BotTokenResponse {
 /// Бот глазами владельца.
 #[derive(Debug, Serialize)]
 pub struct BotResponse {
-    /// Аккаунт бота.
+    /// Аккаунт бота. У бота, чья программа ещё не зарегистрировалась, —
+    /// нулевой UUID: прежние приложения ждут здесь строку.
     pub account_id: Uuid,
     /// Имя бота.
     pub username: String,
+    /// Токен выдан, но программа бота по нему ещё не зарегистрировалась.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pending: bool,
+    /// Сколько секунд ещё действует токен ждущего бота.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<i64>,
 }
 
 /// Регистрация бота его программой.
@@ -82,6 +89,7 @@ fn token_hash(token: &[u8]) -> [u8; 32] {
 }
 
 /// Выдаёт владельцу токен под имя будущего бота. Только с премиумом.
+/// Повторный запрос под то же имя заменяет прежний невыкупленный токен.
 ///
 /// Занятое имя — `409`, предел ботов — `507`, нет премиума — `403`.
 pub(crate) async fn create(
@@ -135,8 +143,10 @@ pub(crate) async fn list(
             .await?
             .into_iter()
             .map(|bot| BotResponse {
-                account_id: bot.account_id,
+                account_id: bot.account_id.unwrap_or_else(Uuid::nil),
+                pending: bot.account_id.is_none(),
                 username: bot.username,
+                expires_in: bot.expires_in,
             })
             .collect(),
     ))

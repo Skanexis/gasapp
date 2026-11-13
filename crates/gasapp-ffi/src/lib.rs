@@ -101,6 +101,11 @@ pub enum FfiError {
     #[error("premium required")]
     PremiumRequired,
 
+    /// Аккаунт заморожен либо заблокирован оператором сервера.
+    /// Подробности — `account_restriction`.
+    #[error("account restricted")]
+    AccountRestricted,
+
     /// В ядре произошла паника.
     ///
     /// Сообщение паники сознательно **не** передаётся: оно может содержать
@@ -121,6 +126,7 @@ impl From<GasAppError> for FfiError {
             GasAppError::EmailCodeRejected => Self::EmailCodeRejected,
             GasAppError::EmailTaken => Self::EmailTaken,
             GasAppError::Forbidden => Self::PremiumRequired,
+            GasAppError::AccountRestricted => Self::AccountRestricted,
             other => Self::Core(other),
         }
     }

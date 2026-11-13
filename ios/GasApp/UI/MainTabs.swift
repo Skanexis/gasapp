@@ -8,6 +8,11 @@ struct MainTabs: View {
     @State private var tab: Tab
     /// Непрочитанные записи каналов — число на вкладке, как на Android.
     @State private var unreadPosts: Int = 0
+    /// Заморозка либо блокировка оператором — тогда экран объяснения
+    /// поверх всего.
+    @State private var restriction: FfiAccountRestriction?
+    @State private var ownName = ""
+    @Environment(\.scenePhase) private var scenePhase
 
     enum Tab: Hashable { case chats, channels, contacts, settings }
 
@@ -52,6 +57,32 @@ struct MainTabs: View {
             if link != nil { tab = .chats }
         }
         .onAppear { if pushed != nil { pushedShown = true } }
+        .task { await checkRestriction() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await checkRestriction() } }
+        }
+        .overlay {
+            if let restriction {
+                RestrictedScreen(restriction: restriction, username: ownName) { await checkRestriction() }
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: restriction == nil)
+    }
+
+    /// Спрашивает сервер, не ограничен ли аккаунт. Без сети прежний
+    /// ответ остаётся: экран не мигает от обрыва связи.
+    private func checkRestriction() async {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        do {
+            let found = try await Background.run { try messenger.accountRestriction(nowMillis: CoreStore.nowMillis) }
+            if found != nil, ownName.isEmpty {
+                ownName = ((try? await Background.run { try messenger.ownUsername() }) ?? nil) ?? ""
+            }
+            restriction = found
+        } catch {
+            // Нет связи или сервер старый — оставляем как было.
+        }
     }
 
     private func binding(for owner: Tab) -> Binding<Bool> {

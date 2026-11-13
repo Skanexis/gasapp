@@ -147,6 +147,16 @@ workflows:
           echo "Номер сборки: $BUILD"
           xcode-project build-ipa --project ios/GasApp.xcodeproj --scheme GasApp \
             --archive-xcargs "CURRENT_PROJECT_VERSION=$BUILD"
+          # altool из Xcode 26 не всегда находит приложение по Bundle ID
+          # («Cannot determine the Apple ID from Bundle ID … (19)»).
+          # Обход по совету Codemagic: числовой Apple ID приложения
+          # (переменная ASC_APP_ID, App Store Connect → приложение →
+          # App Information → Apple ID), а без него — прежний altool.
+          if [ -n "${ASC_APP_ID:-}" ]; then
+            export APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS="--apple-id $(printf '%s' "$ASC_APP_ID" | tr -dc '0-9')"
+          else
+            export APP_STORE_CONNECT_ALTOOL_ADDITIONAL_ARGUMENTS="--use-old-altool"
+          fi
           app-store-connect publish --path build/ios/ipa/*.ipa
           echo "✅ Выгружено. Через 10–30 минут сборка $BUILD появится в App Store Connect → TestFlight."
     artifacts:

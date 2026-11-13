@@ -34,6 +34,7 @@ pub mod auth;
 pub mod cases;
 mod icons;
 pub mod insights;
+pub mod moderation;
 pub mod push;
 pub mod queries;
 
@@ -85,6 +86,8 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/channels/:id/delete", post(delete_channel))
         .route("/channels/:id/dismiss", post(dismiss_channel_reports))
         .route("/accounts/:id/premium", post(set_premium))
+        .route("/accounts/:id/restrict", post(restrict_account))
+        .route("/accounts/:id/lift", post(lift_restriction))
         .route("/logout", post(logout))
         .route_layer(middleware::from_fn_with_state(
             Arc::clone(&state),
@@ -473,6 +476,8 @@ async fn dismiss_channel_reports(
 #[derive(Deserialize)]
 struct Lookup {
     username: Option<String>,
+    /// Что сделано — для строки «готово».
+    done: Option<String>,
 }
 
 async fn account_page(
@@ -497,15 +502,24 @@ async fn account_page(
         },
         None => None,
     };
+    let restricted = match card.as_ref().and_then(Option::as_ref) {
+        Some(card) => match moderation::restriction(&state.pool, card.account_id).await {
+            Ok(restricted) => restricted,
+            Err(error) => return database_error(&error),
+        },
+        None => None,
+    };
 
     Html(layout(
         "Account",
         &csrf,
-        &account_html(
-            wanted.as_deref(),
-            card.as_ref().and_then(Option::as_ref),
-            &csrf,
-        ),
+        &account_html(&AccountView {
+            wanted: wanted.as_deref(),
+            card: card.as_ref().and_then(Option::as_ref),
+            restricted: restricted.as_ref(),
+            done: lookup.done.as_deref(),
+            csrf: &csrf,
+        }),
     ))
     .into_response()
 }
@@ -579,6 +593,97 @@ async fn dismiss_reports(
         Ok(_) => Redirect::to("/reports?done=dismissed").into_response(),
         Err(error) => database_error(&error),
     }
+}
+
+#[derive(Deserialize)]
+struct RestrictForm {
+    csrf: String,
+    /// Имя — только чтобы вернуться на карточку.
+    username: String,
+    /// `freeze` либо `block`.
+    measure: String,
+    days: Option<i32>,
+    reason: String,
+    confirm: Option<String>,
+    /// `case` — решение из дела, иначе из карточки аккаунта.
+    back: Option<String>,
+}
+
+/// Карточка аккаунта по имени (каноничному — в адрес без кодирования).
+fn account_url(raw: &str, done: &str) -> String {
+    let name = canonical_username(raw);
+    if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        format!("/account?username={name}&done={done}")
+    } else {
+        "/account".to_owned()
+    }
+}
+
+/// Замораживает либо блокирует аккаунт: мягче удаления, обратимо.
+async fn restrict_account(
+    State(state): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(account_id): Path<Uuid>,
+    Form(form): Form<RestrictForm>,
+) -> Response {
+    let Some((id, _)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    if !state.auth.csrf_matches(&id, &form.csrf) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(measure) = moderation::Measure::parse(&form.measure, form.days) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some(reason) = Reason::parse(&form.reason).filter(|reason| *reason != Reason::Unfounded)
+    else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    // Блокировка — только с подтверждением, как удаление.
+    if measure == moderation::Measure::Block && form.confirm.as_deref() != Some("yes") {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    match moderation::restrict(&state.pool, account_id, measure, reason).await {
+        Ok(_) => {
+            let done = if measure == moderation::Measure::Block { "blocked" } else { "frozen" };
+            tracing::info!(reason = reason.code(), done, "админ-центр: аккаунт ограничен");
+            if form.back.as_deref() == Some("case") {
+                Redirect::to(&format!("/reports?done={done}")).into_response()
+            } else {
+                Redirect::to(&account_url(&form.username, done)).into_response()
+            }
+        }
+        Err(error) => database_error(&error),
+    }
+}
+
+/// Снимает заморозку либо блокировку.
+async fn lift_restriction(
+    State(state): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(account_id): Path<Uuid>,
+    Form(form): Form<RestrictLiftForm>,
+) -> Response {
+    let Some((id, _)) = session(&state, &headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    if !state.auth.csrf_matches(&id, &form.csrf) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match moderation::lift(&state.pool, account_id).await {
+        Ok(_) => {
+            tracing::info!("админ-центр: ограничение снято");
+            Redirect::to(&account_url(&form.username, "lifted")).into_response()
+        }
+        Err(error) => database_error(&error),
+    }
+}
+
+#[derive(Deserialize)]
+struct RestrictLiftForm {
+    csrf: String,
+    username: String,
 }
 
 #[derive(Deserialize)]
@@ -748,11 +853,16 @@ fn layout(title: &str, csrf: &str, body: &str) -> String {
          <form method=\"post\" action=\"/logout\" class=\"mt-2\"><input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
          <button class=\"sign-out\">Sign out →</button></form></div></div></div></aside>\
          <div class=\"page-wrapper\"><div class=\"page-header d-print-none\"><div class=\"container-xl\">\
-         <h2 class=\"page-title\">{title}</h2></div></div>\
+         <div class=\"row g-2 align-items-center\"><div class=\"col\"><h2 class=\"page-title\">{title}</h2></div>\
+         <div class=\"col-auto ms-auto\"><form class=\"header-search\" method=\"get\" action=\"/account\" role=\"search\">\
+         <div class=\"input-icon\"><span class=\"input-icon-addon\">{search}</span>\
+         <input class=\"form-control\" name=\"username\" placeholder=\"Jump to @username\" aria-label=\"Jump to account by exact username\" required>\
+         </div></form></div></div></div></div>\
          <div class=\"page-body\"><main id=\"content\" class=\"container-xl workspace-legacy\">{body}</main></div></div></div>\
          </body></html>",
         title = escape(title),
         csrf = escape(csrf),
+        search = icon("search"),
     )
 }
 
@@ -795,37 +905,6 @@ fn bytes(size: i64) -> String {
     let fraction = tenths.checked_rem(10).unwrap_or(0);
 
     format!("{whole}.{fraction} {name}")
-}
-
-fn reason_options(selected: Option<Reason>) -> String {
-    Reason::FOR_DELETION
-        .iter()
-        .fold(String::new(), |mut html, reason| {
-            let _ = write!(
-                html,
-                "<option value=\"{}\"{}>{}</option>",
-                reason.code(),
-                if Some(*reason) == selected {
-                    " selected"
-                } else {
-                    ""
-                },
-                escape(reason.label())
-            );
-            html
-        })
-}
-
-fn delete_form(account_id: Uuid, csrf: &str) -> String {
-    format!(
-        "<form class=\"inline\" method=\"post\" action=\"/accounts/{account_id}/delete\">\
-         <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-         <select name=\"reason\" aria-label=\"Reason for deletion\">{options}</select>\
-         <label><input type=\"checkbox\" name=\"confirm\" value=\"yes\" required> I understand this cannot be undone</label>\
-         <button class=\"danger\">Confirm deletion</button></form>",
-        csrf = escape(csrf),
-        options = reason_options(Some(Reason::Spam)),
-    )
 }
 
 /// Жалобы на каналы.
@@ -893,67 +972,127 @@ fn premium_form(card: &queries::AccountCard, csrf: &str) -> String {
          <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
          <input type=\"hidden\" name=\"username\" value=\"{name}\">\
          <input type=\"hidden\" name=\"premium\" value=\"{value}\">\
-         <button>{action}</button></form>",
+         <button class=\"btn btn-sm ms-2\">{action}</button></form>",
         id = card.account_id,
         csrf = escape(csrf),
         name = escape(&card.username),
     )
 }
 
-fn account_html(wanted: Option<&str>, card: Option<&queries::AccountCard>, csrf: &str) -> String {
-    let mut html = format!(
-        "<form class=\"lookup\" method=\"get\" action=\"/account\">\
-         <input name=\"username\" aria-label=\"Exact username\" placeholder=\"Exact username\" value=\"{}\" required>\
-         <button>Find account</button></form>\
-         <p class=\"note\">Search by exact username only. There is no browsable directory of accounts.</p>",
-        escape(wanted.unwrap_or_default())
-    );
+/// Что показать на карточке аккаунта.
+struct AccountView<'a> {
+    wanted: Option<&'a str>,
+    card: Option<&'a queries::AccountCard>,
+    restricted: Option<&'a moderation::Restricted>,
+    done: Option<&'a str>,
+    csrf: &'a str,
+}
 
-    match (wanted, card) {
+fn account_html(view: &AccountView<'_>) -> String {
+    let mut html = format!(
+        "<form class=\"card card-body mb-4\" method=\"get\" action=\"/account\" role=\"search\">\
+         <div class=\"input-group\"><span class=\"input-group-text\">@</span>\
+         <input class=\"form-control\" name=\"username\" aria-label=\"Exact username\" placeholder=\"Exact username\" value=\"{}\" required autofocus>\
+         <button class=\"btn btn-primary\">{} Find account</button></div>\
+         <div class=\"form-hint mt-2\">Exact username only. There is no browsable directory of people.</div></form>",
+        escape(view.wanted.unwrap_or_default()),
+        icon("search"),
+    );
+    let flash = match view.done {
+        Some("frozen") => Some("Account frozen. Open reports were closed."),
+        Some("blocked") => Some("Account blocked. Open reports were closed."),
+        Some("lifted") => Some("Restriction lifted. The account works again."),
+        _ => None,
+    };
+    if let Some(text) = flash {
+        let _ = write!(html, "<div class=\"alert alert-success\" role=\"status\">{text}</div>");
+    }
+
+    match (view.wanted, view.card) {
         (Some(name), None) => {
             let _ = write!(
                 html,
-                "<p class=\"empty-state\">No account found for @{}.</p>",
+                "<div class=\"empty\"><p class=\"empty-title\">No account @{}</p>\
+                 <p class=\"empty-subtitle text-secondary\">Check the spelling: the name must match exactly.</p></div>",
                 escape(name)
             );
         }
         (Some(_), Some(card)) => {
-            let _ = write!(
-                html,
-                "<div class=\"table-scroll detail-table\"><table><tbody><tr><th>Account</th><td>@{name}</td></tr>\
-                 <tr><th>Last active</th><td>{active}</td></tr>\
-                 <tr><th>Devices</th><td class=\"num\">{devices}</td></tr>\
-                 <tr><th>Reporters</th><td class=\"num\">{reporters}</td></tr>\
-                 <tr><th>Certificates</th><td class=\"num\">{certificates}</td></tr>\
-                 <tr><th>Premium</th><td>{premium}</td></tr>\
-                 <tr><th>Channels</th><td class=\"num\">{channels}</td></tr>\
-                 <tr><th>Bots</th><td class=\"num\">{bots}</td></tr>\
-                 <tr><th>Bot owner</th><td>{owner}</td></tr>\
-                 <tr><th>Actions</th><td>{delete}</td></tr></tbody></table></div>",
-                name = escape(&card.username),
-                active = escape(&card.active_month),
-                devices = card.devices,
-                reporters = card.reporters,
-                certificates = card.certificates,
-                premium = premium_form(card, csrf),
-                channels = card.channels,
-                bots = card.bots,
-                owner = card.bot_owner.as_deref().map_or_else(
-                    || "—".to_owned(),
-                    |name| {
-                        format!(
-                            "<a href=\"/account?username={name}\">@{name}</a>",
-                            name = escape(name)
-                        )
-                    }
-                ),
-                delete = delete_form(card.account_id, csrf),
-            );
+            html.push_str(&account_head(card, view.restricted));
+            html.push_str(&account_stats(card));
+            html.push_str(&account_details(card, view.csrf));
+            html.push_str(&moderation::decision_html(&moderation::Decision {
+                account_id: card.account_id,
+                username: &card.username,
+                restricted: view.restricted,
+                suggested: Reason::Spam,
+                csrf: view.csrf,
+                dismiss: false,
+            }));
         }
         (None, _) => {}
     }
 
     html
+}
+
+fn account_head(card: &queries::AccountCard, restricted: Option<&moderation::Restricted>) -> String {
+    let mut badges = String::new();
+    if card.bot_owner.is_some() {
+        badges.push_str("<span class=\"badge bg-info-lt\">bot</span>");
+    }
+    if card.premium {
+        badges.push_str("<span class=\"badge bg-primary-lt\">premium</span>");
+    }
+    badges.push_str(&moderation::status_badge(restricted));
+    let case = if card.reporters > 0 {
+        format!(
+            "<a class=\"btn btn-outline-warning\" href=\"/reports/account/{}\">{} Open case</a>",
+            card.account_id,
+            icon("flag")
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "<div class=\"card mb-3\"><div class=\"card-body d-flex flex-wrap align-items-center gap-3\">\
+         <span class=\"ava-lg\">{ava}</span><div class=\"flex-fill\"><div class=\"d-flex flex-wrap align-items-center gap-2\">\
+         <h3 class=\"m-0\">@{name}</h3>{badges}</div>\
+         <div class=\"text-secondary\">Last active {active} · {devices}</div></div>{case}</div></div>",
+        ava = insights::avatar(&card.username),
+        name = escape(&card.username),
+        active = escape(&card.active_month),
+        devices = cases_plural(card.devices, "device", "devices"),
+    )
+}
+
+fn cases_plural(count: i64, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
+}
+
+fn account_stats(card: &queries::AccountCard) -> String {
+    format!(
+        "<div class=\"row row-cards mb-3\">{}{}{}{}</div>",
+        insights::stat("flag", if card.reporters > 0 { "bad" } else { "ok" }, "Reporters",
+                       &card.reporters.to_string(), "different people"),
+        insights::stat("shield-lock", "info", "Certificates", &card.certificates.to_string(),
+                       "distinct sender proofs"),
+        insights::stat("broadcast", "pink", "Channels", &card.channels.to_string(), "owned"),
+        insights::stat("robot", "gold", "Bots", &card.bots.to_string(), "created by this account"),
+    )
+}
+
+fn account_details(card: &queries::AccountCard, csrf: &str) -> String {
+    let owner = card.bot_owner.as_deref().map_or_else(
+        || "<span class=\"text-secondary\">—</span>".to_owned(),
+        |name| format!("<a href=\"/account?username={name}\">@{name}</a> — a freeze or block of the owner also stops this bot", name = escape(name)),
+    );
+    format!(
+        "<div class=\"card mb-4\"><div class=\"card-body\"><dl class=\"row m-0 details\">\
+         <dt class=\"col-sm-3\">Premium</dt><dd class=\"col-sm-9\">{premium}</dd>\
+         <dt class=\"col-sm-3\">Bot owner</dt><dd class=\"col-sm-9\">{owner}</dd></dl></div></div>",
+        premium = premium_form(card, csrf),
+    )
 }
 
 fn transparency_html(rows: &[queries::TransparencyRow]) -> String {
@@ -974,6 +1113,11 @@ fn transparency_html(rows: &[queries::TransparencyRow]) -> String {
         let action = match row.action.as_str() {
             "account_deleted" => "Account deleted",
             "reports_dismissed" => "Reports dismissed",
+            "account_frozen" => "Account frozen",
+            "account_blocked" => "Account blocked",
+            "restriction_lifted" => "Restriction lifted",
+            "channel_deleted" => "Channel deleted",
+            "channel_reports_dismissed" => "Channel reports dismissed",
             other => other,
         };
         let reason: &str = match Reason::parse(&row.reason) {
@@ -1166,12 +1310,15 @@ mod tests {
             count: 1,
             reporters: 1,
         };
+        let frozen = moderation::Restricted { blocked: false, until: Some("2026-11-20 14:00".into()),
+            reason: Some("spam".into()) };
         let pages = [
             login_html(Some("Invalid operator token.")),
             insights::dashboard_html(&insights::Dashboard::default(), bytes),
             cases::queue_html(&[report], 1, Some("deleted")),
             channel_reports_html(&[channel], "csrf"),
-            account_html(Some("alice"), Some(&account), "csrf"),
+            account_html(&AccountView { wanted: Some("alice"), card: Some(&account), restricted: Some(&frozen),
+                done: Some("frozen"), csrf: "csrf" }),
             transparency_html(&[action]),
         ];
         assert!(pages[2].contains("href=\"/reports/account/"));
@@ -1204,11 +1351,11 @@ mod tests {
         };
         let accounts = vec![
             insights::AccountRow { account_id: Uuid::nil(), username: "anna_k".into(), active_month: "2026-11".into(),
-                premium: true, bot: false, devices: 1, channels: 3, reporters: 0 },
+                premium: true, bot: false, devices: 1, channels: 3, reporters: 0, restricted: None },
             insights::AccountRow { account_id: Uuid::nil(), username: "news_bot".into(), active_month: "2026-11".into(),
-                premium: false, bot: true, devices: 1, channels: 0, reporters: 0 },
+                premium: false, bot: true, devices: 1, channels: 0, reporters: 0, restricted: None },
             insights::AccountRow { account_id: Uuid::nil(), username: "spammer42".into(), active_month: "2026-10".into(),
-                premium: false, bot: false, devices: 1, channels: 0, reporters: 4 },
+                premium: false, bot: false, devices: 1, channels: 0, reporters: 4, restricted: Some(false) },
         ];
         let channels = vec![
             insights::ChannelRow { channel_id: Uuid::nil(), handle: Some("gas_news".into()), owner: "anna_k".into(),
@@ -1221,12 +1368,19 @@ mod tests {
             tables: vec![("attachments".into(), 3_400_000_000), ("envelopes".into(), 220_000_000)] };
         let journal = vec![insights::JournalRow { hour: "2026-11-12 21:00".into(), action: "account_deleted".into(),
             reason: "spam".into(), reporters: 4 }];
+        let card = queries::AccountCard { account_id: Uuid::nil(), username: "spammer42".into(),
+            active_month: "2026-11".into(), devices: 1, reporters: 4, certificates: 3, premium: false,
+            channels: 0, bots: 0, bot_owner: None };
+        let frozen = moderation::Restricted { blocked: false, until: Some("2026-11-20 14:00".into()),
+            reason: Some("spam".into()) };
         let pages = [
             ("overview", layout("Overview", "c", &insights::dashboard_html(&dashboard, bytes))),
             ("accounts", layout("Accounts", "c", &insights::accounts_html(&accounts, insights::AccountView::All, "", 0, true, "c"))),
             ("channels", layout("Channels", "c", &insights::channels_html(&channels, insights::ChannelView::All, "", 0, false))),
             ("health", layout("Health", "c", &insights::health_html(&health, bytes))),
             ("journal", layout("Journal", "c", &insights::journal_html(&journal, reason_label))),
+            ("account", layout("Account", "c", &account_html(&AccountView {
+                wanted: Some("spammer42"), card: Some(&card), restricted: Some(&frozen), done: Some("frozen"), csrf: "c" }))),
         ];
         for (name, html) in pages {
             let _ = std::fs::write(format!("{dir}/{name}.html"), html);

@@ -2340,6 +2340,7 @@ async fn bot_of(
 /// Премиум-владелец заводит бота: токен одноразовый, имя — на `bot`,
 /// бот регистрируется без почты и виден владельцу в списке.
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn a_premium_owner_creates_a_bot() {
     let (state, _mailer) = require_state!();
     let owner_key = device_key();
@@ -2359,8 +2360,18 @@ async fn a_premium_owner_creates_a_bot() {
     let token = issued["token"].as_str().unwrap().to_owned();
     assert_eq!(token.len(), 64);
 
-    // Под то же имя второй токен не выдаётся.
-    let (status, _) = signed(
+    // Пока программа бота не зарегистрировалась, бот виден владельцу
+    // как ждущий — с остатком срока токена.
+    let (status, list) = signed(&state, &owner_key, "GET", &bots, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["username"], username);
+    assert_eq!(list[0]["pending"], true);
+    assert!(list[0]["expires_in"].as_i64().unwrap() > 3000);
+
+    // Повторный запрос под то же имя даёт новый токен, прежний
+    // перестаёт действовать.
+    let (status, again) = signed(
         &state,
         &owner_key,
         "POST",
@@ -2368,7 +2379,33 @@ async fn a_premium_owner_creates_a_bot() {
         Some(serde_json::json!({ "username": username })),
     )
     .await;
+    assert_eq!(status, StatusCode::OK);
+    let first_token = token;
+    let token = again["token"].as_str().unwrap().to_owned();
+    assert_ne!(token, first_token);
+    let (status, _) = post(
+        &state,
+        "/v1/bots/register",
+        bot_registration(&username, &first_token, &device_key()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Чужому владельцу имя, под которое выдан токен, не достаётся.
+    let rival_key = device_key();
+    let rival_device = premium_account(&state, &rival_key).await;
+    let (status, _) = signed(
+        &state,
+        &rival_key,
+        "POST",
+        &format!("/v1/bots/own/{rival_device}"),
+        Some(serde_json::json!({ "username": username })),
+    )
+    .await;
     assert_eq!(status, StatusCode::CONFLICT);
+    let (_, rival_list) =
+        signed(&state, &rival_key, "GET", &format!("/v1/bots/own/{rival_device}"), None).await;
+    assert!(rival_list.as_array().unwrap().is_empty());
 
     // Чужой токен и токен под другое имя не годятся — и настоящий не жгут.
     let private = device_key();
@@ -2410,6 +2447,8 @@ async fn a_premium_owner_creates_a_bot() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(list.as_array().unwrap().len(), 1);
     assert_eq!(list[0]["username"], username);
+    assert!(list[0].get("pending").is_none());
+    assert_ne!(list[0]["account_id"], Uuid::nil().to_string());
 
     // Бот — обычный аккаунт: его запросы за подписью проходят.
     let (status, own) = signed(
@@ -3191,4 +3230,85 @@ async fn a_notify_token_answers_only_whether_mail_waits() {
         .await
         .unwrap();
     assert_eq!(left, 0);
+}
+
+/// Заморозка и блокировка оператором: запросы аккаунта и его ботов
+/// получают `423`, вопрос о статусе открыт и называет срок и причину,
+/// заблокированный по имени не находится; срок вышел — снова работает.
+#[tokio::test]
+async fn frozen_and_blocked_accounts_are_locked_out() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_device = premium_account(&state, &owner_key).await;
+    let bot = bot_name();
+    let (bot_key, bot_device) = bot_of(&state, &owner_key, owner_device, &bot).await;
+    let status_of = |device: Uuid| format!("/v1/accounts/{device}/status");
+    let owner_id: Uuid = sqlx::query_scalar("SELECT account_id FROM devices WHERE device_id = $1")
+        .bind(owner_device)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    let username: String = sqlx::query_scalar("SELECT username FROM accounts WHERE account_id = $1")
+        .bind(owner_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+
+    // Заморозка на неделю.
+    sqlx::query(
+        "UPDATE accounts SET restricted_until = now() + interval '7 days', restriction_reason = 'spam'
+          WHERE account_id = $1",
+    )
+    .bind(owner_id)
+    .execute(&state.pool)
+    .await
+    .unwrap();
+
+    let bots = format!("/v1/bots/own/{owner_device}");
+    let (status, _) = signed(&state, &owner_key, "GET", &bots, None).await;
+    assert_eq!(status, StatusCode::LOCKED);
+
+    let (status, body) = signed(&state, &owner_key, "GET", &status_of(owner_device), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["restriction"]["kind"], "frozen");
+    assert_eq!(body["restriction"]["reason"], "spam");
+    assert!(body["restriction"]["until"].as_i64().unwrap() > 0);
+
+    // Бот замороженного владельца — тоже.
+    let (status, _) = signed(
+        &state,
+        &bot_key,
+        "GET",
+        &format!("/v1/bots/own/{bot_device}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::LOCKED);
+    let (status, body) = signed(&state, &bot_key, "GET", &status_of(bot_device), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["restriction"]["owner"], true);
+
+    // Замороженного по имени найти можно; заблокированного — нет.
+    let discovery = format!("/v1/discovery/username/{username}");
+    assert_eq!(get(&state, &discovery).await.0, StatusCode::OK);
+    sqlx::query("UPDATE accounts SET restricted_until = 'infinity' WHERE account_id = $1")
+        .bind(owner_id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(get(&state, &discovery).await.0, StatusCode::NOT_FOUND);
+    let (_, body) = signed(&state, &owner_key, "GET", &status_of(owner_device), None).await;
+    assert_eq!(body["restriction"]["kind"], "blocked");
+    assert!(body["restriction"].get("until").is_none());
+
+    // Срок вышел — ограничения нет, запросы проходят.
+    sqlx::query("UPDATE accounts SET restricted_until = now() - interval '1 minute' WHERE account_id = $1")
+        .bind(owner_id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let (status, _) = signed(&state, &owner_key, "GET", &bots, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = signed(&state, &owner_key, "GET", &status_of(owner_device), None).await;
+    assert!(body.get("restriction").is_none());
 }

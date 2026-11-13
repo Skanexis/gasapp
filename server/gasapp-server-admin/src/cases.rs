@@ -580,6 +580,8 @@ pub struct Case {
     pub timeline: Vec<(String, i64)>,
     /// Улики: (час, запечатанное).
     pub sealed: Vec<(String, Vec<u8>)>,
+    /// Заморозка либо блокировка, если действует.
+    pub restriction: Option<crate::moderation::Restricted>,
 }
 
 /// Дело по аккаунту; `None` — жалоб на него нет (или аккаунта нет).
@@ -652,6 +654,7 @@ pub async fn case(pool: &PgPool, account_id: Uuid) -> Result<Option<Case>, sqlx:
         signals: signals_of(&row)?,
         timeline: timeline.into_iter().rev().collect(),
         sealed,
+        restriction: crate::moderation::restriction(pool, account_id).await?,
     }))
 }
 
@@ -751,6 +754,8 @@ pub fn queue_html(cases: &[CaseRow], channel_cases: usize, done: Option<&str>) -
         Some("deleted") => Some("Account deleted. Its evidence was deleted with it."),
         Some("dismissed") => Some("Reports dismissed. Their evidence was deleted."),
         Some("channel_deleted") => Some("Channel deleted."),
+        Some("frozen") => Some("Account frozen. The case is closed and its evidence deleted."),
+        Some("blocked") => Some("Account blocked. The case is closed and its evidence deleted."),
         _ => None,
     };
     if let Some(text) = flash {
@@ -796,11 +801,11 @@ pub fn queue_html(cases: &[CaseRow], channel_cases: usize, done: Option<&str>) -
         };
         let _ = write!(
             html,
-            "<tr><td><span class=\"fw-medium\">@{name}</span></td><td>{badge}</td><td>{chips}</td>\
+            "<tr><td><a class=\"row-name\" href=\"/reports/account/{id}\">@{name}</a></td><td>{badge}</td><td>{chips}</td>\
              <td class=\"text-end num\">{independent}<span class=\"text-secondary\"> / {reporters}</span></td>\
              <td class=\"text-end num\">{certificates}</td><td class=\"text-end\">{evidence}</td>\
              <td class=\"text-secondary\">{last}</td>\
-             <td><a class=\"btn btn-sm btn-primary\" href=\"/reports/account/{id}\">Open case {go}</a></td></tr>",
+             <td><a class=\"btn btn-sm btn-ghost-warning\" href=\"/reports/account/{id}\">Open case {go}</a></td></tr>",
             name = escape(&case.username),
             badge = level_badge(level),
             chips = reason_chips(s),
@@ -1111,46 +1116,14 @@ fn signals_html(case: &Case, findings: &[Finding]) -> String {
 }
 
 fn decision_html(case: &Case, csrf: &str) -> String {
-    let s = &case.signals;
-    let mut html = String::new();
-    let options = Reason::FOR_DELETION
-        .iter()
-        .fold(String::new(), |mut out, reason| {
-            let selected = if *reason == suggested_reason(s) {
-                " selected"
-            } else {
-                ""
-            };
-            let _ = write!(
-                out,
-                "<option value=\"{}\"{selected}>{}</option>",
-                reason.code(),
-                escape(reason.label())
-            );
-            out
-        });
-    let _ = write!(
-        html,
-        "<div class=\"card mb-4\"><div class=\"card-header\"><h3 class=\"card-title\">Decision</h3></div><div class=\"card-body\">\
-         <div class=\"row g-3\"><div class=\"col-md-5\"><form method=\"post\" action=\"/accounts/{id}/dismiss\">\
-         <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-         <p class=\"text-secondary\">No violation: the reports and their evidence are deleted; the account stays.</p>\
-         <button class=\"btn w-100\">{check} Dismiss reports</button></form></div>\
-         <div class=\"col-md-7\"><form method=\"post\" action=\"/accounts/{id}/delete\">\
-         <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\
-         <p class=\"text-secondary\">Violation: the account, its devices and its evidence are deleted. This cannot be undone.</p>\
-         <div class=\"d-flex flex-wrap gap-2 align-items-center\"><select class=\"form-select w-auto\" name=\"reason\" aria-label=\"Reason for deletion\">{options}</select>\
-         <label class=\"form-check m-0\"><input class=\"form-check-input\" type=\"checkbox\" name=\"confirm\" value=\"yes\" required> \
-         <span class=\"form-check-label\">I understand this cannot be undone</span></label>\
-         <button class=\"btn btn-danger\">{trash} Delete account</button></div></form></div></div></div></div>\
-         <p class=\"text-secondary small\">{lock} Reporter identities are never shown. Decisions go to the journal without names.</p>",
-        id = case.account_id,
-        csrf = escape(csrf),
-        check = icon("circle-check"),
-        trash = icon("trash"),
-        lock = icon("lock"),
-    );
-    html
+    crate::moderation::decision_html(&crate::moderation::Decision {
+        account_id: case.account_id,
+        username: &case.username,
+        restricted: case.restriction.as_ref(),
+        suggested: suggested_reason(&case.signals),
+        csrf,
+        dismiss: true,
+    })
 }
 
 #[cfg(test)]

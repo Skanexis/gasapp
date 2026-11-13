@@ -169,7 +169,7 @@ final class NetworkController: @unchecked Sendable {
             let status = refresh()
             progress(status)
             if status.ready {
-                lock.lock(); routeThroughTor(status); lock.unlock()
+                lock.withLock { routeThroughTor(status) }
                 return true
             }
             try? await Task.sleep(nanoseconds: 500_000_000)

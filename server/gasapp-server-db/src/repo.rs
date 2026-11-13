@@ -248,6 +248,77 @@ pub async fn register_account(
     Ok((account_id, device_id))
 }
 
+/// Ограничение аккаунта оператором (миграция 0031).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Restriction {
+    /// Блокировка до снятия; иначе — заморозка до [`Self::until_secs`].
+    pub blocked: bool,
+    /// Конец заморозки, секунды Unix; у блокировки — `None`.
+    pub until_secs: Option<i64>,
+    /// Причина — код из списка причин удаления (`spam`, …).
+    pub reason: Option<String>,
+    /// Ограничен не сам аккаунт, а владелец бота.
+    pub via_owner: bool,
+}
+
+/// Устройство для проверки подписи — с ограничением его аккаунта.
+#[derive(Debug, Clone)]
+pub struct AuthDevice {
+    /// Публичный identity-ключ устройства.
+    pub identity_key: Vec<u8>,
+    /// Действующее ограничение аккаунта либо владельца бота.
+    pub restriction: Option<Restriction>,
+}
+
+/// Ключ устройства и действующее ограничение его аккаунта — одним
+/// запросом при проверке каждой подписи.
+///
+/// 🔐 Ограничение владельца распространяется на его ботов: замороженный
+/// аккаунт не продолжает рассылать от их имени.
+///
+/// # Errors
+///
+/// [`RepoError::NotFound`] — устройства нет; [`RepoError::Database`] —
+/// сбой базы.
+pub async fn device_for_auth(pool: &PgPool, device_id: Uuid) -> Result<AuthDevice, RepoError> {
+    type Row = (Vec<u8>, Option<bool>, Option<i64>, Option<String>, bool);
+    let row: Row = sqlx::query_as(
+        "SELECT d.identity_key,
+                r.until = 'infinity'::timestamptz,
+                CASE WHEN r.until = 'infinity'::timestamptz THEN NULL
+                     ELSE EXTRACT(EPOCH FROM r.until)::bigint END,
+                r.reason,
+                r.via_owner
+           FROM devices d
+           JOIN accounts a ON a.account_id = d.account_id
+           LEFT JOIN bots b ON b.account_id = a.account_id
+           LEFT JOIN accounts o ON o.account_id = b.owner_id
+          CROSS JOIN LATERAL (
+                SELECT CASE WHEN a.restricted_until > now() THEN a.restricted_until
+                            WHEN o.restricted_until > now() THEN o.restricted_until END AS until,
+                       CASE WHEN a.restricted_until > now() THEN a.restriction_reason
+                            ELSE o.restriction_reason END AS reason,
+                       NOT COALESCE(a.restricted_until > now(), false) AS via_owner
+          ) r
+          WHERE d.device_id = $1",
+    )
+    .bind(device_id)
+    .fetch_one(pool)
+    .await?;
+
+    let (identity_key, blocked, until_secs, reason, via_owner) = row;
+
+    Ok(AuthDevice {
+        identity_key,
+        restriction: blocked.map(|blocked| Restriction {
+            blocked,
+            until_secs,
+            reason,
+            via_owner,
+        }),
+    })
+}
+
 /// Находит аккаунт по имени — эндпоинт discovery.
 ///
 /// # Errors
@@ -256,7 +327,12 @@ pub async fn register_account(
 /// «нет такого» и «скрыт»: иначе перебор выявлял бы существующие имена.
 pub async fn find_by_username(pool: &PgPool, username: &str) -> Result<Account, RepoError> {
     let row: (Uuid, Vec<u8>) =
-        sqlx::query_as("SELECT account_id, identity_key FROM accounts WHERE username = $1")
+        // Заблокированный аккаунт по имени не находится — как удалённый.
+        sqlx::query_as(
+            "SELECT account_id, identity_key FROM accounts
+              WHERE username = $1
+                AND restricted_until IS DISTINCT FROM 'infinity'::timestamptz",
+        )
             .bind(username)
             .fetch_one(pool)
             .await?;

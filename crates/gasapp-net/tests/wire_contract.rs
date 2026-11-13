@@ -326,11 +326,22 @@ fn certificate_response_parses_server_shape() {
 fn sealed_report_request_matches_server_contract() {
     let request = SealedReportRequest {
         certificate: "aabb".to_owned(),
+        reason: None,
+        evidence: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();
 
+    // Без причины и улик — как прежде: поля не уходят.
     assert_eq!(field_names(&json), vec!["certificate"]);
+
+    let request = SealedReportRequest {
+        reason: Some(1),
+        evidence: Some("47524531".to_owned()),
+        ..request
+    };
+    let json = serde_json::to_string(&request).unwrap();
+    assert_eq!(field_names(&json), vec!["certificate", "evidence", "reason"]);
 }
 
 /// Ответ на жалобу разбирается в клиентский тип.

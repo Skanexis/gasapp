@@ -31,10 +31,13 @@ pub const BOT_SUFFIX: &str = "bot";
 /// Бот глазами владельца.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bot {
-    /// Аккаунт бота.
-    pub account_id: Uuid,
+    /// Аккаунт бота; `None` — токен выдан, но программа бота по нему
+    /// ещё не зарегистрировалась.
+    pub account_id: Option<Uuid>,
     /// Имя бота.
     pub username: String,
+    /// Сколько секунд ещё действует невыкупленный токен.
+    pub expires_in: Option<i64>,
 }
 
 /// Имя бота: каноничное и на `bot`.
@@ -51,8 +54,8 @@ pub fn is_bot_username(username: &str) -> bool {
 ///
 /// * [`RepoError::NotFound`] — аккаунта владельца нет.
 /// * [`RepoError::Conflict`] — у владельца нет премиума.
-/// * [`RepoError::UsernameTaken`] — имя занято аккаунтом либо другим
-///   токеном.
+/// * [`RepoError::UsernameTaken`] — имя занято аккаунтом либо токеном
+///   другого владельца. Свой прежний токен под это имя заменяется.
 /// * [`RepoError::QuotaExceeded`] — у владельца предел ботов либо
 ///   токенов за сутки.
 /// * [`RepoError::Database`] — сбой базы.
@@ -87,6 +90,15 @@ pub async fn issue_token(
 
     // Истёкшие токены — чьи угодно — имён и мест не занимают.
     sqlx::query("DELETE FROM bot_tokens WHERE expires_at <= now()")
+        .execute(&mut *tx)
+        .await?;
+
+    // Свой невыкупленный токен под это имя заменяется новым: владелец
+    // закрыл окно с токеном, не сохранив строку, — и берёт её заново,
+    // а не упирается в «имя занято». Прежний токен перестаёт действовать.
+    sqlx::query("DELETE FROM bot_tokens WHERE owner_id = $1 AND username = $2")
+        .bind(owner_id)
+        .bind(username)
         .execute(&mut *tx)
         .await?;
 
@@ -261,17 +273,24 @@ pub async fn register_bot(
     Ok((account_id, device_id))
 }
 
-/// Боты владельца, по имени.
+/// Боты владельца, по имени, — вместе с теми, чей токен выдан, но ещё
+/// не использован: иначе бот «пропадал», пока его программа не
+/// запущена, и владелец не понимал, создан ли он.
 ///
 /// # Errors
 ///
 /// [`RepoError::Database`] — сбой базы.
 pub async fn list_bots(pool: &PgPool, owner_id: Uuid) -> Result<Vec<Bot>, RepoError> {
-    let rows: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT a.account_id, a.username
+    let rows: Vec<(Option<Uuid>, String, Option<i64>)> = sqlx::query_as(
+        "SELECT a.account_id, a.username, NULL::bigint
            FROM bots b JOIN accounts a ON a.account_id = b.account_id
           WHERE b.owner_id = $1
-          ORDER BY a.username",
+         UNION ALL
+         SELECT NULL::uuid, t.username,
+                GREATEST(0, CEIL(EXTRACT(EPOCH FROM t.expires_at - now())))::bigint
+           FROM bot_tokens t
+          WHERE t.owner_id = $1 AND t.expires_at > now()
+          ORDER BY 2",
     )
     .bind(owner_id)
     .fetch_all(pool)
@@ -279,9 +298,10 @@ pub async fn list_bots(pool: &PgPool, owner_id: Uuid) -> Result<Vec<Bot>, RepoEr
 
     Ok(rows
         .into_iter()
-        .map(|(account_id, username)| Bot {
+        .map(|(account_id, username, expires_in)| Bot {
             account_id,
             username,
+            expires_in,
         })
         .collect())
 }

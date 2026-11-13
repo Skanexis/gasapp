@@ -153,6 +153,13 @@ pub enum GasAppError {
     /// с кириллической «а» были бы разными аккаунтами.
     #[error("invalid username")]
     InvalidUsername,
+
+    /// Аккаунт заморожен либо заблокирован оператором сервера (`423`).
+    ///
+    /// Своим вариантом: интерфейс показывает человеку, что случилось и
+    /// до какого времени, а не сбой сети, который лечится повтором.
+    #[error("account restricted by the operator")]
+    AccountRestricted,
 }
 
 /// Результат операции GasApp.
@@ -190,6 +197,7 @@ mod tests {
             GasAppError::EmailCodeRejected,
             GasAppError::InvalidEmail,
             GasAppError::Forbidden,
+            GasAppError::AccountRestricted,
         ];
 
         // Проверка полноты: если в перечислении появится новый вариант,
@@ -214,7 +222,8 @@ mod tests {
                 | GasAppError::EmailTaken
                 | GasAppError::EmailCodeRejected
                 | GasAppError::InvalidEmail
-                | GasAppError::Forbidden => {}
+                | GasAppError::Forbidden
+                | GasAppError::AccountRestricted => {}
             }
         }
 

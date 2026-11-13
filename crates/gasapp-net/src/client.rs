@@ -1760,6 +1760,8 @@ fn check_status(response: &HttpResponse) -> Result<()> {
         409 => Err(GasAppError::UsernameTaken),
         // 422 сервер отдаёт только на занятый адрес почты.
         422 => Err(GasAppError::EmailTaken),
+        // 423 — аккаунт заморожен либо заблокирован оператором.
+        423 => Err(GasAppError::AccountRestricted),
         // 429 и 5xx лечатся повтором, поэтому попадают в очередь.
         429 | 500..=599 => Err(GasAppError::Network),
         _ => Err(GasAppError::Malformed),

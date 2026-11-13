@@ -399,6 +399,25 @@ pub struct EmailChallengeResponse {
 pub struct AccountStatusResponse {
     /// Есть ли премиум — право создавать каналы.
     pub premium: bool,
+    /// Заморозка либо блокировка оператором. Прежний сервер поля не шлёт.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restriction: Option<RestrictionResponse>,
+}
+
+/// Ограничение аккаунта оператором — со слов сервера.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestrictionResponse {
+    /// `frozen` либо `blocked`.
+    pub kind: String,
+    /// Конец заморозки, секунды Unix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+    /// Причина — код (`spam`, `harassment`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Ограничен владелец бота, а не сам бот.
+    #[serde(default)]
+    pub owner: bool,
 }
 
 /// Запрос создания канала.
@@ -476,10 +495,17 @@ pub struct BotTokenResponse {
 /// Бот глазами владельца.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotResponse {
-    /// Аккаунт бота, UUID.
+    /// Аккаунт бота, UUID; у ждущего бота — нулевой.
     pub account_id: String,
     /// Имя бота.
     pub username: String,
+    /// Токен выдан, но программа бота по нему ещё не зарегистрировалась.
+    /// Прежний сервер поля не шлёт — и ждущих ботов не показывает.
+    #[serde(default)]
+    pub pending: bool,
+    /// Сколько секунд ещё действует токен ждущего бота.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<i64>,
 }
 
 /// Регистрация бота его программой — по токену владельца.

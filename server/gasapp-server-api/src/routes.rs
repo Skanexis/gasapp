@@ -359,6 +359,10 @@ pub enum ApiError {
     PayloadTooLarge,
     /// Место, отведённое устройству, исчерпано.
     InsufficientStorage,
+    /// Аккаунт заморожен либо заблокирован оператором. Подробности —
+    /// в `/v1/accounts/{device}/status`, единственном открытом ему
+    /// запросе.
+    Locked,
     /// Внутренний сбой.
     Internal,
 }
@@ -378,6 +382,7 @@ impl ApiError {
             Self::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
+            Self::Locked => StatusCode::LOCKED,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

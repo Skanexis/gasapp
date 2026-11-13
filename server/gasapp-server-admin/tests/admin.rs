@@ -368,7 +368,7 @@ async fn an_account_is_found_by_exact_name_only() {
     let session = login(&state).await;
 
     let (_, html, _) = send(&state, get(&format!("/account?username=@{name}"), &session)).await;
-    assert!(html.contains("Devices"), "найден по точному имени");
+    assert!(html.contains("Last active") && html.contains("Reporters"), "найден по точному имени");
 
     let (_, html, _) = send(
         &state,
@@ -376,7 +376,99 @@ async fn an_account_is_found_by_exact_name_only() {
     )
     .await;
     assert!(
-        html.contains("No account found"),
+        html.contains("No account @"),
         "по части имени не находится"
     );
+}
+
+/// Заморозка, блокировка и снятие — из дела и с карточки аккаунта:
+/// дело закрывается, решения — в журнале без имени.
+#[tokio::test]
+async fn an_account_is_frozen_blocked_and_released() {
+    let Some(state) = state().await else {
+        eprintln!("GASAPP_TEST_DATABASE_URL не задан — тест пропущен");
+        return;
+    };
+
+    let suffix = &Uuid::new_v4().simple().to_string()[..10];
+    let name = format!("rude{suffix}");
+    let (account, device) =
+        gasapp_server_db::repo::register_account(&state.pool, &name, &key(), &key(), &key())
+            .await
+            .expect("аккаунт");
+    let (_, complainant) =
+        gasapp_server_db::repo::register_account(&state.pool, &format!("hurt{suffix}"), &key(), &key(), &key())
+            .await
+            .expect("жалобщик");
+    gasapp_server_db::repo::record_sealed_sender_report(&state.pool, account, device, complainant, &[7; 32], Some(4))
+        .await
+        .expect("жалоба");
+
+    let session = login(&state).await;
+    let (_, html, _) = send(&state, get(&format!("/reports/account/{account}"), &session)).await;
+    assert!(html.contains("Freeze account") && html.contains("Block account"));
+    let csrf = csrf_of(&html);
+    let until = || async {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT CASE WHEN restricted_until = 'infinity' THEN 'blocked'
+                         WHEN restricted_until > now() + interval '6 days' THEN 'week' END
+               FROM accounts WHERE account_id = $1",
+        )
+        .bind(account)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap()
+    };
+
+    // Неизвестный срок и блокировка без подтверждения — отказ.
+    let restrict = format!("/accounts/{account}/restrict");
+    for bad in [
+        format!("csrf={csrf}&username={name}&measure=freeze&days=365&reason=spam"),
+        format!("csrf={csrf}&username={name}&measure=block&reason=spam"),
+    ] {
+        assert_eq!(send(&state, post(&restrict, &session, &bad)).await.0, StatusCode::BAD_REQUEST);
+    }
+
+    let (status, _, location) = send(
+        &state,
+        post(&restrict, &session, &format!("csrf={csrf}&username={name}&measure=freeze&days=7&reason=harassment&back=case")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location.as_deref(), Some("/reports?done=frozen"));
+    assert_eq!(until().await.as_deref(), Some("week"));
+    let open: i64 = sqlx::query_scalar("SELECT count(*) FROM sealed_sender_reports WHERE reported_account = $1")
+        .bind(account)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(open, 0, "дело закрыто");
+
+    let (_, card, _) = send(&state, get(&format!("/account?username={name}"), &session)).await;
+    assert!(card.contains("Frozen until") && card.contains("Lift restriction"));
+
+    let (_, _, location) = send(
+        &state,
+        post(&restrict, &session, &format!("csrf={csrf}&username={name}&measure=block&reason=harassment&confirm=yes")),
+    )
+    .await;
+    assert_eq!(location, Some(format!("/account?username={name}&done=blocked")));
+    assert_eq!(until().await.as_deref(), Some("blocked"));
+
+    let (_, _, location) = send(
+        &state,
+        post(&format!("/accounts/{account}/lift"), &session, &format!("csrf={csrf}&username={name}")),
+    )
+    .await;
+    assert_eq!(location, Some(format!("/account?username={name}&done=lifted")));
+    assert_eq!(until().await, None);
+
+    for action in ["account_frozen", "account_blocked", "restriction_lifted"] {
+        let logged: i64 = sqlx::query_scalar("SELECT count(*) FROM admin_actions WHERE action = $1")
+            .bind(action)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+        assert!(logged >= 1, "{action} в журнале");
+    }
 }

@@ -42,6 +42,19 @@ pub const BOT_TOKEN_PREFIX: &str = "gasapp-bot:";
 /// Длина токена сервера в шестнадцатеричных знаках.
 const TOKEN_HEX_LEN: usize = 64;
 
+/// Бот глазами владельца.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BotInfo {
+    /// Имя бота.
+    pub username: String,
+    /// Токен выдан, но программа бота ещё не запущена с ним: бот есть
+    /// только как занятое имя. Строку можно взять заново
+    /// ([`Client::create_bot`] под то же имя).
+    pub pending: bool,
+    /// Сколько секунд ещё действует токен ждущего бота.
+    pub expires_in_secs: Option<i64>,
+}
+
 /// Имя бота: каноничное и на `bot`.
 ///
 /// # Errors
@@ -81,7 +94,8 @@ impl<T: Transport> Client<T> {
     ///
     /// Токен действует час и годится один раз. На устройстве он не
     /// сохраняется: строку показывают владельцу, и он сам переносит её
-    /// туда, где будет работать бот.
+    /// туда, где будет работать бот. Потерял строку, пока бот ждёт, —
+    /// повторный вызов под то же имя выдаёт новую, прежняя гаснет.
     ///
     /// # Errors
     ///
@@ -114,12 +128,27 @@ impl<T: Transport> Client<T> {
         Ok(format!("{BOT_TOKEN_PREFIX}{username}:{}", issued.token))
     }
 
-    /// Имена своих ботов. Сетевой вызов.
+    /// Имена своих ботов — и тех, что ждут запуска программы. Сетевой
+    /// вызов.
     ///
     /// # Errors
     ///
     /// [`GasAppError::Network`] — сервер недоступен.
     pub fn bots(&self, now: Timestamp) -> Result<Vec<String>> {
+        Ok(self
+            .bot_list(now)?
+            .into_iter()
+            .map(|bot| bot.username)
+            .collect())
+    }
+
+    /// Свои боты с состоянием: работает ли бот или ждёт, когда его
+    /// программа зарегистрируется по токену. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сервер недоступен.
+    pub fn bot_list(&self, now: Timestamp) -> Result<Vec<BotInfo>> {
         let (device_id, identity) = self.own_device()?;
 
         Ok(self
@@ -127,7 +156,17 @@ impl<T: Transport> Client<T> {
             .bots(&device_id, &DeviceSigner::new(&identity, now))?
             .into_iter()
             // 🔐 Имя от сервера попадает в интерфейс только каноничным.
-            .filter_map(|bot| bot_username(&bot.username).ok())
+            .filter_map(|bot| {
+                Some(BotInfo {
+                    username: bot_username(&bot.username).ok()?,
+                    pending: bot.pending,
+                    expires_in_secs: bot
+                        .pending
+                        .then_some(bot.expires_in)
+                        .flatten()
+                        .map(|secs| secs.clamp(0, 3600)),
+                })
+            })
             .collect())
     }
 

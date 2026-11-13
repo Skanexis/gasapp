@@ -380,6 +380,23 @@ pub(super) fn require_owner(stored: &StoredChannel) -> Result<()> {
     }
 }
 
+/// Причины ограничения, которые интерфейс умеет назвать.
+pub const RESTRICTION_REASONS: [&str; 6] =
+    ["spam", "harassment", "csae", "impersonation", "illegal", "other"];
+
+/// Заморозка либо блокировка аккаунта оператором.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountRestriction {
+    /// Блокировка до снятия; иначе заморозка до [`Self::until_millis`].
+    pub blocked: bool,
+    /// Конец заморозки, миллисекунды Unix.
+    pub until_millis: Option<i64>,
+    /// Причина — код из [`RESTRICTION_REASONS`].
+    pub reason: Option<String>,
+    /// Ограничен владелец бота, а не сам бот.
+    pub via_owner: bool,
+}
+
 impl<T: Transport> Client<T> {
     /// Спрашивает сервер, есть ли у аккаунта премиум.
     ///
@@ -401,6 +418,29 @@ impl<T: Transport> Client<T> {
         self.set_setting_bool(PREMIUM_SETTING, status.premium)?;
 
         Ok(status.premium)
+    }
+
+    /// Заморожен ли аккаунт оператором либо заблокирован. Сетевой
+    /// вызов: этот вопрос сервер открывает и ограниченному аккаунту.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — аккаунт не зарегистрирован;
+    /// [`GasAppError::Network`] — сервер недоступен.
+    pub fn account_restriction(&self, now: Timestamp) -> Result<Option<AccountRestriction>> {
+        let (device_id, identity) = self.own_device()?;
+        let status = self
+            .api
+            .account_status(&device_id, &DeviceSigner::new(&identity, now))?;
+        self.set_setting_bool(PREMIUM_SETTING, status.premium)?;
+
+        Ok(status.restriction.map(|r| AccountRestriction {
+            blocked: r.kind == "blocked",
+            until_millis: r.until.filter(|_| r.kind != "blocked").map(|secs| secs.saturating_mul(1000)),
+            // 🔐 В интерфейс — только известный код, не произвольный текст сервера.
+            reason: r.reason.filter(|code| RESTRICTION_REASONS.contains(&code.as_str())),
+            via_owner: r.owner,
+        }))
     }
 
     /// Последний известный ответ сервера о премиуме — без сети.

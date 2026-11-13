@@ -69,6 +69,26 @@ const VERIFY_KEY_LEN: usize = 32;
 pub struct AccountStatusResponse {
     /// Есть ли у аккаунта премиум.
     pub premium: bool,
+    /// Ограничение оператором, если действует.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restriction: Option<RestrictionResponse>,
+}
+
+/// Заморозка либо блокировка — то, что приложение показывает человеку.
+#[derive(Debug, Serialize)]
+pub struct RestrictionResponse {
+    /// `frozen` либо `blocked`.
+    pub kind: &'static str,
+    /// Конец заморозки, секунды Unix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+    /// Причина: `spam`, `harassment`, `csae`, `impersonation`,
+    /// `illegal`, `other`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Ограничен владелец этого бота, а не сам бот.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub owner: bool,
 }
 
 /// Запрос создания канала.
@@ -482,7 +502,20 @@ pub(crate) async fn account_status(
 ) -> Result<Json<AccountStatusResponse>, ApiError> {
     let (_, premium) = owner_of(&state, device, device_id).await?;
 
-    Ok(Json(AccountStatusResponse { premium }))
+    let restriction = gasapp_server_db::repo::device_for_auth(&state.pool, device_id)
+        .await?
+        .restriction
+        .map(|r| RestrictionResponse {
+            kind: if r.blocked { "blocked" } else { "frozen" },
+            until: r.until_secs,
+            reason: r.reason,
+            owner: r.via_owner,
+        });
+
+    Ok(Json(AccountStatusResponse {
+        premium,
+        restriction,
+    }))
 }
 
 /// Создаёт канал. Только для премиум-аккаунта: иначе `403`.

@@ -708,6 +708,11 @@ fn bot_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> Ht
             if !username.ends_with("bot") {
                 return plain(400, String::new());
             }
+            // Свой невыкупленный токен под это имя заменяется — как на
+            // настоящем сервере.
+            state
+                .bot_tokens
+                .retain(|_, (owner, held)| !(owner.as_str() == device_id && *held == username));
             if state.accounts.contains_key(&username)
                 || state.bot_tokens.values().any(|(_, held)| *held == username)
             {
@@ -734,6 +739,20 @@ fn bot_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> Ht
                     })
                 })
                 .collect();
+            list.extend(
+                state
+                    .bot_tokens
+                    .values()
+                    .filter(|(owner, _)| owner.as_str() == device_id)
+                    .map(|(_, username)| {
+                        serde_json::json!({
+                            "account_id": "00000000-0000-0000-0000-000000000000",
+                            "username": username,
+                            "pending": true,
+                            "expires_in": 3600,
+                        })
+                    }),
+            );
             list.sort_by_key(|bot| bot["username"].as_str().map(str::to_owned));
 
             plain(200, serde_json::Value::Array(list).to_string())
@@ -743,8 +762,13 @@ fn bot_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> Ht
                 return plain(400, String::new());
             };
 
+            let before = state.bot_tokens.len();
+            state
+                .bot_tokens
+                .retain(|_, (owner, held)| !(owner.as_str() == device_id && *held == username));
+            let token_removed = state.bot_tokens.len() != before;
             if state.bots.get(&username).map(String::as_str) != Some(device_id) {
-                return plain(404, String::new());
+                return plain(if token_removed { 204 } else { 404 }, String::new());
             }
 
             state.bots.remove(&username);
@@ -8231,11 +8255,14 @@ fn an_owner_creates_and_deletes_a_bot() {
 
     let token = owner.create_bot("Helper_Bot", now()).expect("токен");
     assert!(token.starts_with("gasapp-bot:helper_bot:"));
-    assert!(matches!(
-        owner.create_bot("helper_bot", now()),
-        Err(GasAppError::UsernameTaken)
-    ));
-    assert!(owner.bots(now()).expect("боты").is_empty());
+    // Пока программа бота не запущена, бот виден как ждущий; строку
+    // можно взять заново — прежняя гаснет.
+    let pending = owner.bot_list(now()).expect("боты");
+    assert_eq!(pending.len(), 1);
+    assert!(pending[0].pending);
+    let stale = token;
+    let token = owner.create_bot("helper_bot", now()).expect("новый токен");
+    assert_ne!(token, stale);
 
     let bot = Client::new(server.clone(), open_storage(&dir, "bot.db"));
     let account = bot.register_bot(&token, now(), &mut OsRng).expect("бот");

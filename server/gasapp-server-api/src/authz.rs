@@ -180,9 +180,10 @@ async fn verify_parts(
 
     // Публичный ключ берётся из базы, а не из запроса: иначе
     // клиент подсунул бы свой и подписал что угодно.
-    let device = gasapp_server_db::repo::list_devices_by_id(&state.pool, device_id)
+    let device = gasapp_server_db::repo::device_for_auth(&state.pool, device_id)
         .await
         .map_err(|_| ApiError::Unauthorized)?;
+    let restricted = device.restriction.is_some();
 
     let identity: [u8; 32] = device
         .identity_key
@@ -203,7 +204,20 @@ async fn verify_parts(
     auth::verify_challenge_signature(&identity, &message, &signature)
         .map_err(|_| ApiError::Unauthorized)?;
 
+    // 🔐 Замороженному и заблокированному аккаунту (и ботам такого
+    // владельца) открыт только вопрос о статусе. Проверка — после
+    // подписи: чужой не узнает по ответу, ограничен ли аккаунт.
+    if restricted && !is_status_request(parts, device_id) {
+        return Err(ApiError::Locked);
+    }
+
     Ok((AuthenticatedDevice { device_id }, body_sha256))
+}
+
+/// Вопрос о статусе своего аккаунта — открыт и ограниченному аккаунту.
+fn is_status_request(parts: &Parts, device_id: Uuid) -> bool {
+    parts.method == axum::http::Method::GET
+        && parts.uri.path() == format!("/v1/accounts/{device_id}/status")
 }
 
 /// Промежуточный слой подписанных запросов.

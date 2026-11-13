@@ -118,7 +118,7 @@ pub async fn dashboard(pool: &PgPool) -> Result<Dashboard, sqlx::Error> {
 // Списки
 
 /// Строка выборки аккаунтов: id, имя, месяц, премиум, бот, устройства, каналы, жалобщики.
-type AccountTuple = (Uuid, String, String, bool, bool, i64, i64, i64);
+type AccountTuple = (Uuid, String, String, bool, bool, i64, i64, i64, Option<bool>);
 
 /// Строка выборки каналов: id, @имя, владелец, закрыт, создан, подписчики, записи, жалобы.
 type ChannelTuple = (Uuid, Option<String>, String, bool, String, i64, i64, i64);
@@ -130,11 +130,12 @@ pub enum AccountView {
     Premium,
     Bots,
     Reported,
+    Restricted,
     Dormant,
 }
 
 impl AccountView {
-    pub const ALL: [Self; 5] = [Self::All, Self::Premium, Self::Bots, Self::Reported, Self::Dormant];
+    pub const ALL: [Self; 6] = [Self::All, Self::Premium, Self::Bots, Self::Reported, Self::Restricted, Self::Dormant];
 
     #[must_use]
     pub fn parse(raw: Option<&str>) -> Self {
@@ -151,6 +152,7 @@ impl AccountView {
             Self::Premium => "premium",
             Self::Bots => "bots",
             Self::Reported => "reported",
+            Self::Restricted => "restricted",
             Self::Dormant => "dormant",
         }
     }
@@ -162,6 +164,7 @@ impl AccountView {
             Self::Premium => "Premium",
             Self::Bots => "Bots",
             Self::Reported => "Reported",
+            Self::Restricted => "Frozen or blocked",
             Self::Dormant => "Inactive 2+ months",
         }
     }
@@ -178,6 +181,8 @@ pub struct AccountRow {
     pub devices: i64,
     pub channels: i64,
     pub reporters: i64,
+    /// `Some(true)` — заблокирован, `Some(false)` — заморожен.
+    pub restricted: Option<bool>,
 }
 
 /// `LIKE` по началу имени: служебные знаки шаблона — буквально.
@@ -214,7 +219,8 @@ pub async fn accounts(
                 (SELECT count(*) FROM devices d WHERE d.account_id = a.account_id),
                 (SELECT count(*) FROM channels c WHERE c.owner_account = a.account_id),
                 (SELECT count(DISTINCT r.complainant_device) FROM sealed_sender_reports r
-                  WHERE r.reported_account = a.account_id)
+                  WHERE r.reported_account = a.account_id),
+                CASE WHEN a.restricted_until > now() THEN a.restricted_until = 'infinity'::timestamptz END
            FROM accounts a
            LEFT JOIN bots b ON b.account_id = a.account_id
           WHERE a.username LIKE $1 ESCAPE '\\'
@@ -223,6 +229,7 @@ pub async fn accounts(
                  OR ($2 = 'bots' AND b.account_id IS NOT NULL)
                  OR ($2 = 'reported' AND EXISTS (SELECT 1 FROM sealed_sender_reports r
                                                   WHERE r.reported_account = a.account_id))
+                 OR ($2 = 'restricted' AND a.restricted_until > now())
                  OR ($2 = 'dormant' AND a.active_month < (date_trunc('month', now()) - interval '1 month')::date))
           ORDER BY a.username
           LIMIT $3 OFFSET $4",
@@ -238,7 +245,7 @@ pub async fn accounts(
     let rows = rows
         .into_iter()
         .take(usize::try_from(PAGE).unwrap_or(50))
-        .map(|(account_id, username, active_month, premium, bot, devices, channels, reporters)| AccountRow {
+        .map(|(account_id, username, active_month, premium, bot, devices, channels, reporters, restricted)| AccountRow {
             account_id,
             username,
             active_month,
@@ -247,6 +254,7 @@ pub async fn accounts(
             devices,
             channels,
             reporters,
+            restricted,
         })
         .collect();
 
@@ -488,7 +496,7 @@ fn percent_of(part: i64, whole: i64) -> i64 {
 }
 
 /// Карточка показателя: иконка, подпись, число, пояснение.
-fn stat(glyph: &str, tone: &str, label: &str, value: &str, hint: &str) -> String {
+pub(crate) fn stat(glyph: &str, tone: &str, label: &str, value: &str, hint: &str) -> String {
     format!(
         "<div class=\"col-sm-6 col-xl-3\"><div class=\"card card-sm h-100\"><div class=\"card-body\">\
          <div class=\"row align-items-center\"><div class=\"col-auto\"><span class=\"stat-tile tone-{tone}\">{}</span></div>\
@@ -502,7 +510,7 @@ fn stat(glyph: &str, tone: &str, label: &str, value: &str, hint: &str) -> String
 }
 
 /// Аватар-инициалы: цвет по имени, как в приложении (шесть тонов).
-fn avatar(name: &str) -> String {
+pub(crate) fn avatar(name: &str) -> String {
     const INKS: [&str; 6] = ["#ffcb2e", "#5ed3c9", "#f59ab8", "#f5b08a", "#c4a9ff", "#7fc4f5"];
     let mut hash: i32 = 0;
     for unit in name.encode_utf16() {
@@ -834,10 +842,15 @@ pub fn accounts_html(rows: &[AccountRow], view: AccountView, query: &str, page: 
         if row.premium {
             badges.push_str(" <span class=\"badge bg-primary-lt ms-1\">premium</span>");
         }
+        match row.restricted {
+            Some(true) => badges.push_str(" <span class=\"badge badge-blocked ms-1\">blocked</span>"),
+            Some(false) => badges.push_str(" <span class=\"badge badge-frozen ms-1\">frozen</span>"),
+            None => {}
+        }
         let (value, label, class) = if row.premium {
-            ("off", "Revoke", "btn btn-sm")
+            ("off", "Revoke", "btn btn-sm btn-ghost-secondary")
         } else {
-            ("on", "Grant", "btn btn-sm btn-primary")
+            ("on", "Grant", "btn btn-sm btn-ghost-warning")
         };
         let reporters = if row.reporters > 0 {
             format!("<span class=\"badge bg-danger-lt\">{}</span>", row.reporters)
@@ -846,7 +859,7 @@ pub fn accounts_html(rows: &[AccountRow], view: AccountView, query: &str, page: 
         };
         let _ = write!(
             html,
-            "<tr><td><div class=\"d-flex align-items-center gap-2\">{ava}<span class=\"fw-medium\">@{name}</span>{badges}</div></td>\
+            "<tr><td><div class=\"d-flex align-items-center gap-2\">{ava}<a class=\"row-name\" href=\"/account?username={name}\">@{name}</a>{badges}</div></td>\
              <td class=\"text-secondary\">{active}</td><td class=\"text-end num\">{devices}</td><td class=\"text-end num\">{channels}</td>\
              <td class=\"text-end\">{reporters}</td>\
              <td><form method=\"post\" action=\"/accounts/{id}/premium\" class=\"m-0\">\
@@ -944,6 +957,11 @@ pub fn journal_html(rows: &[JournalRow], reason_label: fn(&str) -> String) -> St
         let (glyph, tone, action) = match row.action.as_str() {
             "account_deleted" => ("trash", "warn", "Account deleted"),
             "reports_dismissed" => ("check", "ok", "Reports dismissed"),
+            "account_frozen" => ("snowflake", "info", "Account frozen"),
+            "account_blocked" => ("ban", "bad", "Account blocked"),
+            "restriction_lifted" => ("arrow-back-up", "ok", "Restriction lifted"),
+            "channel_deleted" => ("trash", "warn", "Channel deleted"),
+            "channel_reports_dismissed" => ("check", "ok", "Channel reports dismissed"),
             other => ("list-details", "info", other),
         };
         let _ = write!(

@@ -11,7 +11,7 @@
 //! ничем не подписанные: интерфейс показывает их как статистику.
 
 use gasapp_core::client::{
-    AttachmentFile, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry,
+    AccountRestriction, AttachmentFile, BotInfo, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry,
     ChannelJoinRequestInfo, ChannelMember, ChannelPreview, ChannelRole, PendingChannelJoin,
     CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
 };
@@ -19,6 +19,53 @@ use gasapp_types::Timestamp;
 
 use crate::messenger::{FfiAttachmentFile, FfiAttachmentKind, Messenger};
 use crate::{guard, FfiError, FfiQrMatrix};
+
+/// Заморозка либо блокировка аккаунта оператором.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAccountRestriction {
+    /// Блокировка до снятия; иначе заморозка до `until_millis`.
+    pub blocked: bool,
+    /// Конец заморозки, миллисекунды Unix.
+    pub until_millis: Option<i64>,
+    /// Причина: `spam`, `harassment`, `csae`, `impersonation`,
+    /// `illegal`, `other`.
+    pub reason: Option<String>,
+    /// Ограничен владелец бота, а не сам бот.
+    pub via_owner: bool,
+}
+
+impl From<AccountRestriction> for FfiAccountRestriction {
+    fn from(r: AccountRestriction) -> Self {
+        Self {
+            blocked: r.blocked,
+            until_millis: r.until_millis,
+            reason: r.reason,
+            via_owner: r.via_owner,
+        }
+    }
+}
+
+/// Свой бот глазами владельца.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiBot {
+    /// Имя бота.
+    pub username: String,
+    /// Программа бота ещё не запущена с токеном: бот — пока только
+    /// занятое имя. Новую строку даёт `create_bot` под то же имя.
+    pub pending: bool,
+    /// Сколько секунд ещё действует токен ждущего бота.
+    pub expires_in_secs: Option<i64>,
+}
+
+impl From<BotInfo> for FfiBot {
+    fn from(bot: BotInfo) -> Self {
+        Self {
+            username: bot.username,
+            pending: bot.pending,
+            expires_in_secs: bot.expires_in_secs,
+        }
+    }
+}
 
 /// Кто человек в канале.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -469,6 +516,25 @@ impl Messenger {
         let client = self.client()?;
 
         guard(|| client.refresh_premium(Timestamp::from_millis(now_millis)))
+    }
+
+    /// Заморожен ли аккаунт оператором либо заблокирован; `None` —
+    /// нет. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен либо аккаунта нет.
+    pub fn account_restriction(
+        &self,
+        now_millis: i64,
+    ) -> Result<Option<FfiAccountRestriction>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client
+                .account_restriction(Timestamp::from_millis(now_millis))
+                .map(|r| r.map(FfiAccountRestriction::from))
+        })
     }
 
     /// Последний известный ответ о премиуме — без сети.
@@ -1003,6 +1069,22 @@ impl Messenger {
         let client = self.client()?;
 
         guard(|| client.bots(Timestamp::from_millis(now_millis)))
+    }
+
+    /// Свои боты с состоянием: работает или ждёт запуска программы.
+    /// Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn bot_list(&self, now_millis: i64) -> Result<Vec<FfiBot>, FfiError> {
+        let client = self.client()?;
+
+        guard(|| {
+            client
+                .bot_list(Timestamp::from_millis(now_millis))
+                .map(|bots| bots.into_iter().map(FfiBot::from).collect())
+        })
     }
 
     /// Удаляет своего бота вместе с его аккаунтом. Сетевой вызов.
