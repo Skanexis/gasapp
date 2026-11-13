@@ -55,8 +55,10 @@ object BottomNav {
             activity.findViewById<View>(tab.viewId)?.setOnClickListener {
                 val options = android.app.ActivityOptions.makeCustomAnimation(
                     activity,
-                    android.R.anim.fade_in,
-                    android.R.anim.fade_out,
+                    // Свои короткие наплывы: системные fade_in/fade_out
+                    // длятся 500 и 400 мс.
+                    R.anim.tab_enter,
+                    R.anim.tab_exit,
                 )
                 activity.startActivity(android.content.Intent(activity, tab.screen), options.toBundle())
                 activity.finish()

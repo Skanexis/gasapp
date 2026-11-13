@@ -55,6 +55,17 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
         // на каждое событие сокета, и полная перерисовка мигала строками
         // и сбивала прокрутку.
         val old = chats.toList()
+
+        // Первое заполнение — без разницы и без анимации: строки
+        // появляются сразу, а не проявляются по одной после каждого
+        // возврата на экран.
+        if (old.isEmpty()) {
+            chats.addAll(items)
+            notifyDataSetChanged()
+
+            return
+        }
+
         val diff = DiffUtil.calculateDiff(
             object : DiffUtil.Callback() {
                 override fun getOldListSize() = old.size
@@ -82,9 +93,11 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
      * любому, кто взял разблокированное устройство.
      */
     fun clear() {
-        val removed = chats.size
+        if (chats.isEmpty()) return
+
+        // Без анимации удаления: экран уже уходит, проигрывать её некому.
         chats.clear()
-        notifyItemRangeRemoved(0, removed)
+        notifyDataSetChanged()
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -114,8 +127,27 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
         private val presence: View = view.findViewById(R.id.chat_presence)
         private val unread: TextView = view.findViewById(R.id.chat_unread)
 
+        // Цвета, начертания и формат чисел — один раз на строку, а не
+        // на каждую привязку: прокрутка не должна ходить в ресурсы.
+        private val accentColor = androidx.core.content.ContextCompat.getColor(view.context, R.color.accent_base)
+        private val quietColor = androidx.core.content.ContextCompat.getColor(view.context, R.color.text_disabled)
+        private val regularFace = android.graphics.Typeface.create(time.typeface, 400, false)
+        private val strongFace = android.graphics.Typeface.create(time.typeface, 600, false)
+        private val pillPaddingX = (8 * view.resources.displayMetrics.density).toInt()
+        private val pillPaddingY = (3 * view.resources.displayMetrics.density).toInt()
+        private val countFormat = java.text.NumberFormat.getIntegerInstance()
+
+        /** Чат этой строки — для нажатия; слушатель ставится один раз. */
+        private var bound: ChatSummary? = null
+
+        init {
+            itemView.setOnClickListener { bound?.let(onClick) }
+        }
+
         /** Заполняет строку данными чата. */
         fun bind(chat: ChatSummary) {
+            bound = chat
+
             // Инициалы, а не фото: см. комментарий в раскладке.
             avatar.text = initialsOf(chat.name)
             paintAvatar(avatar, chat.name)
@@ -124,26 +156,18 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
             // Запрос виден в списке сразу: иначе незнакомец выглядел бы
             // обычной перепиской, а согласия у него ещё нет.
             time.text = if (chat.request) itemView.context.getString(R.string.request_badge) else chat.time
-            time.setTextColor(
-                androidx.core.content.ContextCompat.getColor(
-                    itemView.context,
-                    // Непрочитанное — время акцентом, как в kit (Chat list).
-                    if (chat.request || chat.unread > 0) R.color.accent_base else R.color.text_disabled,
-                ),
-            )
+            // Непрочитанное — время акцентом, как в kit (Chat list).
+            time.setTextColor(if (chat.request || chat.unread > 0) accentColor else quietColor)
             // Запрос — пилюлей, как прочие состояния в kit; время — простым текстом.
             // Строки переиспользуются, поэтому фон и поля ставятся в обе стороны.
             if (chat.request) {
-                val density = itemView.resources.displayMetrics.density
-                val horizontal = (8 * density).toInt()
-                val vertical = (3 * density).toInt()
                 time.setBackgroundResource(R.drawable.bg_pill_accent)
-                time.setPadding(horizontal, vertical, horizontal, vertical)
-                time.typeface = android.graphics.Typeface.create(time.typeface, 600, false)
+                time.setPadding(pillPaddingX, pillPaddingY, pillPaddingX, pillPaddingY)
+                time.typeface = strongFace
             } else {
                 time.background = null
                 time.setPadding(0, 0, 0, 0)
-                time.typeface = android.graphics.Typeface.create(time.typeface, 400, false)
+                time.typeface = regularFace
             }
 
             // 🔐 Значок верификации — только у сверенных контактов.
@@ -165,14 +189,10 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
                 // Через формат локали, а не `toString()`: в части локалей
                 // цифры пишутся другими знаками, и счётчик оказывался бы
                 // единственным местом интерфейса с латинскими.
-                unread.text = java.text.NumberFormat
-                    .getIntegerInstance()
-                    .format(chat.unread)
+                unread.text = countFormat.format(chat.unread.toLong())
             } else {
                 unread.visibility = View.GONE
             }
-
-            itemView.setOnClickListener { onClick(chat) }
         }
     }
 }

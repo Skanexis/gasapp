@@ -121,7 +121,11 @@ final class AppModel {
             backgroundSince = backgroundSince ?? Date()
             // 🔐 Хранилище файлов закрывается сразу при уходе в фон, не
             // дожидаясь таймаута (`onBackground`, как на Android).
-            if let messenger = try? CoreStore.shared.current() { try? messenger.onBackground() }
+            // Не из главного потока: вызов ждёт замок ядра, а его может
+            // держать сетевой запрос — уход в фон замирал на секунды.
+            if let messenger = try? CoreStore.shared.current() {
+                Background.detach { _ = try? messenger.onBackground() }
+            }
             VaultFiles.clearOpened()
             scheduleBackgroundLock()
         @unknown default:
@@ -166,8 +170,37 @@ final class AppModel {
 
 /// Работа с ядром — не в главном потоке: вызовы ядра блокируют
 /// (сеть, Argon2id), и главный поток встал бы вместе с интерфейсом.
+///
+/// # Почему своя очередь, а не `Task.detached`
+///
+/// У задач Swift общий пул потоков, и он узкий — по числу ядер
+/// процессора. Вызов ядра занимает поток целиком: сетевой — на всё
+/// время запроса (через Tor это секунды), а любой следующий ждёт замок
+/// ядра, тоже стоя в потоке. Приём очереди, загрузка нескольких фото,
+/// предключи, пуш-токен — и пул занят весь. Тогда даже мгновенное
+/// чтение из базы для экрана, который человек только что открыл, ждало
+/// свободного потока: нажатие отзывалось через секунду-две.
+///
+/// Очередь GCD заводит потоки по мере надобности: ждущий сеть вызов
+/// не задерживает чтение для интерфейса.
 enum Background {
+    private static let queue = DispatchQueue(label: "eu.gasapp.core", qos: .userInitiated, attributes: .concurrent)
+
     static func run<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await Task.detached(priority: .userInitiated) { try work() }.value
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
+            queue.async {
+                do {
+                    continuation.resume(returning: try work())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// То же, но без ожидания результата: работа, которая никому не
+    /// отчитывается (обслуживание, закрытие хранилища файлов).
+    static func detach(_ work: @escaping @Sendable () -> Void) {
+        queue.async(execute: work)
     }
 }

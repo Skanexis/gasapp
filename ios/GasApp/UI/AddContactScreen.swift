@@ -84,7 +84,7 @@ struct AddContactScreen: View {
 
     private func loadOwn() async {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        ownName = (try? messenger.ownUsername()) ?? nil
+        ownName = (try? await Background.run { try messenger.ownUsername() }) ?? nil
         if let own = try? await Background.run({ () -> (String, FfiQrMatrix) in
             let uri = try messenger.ownContactLink()
             return (uri, try contactLinkQr(uri: uri))

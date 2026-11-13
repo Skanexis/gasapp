@@ -531,7 +531,7 @@ class LockActivity : AppCompatActivity() {
 
             startActivity(Intent(this, target))
             @Suppress("DEPRECATION")
-            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+            overridePendingTransition(R.anim.tab_enter, R.anim.tab_exit)
             finish()
         }
     }

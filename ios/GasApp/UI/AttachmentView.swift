@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// Вложение сообщения: качается и расшифровывается, только когда
@@ -66,8 +67,14 @@ struct AttachmentView: View {
     }
 
     private func load() async {
+        // Готовая картинка — сразу, без повторного декодирования: при
+        // прокрутке пузырь появляется на экране много раз.
+        if let ready = AttachmentCache.shared.image(descriptor) {
+            image = ready
+            return
+        }
         if let cached = AttachmentCache.shared.get(descriptor) {
-            apply(cached)
+            await apply(cached)
             return
         }
         guard let messenger = try? CoreStore.shared.current(), let device = CoreStore.shared.deviceId else {
@@ -82,11 +89,18 @@ struct AttachmentView: View {
             return
         }
         AttachmentCache.shared.put(descriptor, bytes)
-        apply(bytes)
+        await apply(bytes)
     }
 
-    private func apply(_ bytes: Data) {
-        if let decoded = UIImage(data: bytes) { image = decoded } else { file = bytes }
+    /// Декодирует в фоне. Прежде снимок (до 2560 точек) разворачивался
+    /// в главном потоке, прямо во время прокрутки, — лента дёргалась на
+    /// каждой фотографии.
+    private func apply(_ bytes: Data) async {
+        if let ready = await AttachmentCache.shared.prepared(descriptor, from: bytes) {
+            image = ready
+        } else {
+            file = bytes
+        }
     }
 }
 
@@ -107,5 +121,46 @@ final class AttachmentCache: @unchecked Sendable {
 
     func get(_ key: Data) -> Data? { cache.object(forKey: key as NSData) as Data? }
     func put(_ key: Data, _ value: Data) { cache.setObject(value as NSData, forKey: key as NSData, cost: value.count) }
-    func clear() { cache.removeAllObjects() }
+    func clear() {
+        cache.removeAllObjects()
+        images.removeAllObjects()
+    }
+
+    /// Готовые к показу картинки — тоже только в памяти и до блокировки.
+    private let images: NSCache<NSData, UIImage> = {
+        let cache = NSCache<NSData, UIImage>()
+        cache.totalCostLimit = 96 * 1024 * 1024
+        return cache
+    }()
+
+    func image(_ key: Data) -> UIImage? { images.object(forKey: key as NSData) }
+
+    /// Готовая к показу картинка из расшифрованных байтов: декодируется
+    /// в фоновом потоке и запоминается. Не картинка — `nil`.
+    func prepared(_ key: Data, from bytes: Data) async -> UIImage? {
+        if let ready = image(key) { return ready }
+        let decoded = (try? await Background.run { AttachmentCache.decode(bytes) }) ?? nil
+        if let decoded { putImage(key, decoded) }
+        return decoded
+    }
+
+    func putImage(_ key: Data, _ value: UIImage) {
+        let pixels = Int(value.size.width * value.scale) * Int(value.size.height * value.scale)
+        images.setObject(value, forKey: key as NSData, cost: pixels * 4)
+    }
+
+    /// Самая длинная сторона готовой картинки, в точках экрана: хватает
+    /// и пузырю, и просмотру во весь экран.
+    private static let maxSide: CGFloat = 1600
+
+    /// Разворачивает снимок в готовый к показу вид; не картинка — `nil`.
+    /// Зовётся из фонового потока.
+    static func decode(_ bytes: Data) -> UIImage? {
+        guard let source = UIImage(data: bytes) else { return nil }
+        let longest = max(source.size.width, source.size.height)
+        guard longest > 0 else { return nil }
+        let scale = min(1, maxSide / longest)
+        let size = CGSize(width: source.size.width * scale, height: source.size.height * scale)
+        return source.preparingThumbnail(of: size) ?? source
+    }
 }

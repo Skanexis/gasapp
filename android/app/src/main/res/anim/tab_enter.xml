@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Смена вкладки: новый раздел проявляется за 120 мс. Системный
+  fade_in длится полсекунды — на каждом переключении это читалось
+  как медлительность приложения, а не как анимация.
+-->
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="120"
+    android:fromAlpha="0"
+    android:interpolator="@android:interpolator/decelerate_quad"
+    android:toAlpha="1" />

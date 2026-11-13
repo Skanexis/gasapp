@@ -73,8 +73,25 @@ final class Inbox {
         fire()
     }
 
+    /// Идущий приём. Второй одновременно не запускается: цикл, открытый
+    /// чат и «потянули вниз» просили очередь каждый сам, и одинаковые
+    /// запросы вставали друг за другом — лишняя работа радио.
+    @ObservationIgnored private var receiving: Task<Void, Never>?
+
     /// Забрать очередь сейчас (потянули список вниз, открыли чат).
+    /// Приём уже идёт — дождаться его, а не начинать ещё один.
     func receiveOnce() async {
+        if let receiving {
+            await receiving.value
+            return
+        }
+        let task = Task { await self.receiveNow() }
+        receiving = task
+        await task.value
+        receiving = nil
+    }
+
+    private func receiveNow() async {
         guard let device = CoreStore.shared.deviceId,
               let messenger = try? CoreStore.shared.current() else { return }
         let network = NetworkController.shared

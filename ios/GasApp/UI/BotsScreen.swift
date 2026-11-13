@@ -151,7 +151,7 @@ struct BotsScreen: View {
 
     private func load(refresh: Bool) async {
         guard let messenger = try? CoreStore.shared.current() else { loaded = true; return }
-        username = ((try? messenger.ownUsername()) ?? nil) ?? ""
+        username = ((try? await Background.run { try messenger.ownUsername() }) ?? nil) ?? ""
         let isPremium = (try? await Background.run { () -> Bool in
             if !refresh, (try? messenger.premiumCached()) == true { return true }
             return (try? messenger.refreshPremium(nowMillis: CoreStore.nowMillis)) ?? false

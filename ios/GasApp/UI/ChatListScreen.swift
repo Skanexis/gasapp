@@ -156,8 +156,9 @@ struct ChatListScreen: View {
             for contact in contacts { if let chat = contact.chatId { byChat[chat] = contact } }
 
             return try messenger.chats().map { chatId in
-                // Превью — последнее из сотни последних, не вся переписка.
-                let last = try messenger.messages(chatId: chatId, limit: 100).last
+                // Превью — одно последнее сообщение: прежде ради него
+                // расшифровывалась сотня на каждый чат при каждом обновлении.
+                let last = try messenger.messages(chatId: chatId, limit: 1).last
                 let contact = byChat[chatId]
                 let username = contact?.username ?? ""
                 return ChatRowModel(
@@ -171,8 +172,9 @@ struct ChatListScreen: View {
                 )
             }
         }) ?? rows
-        rows = loadedRows
-        loaded = true
+        // Только изменившееся: присваивание — перерисовка списка.
+        if rows != loadedRows { rows = loadedRows }
+        if !loaded { loaded = true }
     }
 }
 

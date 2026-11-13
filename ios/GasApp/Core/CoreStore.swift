@@ -203,7 +203,12 @@ final class CoreStore: @unchecked Sendable {
     }
 
     private func maintainPrekeys(_ messenger: Messenger) {
-        Task.detached(priority: .utility) {
+        // На очереди GCD, а не задачей Swift: вызов сетевой и занимает
+        // поток на всё время запроса, а пул потоков задач узкий (см.
+        // `Background`). И без пониженного приоритета: вызов держит
+        // замок ядра, и «фоновый» поток с этим замком задерживал бы
+        // отправку сообщения.
+        DispatchQueue.global(qos: .userInitiated).async {
             _ = try? messenger.maintainPrekeys(nowMillis: CoreStore.nowMillis)
         }
     }

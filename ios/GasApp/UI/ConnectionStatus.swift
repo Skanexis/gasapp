@@ -36,13 +36,20 @@ final class ConnectionStatus {
     private var ticker: Task<Void, Never>?
     private var hideDone: Task<Void, Never>?
 
-    /// Опрос раз в секунду, пока виден экран с полосой.
+    /// Опрос, пока приложение на экране: раз в секунду, когда Tor
+    /// подключается и процент меняется, и раз в три — в покое.
+    /// 🔋 Главный поток не будится каждую секунду ради того же ответа.
     func start() {
         guard ticker == nil else { return }
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refresh()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                let busy: Bool
+                switch self?.state {
+                case .connecting?, .stalled?, .justConnected?: busy = true
+                default: busy = false
+                }
+                try? await Task.sleep(nanoseconds: busy ? 1_000_000_000 : 3_000_000_000)
             }
         }
     }

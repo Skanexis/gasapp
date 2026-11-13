@@ -403,8 +403,15 @@ struct ChannelMediaView: View {
         }
         .task {
             guard attachment.kind == .image else { return }
+            // Декодирование — в фоне и один раз: лента не дёргается на
+            // картинках (см. AttachmentCache.prepared).
+            if let ready = AttachmentCache.shared.image(attachment.descriptor) {
+                image = ready
+                return
+            }
             if let cached = AttachmentCache.shared.get(attachment.descriptor) {
-                image = UIImage(data: cached)
+                image = await AttachmentCache.shared.prepared(attachment.descriptor, from: cached)
+                failed = image == nil
                 return
             }
             guard let messenger = try? CoreStore.shared.current() else { failed = true; return }
@@ -414,7 +421,7 @@ struct ChannelMediaView: View {
                 try messenger.fetchChannelMedia(channelId: id, descriptor: descriptor, nowMillis: CoreStore.nowMillis)
             }) {
                 AttachmentCache.shared.put(descriptor, bytes)
-                image = UIImage(data: bytes)
+                image = await AttachmentCache.shared.prepared(descriptor, from: bytes)
                 failed = image == nil
             } else {
                 failed = true

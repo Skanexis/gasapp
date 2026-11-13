@@ -30,7 +30,7 @@ import org.gasapp.app.core.SecureClipboard
 import org.gasapp.app.core.SecureWindow
 import org.gasapp.app.core.AttachmentPrep
 import org.gasapp.app.core.SendGuard
-import org.gasapp.app.net.NotificationSocket
+import org.gasapp.app.net.NotificationHub
 import org.gasapp.app.ui.AttachmentKindMark
 import org.gasapp.app.ui.AttachmentPreview
 import org.gasapp.app.ui.DeliveryMark
@@ -55,6 +55,7 @@ import uniffi.gasapp.FfiMessage
 class ChatActivity : AppCompatActivity() {
 
     private lateinit var adapter: MessageAdapter
+    private lateinit var messageList: RecyclerView
     private lateinit var input: GasAppTextField
     private lateinit var sendButton: View
 
@@ -109,13 +110,59 @@ class ChatActivity : AppCompatActivity() {
     private var peerAccountId: String? = null
 
     /**
-     * Сокет уведомлений.
+     * Новый конверт — повод забрать очередь.
      *
-     * 🔐 Открывается при показе экрана и закрывается при уходе с него:
-     * постоянно открытый сокет — непрерывный признак присутствия,
-     * видимый наблюдателю канала.
+     * 🔐 Сокет общий на все экраны и закрыт, когда приложение не на
+     * экране: открытый сокет — непрерывный признак присутствия,
+     * видимый наблюдателю канала (см. [NotificationHub]).
      */
-    private var notifications: NotificationSocket? = null
+    private val onEnvelope: () -> Unit = { fetchIncoming(notified = true) }
+
+    /** Идёт ли чтение переписки; второе одновременно не запускается. */
+    private var reloading = false
+
+    /** Пока шло чтение, переписка изменилась снова: перечитать ещё раз. */
+    private var reloadAgain = false
+
+    /** Идёт ли приём очереди с сервера. */
+    private var fetching = false
+
+    /** Пока шёл приём, пришло ещё уведомление. */
+    private var fetchAgain = false
+
+    /**
+     * Вложения и кнопки уже прочитанных сообщений.
+     *
+     * За каждым — отдельный поход в ядро на каждое сообщение, а
+     * переписка перечитывается на любое событие: без памяти это сотни
+     * вызовов на одну новую галочку. Вложения сообщения не меняются;
+     * кнопки меняет только приём и нажатие — там память о них
+     * сбрасывается.
+     *
+     * 🔐 В описании вложения лежит ключ его расшифровки: обе памяти
+     * стираются при уходе с экрана вместе с перепиской.
+     */
+    private val attachmentCache = java.util.concurrent.ConcurrentHashMap<String, Attached>()
+    private val buttonCache = java.util.concurrent.ConcurrentHashMap<String, List<List<MessageButton>>>()
+
+    /** Вложение сообщения; обёртка — потому что его может не быть. */
+    private class Attached(val preview: AttachmentPreview?)
+
+    /** Докуда чат уже отмечен прочитанным за этот показ экрана. */
+    private var markedReadUpTo = 0L
+
+    /** На какое сообщение уже ушла квитанция о прочтении. */
+    private var receiptedId: String? = null
+
+    /** Время в пузыре. Потокобезопасен, создаётся один раз. */
+    private val timeFormat by lazy {
+        java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.getDefault())
+            .withZone(java.time.ZoneId.systemDefault())
+    }
+
+    /** Подписи плашек дня: считаются раз на день, а не на сообщение. */
+    private val dayLabels = HashMap<java.time.LocalDate, String>()
+    private var dayLabelsFor: java.time.LocalDate? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -147,10 +194,15 @@ class ChatActivity : AppCompatActivity() {
             dayLabel = ::dayLabel,
             onButtonClick = ::pressButton,
         )
-        findViewById<RecyclerView>(R.id.message_list).apply {
-            layoutManager = LinearLayoutManager(context)
+        messageList = findViewById<RecyclerView>(R.id.message_list).apply {
+            // От низа: переписка открывается на последних сообщениях,
+            // а короткая прижата к полю ввода.
+            layoutManager = LinearLayoutManager(context).apply { stackFromEnd = true }
             adapter = this@ChatActivity.adapter
             itemAnimator = org.gasapp.app.ui.RiseItemAnimator()
+            // Размер списка от содержимого не зависит: изменение строк
+            // не пересчитывает раскладку всего экрана.
+            setHasFixedSize(true)
         }
 
         findViewById<TextView>(R.id.chat_verification_state).apply {
@@ -379,13 +431,7 @@ class ChatActivity : AppCompatActivity() {
         // Уведомления вместо опроса: сообщение появляется, как только
         // сервер поставил конверт в очередь, а не когда пользователь
         // догадался обновить экран.
-        Core.deviceId?.let { device ->
-            notifications = NotificationSocket(
-                baseUrl = BuildConfig.GASAPP_SERVER_URL,
-                deviceId = device,
-                onEnvelope = { runOnUiThread { fetchIncoming(notified = true) } },
-            ).also { it.connect() }
-        }
+        NotificationHub.subscribe(onEnvelope)
     }
 
     /**
@@ -398,10 +444,10 @@ class ChatActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
 
-        notifications?.close()
-        notifications = null
+        NotificationHub.unsubscribe(onEnvelope)
 
         adapter.clear()
+        forgetShown()
 
         // ⚠️ Сохранение вложения здесь не отменяется, и это
         // не упущение. Диалог выбора места — полноэкранная
@@ -495,28 +541,29 @@ class ChatActivity : AppCompatActivity() {
      */
     private fun refreshSendMode() {
         lifecycleScope.launch {
-            val contact = withContext(Dispatchers.IO) {
-                runCatching {
-                    Core.messenger().contacts().firstOrNull { contact ->
+            // Один заход в фоновый поток на все три чтения: каждый
+            // отдельный — это лишняя пересадка между потоками.
+            val (contact, request, isBlocked) = withContext(Dispatchers.IO) {
+                val contact = runCatching {
+                    Core.messenger().contacts().firstOrNull { candidate ->
                         if (chatId.isNotEmpty()) {
-                            contact.chatId == chatId
+                            candidate.chatId == chatId
                         } else {
-                            contact.username == peerUsername && !contact.replaced
+                            candidate.username == peerUsername && !candidate.replaced
                         }
                     }
                 }.getOrNull()
-            }
-            val request = withContext(Dispatchers.IO) {
-                chatId.takeIf { it.isNotEmpty() }
+                val request = chatId.takeIf { it.isNotEmpty() }
                     ?.let { runCatching { Core.messenger().chatRequest(it) }.getOrNull() }
                     ?: FfiChatRequest.SETTLED
-            }
-            awaitingPeer = request == FfiChatRequest.OUTGOING
-            blocked = withContext(Dispatchers.IO) {
-                chatId.takeIf { it.isNotEmpty() }
+                val isBlocked = chatId.takeIf { it.isNotEmpty() }
                     ?.let { runCatching { Core.messenger().isChatBlocked(it) }.getOrNull() }
                     ?: false
+
+                Triple(contact, request, isBlocked)
             }
+            awaitingPeer = request == FfiChatRequest.OUTGOING
+            blocked = isBlocked
 
             peerAccountId = contact?.accountId
             wasVerified = contact?.verified ?: wasVerified
@@ -588,7 +635,7 @@ class ChatActivity : AppCompatActivity() {
         // Статус Pending, а не Sent: сообщение ещё не ушло на сервер.
         // Показать «отправлено» до подтверждения значило бы соврать
         // пользователю о состоянии его переписки.
-        val localId = "local-${System.currentTimeMillis()}"
+        val localId = "${MessageAdapter.LOCAL_ID_PREFIX}${System.currentTimeMillis()}"
         adapter.append(
             MessageItem(
                 messageId = localId,
@@ -599,6 +646,9 @@ class ChatActivity : AppCompatActivity() {
                 timestampMillis = System.currentTimeMillis(),
             ),
         )
+
+        // Своё сообщение всегда на виду, где бы ни стояла прокрутка.
+        messageList.scrollToPosition(adapter.size - 1)
 
         input.setText("")
 
@@ -649,45 +699,149 @@ class ChatActivity : AppCompatActivity() {
      * возврата на экран.
      */
     private fun reload(markFailed: Boolean = false) {
+        // Одно чтение за раз. Прежде каждое событие запускало своё, и
+        // запоздавшее могло лечь поверх более свежего.
+        if (reloading) {
+            reloadAgain = true
+
+            return
+        }
+
+        reloading = true
+
         lifecycleScope.launch {
-            val messages = withContext(Dispatchers.IO) {
-                runCatching {
-                    val messenger = Core.messenger()
+            try {
+                var keepOnEmpty = markFailed
 
-                    messenger.messages(chatId, MESSAGE_LIMIT).map { message ->
-                        // Описания читаются здесь же: они лежат
-                        // в зашифрованной базе, и поход за ними
-                        // из главного потока подвесил бы прокрутку.
-                        message.toItem(
-                            runCatching { messenger.attachmentsOf(message.messageId) }
-                                .getOrDefault(emptyList()),
-                        )
+                do {
+                    reloadAgain = false
+
+                    // Пустой экран заполняется в два приёма: сначала
+                    // последние сообщения — их хватает на экран с
+                    // запасом, и появляются они сразу, — затем вся
+                    // загружаемая переписка, уже под прокрутку вверх.
+                    var messages = emptyList<MessageItem>()
+                    var complete = false
+
+                    if (adapter.size == 0) {
+                        messages = withContext(Dispatchers.IO) { readMessages(FIRST_PAGE) }
+                        complete = messages.size < FIRST_PAGE.toInt()
+
+                        if (!complete) show(messages)
                     }
-                }.getOrDefault(emptyList())
-            }
 
-            if (messages.isEmpty() && markFailed) {
-                return@launch
-            }
+                    if (!complete) {
+                        messages = withContext(Dispatchers.IO) { readMessages(MESSAGE_LIMIT) }
+                    }
 
-            adapter.submit(messages)
+                    if (!(messages.isEmpty() && keepOnEmpty)) {
+                        show(messages)
+                        acknowledge(messages)
+                    }
 
-            // Показано — прочитано: счётчик в списке чатов обнуляется.
-            // Только пока экран виден: сообщение, пришедшее в фоне,
-            // остаётся непрочитанным.
-            val shown = messages.maxOfOrNull { it.timestampMillis }
-            if (shown != null && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                launch(Dispatchers.IO) {
-                    runCatching { ReadMarks.markRead(Core.messenger(), chatId, shown) }
-                }
-            }
-
-            // Квитанция после показа: сообщение прочитано тогда, когда
-            // оно на экране, а не когда пришло по сети.
-            messages.lastOrNull { !it.outgoing }?.let { last ->
-                sendReadReceipt(last.messageId)
+                    keepOnEmpty = false
+                } while (reloadAgain && isShown())
+            } finally {
+                reloading = false
             }
         }
+    }
+
+    /** Виден ли экран: только тогда на нём место расшифрованному. */
+    private fun isShown(): Boolean = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+
+    /**
+     * Читает последние [limit] сообщений вместе с вложениями и кнопками.
+     *
+     * Фоновый поток: всё лежит в зашифрованной базе, и поход за этим
+     * из главного потока подвесил бы прокрутку.
+     */
+    private fun readMessages(limit: UInt): List<MessageItem> =
+        runCatching {
+            val messenger = Core.messenger()
+
+            messenger.messages(chatId, limit).map { message ->
+                val id = message.messageId
+
+                val attached = attachmentCache[id] ?: runCatching { messenger.attachmentsOf(id) }
+                    .getOrNull()
+                    // Первое вложение: одно на сообщение — то, что сейчас
+                    // отправляет приложение. Формат протокола допускает
+                    // несколько, и когда интерфейс научится их показывать,
+                    // менять придётся здесь, а не в ядре.
+                    ?.let { descriptors -> Attached(descriptors.firstOrNull()?.let(::previewOf)) }
+                    // Запоминается только удавшееся чтение.
+                    ?.also { attachmentCache[id] = it }
+
+                // Кнопки бывают только под сообщениями собеседника (бота).
+                val buttons = when {
+                    message.outgoing -> emptyList()
+                    else -> buttonCache[id] ?: runCatching { messenger.messageButtons(id) }
+                        .getOrNull()
+                        ?.map { row -> row.map { MessageButton(it.label, it.isLink) } }
+                        ?.also { buttonCache[id] = it }
+                        ?: emptyList()
+                }
+
+                message.toItem(attached?.preview, buttons)
+            }
+        }.getOrDefault(emptyList())
+
+    /** Показывает прочитанное, если экран ещё виден. */
+    private fun show(messages: List<MessageItem>) {
+        // 🔐 Экран ушёл, пока читалась база: расшифрованное в очищенный
+        // список не возвращается, и память о вложениях — тоже.
+        if (!isShown()) {
+            forgetShown()
+
+            return
+        }
+
+        val first = adapter.size == 0
+        val atEnd = !messageList.canScrollVertically(1)
+
+        adapter.submit(messages)
+
+        // К новому сообщению переписка едет, только если человек и так
+        // был внизу: читающего старое не сдёргивает.
+        if (messages.isNotEmpty() && (first || atEnd)) {
+            messageList.scrollToPosition(messages.size - 1)
+        }
+    }
+
+    /**
+     * Отмечает показанное прочитанным и отправляет квитанцию.
+     *
+     * Раз на новое сообщение, а не на каждое перечитывание: запись в
+     * базу и тем более конверт в сеть ради того же самого сообщения —
+     * пустая работа радио.
+     */
+    private fun acknowledge(messages: List<MessageItem>) {
+        // Только пока экран виден: сообщение, пришедшее в фоне,
+        // остаётся непрочитанным.
+        if (!isShown()) return
+
+        // Показано — прочитано: счётчик в списке чатов обнуляется.
+        val shown = messages.maxOfOrNull { it.timestampMillis }
+        if (shown != null && shown > markedReadUpTo) {
+            markedReadUpTo = shown
+            lifecycleScope.launch(Dispatchers.IO) {
+                runCatching { ReadMarks.markRead(Core.messenger(), chatId, shown) }
+            }
+        }
+
+        // Квитанция после показа: сообщение прочитано тогда, когда
+        // оно на экране, а не когда пришло по сети.
+        messages.lastOrNull { !it.outgoing }?.let { last ->
+            sendReadReceipt(last.messageId)
+        }
+    }
+
+    /** 🔐 Забывает всё, что держалось ради показанной переписки. */
+    private fun forgetShown() {
+        attachmentCache.clear()
+        buttonCache.clear()
+        markedReadUpTo = 0L
     }
 
     /**
@@ -720,26 +874,53 @@ class ChatActivity : AppCompatActivity() {
     private fun fetchIncoming(notified: Boolean = false) {
         val device = Core.deviceId ?: return
 
-        lifecycleScope.launch {
-            val received = withContext(Dispatchers.IO) {
-                runCatching {
-                    Core.messenger()
-                        .receiveMessages(device, System.currentTimeMillis())
-                }.getOrDefault(0u)
-            }
+        // Один приём за раз: уведомления приходят пачкой, а очередь из
+        // одинаковых запросов только занимала бы сеть и батарею.
+        if (fetching) {
+            fetchAgain = true
 
-            // По уведомлению сервера экран перечитывается всегда: пришедшее
-            // могло быть не сообщением, а кнопками бота под уже показанным
-            // сообщением — в счёт принятых они не входят, и без этого
-            // кнопки появлялись только после повторного входа в чат.
-            if (received > 0u || notified) {
-                reload()
-                resolvePeerUsername()
+            return
+        }
+
+        fetching = true
+
+        lifecycleScope.launch {
+            try {
+                var force = notified
+
+                do {
+                    fetchAgain = false
+
+                    val received = withContext(Dispatchers.IO) {
+                        runCatching {
+                            Core.messenger()
+                                .receiveMessages(device, System.currentTimeMillis())
+                        }.getOrDefault(0u)
+                    }
+
+                    // По уведомлению сервера экран перечитывается всегда: пришедшее
+                    // могло быть не сообщением, а кнопками бота под уже показанным
+                    // сообщением — в счёт принятых они не входят, и без этого
+                    // кнопки появлялись только после повторного входа в чат.
+                    if (received > 0u || force) {
+                        buttonCache.clear()
+                        reload()
+                        resolvePeerUsername()
+                    }
+
+                    // Повтор — всегда по уведомлению.
+                    force = true
+                } while (fetchAgain && isShown())
+            } finally {
+                fetching = false
             }
         }
     }
 
-    private fun FfiMessage.toItem(descriptors: List<ByteArray> = emptyList()): MessageItem =
+    private fun FfiMessage.toItem(
+        attachment: AttachmentPreview?,
+        buttons: List<List<MessageButton>>,
+    ): MessageItem =
         MessageItem(
             messageId = messageId,
             text = text,
@@ -753,20 +934,8 @@ class ChatActivity : AppCompatActivity() {
                 FfiDeliveryStatus.READ -> DeliveryMark.Read
                 FfiDeliveryStatus.FAILED -> DeliveryMark.Failed
             },
-            // Первое вложение: одно на сообщение — то, что сейчас
-            // отправляет приложение. Формат протокола допускает
-            // несколько, и когда интерфейс научится их показывать,
-            // менять придётся здесь, а не в ядре.
-            attachment = descriptors.firstOrNull()?.let(::previewOf),
-            // Кнопки бывают только под сообщениями собеседника (бота).
-            // Читаются здесь же, в фоновом потоке, как описания вложений.
-            buttons = if (outgoing) {
-                emptyList()
-            } else {
-                runCatching { Core.messenger().messageButtons(messageId) }
-                    .getOrDefault(emptyList())
-                    .map { row -> row.map { MessageButton(it.label, it.isLink) } }
-            },
+            attachment = attachment,
+            buttons = buttons,
         )
 
     /**
@@ -788,6 +957,9 @@ class ChatActivity : AppCompatActivity() {
                     )
                 }
             }
+
+            // Нажатие могло сменить сами кнопки.
+            buttonCache.remove(message.messageId)
 
             pressed
                 .onSuccess { link ->
@@ -856,16 +1028,23 @@ class ChatActivity : AppCompatActivity() {
      * передаче присутствия — решение принимает ядро.
      */
     private fun sendReadReceipt(lastMessageId: String) {
+        if (receiptedId == lastMessageId) return
+
+        receiptedId = lastMessageId
+
         lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
+            val sent = withContext(Dispatchers.IO) {
                 runCatching {
                     Core.messenger().sendReadReceipt(
                         peerUsername,
                         lastMessageId,
                         System.currentTimeMillis(),
                     )
-                }
+                }.isSuccess
             }
+
+            // Не ушла — следующее перечитывание попробует снова.
+            if (!sent && receiptedId == lastMessageId) receiptedId = null
         }
     }
 
@@ -1281,8 +1460,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun formatTime(millis: Long): String =
-        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(millis))
+        timeFormat.format(java.time.Instant.ofEpochMilli(millis))
 
     private fun timeNow(): String = formatTime(System.currentTimeMillis())
 
@@ -1292,6 +1470,17 @@ class ChatActivity : AppCompatActivity() {
         val day = java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
         val today = java.time.LocalDate.now(zone)
 
+        // «Сегодня» и «Вчера» привязаны к дню: наступил новый —
+        // подписи считаются заново.
+        if (dayLabelsFor != today) {
+            dayLabels.clear()
+            dayLabelsFor = today
+        }
+
+        return dayLabels.getOrPut(day) { labelOf(day, today) }
+    }
+
+    private fun labelOf(day: java.time.LocalDate, today: java.time.LocalDate): String {
         return when (day) {
             today -> getString(R.string.chat_day_today)
             today.minusDays(1) -> getString(R.string.chat_day_yesterday)
@@ -1380,6 +1569,9 @@ class ChatActivity : AppCompatActivity() {
 
         /** Сколько сообщений загружается в переписку. */
         private const val MESSAGE_LIMIT = 200u
+
+        /** Сколько последних сообщений показывается сразу при открытии. */
+        private const val FIRST_PAGE = 30u
 
         /** Сверен ли safety number. */
         const val EXTRA_VERIFIED = "chat_verified"

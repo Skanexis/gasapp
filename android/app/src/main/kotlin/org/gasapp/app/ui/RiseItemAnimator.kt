@@ -21,6 +21,11 @@ class RiseItemAnimator : DefaultItemAnimator() {
 
     init {
         addDuration = ADD_MS
+
+        // Изменённая строка перерисовывается на месте. Со стандартной
+        // анимацией смена галочки «отправлено → доставлено» растворяла
+        // и проявляла весь пузырь — сообщение мигало на каждый статус.
+        supportsChangeAnimations = false
     }
 
     override fun animateAdd(holder: RecyclerView.ViewHolder): Boolean {

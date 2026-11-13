@@ -2,6 +2,8 @@
 
 package org.gasapp.app.ui
 
+import org.gasapp.app.R
+
 /**
  * Инициалы для аватара.
  *
@@ -45,10 +47,19 @@ fun paintAvatar(avatar: android.widget.TextView, key: String) {
     val ink = AVATAR_INKS[Math.floorMod(key.hashCode(), AVATAR_INKS.size)]
 
     avatar.setTextColor(ink)
-    avatar.background = android.graphics.drawable.GradientDrawable().apply {
-        shape = android.graphics.drawable.GradientDrawable.OVAL
-        setColor(androidx.core.graphics.ColorUtils.setAlphaComponent(ink, AVATAR_FILL_ALPHA))
-    }
+
+    // Свой круг заводится у вида один раз и дальше только перекрашивается:
+    // строки списка привязываются при каждой прокрутке, и новый фон
+    // на каждую — мусор для сборщика посреди кадра.
+    val circle = avatar.getTag(R.id.chat_avatar) as? android.graphics.drawable.GradientDrawable
+        ?: android.graphics.drawable.GradientDrawable().also {
+            it.shape = android.graphics.drawable.GradientDrawable.OVAL
+            avatar.setTag(R.id.chat_avatar, it)
+        }
+
+    if (avatar.background !== circle) avatar.background = circle
+
+    circle.setColor(androidx.core.graphics.ColorUtils.setAlphaComponent(ink, AVATAR_FILL_ALPHA))
 }
 
 /** Подложка аватара — краска на ~16 %. */

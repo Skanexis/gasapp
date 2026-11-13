@@ -50,7 +50,7 @@ final class Push: NSObject, UNUserNotificationCenterDelegate {
         guard SecureStore.int(Self.registeredKey) == 1 else { return }
         UIApplication.shared.unregisterForRemoteNotifications()
         guard let messenger = try? CoreStore.shared.current() else { return }
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .userInitiated) {
             if (try? messenger.unregisterPushToken(nowMillis: CoreStore.nowMillis)) != nil {
                 await MainActor.run { SecureStore.set(0, for: Push.registeredKey) }
             }
@@ -76,7 +76,7 @@ final class Push: NSObject, UNUserNotificationCenterDelegate {
         #else
         let provider = FfiPushProvider.apns
         #endif
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .userInitiated) {
             if (try? messenger.registerPushToken(provider: provider, token: hex, nowMillis: CoreStore.nowMillis)) != nil {
                 await MainActor.run { SecureStore.set(1, for: Push.registeredKey) }
             }

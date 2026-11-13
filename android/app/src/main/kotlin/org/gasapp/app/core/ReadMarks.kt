@@ -21,9 +21,26 @@ object ReadMarks {
     /** Сколько последних сообщений просматривать при подсчёте. */
     const val SCAN_LIMIT: UInt = 100u
 
-    /** Сколько входящих новее отметки среди [messages]. */
-    fun unread(messenger: Messenger, chatId: String, messages: List<FfiMessage>): Int =
-        count(messages, messenger.settingInt(key(chatId), 0L))
+    /**
+     * Сколько непрочитанных в чате; [last] — его последнее сообщение.
+     *
+     * Сообщения ядро отдаёт по времени, поэтому последнее — самое
+     * новое: если оно не новее отметки, непрочитанных нет, и сотню
+     * сообщений ради нуля расшифровывать незачем. Так у прочитанного
+     * чата (а их в списке большинство) читается одно сообщение, а не
+     * [SCAN_LIMIT].
+     */
+    fun unread(messenger: Messenger, chatId: String, last: FfiMessage?): Int {
+        if (last == null) return 0
+
+        val mark = messenger.settingInt(key(chatId), 0L)
+        if (!isNewer(last, mark)) return 0
+
+        return count(messenger.messages(chatId, SCAN_LIMIT), mark)
+    }
+
+    /** Новее ли отметки самое свежее сообщение чата. */
+    internal fun isNewer(last: FfiMessage, mark: Long): Boolean = last.timestamp > mark
 
     /** Входящие новее [mark]: свои сообщения непрочитанными не бывают. */
     internal fun count(messages: List<FfiMessage>, mark: Long): Int =

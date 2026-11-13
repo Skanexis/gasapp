@@ -24,7 +24,7 @@ import org.gasapp.app.core.TouchTarget
 import org.gasapp.app.net.EmbeddedTor
 import org.gasapp.app.net.ClockCheck
 import org.gasapp.app.net.NetworkProxy
-import org.gasapp.app.net.NotificationSocket
+import org.gasapp.app.net.NotificationHub
 import org.gasapp.app.notify.NotifyPrefs
 import org.gasapp.app.notify.NotifySetup
 import org.gasapp.app.ui.BottomNav
@@ -54,11 +54,23 @@ class ChatListActivity : AppCompatActivity() {
     private lateinit var empty: View
 
     /**
-     * Сокет уведомлений, пока открыт список.
-     *
-     * Без него новый чат появлялся бы только при переоткрытии экрана.
+     * Новый конверт — повод забрать очередь: так появляется чат от
+     * человека, который написал впервые. Сокет общий на все экраны
+     * (см. [NotificationHub]).
      */
-    private var notifications: NotificationSocket? = null
+    private val onEnvelope: () -> Unit = { syncChats() }
+
+    /** Идёт ли приём очереди; второй одновременно не запускается. */
+    private var syncing = false
+
+    /** Пока шёл приём, пришло ещё уведомление: забрать очередь снова. */
+    private var syncAgain = false
+
+    /** Время в строке списка. Потокобезопасен, создаётся один раз. */
+    private val timeFormat by lazy {
+        java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.getDefault())
+            .withZone(java.time.ZoneId.systemDefault())
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -217,11 +229,14 @@ class ChatListActivity : AppCompatActivity() {
 
                         if (waited) {
                             waited = false
-                            loadChats()
+                            syncChats()
                         }
                     }
 
-                    delay(TOR_POLL_MS)
+                    // Раз в секунду — только пока полоса на экране и
+                    // процент меняется. В покое опрос реже: главный
+                    // поток не будится ради неизменного ответа.
+                    delay(if (connecting) TOR_POLL_MS else TOR_IDLE_POLL_MS)
                 }
             }
         }
@@ -237,8 +252,7 @@ class ChatListActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
 
-        notifications?.close()
-        notifications = null
+        NotificationHub.unsubscribe(onEnvelope)
 
         adapter.clear()
     }
@@ -247,105 +261,112 @@ class ChatListActivity : AppCompatActivity() {
         super.onStart()
         // Приложение открыто: уведомление «есть новое» больше не нужно.
         NotifySetup.onAppOpened(this)
-        loadChats()
 
-        // Новый конверт — повод забрать очередь заново: так появляется
-        // чат от человека, который написал впервые.
-        Core.deviceId?.let { device ->
-            notifications = NotificationSocket(
-                baseUrl = BuildConfig.GASAPP_SERVER_URL,
-                deviceId = device,
-                onEnvelope = { runOnUiThread { loadChats() } },
-            ).also { it.connect() }
-        }
+        // Сначала — то, что уже лежит на устройстве: это миллисекунды.
+        // Очередь с сервера забирается следом и список не задерживает.
+        showLocal()
+        syncChats()
+
+        NotificationHub.subscribe(onEnvelope)
     }
 
     /**
-     * Читает чаты и превью последних сообщений из ядра.
+     * Показывает чаты из базы — без сети.
      *
      * Уходит на `Dispatchers.IO`: переход через границу FFI
      * блокирующий, а внутри — расшифровка сообщений.
      */
-    private fun loadChats() {
+    private fun showLocal() {
         lifecycleScope.launch {
-            val chats = withContext(Dispatchers.IO) {
-                runCatching {
-                    val messenger = Core.messenger()
+            val chats = withContext(Dispatchers.IO) { readChats() }
 
-                    // 🔐 Сначала — очередь на сервере.
-                    //
-                    // Прежде входящие забирал только экран переписки,
-                    // а он существует лишь для уже известного чата.
-                    // Первое сообщение от нового собеседника не
-                    // забиралось никогда: открыть было нечего. Нашлось
-                    // только живым обменом с эмулятором — два конверта
-                    // лежали на сервере, а список показывал «нет чатов».
-                    //
-                    // Приём общий на весь аккаунт, а не на чат, поэтому
-                    // одного вызова хватает на все переписки. Сбой сети
-                    // не мешает показать то, что уже есть.
-                    Core.deviceId?.let { device ->
-                        runCatching { messenger.receiveMessages(device, System.currentTimeMillis()) }
-                    }
-
-                    // Собеседник каждого чата: имя, которым ему отвечают,
-                    // и отметка о сверке.
-                    val contacts = messenger.contacts().associateBy { it.chatId }
-
-                    messenger.chats().map { chatId ->
-                        // Не больше сотни последних сообщений на чат: превью —
-                        // последнее из них, счётчик — входящие после отметки
-                        // прочтения. Вся переписка ради списка не читается.
-                        val recent = messenger.messages(chatId, ReadMarks.SCAN_LIMIT)
-                        ChatRow(
-                            chatId,
-                            recent.lastOrNull(),
-                            contacts[chatId],
-                            runCatching { messenger.chatRequest(chatId) }.getOrNull() == FfiChatRequest.INCOMING,
-                            runCatching { ReadMarks.unread(messenger, chatId, recent) }.getOrDefault(0),
-                        )
-                    }
-                }.getOrDefault(emptyList())
-            }
-
-            render(
-                chats.map { (chatId, last, contact, request, unread) ->
-                    val username = contact?.username.orEmpty()
-
-                    ChatSummary(
-                        chatId = chatId,
-                        // Имя собеседника хранится с контактом, а не
-                        // с чатом; пока оно неизвестно, показывается
-                        // начало идентификатора — этого хватает, чтобы
-                        // отличать чаты друг от друга.
-                        name = username.ifEmpty { chatId.take(CHAT_LABEL_CHARS) },
-                        preview = last?.text.orEmpty(),
-                        time = last?.let { formatTime(it.timestamp) }.orEmpty(),
-                        // Прежде здесь стояло `false` для всех чатов.
-                        verified = contact?.verified == true,
-                        peerUsername = username,
-                        request = request,
-                        unread = unread,
-                    )
-                },
-            )
+            // 🔐 Экран ушёл, пока читалась база: расшифрованные превью
+            // в очищенный список не возвращаются (см. onStop).
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) render(chats)
         }
     }
 
-    /** Строка списка до разметки: чат, последнее сообщение, собеседник, запрос. */
-    private data class ChatRow(
-        val chatId: String,
-        val last: uniffi.gasapp.FfiMessage?,
-        val contact: uniffi.gasapp.FfiContact?,
-        val request: Boolean,
-        val unread: Int,
-    )
+    /**
+     * Забирает очередь с сервера и перечитывает список.
+     *
+     * 🔐 Приём — здесь, а не только на экране переписки: тот существует
+     * лишь для уже известного чата, и первое сообщение от нового
+     * собеседника иначе не забиралось бы никогда. Приём общий на весь
+     * аккаунт, одного вызова хватает на все переписки.
+     *
+     * # Почему список не ждёт сеть
+     *
+     * Прежде чаты читались после приёма, одним заходом: каждый показ
+     * экрана — в том числе возврат из переписки — ждал ответа сервера,
+     * а через Tor это секунды пустого списка. Теперь сеть только
+     * обновляет уже показанное.
+     *
+     * Один приём за раз: уведомления приходят пачкой, и очередь из
+     * одинаковых запросов только занимала бы сеть и батарею.
+     */
+    private fun syncChats() {
+        if (syncing) {
+            syncAgain = true
 
-    private fun formatTime(millis: Long): String =
-        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(millis))
+            return
+        }
 
+        val device = Core.deviceId ?: return
+        syncing = true
 
+        lifecycleScope.launch {
+            try {
+                do {
+                    syncAgain = false
+
+                    withContext(Dispatchers.IO) {
+                        runCatching { Core.messenger().receiveMessages(device, System.currentTimeMillis()) }
+                    }
+
+                    // Перечитывается всегда, а не только при новых
+                    // сообщениях: приём меняет и статусы, и запросы.
+                    // Сбой сети не мешает показать то, что уже есть.
+                    showLocal()
+                } while (syncAgain && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+            } finally {
+                syncing = false
+            }
+        }
+    }
+
+    /** Читает чаты и превью последних сообщений из ядра. Фоновый поток. */
+    private fun readChats(): List<ChatSummary> =
+        runCatching {
+            val messenger = Core.messenger()
+
+            // Собеседник каждого чата: имя, которым ему отвечают,
+            // и отметка о сверке.
+            val contacts = messenger.contacts().associateBy { it.chatId }
+
+            messenger.chats().map { chatId ->
+                // Превью — последнее сообщение. Счётчик считает сам
+                // ReadMarks и просматривает переписку, только если есть
+                // что считать.
+                val last = messenger.messages(chatId, 1u).lastOrNull()
+                val contact = contacts[chatId]
+                val username = contact?.username.orEmpty()
+
+                ChatSummary(
+                    chatId = chatId,
+                    // Имя собеседника хранится с контактом, а не
+                    // с чатом; пока оно неизвестно, показывается
+                    // начало идентификатора — этого хватает, чтобы
+                    // отличать чаты друг от друга.
+                    name = username.ifEmpty { chatId.take(CHAT_LABEL_CHARS) },
+                    preview = last?.text.orEmpty(),
+                    time = last?.let { timeFormat.format(java.time.Instant.ofEpochMilli(it.timestamp)) }.orEmpty(),
+                    verified = contact?.verified == true,
+                    peerUsername = username,
+                    request = runCatching { messenger.chatRequest(chatId) }.getOrNull() == FfiChatRequest.INCOMING,
+                    unread = runCatching { ReadMarks.unread(messenger, chatId, last) }.getOrDefault(0),
+                )
+            }
+        }.getOrDefault(emptyList())
 
     /**
      * Новый собеседник — экран с @именем и сканером QR.
@@ -384,8 +405,11 @@ class ChatListActivity : AppCompatActivity() {
      * Имена взяты из UI kit, чтобы экран совпадал с макетом.
      */
     private companion object {
-        /** Как часто проверять подключение Tor. */
+        /** Как часто проверять подключение Tor, пока он подключается. */
         private const val TOR_POLL_MS = 1_000L
+
+        /** Как часто проверять состояние сети, когда полосы нет. */
+        private const val TOR_IDLE_POLL_MS = 3_000L
 
         /** Текущий счёт Security Center. */
         const val SECURITY_SCORE = 9

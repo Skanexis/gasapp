@@ -142,14 +142,24 @@ struct VaultScreen: View {
 
     // MARK: - Ядро
 
+    /// Перечитывает состояние хранилища — в фоне. Эти вызовы ждут замок
+    /// ядра, который на время сетевого запроса занят: из главного потока
+    /// экран замирал, пока запрос не закончится.
     private func render() {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        open = (try? messenger.isVaultOpen(nowMillis: CoreStore.nowMillis)) ?? false
-        count = Int((try? messenger.vaultFileCount()) ?? 0)
-        if open {
-            files = (try? messenger.vaultFiles(limit: 1000, nowMillis: CoreStore.nowMillis)) ?? []
-        } else {
-            files = []
+        Task {
+            let state = try? await Background.run { () -> (Bool, Int, [FfiVaultFile]) in
+                let isOpen = (try? messenger.isVaultOpen(nowMillis: CoreStore.nowMillis)) ?? false
+                let total = Int((try? messenger.vaultFileCount()) ?? 0)
+                let list: [FfiVaultFile] = isOpen
+                    ? ((try? messenger.vaultFiles(limit: 1000, nowMillis: CoreStore.nowMillis)) ?? [])
+                    : []
+                return (isOpen, total, list)
+            }
+            guard let state else { return }
+            open = state.0
+            count = state.1
+            files = state.2
         }
     }
 
@@ -214,18 +224,30 @@ struct VaultScreen: View {
 
     private func seal() {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        try? messenger.sealVault()
+        // Экран закрывается сразу; само закрытие в ядре — следом, в фоне.
+        open = false
+        files = []
         VaultFiles.clearOpened()
         status = nil
-        render()
+        Task {
+            _ = try? await Background.run { try messenger.sealVault() }
+            render()
+        }
     }
 
     /// Уход с экрана или в фон закрывает хранилище и стирает открытые файлы.
     private func leave() {
-        if let messenger = try? CoreStore.shared.current() { try? messenger.onBackground() }
         preview = nil
         VaultFiles.clearOpened()
-        render()
+        // 🔐 С экрана содержимое уходит сразу, ядро закрывает хранилище
+        // следом — не из главного потока (см. `render`).
+        open = false
+        files = []
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            _ = try? await Background.run { try messenger.onBackground() }
+            render()
+        }
     }
 
     /// Шифрует ядро, на диск пишет приложение — как со вложениями.

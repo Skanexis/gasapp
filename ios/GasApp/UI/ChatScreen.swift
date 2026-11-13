@@ -15,6 +15,11 @@ struct MessageRow: Identifiable, Equatable {
     var attachments: [Data] = []
     /// Кнопки бота под сообщением: ряды подписей (`messageButtons`).
     var buttons: [[ButtonCell]] = []
+    /// Время для показа. Считается один раз, при чтении переписки, а не
+    /// при каждой отрисовке пузыря; пусто — пузырь посчитает сам.
+    var time = ""
+    /// С этого сообщения начинается день: над ним — плашка с датой.
+    var startsDay = false
 }
 
 /// Кнопка бота: подпись и признак ссылки — ссылка не открывается сама.
@@ -57,6 +62,11 @@ struct ChatScreen: View {
     @State private var confirmDecline = false
     @State private var toast: String?
     @State private var receiptSentFor: String?
+    /// Описания вложений уже прочитанных сообщений. За каждым — поход в
+    /// базу, а переписка перечитывается на любое событие; вложения
+    /// сообщения не меняются. 🔐 В описании — ключ файла: живёт, пока
+    /// открыт экран, вместе с самой перепиской.
+    @State private var knownAttachments: [String: [Data]] = [:]
     @State private var photo: PhotosPickerItem?
     @State private var sendingPhoto = false
     @State private var editing: MessageRow?
@@ -68,8 +78,10 @@ struct ChatScreen: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 6) {
-                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                            if index == 0 || !Calendar.current.isDate(Self.date(of: message), inSameDayAs: Self.date(of: messages[index - 1])) {
+                        ForEach(messages) { message in
+                            // Начало дня посчитано при чтении переписки:
+                            // календарь в отрисовке — работа на каждый кадр.
+                            if message.startsDay {
                                 DaySeparator(date: Self.date(of: message))
                             }
                             MessageBubble(message: message)
@@ -88,9 +100,15 @@ struct ChatScreen: View {
                 // Переписка открывается на последнем сообщении, а не сверху.
                 .defaultScrollAnchor(.bottom)
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of: messages.count) { _, _ in
+                .onChange(of: messages.count) { before, _ in
                     guard let last = messages.last else { return }
-                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                    // Открытие чата — сразу на месте, без проезда по всей
+                    // переписке; новое сообщение — плавно.
+                    if before == 0 {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    } else {
+                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
                 }
             }
 
@@ -100,7 +118,11 @@ struct ChatScreen: View {
             }
 
             guardPanel
-            composer
+            // Поле ввода — отдельным видом, и текст сюда идёт привязкой:
+            // этот экран набираемого не читает, поэтому нажатие клавиши
+            // перерисовывает одно поле, а не всю переписку.
+            ChatComposer(draft: $draft, photo: $photo, enabled: mode == .open, sendingPhoto: sendingPhoto,
+                         onSend: { send() }, onPhoto: { sendPhoto($0) })
         }
         .gasScreen()
         .navigationTitle(title)
@@ -186,6 +208,10 @@ struct ChatScreen: View {
         }
         .task {
             resolvedChatId = chatId
+            // Сначала — то, что уже лежит на телефоне: это мгновенно.
+            // Прежде экран ждал ответа сервера (через Tor — секунды) и
+            // всё это время был пуст.
+            await refresh()
             await inbox.receiveOnce()
             await refresh()
         }
@@ -248,57 +274,8 @@ struct ChatScreen: View {
         .background(GasAppColor.bgRaised)
     }
 
-    private var composer: some View {
-        HStack(spacing: 10) {
-            PhotosPicker(selection: $photo, matching: .images) {
-                if sendingPhoto {
-                    ProgressView().tint(GasAppColor.accent).frame(width: 30, height: 30)
-                } else {
-                    Image(systemName: "photo.on.rectangle.angled").font(.system(size: 24))
-                        .foregroundStyle(GasAppColor.accent)
-                }
-            }
-            .disabled(sendingPhoto)
-            .accessibilityLabel(L10n.t("Отправить фото", "Send a photo", "Invia una foto"))
-            .onChange(of: photo) { _, item in
-                if let item { sendPhoto(item) }
-            }
-            TextField(L10n.t("Сообщение", "Message", "Messaggio"), text: $draft, axis: .vertical)
-                .font(GasFont.text(16))
-                .lineLimit(1...6)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(GasAppColor.bgCard))
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(canSend ? GasAppColor.accent.opacity(0.4) : GasAppColor.line, lineWidth: 1))
-                .foregroundStyle(GasAppColor.textPrimary)
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                send()
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(canSend ? GasAppColor.accentOn : GasAppColor.textTertiary)
-                    .frame(width: 40, height: 40)
-                    .background(Circle().fill(canSend ? GasAppColor.accent : GasAppColor.bgCard))
-                    .scaleEffect(canSend ? 1 : 0.92)
-            }
-            .disabled(!canSend)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: canSend)
-            .accessibilityLabel(L10n.t("Отправить", "Send", "Invia"))
-        }
-        .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(GasAppColor.bgRaised)
-        .overlay(alignment: .top) { Rectangle().fill(GasAppColor.line).frame(height: 1) }
-        .disabled(mode != .open)
-        .opacity(mode == .open ? 1 : 0.4)
-    }
-
     static func date(of message: MessageRow) -> Date {
         Date(timeIntervalSince1970: TimeInterval(message.timestamp) / 1000)
-    }
-
-    private var canSend: Bool {
-        mode == .open && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: - Действия с сообщением
@@ -436,13 +413,14 @@ struct ChatScreen: View {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let peer = peerUsername
         let known = resolvedChatId
+        let remembered = knownAttachments
 
         struct Snapshot: Sendable {
             var chatId: String
             var contact: FfiContact?
-            var messages: [FfiMessage]
+            var rows: [MessageRow]
+            var lastIncoming: String?
             var attachments: [String: [Data]]
-            var buttons: [String: [[ButtonCell]]]
             var request: FfiChatRequest
             var blocked: Bool
         }
@@ -460,44 +438,67 @@ struct ChatScreen: View {
             // Описания вложений — из локальной базы; сами файлы качаются,
             // только когда сообщение на экране (AttachmentView).
             var attachments: [String: [Data]] = [:]
-            var buttons: [String: [[ButtonCell]]] = [:]
+            var rows: [MessageRow] = []
+            rows.reserveCapacity(list.count)
+            let calendar = Calendar.current
+            var previousDay: Date?
             for message in list {
-                if let descriptors = try? messenger.attachmentsOf(messageId: message.messageId), !descriptors.isEmpty {
-                    attachments[message.messageId] = descriptors
+                let id = message.messageId
+                // Уже читали — второй раз в базу не идём (и пустой ответ
+                // тоже помним: у большинства сообщений вложений нет).
+                let descriptors: [Data]
+                if let seen = remembered[id] {
+                    descriptors = seen
+                } else if let read = try? messenger.attachmentsOf(messageId: id) {
+                    descriptors = read
+                    attachments[id] = read
+                } else {
+                    descriptors = []
                 }
                 // Кнопки бывают только под сообщением собеседника (бота).
-                if !message.outgoing, let rows = try? messenger.messageButtons(messageIdText: message.messageId), !rows.isEmpty {
-                    buttons[message.messageId] = rows.map { $0.map { ButtonCell(label: $0.label, isLink: $0.isLink) } }
+                // Читаются каждый раз: бот вправе их сменить.
+                var buttons: [[ButtonCell]] = []
+                if !message.outgoing, let found = try? messenger.messageButtons(messageIdText: id), !found.isEmpty {
+                    buttons = found.map { $0.map { ButtonCell(label: $0.label, isLink: $0.isLink) } }
                 }
+                // Время и начало дня — здесь, в фоне, один раз на сообщение.
+                let date = Date(timeIntervalSince1970: TimeInterval(message.timestamp) / 1000)
+                let startsDay = previousDay.map { !calendar.isDate(date, inSameDayAs: $0) } ?? true
+                previousDay = date
+                rows.append(MessageRow(id: id, text: message.text, timestamp: message.timestamp,
+                                       outgoing: message.outgoing, status: message.status,
+                                       attachments: descriptors, buttons: buttons,
+                                       time: formatChatTime(message.timestamp), startsDay: startsDay))
             }
-            return Snapshot(chatId: chat, contact: found, messages: list, attachments: attachments,
-                            buttons: buttons, request: request, blocked: blocked)
+            return Snapshot(chatId: chat, contact: found, rows: rows,
+                            lastIncoming: list.last(where: { !$0.outgoing })?.messageId,
+                            attachments: attachments, request: request, blocked: blocked)
         }) else { return }
 
-        resolvedChatId = snap.chatId
-        contact = snap.contact
-        blocked = snap.blocked
-        messages = snap.messages.map {
-            MessageRow(id: $0.messageId, text: $0.text, timestamp: $0.timestamp, outgoing: $0.outgoing,
-                       status: $0.status, attachments: snap.attachments[$0.messageId] ?? [],
-                       buttons: snap.buttons[$0.messageId] ?? [])
+        if !snap.attachments.isEmpty {
+            knownAttachments.merge(snap.attachments) { _, fresh in fresh }
         }
+        // Присваивается только изменившееся: каждое присваивание —
+        // перерисовка экрана, а перечитывание чаще всего ничего не меняет.
+        if resolvedChatId != snap.chatId { resolvedChatId = snap.chatId }
+        contact = snap.contact
+        if blocked != snap.blocked { blocked = snap.blocked }
+        if messages != snap.rows { messages = snap.rows }
         // Контакта нет или он не прочитался — ключ не подтверждён:
         // отправку это не откроет, её всё равно решает ядро.
-        mode = SendMode.decide(
+        let decided = SendMode.decide(
             keyChanged: snap.contact?.keyChanged == true,
             replaced: snap.contact?.replaced == true,
             keyConfirmed: snap.contact?.keyConfirmed == true,
             request: snap.request == .incoming,
             blocked: snap.blocked
         )
+        if mode != decided { mode = decided }
 
         // Отметка «прочитано» — до последнего входящего, и только после
         // принятия запроса: незнакомец не должен узнать, что прочли.
         // Одна отметка на новое входящее, а не на каждое обновление экрана.
-        if mode == .open, let lastIncoming = snap.messages.last(where: { !$0.outgoing }),
-           lastIncoming.messageId != receiptSentFor {
-            let id = lastIncoming.messageId
+        if mode == .open, let id = snap.lastIncoming, id != receiptSentFor {
             if (try? await Background.run {
                 try messenger.sendReadReceipt(peerUsername: peer, untilMessageId: id, nowMillis: CoreStore.nowMillis)
             }) != nil {
@@ -527,8 +528,12 @@ struct ChatScreen: View {
         toast = nil
 
         // «Отправляется», а не «отправлено»: на сервер оно ещё не ушло.
-        let local = MessageRow(id: "local-\(UUID().uuidString)", text: text, timestamp: CoreStore.nowMillis,
-                               outgoing: true, status: .pending)
+        let now = CoreStore.nowMillis
+        let startsDay = messages.last.map {
+            !Calendar.current.isDate(Self.date(of: $0), inSameDayAs: Date(timeIntervalSince1970: TimeInterval(now) / 1000))
+        } ?? true
+        let local = MessageRow(id: "local-\(UUID().uuidString)", text: text, timestamp: now,
+                               outgoing: true, status: .pending, time: formatChatTime(now), startsDay: startsDay)
         messages.append(local)
         let peer = peerUsername
 
@@ -768,6 +773,11 @@ struct ChatScreen: View {
 struct MessageBubble: View {
     let message: MessageRow
 
+    /// Время пузыря: посчитанное при чтении переписки, иначе — здесь.
+    private var time: String {
+        message.time.isEmpty ? formatChatTime(message.timestamp) : message.time
+    }
+
     var body: some View {
         HStack {
             if message.outgoing { Spacer(minLength: 56) }
@@ -784,13 +794,13 @@ struct MessageBubble: View {
                         .multilineTextAlignment(.leading)
                 }
                 HStack(spacing: 4) {
-                    Text(formatChatTime(message.timestamp))
+                    Text(time)
                     if message.outgoing { statusIcon }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(message.outgoing
-                    ? "\(formatChatTime(message.timestamp)), \(Self.statusText(message.status))"
-                    : formatChatTime(message.timestamp))
+                    ? "\(time), \(Self.statusText(message.status))"
+                    : time)
                 .font(GasFont.text(11))
                 .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingMeta : GasAppColor.textTertiary)
             }
@@ -849,6 +859,70 @@ struct MessageBubble: View {
         case .read: L10n.t("Прочитано", "Read", "Letto")
         case .failed: L10n.t("Не отправлено", "Not sent", "Non inviato")
         }
+    }
+}
+
+/// Поле ввода переписки: фото, текст, кнопка отправки.
+///
+/// Отдельный вид ради отклика: набираемый текст читает только он.
+/// Пока поле было частью экрана переписки, каждая буква перерисовывала
+/// экран целиком — вместе с лентой сообщений.
+struct ChatComposer: View {
+    @Binding var draft: String
+    @Binding var photo: PhotosPickerItem?
+    /// Можно ли писать (решает ядро; экран лишь показывает).
+    let enabled: Bool
+    let sendingPhoto: Bool
+    let onSend: () -> Void
+    let onPhoto: (PhotosPickerItem) -> Void
+
+    private var canSend: Bool {
+        enabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            PhotosPicker(selection: $photo, matching: .images) {
+                if sendingPhoto {
+                    ProgressView().tint(GasAppColor.accent).frame(width: 30, height: 30)
+                } else {
+                    Image(systemName: "photo.on.rectangle.angled").font(.system(size: 24))
+                        .foregroundStyle(GasAppColor.accent)
+                }
+            }
+            .disabled(sendingPhoto)
+            .accessibilityLabel(L10n.t("Отправить фото", "Send a photo", "Invia una foto"))
+            .onChange(of: photo) { _, item in
+                if let item { onPhoto(item) }
+            }
+            TextField(L10n.t("Сообщение", "Message", "Messaggio"), text: $draft, axis: .vertical)
+                .font(GasFont.text(16))
+                .lineLimit(1...6)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(GasAppColor.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(canSend ? GasAppColor.accent.opacity(0.4) : GasAppColor.line, lineWidth: 1))
+                .foregroundStyle(GasAppColor.textPrimary)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onSend()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(canSend ? GasAppColor.accentOn : GasAppColor.textTertiary)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(canSend ? GasAppColor.accent : GasAppColor.bgCard))
+                    .scaleEffect(canSend ? 1 : 0.92)
+            }
+            .disabled(!canSend)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: canSend)
+            .accessibilityLabel(L10n.t("Отправить", "Send", "Invia"))
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(GasAppColor.bgRaised)
+        .overlay(alignment: .top) { Rectangle().fill(GasAppColor.line).frame(height: 1) }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
     }
 }
 

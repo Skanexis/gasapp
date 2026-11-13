@@ -201,14 +201,30 @@ class MessageAdapter(
         // и сбивала прокрутку.
         val old = rows.toList()
         val new = rowsOf(items)
+
+        // Первое заполнение — без разницы и без анимации: переписка
+        // появляется сразу, а не поднимается сообщение за сообщением
+        // при каждом открытии чата.
+        if (old.isEmpty()) {
+            rows.addAll(new)
+            notifyDataSetChanged()
+
+            return
+        }
+
+        val settled = settledIds(old, new)
         val diff = DiffUtil.calculateDiff(
             object : DiffUtil.Callback() {
                 override fun getOldListSize() = old.size
 
                 override fun getNewListSize() = new.size
 
-                override fun areItemsTheSame(oldPosition: Int, newPosition: Int) =
-                    old[oldPosition].item.messageId == new[newPosition].item.messageId
+                override fun areItemsTheSame(oldPosition: Int, newPosition: Int): Boolean {
+                    val before = old[oldPosition].item.messageId
+                    val after = new[newPosition].item.messageId
+
+                    return before == after || settled[before] == after
+                }
 
                 override fun areContentsTheSame(oldPosition: Int, newPosition: Int) =
                     old[oldPosition] == new[newPosition]
@@ -219,6 +235,37 @@ class MessageAdapter(
         rows.addAll(new)
         diff.dispatchUpdatesTo(this)
     }
+
+    /**
+     * Какому сохранённому сообщению соответствует каждое «местное».
+     *
+     * Только что отправленное показывается сразу, под временным
+     * идентификатором ([LOCAL_ID_PREFIX]); после отправки ядро отдаёт
+     * его же под настоящим. Без этой связи разница видела бы удаление
+     * и вставку: пузырь исчезал и поднимался заново. Связь — по тексту
+     * среди исходящих, которых прежде в списке не было.
+     */
+    private fun settledIds(old: List<MessageRow>, new: List<MessageRow>): Map<String, String> {
+        val locals = old.filter { it.item.messageId.startsWith(LOCAL_ID_PREFIX) }
+        if (locals.isEmpty()) return emptyMap()
+
+        val known = old.mapTo(HashSet()) { it.item.messageId }
+        val fresh = new.filterTo(ArrayList()) { it.item.outgoing && it.item.messageId !in known }
+        val settled = HashMap<String, String>()
+
+        for (local in locals) {
+            val match = fresh.firstOrNull { it.item.text == local.item.text } ?: continue
+
+            fresh.remove(match)
+            settled[local.item.messageId] = match.item.messageId
+        }
+
+        return settled
+    }
+
+    /** Сколько сообщений показано. */
+    val size: Int
+        get() = rows.size
 
     /** Добавляет одно сообщение в конец. */
     fun append(item: MessageItem) {
@@ -256,9 +303,11 @@ class MessageAdapter(
      * приложение.
      */
     fun clear() {
-        val removed = rows.size
+        if (rows.isEmpty()) return
+
+        // Без анимации удаления: экран уже уходит, проигрывать её некому.
         rows.clear()
-        notifyItemRangeRemoved(0, removed)
+        notifyDataSetChanged()
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -274,18 +323,21 @@ class MessageAdapter(
 
     override fun getItemCount(): Int = rows.size
 
-    private companion object {
+    companion object {
+        /** Начало временного идентификатора ещё не сохранённого сообщения. */
+        const val LOCAL_ID_PREFIX = "local-"
+
         /** Сообщения ближе пяти минут — одна группа. */
-        const val GROUP_GAP_MS = 5 * 60 * 1000L
+        private const val GROUP_GAP_MS = 5 * 60 * 1000L
 
         /** Высота кнопки под сообщением — не меньше области нажатия. */
-        const val BUTTON_MIN_HEIGHT_DP = 48
+        private const val BUTTON_MIN_HEIGHT_DP = 48
 
         /** Промежуток между кнопками и их внутренний отступ. */
-        const val BUTTON_GAP_DP = 6
+        private const val BUTTON_GAP_DP = 6
 
         /** Кегль подписи кнопки. */
-        const val BUTTON_TEXT_SP = 14f
+        private const val BUTTON_TEXT_SP = 14f
     }
 
     /** Держатель пузыря сообщения. */
@@ -342,6 +394,47 @@ class MessageAdapter(
         private val editedMark: TextView = view.findViewById(R.id.message_edited)
         private val day: TextView = view.findViewById(R.id.message_day)
 
+        // Всё, что не зависит от сообщения, считается один раз на
+        // держатель: привязка идёт на каждую строку при прокрутке,
+        // и поход в ресурсы или новый фон посреди кадра — это рывок.
+        private val density = view.resources.displayMetrics.density
+        private val gapInGroup = (GAP_IN_GROUP_DP * density).toInt()
+        private val gapBetweenGroups = (GAP_BETWEEN_GROUPS_DP * density).toInt()
+        private val outgoingInk = ContextCompat.getColor(view.context, R.color.bubble_outgoing_text)
+        private val outgoingMeta = ContextCompat.getColor(view.context, R.color.bubble_outgoing_meta)
+        private val incomingInk = ContextCompat.getColor(view.context, R.color.text_primary)
+        private val incomingMeta = ContextCompat.getColor(view.context, R.color.text_tertiary)
+        private val outgoingFill = ContextCompat.getColor(view.context, R.color.bubble_outgoing)
+        private val incomingFill = ContextCompat.getColor(view.context, R.color.bg_card)
+        private val readTint = ColorStateList.valueOf(outgoingInk)
+        private val quietTint = ColorStateList.valueOf(outgoingMeta)
+        private val editedLabel = view.context.getString(R.string.message_edited)
+
+        // В sp, как и само время: в dp заполнитель не рос бы вместе
+        // с системным шрифтом, и на крупном время наезжало на текст.
+        private val metaPx = android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_SP,
+            META_TEXT_SP.toFloat(),
+            view.resources.displayMetrics,
+        ).toInt()
+
+        /** Фоны пузыря: сторона × примыкание к предыдущему. Свои у каждого держателя. */
+        private val shapes = arrayOfNulls<GradientDrawable>(4)
+
+        /** Сообщение этого пузыря — для нажатий; слушатель ставится один раз. */
+        private var bound: MessageItem? = null
+
+        init {
+            bubble.setOnLongClickListener {
+                bound?.let { onMessageLongClick?.invoke(it) }
+
+                // true: событие обработано, и обычное нажатие после
+                // него не сработает — иначе меню открывалось бы
+                // вместе с другим действием.
+                onMessageLongClick != null
+            }
+        }
+
         /** Ряды кнопок — последним в пузыре, под текстом и временем. */
         private val buttons: LinearLayout = LinearLayout(view.context).apply {
             orientation = LinearLayout.VERTICAL
@@ -363,11 +456,14 @@ class MessageAdapter(
          * нажатия, что его уведут из приложения.
          */
         private fun bindButtons(message: MessageItem) {
-            buttons.removeAllViews()
+            if (buttons.childCount > 0) buttons.removeAllViews()
             buttons.visibility = if (message.buttons.isEmpty()) View.GONE else View.VISIBLE
 
+            // Кнопки — редкость (сообщения ботов): у обычного пузыря
+            // здесь делать нечего.
+            if (message.buttons.isEmpty()) return
+
             val context = itemView.context
-            val density = context.resources.displayMetrics.density
             val gap = (BUTTON_GAP_DP * density).toInt()
 
             message.buttons.forEachIndexed { rowIndex, row ->
@@ -410,6 +506,7 @@ class MessageAdapter(
         /** Заполняет пузырь данными сообщения. */
         fun bind(row: MessageRow) {
             val message = row.item
+            bound = message
 
             text.text = withRoomForTime(message)
             time.text = message.time
@@ -418,22 +515,12 @@ class MessageAdapter(
             day.visibility = if (row.day != null) View.VISIBLE else View.GONE
 
             // Группа: плотно внутри, воздух между группами.
-            val density = itemView.resources.displayMetrics.density
             container.setPadding(
                 container.paddingStart,
-                ((if (row.joinsPrevious) GAP_IN_GROUP_DP else GAP_BETWEEN_GROUPS_DP) * density).toInt(),
+                if (row.joinsPrevious) gapInGroup else gapBetweenGroups,
                 container.paddingEnd,
-                ((if (row.joinsNext) GAP_IN_GROUP_DP else GAP_BETWEEN_GROUPS_DP) * density).toInt(),
+                if (row.joinsNext) gapInGroup else gapBetweenGroups,
             )
-
-            bubble.setOnLongClickListener {
-                onMessageLongClick?.invoke(message)
-
-                // true: событие обработано, и обычное нажатие после
-                // него не сработает — иначе меню открывалось бы
-                // вместе с другим действием.
-                onMessageLongClick != null
-            }
 
             // Пустая подпись прячется: пузырь с вложением и без текста
             // иначе оставлял бы пустую строку над файлом.
@@ -445,25 +532,22 @@ class MessageAdapter(
             editedMark.visibility = if (message.edited) View.VISIBLE else View.GONE
 
             container.gravity = if (message.outgoing) Gravity.END else Gravity.START
-            bubble.background = bubbleShape(message.outgoing, row.joinsPrevious, row.joinsNext)
+            val shape = bubbleShape(message.outgoing, row.joinsPrevious)
+            if (bubble.background !== shape) bubble.background = shape
 
             // Исходящее — «чернила» акцента с тёмным текстом, входящее —
             // бумага карточки со светлым: сторона читается без подписи.
-            val context = itemView.context
-            val ink = if (message.outgoing) R.color.bubble_outgoing_text else R.color.text_primary
-            val meta = if (message.outgoing) R.color.bubble_outgoing_meta else R.color.text_tertiary
-            text.setTextColor(ContextCompat.getColor(context, ink))
-            time.setTextColor(ContextCompat.getColor(context, meta))
-            editedMark.setTextColor(ContextCompat.getColor(context, meta))
+            val meta = if (message.outgoing) outgoingMeta else incomingMeta
+            text.setTextColor(if (message.outgoing) outgoingInk else incomingInk)
+            time.setTextColor(meta)
+            editedMark.setTextColor(meta)
 
             // Статус показывается только у исходящих: у входящих он
             // не имеет смысла и сбивал бы с толку.
             if (message.outgoing) {
                 status.visibility = View.VISIBLE
                 status.setImageResource(iconFor(message.status))
-                status.imageTintList = ColorStateList.valueOf(
-                    ContextCompat.getColor(itemView.context, tintFor(message.status)),
-                )
+                status.imageTintList = tintFor(message.status)
                 status.contentDescription = itemView.context.getString(labelFor(message.status))
             } else {
                 status.visibility = View.GONE
@@ -477,8 +561,10 @@ class MessageAdapter(
          * там, где пузырь примыкает к соседу; у последнего в группе —
          * малый нижний угол со стороны отправителя («хвостик»).
          */
-        private fun bubbleShape(outgoing: Boolean, joinsPrevious: Boolean, joinsNext: Boolean): GradientDrawable {
-            val density = itemView.resources.displayMetrics.density
+        private fun bubbleShape(outgoing: Boolean, joinsPrevious: Boolean): GradientDrawable {
+            val slot = (if (outgoing) 2 else 0) + (if (joinsPrevious) 1 else 0)
+            shapes[slot]?.let { return it }
+
             val big = BIG_RADIUS_DP * density
             val small = SMALL_RADIUS_DP * density
 
@@ -496,13 +582,8 @@ class MessageAdapter(
 
             return GradientDrawable().apply {
                 cornerRadii = corners
-                setColor(
-                    ContextCompat.getColor(
-                        itemView.context,
-                        if (outgoing) R.color.bubble_outgoing else R.color.bg_card,
-                    ),
-                )
-            }
+                setColor(if (outgoing) outgoingFill else incomingFill)
+            }.also { shapes[slot] = it }
         }
 
         /**
@@ -517,10 +598,9 @@ class MessageAdapter(
         private fun withRoomForTime(message: MessageItem): CharSequence {
             if (message.text.isEmpty()) return ""
 
-            val context = itemView.context
             val placeholder = buildString {
                 append("\u00A0\u00A0")
-                if (message.edited) append(context.getString(R.string.message_edited)).append('\u00A0')
+                if (message.edited) append(editedLabel).append('\u00A0')
                 append(message.time)
                 // Место под значок статуса у исходящих.
                 if (message.outgoing) append("\u00A0\u2003\u2003")
@@ -530,13 +610,6 @@ class MessageAdapter(
                 val start = length
                 append(placeholder)
                 setSpan(ForegroundColorSpan(Color.TRANSPARENT), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                // В sp, как и само время: в dp заполнитель не рос бы вместе
-                // с системным шрифтом, и на крупном время наезжало на текст.
-                val metaPx = android.util.TypedValue.applyDimension(
-                    android.util.TypedValue.COMPLEX_UNIT_SP,
-                    META_TEXT_SP.toFloat(),
-                    context.resources.displayMetrics,
-                ).toInt()
                 setSpan(AbsoluteSizeSpan(metaPx), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
@@ -571,11 +644,11 @@ class MessageAdapter(
             DeliveryMark.Failed -> R.string.delivery_failed
         }
 
-        private fun tintFor(status: DeliveryMark): Int = when (status) {
+        private fun tintFor(status: DeliveryMark): ColorStateList = when (status) {
             // На «чернилах» исходящего пузыря: прочитанное — полной
             // краской, остальное — приглушённой; неудача видна формой.
-            DeliveryMark.Read, DeliveryMark.Failed -> R.color.bubble_outgoing_text
-            else -> R.color.bubble_outgoing_meta
+            DeliveryMark.Read, DeliveryMark.Failed -> readTint
+            else -> quietTint
         }
 
         private companion object {

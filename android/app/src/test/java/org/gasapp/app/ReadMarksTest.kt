@@ -36,6 +36,29 @@ class ReadMarksTest {
         assertEquals(0, ReadMarks.count(messages, mark = 400))
     }
 
+    /**
+     * Короткий путь списка чатов: последнее сообщение не новее отметки —
+     * переписку ради счётчика не читают. Он обязан давать тот же ноль,
+     * что и полный подсчёт, при любой отметке.
+     */
+    @Test
+    fun last_message_not_newer_than_the_mark_means_nothing_is_unread() {
+        val messages = listOf(
+            message(100, outgoing = false),
+            message(200, outgoing = true),
+            message(300, outgoing = false),
+        )
+
+        for (mark in listOf(0L, 99L, 100L, 250L, 299L, 300L, 301L, 1_000L)) {
+            if (!ReadMarks.isNewer(messages.last(), mark)) {
+                assertEquals("отметка $mark", 0, ReadMarks.count(messages, mark))
+            }
+        }
+
+        assertEquals(false, ReadMarks.isNewer(messages.last(), mark = 300))
+        assertEquals(true, ReadMarks.isNewer(messages.last(), mark = 299))
+    }
+
     @Test
     fun own_messages_are_never_unread() {
         val messages = listOf(message(500, outgoing = true), message(600, outgoing = true))
