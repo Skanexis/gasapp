@@ -240,8 +240,53 @@ encrypted,messenger,private,chat,tor,e2ee,secure,channels,privacy,no phone
 
 ### Описание (≤ 4000)
 
-Для iOS — то же, что для Google Play, с одной правкой: «вход по PIN
-и Face ID / Touch ID» вместо «отпечатка пальца».
+EN (iOS — сверено со сборкой 2026-11-24: Face ID, жалоба с уликами,
+статусы, без выгрузки и «защиты от снимков», которой на iOS нет):
+
+```text
+GasApp is a messenger for private conversations and channels: the server cannot read your messages.
+
+NO PHONE NUMBER
+Your account is a username you choose. It is not tied to a phone number or your real name. Creating an account requires an email address: a code is sent to it. The server does not store the address itself, only a hash of it.
+
+END-TO-END ENCRYPTION
+Messages, photos and files are encrypted on your iPhone and decrypted only on your contact's device. The protocol is open: PQXDH and Double Ratchet. Starting a conversation includes ML-KEM, so traffic recorded today cannot be decrypted by a future quantum computer.
+
+TOR BUILT IN
+Turn on Tor with one switch and the server does not see your IP address. There is nothing extra to install. If Tor is blocked where you are, GasApp connects through bridges on its own.
+
+THE SERVER KNOWS AS LITTLE AS POSSIBLE
+• the sender is sealed (sealed sender): the server does not know who writes to whom;
+• IP addresses are not logged;
+• no analytics, no ads, no trackers;
+• undelivered messages are kept for 30 days at most.
+
+VERIFY WHO YOU TALK TO
+Compare safety numbers by scanning each other's QR code in person. A public key log keeps the server from silently swapping your contact's key.
+
+CHANNELS
+Read channels by link, QR code or @name: posts with photos and files, reactions, pinned posts, search. Closed channels are joined by a request you approve. The server stores the posts and title of a channel without an @name encrypted; a public channel with an @name can be read by the server. Channels can be created by premium accounts, granted by the server operator. A channel is not a private conversation: anyone with the link can read it.
+
+SAFETY
+A new sender's first message arrives as a request you accept or decline. Block anyone in one tap. Report abuse right from the chat: you can attach the messages and screenshots yourself, encrypted for our moderation team only.
+
+ALSO
+• clear message status: sending, sent, delivered, read;
+• disappearing messages;
+• encrypted file vault;
+• backups encrypted with a recovery key only you know;
+• PIN and Face ID unlock; content is hidden in the app switcher and during screen recording;
+• delete your account right in the app.
+
+HONEST STATUS
+GasApp is an open project, and every claim above is described in our published documents. An independent security audit is still ahead; what is protected and where the limits are is described honestly in the privacy policy.
+
+Calls, voice messages and group chats are not available yet. Notifications carry no message text and no sender name.
+```
+
+RU — как у Google Play, с правками: «Face ID» вместо отпечатка, абзац
+«Безопасность» (запрос на переписку, блокировка, жалоба с уликами), без
+«выгрузки данных» и «защиты от снимков экрана».
 
 ### Что нового (≤ 4000)
 
