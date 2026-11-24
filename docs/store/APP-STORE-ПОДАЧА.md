@@ -157,6 +157,13 @@ Standard algorithms only (X25519, ML-KEM, AES-GCM, SHA-2, HKDF).
 
 ## 5. Pricing and Availability
 
+Меню слева, внизу — раздел **MONETIZATION** → *Pricing and
+Availability* (меню прокручивается).
+
+⚠️ Блок **App Encryption Documentation → Upload** в App Information
+**не трогать**: ответы о шифровании даны у сборки (§ 1), документы при
+стандартных алгоритмах не нужны.
+
 * Price: **Free**.
 * Availability: все страны и регионы, **кроме France** (решение
   владельца 2026-10-10, см. app-store.md § 2).
