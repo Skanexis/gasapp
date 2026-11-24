@@ -99,10 +99,13 @@ with a 6-digit code and set a 6-digit PIN. The server keeps only a hash
 of the email.
 
 HOW TO TEST
-GasApp has no passwords. The "User name" and "Password" in the sign-in
-fields are for a TEST MAILBOX we created for you, at <webmail URL>.
+GasApp has no login with a password: you create a NEW account on your
+device. The "User name" and "Password" in the sign-in fields are NOT for
+the app - they open a TEST MAILBOX we created for you, at <webmail URL>.
 It receives the 6-digit sign-up code. You may also use your own email.
-1. Tap "Create account", choose any free username, enter the test
+Do not tap "I have a backup": that restores an existing account from
+its backup files and is not needed for review.
+1. Tap "Get started" > "Create account", choose any free username, enter the test
    mailbox address, then choose any 6-digit PIN. Leave "Connect through
    Tor" off (the default).
 2. Open the test mailbox in a browser and enter the 6-digit code from
