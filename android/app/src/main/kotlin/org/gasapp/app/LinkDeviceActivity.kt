@@ -205,9 +205,9 @@ class LinkDeviceActivity : AppCompatActivity() {
                     finish()
                 }
                 .onFailure {
-                    // Грант одноразовый: после отказа — заново, с новым QR.
+                    // Вход повторяем: ядро досылает то, что не дошло, — QR
+                    // заново не нужен, экран сверки остаётся.
                     showStatus(getString(R.string.link_failed))
-                    restart()
                 }
         }
     }

@@ -9694,6 +9694,11 @@ fn history_moves_to_a_newly_linked_device() {
         .collect();
     assert_eq!(texts, vec![("hi bob", true), ("hi alice", false)]);
     assert_eq!(moved[0].message_id, first);
+    // Мы отвечали в этом чате — на новом телефоне он не «запрос».
+    assert_eq!(
+        phone.chat_request(&chat).expect("состояние"),
+        Some(ChatRequest::Settled)
+    );
 
     // 🔐 Полчаса после входа прошли — история не принимается.
     late.receive_messages(&late_device, later(12 + 31 * 60))

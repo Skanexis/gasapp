@@ -18,7 +18,9 @@
 
 use std::sync::Mutex;
 
-use gasapp_net::api::{LinkCompleteBody, LinkGrantBody, LinkRequestBody, UnlinkBody};
+use gasapp_net::api::{
+    LinkCompleteBody, LinkGrantBody, LinkRequestBody, PublishKeysRequest, UnlinkBody,
+};
 use gasapp_net::client::Transport;
 use gasapp_protocol::device_link::{self, LinkCode, LinkGrant, LinkSecrets, OpenedGrant};
 use gasapp_protocol::device_list::{
@@ -47,6 +49,14 @@ pub(crate) struct PendingLink {
     pq: PqIdentityKeyPair,
     device_id: DeviceId,
     opened: Option<OpenedGrant>,
+    /// Сервер уже знает устройство, база — ключи: осталось дослать ключи.
+    completed: Option<CompletedLink>,
+}
+
+/// Первая фаза входа сделана ([`Client::finish_device_link`]).
+pub(crate) struct CompletedLink {
+    account: Account,
+    request: PublishKeysRequest,
 }
 
 /// Грант на основном — между сверкой цифр и отправкой.
@@ -66,6 +76,9 @@ pub(crate) struct PreparedLink {
 pub(crate) struct LinkState {
     pending: Mutex<Option<PendingLink>>,
     prepared: Mutex<Option<PreparedLink>>,
+    /// Свои другие устройства и когда узнаны (`client::devices`): в
+    /// памяти, чтобы не спрашивать discovery своего имени при отправке.
+    pub(crate) own_targets: Mutex<Option<(i64, Vec<super::devices::Target>)>>,
 }
 
 /// Грант пришёл: что показать на новом устройстве.
@@ -137,6 +150,7 @@ impl<T: Transport> Client<T> {
             pq,
             device_id,
             opened: None,
+            completed: None,
         });
         Ok(uri)
     }
@@ -180,37 +194,60 @@ impl<T: Transport> Client<T> {
     /// Новое устройство: человек сверил цифры — устройство регистрируется
     /// в аккаунте и публикует свои предключи.
     ///
+    /// Повторяемо: сбой сети после регистрации на сервере не обрывает
+    /// вход — повторный вызов досылает ключи, а не начинает заново (новый
+    /// QR был бы невозможен: устройство уже с ключами).
+    ///
     /// # Errors
     ///
     /// * [`GasAppError::Uninitialized`] — гранта ещё нет;
-    /// * [`GasAppError::Network`] — сервер недоступен или отказал.
+    /// * [`GasAppError::Network`] — сервер недоступен или отказал (можно
+    ///   повторить).
     pub fn finish_device_link<R: RngCore + CryptoRng>(
         &self,
         now: Timestamp,
         rng: &mut R,
     ) -> Result<Account> {
-        let pending = self
+        let mut guard = self
             .linking
             .pending
             .lock()
-            .map_err(|_| GasAppError::Storage)?
-            .take()
-            .ok_or(GasAppError::Uninitialized)?;
-        let Some(opened) = pending.opened else {
-            return Err(GasAppError::Uninitialized);
-        };
+            .map_err(|_| GasAppError::Storage)?;
+        let pending = guard.as_mut().ok_or(GasAppError::Uninitialized)?;
+        if pending.completed.is_none() {
+            let done = self.register_linked(pending, now, rng)?;
+            pending.completed = Some(done);
+        }
+        let account = self.publish_linked(pending, now, rng)?;
+        *guard = None;
+        Ok(account)
+    }
+
+    /// Первая фаза входа — один раз: сервер узнаёт устройство, база —
+    /// ключи и аккаунт. Возвращает то, что досылается второй фазой.
+    fn register_linked<R: RngCore + CryptoRng>(
+        &self,
+        pending: &PendingLink,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<CompletedLink> {
+        let opened = pending.opened.as_ref().ok_or(GasAppError::Uninitialized)?;
+        let access_key: [u8; ACCESS_KEY_LEN] = opened
+            .grant
+            .extra
+            .as_slice()
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?;
         let nonce = pending.secrets.request().nonce;
+        let private = PrivateKeyBytes::new(*pending.identity.private().expose_secret());
 
         let mut message = COMPLETE_DOMAIN.to_vec();
         message.extend_from_slice(&nonce);
-        let signature = gasapp_protocol::xeddsa::montgomery::sign(
-            &PrivateKeyBytes::new(*pending.identity.private().expose_secret()),
-            &message,
-        )?;
+        let signature = gasapp_protocol::xeddsa::montgomery::sign(&private, &message)?;
         // 🔐 Членство: этот ключ — устройство именно этого аккаунта. Без
         // подписи собеседники устройство из списка не примут.
         let membership = device_list::sign_membership(
-            &PrivateKeyBytes::new(*pending.identity.private().expose_secret()),
+            &private,
             &opened.grant.account_identity,
             pending.device_id.as_uuid().as_bytes(),
         )?;
@@ -222,11 +259,10 @@ impl<T: Transport> Client<T> {
             },
         )?;
         let device_id = parse_uuid(&response.device_id).map(DeviceId::from_uuid)?;
-        if device_id != pending.device_id {
-            return Err(GasAppError::Malformed);
-        }
         let account_id = parse_uuid(&response.account_id).map(AccountId::from_uuid)?;
-        if account_id.as_uuid().as_bytes() != &opened.grant.account_id {
+        if device_id != pending.device_id
+            || account_id.as_uuid().as_bytes() != &opened.grant.account_id
+        {
             return Err(GasAppError::Malformed);
         }
 
@@ -249,6 +285,8 @@ impl<T: Transport> Client<T> {
         self.storage
             .set_own_account_identity(&opened.grant.account_identity, &opened.grant.account_pq)?;
         self.save_list(&opened.grant.account_identity, &opened.device_list, now)?;
+        // Ключ доступа аккаунта — тот же, что у основного.
+        self.storage.init_own_access_key(&access_key)?;
 
         let mut request = publish_request(&bundle);
         // Своя половина и её привязка — как у устройства, не у аккаунта:
@@ -262,35 +300,45 @@ impl<T: Transport> Client<T> {
         let (kem_public, kem_signature) = self.sealed_kem_publication(identity, rng)?;
         request.sealed_kem_public = Some(kem_public);
         request.sealed_kem_signature = Some(kem_signature);
+
+        Ok(CompletedLink {
+            account: Account {
+                account_id,
+                device_id,
+                username,
+            },
+            request,
+        })
+    }
+
+    /// Вторая фаза входа — повторяемая: ключи на сервер, ключ доступа,
+    /// отметки.
+    fn publish_linked<R: RngCore + CryptoRng>(
+        &self,
+        pending: &PendingLink,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Account> {
+        let completed = pending
+            .completed
+            .as_ref()
+            .ok_or(GasAppError::Uninitialized)?;
+        let identity = &pending.identity;
         self.api.publish_keys(
-            &device_id.to_string(),
-            &request,
+            &completed.account.device_id.to_string(),
+            &completed.request,
             &DeviceSigner::new(identity, now),
         )?;
         self.storage.mark_own_sealed_kem_published(now)?;
-
-        // Ключ доступа аккаунта — тот же, что у основного: выкладывается и
-        // для этого устройства.
-        let access_key: [u8; ACCESS_KEY_LEN] = opened
-            .grant
-            .extra
-            .as_slice()
-            .try_into()
-            .map_err(|_| GasAppError::Malformed)?;
-        self.storage.init_own_access_key(&access_key)?;
         self.ensure_access_key(identity, now, rng)?;
         self.set_setting_bool(super::devices::MULTI_DEVICE_SETTING, true)?;
         // С этого момента полчаса принимается история от основного.
         self.storage
             .set_setting_int(super::history::LINKED_AT_SETTING, now.as_millis())?;
+        self.forget_own_targets();
         self.storage
             .log_security_event("device_linked_to_account", None, now)?;
-
-        Ok(Account {
-            account_id,
-            device_id,
-            username,
-        })
+        Ok(completed.account.clone())
     }
 
     /// Основное устройство: QR нового — проверенный запрос, новый список
@@ -403,6 +451,7 @@ impl<T: Transport> Client<T> {
         )?;
         self.set_setting_bool(super::devices::MULTI_DEVICE_SETTING, true)?;
         self.schedule_history(&prepared.device_id, now)?;
+        self.forget_own_targets();
         self.storage
             .log_security_event("device_link_approved", None, now)?;
         Ok(())
@@ -495,6 +544,7 @@ impl<T: Transport> Client<T> {
             &DeviceSigner::new(&identity, now),
         )?;
         self.save_list(identity.public().public(), &list, now)?;
+        self.forget_own_targets();
         self.storage
             .log_security_event("device_unlinked", None, now)?;
         Ok(())

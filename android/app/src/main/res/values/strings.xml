@@ -992,12 +992,10 @@ No GasApp yet? The link shows where to get it.</string>
     <string name="devices_unlink_title">Unlink this device?</string>
     <string name="devices_unlink_message">New messages will no longer reach it. Messages already on it stay there.</string>
     <string name="devices_load_failed">The device list didn’t load. Check your connection.</string>
-    <string name="devices_compare_title">Compare the digits</string>
-    <string name="devices_compare_message">The new phone must show the same digits. If they don’t match, don’t link: the QR was swapped. The new phone gets all new messages and the last 30 days of messages.</string>
-    <string name="devices_compare_match">They match — link</string>
-    <string name="devices_compare_mismatch">They don’t match</string>
-    <string name="devices_mismatch_done">The digits didn’t match — the device was not linked.</string>
-    <string name="devices_approved">On the new phone, tap “Digits match” — and it signs in.</string>
+    <string name="devices_compare_title">Link this device?</string>
+    <string name="devices_compare_message">Link only your own phone that you are holding. After “Link”, digits appear on the new phone — they must match these. The new phone gets all new messages and the last 30 days of messages.</string>
+    <string name="devices_compare_match">Link</string>
+    <string name="devices_approved">If they match, tap “Digits match” on the new phone. If not, tap “They don’t match” there: the device won’t sign in.</string>
     <string name="devices_error_code">The code didn’t work or has expired. A new QR appears on the new phone — scan it.</string>
     <string name="devices_error_restricted">Your account is restricted — linking is unavailable.</string>
     <string name="scan_hint_device">Point the camera at the QR code on the new phone</string>
@@ -1012,7 +1010,9 @@ No GasApp yet? The link shows where to get it.</string>
     <string name="link_match">Digits match</string>
     <string name="link_mismatch">They don’t match</string>
     <string name="link_mismatch_done">The digits didn’t match — sign-in cancelled. Try again with the new QR.</string>
-    <string name="link_failed">Sign-in didn’t complete. Check your connection and scan the new QR with the main phone.</string>
+    <string name="link_failed">Sign-in didn’t complete. Check your connection and tap “Digits match” again.</string>
     <string name="link_history">Your last 30 days of messages arrive here within a couple of minutes — text only, without files and disappearing messages.</string>
     <string name="link_qr_description">Code for linking this phone</string>
+    <string name="devices_code_title">Compare with the new phone</string>
+    <string name="devices_linked_done">Device linked. The last 30 days of messages will reach it within a minute.</string>
 </resources>

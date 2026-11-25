@@ -899,12 +899,10 @@ Non hai GasApp? Il link ti mostra dove scaricarla.</string>
     <string name="devices_unlink_title">Scollegare il dispositivo?</string>
     <string name="devices_unlink_message">I nuovi messaggi non lo raggiungeranno più. I messaggi già presenti restano lì.</string>
     <string name="devices_load_failed">L’elenco dei dispositivi non si è caricato. Controlla la connessione.</string>
-    <string name="devices_compare_title">Confronta le cifre</string>
-    <string name="devices_compare_message">Il nuovo telefono deve mostrare le stesse cifre. Se non coincidono, non collegare: il QR è stato sostituito. Il nuovo telefono riceverà tutti i nuovi messaggi e quelli degli ultimi 30 giorni.</string>
-    <string name="devices_compare_match">Coincidono — collega</string>
-    <string name="devices_compare_mismatch">Non coincidono</string>
-    <string name="devices_mismatch_done">Le cifre non coincidevano: il dispositivo non è stato collegato.</string>
-    <string name="devices_approved">Sul nuovo telefono tocca «Le cifre coincidono» ed entrerà nell’account.</string>
+    <string name="devices_compare_title">Collegare il dispositivo?</string>
+    <string name="devices_compare_message">Collega solo il tuo telefono, quello che hai in mano. Dopo «Collega» sul nuovo telefono appariranno delle cifre: devono coincidere con queste. Il nuovo telefono riceverà tutti i nuovi messaggi e quelli degli ultimi 30 giorni.</string>
+    <string name="devices_compare_match">Collega</string>
+    <string name="devices_approved">Se coincidono, tocca «Le cifre coincidono» sul nuovo telefono. Altrimenti tocca lì «Non coincidono»: il dispositivo non entrerà.</string>
     <string name="devices_error_code">Il codice non è valido o è scaduto. Sul nuovo telefono apparirà un nuovo QR: scansionalo.</string>
     <string name="devices_error_restricted">Il tuo account è limitato: il collegamento non è disponibile.</string>
     <string name="scan_hint_device">Inquadra il codice QR sul nuovo telefono</string>
@@ -919,7 +917,9 @@ Non hai GasApp? Il link ti mostra dove scaricarla.</string>
     <string name="link_match">Le cifre coincidono</string>
     <string name="link_mismatch">Non coincidono</string>
     <string name="link_mismatch_done">Le cifre non coincidevano: accesso annullato. Riprova con il nuovo QR.</string>
-    <string name="link_failed">L’accesso non è stato completato. Controlla la connessione e scansiona il nuovo QR con il telefono principale.</string>
+    <string name="link_failed">L’accesso non è stato completato. Controlla la connessione e tocca di nuovo «Le cifre coincidono».</string>
     <string name="link_history">Gli ultimi 30 giorni di messaggi arriveranno qui entro un paio di minuti: solo testo, senza file e messaggi a scomparsa.</string>
     <string name="link_qr_description">Codice per collegare questo telefono</string>
+    <string name="devices_code_title">Confronta con il nuovo telefono</string>
+    <string name="devices_linked_done">Dispositivo collegato. I messaggi degli ultimi 30 giorni lo raggiungeranno entro un minuto.</string>
 </resources>

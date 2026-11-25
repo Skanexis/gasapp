@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 use gasapp_net::client::Transport;
 use gasapp_protocol::content::{Content, HistoryItem, MAX_HISTORY_ITEMS};
 use gasapp_protocol::keys::IdentityKeyPair;
+use gasapp_storage::requests::ChatRequest;
 use gasapp_storage::{MessageStatus, StoredMessage};
 use gasapp_types::{
     AccountId, ChatId, Ciphertext, GasAppError, MessageId, Plaintext, PublicKeyBytes, Result,
@@ -89,6 +90,12 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<usize> {
+        // Свои устройства — заодно с приёмом (а не с отправкой: см.
+        // `Client::own_targets`).
+        if self.setting_bool(super::devices::MULTI_DEVICE_SETTING, false)? {
+            let (identity, _) = self.load_identity()?;
+            let _ = self.refresh_own_targets_if_old(&identity, now);
+        }
         let pending: Vec<(String, i64)> = self
             .storage
             .list_settings()?
@@ -112,8 +119,10 @@ impl<T: Transport> Client<T> {
                 self.storage.set_setting_int(&key, 0)?;
                 continue;
             }
+            // Новое устройство в памяти ещё не знают — спрашиваем discovery
+            // (это приём, не отправка).
             let Some(target) = self
-                .own_targets(&identity, now)?
+                .refresh_own_targets(&identity, now)?
                 .into_iter()
                 .find(|target| target.device_id == device)
             else {
@@ -232,6 +241,7 @@ impl<T: Transport> Client<T> {
             .ok_or(GasAppError::Uninitialized)?;
 
         let mut named = HashSet::new();
+        let mut answered = HashSet::new();
         let mut newest: HashMap<ChatId, (i64, MessageId)> = HashMap::new();
         for item in items {
             let peer = PublicKeyBytes::new(item.peer);
@@ -267,11 +277,28 @@ impl<T: Transport> Client<T> {
                 message_type: 0,
                 expires_at: None,
             })?;
+            if item.outgoing {
+                answered.insert(chat_id);
+            }
             if stored {
                 let entry = newest.entry(chat_id).or_insert((i64::MIN, message_id));
                 if item.sent_at_millis >= entry.0 {
                     *entry = (item.sent_at_millis, message_id);
                 }
+            }
+        }
+
+        // Чат, где мы отвечали, — обычная переписка, а не запрос: иначе
+        // первое же сообщение собеседника на новое устройство сделало бы
+        // давний чат «запросом незнакомца». Только входящие — как было:
+        // на основном это мог быть и неотвеченный запрос.
+        for chat_id in &answered {
+            if matches!(
+                self.storage.chat_request_state(chat_id)?,
+                None | Some(ChatRequest::Incoming)
+            ) {
+                self.storage
+                    .set_chat_request_state(chat_id, ChatRequest::Settled)?;
             }
         }
 

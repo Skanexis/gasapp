@@ -61,6 +61,44 @@
                 tools:text="Цифры не совпали — устройство не подключено."
                 tools:visibility="visible" />
 
+            <!--
+              Грант ушёл: эти цифры должны появиться на новом телефоне.
+              Сверяют их там — поэтому здесь они остаются, пока он не войдёт.
+            -->
+            <LinearLayout
+                android:id="@+id/devices_code_panel"
+                style="@style/GasAppPanel"
+                android:layout_marginTop="@dimen/space_m"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <TextView
+                    style="@style/GasAppText.H4"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/devices_code_title" />
+
+                <TextView
+                    android:id="@+id/devices_code"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:fontFamily="@font/rubik"
+                    android:fontFeatureSettings="tnum"
+                    android:gravity="center"
+                    android:letterSpacing="0.12"
+                    android:textColor="@color/accent_base"
+                    android:textSize="40sp"
+                    tools:text="482 913" />
+
+                <TextView
+                    style="@style/GasAppText.Caption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/devices_approved" />
+            </LinearLayout>
+
             <TextView
                 style="@style/GasAppSectionLabel"
                 android:layout_marginTop="@dimen/space_l"

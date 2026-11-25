@@ -220,8 +220,14 @@
             android:name=".RestoreActivity"
             android:exported="false" />
 
+        <!--
+          Связывание живёт в памяти ядра и в корутине экрана: пересоздание
+          (поворот, тёмная тема, окно) начинало бы вход заново — и могло
+          потерять уже одобренный грант. Экран переживает смену сам.
+        -->
         <activity
             android:name=".LinkDeviceActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density"
             android:exported="false" />
 
         <activity

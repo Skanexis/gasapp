@@ -24,6 +24,7 @@ use gasapp_types::{ChatId, GasAppError, Plaintext, PublicKeyBytes, Result, Times
 use rand_core::{CryptoRng, RngCore};
 
 use gasapp_protocol::content::Content;
+use gasapp_storage::requests::ChatRequest;
 use gasapp_storage::MessageStatus;
 use gasapp_types::MessageId;
 
@@ -33,6 +34,12 @@ use crate::session;
 /// Есть ли у аккаунта другие устройства — копии отправленного идут только
 /// тогда (иначе лишний запрос discovery на каждое сообщение).
 pub(crate) const MULTI_DEVICE_SETTING: &str = "multi_device";
+
+/// Сколько отправка верит своим устройствам из памяти.
+const OWN_TARGETS_TTL_MILLIS: i64 = 6 * 60 * 60 * 1000;
+
+/// Как часто приём обновляет свои устройства.
+const OWN_TARGETS_REFRESH_MILLIS: i64 = 60 * 60 * 1000;
 
 /// Устройство собеседника, которому доставляется сообщение.
 #[derive(Debug, Clone)]
@@ -292,6 +299,66 @@ impl<T: Transport> Client<T> {
         self.send_to_devices(identity, &self_chat, &own, &targets, &plaintext, now, rng)
     }
 
+    /// Свои другие устройства — из памяти, пока свежие.
+    ///
+    /// 🔐 Discovery своего имени сразу после sealed-отправки собеседнику
+    /// назвал бы серверу отправителя: «кто сейчас спросил свои устройства,
+    /// тот и отправил». Поэтому список обновляется с приёмом сообщений
+    /// ([`Client::refresh_own_targets_if_old`]) и при подключении и
+    /// отключении устройств, а отправка берёт его из памяти.
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::refresh_own_targets`] — если в памяти списка нет.
+    pub(crate) fn own_targets(
+        &self,
+        identity: &IdentityKeyPair,
+        now: Timestamp,
+    ) -> Result<Vec<Target>> {
+        if let Some((at, targets)) = self
+            .linking
+            .own_targets
+            .lock()
+            .map_err(|_| GasAppError::Storage)?
+            .as_ref()
+        {
+            if now.as_millis().saturating_sub(*at) < OWN_TARGETS_TTL_MILLIS {
+                return Ok(targets.clone());
+            }
+        }
+        self.refresh_own_targets(identity, now)
+    }
+
+    /// Обновляет свои устройства в памяти, если они старше часа. Зовётся
+    /// с приёмом сообщений, а не с отправкой.
+    pub(crate) fn refresh_own_targets_if_old(
+        &self,
+        identity: &IdentityKeyPair,
+        now: Timestamp,
+    ) -> Result<()> {
+        let fresh = self
+            .linking
+            .own_targets
+            .lock()
+            .map_err(|_| GasAppError::Storage)?
+            .as_ref()
+            .is_some_and(|(at, _)| {
+                now.as_millis().saturating_sub(*at) < OWN_TARGETS_REFRESH_MILLIS
+            });
+        if !fresh {
+            self.refresh_own_targets(identity, now)?;
+        }
+        Ok(())
+    }
+
+    /// Свой список устройств сменился (подключение, отключение): из памяти
+    /// — забыть.
+    pub(crate) fn forget_own_targets(&self) {
+        if let Ok(mut cache) = self.linking.own_targets.lock() {
+            *cache = None;
+        }
+    }
+
     /// Свои другие устройства — по своему же подписанному списку из
     /// discovery: ключ аккаунта и его половина сверяются со своими.
     ///
@@ -299,7 +366,21 @@ impl<T: Transport> Client<T> {
     ///
     /// [`GasAppError::IdentityChanged`] — discovery называет для своего
     /// имени чужой ключ; [`GasAppError::Network`] — сервер недоступен.
-    pub(crate) fn own_targets(
+    pub(crate) fn refresh_own_targets(
+        &self,
+        identity: &IdentityKeyPair,
+        now: Timestamp,
+    ) -> Result<Vec<Target>> {
+        let targets = self.discover_own_targets(identity, now)?;
+        *self
+            .linking
+            .own_targets
+            .lock()
+            .map_err(|_| GasAppError::Storage)? = Some((now.as_millis(), targets.clone()));
+        Ok(targets)
+    }
+
+    fn discover_own_targets(
         &self,
         identity: &IdentityKeyPair,
         now: Timestamp,
@@ -342,6 +423,17 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
     ) -> Result<bool> {
         let chat_id = derive_chat_id(&self.own_account(identity)?, peer);
+        // Мы пишем в этот чат с другого своего устройства — это не запрос
+        // незнакомца: начали мы, а запрос — значит, мы его уже приняли.
+        match self.storage.chat_request_state(&chat_id)? {
+            None => self
+                .storage
+                .set_chat_request_state(&chat_id, ChatRequest::Outgoing)?,
+            Some(ChatRequest::Incoming) => self
+                .storage
+                .set_chat_request_state(&chat_id, ChatRequest::Settled)?,
+            Some(_) => {}
+        }
         // Чат с именем: имя — заявление, принимается, только если
         // discovery называет для него тот же ключ.
         if let Some(name) = peer_username {

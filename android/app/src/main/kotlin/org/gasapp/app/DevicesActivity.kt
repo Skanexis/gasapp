@@ -173,14 +173,12 @@ class DevicesActivity : AppCompatActivity() {
             .content(view)
             .alwaysSecure()
             .cancelable(false)
-            .secondary(R.string.devices_compare_mismatch) {
-                showStatus(getString(R.string.devices_mismatch_done), ok = false)
-            }
-            .primary(R.string.devices_compare_match, closeOnClick = false) { dialog -> approve(dialog) }
+            .secondary()
+            .primary(R.string.devices_compare_match, closeOnClick = false) { dialog -> approve(dialog, view.text) }
             .show()
     }
 
-    private fun approve(dialog: GasAppDialog.Shown) {
+    private fun approve(dialog: GasAppDialog.Shown, code: CharSequence) {
         dialog.setBusy(true)
 
         lifecycleScope.launch {
@@ -191,8 +189,12 @@ class DevicesActivity : AppCompatActivity() {
 
             result
                 .onSuccess {
-                    showStatus(getString(R.string.devices_approved), ok = true)
+                    // Цифры остаются на экране: сверяют их с новым телефоном,
+                    // который покажет их только теперь.
+                    findViewById<TextView>(R.id.devices_code).text = code
+                    findViewById<View>(R.id.devices_code_panel).isVisible = true
                     waitForNewDevice()
+                    findViewById<View>(R.id.devices_code_panel).isVisible = false
                 }
                 .onFailure { showStatus(errorText(it), ok = false) }
         }
@@ -209,11 +211,12 @@ class DevicesActivity : AppCompatActivity() {
             delay(WAIT_STEP_MS)
             val found = io { Core.messenger().ownDevices(System.currentTimeMillis()) }.getOrNull() ?: return@repeat
             if (found.size > before) {
-                hideStatus()
+                findViewById<View>(R.id.devices_code_panel).isVisible = false
+                showStatus(getString(R.string.devices_linked_done), ok = true)
                 load()
                 // Приём заодно отправляет новому устройству историю за 30
                 // дней (ядро, этап 4б), как только оно выложит ключи.
-                repeat(WAIT_ROUNDS) {
+                repeat(RECEIVE_ROUNDS) {
                     delay(WAIT_STEP_MS)
                     io { Core.deviceId?.let { Core.messenger().receiveMessages(it, System.currentTimeMillis()) } }
                 }
@@ -281,7 +284,9 @@ class DevicesActivity : AppCompatActivity() {
         const val SHORT_ID = 4
         const val DIGITS_SP = 40f
         const val DIGITS_SPACING = 0.12f
-        const val WAIT_ROUNDS = 10
+        /** До двух минут: человек сверяет цифры на новом телефоне. */
+        const val WAIT_ROUNDS = 40
         const val WAIT_STEP_MS = 3_000L
+        const val RECEIVE_ROUNDS = 10
     }
 }

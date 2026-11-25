@@ -15,6 +15,9 @@ struct DevicesScreen: View {
     @State private var loading = true
     @State private var error: String?
     @State private var note: String?
+    /// Грант ушёл: эти цифры должны появиться на новом телефоне — сверять
+    /// их там, поэтому здесь они остаются на экране, пока он не войдёт.
+    @State private var approvedCode: String?
     @State private var scanning = false
     @State private var preparing = false
     @State private var pendingCode: String?
@@ -35,6 +38,22 @@ struct DevicesScreen: View {
 
                 if let error {
                     Banner(title: L10n.t("Не получилось", "Didn’t work", "Non ha funzionato"), message: error, tone: .error)
+                }
+                if let approvedCode {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(L10n.t("Сверьте с новым телефоном", "Compare with the new phone", "Confronta con il nuovo telefono"))
+                            .font(GasFont.text(17, .bold))
+                            .foregroundStyle(GasAppColor.textPrimary)
+                        LinkDigits(code: approvedCode)
+                        Text(L10n.t("Совпадают — на новом телефоне нажмите «Цифры совпадают». Не совпадают — нажмите там «Не совпадают»: устройство не войдёт.",
+                                    "If they match, tap “Digits match” on the new phone. If not, tap “They don’t match” there: the device won’t sign in.",
+                                    "Se coincidono, tocca «Le cifre coincidono» sul nuovo telefono. Altrimenti tocca lì «Non coincidono»: il dispositivo non entrerà."))
+                            .font(GasFont.text(14))
+                            .foregroundStyle(GasAppColor.textSecondary)
+                    }
+                    .padding(16)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(GasAppColor.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(GasAppColor.accent.opacity(0.6), lineWidth: 1.5))
                 }
                 if let note {
                     Banner(title: L10n.t("Почти готово", "Almost done", "Quasi fatto"), message: note, tone: .ok)
@@ -96,12 +115,7 @@ struct DevicesScreen: View {
         )) { pending in
             LinkConfirmSheet(code: pending.code, approving: approving,
                              onApprove: approve,
-                             onReject: {
-                                 pendingCode = nil
-                                 error = L10n.t("Цифры не совпали — устройство не подключено. Если вы не начинали подключение, ничего делать не нужно.",
-                                                "The digits didn’t match — the device was not linked. If you didn’t start linking, there’s nothing to do.",
-                                                "Le cifre non coincidevano: il dispositivo non è stato collegato. Se non hai avviato il collegamento, non serve fare nulla.")
-                             })
+                             onReject: { pendingCode = nil })
                 .presentationDetents([.medium, .large])
                 .interactiveDismissDisabled(approving)
         }
@@ -195,12 +209,11 @@ struct DevicesScreen: View {
             do {
                 try await Background.run { try messenger.approveDeviceLink(nowMillis: CoreStore.nowMillis) }
                 approving = false
+                approvedCode = pendingCode
                 pendingCode = nil
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                note = L10n.t("На новом телефоне нажмите «Цифры совпадают» — и он войдёт в аккаунт.",
-                              "On the new phone, tap “Digits match” — and it signs in to your account.",
-                              "Sul nuovo telefono tocca «Le cifre coincidono» ed entrerà nel tuo account.")
                 await waitForNewDevice()
+                approvedCode = nil
             } catch {
                 approving = false
                 pendingCode = nil
@@ -210,15 +223,17 @@ struct DevicesScreen: View {
         }
     }
 
-    /// Новое устройство появляется в списке, когда само завершит вход:
-    /// смотрим ещё полминуты.
+    /// Новое устройство появляется в списке, когда человек сверит цифры и
+    /// оно войдёт: смотрим до двух минут.
     private func waitForNewDevice() async {
         let before = devices.count
-        for _ in 0..<10 {
+        for _ in 0..<40 {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             await load()
             if devices.count > before {
-                note = nil
+                note = L10n.t("Устройство подключено. Переписка за 30 дней уйдёт на него в ближайшую минуту.",
+                              "Device linked. The last 30 days of messages will reach it within a minute.",
+                              "Dispositivo collegato. I messaggi degli ultimi 30 giorni lo raggiungeranno entro un minuto.")
                 return
             }
         }
@@ -338,7 +353,8 @@ struct LinkDigits: View {
     }
 }
 
-/// Основной телефон: сверка цифр перед подключением.
+/// Основной телефон: подтверждение подключения. Цифры сверяются потом —
+/// когда новый телефон их покажет (после «Подключить»).
 private struct LinkConfirmSheet: View {
     let code: String
     let approving: Bool
@@ -347,21 +363,26 @@ private struct LinkConfirmSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            ScreenTitle(text: L10n.t("Сверьте цифры", "Compare the digits", "Confronta le cifre"),
-                        subtitle: L10n.t("Такие же цифры должны быть на новом телефоне.",
-                                         "The new phone must show the same digits.",
-                                         "Il nuovo telefono deve mostrare le stesse cifre."))
+            ScreenTitle(text: L10n.t("Подключить устройство?", "Link this device?", "Collegare il dispositivo?"),
+                        subtitle: L10n.t("Подключайте только свой телефон, который держите в руках.",
+                                         "Link only your own phone that you are holding.",
+                                         "Collega solo il tuo telefono, quello che hai in mano."))
+            Text(L10n.t("После «Подключить» на новом телефоне появятся цифры — они должны совпасть с этими:",
+                        "After “Link”, digits appear on the new phone — they must match these:",
+                        "Dopo «Collega» sul nuovo telefono appariranno delle cifre: devono coincidere con queste:"))
+                .font(GasFont.text(14))
+                .foregroundStyle(GasAppColor.textSecondary)
             LinkDigits(code: code)
-            Text(L10n.t("Не совпадают — не подключайте: значит, QR подменили. Новый телефон получит все новые сообщения и переписку за последние 30 дней.",
-                        "If they don’t match, don’t link: the QR was swapped. The new phone gets all new messages and the last 30 days of messages.",
-                        "Se non coincidono, non collegare: il QR è stato sostituito. Il nuovo telefono riceverà tutti i nuovi messaggi e quelli degli ultimi 30 giorni."))
+            Text(L10n.t("Новый телефон получит все новые сообщения и переписку за последние 30 дней.",
+                        "The new phone gets all new messages and the last 30 days of messages.",
+                        "Il nuovo telefono riceverà tutti i nuovi messaggi e quelli degli ultimi 30 giorni."))
                 .font(GasFont.text(14))
                 .foregroundStyle(GasAppColor.textSecondary)
             Spacer(minLength: 0)
-            GoldButton(title: L10n.t("Совпадают — подключить", "They match — link", "Coincidono — collega"),
+            GoldButton(title: L10n.t("Подключить", "Link", "Collega"),
                        isLoading: approving, action: onApprove)
-            OutlineButton(title: L10n.t("Не совпадают", "They don’t match", "Non coincidono"),
-                          tone: GasAppColor.error, isEnabled: !approving, action: onReject)
+            OutlineButton(title: L10n.t("Отмена", "Cancel", "Annulla"),
+                          isEnabled: !approving, action: onReject)
         }
         .padding(24)
         .gasScreen()
@@ -521,12 +542,11 @@ struct NewDeviceLinkView: View {
             } catch {
                 finishing = false
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
-                // Грант одноразовый: после отказа — заново, с новым QR.
-                offer = nil
-                self.error = L10n.t("Вход не завершился. Проверьте связь и отсканируйте новый QR основным телефоном.",
-                                    "Sign-in didn’t complete. Check your connection and scan the new QR with the main phone.",
-                                    "L’accesso non è stato completato. Controlla la connessione e scansiona il nuovo QR con il telefono principale.")
-                attempt += 1
+                // Вход повторяем: ядро досылает то, что не дошло, — QR
+                // заново не нужен.
+                self.error = L10n.t("Вход не завершился. Проверьте связь и нажмите «Цифры совпадают» ещё раз.",
+                                    "Sign-in didn’t complete. Check your connection and tap “Digits match” again.",
+                                    "L’accesso non è stato completato. Controlla la connessione e tocca di nuovo «Le cifre coincidono».")
             }
         }
     }

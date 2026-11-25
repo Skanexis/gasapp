@@ -1045,12 +1045,10 @@
     <string name="devices_unlink_title">Отключить устройство?</string>
     <string name="devices_unlink_message">Новые сообщения на него больше не придут. Переписка, которая уже есть на нём, там и останется.</string>
     <string name="devices_load_failed">Список устройств не загрузился. Проверьте связь.</string>
-    <string name="devices_compare_title">Сверьте цифры</string>
-    <string name="devices_compare_message">Такие же цифры должны быть на новом телефоне. Не совпадают — не подключайте: значит, QR подменили. Новый телефон получит все новые сообщения и переписку за последние 30 дней.</string>
-    <string name="devices_compare_match">Совпадают — подключить</string>
-    <string name="devices_compare_mismatch">Не совпадают</string>
-    <string name="devices_mismatch_done">Цифры не совпали — устройство не подключено.</string>
-    <string name="devices_approved">На новом телефоне нажмите «Цифры совпадают» — и он войдёт в аккаунт.</string>
+    <string name="devices_compare_title">Подключить устройство?</string>
+    <string name="devices_compare_message">Подключайте только свой телефон, который держите в руках. После «Подключить» на новом телефоне появятся цифры — они должны совпасть с этими. Новый телефон получит все новые сообщения и переписку за последние 30 дней.</string>
+    <string name="devices_compare_match">Подключить</string>
+    <string name="devices_approved">Совпадают — на новом телефоне нажмите «Цифры совпадают». Не совпадают — нажмите там «Не совпадают»: устройство не войдёт.</string>
     <string name="devices_error_code">Код не подошёл или устарел. На новом телефоне появится новый QR — отсканируйте его.</string>
     <string name="devices_error_restricted">Аккаунт ограничен — подключение недоступно.</string>
     <string name="scan_hint_device">Наведите камеру на QR-код на новом телефоне</string>
@@ -1065,7 +1063,9 @@
     <string name="link_match">Цифры совпадают</string>
     <string name="link_mismatch">Не совпадают</string>
     <string name="link_mismatch_done">Цифры не совпали — вход отменён. Попробуйте ещё раз с новым QR.</string>
-    <string name="link_failed">Вход не завершился. Проверьте связь и отсканируйте новый QR основным телефоном.</string>
+    <string name="link_failed">Вход не завершился. Проверьте связь и нажмите «Цифры совпадают» ещё раз.</string>
     <string name="link_history">Последние 30 дней переписки придут сюда за пару минут — только текст, без файлов и исчезающих сообщений.</string>
     <string name="link_qr_description">Код для подключения этого телефона</string>
+    <string name="devices_code_title">Сверьте с новым телефоном</string>
+    <string name="devices_linked_done">Устройство подключено. Переписка за 30 дней уйдёт на него в ближайшую минуту.</string>
 </resources>
