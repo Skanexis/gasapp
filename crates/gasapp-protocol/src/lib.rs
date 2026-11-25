@@ -33,6 +33,8 @@ pub mod channel;
 pub mod channel_join;
 pub mod contact_link;
 pub mod content;
+pub mod device_link;
+pub mod device_list;
 pub mod double_ratchet;
 pub mod engine;
 pub mod envelope;
