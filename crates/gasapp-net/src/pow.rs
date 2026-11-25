@@ -94,6 +94,35 @@ pub fn first_contact_challenge(destination_device_id: &str, sealed: &[u8]) -> [u
     hasher.finalize().into()
 }
 
+/// Домен-разделитель челленджа ящика связывания устройств.
+const LINK_DOMAIN: &[u8] = b"GASAPP_POW_LINK_v1";
+
+/// Сложность открытия ящика связывания (`docs/protocol/MULTI-DEVICE.md`).
+///
+/// 🔐 Ящик открывают без входа — у нового устройства ещё нет аккаунта.
+/// Без работы один клиент занимал бы все ящики сервера и отрезал от
+/// связывания всех. 21 бит — около двух миллионов хешей: секунда на
+/// телефоне раз в минуту (QR обновляется), дорого для того, кто открывает
+/// тысячи.
+pub const LINK_DIFFICULTY: u32 = 21;
+
+/// Челлендж ящика связывания: хеш запроса нового устройства (в нём и
+/// nonce ящика) — одно решение годится ровно для одного ящика.
+#[must_use]
+pub fn link_challenge(request: &[u8]) -> [u8; CHALLENGE_LEN] {
+    let request_hash = Sha256::digest(request);
+
+    let mut hasher = Sha256::new();
+    hasher.update(LINK_DOMAIN);
+    hasher.update(
+        u64::try_from(request_hash.len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes(),
+    );
+    hasher.update(request_hash);
+    hasher.finalize().into()
+}
+
 /// Домен-разделитель челленджа запроса кода на почту.
 const EMAIL_CODE_DOMAIN: &[u8] = b"GASAPP_POW_EMAIL_v2";
 
@@ -373,6 +402,15 @@ mod tests {
         assert!(
             elapsed < std::time::Duration::from_secs(10),
             "подбор занял {elapsed:?}: хеш стал слишком дорогим"
+        );
+    }
+    /// Эталон посчитан независимой реализацией (Python, hashlib); тот же
+    /// вектор проверяет и другая сторона.
+    #[test]
+    fn link_challenge_matches_the_reference() {
+        assert_eq!(
+            link_challenge(&[1, 2, 3]).get(..8).expect("восемь байт"),
+            [0x3c, 0x85, 0xca, 0x8b, 0x7f, 0x1a, 0x09, 0x40]
         );
     }
 }

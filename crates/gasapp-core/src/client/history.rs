@@ -95,6 +95,8 @@ impl<T: Transport> Client<T> {
         if self.setting_bool(super::devices::MULTI_DEVICE_SETTING, false)? {
             let (identity, _) = self.load_identity()?;
             let _ = self.refresh_own_targets_if_old(&identity, now);
+            // Основное — и переподпись своего списка раз в неделю.
+            let _ = self.resign_own_list_if_old(now);
         }
         let pending: Vec<(String, i64)> = self
             .storage

@@ -409,6 +409,44 @@ pub async fn complete_link(
     Ok((account, request.device_id))
 }
 
+/// Основное устройство переподписывает свой список без изменений состава:
+/// новая версия, новое время. Так список не стареет — клиенты не доверяют
+/// списку старше 30 дней (иначе сервер мог бы бесконечно отдавать старую
+/// версию с давно отключённым устройством).
+///
+/// # Errors
+///
+/// * [`RepoError::NotFound`] — у аккаунта ещё нет списка;
+/// * [`RepoError::Conflict`] — устройство не основное, версия не новее,
+///   состав другой или ключи не те;
+/// * [`RepoError::Database`] — сбой базы.
+pub async fn refresh_device_list(
+    pool: &PgPool,
+    primary_device: Uuid,
+    device_list: &[u8],
+) -> Result<(), RepoError> {
+    let mut tx = pool.begin().await?;
+    let (account, identity, version) = primary_account(&mut tx, primary_device)
+        .await?
+        .ok_or(RepoError::Conflict)?;
+    if version == 0 {
+        return Err(RepoError::NotFound);
+    }
+    let known = account_devices(&mut tx, account).await?;
+    let list = parse_device_list(device_list).ok_or(RepoError::Conflict)?;
+    // Состав — тот же: переподпись не подключает и не отключает.
+    let same = list.devices.len() == known.len()
+        && known
+            .iter()
+            .all(|(id, _)| list.devices.iter().any(|(listed, _)| listed == id));
+    if !same || !list_fits(&list, &identity, version, &known, None) {
+        return Err(RepoError::Conflict);
+    }
+    store_list(&mut tx, account, list.version, device_list).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Основное устройство отключает устройство `target`: новый список без
 /// него, устройство и его очередь и ключи удаляются.
 ///

@@ -1228,6 +1228,12 @@ fn link_route(
             None => plain(404, String::new()),
         });
     }
+    if rest == "device-list" {
+        // Переподпись своего списка основным — тот же состав.
+        let parsed: gasapp_net::api::UnlinkBody = serde_json::from_str(body).ok()?;
+        state.device_lists.insert(account, parsed.device_list);
+        return Some(plain(204, String::new()));
+    }
     if let Some(target) = rest.strip_prefix("linked/") {
         let parsed: gasapp_net::api::UnlinkBody = serde_json::from_str(body).ok()?;
         if let Some(devices) = state.linked.get_mut(&account) {
@@ -9739,4 +9745,61 @@ fn history_moves_to_a_newly_linked_device() {
     late.receive_messages(&late_device, later(12 + 31 * 60))
         .expect("приём");
     assert!(late.messages(&chat, 10).expect("сообщения").is_empty());
+}
+
+/// 🔐 Список устройств старше 30 дней — только основному устройству:
+/// сервер мог придержать старую версию с давно отключённым телефоном.
+/// Основное переподписывает список раз в неделю — и доставка всем
+/// устройствам возвращается.
+#[test]
+fn a_stale_device_list_reaches_only_the_primary() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, _bob_device) = alice_and_bob(&server, &dir);
+    let (phone, phone_device) = link_new_device(&server, &dir, &alice, "phone.db", now());
+
+    bob.send_message("alice", "fresh list", later(1), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        alice
+            .receive_messages(&alice_device, later(2))
+            .expect("приём"),
+        1
+    );
+    assert_eq!(
+        phone
+            .receive_messages(&phone_device, later(2))
+            .expect("приём"),
+        1
+    );
+
+    let month = 31 * 24 * 60 * 60;
+    bob.send_message("alice", "old list", later(month), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        alice
+            .receive_messages(&alice_device, later(month + 1))
+            .expect("приём"),
+        1
+    );
+    assert_eq!(
+        phone
+            .receive_messages(&phone_device, later(month + 1))
+            .expect("приём"),
+        0,
+        "старый список — только основному"
+    );
+
+    // Основное переподписывает список (с приёмом) — доставка обоим.
+    alice
+        .send_pending_history(later(month + 2), &mut OsRng)
+        .expect("переподпись");
+    bob.send_message("alice", "re-signed", later(month + 3), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        phone
+            .receive_messages(&phone_device, later(month + 4))
+            .expect("приём"),
+        1
+    );
 }

@@ -42,6 +42,8 @@ const MEMBERSHIP_DOMAIN: &[u8] = b"GASAPP_DEVICE_MEMBERSHIP_v1";
 pub struct LinkRequestBody {
     /// `LinkRequest`, hex.
     pub request: String,
+    /// Решение работы над `pow::link_challenge(request)`.
+    pub pow_nonce: u64,
 }
 
 /// Запрос из ящика.
@@ -118,6 +120,13 @@ pub(crate) async fn open(
     if parsed.nonce != nonce {
         return Err(ApiError::BadRequest);
     }
+    // 🔐 Работа за ящик: без неё один клиент занимал бы все ящики.
+    crate::pow::verify(
+        &crate::pow::link_challenge(&request),
+        body.pow_nonce,
+        crate::pow::LINK_DIFFICULTY,
+    )
+    .map_err(|_| ApiError::Unauthorized)?;
     devices::open_box(&state.pool, nonce, &request)
         .await
         .map_err(|error| match error {
@@ -225,6 +234,26 @@ pub(crate) async fn device_list_of(
 }
 
 /// Основное устройство отключает другое.
+/// Основное устройство переподписывает свой список (тот же состав).
+pub(crate) async fn refresh(
+    State(state): State<Arc<AppState>>,
+    device: AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+    Json(body): Json<UnlinkBody>,
+) -> Result<StatusCode, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+    let list = bounded_hex(&body.device_list, MAX_LIST_BYTES)?;
+    devices::refresh_device_list(&state.pool, device_id, &list)
+        .await
+        .map_err(|error| match error {
+            RepoError::Conflict => ApiError::Forbidden,
+            other => other.into(),
+        })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub(crate) async fn unlink(
     State(state): State<Arc<AppState>>,
     device: AuthenticatedDevice,

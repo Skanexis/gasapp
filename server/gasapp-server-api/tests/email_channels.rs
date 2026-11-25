@@ -3380,16 +3380,44 @@ async fn a_second_device_is_linked_and_unlinked() {
     let new_public = public_key(&new_key);
     let new_device = Uuid::new_v4();
     let nonce = Uuid::new_v4();
-    let request = hex::encode(link_request(nonce, new_device, &new_public));
+    let raw_request = link_request(nonce, new_device, &new_public);
+    let request = hex::encode(&raw_request);
+    let challenge = gasapp_server_api::pow::link_challenge(&raw_request);
+    let pow_nonce = (0..u64::MAX)
+        .find(|nonce| {
+            gasapp_server_api::pow::verify(
+                &challenge,
+                *nonce,
+                gasapp_server_api::pow::LINK_DIFFICULTY,
+            )
+            .is_ok()
+        })
+        .expect("решение");
+    let open_body =
+        |pow_nonce: u64| serde_json::json!({ "request": request, "pow_nonce": pow_nonce });
+
+    // 🔐 Без работы ящик не открывается.
+    let open = format!("/v1/link/{nonce}");
+    let wrong = (0..u64::MAX)
+        .find(|nonce| {
+            gasapp_server_api::pow::verify(
+                &challenge,
+                *nonce,
+                gasapp_server_api::pow::LINK_DIFFICULTY,
+            )
+            .is_err()
+        })
+        .expect("не решение");
+    let (status, _) = post(&state, &open, open_body(wrong)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     // Ящик: открывается один раз и только под свой nonce.
-    let open = format!("/v1/link/{nonce}");
-    let (status, _) = post(&state, &open, serde_json::json!({ "request": request })).await;
+    let (status, _) = post(&state, &open, open_body(pow_nonce)).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let (status, _) = post(&state, &open, serde_json::json!({ "request": request })).await;
+    let (status, _) = post(&state, &open, open_body(pow_nonce)).await;
     assert_eq!(status, StatusCode::CONFLICT);
     let other = format!("/v1/link/{}", Uuid::new_v4());
-    let (status, _) = post(&state, &other, serde_json::json!({ "request": request })).await;
+    let (status, _) = post(&state, &other, open_body(pow_nonce)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, body) = get(&state, &format!("/v1/link/{nonce}/request")).await;
@@ -3501,9 +3529,40 @@ async fn a_second_device_is_linked_and_unlinked() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
+    // 🔐 Переподпись списка: только основное, тот же состав, версия новее.
+    let both = |version| {
+        device_list(
+            &owner_public,
+            version,
+            &[(owner_device, owner_public), (new_device, new_public)],
+        )
+    };
+    let refresh_body = |list: &[u8]| Some(serde_json::json!({ "device_list": hex::encode(list) }));
+    let refresh = format!("/v1/devices/{owner_device}/device-list");
+    let attempts = [
+        (&owner_key, refresh.clone(), both(2), StatusCode::FORBIDDEN),
+        (
+            &owner_key,
+            refresh.clone(),
+            device_list(&owner_public, 3, &[(owner_device, owner_public)]),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            &new_key,
+            format!("/v1/devices/{new_device}/device-list"),
+            both(3),
+            StatusCode::FORBIDDEN,
+        ),
+        (&owner_key, refresh.clone(), both(3), StatusCode::NO_CONTENT),
+    ];
+    for (key, uri, list, expected) in attempts {
+        let (status, _) = signed(&state, key, "PUT", &uri, refresh_body(&list)).await;
+        assert_eq!(status, expected);
+    }
+
     // Отключение: список новее и без устройства.
     let unlink = format!("/v1/devices/{owner_device}/linked/{new_device}");
-    let only_owner = device_list(&owner_public, 3, &[(owner_device, owner_public)]);
+    let only_owner = device_list(&owner_public, 4, &[(owner_device, owner_public)]);
     let (status, _) = signed(
         &state,
         &owner_key,
@@ -3530,13 +3589,25 @@ async fn a_second_device_is_linked_and_unlinked() {
 
     // Просроченный ящик не отдаёт ничего.
     let late = Uuid::new_v4();
-    let late_request = hex::encode(link_request(late, Uuid::new_v4(), &new_public));
-    post(
+    let late_raw = link_request(late, Uuid::new_v4(), &new_public);
+    let late_challenge = gasapp_server_api::pow::link_challenge(&late_raw);
+    let late_pow = (0..u64::MAX)
+        .find(|nonce| {
+            gasapp_server_api::pow::verify(
+                &late_challenge,
+                *nonce,
+                gasapp_server_api::pow::LINK_DIFFICULTY,
+            )
+            .is_ok()
+        })
+        .expect("решение");
+    let (status, _) = post(
         &state,
         &format!("/v1/link/{late}"),
-        serde_json::json!({ "request": late_request }),
+        serde_json::json!({ "request": hex::encode(&late_raw), "pow_nonce": late_pow }),
     )
     .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     sqlx::query("UPDATE link_boxes SET expires_at = now() - interval '1 second' WHERE nonce = $1")
         .bind(late)
         .execute(&state.pool)

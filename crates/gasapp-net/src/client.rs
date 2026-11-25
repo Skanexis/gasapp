@@ -1595,6 +1595,26 @@ impl<T: Transport> ApiClient<T> {
         Ok(())
     }
 
+    /// Основное устройство переподписывает свой список (тот же состав).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] при сбое соединения; отказ сервера.
+    pub fn refresh_device_list(
+        &self,
+        device_id: &str,
+        body: &crate::api::UnlinkBody,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.send_signed(
+            Method::Put,
+            format!("/v1/devices/{device_id}/device-list"),
+            Some(to_json(body)?),
+            signer,
+        )?;
+        Ok(())
+    }
+
     /// Забирает ожидающие конверты.
     ///
     /// # Errors

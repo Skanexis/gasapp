@@ -71,6 +71,10 @@ pub(crate) struct PreparedLink {
     body: LinkGrantBody,
 }
 
+/// Как часто основное переподписывает свой список (неделя): собеседники
+/// не верят списку старше [`super::devices::MAX_LIST_AGE_MILLIS`].
+const LIST_RESIGN_MILLIS: i64 = 7 * 24 * 60 * 60 * 1000;
+
 /// Состояние связывания в клиенте — только в памяти.
 #[derive(Default)]
 pub(crate) struct LinkState {
@@ -132,11 +136,19 @@ impl<T: Transport> Client<T> {
             rng,
         );
         let nonce = uuid::Uuid::from_bytes(secrets.request().nonce).to_string();
+        let request = secrets.request().encode();
+        // Работа за ящик: открыть его можно без входа (см. `pow::LINK_DIFFICULTY`).
+        let pow_nonce = gasapp_net::pow::solve(
+            &gasapp_net::pow::link_challenge(&request),
+            gasapp_net::pow::LINK_DIFFICULTY,
+        )
+        .ok_or(GasAppError::Crypto)?;
 
         self.api.link_open(
             &nonce,
             &LinkRequestBody {
-                request: hex(&secrets.request().encode()),
+                request: hex(&request),
+                pow_nonce,
             },
         )?;
         let uri = secrets.request().code().to_uri();
@@ -598,6 +610,55 @@ impl<T: Transport> Client<T> {
                 pq_identity: pq.public(),
             }],
         })
+    }
+
+    /// Основное устройство: переподписывает свой список, если он старше
+    /// недели (тот же состав, новая версия и время). Зовётся с приёмом.
+    ///
+    /// 🔐 Собеседники не верят списку старше 30 дней — тогда пишут только
+    /// основному устройству. Иначе сервер мог бы годами отдавать старую
+    /// версию с давно отключённым (украденным) телефоном.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сервер недоступен; повтор в следующий раз.
+    pub(crate) fn resign_own_list_if_old(&self, now: Timestamp) -> Result<()> {
+        let Ok((identity, pq)) = self.primary_keys() else {
+            return Ok(());
+        };
+        let account = *identity.public().public();
+        // Своего списка в базе может не быть (после «Подключить» он только
+        // на сервере) — тогда с сервера; у аккаунта без списка — нечего.
+        let signed = match self.storage.device_list(&account)? {
+            Some(stored) => SignedDeviceList::verify(&stored.signed, &account, &pq.public())?,
+            None => match self.refresh_own_list(&account, &pq.public(), now)? {
+                Some(signed) => signed,
+                None => return Ok(()),
+            },
+        };
+        if now.as_millis().saturating_sub(signed.list.issued_at_millis) < LIST_RESIGN_MILLIS {
+            return Ok(());
+        }
+        let current = self.own_device_list(&identity, &pq, now)?;
+        let list = DeviceList {
+            account_identity: account,
+            version: current
+                .version
+                .checked_add(1)
+                .ok_or(GasAppError::Malformed)?,
+            issued_at_millis: now.as_millis(),
+            devices: current.devices,
+        }
+        .sign(&identity, &pq)?;
+        let own = self.own_device_id()?.ok_or(GasAppError::Uninitialized)?;
+        self.api.refresh_device_list(
+            &own,
+            &UnlinkBody {
+                device_list: hex(&list.to_bytes()),
+            },
+            &DeviceSigner::new(&identity, now),
+        )?;
+        self.save_list(&account, &list, now)
     }
 
     /// Свой список с сервера — проверенный и запомненный. `None` — у

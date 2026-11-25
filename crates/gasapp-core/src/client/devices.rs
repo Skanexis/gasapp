@@ -35,6 +35,9 @@ use crate::session;
 /// тогда (иначе лишний запрос discovery на каждое сообщение).
 pub(crate) const MULTI_DEVICE_SETTING: &str = "multi_device";
 
+/// Список устройств старше этого — только основному устройству.
+pub(crate) const MAX_LIST_AGE_MILLIS: i64 = 30 * 24 * 60 * 60 * 1000;
+
 /// Сколько отправка верит своим устройствам из памяти.
 const OWN_TARGETS_TTL_MILLIS: i64 = 6 * 60 * 60 * 1000;
 
@@ -92,6 +95,27 @@ impl<T: Transport> Client<T> {
         };
 
         let signed = SignedDeviceList::verify(&unhex(list_hex)?, account, account_pq)?;
+        // 🔐 Список старше 30 дней — только основному устройству: свежий
+        // основное переподписывает раз в неделю, а старый сервер мог
+        // придержать — с давно отключённым телефоном в нём.
+        if now.as_millis().saturating_sub(signed.list.issued_at_millis) > MAX_LIST_AGE_MILLIS {
+            self.storage
+                .log_security_event("device_list_stale", None, now)?;
+            let device_id = signed
+                .list
+                .devices
+                .iter()
+                .find(|entry| entry.identity == *account)
+                .map(|entry| uuid::Uuid::from_bytes(entry.device_id).to_string())
+                .filter(|id| peer.device_ids.contains(id))
+                .ok_or(GasAppError::SessionNotFound)?;
+            return Ok(vec![Target {
+                device_id,
+                identity: *account,
+                pq: account_pq.to_vec(),
+                kem: account_kem.to_vec(),
+            }]);
+        }
         let proofs = memberships(peer);
         let devices = self.accept_device_list(account, &signed, &proofs, now)?;
 

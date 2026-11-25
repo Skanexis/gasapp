@@ -544,6 +544,10 @@ pub struct DiscoveredDevice {
 pub struct LinkRequestBody {
     /// `LinkRequest`, hex.
     pub request: String,
+    /// Решение работы (`pow::link_challenge`, `pow::LINK_DIFFICULTY`).
+    /// В ответе сервера (запрос из ящика — основному устройству) его нет.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pow_nonce: u64,
 }
 
 /// Грант основного устройства.
@@ -875,4 +879,10 @@ pub struct ChannelReactRequest {
     pub seq: u64,
     /// Эмодзи из закрытого набора; `None` — снять реакцию.
     pub emoji: Option<String>,
+}
+
+/// Ноль не сериализуется: поле есть только в запросе клиента.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }

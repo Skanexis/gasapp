@@ -825,6 +825,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/devices/:device_id/linked/:target",
             axum::routing::delete(crate::linking::unlink),
         )
+        .route(
+            "/v1/devices/:device_id/device-list",
+            put(crate::linking::refresh),
+        )
         // 🔐 Журнал ключей (§9.7): без аутентификации — сервер не должен
         // знать, кто проверяет, иначе показал бы проверяющему своё дерево.
         .route("/v1/kt/heads", get(crate::kt::heads_all))
