@@ -3449,31 +3449,34 @@ async fn a_second_device_is_linked_and_unlinked() {
     let complete = format!("/v1/link/{nonce}/complete");
     let mut message = b"GASAPP_LINK_COMPLETE_v1".to_vec();
     message.extend_from_slice(nonce.as_bytes());
+    // Членство — подпись нового устройства: «я — устройство этого аккаунта».
+    let claim = |account: &[u8]| {
+        let mut claim = b"GASAPP_DEVICE_MEMBERSHIP_v1".to_vec();
+        claim.extend_from_slice(account);
+        claim.extend_from_slice(new_device.as_bytes());
+        claim
+    };
+    let membership = common::client_sign(&new_key, &claim(&owner_public));
+    let body = |signature: &[u8], membership: &[u8]| {
+        serde_json::json!({
+            "signature": hex::encode(signature),
+            "membership": hex::encode(membership),
+        })
+    };
     let forged = common::client_sign(&stranger_key, &message);
-    let (status, _) = post(
-        &state,
-        &complete,
-        serde_json::json!({ "signature": hex::encode(forged) }),
-    )
-    .await;
+    let (status, _) = post(&state, &complete, body(&forged, &membership)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let genuine = common::client_sign(&new_key, &message);
-    let (status, body) = post(
-        &state,
-        &complete,
-        serde_json::json!({ "signature": hex::encode(genuine) }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body:?}");
-    assert_eq!(body["device_id"], new_device.to_string());
+    // 🔐 Членство, подписанное для другого аккаунта, — отказ.
+    let elsewhere = common::client_sign(&new_key, &claim(&public_key(&stranger_key)));
+    let (status, _) = post(&state, &complete, body(&genuine, &elsewhere)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, response) = post(&state, &complete, body(&genuine, &membership)).await;
+    assert_eq!(status, StatusCode::OK, "{response:?}");
+    assert_eq!(response["device_id"], new_device.to_string());
 
     // Ящик одноразовый.
-    let (status, _) = post(
-        &state,
-        &complete,
-        serde_json::json!({ "signature": hex::encode(genuine) }),
-    )
-    .await;
+    let (status, _) = post(&state, &complete, body(&genuine, &membership)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Новое устройство работает своим ключом; discovery знает оба и список.

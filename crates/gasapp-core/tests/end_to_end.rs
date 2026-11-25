@@ -117,6 +117,8 @@ struct ServerState {
     linked: HashMap<String, Vec<String>>,
     /// Подписанные списки устройств по аккаунту, hex.
     device_lists: HashMap<String, String>,
+    /// Подписи членства подключённых устройств, hex.
+    memberships: HashMap<String, String>,
     /// Ящики связывания: запрос, грант, аккаунт и список.
     link_boxes: HashMap<String, LinkBox>,
     /// Путь и заголовки каждого пришедшего запроса.
@@ -1182,6 +1184,7 @@ fn link_route(
                 _ => plain(404, String::new()),
             },
             (Method::Post, "complete") => {
+                let parsed: gasapp_net::api::LinkCompleteBody = serde_json::from_str(body).ok()?;
                 let Some((request, Some(_), Some((account, list)))) =
                     state.link_boxes.remove(&nonce)
                 else {
@@ -1192,6 +1195,7 @@ fn link_route(
                 let device = uuid::Uuid::from_slice(bytes.get(29..45)?).ok()?.to_string();
                 let identity = hex::encode(bytes.get(45..77)?);
                 state.device_identity.insert(device.clone(), identity);
+                state.memberships.insert(device.clone(), parsed.membership);
                 state
                     .linked
                     .entry(account.clone())
@@ -1975,6 +1979,7 @@ impl Transport for FakeServer {
                                         sealed_kem_signature: bundle
                                             .sealed_kem_signature
                                             .clone()?,
+                                        membership: state.memberships.get(device).cloned(),
                                     })
                                 })
                                 .collect()

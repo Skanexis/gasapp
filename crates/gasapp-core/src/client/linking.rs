@@ -22,7 +22,7 @@ use gasapp_net::api::{LinkCompleteBody, LinkGrantBody, LinkRequestBody, UnlinkBo
 use gasapp_net::client::Transport;
 use gasapp_protocol::device_link::{self, LinkCode, LinkGrant, LinkSecrets, OpenedGrant};
 use gasapp_protocol::device_list::{
-    check_succession, DeviceEntry, DeviceList, SignedDeviceList, MAX_DEVICES,
+    self, check_succession, DeviceEntry, DeviceList, SignedDeviceList, MAX_DEVICES,
 };
 use gasapp_protocol::keys::IdentityKeyPair;
 use gasapp_protocol::pq_identity::PqIdentityKeyPair;
@@ -207,10 +207,18 @@ impl<T: Transport> Client<T> {
             &PrivateKeyBytes::new(*pending.identity.private().expose_secret()),
             &message,
         )?;
+        // 🔐 Членство: этот ключ — устройство именно этого аккаунта. Без
+        // подписи собеседники устройство из списка не примут.
+        let membership = device_list::sign_membership(
+            &PrivateKeyBytes::new(*pending.identity.private().expose_secret()),
+            &opened.grant.account_identity,
+            pending.device_id.as_uuid().as_bytes(),
+        )?;
         let response = self.api.link_complete(
             &uuid::Uuid::from_bytes(nonce).to_string(),
             &LinkCompleteBody {
                 signature: hex(&signature),
+                membership: hex(&membership),
             },
         )?;
         let device_id = parse_uuid(&response.device_id).map(DeviceId::from_uuid)?;
@@ -576,9 +584,20 @@ impl<T: Transport> Client<T> {
         signed: &SignedDeviceList,
         now: Timestamp,
     ) -> Result<()> {
-        let devices: Vec<KnownDevice> = signed
-            .list
-            .devices
+        self.save_list_with(account, signed, &signed.list.devices, now)
+    }
+
+    /// Запоминает список и устройства, которым верить: для своего аккаунта
+    /// — все (список подписан своим ключом), для собеседника — только с
+    /// подписью членства ([`device_list::proven_devices`]).
+    pub(crate) fn save_list_with(
+        &self,
+        account: &PublicKeyBytes,
+        signed: &SignedDeviceList,
+        trusted: &[DeviceEntry],
+        now: Timestamp,
+    ) -> Result<()> {
+        let devices: Vec<KnownDevice> = trusted
             .iter()
             .map(|entry| KnownDevice {
                 device_id: entry.device_id,
@@ -604,7 +623,20 @@ impl<T: Transport> Client<T> {
         let Some((account, _)) = self.storage.own_account_identity()? else {
             return Ok(None);
         };
-        Ok(self.storage.device_list(&account)?.map(|list| list.signed))
+        let Some(list) = self.storage.device_list(&account)? else {
+            return Ok(None);
+        };
+        // С подписью членства этого устройства: без неё получатель не
+        // примет его в списке.
+        let (identity, _) = self.load_identity()?;
+        let own = self.own_device_id()?.ok_or(GasAppError::Uninitialized)?;
+        let device_id = device_bytes(&own)?;
+        let membership = device_list::sign_membership(
+            &PrivateKeyBytes::new(*identity.private().expose_secret()),
+            &account,
+            &device_id,
+        )?;
+        device_list::encode_shared(&list.signed, &[(device_id, membership)]).map(Some)
     }
 
     /// 🔐 Список устройств из первого сообщения сессии с незнакомого
@@ -614,7 +646,11 @@ impl<T: Transport> Client<T> {
     /// доверие при первой встрече, как к ключу в конверте инициации.
     /// Подпись, наличие устройства в списке и правило версий — всегда.
     /// Не сошлось — устройство остаётся незнакомым.
-    pub(crate) fn learn_device_list(&self, device: &PublicKeyBytes, bytes: &[u8], now: Timestamp) {
+    pub(crate) fn learn_device_list(&self, device: &PublicKeyBytes, shared: &[u8], now: Timestamp) {
+        let Ok((bytes, proofs)) = device_list::decode_shared(shared) else {
+            return;
+        };
+        let bytes = bytes.as_slice();
         let Some(split) = bytes
             .len()
             .checked_sub(gasapp_protocol::pq_identity::HYBRID_SIGNATURE_LEN)
@@ -631,7 +667,9 @@ impl<T: Transport> Client<T> {
         else {
             return;
         };
-        if !list.devices.iter().any(|entry| entry.identity == *device) {
+        // 🔐 Устройство отправителя — в списке и с подписью членства.
+        let proven = device_list::proven_devices(&list, &proofs);
+        if !proven.iter().any(|entry| entry.identity == *device) {
             return;
         }
         let account = list.account_identity;
@@ -658,7 +696,7 @@ impl<T: Transport> Client<T> {
         )
         .is_ok()
         {
-            let _ = self.save_list(&account, &signed, now);
+            let _ = self.save_list_with(&account, &signed, &proven, now);
         }
     }
 }

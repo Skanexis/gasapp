@@ -191,13 +191,18 @@ async fn primary_account(
 async fn account_devices(
     tx: &mut Transaction<'_, Postgres>,
     account: Uuid,
-) -> Result<Vec<Uuid>, RepoError> {
+) -> Result<Vec<(Uuid, Vec<u8>)>, RepoError> {
     Ok(
-        sqlx::query_scalar("SELECT device_id FROM devices WHERE account_id = $1")
+        sqlx::query_as("SELECT device_id, identity_key FROM devices WHERE account_id = $1")
             .bind(account)
             .fetch_all(&mut **tx)
             .await?,
     )
+}
+
+/// Есть ли у аккаунта устройство с таким идентификатором.
+fn has_device(known: &[(Uuid, Vec<u8>)], device: Uuid) -> bool {
+    known.iter().any(|(id, _)| *id == device)
 }
 
 /// Проверяет новый список основного устройства: ключ аккаунта, версия
@@ -206,15 +211,19 @@ fn list_fits(
     list: &ParsedList,
     identity: &[u8],
     current_version: i64,
-    known: &[Uuid],
+    known: &[(Uuid, Vec<u8>)],
     extra: Option<Uuid>,
 ) -> bool {
+    // Устройство в списке — с тем же ключом, с каким оно зарегистрировано:
+    // иначе список назвал бы «своим» чужой ключ под своим идентификатором.
     list.account_identity.as_slice() == identity
         && list.version > current_version
-        && list
-            .devices
-            .iter()
-            .all(|(id, _)| known.contains(id) || Some(*id) == extra)
+        && list.devices.iter().all(|(id, key)| {
+            known
+                .iter()
+                .any(|(known_id, known_key)| known_id == id && known_key.as_slice() == key)
+                || Some(*id) == extra
+        })
 }
 
 /// Основное устройство выдаёт грант: шифротекст для нового устройства и
@@ -255,7 +264,7 @@ pub async fn put_grant(
         .iter()
         .any(|(id, key)| *id == request.device_id && *key == request.identity);
     if !new_listed
-        || known.contains(&request.device_id)
+        || has_device(&known, request.device_id)
         || !list_fits(&list, &identity, version, &known, Some(request.device_id))
     {
         return Err(RepoError::Conflict);
@@ -299,16 +308,40 @@ pub async fn take_grant(pool: &PgPool, nonce: Uuid) -> Result<Vec<u8>, RepoError
 /// # Errors
 ///
 /// [`RepoError::NotFound`] — ящика нет, гранта нет или срок вышел.
-pub async fn granted_request(pool: &PgPool, nonce: Uuid) -> Result<ParsedRequest, RepoError> {
-    let request: Vec<u8> = sqlx::query_scalar(
-        "SELECT request FROM link_boxes
-          WHERE nonce = $1 AND expires_at > now() AND grant_blob IS NOT NULL",
+pub async fn granted_request(
+    pool: &PgPool,
+    nonce: Uuid,
+) -> Result<(ParsedRequest, Vec<u8>), RepoError> {
+    let (request, account_identity): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT b.request, a.identity_key
+           FROM link_boxes b
+           JOIN accounts a ON a.account_id = b.account_id
+          WHERE b.nonce = $1 AND b.expires_at > now() AND b.grant_blob IS NOT NULL",
     )
     .bind(nonce)
     .fetch_optional(pool)
     .await?
     .ok_or(RepoError::NotFound)?;
-    parse_link_request(&request).ok_or(RepoError::NotFound)
+    Ok((
+        parse_link_request(&request).ok_or(RepoError::NotFound)?,
+        account_identity,
+    ))
+}
+
+/// Подпись членства подключённого устройства. `None` — основное (ему
+/// подпись не нужна) либо устройства нет.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn membership_of(pool: &PgPool, device_id: Uuid) -> Result<Option<Vec<u8>>, RepoError> {
+    Ok(
+        sqlx::query_scalar("SELECT membership FROM devices WHERE device_id = $1")
+            .bind(device_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten(),
+    )
 }
 
 /// Ящик с грантом: запрос, аккаунт, список, его версия.
@@ -323,7 +356,11 @@ type GrantedBox = (Vec<u8>, Option<Uuid>, Option<Vec<u8>>, Option<i64>);
 /// * [`RepoError::Conflict`] — пока ждали, список сменился, или
 ///   устройств уже предел;
 /// * [`RepoError::Database`] — сбой базы.
-pub async fn complete_link(pool: &PgPool, nonce: Uuid) -> Result<(Uuid, Uuid), RepoError> {
+pub async fn complete_link(
+    pool: &PgPool,
+    nonce: Uuid,
+    membership: &[u8],
+) -> Result<(Uuid, Uuid), RepoError> {
     let mut tx = pool.begin().await?;
     let row: Option<GrantedBox> = sqlx::query_as(
         "SELECT request, account_id, device_list, list_version FROM link_boxes
@@ -353,12 +390,16 @@ pub async fn complete_link(pool: &PgPool, nonce: Uuid) -> Result<(Uuid, Uuid), R
         return Err(RepoError::Conflict);
     }
 
-    sqlx::query("INSERT INTO devices (device_id, account_id, identity_key) VALUES ($1, $2, $3)")
-        .bind(request.device_id)
-        .bind(account)
-        .bind(request.identity.as_slice())
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "INSERT INTO devices (device_id, account_id, identity_key, membership)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(request.device_id)
+    .bind(account)
+    .bind(request.identity.as_slice())
+    .bind(membership)
+    .execute(&mut *tx)
+    .await?;
     store_list(&mut tx, account, version, &list).await?;
     sqlx::query("DELETE FROM link_boxes WHERE nonce = $1")
         .bind(nonce)
@@ -389,7 +430,7 @@ pub async fn unlink_device(
         .await?
         .ok_or(RepoError::Conflict)?;
     let known = account_devices(&mut tx, account).await?;
-    if target == primary_device || !known.contains(&target) {
+    if target == primary_device || !has_device(&known, target) {
         return Err(RepoError::NotFound);
     }
     let list = parse_device_list(device_list).ok_or(RepoError::Conflict)?;

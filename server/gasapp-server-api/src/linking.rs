@@ -35,6 +35,7 @@ const MAX_GRANT_BYTES: usize = 1_200_000;
 const MAX_LIST_BYTES: usize = 20_000;
 /// Что подписывает новое устройство, завершая связывание.
 const COMPLETE_DOMAIN: &[u8] = b"GASAPP_LINK_COMPLETE_v1";
+const MEMBERSHIP_DOMAIN: &[u8] = b"GASAPP_DEVICE_MEMBERSHIP_v1";
 
 /// Запрос нового устройства.
 #[derive(Debug, Deserialize)]
@@ -71,6 +72,9 @@ pub struct GrantResponse {
 pub struct CompleteBody {
     /// Подпись `GASAPP_LINK_COMPLETE_v1 ‖ nonce` ключом нового устройства, hex.
     pub signature: String,
+    /// Подпись членства в аккаунте гранта (`GASAPP_DEVICE_MEMBERSHIP_v1 ‖
+    /// ключ аккаунта ‖ устройство`) тем же ключом, hex.
+    pub membership: String,
 }
 
 /// Новое устройство создано.
@@ -177,20 +181,28 @@ pub(crate) async fn complete(
     Json(body): Json<CompleteBody>,
 ) -> Result<Json<CompleteResponse>, ApiError> {
     let signature = bounded_hex(&body.signature, 64)?;
-    let request = devices::granted_request(&state.pool, nonce).await?;
+    let membership = bounded_hex(&body.membership, 64)?;
+    let (request, account_identity) = devices::granted_request(&state.pool, nonce).await?;
 
     let mut message = COMPLETE_DOMAIN.to_vec();
     message.extend_from_slice(nonce.as_bytes());
     crate::auth::verify_challenge_signature(&request.identity, &message, &signature)
         .map_err(|_| ApiError::Unauthorized)?;
 
-    let (account_id, device_id) =
-        devices::complete_link(&state.pool, nonce)
-            .await
-            .map_err(|error| match error {
-                RepoError::Conflict => ApiError::Conflict,
-                other => other.into(),
-            })?;
+    // Членство — в том аккаунте, что выдал грант: клиенты принимают
+    // подключённое устройство только с этой подписью.
+    let mut claim = MEMBERSHIP_DOMAIN.to_vec();
+    claim.extend_from_slice(&account_identity);
+    claim.extend_from_slice(request.device_id.as_bytes());
+    crate::auth::verify_challenge_signature(&request.identity, &claim, &membership)
+        .map_err(|_| ApiError::Unauthorized)?;
+
+    let (account_id, device_id) = devices::complete_link(&state.pool, nonce, &membership)
+        .await
+        .map_err(|error| match error {
+            RepoError::Conflict => ApiError::Conflict,
+            other => other.into(),
+        })?;
     Ok(Json(CompleteResponse {
         account_id,
         device_id,

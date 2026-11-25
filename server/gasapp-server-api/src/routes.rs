@@ -517,6 +517,9 @@ pub struct DiscoveredDevice {
     pub sealed_kem_public: String,
     /// Его подпись, hex.
     pub sealed_kem_signature: String,
+    /// Подпись членства в аккаунте ключом устройства, hex.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership: Option<String>,
 }
 
 /// Регистрация токена push-уведомлений.
@@ -1176,8 +1179,20 @@ async fn discovery(
     // второй round-trip перед каждой первой отправкой.
     let devices = repo::list_devices(&state.pool, account.account_id).await?;
 
-    let sealed_kem = match devices.first() {
-        Some(first) => repo::sealed_kem_of(&state.pool, first.device_id).await?,
+    // Ключ sealed sender аккаунта — только основного устройства: ключи
+    // подключённых подписаны их собственными ключами, а клиент проверяет
+    // этот ключом аккаунта.
+    // Аккаунт с одним устройством, зарегистрированным под другим ключом
+    // (так регистрировали прежние клиенты), — как раньше: его устройство.
+    let primary = devices
+        .iter()
+        .find(|device| device.identity_key == account.identity_key)
+        .or(match devices.as_slice() {
+            [only] => Some(only),
+            _ => None,
+        });
+    let sealed_kem = match primary {
+        Some(primary) => repo::sealed_kem_of(&state.pool, primary.device_id).await?,
         None => None,
     };
     let pq = repo::pq_identity_of(&state.pool, account.account_id).await?;
@@ -1193,6 +1208,12 @@ async fn discovery(
                     device_id: device.device_id,
                     sealed_kem_public: hex::encode(public),
                     sealed_kem_signature: hex::encode(signature),
+                    membership: gasapp_server_db::devices::membership_of(
+                        &state.pool,
+                        device.device_id,
+                    )
+                    .await?
+                    .map(hex::encode),
                 });
             }
         }

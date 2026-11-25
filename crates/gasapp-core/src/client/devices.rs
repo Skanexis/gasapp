@@ -17,7 +17,7 @@
 
 use gasapp_net::api::DiscoveryResponse;
 use gasapp_net::client::Transport;
-use gasapp_protocol::device_list::{check_succession, SignedDeviceList};
+use gasapp_protocol::device_list::{self, check_succession, Membership, SignedDeviceList};
 use gasapp_protocol::keys::IdentityKeyPair;
 use gasapp_storage::devices::{KnownDevice, StoredDeviceList};
 use gasapp_types::{ChatId, GasAppError, Plaintext, PublicKeyBytes, Result, Timestamp};
@@ -85,7 +85,8 @@ impl<T: Transport> Client<T> {
         };
 
         let signed = SignedDeviceList::verify(&unhex(list_hex)?, account, account_pq)?;
-        let devices = self.accept_device_list(account, &signed, now)?;
+        let proofs = memberships(peer);
+        let devices = self.accept_device_list(account, &signed, &proofs, now)?;
 
         let mut targets = Vec::with_capacity(devices.len());
         for device in devices {
@@ -123,6 +124,7 @@ impl<T: Transport> Client<T> {
         &self,
         account: &PublicKeyBytes,
         signed: &SignedDeviceList,
+        proofs: &[Membership],
         now: Timestamp,
     ) -> Result<Vec<KnownDevice>> {
         let stored = self.storage.device_list(account)?;
@@ -144,9 +146,10 @@ impl<T: Transport> Client<T> {
             }
         }
 
-        let devices: Vec<KnownDevice> = signed
-            .list
-            .devices
+        // 🔐 Подключённое устройство — только с подписью членства: иначе
+        // список назвал бы «своим» ключ чужого устройства, и его сообщения
+        // попадали бы не в тот чат.
+        let devices: Vec<KnownDevice> = device_list::proven_devices(&signed.list, proofs)
             .iter()
             .map(|entry| KnownDevice {
                 device_id: entry.device_id,
@@ -155,8 +158,14 @@ impl<T: Transport> Client<T> {
             })
             .collect();
 
-        if stored.as_ref().map(|list| list.version) != Some(signed.list.version) {
-            let before = self.storage.known_devices(account)?;
+        let before = self.storage.known_devices(account)?;
+        // Та же версия, но доверенных стало больше: подпись членства
+        // подключённого устройства появляется в discovery, когда оно
+        // выложит ключи, — позже, чем список.
+        if stored.as_ref().map(|list| list.version) != Some(signed.list.version)
+            || before.len() != devices.len()
+            || devices.iter().any(|device| !before.contains(device))
+        {
             if !before.is_empty() && devices.iter().any(|device| !before.contains(device)) {
                 // Подключено новое устройство собеседника — в журнал; в чате
                 // это покажет интерфейс (этап 5).
@@ -393,6 +402,19 @@ impl<T: Transport> Client<T> {
             _ => Ok(false),
         }
     }
+}
+
+/// Подписи членства устройств из discovery.
+fn memberships(peer: &DiscoveryResponse) -> Vec<Membership> {
+    peer.devices
+        .iter()
+        .filter_map(|device| {
+            let id = *uuid::Uuid::parse_str(&device.device_id).ok()?.as_bytes();
+            let signature: [u8; device_list::MEMBERSHIP_SIGNATURE_LEN] =
+                unhex(device.membership.as_deref()?).ok()?.try_into().ok()?;
+            Some((id, signature))
+        })
+        .collect()
 }
 
 /// Ключ sealed sender подключённого устройства из discovery — только

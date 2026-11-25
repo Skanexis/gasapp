@@ -532,6 +532,11 @@ pub struct DiscoveredDevice {
     pub sealed_kem_public: String,
     /// Его подпись ключом устройства, hex.
     pub sealed_kem_signature: String,
+    /// Подпись членства устройства в аккаунте его ключом, hex
+    /// (`device_list::sign_membership`). Без неё устройство из списка не
+    /// принимается.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membership: Option<String>,
 }
 
 /// Запрос нового устройства в ящике связывания.
@@ -562,6 +567,8 @@ pub struct LinkGrantResponse {
 pub struct LinkCompleteBody {
     /// Подпись `GASAPP_LINK_COMPLETE_v1 ‖ nonce`, hex.
     pub signature: String,
+    /// Подпись членства в аккаунте (`device_list::sign_membership`), hex.
+    pub membership: String,
 }
 
 /// Отключение устройства.

@@ -350,10 +350,21 @@ pub async fn find_by_username(pool: &PgPool, username: &str) -> Result<Account, 
 /// [`RepoError::Database`] — сбой базы.
 pub async fn list_devices(pool: &PgPool, account_id: Uuid) -> Result<Vec<Device>, RepoError> {
     let rows: Vec<(Uuid, Vec<u8>)> =
-        sqlx::query_as("SELECT device_id, identity_key FROM devices WHERE account_id = $1")
-            .bind(account_id)
-            .fetch_all(pool)
-            .await?;
+        // Основное устройство (его ключ — ключ аккаунта) — первым: discovery
+        // берёт у первого ключ sealed sender аккаунта. Без порядка Postgres
+        // после UPDATE строки мог отдать первым подключённое устройство, а
+        // его ключ подписан не ключом аккаунта — писать аккаунту не мог бы
+        // никто.
+        sqlx::query_as(
+            "SELECT d.device_id, d.identity_key
+               FROM devices d
+               JOIN accounts a ON a.account_id = d.account_id
+              WHERE d.account_id = $1
+              ORDER BY (d.identity_key = a.identity_key) DESC, d.device_id",
+        )
+        .bind(account_id)
+        .fetch_all(pool)
+        .await?;
 
     Ok(rows
         .into_iter()
@@ -1627,6 +1638,19 @@ pub async fn rebind_account(
     }
 
     sqlx::query("DELETE FROM devices WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
+
+    // Список устройств подписан прежним ключом аккаунта: после перепривязки
+    // он не проверяется новым — с ним аккаунту не написал бы никто, а сам
+    // владелец не смог бы ни подключить, ни отключить устройство. Ящики
+    // связывания прежнего ключа — туда же.
+    sqlx::query("DELETE FROM device_lists WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query("DELETE FROM link_boxes WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *transaction)
         .await?;

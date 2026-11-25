@@ -38,6 +38,12 @@ CREATE INDEX link_boxes_by_expiry ON link_boxes (expires_at);
 -- привязка к его классическому ключу. У основного устройства она та же,
 -- что у аккаунта (`accounts.pq_identity_key`), — здесь пусто.
 -- 🔐 Подключённое устройство не может менять половину аккаунта.
+--
+-- `membership` — подпись подключённого устройства его ключом: «я —
+-- устройство этого аккаунта» (домен GASAPP_DEVICE_MEMBERSHIP_v1). Клиенты
+-- принимают из списка только устройства с такой подписью: иначе список,
+-- подписанный одним аккаунтом, мог бы назвать своим ключ чужого устройства.
 ALTER TABLE devices
     ADD COLUMN pq_identity_key  BYTEA,
-    ADD COLUMN identity_binding BYTEA;
+    ADD COLUMN identity_binding BYTEA,
+    ADD COLUMN membership       BYTEA CHECK (membership IS NULL OR octet_length(membership) = 64);

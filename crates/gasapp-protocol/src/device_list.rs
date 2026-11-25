@@ -26,7 +26,7 @@
 //! подпись = XEdDSA(IK_A) ‖ ML-DSA-65(PQ_A, домен GASAPP_DEVICE_LIST_v1)
 //! ```
 
-use gasapp_types::{GasAppError, PublicKeyBytes, Result};
+use gasapp_types::{GasAppError, PrivateKeyBytes, PublicKeyBytes, Result};
 use sha2::{Digest, Sha256};
 
 use crate::keys::IdentityKeyPair;
@@ -309,6 +309,147 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Домен подписи членства: устройство подтверждает, что оно — устройство
+/// этого аккаунта.
+pub const MEMBERSHIP_DOMAIN: &[u8] = b"GASAPP_DEVICE_MEMBERSHIP_v1";
+
+/// Длина подписи членства (XEdDSA).
+pub const MEMBERSHIP_SIGNATURE_LEN: usize = 64;
+
+/// Доказательство членства: устройство и его подпись.
+pub type Membership = ([u8; DEVICE_ID_LEN], [u8; MEMBERSHIP_SIGNATURE_LEN]);
+
+/// Сообщение, которое подписывает устройство: домен ‖ ключ аккаунта ‖
+/// идентификатор устройства.
+#[must_use]
+pub fn membership_message(account: &PublicKeyBytes, device_id: &[u8; DEVICE_ID_LEN]) -> Vec<u8> {
+    let mut message = MEMBERSHIP_DOMAIN.to_vec();
+    message.extend_from_slice(account.as_bytes());
+    message.extend_from_slice(device_id);
+    message
+}
+
+/// Устройство подписывает своё членство в аккаунте.
+///
+/// 🔐 Без этой подписи список, подписанный аккаунтом, мог бы назвать
+/// «своим» чужой ключ — ключ устройства другого человека: получатель
+/// приписал бы его сообщения не тому собеседнику. Подпись делает только
+/// само устройство и только для аккаунта, к которому подключилось.
+///
+/// # Errors
+///
+/// [`GasAppError::Crypto`] — ключ не годится для подписи.
+pub fn sign_membership(
+    device: &PrivateKeyBytes,
+    account: &PublicKeyBytes,
+    device_id: &[u8; DEVICE_ID_LEN],
+) -> Result<[u8; MEMBERSHIP_SIGNATURE_LEN]> {
+    crate::xeddsa::montgomery::sign(device, &membership_message(account, device_id))
+}
+
+/// Проверяет подпись членства устройства `device` в аккаунте `account`.
+///
+/// # Errors
+///
+/// [`GasAppError::InvalidSignature`] — подпись не этого устройства или не
+/// для этого аккаунта.
+pub fn verify_membership(
+    device: &PublicKeyBytes,
+    account: &PublicKeyBytes,
+    device_id: &[u8; DEVICE_ID_LEN],
+    signature: &[u8],
+) -> Result<()> {
+    crate::xeddsa::montgomery::verify(device, &membership_message(account, device_id), signature)
+        .map_err(|_| GasAppError::InvalidSignature)
+}
+
+/// Устройства списка, которым можно верить: основное (его ключ — ключ
+/// аккаунта) и подключённые с действительной подписью членства.
+#[must_use]
+pub fn proven_devices(list: &DeviceList, proofs: &[Membership]) -> Vec<DeviceEntry> {
+    list.devices
+        .iter()
+        .filter(|entry| {
+            entry.identity == list.account_identity
+                || proofs.iter().any(|(device_id, signature)| {
+                    *device_id == entry.device_id
+                        && verify_membership(
+                            &entry.identity,
+                            &list.account_identity,
+                            device_id,
+                            signature,
+                        )
+                        .is_ok()
+                })
+        })
+        .cloned()
+        .collect()
+}
+
+/// Список с доказательствами членства — одним блоком (хвост ключа
+/// доступа): длина списка (u32 BE) ‖ список ‖ n (u8) ‖ n × (id ‖ подпись).
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — доказательств больше, чем устройств.
+pub fn encode_shared(list: &[u8], proofs: &[Membership]) -> Result<Vec<u8>> {
+    if proofs.len() > MAX_DEVICES {
+        return Err(GasAppError::Malformed);
+    }
+    let length = u32::try_from(list.len()).map_err(|_| GasAppError::Malformed)?;
+    let mut out = Vec::with_capacity(
+        list.len().saturating_add(5).saturating_add(
+            proofs
+                .len()
+                .saturating_mul(DEVICE_ID_LEN + MEMBERSHIP_SIGNATURE_LEN),
+        ),
+    );
+    out.extend_from_slice(&length.to_be_bytes());
+    out.extend_from_slice(list);
+    out.push(u8::try_from(proofs.len()).map_err(|_| GasAppError::Malformed)?);
+    for (device_id, signature) in proofs {
+        out.extend_from_slice(device_id);
+        out.extend_from_slice(signature);
+    }
+    Ok(out)
+}
+
+/// Разбирает [`encode_shared`].
+///
+/// # Errors
+///
+/// [`GasAppError::Malformed`] — обрыв, хвост или доказательств больше,
+/// чем устройств.
+pub fn decode_shared(bytes: &[u8]) -> Result<(Vec<u8>, Vec<Membership>)> {
+    let (length, rest) = bytes
+        .split_first_chunk::<4>()
+        .ok_or(GasAppError::Malformed)?;
+    let length =
+        usize::try_from(u32::from_be_bytes(*length)).map_err(|_| GasAppError::Malformed)?;
+    let list = rest.get(..length).ok_or(GasAppError::Malformed)?;
+    let rest = rest.get(length..).ok_or(GasAppError::Malformed)?;
+    let (count, mut rest) = rest.split_first().ok_or(GasAppError::Malformed)?;
+    let count = usize::from(*count);
+    if count > MAX_DEVICES {
+        return Err(GasAppError::Malformed);
+    }
+    let mut proofs = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (device_id, tail) = rest
+            .split_first_chunk::<DEVICE_ID_LEN>()
+            .ok_or(GasAppError::Malformed)?;
+        let (signature, tail) = tail
+            .split_first_chunk::<MEMBERSHIP_SIGNATURE_LEN>()
+            .ok_or(GasAppError::Malformed)?;
+        proofs.push((*device_id, *signature));
+        rest = tail;
+    }
+    if !rest.is_empty() {
+        return Err(GasAppError::Malformed);
+    }
+    Ok((list.to_vec(), proofs))
+}
+
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {
@@ -447,5 +588,52 @@ mod tests {
         let mut bytes = list(&primary, &[], 1).encode().unwrap();
         bytes.push(0);
         assert!(DeviceList::decode(&bytes).is_err());
+    }
+    /// Подключённое устройство в списке — только с подписью членства для
+    /// этого аккаунта; чужой ключ без неё отбрасывается.
+    #[test]
+    fn only_proven_devices_are_trusted() {
+        let mut rng = rand_core::OsRng;
+        let account = generate_identity(&mut rng).expect("аккаунт");
+        let linked = generate_identity(&mut rng).expect("устройство");
+        let stranger = generate_identity(&mut rng).expect("чужой");
+        let account_key = *account.public().public();
+        let entry = |id: u8, key: &IdentityKeyPair| DeviceEntry {
+            device_id: [id; DEVICE_ID_LEN],
+            identity: *key.public().public(),
+            pq_identity: vec![0; PQ_PUBLIC_LEN],
+        };
+        let list = DeviceList {
+            account_identity: account_key,
+            version: 2,
+            issued_at_millis: 1,
+            devices: vec![entry(1, &account), entry(2, &linked), entry(3, &stranger)],
+        };
+        let private = |key: &IdentityKeyPair| PrivateKeyBytes::new(*key.private().expose_secret());
+        let good =
+            sign_membership(&private(&linked), &account_key, &[2; DEVICE_ID_LEN]).expect("подпись");
+        // Чужой ключ подписал членство в другом аккаунте — не годится.
+        let other = sign_membership(
+            &private(&stranger),
+            stranger.public().public(),
+            &[3; DEVICE_ID_LEN],
+        )
+        .expect("подпись");
+        let proven = proven_devices(
+            &list,
+            &[([2; DEVICE_ID_LEN], good), ([3; DEVICE_ID_LEN], other)],
+        );
+        let ids: Vec<u8> = proven.iter().map(|entry| entry.device_id[0]).collect();
+        assert_eq!(ids, vec![1, 2]);
+
+        let shared = encode_shared(b"list", &[([2; DEVICE_ID_LEN], good)]).expect("кодируется");
+        assert_eq!(
+            decode_shared(&shared).expect("читается"),
+            (b"list".to_vec(), vec![([2; DEVICE_ID_LEN], good)])
+        );
+        let mut tail = shared.clone();
+        tail.push(0);
+        assert!(decode_shared(&tail).is_err());
+        assert!(decode_shared(shared.get(..shared.len() - 1).expect("срез")).is_err());
     }
 }
