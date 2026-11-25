@@ -117,6 +117,9 @@ struct SettingsScreen: View {
                             ConnectionBadge()
                         }
                     }
+                    NavigationLink { DevicesScreen() } label: {
+                        SettingRow(icon: "ipad.and.iphone", color: .indigo, title: L10n.t("Устройства", "Devices", "Dispositivi"))
+                    }
                     Toggle(isOn: $pushEnabled) {
                         SettingRow(icon: "bell.badge.fill", color: .red, title: L10n.t("Уведомления", "Notifications", "Notifiche"))
                     }

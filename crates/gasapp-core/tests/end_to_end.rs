@@ -9479,6 +9479,14 @@ fn only_the_primary_links_and_stale_codes_are_refused() {
         .prepare_device_link(&uri, later(120), &mut OsRng)
         .is_err());
 
+    // Цифры сверяли дольше срока QR — гранта нет: новое устройство уже
+    // показывает другой код.
+    alice
+        .prepare_device_link(&uri, now(), &mut OsRng)
+        .expect("запрос");
+    assert!(alice.approve_device_link(later(120)).is_err());
+    assert!(phone.poll_device_link().expect("опрос").is_none());
+
     let code = alice
         .prepare_device_link(&uri, now(), &mut OsRng)
         .expect("запрос");

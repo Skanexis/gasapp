@@ -13,7 +13,7 @@ import UIKit
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var model
 
-    enum Step { case welcome, account, pin, confirmPin, code }
+    enum Step { case welcome, account, pin, confirmPin, code, link }
 
     @State private var step: Step = .welcome
     @State private var username = ""
@@ -42,6 +42,8 @@ struct OnboardingFlow: View {
     /// Возвращение аккаунта из копии: имя и почта не нужны — они в копии.
     @State private var recovering = false
     @State private var showRestore = false
+    /// Вход с другого телефона: аккаунт придёт с основного по QR.
+    @State private var linking = false
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -62,6 +64,7 @@ struct OnboardingFlow: View {
                     case .account: account
                     case .pin, .confirmPin: pinStep
                     case .code: codeStep
+                    case .link: NewDeviceLinkView(busy: $working) { model.didUnlock() }
                     }
                 }
                 // Приветствие — во всю ширину: сцена без полей, отступы — у блоков под ней.
@@ -166,6 +169,10 @@ struct OnboardingFlow: View {
 
                 GoldButton(title: L10n.t("Начать", "Get started", "Inizia")) { step = .account }
                     .padding(.top, 8)
+                OutlineButton(title: L10n.t("Войти с другого телефона", "Sign in from another phone", "Accedi da un altro telefono")) {
+                    linking = true
+                    step = .pin
+                }
                 OutlineButton(title: L10n.t("У меня есть резервная копия", "I have a backup", "Ho un backup")) {
                     recovering = true
                     step = .pin
@@ -225,7 +232,7 @@ struct OnboardingFlow: View {
     /// Назад — до того, как открыта база: на шаге кода аккаунт уже
     /// создаётся, и возврат идёт через ошибки этого шага.
     private var canGoBack: Bool {
-        !working && (step == .account || isPinStep)
+        !working && (step == .account || isPinStep || step == .link)
     }
 
     private func goBack() {
@@ -235,8 +242,9 @@ struct OnboardingFlow: View {
         case .account:
             step = .welcome
         case .pin:
-            if recovering {
+            if recovering || linking {
                 recovering = false
+                linking = false
                 step = .welcome
             } else {
                 step = .account
@@ -244,6 +252,11 @@ struct OnboardingFlow: View {
         case .confirmPin:
             firstPin.wipe(); firstPin = []
             step = .pin
+        case .link:
+            // 🔐 Вход не завершён — база без аккаунта не нужна.
+            CoreStore.shared.wipe()
+            linking = false
+            step = .welcome
         default:
             break
         }
@@ -308,7 +321,7 @@ struct OnboardingFlow: View {
             return
         }
         firstPin.wipe(); firstPin = []
-        if recovering { openForRecovery(pin: entered) } else { createAccount(pin: entered) }
+        if recovering || linking { openForRecovery(pin: entered) } else { createAccount(pin: entered) }
     }
 
     private func createAccount(pin: [UInt8]) {
@@ -475,8 +488,9 @@ struct OnboardingFlow: View {
         }
     }
 
-    /// База — под новым PIN, сеть — по выбору; дальше экран копии вернёт
-    /// аккаунт. 🔐 Не дошло до конца — база стирается (как у регистрации).
+    /// База — под новым PIN, сеть — по выбору; дальше аккаунт вернёт экран
+    /// копии либо придёт с основного телефона по QR. 🔐 Не дошло до конца —
+    /// база стирается (как у регистрации).
     private func openForRecovery(pin: [UInt8]) {
         working = true
         let tor = viaTor
@@ -493,7 +507,7 @@ struct OnboardingFlow: View {
                     }
                 }
                 working = false
-                showRestore = true
+                if linking { step = .link } else { showRestore = true }
             } catch {
                 CoreStore.shared.wipe()
                 working = false

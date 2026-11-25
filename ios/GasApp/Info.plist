@@ -66,7 +66,7 @@
 	</array>
 	<!-- Камера — только для сканирования QR контакта и safety number. -->
 	<key>NSCameraUsageDescription</key>
-	<string>The camera is used to scan a contact’s QR code or a safety number. Camera images are not sent anywhere.</string>
+	<string>The camera is used to scan a contact’s QR code, a safety number or the code of your new phone. Camera images are not sent anywhere.</string>
 	<!-- Face ID — только чтобы открыть переписку вместо PIN (по желанию). -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID unlocks your messages instead of the PIN. Turn it on in Settings.</string>

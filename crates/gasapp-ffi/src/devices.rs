@@ -107,7 +107,8 @@ impl Messenger {
     ///
     /// # Errors
     ///
-    /// [`FfiError::Core`] — подготовленного гранта нет, срок QR вышел.
+    /// [`FfiError::Core`] — подготовленного гранта нет, срок QR вышел
+    /// (новое устройство уже показывает другой код).
     pub fn approve_device_link(&self, now_millis: i64) -> Result<(), FfiError> {
         let client = self.client()?;
         guard(|| client.approve_device_link(Timestamp::from_millis(now_millis)))

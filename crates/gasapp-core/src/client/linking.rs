@@ -52,6 +52,10 @@ pub(crate) struct PendingLink {
 /// Грант на основном — между сверкой цифр и отправкой.
 pub(crate) struct PreparedLink {
     nonce: String,
+    /// QR, по которому подготовлен грант: срок проверяется и при
+    /// «Подключить» — новое устройство к тому времени могло уйти на
+    /// новый QR, и грант в старый ящик никто бы не забрал.
+    code: LinkCode,
     body: LinkGrantBody,
 }
 
@@ -347,6 +351,7 @@ impl<T: Transport> Client<T> {
             .lock()
             .map_err(|_| GasAppError::Storage)? = Some(PreparedLink {
             nonce,
+            code,
             body: LinkGrantBody {
                 grant: hex(&seal.sealed),
                 device_list: hex(&list.to_bytes()),
@@ -362,7 +367,9 @@ impl<T: Transport> Client<T> {
     ///
     /// * [`GasAppError::Uninitialized`] — подготовленного гранта нет;
     /// * [`GasAppError::Forbidden`] — сервер не принял список;
-    /// * [`GasAppError::SessionNotFound`] — срок QR вышел.
+    /// * [`GasAppError::Malformed`] — срок QR вышел, пока человек сверял
+    ///   цифры;
+    /// * [`GasAppError::SessionNotFound`] — ящика на сервере уже нет.
     pub fn approve_device_link(&self, now: Timestamp) -> Result<()> {
         let prepared = self
             .linking
@@ -371,6 +378,7 @@ impl<T: Transport> Client<T> {
             .map_err(|_| GasAppError::Storage)?
             .take()
             .ok_or(GasAppError::Uninitialized)?;
+        prepared.code.check_fresh(now.as_millis())?;
         let (identity, _) = self.load_identity()?;
         let own = self.own_device_id()?.ok_or(GasAppError::Uninitialized)?;
         self.api.link_grant(
