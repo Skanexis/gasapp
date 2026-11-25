@@ -1039,14 +1039,14 @@
     <string name="devices_link_hint">На новом телефоне установите GasApp и на первом экране выберите «Войти с другого телефона» — появится QR-код.</string>
     <string name="devices_link_full">Устройств уже пять — чтобы подключить новое, отключите одно из них.</string>
     <string name="devices_not_primary">Это подключённый телефон. Подключать и отключать устройства можно только с основного.</string>
-    <string name="devices_note_history">История переписки на новое устройство не переносится: там будут сообщения с момента подключения.</string>
+    <string name="devices_note_history">Последние 30 дней переписки переезжают на новое устройство за пару минут после входа — только текст, без файлов и исчезающих сообщений.</string>
     <string name="devices_note_privacy">Сервер знает, сколько у вас устройств, но не знает, с какого из них вы пишете.</string>
     <string name="devices_unlink">Отключить</string>
     <string name="devices_unlink_title">Отключить устройство?</string>
     <string name="devices_unlink_message">Новые сообщения на него больше не придут. Переписка, которая уже есть на нём, там и останется.</string>
     <string name="devices_load_failed">Список устройств не загрузился. Проверьте связь.</string>
     <string name="devices_compare_title">Сверьте цифры</string>
-    <string name="devices_compare_message">Такие же цифры должны быть на новом телефоне. Не совпадают — не подключайте: значит, QR подменили. Новый телефон получит доступ ко всем новым сообщениям.</string>
+    <string name="devices_compare_message">Такие же цифры должны быть на новом телефоне. Не совпадают — не подключайте: значит, QR подменили. Новый телефон получит все новые сообщения и переписку за последние 30 дней.</string>
     <string name="devices_compare_match">Совпадают — подключить</string>
     <string name="devices_compare_mismatch">Не совпадают</string>
     <string name="devices_mismatch_done">Цифры не совпали — устройство не подключено.</string>
@@ -1066,6 +1066,6 @@
     <string name="link_mismatch">Не совпадают</string>
     <string name="link_mismatch_done">Цифры не совпали — вход отменён. Попробуйте ещё раз с новым QR.</string>
     <string name="link_failed">Вход не завершился. Проверьте связь и отсканируйте новый QR основным телефоном.</string>
-    <string name="link_history">История переписки сюда не переносится — будут сообщения с момента входа.</string>
+    <string name="link_history">Последние 30 дней переписки придут сюда за пару минут — только текст, без файлов и исчезающих сообщений.</string>
     <string name="link_qr_description">Код для подключения этого телефона</string>
 </resources>

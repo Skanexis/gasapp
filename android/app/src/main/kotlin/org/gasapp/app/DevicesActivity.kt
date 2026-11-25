@@ -211,6 +211,12 @@ class DevicesActivity : AppCompatActivity() {
             if (found.size > before) {
                 hideStatus()
                 load()
+                // Приём заодно отправляет новому устройству историю за 30
+                // дней (ядро, этап 4б), как только оно выложит ключи.
+                repeat(WAIT_ROUNDS) {
+                    delay(WAIT_STEP_MS)
+                    io { Core.deviceId?.let { Core.messenger().receiveMessages(it, System.currentTimeMillis()) } }
+                }
 
                 return
             }

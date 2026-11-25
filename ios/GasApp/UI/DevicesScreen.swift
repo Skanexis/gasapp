@@ -68,9 +68,9 @@ struct DevicesScreen: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(L10n.t("История переписки на новое устройство не переносится: там будут сообщения с момента подключения.",
-                                 "Message history does not move to a new device: it gets messages from the moment it is linked.",
-                                 "La cronologia dei messaggi non passa al nuovo dispositivo: riceve i messaggi dal momento del collegamento."),
+                    Label(L10n.t("Последние 30 дней переписки переезжают на новое устройство за пару минут после входа — только текст, без файлов и исчезающих сообщений.",
+                                 "Last 30 days of messages move to a new device within a couple of minutes after it signs in — text only, without files and disappearing messages.",
+                                 "Gli ultimi 30 giorni di messaggi passano al nuovo dispositivo entro un paio di minuti dall’accesso: solo testo, senza file e messaggi a scomparsa."),
                           systemImage: "clock.arrow.circlepath")
                     Label(L10n.t("Сервер знает, сколько у вас устройств, но не знает, с какого из них вы пишете.",
                                  "The server knows how many devices you have, but not which one you write from.",
@@ -352,9 +352,9 @@ private struct LinkConfirmSheet: View {
                                          "The new phone must show the same digits.",
                                          "Il nuovo telefono deve mostrare le stesse cifre."))
             LinkDigits(code: code)
-            Text(L10n.t("Не совпадают — не подключайте: значит, QR подменили. Новый телефон получит доступ ко всем новым сообщениям.",
-                        "If they don’t match, don’t link: the QR was swapped. The new phone gets access to all new messages.",
-                        "Se non coincidono, non collegare: il QR è stato sostituito. Il nuovo telefono avrà accesso a tutti i nuovi messaggi."))
+            Text(L10n.t("Не совпадают — не подключайте: значит, QR подменили. Новый телефон получит все новые сообщения и переписку за последние 30 дней.",
+                        "If they don’t match, don’t link: the QR was swapped. The new phone gets all new messages and the last 30 days of messages.",
+                        "Se non coincidono, non collegare: il QR è stato sostituito. Il nuovo telefono riceverà tutti i nuovi messaggi e quelli degli ultimi 30 giorni."))
                 .font(GasFont.text(14))
                 .foregroundStyle(GasAppColor.textSecondary)
             Spacer(minLength: 0)
@@ -449,9 +449,9 @@ struct NewDeviceLinkView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                Label(L10n.t("История переписки сюда не переносится — будут сообщения с момента входа.",
-                             "Message history doesn’t move here — you get messages from the moment you sign in.",
-                             "La cronologia non viene trasferita qui: riceverai i messaggi dal momento dell’accesso."),
+                Label(L10n.t("Последние 30 дней переписки придут сюда за пару минут — только текст, без файлов и исчезающих сообщений.",
+                             "Your last 30 days of messages arrive here within a couple of minutes — text only, without files and disappearing messages.",
+                             "Gli ultimi 30 giorni di messaggi arriveranno qui entro un paio di minuti: solo testo, senza file e messaggi a scomparsa."),
                       systemImage: "clock.arrow.circlepath")
                     .font(GasFont.text(13))
                     .foregroundStyle(GasAppColor.textTertiary)

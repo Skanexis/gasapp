@@ -85,6 +85,13 @@ const KIND_DISAPPEARING_TIMER: u8 = 12;
 /// Копия отправленного своим устройствам (`docs/protocol/MULTI-DEVICE.md`).
 const KIND_SENT: u8 = 13;
 
+/// Перенесённая история: последние 30 дней — новому своему устройству.
+const KIND_HISTORY: u8 = 14;
+
+/// Сколько сообщений истории в одной пачке: пачка должна помещаться в
+/// наибольший бакет padding и с текстами на пределе.
+pub const MAX_HISTORY_ITEMS: usize = 200;
+
 /// Наибольший таймер исчезающих сообщений — год.
 ///
 /// 🔐 Значение приходит от собеседника. Без предела «таймер» на
@@ -164,7 +171,7 @@ fn write_sent(
     peer_username: Option<&str>,
     content: &Content,
 ) -> Result<()> {
-    if matches!(content, Content::Sent { .. }) {
+    if matches!(content, Content::Sent { .. } | Content::History { .. }) {
         return Err(GasAppError::Malformed);
     }
     out.push(KIND_SENT);
@@ -191,7 +198,7 @@ fn read_sent(reader: &mut Reader<'_>) -> Result<Content> {
         _ => return Err(GasAppError::Malformed),
     };
     let inner = Content::from_unpadded_bytes(&reader.take_blob()?)?;
-    if matches!(inner, Content::Sent { .. }) {
+    if matches!(inner, Content::Sent { .. } | Content::History { .. }) {
         return Err(GasAppError::Malformed);
     }
     Ok(Content::Sent {
@@ -199,6 +206,96 @@ fn read_sent(reader: &mut Reader<'_>) -> Result<Content> {
         peer_username,
         content: Box::new(inner),
     })
+}
+
+/// Сообщение перенесённой истории ([`Content::History`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryItem {
+    /// Ключ аккаунта собеседника — по нему чат на новом устройстве.
+    pub peer: [u8; 32],
+    /// Его имя — чтобы чат был с именем.
+    pub peer_username: Option<String>,
+    /// Идентификатор сообщения — тот же, что у оригинала: правки и
+    /// удаления потом находят его и здесь.
+    pub id: [u8; MESSAGE_ID_LEN],
+    /// Отправлено с этого аккаунта (иначе — получено от собеседника).
+    pub outgoing: bool,
+    /// Время отправки, миллисекунды Unix.
+    pub sent_at_millis: i64,
+    /// Текст.
+    pub body: String,
+}
+
+/// История: число, затем каждое сообщение — собеседник, имя (0/1 и
+/// текст), идентификатор, направление, время, текст.
+fn write_history(out: &mut Vec<u8>, items: &[HistoryItem]) -> Result<()> {
+    if items.is_empty() || items.len() > MAX_HISTORY_ITEMS {
+        return Err(GasAppError::Malformed);
+    }
+    out.push(KIND_HISTORY);
+    out.extend_from_slice(
+        &u16::try_from(items.len())
+            .map_err(|_| GasAppError::Malformed)?
+            .to_be_bytes(),
+    );
+    for item in items {
+        out.extend_from_slice(&item.peer);
+        match &item.peer_username {
+            Some(name) => {
+                out.push(1);
+                write_text(out, name)?;
+            }
+            None => out.push(0),
+        }
+        out.extend_from_slice(&item.id);
+        out.push(u8::from(item.outgoing));
+        out.extend_from_slice(&item.sent_at_millis.to_be_bytes());
+        write_text(out, &item.body)?;
+    }
+    Ok(())
+}
+
+/// Разбирает историю после метки вида.
+fn read_history(reader: &mut Reader<'_>) -> Result<Content> {
+    let count_bytes: [u8; 2] = reader
+        .take_slice(2)?
+        .try_into()
+        .map_err(|_| GasAppError::Malformed)?;
+    let count = usize::from(u16::from_be_bytes(count_bytes));
+    if count == 0 || count > MAX_HISTORY_ITEMS {
+        return Err(GasAppError::Malformed);
+    }
+    let mut items = Vec::with_capacity(count);
+    for _ in 0..count {
+        let peer: [u8; 32] = reader
+            .take_slice(32)?
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?;
+        let peer_username = match reader.take_u8()? {
+            0 => None,
+            1 => Some(reader.take_text()?),
+            _ => return Err(GasAppError::Malformed),
+        };
+        let id = reader.take_id()?;
+        let outgoing = match reader.take_u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(GasAppError::Malformed),
+        };
+        let time: [u8; 8] = reader
+            .take_slice(8)?
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?;
+        items.push(HistoryItem {
+            peer,
+            peer_username,
+            id,
+            outgoing,
+            sent_at_millis: i64::from_be_bytes(time),
+            body: reader.take_text()?,
+        });
+    }
+    Ok(Content::History { items })
 }
 
 /// Предел списка устройств в ключе доступа: 5 устройств и подпись.
@@ -411,6 +508,18 @@ pub enum Content {
         content: Box<Content>,
     },
 
+    /// Перенесённая история — новому своему устройству
+    /// (`docs/protocol/MULTI-DEVICE.md`, этап 4б): последние 30 дней,
+    /// только текст, пачками до [`MAX_HISTORY_ITEMS`].
+    ///
+    /// 🔐 Принимается только от основного устройства своего аккаунта и
+    /// только вскоре после подключения: иначе любое своё устройство
+    /// могло бы вписать другим «входящие» от собеседников.
+    History {
+        /// Сообщения пачки.
+        items: Vec<HistoryItem>,
+    },
+
     /// Таймер исчезающих сообщений, заданный отправителем для чата.
     ///
     /// 🔐 Таймер общий для обоих: кто бы его ни поставил, сообщения
@@ -538,6 +647,7 @@ impl Content {
                 peer_username,
                 content,
             } => write_sent(&mut out, peer, peer_username.as_deref(), content)?,
+            Self::History { items } => write_history(&mut out, items)?,
             Self::AccessKey {
                 key,
                 sender_username,
@@ -675,6 +785,7 @@ impl Content {
             },
             KIND_ACCESS_KEY => read_access_key(&mut reader)?,
             KIND_SENT => read_sent(&mut reader)?,
+            KIND_HISTORY => read_history(&mut reader)?,
             KIND_KT_HEAD => {
                 let (epoch, head) = take_kt_head(&mut reader)?;
                 Self::KtHead { epoch, head }
@@ -1306,6 +1417,56 @@ mod tests {
             }),
         };
         assert!(nested.to_bytes().is_err());
+    }
+
+    /// История переживает кодирование; пустая, слишком длинная и
+    /// вложенная в копию — нет; чужой флаг направления отвергается.
+    #[test]
+    fn history_round_trips_within_limits() {
+        let item = |outgoing| HistoryItem {
+            peer: [5; 32],
+            peer_username: Some("bob".to_owned()),
+            id: [1; 16],
+            outgoing,
+            sent_at_millis: 1_700_000_000_000,
+            body: "старое сообщение".to_owned(),
+        };
+        let content = Content::History {
+            items: vec![
+                item(true),
+                HistoryItem {
+                    peer_username: None,
+                    ..item(false)
+                },
+            ],
+        };
+        let bytes = content.to_bytes().expect("кодируется");
+        assert_eq!(Content::from_bytes(&bytes).expect("читается"), content);
+
+        assert!(Content::History { items: Vec::new() }.to_bytes().is_err());
+        assert!(Content::History {
+            items: vec![item(true); MAX_HISTORY_ITEMS + 1]
+        }
+        .to_bytes()
+        .is_err());
+        assert!(Content::Sent {
+            peer: [8; 32],
+            peer_username: None,
+            content: Box::new(content.clone()),
+        }
+        .to_bytes()
+        .is_err());
+
+        // Флаг направления — только 0 или 1.
+        let mut raw = Content::History {
+            items: vec![item(true)],
+        }
+        .to_unpadded_bytes()
+        .expect("кодируется");
+        // Версия, вид, число (2), собеседник (32), имя (1 + 4 + 3), id (16).
+        let flag = 1 + 1 + 2 + 32 + 1 + 4 + 3 + 16;
+        *raw.get_mut(flag).expect("флаг") = 2;
+        assert!(Content::from_unpadded_bytes(&raw).is_err());
     }
 
     /// Список устройств едет в хвосте ключа доступа — с именем и без.

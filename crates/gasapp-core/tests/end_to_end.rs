@@ -9594,3 +9594,104 @@ fn sent_messages_appear_on_the_other_own_device() {
         .iter()
         .all(|message| message.message_id != sent));
 }
+
+/// Подключает новое устройство к аккаунту `primary` по QR (связывание из
+/// `docs/protocol/MULTI-DEVICE.md`) и возвращает его с идентификатором.
+fn link_new_device(
+    server: &FakeServer,
+    dir: &tempfile::TempDir,
+    primary: &Client<FakeServer>,
+    file: &str,
+    at: Timestamp,
+) -> (Client<FakeServer>, String) {
+    let phone = Client::new(server.clone(), open_storage(dir, file));
+    let uri = phone.start_device_link(at, &mut OsRng).expect("QR");
+    primary
+        .prepare_device_link(&uri, at, &mut OsRng)
+        .expect("запрос");
+    primary.approve_device_link(at).expect("грант");
+    phone.poll_device_link().expect("опрос").expect("грант");
+    let device = phone
+        .finish_device_link(at, &mut OsRng)
+        .expect("подключено")
+        .device_id
+        .to_string();
+    (phone, device)
+}
+
+/// Перенос истории (этап 4б): основное отдаёт новому устройству последние
+/// 30 дней — свои и входящие сообщения, в тех же чатах и с теми же
+/// идентификаторами. Устройство, вошедшее давно, историю не принимает.
+#[test]
+fn history_moves_to_a_newly_linked_device() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let first = alice
+        .send_message("bob", "hi bob", now(), &mut OsRng)
+        .expect("отправлено");
+    bob.receive_messages(&bob_device, later(1)).expect("приём");
+    bob.send_message("alice", "hi alice", later(2), &mut OsRng)
+        .expect("ответ");
+    alice
+        .receive_messages(&alice_device, later(3))
+        .expect("приём");
+
+    // Новое устройство ещё не вошло — отправлять некому.
+    let late = Client::new(server.clone(), open_storage(&dir, "late.db"));
+    let uri = late.start_device_link(later(10), &mut OsRng).expect("QR");
+    alice
+        .prepare_device_link(&uri, later(10), &mut OsRng)
+        .expect("запрос");
+    alice.approve_device_link(later(10)).expect("грант");
+    assert_eq!(
+        alice
+            .send_pending_history(later(11), &mut OsRng)
+            .expect("ожидание"),
+        0
+    );
+    late.poll_device_link().expect("опрос").expect("грант");
+    let late_device = late
+        .finish_device_link(later(12), &mut OsRng)
+        .expect("подключено")
+        .device_id
+        .to_string();
+
+    let (phone, phone_device) = link_new_device(&server, &dir, &alice, "phone.db", later(12));
+
+    // Оба вошли — история уходит обоим, и только один раз.
+    assert_eq!(
+        alice
+            .send_pending_history(later(13), &mut OsRng)
+            .expect("история"),
+        4
+    );
+    assert_eq!(
+        alice
+            .send_pending_history(later(14), &mut OsRng)
+            .expect("повтор"),
+        0
+    );
+
+    assert_eq!(
+        phone
+            .receive_messages(&phone_device, later(15))
+            .expect("приём"),
+        1
+    );
+    let chat = alice.chats().expect("чаты")[0];
+    assert_eq!(phone.chats().expect("чаты"), vec![chat], "тот же чат");
+    let moved = phone.messages(&chat, 10).expect("сообщения");
+    let texts: Vec<(&str, bool)> = moved
+        .iter()
+        .map(|message| (message.text.as_str(), message.outgoing))
+        .collect();
+    assert_eq!(texts, vec![("hi bob", true), ("hi alice", false)]);
+    assert_eq!(moved[0].message_id, first);
+
+    // 🔐 Полчаса после входа прошли — история не принимается.
+    late.receive_messages(&late_device, later(12 + 31 * 60))
+        .expect("приём");
+    assert!(late.messages(&chat, 10).expect("сообщения").is_empty());
+}

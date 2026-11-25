@@ -52,6 +52,8 @@ pub(crate) struct PendingLink {
 /// Грант на основном — между сверкой цифр и отправкой.
 pub(crate) struct PreparedLink {
     nonce: String,
+    /// Новое устройство — ему после входа уходит история (этап 4б).
+    device_id: String,
     /// QR, по которому подготовлен грант: срок проверяется и при
     /// «Подключить» — новое устройство к тому времени могло уйти на
     /// новый QR, и грант в старый ящик никто бы не забрал.
@@ -270,6 +272,9 @@ impl<T: Transport> Client<T> {
         self.storage.init_own_access_key(&access_key)?;
         self.ensure_access_key(identity, now, rng)?;
         self.set_setting_bool(super::devices::MULTI_DEVICE_SETTING, true)?;
+        // С этого момента полчаса принимается история от основного.
+        self.storage
+            .set_setting_int(super::history::LINKED_AT_SETTING, now.as_millis())?;
         self.storage
             .log_security_event("device_linked_to_account", None, now)?;
 
@@ -351,6 +356,7 @@ impl<T: Transport> Client<T> {
             .lock()
             .map_err(|_| GasAppError::Storage)? = Some(PreparedLink {
             nonce,
+            device_id: uuid::Uuid::from_bytes(request.device_id).to_string(),
             code,
             body: LinkGrantBody {
                 grant: hex(&seal.sealed),
@@ -388,6 +394,7 @@ impl<T: Transport> Client<T> {
             &DeviceSigner::new(&identity, now),
         )?;
         self.set_setting_bool(super::devices::MULTI_DEVICE_SETTING, true)?;
+        self.schedule_history(&prepared.device_id, now)?;
         self.storage
             .log_security_event("device_link_approved", None, now)?;
         Ok(())

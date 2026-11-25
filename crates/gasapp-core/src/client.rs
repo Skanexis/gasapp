@@ -59,6 +59,7 @@ mod bots;
 mod channel_closed;
 mod channels;
 mod devices;
+mod history;
 mod keyboards;
 mod kt;
 mod linking;
@@ -1185,6 +1186,9 @@ impl<T: Transport> Client<T> {
                             *content,
                             now,
                         )?,
+                        Ok(Content::History { items }) => {
+                            self.apply_history(&identity, &device, items, now)?
+                        }
                         _ => false,
                     };
                     if let Some(consumed) = incoming.consumed_one_time {
@@ -1291,6 +1295,7 @@ impl<T: Transport> Client<T> {
                     | Content::Callback { .. }
                     | Content::DisappearingTimer { .. }
                     | Content::Sent { .. }
+                    | Content::History { .. }
             );
 
             match content {
@@ -1433,7 +1438,10 @@ impl<T: Transport> Client<T> {
 
                 // 🔐 Копия отправленного — только от своего устройства (ветка
                 // выше); от собеседника она ничего не значит.
-                Content::Sent { .. } | Content::Reaction { .. } | Content::Typing { .. } => {
+                Content::Sent { .. }
+                | Content::History { .. }
+                | Content::Reaction { .. }
+                | Content::Typing { .. } => {
                     // Ничего не сохраняется, но по разным причинам.
                     //
                     // Реакции приходят и снимаются многократно: держать

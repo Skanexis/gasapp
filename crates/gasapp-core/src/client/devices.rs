@@ -267,6 +267,35 @@ impl<T: Transport> Client<T> {
             return Ok(());
         }
         let own = self.own_account(identity)?;
+        let targets = self.own_targets(identity, now)?;
+        if targets.is_empty() {
+            return Ok(());
+        }
+        let plaintext = Plaintext::new(
+            Content::Sent {
+                peer: *peer.as_bytes(),
+                peer_username: Some(peer_username.to_owned()),
+                content: Box::new(content.clone()),
+            }
+            .to_bytes()?,
+        );
+        let self_chat = derive_chat_id(&own, &own);
+        self.send_to_devices(identity, &self_chat, &own, &targets, &plaintext, now, rng)
+    }
+
+    /// Свои другие устройства — по своему же подписанному списку из
+    /// discovery: ключ аккаунта и его половина сверяются со своими.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::IdentityChanged`] — discovery называет для своего
+    /// имени чужой ключ; [`GasAppError::Network`] — сервер недоступен.
+    pub(crate) fn own_targets(
+        &self,
+        identity: &IdentityKeyPair,
+        now: Timestamp,
+    ) -> Result<Vec<Target>> {
+        let own = self.own_account(identity)?;
         let username = self.own_username()?.ok_or(GasAppError::Uninitialized)?;
         let found = self.discover_for_send(&username, now)?;
         if parse_public_key(&found.identity_key)? != own {
@@ -282,24 +311,11 @@ impl<T: Transport> Client<T> {
         }
         let kem = verified_sealed_kem(&found, &own, &pq)?;
         let me = self.own_device_id()?.unwrap_or_default();
-        let targets: Vec<Target> = self
+        Ok(self
             .peer_targets(&found, &own, &pq, &kem, now)?
             .into_iter()
             .filter(|target| target.device_id != me)
-            .collect();
-        if targets.is_empty() {
-            return Ok(());
-        }
-        let plaintext = Plaintext::new(
-            Content::Sent {
-                peer: *peer.as_bytes(),
-                peer_username: Some(peer_username.to_owned()),
-                content: Box::new(content.clone()),
-            }
-            .to_bytes()?,
-        );
-        let self_chat = derive_chat_id(&own, &own);
-        self.send_to_devices(identity, &self_chat, &own, &targets, &plaintext, now, rng)
+            .collect())
     }
 
     /// Копия, пришедшая со своего устройства: сообщение — как отправленное

@@ -521,6 +521,11 @@ impl Messenger {
 
         let count =
             guard(|| client.receive_messages(&device_id, Timestamp::from_millis(now_millis)))?;
+        // Основное устройство: история новому своему устройству, если оно
+        // уже вошло (этап 4б). Сбой не мешает приёму — повтор в следующий раз.
+        let _ = guard(|| {
+            client.send_pending_history(Timestamp::from_millis(now_millis), &mut rand_core::OsRng)
+        });
 
         u32::try_from(count).map_err(|_| FfiError::InvalidArgument)
     }
