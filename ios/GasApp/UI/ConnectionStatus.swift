@@ -21,6 +21,8 @@ final class ConnectionStatus {
         case connecting(percent: Int, bridges: Bool)
         /// Tor застрял: вероятно, заблокирован.
         case stalled(percent: Int)
+        /// Tor заблокирован — приложение само подбирает мост.
+        case searchingBridges
         /// Только что подключились — короткое «готово».
         case justConnected(bridges: Bool)
         /// Напрямую: сервер видит адрес.
@@ -46,7 +48,7 @@ final class ConnectionStatus {
                 self?.refresh()
                 let busy: Bool
                 switch self?.state {
-                case .connecting?, .stalled?, .justConnected?: busy = true
+                case .connecting?, .stalled?, .justConnected?, .searchingBridges?: busy = true
                 default: busy = false
                 }
                 try? await Task.sleep(nanoseconds: busy ? 1_000_000_000 : 3_000_000_000)
@@ -69,7 +71,9 @@ final class ConnectionStatus {
             switch network.currentMode {
             case .tor?:
                 if network.isConnectingTor || !tor.ready {
-                    next = tor.stalled ? .stalled(percent: Int(tor.percent)) : .connecting(percent: Int(tor.percent), bridges: tor.bridges)
+                    next = network.isSearchingBridges ? .searchingBridges
+                        : tor.stalled ? .stalled(percent: Int(tor.percent))
+                        : .connecting(percent: Int(tor.percent), bridges: tor.bridges)
                 } else if Inbox.shared.lastError != nil {
                     next = .offline
                 } else if wasConnecting {
@@ -87,7 +91,7 @@ final class ConnectionStatus {
         }
 
         switch next {
-        case .connecting, .stalled: wasConnecting = true
+        case .connecting, .stalled, .searchingBridges: wasConnecting = true
         case .justConnected:
             wasConnecting = false
             hideDone?.cancel()
@@ -123,10 +127,16 @@ struct ConnectionStrip: View {
                       progress: Double(percent) / 100, animated: true)
             case let .stalled(percent):
                 strip(tint: GasAppColor.warn, background: GasAppColor.warnDim, icon: "exclamationmark.triangle.fill",
-                      text: L10n.t("Tor не подключается (\(percent)%) — возможно, заблокирован", "Tor is stuck (\(percent)%) — it may be blocked", "Tor è bloccato (\(percent)%): potrebbe essere bloccato"),
+                      text: L10n.t("Tor не отвечает (\(percent)%) — пробуем мосты", "Tor is not responding (\(percent)%) — trying bridges", "Tor non risponde (\(percent)%): proviamo i bridge"),
                       progress: Double(percent) / 100) {
-                    NavigationLink { NetworkScreen() } label: { action(L10n.t("Мосты", "Bridges", "Bridge"), tint: GasAppColor.warn) }
+                    Button { NetworkController.shared.reconnectNow(); status.refresh() } label: {
+                        action(L10n.t("Переподключить", "Reconnect", "Riconnetti"), tint: GasAppColor.warn)
+                    }
                 }
+            case .searchingBridges:
+                strip(tint: GasAppColor.accent, background: GasAppColor.accentDim, icon: "arrow.triangle.2.circlepath",
+                      text: L10n.t("Tor заблокирован в этой сети — подбираем мост…", "Tor is blocked on this network — finding a bridge…", "Tor è bloccato su questa rete: cerchiamo un bridge…"),
+                      animated: true)
             case let .justConnected(bridges):
                 strip(tint: GasAppColor.ok, background: GasAppColor.okDim, icon: "checkmark.shield.fill",
                       text: bridges
@@ -211,6 +221,7 @@ struct ConnectionBadge: View {
                     : (L10n.t("Подключено", "Connected", "Connesso"), GasAppColor.ok)
             case let .connecting(percent, _): return ("\(percent)%", GasAppColor.accent)
             case .stalled: return (L10n.t("Застрял", "Stuck", "Bloccato"), GasAppColor.warn)
+            case .searchingBridges: return (L10n.t("Ищем мост", "Finding bridge", "Cerco bridge"), GasAppColor.accent)
             case .direct: return (L10n.t("Напрямую", "Direct", "Diretta"), GasAppColor.warn)
             case .offline: return (L10n.t("Нет связи", "Offline", "Offline"), GasAppColor.error)
             case .clockWrong: return (L10n.t("Часы", "Clock", "Orologio"), GasAppColor.warn)

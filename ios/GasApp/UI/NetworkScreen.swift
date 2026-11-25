@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import SwiftUI
+import UIKit
 
 /// Сеть — аналог `NetworkActivity`: режим выхода (напрямую, Tor, свой
-/// SOCKS5-прокси) и мосты Tor.
+/// SOCKS5-прокси) и ход подключения к Tor.
 ///
-/// Там, где Tor блокируют, нужны мосты. Их можно вставить строками или
-/// запросить у Tor Project (moat) — 🔐 запрос идёт через сам Tor
-/// встроенным транспортом, не напрямую.
+/// Мостов здесь нет: где Tor блокируют, приложение подбирает их само
+/// (`NetworkController`, «Мосты без участия человека») — человеку не
+/// нужно идти сюда при каждом входе и просить новые.
 ///
 /// 🔐 Сеть мимо Tor — только владельцу (аудит 2026-10-02, A-3): PIN
 /// спрашивается заново. Свой прокси, тихо вписанный тем, кому дали
@@ -21,18 +22,21 @@ struct NetworkScreen: View {
     @State private var saved: FfiProxy?
     @State private var host = ""
     @State private var port = ""
-    @State private var bridges = ""
-    @State private var status = ""
     @State private var message: String?
     @State private var working = false
     @State private var pending: FfiProxy?
     @State private var askPin = false
     @State private var confirmDirect = false
-    private let ticker = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+    @State private var tor = NetworkController.shared.torStatus
+    @State private var searching = false
+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Form {
-            // Строки — цветом карточек GasApp, а не системным серым.
+            if saved == .tor {
+                Section { torCard }
+                    .listRowBackground(GasAppColor.bgCard)
+            }
             Group {
                 Section {
                     Picker(L10n.t("Подключение", "Connection", "Connessione"), selection: $mode) {
@@ -49,45 +53,42 @@ struct NetworkScreen: View {
                         TextField(L10n.t("Порт", "Port", "Porta"), text: $port)
                             .keyboardType(.numberPad)
                     }
-                    Button(L10n.t("Сохранить", "Save", "Salva")) { saveMode() }
-                        .disabled(working)
                 } header: {
                     Text(L10n.t("Подключение", "Connection", "Connessione"))
                 } footer: {
                     Text(hint)
                 }
-                if mode == .tor {
-                    Section(L10n.t("Состояние Tor", "Tor status", "Stato di Tor")) {
-                        Text(status).foregroundStyle(GasAppColor.textSecondary)
-                    }
-                    Section {
-                        TextEditor(text: $bridges)
-                            .frame(minHeight: 140)
-                            .font(.system(size: 12, design: .monospaced))
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                        Button(L10n.t("Сохранить мосты", "Save bridges", "Salva bridge")) { save() }
-                            .disabled(working)
-                        Button(L10n.t("Получить мосты у Tor Project", "Get bridges from Tor Project", "Ottieni bridge da Tor Project")) { fetch() }
-                            .disabled(working)
-                    } header: {
-                        Text(L10n.t("Мосты", "Bridges", "Bridge"))
-                    } footer: {
-                        Text(L10n.t("По строке на мост (obfs4, webtunnel, snowflake). Пусто — прямое подключение к сети Tor.",
-                                    "One bridge per line (obfs4, webtunnel, snowflake). Empty — connect to Tor directly.", "Un bridge per riga (obfs4, webtunnel, snowflake). Vuoto: connessione diretta a Tor."))
-                    }
-                }
-                if let message {
-                    Section { Text(message).foregroundStyle(GasAppColor.warn) }
-                }
             }
             .listRowBackground(GasAppColor.bgCard)
+
+            Section {
+                GoldButton(title: changed ? L10n.t("Сохранить", "Save", "Salva")
+                                          : L10n.t("Сохранено", "Saved", "Salvato"),
+                           isLoading: working, isEnabled: changed) { saveMode() }
+                if let message {
+                    Text(message)
+                        .font(GasFont.text(14, .semibold))
+                        .foregroundStyle(message == savedText ? GasAppColor.ok : GasAppColor.warn)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
+                }
+            } footer: {
+                if mode == .tor {
+                    Text(L10n.t("Мосты Tor подбираются сами: если в вашей сети Tor заблокирован, приложение получит новые мосты у Tor Project и переподключится. Ничего вводить не нужно.",
+                                "Tor bridges are picked automatically: if Tor is blocked on your network, the app gets fresh bridges from the Tor Project and reconnects. Nothing to enter.",
+                                "I bridge di Tor si scelgono da soli: se Tor è bloccato sulla tua rete, l’app ottiene nuovi bridge dal Tor Project e si riconnette. Non devi inserire nulla."))
+                        .padding(.top, 8)
+                }
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
         }
         .scrollContentBackground(.hidden)
         .background(GasAppColor.bgBase.ignoresSafeArea())
         .navigationTitle(L10n.t("Сеть", "Network", "Rete"))
         .task { await load() }
         .onReceive(ticker) { _ in updateStatus() }
+        .onChange(of: mode) { _, _ in message = nil }
         .sheet(isPresented: $askPin, onDismiss: { if !confirmDirect && !working { pending = nil } }) {
             PinConfirmSheet(title: L10n.t("Подключение без Tor", "Connect without Tor", "Connetti senza Tor")) { pin in reauth(pin) }
         }
@@ -103,6 +104,94 @@ struct NetworkScreen: View {
             Text(L10n.t("Сервер увидит ваш IP-адрес: примерное местоположение и то, какие ваши аккаунты сидят в одной сети. Tor его скрывает.",
                         "The server will see your IP address: roughly where you are, and which of your accounts share a network. Tor hides it.", "Il server vedrà il tuo indirizzo IP: più o meno dove ti trovi e quali dei tuoi account condividono una rete. Tor lo nasconde."))
         }
+    }
+
+    // MARK: - Состояние Tor
+
+    private enum TorState { case ready, connecting, searching, stuck }
+
+    private var torState: TorState {
+        if tor.ready { return .ready }
+        if searching { return .searching }
+        if tor.stalled { return .stuck }
+        return .connecting
+    }
+
+    private var torCard: some View {
+        let state = torState
+        let (icon, color, title, detail): (String, Color, String, String) = {
+            switch state {
+            case .ready:
+                return ("checkmark.shield.fill", GasAppColor.ok,
+                        L10n.t("Подключено через Tor", "Connected through Tor", "Connesso tramite Tor"),
+                        tor.bridges
+                            ? L10n.t("Через мост: в этой сети Tor заблокирован, но мост его обходит.", "Through a bridge: Tor is blocked on this network, the bridge gets around it.", "Tramite bridge: Tor è bloccato su questa rete, il bridge lo aggira.")
+                            : L10n.t("Сервер не видит ваш IP-адрес.", "The server can’t see your IP address.", "Il server non vede il tuo indirizzo IP."))
+            case .connecting:
+                return ("point.3.connected.trianglepath.dotted", GasAppColor.accent,
+                        L10n.t("Подключаемся… \(tor.percent)%", "Connecting… \(tor.percent)%", "Connessione… \(tor.percent)%"),
+                        tor.bridges
+                            ? L10n.t("Через мост. Обычно это 10–30 секунд.", "Through a bridge. Usually 10–30 seconds.", "Tramite bridge. Di solito 10–30 secondi.")
+                            : L10n.t("Обычно это несколько секунд.", "Usually a few seconds.", "Di solito pochi secondi."))
+            case .searching:
+                return ("arrow.triangle.2.circlepath", GasAppColor.accent,
+                        L10n.t("Подбираем мост", "Finding a bridge", "Cerchiamo un bridge"),
+                        L10n.t("Tor в этой сети заблокирован. Приложение само берёт новые мосты у Tor Project — до минуты.", "Tor is blocked on this network. The app is getting fresh bridges from the Tor Project — up to a minute.", "Tor è bloccato su questa rete. L’app prende nuovi bridge dal Tor Project: fino a un minuto."))
+            case .stuck:
+                return ("exclamationmark.triangle.fill", GasAppColor.warn,
+                        L10n.t("Tor не отвечает", "Tor isn’t responding", "Tor non risponde"),
+                        L10n.t("Пробуем мосты. Проверьте, что интернет работает.", "Trying bridges. Check that the internet works.", "Proviamo i bridge. Controlla che internet funzioni."))
+            }
+        }()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(color)
+                    .frame(width: 46, height: 46)
+                    .background(Circle().fill(color.opacity(0.15)))
+                    .symbolEffect(.pulse, isActive: state != .ready)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(GasFont.text(18, .bold))
+                        .foregroundStyle(GasAppColor.textPrimary)
+                        .contentTransition(.numericText())
+                    Text(detail)
+                        .font(GasFont.text(14))
+                        .foregroundStyle(GasAppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if state == .connecting {
+                ProgressView(value: Double(tor.percent), total: 100)
+                    .tint(GasAppColor.accent)
+                    .animation(.easeOut(duration: 0.5), value: tor.percent)
+            }
+            if state != .ready {
+                Button {
+                    NetworkController.shared.reconnectNow()
+                    updateStatus()
+                } label: {
+                    Label(L10n.t("Переподключить", "Reconnect", "Riconnetti"), systemImage: "arrow.clockwise")
+                        .font(GasFont.text(15, .semibold))
+                }
+                .buttonStyle(.borderless)
+                .tint(GasAppColor.accent)
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .animation(.easeInOut(duration: 0.25), value: state)
+    }
+
+    // MARK: - Режим
+
+    private var savedText: String { L10n.t("Сохранено", "Saved", "Salvato") }
+
+    /// Выбор на экране отличается от сохранённого — есть что сохранять.
+    private var changed: Bool {
+        guard let choice = selected else { return mode == .socks }
+        return choice != saved
     }
 
     private var hint: String {
@@ -121,10 +210,8 @@ struct NetworkScreen: View {
 
     private func load() async {
         guard let messenger = try? CoreStore.shared.current() else { return }
-        let state = try? await Background.run { () -> (FfiProxy, [String]) in
-            (try messenger.proxy(), try messenger.torBridges())
-        }
-        if let current = state?.0 {
+        let current = try? await Background.run { try messenger.proxy() }
+        if let current {
             saved = current
             switch current {
             case .direct: mode = .direct
@@ -135,7 +222,6 @@ struct NetworkScreen: View {
                 port = String(p)
             }
         }
-        bridges = (state?.1 ?? []).joined(separator: "\n")
         updateStatus()
     }
 
@@ -208,54 +294,16 @@ struct NetworkScreen: View {
             // Не из главного потока: смена режима останавливает или
             // запускает Tor, а это вызовы ядра.
             _ = try? await Background.run { NetworkController.shared.apply(proxy: choice, bridges: lines) }
-            message = L10n.t("Сохранено", "Saved", "Salvato")
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            withAnimation { message = savedText }
             updateStatus()
         }
     }
 
     private func updateStatus() {
-        let tor = NetworkController.shared.torStatus
-        status = !tor.running ? L10n.t("Не используется (напрямую)", "Not in use (direct)", "Non in uso (diretta)")
-            : tor.ready ? L10n.t("Подключён\(tor.bridges ? " через мосты" : "")", "Connected\(tor.bridges ? " via bridges" : "")", "Connesso\(tor.bridges ? " tramite bridge" : "")")
-            : tor.stalled ? L10n.t("Не подключается — возможно, Tor заблокирован. Нужны мосты.", "Stuck — Tor may be blocked. Add bridges.", "Bloccato: Tor potrebbe essere bloccato. Aggiungi dei bridge.")
-            : L10n.t("Подключается… \(tor.percent)%", "Connecting… \(tor.percent)%", "Connessione… \(tor.percent)%")
-    }
-
-    private func save() {
-        guard let messenger = try? CoreStore.shared.current() else { return }
-        let text = bridges
-        guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || validateTorBridges(text: text) else {
-            message = L10n.t("Строка моста не разбирается", "A bridge line can’t be parsed", "Una riga di bridge non è valida")
-            return
-        }
-        working = true
-        Task {
-            let saved = try? await Background.run { try messenger.setTorBridges(text: text) }
-            working = false
-            guard let saved else {
-                message = L10n.t("Не сохранилось", "Not saved", "Non salvato")
-                return
-            }
-            message = L10n.t("Мосты сохранены", "Bridges saved", "Bridge salvati")
-            // Режим — тот же; Tor перезапускается с новыми мостами.
-            let mode = try? await Background.run { try messenger.proxy() }
-            _ = try? await Background.run { NetworkController.shared.apply(proxy: mode, bridges: saved) }
-        }
-    }
-
-    private func fetch() {
-        working = true
-        message = L10n.t("Запрашиваем мосты…", "Requesting bridges…", "Richiesta dei bridge…")
-        Task {
-            let got = try? await Background.run { try fetchTorBridges(country: nil) }
-            working = false
-            if let got, !got.isEmpty {
-                bridges = got.joined(separator: "\n")
-                message = L10n.t("Мосты получены — сохраните их.", "Bridges received — save them.", "Bridge ricevuti: salvali.")
-            } else {
-                message = L10n.t("Не удалось получить мосты", "Could not get bridges", "Impossibile ottenere i bridge")
-            }
-        }
+        let network = NetworkController.shared
+        tor = network.torStatus
+        searching = network.isSearchingBridges
     }
 }
 

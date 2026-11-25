@@ -33,6 +33,14 @@ final class NetworkController: @unchecked Sendable {
     /// `embeddedTorStatus()` ждёт ту же блокировку, что держит запуск Tor
     /// (секунды), и вызов с главного потока замораживал интерфейс.
     private var cached = NetworkController.stopped
+    /// Начало текущей попытки подключения — отсчёт «долго не готов».
+    private var attemptStarted = Date()
+    /// Когда последний раз спрашивали мосты у Tor Project.
+    private var lastFreshAttempt = Date.distantPast
+    /// Идёт запрос свежих мостов — экранам: «Ищем рабочий мост».
+    private var searching = false
+    /// Сторож подключения: при признаках блокировки — мосты сами.
+    private var watcher: Task<Void, Never>?
 
     private static let stopped = FfiTorStatus(
         running: false, ready: false, percent: 0, stalled: false, port: 0, isolatedPort: 0,
@@ -194,9 +202,11 @@ final class NetworkController: @unchecked Sendable {
             trustedPrefix: base.path,
             serverHost: host,
             serverPort: UInt16(server.port ?? 443),
-            bridges: bridges,
+            bridges: effectiveBridgesLocked(),
             serverOnion: AppConfig.serverOnion
         )
+        attemptStarted = Date()
+        startWatcherLocked()
 
         waiter?.cancel()
         waiter = Task.detached(priority: .userInitiated) { [weak self] in
@@ -286,6 +296,130 @@ final class NetworkController: @unchecked Sendable {
     private var isTorRoute: Bool {
         if case .tor = NetworkRoute.current { return true }
         return false
+    }
+
+    // MARK: - Мосты без участия человека
+    //
+    // Как `EmbeddedTor` на Android. Человек мосты не вводит:
+    // 1. сначала Tor идёт напрямую;
+    // 2. не подключился за `Auto.slow` или застрял (Tor заблокирован) —
+    //    дальше всегда через мосты, сначала через уже известные;
+    // 3. и они не работают — свежие мосты от Tor Project (moat, через CDN,
+    //    без сервера GasApp), и Tor перезапускается с ними сам. Мосты
+    //    со временем блокируют — поэтому свежие спрашиваются снова, как
+    //    только известные перестали работать.
+    //
+    // 🔐 Свежие мосты — вне зашифрованной базы (как на Android): они
+    // нужны и до PIN. Выдают они лишь то, что приложение ходит в Tor
+    // через мосты, — это же видно по каталогу Tor на устройстве.
+
+    private enum Auto {
+        static let freshKey = "gasapp.tor.freshBridges"
+        static let useKey = "gasapp.tor.useBridges"
+        static let maxFresh = 8
+        /// Сколько подключения без готовности считать блокировкой.
+        static let slow: TimeInterval = 25
+        /// Не чаще одного запроса к Tor Project за это время.
+        static let freshRetry: TimeInterval = 90
+    }
+
+    private var freshBridges: [String] {
+        UserDefaults.standard.stringArray(forKey: Auto.freshKey) ?? []
+    }
+
+    private var useBridges: Bool {
+        get { UserDefaults.standard.bool(forKey: Auto.useKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Auto.useKey) }
+    }
+
+    /// Мосты запуска: свежие — первыми, затем строки прежних версий,
+    /// когда человек вводил их сам. Пусто — напрямую в сеть Tor.
+    private func effectiveBridgesLocked() -> [String] {
+        guard useBridges || !bridges.isEmpty else { return [] }
+        var seen = Set<String>()
+        return (freshBridges + bridges).filter { seen.insert($0).inserted }
+    }
+
+    /// Идёт поиск рабочего моста — для экранов.
+    var isSearchingBridges: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return searching
+    }
+
+    /// «Переподключить» на экранах: Tor заново, а если и так не выйдет —
+    /// свежие мосты почти сразу, без ожидания паузы между запросами.
+    func reconnectNow() {
+        lock.lock(); defer { lock.unlock() }
+        guard case .tor = mode ?? .direct else { return }
+        lastFreshAttempt = .distantPast
+        NetworkRoute.current = .closed
+        startTorLocked(restart: .force)
+        attemptStarted = Date().addingTimeInterval(-(Auto.slow - 10))
+    }
+
+    private func startWatcherLocked() {
+        guard watcher == nil else { return }
+        watcher = Task.detached(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let self, await self.watchTick() else { break }
+            }
+            self?.lock.withLock { self?.watcher = nil }
+        }
+    }
+
+    /// Шаг сторожа; `false` — следить не за чем (выбран не Tor).
+    private func watchTick() async -> Bool {
+        let wantsTor: Bool = lock.withLock {
+            if case .tor = mode ?? .direct { return true }
+            return false
+        }
+        guard wantsTor else { return false }
+        let status = refresh()
+        guard status.running, !status.ready else { return true }
+        let blocked = lock.withLock {
+            status.stalled || Date().timeIntervalSince(attemptStarted) > Auto.slow
+        }
+        if blocked { await escalate(viaBridges: status.bridges) }
+        return true
+    }
+
+    private func escalate(viaBridges: Bool) async {
+        // Напрямую не вышло — дальше всегда через мосты; известные есть —
+        // сразу с ними, а свежие спросим, если и они не пройдут.
+        let switched: Bool = lock.withLock {
+            guard !viaBridges else { return false }
+            useBridges = true
+            guard !effectiveBridgesLocked().isEmpty else { return false }
+            NetworkRoute.current = .closed
+            startTorLocked(restart: .force)
+            return true
+        }
+        if switched { return }
+
+        let due: Bool = lock.withLock {
+            guard !searching, Date().timeIntervalSince(lastFreshAttempt) > Auto.freshRetry else { return false }
+            searching = true
+            lastFreshAttempt = Date()
+            return true
+        }
+        guard due else { return }
+        // До двух минут: moat идёт через CDN (meek) — не из главного потока.
+        let fetched = (try? await Background.run { try fetchTorBridges(country: nil) }) ?? []
+
+        lock.withLock {
+            searching = false
+            guard !fetched.isEmpty else { return }
+            let known = Set(freshBridges)
+            let isNew = fetched.contains { !known.contains($0) }
+            var seen = Set<String>()
+            let merged = (fetched + freshBridges).filter { seen.insert($0).inserted }
+            UserDefaults.standard.set(Array(merged.prefix(Auto.maxFresh)), forKey: Auto.freshKey)
+            useBridges = true
+            guard isNew, !cached.ready, case .tor = mode ?? .direct else { return }
+            NetworkRoute.current = .closed
+            startTorLocked(restart: .force)
+        }
     }
 
     private static func clean(_ bridges: [String]?) -> [String] {
