@@ -3434,6 +3434,12 @@ async fn a_second_device_is_linked_and_unlinked() {
     let ids = found["device_ids"].as_array().unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(found["device_list"], hex::encode(&with_new));
+    let account: Uuid = found["account_id"].as_str().unwrap().parse().unwrap();
+    let (status, body) = get(&state, &format!("/v1/accounts/by-id/{account}/device-list")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["device_list"], hex::encode(&with_new));
+    let (status, _) = get(&state, &format!("/v1/accounts/by-id/{}/device-list", Uuid::new_v4())).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Отключение: список новее и без устройства.
     let unlink = format!("/v1/devices/{owner_device}/linked/{new_device}");

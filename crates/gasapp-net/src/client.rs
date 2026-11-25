@@ -1485,6 +1485,17 @@ impl<T: Transport> ApiClient<T> {
         parse(&self.send(Method::Get, "/v1/sealed/report-key".to_owned(), None)?)
     }
 
+    /// Подписанный список устройств аккаунта по его идентификатору
+    /// (из сертификата отправителя). Без подписи запроса.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — списка нет (одно устройство);
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn device_list_of(&self, account_id: &str) -> Result<crate::api::DeviceListResponse> {
+        parse(&self.send(Method::Get, format!("/v1/accounts/by-id/{account_id}/device-list"), None)?)
+    }
+
     /// Забирает ожидающие конверты.
     ///
     /// # Errors

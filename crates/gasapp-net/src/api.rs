@@ -116,6 +116,11 @@ pub struct DiscoveryResponse {
     /// Привязка половин identity друг к другу — гибридная подпись, hex.
     #[serde(default)]
     pub identity_binding: Option<String>,
+    /// Подписанный ключом аккаунта список устройств, hex
+    /// (`docs/protocol/MULTI-DEVICE.md`). Нет — одно устройство либо
+    /// прежний сервер.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_list: Option<String>,
 }
 
 /// Публикация предключей устройства.
@@ -165,6 +170,13 @@ pub struct PublishKeysRequest {
 pub struct BundleResponse {
     /// Устройство, которому принадлежит набор.
     pub device_id: String,
+    /// Ключ ML-KEM-1024 sealed sender этого устройства, hex. Прежний
+    /// сервер его не шлёт.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_public: Option<String>,
+    /// Его подпись ключом устройства, hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_signature: Option<String>,
     /// Identity-ключ устройства, hex.
     pub identity_key: String,
     /// 🔐 Пост-квантовая половина identity — открытый ключ ML-DSA-65, hex
@@ -506,6 +518,13 @@ pub struct BotResponse {
     /// Сколько секунд ещё действует токен ждущего бота.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_in: Option<i64>,
+}
+
+/// Подписанный список устройств аккаунта.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceListResponse {
+    /// Список ‖ подпись, hex.
+    pub device_list: String,
 }
 
 /// Регистрация бота его программой — по токену владельца.

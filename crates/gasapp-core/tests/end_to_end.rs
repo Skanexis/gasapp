@@ -1849,6 +1849,7 @@ impl Transport for FakeServer {
                         (
                             200,
                             serde_json::to_string(&DiscoveryResponse {
+                                device_list: None,
                                 account_id: account_id.clone(),
                                 identity_key: identity_key.clone(),
                                 sealed_kem_public: state
@@ -1963,6 +1964,8 @@ impl Transport for FakeServer {
                             200,
                             serde_json::to_string(&BundleResponse {
                                 device_id,
+                                sealed_kem_public: None,
+                                sealed_kem_signature: None,
                                 pq_identity_key: pq.as_ref().map(|(public, _)| public.clone()),
                                 identity_binding: pq.map(|(_, binding)| binding),
                                 identity_key: identity,

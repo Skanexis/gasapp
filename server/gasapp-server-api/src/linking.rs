@@ -82,6 +82,13 @@ pub struct CompleteResponse {
     pub device_id: Uuid,
 }
 
+/// Список устройств аккаунта.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceListResponse {
+    /// Подписанный список, hex.
+    pub device_list: String,
+}
+
 /// Отключение устройства.
 #[derive(Debug, Deserialize)]
 pub struct UnlinkBody {
@@ -186,6 +193,21 @@ pub(crate) async fn complete(
     Ok(Json(CompleteResponse {
         account_id,
         device_id,
+    }))
+}
+
+/// Подписанный список устройств аккаунта — без подписи запроса: в нём
+/// только открытые ключи, а аккаунт получатель знает из сертификата
+/// отправителя. Нет списка — `404` (у аккаунта одно устройство).
+pub(crate) async fn device_list_of(
+    State(state): State<Arc<AppState>>,
+    Path(account_id): Path<Uuid>,
+) -> Result<Json<DeviceListResponse>, ApiError> {
+    let list = devices::device_list(&state.pool, account_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(DeviceListResponse {
+        device_list: hex::encode(list),
     }))
 }
 

@@ -552,6 +552,13 @@ pub struct PublishKeysRequest {
 pub struct BundleResponse {
     /// Устройство, которому принадлежит набор.
     pub device_id: Uuid,
+    /// Ключ ML-KEM-1024 sealed sender **этого** устройства, hex
+    /// (`docs/protocol/MULTI-DEVICE.md`: у каждого устройства свой).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_public: Option<String>,
+    /// Его подпись ключом устройства, hex.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sealed_kem_signature: Option<String>,
     /// Identity-ключ устройства, hex.
     pub identity_key: String,
     /// Пост-квантовая половина identity владельца, hex.
@@ -783,6 +790,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         // связывания — без подписи (nonce из QR), грант и отключение —
         // за подписью основного устройства.
         .route("/v1/link/:nonce", post(crate::linking::open))
+        // Список устройств по аккаунту из сертификата отправителя: так
+        // получатель узнаёт, чьё это новое устройство.
+        .route(
+            "/v1/accounts/by-id/:account_id/device-list",
+            get(crate::linking::device_list_of),
+        )
         .route("/v1/link/:nonce/request", get(crate::linking::request))
         .route("/v1/link/:nonce/grant", get(crate::linking::take_grant))
         .route("/v1/link/:nonce/complete", post(crate::linking::complete))
@@ -1508,9 +1521,12 @@ async fn take_bundle(
 
     let account = repo::account_of_device(&state.pool, bundle.device_id).await?;
     let pq = repo::pq_identity_of(&state.pool, account).await?;
+    let sealed_kem = repo::sealed_kem_of(&state.pool, bundle.device_id).await?;
 
     Ok(Json(BundleResponse {
         device_id: bundle.device_id,
+        sealed_kem_public: sealed_kem.as_ref().map(|(public, _)| hex::encode(public)),
+        sealed_kem_signature: sealed_kem.as_ref().map(|(_, signature)| hex::encode(signature)),
         identity_key: hex::encode(bundle.identity_key),
         pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
         identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
