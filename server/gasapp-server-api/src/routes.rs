@@ -497,6 +497,11 @@ pub struct DiscoveryResponse {
     /// Гибридная привязка половин identity, hex.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identity_binding: Option<String>,
+    /// Подписанный ключом аккаунта список устройств, hex
+    /// (`docs/protocol/MULTI-DEVICE.md`). Нет — у аккаунта одно
+    /// устройство. 🔐 Подпись проверяет клиент.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_list: Option<String>,
 }
 
 /// Регистрация токена push-уведомлений.
@@ -774,6 +779,18 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/v1/auth/verify", post(verify_auth))
         .route("/v1/discovery/username/:username", get(discovery))
+        // Несколько устройств (docs/protocol/MULTI-DEVICE.md): ящик
+        // связывания — без подписи (nonce из QR), грант и отключение —
+        // за подписью основного устройства.
+        .route("/v1/link/:nonce", post(crate::linking::open))
+        .route("/v1/link/:nonce/request", get(crate::linking::request))
+        .route("/v1/link/:nonce/grant", get(crate::linking::take_grant))
+        .route("/v1/link/:nonce/complete", post(crate::linking::complete))
+        .route("/v1/devices/:device_id/link/:nonce", put(crate::linking::grant))
+        .route(
+            "/v1/devices/:device_id/linked/:target",
+            axum::routing::delete(crate::linking::unlink),
+        )
         // 🔐 Журнал ключей (§9.7): без аутентификации — сервер не должен
         // знать, кто проверяет, иначе показал бы проверяющему своё дерево.
         .route("/v1/kt/heads", get(crate::kt::heads_all))
@@ -1133,6 +1150,7 @@ async fn discovery(
         None => None,
     };
     let pq = repo::pq_identity_of(&state.pool, account.account_id).await?;
+    let device_list = gasapp_server_db::devices::device_list(&state.pool, account.account_id).await?;
 
     let response = DiscoveryResponse {
         account_id: account.account_id,
@@ -1144,6 +1162,7 @@ async fn discovery(
             .map(|(_, signature)| hex::encode(signature)),
         pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
         identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
+        device_list: device_list.map(hex::encode),
     };
 
     {

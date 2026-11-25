@@ -21,6 +21,7 @@
 
 pub mod bots;
 pub mod channels;
+pub mod devices;
 pub mod email;
 pub mod kt;
 pub mod notify;

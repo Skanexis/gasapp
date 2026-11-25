@@ -3312,3 +3312,151 @@ async fn frozen_and_blocked_accounts_are_locked_out() {
     let (_, body) = signed(&state, &owner_key, "GET", &status_of(owner_device), None).await;
     assert!(body.get("restriction").is_none());
 }
+
+// ---------------------------------------------------------------------------
+//  Несколько устройств (docs/protocol/MULTI-DEVICE.md)
+// ---------------------------------------------------------------------------
+
+/// Запрос связывания: магия, версия, ящик, срок, устройство, ключ.
+fn link_request(nonce: Uuid, device: Uuid, identity: &[u8; 32]) -> Vec<u8> {
+    let mut out = b"GLR1".to_vec();
+    out.push(1);
+    out.extend_from_slice(nonce.as_bytes());
+    out.extend_from_slice(&0i64.to_be_bytes());
+    out.extend_from_slice(device.as_bytes());
+    out.extend_from_slice(identity);
+    out.resize(gasapp_server_db::devices::LINK_REQUEST_LEN, 0);
+    out
+}
+
+/// Список устройств; подпись — нули (её проверяют клиенты).
+fn device_list(account: &[u8; 32], version: u64, devices: &[(Uuid, [u8; 32])]) -> Vec<u8> {
+    let mut out = b"GDL1".to_vec();
+    out.extend_from_slice(account);
+    out.extend_from_slice(&version.to_be_bytes());
+    out.extend_from_slice(&0i64.to_be_bytes());
+    out.push(u8::try_from(devices.len()).unwrap());
+    for (id, key) in devices {
+        out.extend_from_slice(id.as_bytes());
+        out.extend_from_slice(key);
+        out.extend_from_slice(&[0u8; 1952]);
+    }
+    out.extend_from_slice(&[0u8; 64 + 3309]);
+    out
+}
+
+/// Новое устройство подключается по ящику с грантом основного, видно в
+/// discovery вместе со списком; отключённое теряет доступ, а старый
+/// список сервер больше не принимает.
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn a_second_device_is_linked_and_unlinked() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_public = public_key(&owner_key);
+    let owner_name = unique_name("linker");
+    let owner_device = register(&state, &owner_name, &owner_key).await;
+    // Как у настоящих клиентов: ключ основного устройства — ключ аккаунта.
+    sqlx::query(
+        "UPDATE accounts SET identity_key = $2
+          WHERE account_id = (SELECT account_id FROM devices WHERE device_id = $1)",
+    )
+    .bind(owner_device)
+    .bind(owner_public.as_slice())
+    .execute(&state.pool)
+    .await
+    .unwrap();
+
+    let new_key = device_key();
+    let new_public = public_key(&new_key);
+    let new_device = Uuid::new_v4();
+    let nonce = Uuid::new_v4();
+    let request = hex::encode(link_request(nonce, new_device, &new_public));
+
+    // Ящик: открывается один раз и только под свой nonce.
+    let open = format!("/v1/link/{nonce}");
+    let (status, _) = post(&state, &open, serde_json::json!({ "request": request })).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = post(&state, &open, serde_json::json!({ "request": request })).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let other = format!("/v1/link/{}", Uuid::new_v4());
+    let (status, _) = post(&state, &other, serde_json::json!({ "request": request })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, body) = get(&state, &format!("/v1/link/{nonce}/request")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["request"], request);
+
+    // Гранта ещё нет.
+    let (status, _) = get(&state, &format!("/v1/link/{nonce}/grant")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let with_new = device_list(&owner_public, 2, &[(owner_device, owner_public), (new_device, new_public)]);
+    let grant_uri = |device: Uuid| format!("/v1/devices/{device}/link/{nonce}");
+    let grant = |list: &[u8]| serde_json::json!({ "grant": "abcd", "device_list": hex::encode(list) });
+
+    // 🔐 Список без нового устройства и грант не основного устройства — отказ.
+    let without_new = device_list(&owner_public, 2, &[(owner_device, owner_public)]);
+    let (status, _) = signed(&state, &owner_key, "PUT", &grant_uri(owner_device), Some(grant(&without_new))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let stranger_key = device_key();
+    let stranger_device = register(&state, &unique_name("stranger"), &stranger_key).await;
+    let (status, _) = signed(&state, &stranger_key, "PUT", &grant_uri(stranger_device), Some(grant(&with_new))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _) = signed(&state, &owner_key, "PUT", &grant_uri(owner_device), Some(grant(&with_new))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, body) = get(&state, &format!("/v1/link/{nonce}/grant")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["grant"], "abcd");
+
+    // 🔐 Завершает только владелец ключа из запроса.
+    let complete = format!("/v1/link/{nonce}/complete");
+    let mut message = b"GASAPP_LINK_COMPLETE_v1".to_vec();
+    message.extend_from_slice(nonce.as_bytes());
+    let forged = common::client_sign(&stranger_key, &message);
+    let (status, _) = post(&state, &complete, serde_json::json!({ "signature": hex::encode(forged) })).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let genuine = common::client_sign(&new_key, &message);
+    let (status, body) = post(&state, &complete, serde_json::json!({ "signature": hex::encode(genuine) })).await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["device_id"], new_device.to_string());
+
+    // Ящик одноразовый.
+    let (status, _) = post(&state, &complete, serde_json::json!({ "signature": hex::encode(genuine) })).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Новое устройство работает своим ключом; discovery знает оба и список.
+    let status_of = |device: Uuid| format!("/v1/accounts/{device}/status");
+    let (status, _) = signed(&state, &new_key, "GET", &status_of(new_device), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, found) = get(&state, &format!("/v1/discovery/username/{owner_name}")).await;
+    let ids = found["device_ids"].as_array().unwrap();
+    assert_eq!(ids.len(), 2);
+    assert_eq!(found["device_list"], hex::encode(&with_new));
+
+    // Отключение: список новее и без устройства.
+    let unlink = format!("/v1/devices/{owner_device}/linked/{new_device}");
+    let only_owner = device_list(&owner_public, 3, &[(owner_device, owner_public)]);
+    let (status, _) = signed(&state, &owner_key, "DELETE", &unlink, Some(serde_json::json!({ "device_list": hex::encode(&with_new) }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = signed(&state, &owner_key, "DELETE", &unlink, Some(serde_json::json!({ "device_list": hex::encode(&only_owner) }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = signed(&state, &new_key, "GET", &status_of(new_device), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, found) = get(&state, &format!("/v1/discovery/username/{owner_name}")).await;
+    assert_eq!(found["device_ids"].as_array().unwrap().len(), 1);
+    assert_eq!(found["device_list"], hex::encode(&only_owner));
+
+    // Просроченный ящик не отдаёт ничего.
+    let late = Uuid::new_v4();
+    let late_request = hex::encode(link_request(late, Uuid::new_v4(), &new_public));
+    post(&state, &format!("/v1/link/{late}"), serde_json::json!({ "request": late_request })).await;
+    sqlx::query("UPDATE link_boxes SET expires_at = now() - interval '1 second' WHERE nonce = $1")
+        .bind(late)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let (status, _) = get(&state, &format!("/v1/link/{late}/request")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
