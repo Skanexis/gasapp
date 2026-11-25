@@ -416,6 +416,54 @@ async fn store_list(
     Ok(())
 }
 
+/// Основное ли устройство: его identity — ключ аккаунта.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn is_primary(pool: &PgPool, device_id: Uuid) -> Result<bool, RepoError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM devices d JOIN accounts a
+                          ON a.account_id = d.account_id AND a.identity_key = d.identity_key
+                         WHERE d.device_id = $1)",
+    )
+    .bind(device_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Записывает пост-квантовую половину подключённого устройства.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn set_device_pq(pool: &PgPool, device_id: Uuid, public: &[u8], binding: &[u8]) -> Result<(), RepoError> {
+    sqlx::query("UPDATE devices SET pq_identity_key = $2, identity_binding = $3 WHERE device_id = $1")
+        .bind(device_id)
+        .bind(public)
+        .bind(binding)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Пост-квантовая половина подключённого устройства, если есть.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn device_pq(pool: &PgPool, device_id: Uuid) -> Result<Option<(Vec<u8>, Vec<u8>)>, RepoError> {
+    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> =
+        sqlx::query_as("SELECT pq_identity_key, identity_binding FROM devices WHERE device_id = $1")
+            .bind(device_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(match row {
+        Some((Some(public), Some(binding))) => Some((public, binding)),
+        _ => None,
+    })
+}
+
 /// Подписанный список устройств аккаунта; `None` — у аккаунта одно
 /// устройство и списка ещё не было.
 ///

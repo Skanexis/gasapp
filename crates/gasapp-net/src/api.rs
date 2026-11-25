@@ -534,6 +534,43 @@ pub struct DiscoveredDevice {
     pub sealed_kem_signature: String,
 }
 
+/// Запрос нового устройства в ящике связывания.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkRequestBody {
+    /// `LinkRequest`, hex.
+    pub request: String,
+}
+
+/// Грант основного устройства.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkGrantBody {
+    /// Конверт для нового устройства, hex.
+    pub grant: String,
+    /// Подписанный список устройств с новым, hex.
+    pub device_list: String,
+}
+
+/// Грант, забранный новым устройством.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkGrantResponse {
+    /// Конверт, hex.
+    pub grant: String,
+}
+
+/// Завершение связывания подписью ключа нового устройства.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkCompleteBody {
+    /// Подпись `GASAPP_LINK_COMPLETE_v1 ‖ nonce`, hex.
+    pub signature: String,
+}
+
+/// Отключение устройства.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnlinkBody {
+    /// Подписанный список без отключаемого, hex.
+    pub device_list: String,
+}
+
 /// Подписанный список устройств аккаунта.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceListResponse {

@@ -1496,6 +1496,89 @@ impl<T: Transport> ApiClient<T> {
         parse(&self.send(Method::Get, format!("/v1/accounts/by-id/{account_id}/device-list"), None)?)
     }
 
+    /// Новое устройство открывает ящик связывания со своим запросом.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::UsernameTaken`] — ящик с таким nonce уже есть;
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn link_open(&self, nonce: &str, request: &crate::api::LinkRequestBody) -> Result<()> {
+        self.send(Method::Post, format!("/v1/link/{nonce}"), Some(to_json(request)?))?;
+        Ok(())
+    }
+
+    /// Основное устройство берёт запрос по nonce из QR.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — ящика нет или срок вышел.
+    pub fn link_request(&self, nonce: &str) -> Result<crate::api::LinkRequestBody> {
+        parse(&self.send(Method::Get, format!("/v1/link/{nonce}/request"), None)?)
+    }
+
+    /// Основное устройство выдаёт грант.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Forbidden`] — устройство не основное или список не
+    /// принят; [`GasAppError::SessionNotFound`] — ящика нет.
+    pub fn link_grant(
+        &self,
+        device_id: &str,
+        nonce: &str,
+        body: &crate::api::LinkGrantBody,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.send_signed(
+            Method::Put,
+            format!("/v1/devices/{device_id}/link/{nonce}"),
+            Some(to_json(body)?),
+            signer,
+        )?;
+        Ok(())
+    }
+
+    /// Новое устройство забирает грант.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — гранта ещё нет.
+    pub fn link_take_grant(&self, nonce: &str) -> Result<crate::api::LinkGrantResponse> {
+        parse(&self.send(Method::Get, format!("/v1/link/{nonce}/grant"), None)?)
+    }
+
+    /// Новое устройство завершает связывание.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::InvalidSignature`] — подпись не принята;
+    /// [`GasAppError::UsernameTaken`] — список сменился, пока ждали.
+    pub fn link_complete(&self, nonce: &str, body: &crate::api::LinkCompleteBody) -> Result<RegisterResponse> {
+        parse(&self.send(Method::Post, format!("/v1/link/{nonce}/complete"), Some(to_json(body)?))?)
+    }
+
+    /// Основное устройство отключает другое.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Forbidden`] — устройство не основное или список не
+    /// принят.
+    pub fn unlink_device(
+        &self,
+        device_id: &str,
+        target: &str,
+        body: &crate::api::UnlinkBody,
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        self.send_signed(
+            Method::Delete,
+            format!("/v1/devices/{device_id}/linked/{target}"),
+            Some(to_json(body)?),
+            signer,
+        )?;
+        Ok(())
+    }
+
     /// Забирает ожидающие конверты.
     ///
     /// # Errors

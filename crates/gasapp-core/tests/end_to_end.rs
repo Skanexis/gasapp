@@ -67,6 +67,9 @@ const FAKE_SERVER_KEY: [u8; 32] = [0x77; 32];
 const FAR_FUTURE_MILLIS: i64 = 4_102_444_800_000;
 use rand_core::OsRng;
 
+/// Ящик связывания: запрос, грант, аккаунт и список устройств.
+type LinkBox = (String, Option<String>, Option<(String, String)>);
+
 /// Состояние поддельного сервера.
 #[derive(Default)]
 struct ServerState {
@@ -110,6 +113,12 @@ struct ServerState {
     plain_accepted: usize,
     /// Сколько раз устройство публиковало предключи.
     publishes: HashMap<String, usize>,
+    /// Подключённые устройства аккаунта (`docs/protocol/MULTI-DEVICE.md`).
+    linked: HashMap<String, Vec<String>>,
+    /// Подписанные списки устройств по аккаунту, hex.
+    device_lists: HashMap<String, String>,
+    /// Ящики связывания: запрос, грант, аккаунт и список.
+    link_boxes: HashMap<String, LinkBox>,
     /// Путь и заголовки каждого пришедшего запроса.
     ///
     /// Нужны, чтобы проверять не только ответ, но и то, что клиент
@@ -1127,6 +1136,91 @@ fn account_of(state: &ServerState, device_id: &str) -> Option<String> {
         .iter()
         .find(|(_, device)| device.as_str() == device_id)
         .map(|(account, _)| account.clone())
+        .or_else(|| {
+            state
+                .linked
+                .iter()
+                .find(|(_, devices)| devices.iter().any(|device| device == device_id))
+                .map(|(account, _)| account.clone())
+        })
+}
+
+/// Связывание устройств — как `gasapp-server-api::linking`.
+fn link_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> Option<HttpResponse> {
+    let path = request.path.as_str();
+    let body = request.body.as_deref().unwrap_or_default();
+
+    if let Some(account) = path
+        .strip_prefix("/v1/accounts/by-id/")
+        .and_then(|rest| rest.strip_suffix("/device-list"))
+    {
+        return Some(match state.device_lists.get(account) {
+            Some(list) => plain(200, format!(r#"{{"device_list":"{list}"}}"#)),
+            None => plain(404, String::new()),
+        });
+    }
+
+    if let Some(rest) = path.strip_prefix("/v1/link/") {
+        let (nonce, action) = rest.split_once('/').unwrap_or((rest, ""));
+        let nonce = nonce.to_owned();
+        return Some(match (&request.method, action) {
+            (Method::Post, "") => {
+                let parsed: gasapp_net::api::LinkRequestBody = serde_json::from_str(body).ok()?;
+                state.link_boxes.insert(nonce, (parsed.request, None, None));
+                plain(204, String::new())
+            }
+            (Method::Get, "request") => match state.link_boxes.get(&nonce) {
+                Some((request, _, _)) => plain(200, format!(r#"{{"request":"{request}"}}"#)),
+                None => plain(404, String::new()),
+            },
+            (Method::Get, "grant") => match state.link_boxes.get(&nonce) {
+                Some((_, Some(grant), _)) => plain(200, format!(r#"{{"grant":"{grant}"}}"#)),
+                _ => plain(404, String::new()),
+            },
+            (Method::Post, "complete") => {
+                let Some((request, Some(_), Some((account, list)))) = state.link_boxes.remove(&nonce) else {
+                    return Some(plain(404, String::new()));
+                };
+                // Запрос: магия, версия, ящик, срок, устройство, ключ.
+                let bytes = hex::decode(&request).ok()?;
+                let device = uuid::Uuid::from_slice(bytes.get(29..45)?).ok()?.to_string();
+                let identity = hex::encode(bytes.get(45..77)?);
+                state.device_identity.insert(device.clone(), identity);
+                state.linked.entry(account.clone()).or_default().push(device.clone());
+                state.device_lists.insert(account.clone(), list);
+                plain(200, format!(r#"{{"account_id":"{account}","device_id":"{device}"}}"#))
+            }
+            _ => plain(404, String::new()),
+        });
+    }
+
+    let rest = path.strip_prefix("/v1/devices/")?;
+    let (device, rest) = rest.split_once('/')?;
+    if !signed || !state.device_identity.contains_key(device) {
+        return Some(plain(401, String::new()));
+    }
+    let account = account_of(state, device)?;
+    if let Some(nonce) = rest.strip_prefix("link/") {
+        let parsed: gasapp_net::api::LinkGrantBody = serde_json::from_str(body).ok()?;
+        return Some(match state.link_boxes.get_mut(nonce) {
+            Some(entry) => {
+                entry.1 = Some(parsed.grant);
+                entry.2 = Some((account, parsed.device_list));
+                plain(204, String::new())
+            }
+            None => plain(404, String::new()),
+        });
+    }
+    if let Some(target) = rest.strip_prefix("linked/") {
+        let parsed: gasapp_net::api::UnlinkBody = serde_json::from_str(body).ok()?;
+        if let Some(devices) = state.linked.get_mut(&account) {
+            devices.retain(|linked| linked != target);
+        }
+        state.device_identity.remove(target);
+        state.device_lists.insert(account, parsed.device_list);
+        return Some(plain(204, String::new()));
+    }
+    None
 }
 
 /// Имя аккаунта.
@@ -1691,6 +1785,14 @@ impl Transport for FakeServer {
                     (401, String::new())
                 }
             }
+            // Связывание устройств — отдельной функцией (`link_route`).
+            (_, path)
+                if path.starts_with("/v1/link/")
+                    || path.starts_with("/v1/devices/")
+                    || path.starts_with("/v1/accounts/by-id/") =>
+            {
+                return Ok(link_route(&mut state, request, signed).unwrap_or_else(|| plain(400, String::new())));
+            }
             // Боты — отдельной функцией (`bot_route`).
             (_, path) if path.starts_with("/v1/bots/") => {
                 return Ok(bot_route(&mut state, request, signed));
@@ -1845,12 +1947,29 @@ impl Transport for FakeServer {
                     Some((account_id, identity_key)) => {
                         let device_id = state.devices.get(account_id).cloned().unwrap_or_default();
                         let pq = state.pq.get(identity_key).cloned();
+                        let mut device_ids = vec![device_id.clone()];
+                        device_ids.extend(state.linked.get(account_id).cloned().unwrap_or_default());
+                        let devices = if device_ids.len() > 1 {
+                            device_ids
+                                .iter()
+                                .filter_map(|device| {
+                                    let bundle = state.bundles.get(device)?;
+                                    Some(gasapp_net::api::DiscoveredDevice {
+                                        device_id: device.clone(),
+                                        sealed_kem_public: bundle.sealed_kem_public.clone()?,
+                                        sealed_kem_signature: bundle.sealed_kem_signature.clone()?,
+                                    })
+                                })
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
 
                         (
                             200,
                             serde_json::to_string(&DiscoveryResponse {
-                                device_list: None,
-                                devices: Vec::new(),
+                                device_list: state.device_lists.get(account_id).cloned(),
+                                devices,
                                 account_id: account_id.clone(),
                                 identity_key: identity_key.clone(),
                                 sealed_kem_public: state
@@ -1861,7 +1980,7 @@ impl Transport for FakeServer {
                                     .bundles
                                     .get(&device_id)
                                     .and_then(|bundle| bundle.sealed_kem_signature.clone()),
-                                device_ids: vec![device_id],
+                                device_ids,
                                 pq_identity_key: pq.as_ref().map(|(public, _)| public.clone()),
                                 identity_binding: pq.map(|(_, binding)| binding),
                             })
@@ -1947,7 +2066,14 @@ impl Transport for FakeServer {
                     .cloned()
                     .unwrap_or_default();
 
-                let pq = state.pq.get(&identity).cloned();
+                // Половина — аккаунта (как на настоящем сервере), и у
+                // подключённого устройства тоже.
+                let pq = state.pq.get(&identity).cloned().or_else(|| {
+                    let account = account_of(&state, &device_id)?;
+                    let primary = state.devices.get(&account)?;
+                    let primary_identity = state.device_identity.get(primary)?;
+                    state.pq.get(primary_identity).cloned()
+                });
 
                 match state.bundles.get_mut(&device_id) {
                     Some(keys) => {
@@ -2044,11 +2170,7 @@ impl Transport for FakeServer {
                     .trim_start_matches("/v1/sealed/certificate/")
                     .to_owned();
 
-                let account_id = state
-                    .devices
-                    .iter()
-                    .find(|(_, device)| **device == device_id)
-                    .map(|(account, _)| account.clone());
+                let account_id = account_of(&state, &device_id);
                 let identity = state.device_identity.get(&device_id).cloned();
 
                 match (account_id, identity) {
@@ -9225,4 +9347,99 @@ fn a_member_who_asks_again_keeps_reading() {
         texts(&member, &channel_id),
         ["только для своих", "после удаления"]
     );
+}
+
+/// Несколько устройств (`docs/protocol/MULTI-DEVICE.md`): второе устройство
+/// Алисы подключается по QR со сверкой шести цифр; Боб пишет — сообщение
+/// приходит на оба в один и тот же чат; второе устройство отвечает — Боб
+/// видит ответ в чате с Алисой; отключённое больше ничего не получает.
+#[test]
+fn a_linked_device_receives_and_sends_in_the_same_chat() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    // Новое устройство: QR; гранта ещё нет.
+    let phone = Client::new(server.clone(), open_storage(&dir, "alice-phone.db"));
+    let uri = phone.start_device_link(now(), &mut OsRng).expect("QR");
+    assert!(phone.poll_device_link().expect("опрос").is_none());
+
+    // Основное: сканирует, видит цифры, подтверждает.
+    let code = alice
+        .prepare_device_link(&uri, now(), &mut OsRng)
+        .expect("запрос проверен");
+    alice.approve_device_link(now()).expect("грант");
+
+    let offer = phone.poll_device_link().expect("опрос").expect("грант пришёл");
+    assert_eq!(offer.code, code, "цифры на двух экранах совпадают");
+    assert_eq!(offer.username, "alice");
+    let phone_device = phone
+        .finish_device_link(now(), &mut OsRng)
+        .expect("подключено")
+        .device_id
+        .to_string();
+
+    // Ссылка-контакт — ключа аккаунта, у обоих устройств одна.
+    assert_eq!(
+        phone.own_contact_link().expect("ссылка"),
+        alice.own_contact_link().expect("ссылка")
+    );
+    let devices = alice.own_devices(now()).expect("устройства");
+    assert_eq!(devices.len(), 2);
+    assert!(devices.iter().any(|device| device.this_device && device.primary));
+
+    // Боб пишет Алисе — приходит на оба устройства, в один чат.
+    bob.send_message("alice", "hi both", later(1), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(alice.receive_messages(&alice_device, later(2)).expect("приём"), 1);
+    assert_eq!(phone.receive_messages(&phone_device, later(2)).expect("приём"), 1);
+    assert_eq!(texts_of(&phone), vec!["hi both".to_owned()]);
+    assert_eq!(phone.chats().expect("чаты"), alice.chats().expect("чаты"));
+
+    // Второе устройство отвечает: Боб видит ответ в том же чате с Алисой.
+    let contact = phone.discover_contact("bob", later(3)).expect("Боб найден");
+    phone
+        .set_contact_verified(&contact.account_id, true, later(3))
+        .expect("сверен");
+    phone
+        .send_message("bob", "from the phone", later(3), &mut OsRng)
+        .expect("ответ отправлен");
+    assert_eq!(bob.receive_messages(&bob_device, later(4)).expect("приём"), 1);
+    assert_eq!(bob.chats().expect("чаты").len(), 1, "ответ — в чате с Алисой");
+    assert!(texts_of(&bob).contains(&"from the phone".to_owned()));
+
+    // Отключение: дальше Боб пишет только основному устройству.
+    alice.unlink_device(&phone_device, later(5)).expect("отключено");
+    assert_eq!(alice.own_devices(later(5)).expect("устройства").len(), 1);
+    bob.send_message("alice", "only primary", later(6), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(alice.receive_messages(&alice_device, later(7)).expect("приём"), 1);
+    assert!(phone
+        .receive_messages(&phone_device, later(7))
+        .map_or(true, |received| received == 0));
+}
+
+/// 🔐 Подключать устройства может только основное; QR старше 60 секунд
+/// не принимается.
+#[test]
+fn only_the_primary_links_and_stale_codes_are_refused() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, _bob, _alice_device, _bob_device) = alice_and_bob(&server, &dir);
+
+    let phone = Client::new(server.clone(), open_storage(&dir, "phone.db"));
+    let uri = phone.start_device_link(now(), &mut OsRng).expect("QR");
+    assert!(alice.prepare_device_link(&uri, later(120), &mut OsRng).is_err());
+
+    let code = alice.prepare_device_link(&uri, now(), &mut OsRng).expect("запрос");
+    alice.approve_device_link(now()).expect("грант");
+    assert_eq!(phone.poll_device_link().expect("опрос").expect("грант").code, code);
+    phone.finish_device_link(now(), &mut OsRng).expect("подключено");
+
+    let third = Client::new(server.clone(), open_storage(&dir, "third.db"));
+    let uri = third.start_device_link(now(), &mut OsRng).expect("QR");
+    assert!(matches!(
+        phone.prepare_device_link(&uri, now(), &mut OsRng),
+        Err(GasAppError::Forbidden)
+    ));
 }

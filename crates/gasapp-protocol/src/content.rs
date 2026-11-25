@@ -97,6 +97,65 @@ pub const ACCESS_KEY_LEN: usize = 32;
 /// Длина идентификатора сообщения.
 pub const MESSAGE_ID_LEN: usize = 16;
 
+/// Ключ доступа: метка, ключ и необязательный хвост — имя (метка 1;
+/// так писали прежние версии) и список устройств (метка 2).
+fn write_access_key(
+    out: &mut Vec<u8>,
+    key: &[u8; ACCESS_KEY_LEN],
+    sender_username: Option<&str>,
+    device_list: Option<&[u8]>,
+) -> Result<()> {
+    out.push(KIND_ACCESS_KEY);
+    out.extend_from_slice(key);
+
+    // Хвост необязателен: сообщение без него читается как
+    // «имени нет» — так писали прежние версии.
+    if let Some(name) = sender_username {
+        out.push(1);
+        write_text(out, name)?;
+    }
+    if let Some(list) = device_list {
+        if list.len() > MAX_DEVICE_LIST_BYTES {
+            return Err(GasAppError::Malformed);
+        }
+        out.push(2);
+        write_bytes(out, list)?;
+    }
+    Ok(())
+}
+
+/// Разбирает ключ доступа после метки вида.
+fn read_access_key(reader: &mut Reader<'_>) -> Result<Content> {
+    let key = reader.take_access_key()?;
+    let mut sender_username = None;
+    let mut device_list = None;
+    // Поля хвоста — по метке, каждое не больше раза, в порядке
+    // имя → список: прежние версии писали только имя.
+    while !reader.at_end() {
+        match reader.take_u8()? {
+            1 if sender_username.is_none() && device_list.is_none() => {
+                sender_username = Some(reader.take_text()?);
+            }
+            2 if device_list.is_none() => {
+                let list = reader.take_blob()?;
+                if list.len() > MAX_DEVICE_LIST_BYTES {
+                    return Err(GasAppError::Malformed);
+                }
+                device_list = Some(list);
+            }
+            _ => return Err(GasAppError::Malformed),
+        }
+    }
+    Ok(Content::AccessKey {
+        key,
+        sender_username,
+        device_list,
+    })
+}
+
+/// Предел списка устройств в ключе доступа: 5 устройств и подпись.
+pub const MAX_DEVICE_LIST_BYTES: usize = 20_000;
+
 /// Содержимое сообщения.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Content {
@@ -278,6 +337,15 @@ pub enum Content {
         /// Иначе назвавшийся «alice» получил бы ответ, ушедший настоящей
         /// Алисе в другой чат.
         sender_username: Option<String>,
+        /// Подписанный ключом аккаунта список устройств отправителя
+        /// (`docs/protocol/MULTI-DEVICE.md`) — его шлёт подключённое
+        /// устройство первым сообщением новой сессии.
+        ///
+        /// 🔐 Под шифрованием, а не запросом к серверу: спроси получатель
+        /// сервер «чьё это устройство» сразу после доставки, сервер узнал
+        /// бы отправителя запечатанного конверта. Получатель проверяет
+        /// подпись сам.
+        device_list: Option<Vec<u8>>,
     },
 
     /// Таймер исчезающих сообщений, заданный отправителем для чата.
@@ -405,16 +473,9 @@ impl Content {
             Self::AccessKey {
                 key,
                 sender_username,
+                device_list,
             } => {
-                out.push(KIND_ACCESS_KEY);
-                out.extend_from_slice(key);
-
-                // Хвост необязателен: сообщение без него читается как
-                // «имени нет» — так писали прежние версии.
-                if let Some(name) = sender_username {
-                    out.push(1);
-                    write_text(&mut out, name)?;
-                }
+                write_access_key(&mut out, key, sender_username.as_deref(), device_list.as_deref())?;
             }
             Self::KtHead { epoch, head } => {
                 out.push(KIND_KT_HEAD);
@@ -539,17 +600,7 @@ impl Content {
             KIND_READ_RECEIPT => Self::ReadReceipt {
                 until: reader.take_id()?,
             },
-            KIND_ACCESS_KEY => Self::AccessKey {
-                key: reader.take_access_key()?,
-                sender_username: if reader.at_end() {
-                    None
-                } else {
-                    match reader.take_u8()? {
-                        1 => Some(reader.take_text()?),
-                        _ => return Err(GasAppError::Malformed),
-                    }
-                },
-            },
+            KIND_ACCESS_KEY => read_access_key(&mut reader)?,
             KIND_KT_HEAD => {
                 let (epoch, head) = take_kt_head(&mut reader)?;
                 Self::KtHead { epoch, head }
@@ -786,6 +837,7 @@ mod tests {
         let with_name = Content::AccessKey {
             key: [7; ACCESS_KEY_LEN],
             sender_username: Some("алиса".to_owned()),
+            device_list: None,
         };
         let bytes = with_name.to_bytes().expect("кодируется");
         assert_eq!(Content::from_bytes(&bytes).expect("читается"), with_name);
@@ -793,6 +845,7 @@ mod tests {
         let old_format = Content::AccessKey {
             key: [7; ACCESS_KEY_LEN],
             sender_username: None,
+            device_list: None,
         };
         // Без дополнения: длина без имени — версия, тип и сам ключ,
         // ровно как у прежних версий.
@@ -1151,12 +1204,33 @@ mod tests {
         assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
     }
 
+    /// Список устройств едет в хвосте ключа доступа — с именем и без.
+    #[test]
+    fn access_key_carries_a_device_list() {
+        for name in [None, Some("anna".to_owned())] {
+            let content = Content::AccessKey {
+                key: [9; ACCESS_KEY_LEN],
+                sender_username: name,
+                device_list: Some(vec![4; 300]),
+            };
+            let bytes = content.to_bytes().expect("кодируется");
+            assert_eq!(Content::from_bytes(&bytes).expect("читается"), content);
+        }
+        let too_big = Content::AccessKey {
+            key: [9; ACCESS_KEY_LEN],
+            sender_username: None,
+            device_list: Some(vec![4; MAX_DEVICE_LIST_BYTES + 1]),
+        };
+        assert!(too_big.to_bytes().is_err());
+    }
+
     /// Ключ доступа sealed sender переживает сериализацию.
     #[test]
     fn access_key_round_trips() {
         let content = Content::AccessKey {
             key: [0x5Au8; ACCESS_KEY_LEN],
             sender_username: None,
+            device_list: None,
         };
         let bytes = content.to_bytes().expect("сериализация");
 
@@ -1176,6 +1250,7 @@ mod tests {
         let bytes = Content::AccessKey {
             key,
             sender_username: None,
+            device_list: None,
         }
         .to_unpadded_bytes()
         .expect("сериализация");
@@ -1192,6 +1267,7 @@ mod tests {
         let mut bytes = Content::AccessKey {
             key: [0x11u8; ACCESS_KEY_LEN],
             sender_username: None,
+            device_list: None,
         }
         .to_unpadded_bytes()
         .expect("сериализация");

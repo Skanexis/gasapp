@@ -67,8 +67,13 @@ impl<T: Transport> Client<T> {
         )))
     }
 
-    /// Хеш своей пост-квантовой половины.
+    /// Хеш пост-квантовой половины своего **аккаунта**: на подключённом
+    /// устройстве — записанной при связывании, иначе — своей
+    /// (`docs/protocol/MULTI-DEVICE.md`).
     pub(super) fn own_pq_hash(&self) -> Result<[u8; 32]> {
+        if let Some((_, account_pq)) = self.storage.own_account_identity()? {
+            return Ok(pq_identity::pq_identity_hash(&account_pq));
+        }
         Ok(pq_identity::pq_identity_hash(
             &self.own_pq_identity()?.public(),
         ))

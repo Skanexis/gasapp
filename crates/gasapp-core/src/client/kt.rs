@@ -333,9 +333,10 @@ impl<T: Transport> Client<T> {
     pub fn kt_check_self(&self, now: Timestamp) -> Result<KtSelfCheck> {
         let username = self.own_username()?.ok_or(GasAppError::Uninitialized)?;
         let (identity, _) = self.load_identity()?;
+        // Под именем в журнале — ключ аккаунта, а не этого устройства.
         let own = Leaf {
-            identity_key: *identity.public().public().as_bytes(),
-            pq_hash: pq_identity::pq_identity_hash(&self.own_pq_identity()?.public()),
+            identity_key: *self.own_account(&identity)?.as_bytes(),
+            pq_hash: self.own_pq_hash()?,
             version: 0,
         };
 

@@ -1486,9 +1486,15 @@ async fn publish_keys(
     }
 
     // Пост-квантовая половина identity — у аккаунтов, заведённых без неё.
+    // 🔐 Половину аккаунта меняет только основное устройство; у
+    // подключённого она своя (docs/protocol/MULTI-DEVICE.md).
     if let Some((public, binding)) = pq_update {
-        let account = repo::account_of_device(&state.pool, device_id).await?;
-        repo::set_pq_identity(&state.pool, account, &public, &binding).await?;
+        if gasapp_server_db::devices::is_primary(&state.pool, device_id).await? {
+            let account = repo::account_of_device(&state.pool, device_id).await?;
+            repo::set_pq_identity(&state.pool, account, &public, &binding).await?;
+        } else {
+            gasapp_server_db::devices::set_device_pq(&state.pool, device_id, &public, &binding).await?;
+        }
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -1548,7 +1554,12 @@ async fn take_bundle(
     let degraded = bundle.one_time.is_none() || bundle.one_time_kem.is_none();
 
     let account = repo::account_of_device(&state.pool, bundle.device_id).await?;
-    let pq = repo::pq_identity_of(&state.pool, account).await?;
+    // Подключённое устройство — со своей половиной, основное — с половиной
+    // аккаунта.
+    let pq = match gasapp_server_db::devices::device_pq(&state.pool, bundle.device_id).await? {
+        Some(own) => Some(own),
+        None => repo::pq_identity_of(&state.pool, account).await?,
+    };
     let sealed_kem = repo::sealed_kem_of(&state.pool, bundle.device_id).await?;
 
     Ok(Json(BundleResponse {

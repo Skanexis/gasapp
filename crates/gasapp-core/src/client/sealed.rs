@@ -388,6 +388,9 @@ impl<T: Transport> Client<T> {
             Content::AccessKey {
                 key: own_key,
                 sender_username: self.own_username()?,
+                // Подключённое устройство называет свой аккаунт списком
+                // устройств (`docs/protocol/MULTI-DEVICE.md`).
+                device_list: self.own_device_list_for_peers()?,
             }
             .to_bytes()?,
         );
@@ -398,7 +401,7 @@ impl<T: Transport> Client<T> {
             session::continue_session(&state, &share)?
         } else {
             let response = self.api.fetch_bundle(&target.device_id)?;
-            let mut bundle = parse_bundle(&response)?;
+            let bundle = parse_bundle(&response)?;
 
             // 🔐 Bundle обязан принадлежать тому, кому пишем: и
             // классическая, и пост-квантовая половины — те же, что
@@ -409,8 +412,8 @@ impl<T: Transport> Client<T> {
             }
             if target.identity == *account {
                 self.remember_peer_pq(&peer_account(account), &bundle.pq_identity, now)?;
-            } else {
-                bundle.pq_identity.clone_from(&target.pq);
+            } else if bundle.pq_identity != target.pq {
+                return Err(GasAppError::IdentityChanged);
             }
 
             let started = session::start_session(identity, &bundle, &share, rng)?;

@@ -33,3 +33,11 @@ CREATE TABLE link_boxes (
 );
 
 CREATE INDEX link_boxes_by_expiry ON link_boxes (expires_at);
+
+-- Пост-квантовая половина identity **подключённого** устройства и её
+-- привязка к его классическому ключу. У основного устройства она та же,
+-- что у аккаунта (`accounts.pq_identity_key`), — здесь пусто.
+-- 🔐 Подключённое устройство не может менять половину аккаунта.
+ALTER TABLE devices
+    ADD COLUMN pq_identity_key  BYTEA,
+    ADD COLUMN identity_binding BYTEA;

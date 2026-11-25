@@ -61,6 +61,7 @@ mod channels;
 mod devices;
 mod keyboards;
 mod kt;
+mod linking;
 mod network;
 mod notify;
 mod pq;
@@ -83,6 +84,7 @@ use gasapp_types::{
     PublicKeyBytes, Result, Timestamp,
 };
 pub use keyboards::ButtonCallback;
+pub use linking::{LinkOffer, OwnDevice};
 pub use kt::{KtSelfCheck, KtVerdict};
 pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 pub use notify::{new_notify_token, PushProvider, NOTIFY_TOKEN_LEN};
@@ -290,6 +292,9 @@ pub struct Client<T: Transport> {
     /// как в свежем, и подписаны владельцем. Иначе посторонний отрезал
     /// бы человека от собеседников, выбирая бюджет его имени.
     discovered: Mutex<HashMap<String, (DiscoveryResponse, Timestamp)>>,
+
+    /// Связывание устройств — только в памяти (`client::linking`).
+    linking: linking::LinkState,
 }
 
 /// Сколько годен последний ответ discovery для отправки при отказе
@@ -306,6 +311,7 @@ impl<T: Transport> Client<T> {
             // только повторная аутентификация.
             vault: Mutex::new(VaultGuard::new(Timestamp::from_millis(0))),
             discovered: Mutex::new(HashMap::new()),
+            linking: linking::LinkState::default(),
         }
     }
 
@@ -1021,6 +1027,20 @@ impl<T: Transport> Client<T> {
                 continue;
             };
 
+            // Подключённое устройство собеседника называет свой аккаунт
+            // подписанным списком устройств в первом сообщении сессии
+            // (`client::linking`): до расчёта чата — он считается по
+            // ключу аккаунта.
+            if let Some(device) = incoming.sender_identity {
+                if let Ok(Content::AccessKey {
+                    device_list: Some(list),
+                    ..
+                }) = Content::from_bytes(incoming.plaintext.expose())
+                {
+                    self.learn_device_list(&device, &list, now);
+                }
+            }
+
             // 🔐 Повтор принятого конверта инициации не трогает сессию.
             //
             // Конверт инициации самодостаточен: расшифровывается им
@@ -1287,6 +1307,7 @@ impl<T: Transport> Client<T> {
                 Content::AccessKey {
                     key,
                     sender_username,
+                    ..
                 } => {
                     // 🔐 Ключ сохраняется только за собеседником,
                     // установленным криптографически: identity из PQXDH
@@ -1655,7 +1676,7 @@ impl<T: Transport> Client<T> {
         let username = self.storage.load_own_keys()?.and_then(|keys| keys.username);
 
         ContactLink {
-            identity: *identity.public().public(),
+            identity: self.own_account(&identity)?,
             pq_identity_hash: self.own_pq_hash()?,
             display_name: username,
         }
