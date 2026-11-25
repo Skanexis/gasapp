@@ -142,6 +142,20 @@ impl<T: Transport> Client<T> {
                 )?;
                 sent = sent.saturating_add(count);
             }
+            // Таймеры исчезающих и блокировки — тоже: без них новое
+            // устройство хранило бы «исчезающие» вечно и показывало бы
+            // заблокированных.
+            for copy in self.chat_state_copies()? {
+                self.send_to_devices(
+                    &identity,
+                    &self_chat,
+                    &own,
+                    std::slice::from_ref(&target),
+                    &Plaintext::new(copy.to_bytes()?),
+                    now,
+                    rng,
+                )?;
+            }
             self.storage.set_setting_int(&key, 0)?;
             self.storage
                 .log_security_event("device_history_sent", None, now)?;

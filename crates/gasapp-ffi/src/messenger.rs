@@ -383,6 +383,15 @@ impl Messenger {
         self.client.lock().map_err(|_| FfiError::Panic)
     }
 
+    /// Блокировка — своим устройствам (`docs/protocol/MULTI-DEVICE.md`):
+    /// иначе заблокированный писал бы на подключённые телефоны. Сбой не
+    /// мешает самой блокировке — она уже записана здесь.
+    fn sync_block(&self, chat: &gasapp_types::ChatId, blocked: bool, now: Timestamp) {
+        if let Ok(client) = self.client() {
+            let _ = guard(|| client.sync_block(chat, blocked, now, &mut rand_core::OsRng));
+        }
+    }
+
     /// Клиент локальных чтений: не ждёт сетевых запросов основного.
     pub(crate) fn reader(&self) -> Result<std::sync::MutexGuard<'_, Client<Offline>>, FfiError> {
         self.reader.lock().map_err(|_| FfiError::Panic)
@@ -605,15 +614,13 @@ impl Messenger {
         now_millis: i64,
     ) -> Result<(), FfiError> {
         let chat = parse_chat(&chat_id)?;
-        let client = self.reader()?;
-
-        guard(|| {
-            client.block_chat(
-                &chat,
-                username.as_deref(),
-                Timestamp::from_millis(now_millis),
-            )
-        })
+        let now = Timestamp::from_millis(now_millis);
+        {
+            let client = self.reader()?;
+            guard(|| client.block_chat(&chat, username.as_deref(), now))?;
+        }
+        self.sync_block(&chat, true, now);
+        Ok(())
     }
 
     /// Снимает блокировку.
@@ -623,9 +630,17 @@ impl Messenger {
     /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
     pub fn unblock_chat(&self, chat_id: String) -> Result<(), FfiError> {
         let chat = parse_chat(&chat_id)?;
-        let client = self.reader()?;
-
-        guard(|| client.unblock_chat(&chat))
+        {
+            let client = self.reader()?;
+            guard(|| client.unblock_chat(&chat))?;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
+            .unwrap_or_default();
+        self.sync_block(&chat, false, Timestamp::from_millis(now));
+        Ok(())
     }
 
     /// Заблокирован ли собеседник чата.

@@ -972,10 +972,14 @@ impl<T: Transport> Client<T> {
             rng,
         )?;
 
-        // Видимое в переписке — копией своим устройствам.
+        // Видимое в переписке и таймер исчезающих — копией своим
+        // устройствам: иначе на них сообщения жили бы вечно.
         if matches!(
             content,
-            Content::Attachments { .. } | Content::Edit { .. } | Content::Delete { .. }
+            Content::Attachments { .. }
+                | Content::Edit { .. }
+                | Content::Delete { .. }
+                | Content::DisappearingTimer { .. }
         ) {
             let _ = self.copy_to_own_devices(
                 &identity,
@@ -1296,6 +1300,7 @@ impl<T: Transport> Client<T> {
                     | Content::DisappearingTimer { .. }
                     | Content::Sent { .. }
                     | Content::History { .. }
+                    | Content::Block { .. }
             );
 
             match content {
@@ -1440,6 +1445,7 @@ impl<T: Transport> Client<T> {
                 // выше); от собеседника она ничего не значит.
                 Content::Sent { .. }
                 | Content::History { .. }
+                | Content::Block { .. }
                 | Content::Reaction { .. }
                 | Content::Typing { .. } => {
                     // Ничего не сохраняется, но по разным причинам.

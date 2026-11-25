@@ -88,6 +88,9 @@ const KIND_SENT: u8 = 13;
 /// Перенесённая история: последние 30 дней — новому своему устройству.
 const KIND_HISTORY: u8 = 14;
 
+/// Блокировка собеседника — своим устройствам (только внутри копии).
+const KIND_BLOCK: u8 = 15;
+
 /// Сколько сообщений истории в одной пачке. Объём это не ограничивает:
 /// 200 текстов на пределе в бакет padding (256 КиБ) не влезут — пачки по
 /// объёму режет отправитель (`client::history`), а слишком большую
@@ -522,6 +525,14 @@ pub enum Content {
         items: Vec<HistoryItem>,
     },
 
+    /// Блокировка собеседника, поставленная или снятая на другом своём
+    /// устройстве. Имеет смысл только внутри [`Content::Sent`]: от
+    /// собеседника она ничего не значит.
+    Block {
+        /// Заблокирован ли.
+        blocked: bool,
+    },
+
     /// Таймер исчезающих сообщений, заданный отправителем для чата.
     ///
     /// 🔐 Таймер общий для обоих: кто бы его ни поставил, сообщения
@@ -650,6 +661,10 @@ impl Content {
                 content,
             } => write_sent(&mut out, peer, peer_username.as_deref(), content)?,
             Self::History { items } => write_history(&mut out, items)?,
+            Self::Block { blocked } => {
+                out.push(KIND_BLOCK);
+                out.push(u8::from(*blocked));
+            }
             Self::AccessKey {
                 key,
                 sender_username,
@@ -685,17 +700,7 @@ impl Content {
                 out.extend_from_slice(target);
                 write_bytes(&mut out, data)?;
             }
-            Self::DisappearingTimer { seconds } => {
-                // Ноль — «выключено»: отдельный флаг был бы лишним
-                // состоянием, которое можно рассогласовать.
-                let value = seconds.unwrap_or(0);
-                if value > MAX_DISAPPEARING_SECONDS || *seconds == Some(0) {
-                    return Err(GasAppError::Malformed);
-                }
-
-                out.push(KIND_DISAPPEARING_TIMER);
-                out.extend_from_slice(&value.to_be_bytes());
-            }
+            Self::DisappearingTimer { seconds } => write_disappearing_timer(&mut out, *seconds)?,
         }
 
         Ok(out)
@@ -788,6 +793,13 @@ impl Content {
             KIND_ACCESS_KEY => read_access_key(&mut reader)?,
             KIND_SENT => read_sent(&mut reader)?,
             KIND_HISTORY => read_history(&mut reader)?,
+            KIND_BLOCK => Self::Block {
+                blocked: match reader.take_u8()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(GasAppError::Malformed),
+                },
+            },
             KIND_KT_HEAD => {
                 let (epoch, head) = take_kt_head(&mut reader)?;
                 Self::KtHead { epoch, head }
@@ -823,6 +835,18 @@ impl Content {
 
         Ok(content)
     }
+}
+
+/// Таймер исчезающих: срок в секундах, ноль — «выключено» (отдельный
+/// флаг был бы лишним состоянием, которое можно рассогласовать).
+fn write_disappearing_timer(out: &mut Vec<u8>, seconds: Option<u32>) -> Result<()> {
+    let value = seconds.unwrap_or(0);
+    if value > MAX_DISAPPEARING_SECONDS || seconds == Some(0) {
+        return Err(GasAppError::Malformed);
+    }
+    out.push(KIND_DISAPPEARING_TIMER);
+    out.extend_from_slice(&value.to_be_bytes());
+    Ok(())
 }
 
 /// Записывает текст с проверкой предела.
@@ -1469,6 +1493,20 @@ mod tests {
         let flag = 1 + 1 + 2 + 32 + 1 + 4 + 3 + 16;
         *raw.get_mut(flag).expect("флаг") = 2;
         assert!(Content::from_unpadded_bytes(&raw).is_err());
+    }
+
+    /// Блокировка внутри копии переживает кодирование.
+    #[test]
+    fn a_block_copy_round_trips() {
+        for blocked in [true, false] {
+            let content = Content::Sent {
+                peer: [4; 32],
+                peer_username: Some("eve".to_owned()),
+                content: Box::new(Content::Block { blocked }),
+            };
+            let bytes = content.to_bytes().expect("кодируется");
+            assert_eq!(Content::from_bytes(&bytes).expect("читается"), content);
+        }
     }
 
     /// Список устройств едет в хвосте ключа доступа — с именем и без.

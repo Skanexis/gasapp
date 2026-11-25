@@ -425,14 +425,16 @@ impl<T: Transport> Client<T> {
         let chat_id = derive_chat_id(&self.own_account(identity)?, peer);
         // Мы пишем в этот чат с другого своего устройства — это не запрос
         // незнакомца: начали мы, а запрос — значит, мы его уже приняли.
-        match self.storage.chat_request_state(&chat_id)? {
-            None => self
-                .storage
-                .set_chat_request_state(&chat_id, ChatRequest::Outgoing)?,
-            Some(ChatRequest::Incoming) => self
-                .storage
-                .set_chat_request_state(&chat_id, ChatRequest::Settled)?,
-            Some(_) => {}
+        if matches!(content, Content::Text { .. } | Content::Attachments { .. }) {
+            match self.storage.chat_request_state(&chat_id)? {
+                None => self
+                    .storage
+                    .set_chat_request_state(&chat_id, ChatRequest::Outgoing)?,
+                Some(ChatRequest::Incoming) => self
+                    .storage
+                    .set_chat_request_state(&chat_id, ChatRequest::Settled)?,
+                Some(_) => {}
+            }
         }
         // Чат с именем: имя — заявление, принимается, только если
         // discovery называет для него тот же ключ.
@@ -491,8 +493,98 @@ impl<T: Transport> Client<T> {
                 }
                 Ok(false)
             }
+            // Таймер и блокировка — общие для всех своих устройств.
+            Content::DisappearingTimer { seconds } => {
+                self.storage.set_disappearing_timer(&chat_id, seconds)?;
+                Ok(false)
+            }
+            Content::Block { blocked: true } => {
+                self.storage.block_chat(&chat_id, peer_username, now)?;
+                Ok(false)
+            }
+            Content::Block { blocked: false } => {
+                self.storage.unblock_chat(&chat_id)?;
+                Ok(false)
+            }
             _ => Ok(false),
         }
+    }
+}
+
+impl<T: Transport> Client<T> {
+    /// Блокировка поставлена или снята здесь — своим устройствам тоже:
+    /// иначе заблокированный продолжал бы писать на подключённые телефоны.
+    /// Сбой не мешает самой блокировке (она уже записана).
+    ///
+    /// # Errors
+    ///
+    /// Как у отправки.
+    pub fn sync_block<R: RngCore + CryptoRng>(
+        &self,
+        chat_id: &ChatId,
+        blocked: bool,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let Some((peer, username)) = self.chat_peer(chat_id)? else {
+            return Ok(());
+        };
+        let (identity, _) = self.load_identity()?;
+        self.copy_to_own_devices(
+            &identity,
+            &peer,
+            username.as_deref().unwrap_or_default(),
+            &Content::Block { blocked },
+            now,
+            rng,
+        )
+    }
+
+    /// Собеседник чата: ключ его аккаунта и имя.
+    pub(crate) fn chat_peer(
+        &self,
+        chat_id: &ChatId,
+    ) -> Result<Option<(PublicKeyBytes, Option<String>)>> {
+        Ok(self
+            .storage
+            .list_contacts(u32::MAX)?
+            .into_iter()
+            .find(|contact| contact.chat_id.as_ref() == Some(chat_id))
+            .and_then(|contact| {
+                let key = <[u8; 32]>::try_from(contact.identity_key.as_slice()).ok()?;
+                Some((PublicKeyBytes::new(key), contact.username))
+            }))
+    }
+
+    /// Таймеры и блокировки чатов — новому своему устройству вместе с
+    /// историей (копиями, как с любого своего устройства).
+    pub(crate) fn chat_state_copies(&self) -> Result<Vec<Content>> {
+        let mut copies = Vec::new();
+        for contact in self.storage.list_contacts(u32::MAX)? {
+            let Some(chat_id) = contact.chat_id else {
+                continue;
+            };
+            let Ok(peer) = <[u8; 32]>::try_from(contact.identity_key.as_slice()) else {
+                continue;
+            };
+            let mut state = Vec::new();
+            if let Some(seconds) = self.storage.get_disappearing_timer(&chat_id)? {
+                state.push(Content::DisappearingTimer {
+                    seconds: Some(seconds),
+                });
+            }
+            if self.storage.is_chat_blocked(&chat_id)? {
+                state.push(Content::Block { blocked: true });
+            }
+            for content in state {
+                copies.push(Content::Sent {
+                    peer,
+                    peer_username: contact.username.clone(),
+                    content: Box::new(content),
+                });
+            }
+        }
+        Ok(copies)
     }
 }
 

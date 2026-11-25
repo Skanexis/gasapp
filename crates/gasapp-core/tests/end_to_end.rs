@@ -9598,6 +9598,41 @@ fn sent_messages_appear_on_the_other_own_device() {
         .expect("сообщения")
         .iter()
         .all(|message| message.message_id != sent));
+
+    // Таймер исчезающих — общий для своих устройств: копия, пришедшая
+    // после него, на втором устройстве исчезает в срок.
+    alice
+        .set_shared_disappearing_timer("bob", Some(60), later(7), &mut OsRng)
+        .expect("таймер");
+    alice
+        .send_message("bob", "vanishing", later(8), &mut OsRng)
+        .expect("отправлено");
+    phone
+        .receive_messages(&phone_device, later(9))
+        .expect("приём");
+    assert!(phone
+        .messages(&chat, 10)
+        .expect("сообщения")
+        .iter()
+        .any(|message| message.text == "vanishing"));
+    phone.purge_expired(later(8 + 61)).expect("очистка");
+    assert!(phone
+        .messages(&chat, 10)
+        .expect("сообщения")
+        .iter()
+        .all(|message| message.text != "vanishing"));
+
+    // Блокировка — тоже.
+    alice
+        .block_chat(&chat, Some("bob"), later(10))
+        .expect("заблокирован");
+    alice
+        .sync_block(&chat, true, later(10), &mut OsRng)
+        .expect("своим устройствам");
+    phone
+        .receive_messages(&phone_device, later(11))
+        .expect("приём");
+    assert!(phone.is_chat_blocked(&chat).expect("блокировка"));
 }
 
 /// Подключает новое устройство к аккаунту `primary` по QR (связывание из
