@@ -502,6 +502,21 @@ pub struct DiscoveryResponse {
     /// устройство. 🔐 Подпись проверяет клиент.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_list: Option<String>,
+    /// Ключи sealed sender каждого устройства — когда устройств больше
+    /// одного. 🔐 Подписаны ключом своего устройства, проверяет клиент.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<DiscoveredDevice>,
+}
+
+/// Устройство в ответе discovery.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscoveredDevice {
+    /// Устройство.
+    pub device_id: Uuid,
+    /// Ключ ML-KEM-1024 sealed sender, hex.
+    pub sealed_kem_public: String,
+    /// Его подпись, hex.
+    pub sealed_kem_signature: String,
 }
 
 /// Регистрация токена push-уведомлений.
@@ -1164,6 +1179,18 @@ async fn discovery(
     };
     let pq = repo::pq_identity_of(&state.pool, account.account_id).await?;
     let device_list = gasapp_server_db::devices::device_list(&state.pool, account.account_id).await?;
+    let mut discovered = Vec::new();
+    if devices.len() > 1 {
+        for device in &devices {
+            if let Some((public, signature)) = repo::sealed_kem_of(&state.pool, device.device_id).await? {
+                discovered.push(DiscoveredDevice {
+                    device_id: device.device_id,
+                    sealed_kem_public: hex::encode(public),
+                    sealed_kem_signature: hex::encode(signature),
+                });
+            }
+        }
+    }
 
     let response = DiscoveryResponse {
         account_id: account.account_id,
@@ -1176,6 +1203,7 @@ async fn discovery(
         pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
         identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
         device_list: device_list.map(hex::encode),
+        devices: discovered,
     };
 
     {

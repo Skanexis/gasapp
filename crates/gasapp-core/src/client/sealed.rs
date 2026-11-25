@@ -306,24 +306,27 @@ impl<T: Transport> Client<T> {
     /// ключ забыт, отправка **не** повторена обычным путём (см. модуль);
     /// [`GasAppError::Network`] — сервер недоступен.
     #[allow(clippy::too_many_arguments)]
+    ///
+    /// `account` — ключ аккаунта получателя (ключ доступа — его), `target` —
+    /// устройство, которому запечатывается конверт (`docs/protocol/MULTI-DEVICE.md`).
     pub(super) fn deliver<R: RngCore + CryptoRng>(
         &self,
         identity: &IdentityKeyPair,
-        peer_identity: &PublicKeyBytes,
-        peer_device: &str,
-        peer_kem: &[u8],
+        account: &PublicKeyBytes,
+        target: &super::devices::Target,
         envelope: &[u8],
         now: Timestamp,
         rng: &mut R,
     ) -> Result<()> {
-        let peer = peer_account(peer_identity);
+        let peer = peer_account(account);
+        let peer_device = target.device_id.as_str();
 
         let access_key = self.storage.contact_access_key(&peer)?;
 
         let (certificate, _) = self.ensure_certificate(identity, now, false)?;
         // 🔐 Гибрид X25519 + ML-KEM-1024: имя отправителя не раскроет
         // и тот, кто записал трафик сейчас и получит квантовый компьютер потом.
-        let sealed = sealed_sender::seal(peer_identity, peer_kem, &certificate, envelope, rng)?;
+        let sealed = sealed_sender::seal(&target.identity, &target.kem, &certificate, envelope, rng)?;
 
         // 🔐 Без ключа доступа — тоже запечатано, но с proof-of-work
         // (см. описание модуля). Отправки за подписью здесь нет:
@@ -366,14 +369,15 @@ impl<T: Transport> Client<T> {
     /// identity отправителя из самого конверта инициации и может
     /// сохранить ключ за правильным собеседником.
     #[allow(clippy::too_many_arguments)]
+    ///
+    /// `session_id` — сессия с устройством `target` аккаунта `account`.
     pub(super) fn send_own_access_key<R: RngCore + CryptoRng>(
         &self,
         identity: &IdentityKeyPair,
-        chat_id: &ChatId,
+        account: &PublicKeyBytes,
+        session_id: &ChatId,
         existing: Option<SessionState>,
-        peer_identity: &PublicKeyBytes,
-        peer_device: &str,
-        peer_kem: &[u8],
+        target: &super::devices::Target,
         now: Timestamp,
         rng: &mut R,
     ) -> Result<SessionState> {
@@ -393,16 +397,21 @@ impl<T: Transport> Client<T> {
         let outgoing = if let Some(state) = existing {
             session::continue_session(&state, &share)?
         } else {
-            let response = self.api.fetch_bundle(peer_device)?;
-            let bundle = parse_bundle(&response)?;
+            let response = self.api.fetch_bundle(&target.device_id)?;
+            let mut bundle = parse_bundle(&response)?;
 
             // 🔐 Bundle обязан принадлежать тому, кому пишем: и
             // классическая, и пост-квантовая половины — те же, что
-            // проверены и запомнены по discovery.
-            if bundle.identity_key.public() != peer_identity {
+            // проверены и запомнены по discovery. У подключённого
+            // устройства обе — из проверенного списка устройств.
+            if bundle.identity_key.public() != &target.identity {
                 return Err(GasAppError::IdentityChanged);
             }
-            self.remember_peer_pq(&peer_account(peer_identity), &bundle.pq_identity, now)?;
+            if target.identity == *account {
+                self.remember_peer_pq(&peer_account(account), &bundle.pq_identity, now)?;
+            } else {
+                bundle.pq_identity.clone_from(&target.pq);
+            }
 
             let started = session::start_session(identity, &bundle, &share, rng)?;
 
@@ -433,32 +442,16 @@ impl<T: Transport> Client<T> {
             // нет: он не прочёл бы ни одного, и переписка ломалась
             // навсегда. Повтор здесь безопасен: он начнёт новую сессию
             // с новыми ключами — ни один ключ не используется дважды.
-            self.deliver(
-                identity,
-                peer_identity,
-                peer_device,
-                peer_kem,
-                &outgoing.envelope,
-                now,
-                rng,
-            )?;
-            self.storage.save_session(chat_id, &outgoing.session, now)?;
+            self.deliver(identity, account, target, &outgoing.envelope, now, rng)?;
+            self.storage.save_session(session_id, &outgoing.session, now)?;
         } else {
             // Сессия сохраняется до отправки — тот же порядок, что у любого
             // сообщения: потерянное состояние храповика хуже повторной попытки.
-            self.storage.save_session(chat_id, &outgoing.session, now)?;
-            self.deliver(
-                identity,
-                peer_identity,
-                peer_device,
-                peer_kem,
-                &outgoing.envelope,
-                now,
-                rng,
-            )?;
+            self.storage.save_session(session_id, &outgoing.session, now)?;
+            self.deliver(identity, account, target, &outgoing.envelope, now, rng)?;
         }
         self.storage
-            .mark_access_key_shared(&peer_account(peer_identity), now)?;
+            .mark_access_key_shared(&peer_account(account), now)?;
 
         Ok(outgoing.session)
     }

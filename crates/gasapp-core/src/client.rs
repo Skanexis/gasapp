@@ -58,6 +58,7 @@ mod blocks;
 mod bots;
 mod channel_closed;
 mod channels;
+mod devices;
 mod keyboards;
 mod kt;
 mod network;
@@ -691,17 +692,11 @@ impl<T: Transport> Client<T> {
         )?;
         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
 
-        let delivered = self.send_stored_message(
-            &identity,
-            &chat_id,
-            existing,
-            &peer,
-            &peer_identity,
-            &peer_kem,
-            &plaintext,
-            now,
-            rng,
-        );
+        let delivered = self
+            .peer_targets(&peer, &peer_identity, &peer_pq, &peer_kem, now)
+            .and_then(|targets| {
+                self.send_to_devices(&identity, &chat_id, &peer_identity, &targets, &plaintext, now, rng)
+            });
         if let Err(error) = delivered {
             let _ = self
                 .storage
@@ -717,66 +712,6 @@ impl<T: Transport> Client<T> {
         let _ = self.kt_gossip_head(peer_username, now, rng);
 
         Ok(message_id)
-    }
-
-    /// Сетевая часть отправки уже записанного сообщения: ключ доступа
-    /// (при нужде), шифрование, доставка.
-    #[allow(clippy::too_many_arguments)]
-    fn send_stored_message<R: RngCore + CryptoRng>(
-        &self,
-        identity: &IdentityKeyPair,
-        chat_id: &ChatId,
-        existing: Option<gasapp_protocol::keys::SessionState>,
-        peer: &DiscoveryResponse,
-        peer_identity: &PublicKeyBytes,
-        peer_kem: &[u8],
-        plaintext: &Plaintext,
-        now: Timestamp,
-        rng: &mut R,
-    ) -> Result<()> {
-        // Устройство собеседника: bundle и доставка адресуются по нему.
-        // Берётся первое из списка — многоустройственная доставка
-        // появится вместе с синхронизацией (раздел 13.1).
-        let peer_device = peer
-            .device_ids
-            .first()
-            .cloned()
-            .ok_or(GasAppError::SessionNotFound)?;
-        let peer = peer_account(peer_identity);
-
-        // 🔐 Ключ доступа sealed sender уходит раньше текста — та же
-        // логика, что в `send_content` (см. модуль `sealed`). Прежде
-        // текст шёл собственной веткой прямо в `send_envelope`, и
-        // основная переписка оставалась бы незапечатанной, даже когда
-        // реакции и правки уже запечатаны.
-        let session = match existing {
-            Some(state) if self.storage.access_key_shared_with(&peer)? => state,
-            other => self.send_own_access_key(
-                identity,
-                chat_id,
-                other,
-                peer_identity,
-                &peer_device,
-                peer_kem,
-                now,
-                rng,
-            )?,
-        };
-
-        let outgoing = session::continue_session(&session, plaintext)?;
-
-        // Сессия сохраняется до отправки: см. порядок операций.
-        self.storage.save_session(chat_id, &outgoing.session, now)?;
-
-        self.deliver(
-            identity,
-            peer_identity,
-            &peer_device,
-            peer_kem,
-            &outgoing.envelope,
-            now,
-            rng,
-        )
     }
 
     /// Отправляет реакцию на сообщение.
@@ -997,13 +932,6 @@ impl<T: Transport> Client<T> {
 
         let plaintext = Plaintext::new(content.to_bytes()?);
 
-        let peer_device = peer
-            .device_ids
-            .first()
-            .cloned()
-            .ok_or(GasAppError::SessionNotFound)?;
-        let peer = peer_account(&peer_identity);
-
         // 🔐 Ключ доступа sealed sender уходит собеседнику раньше
         // содержимого (см. модуль `sealed`): новой сессии — первым
         // сообщением, существующей — если собеседник начинал сессию
@@ -1013,36 +941,10 @@ impl<T: Transport> Client<T> {
 
         self.note_outgoing(&chat_id, existing.is_none())?;
 
-        let session = match existing {
-            Some(state) if self.storage.access_key_shared_with(&peer)? => state,
-            other => self.send_own_access_key(
-                &identity,
-                &chat_id,
-                other,
-                &peer_identity,
-                &peer_device,
-                &peer_kem,
-                now,
-                rng,
-            )?,
-        };
-
-        let outgoing = session::continue_session(&session, &plaintext)?;
-
-        // Сессия сохраняется до отправки: см. порядок операций
-        // в описании модуля.
-        self.storage
-            .save_session(&chat_id, &outgoing.session, now)?;
-
-        self.deliver(
-            &identity,
-            &peer_identity,
-            &peer_device,
-            &peer_kem,
-            &outgoing.envelope,
-            now,
-            rng,
-        )?;
+        // Каждому устройству собеседника — своя сессия и доставка
+        // (`client::devices`).
+        let targets = self.peer_targets(&peer, &peer_identity, &peer_pq, &peer_kem, now)?;
+        self.send_to_devices(&identity, &chat_id, &peer_identity, &targets, &plaintext, now, rng)?;
 
         Ok(chat_id)
     }

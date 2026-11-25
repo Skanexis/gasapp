@@ -142,24 +142,16 @@ impl<T: Transport> Client<T> {
 
         let peer_pq = self.verified_peer_pq(&peer, &advertised, now)?;
         let peer_kem = verified_sealed_kem(&peer, &advertised, &peer_pq)?;
-        let Some(device) = peer.device_ids.first().cloned() else {
-            return Ok(());
-        };
-        let Some(session) = self.storage.load_session(chat_id)? else {
-            return Ok(());
-        };
+        let targets = self.peer_targets(&peer, &advertised, &peer_pq, &peer_kem, now)?;
         let (identity, _) = self.load_identity()?;
 
-        self.send_own_access_key(
-            &identity,
-            chat_id,
-            Some(session),
-            &advertised,
-            &device,
-            &peer_kem,
-            now,
-            rng,
-        )?;
+        // Ключ доступа — каждому устройству, с которым уже есть сессия.
+        for target in &targets {
+            let session_id = crate::session::device_session_id(chat_id, &advertised, &target.identity);
+            if let Some(session) = self.storage.load_session(&session_id)? {
+                self.send_own_access_key(&identity, &advertised, &session_id, Some(session), target, now, rng)?;
+            }
+        }
 
         Ok(())
     }

@@ -121,6 +121,9 @@ pub struct DiscoveryResponse {
     /// прежний сервер.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_list: Option<String>,
+    /// Ключи sealed sender каждого устройства, когда их больше одного.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<DiscoveredDevice>,
 }
 
 /// Публикация предключей устройства.
@@ -518,6 +521,17 @@ pub struct BotResponse {
     /// Сколько секунд ещё действует токен ждущего бота.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_in: Option<i64>,
+}
+
+/// Устройство в ответе discovery: его ключ sealed sender.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredDevice {
+    /// Устройство, UUID.
+    pub device_id: String,
+    /// Ключ ML-KEM-1024 sealed sender, hex.
+    pub sealed_kem_public: String,
+    /// Его подпись ключом устройства, hex.
+    pub sealed_kem_signature: String,
 }
 
 /// Подписанный список устройств аккаунта.

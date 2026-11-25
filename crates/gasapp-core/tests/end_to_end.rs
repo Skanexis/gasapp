@@ -1850,6 +1850,7 @@ impl Transport for FakeServer {
                             200,
                             serde_json::to_string(&DiscoveryResponse {
                                 device_list: None,
+                                devices: Vec::new(),
                                 account_id: account_id.clone(),
                                 identity_key: identity_key.clone(),
                                 sealed_kem_public: state

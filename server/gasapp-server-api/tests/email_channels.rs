@@ -3434,6 +3434,9 @@ async fn a_second_device_is_linked_and_unlinked() {
     let ids = found["device_ids"].as_array().unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(found["device_list"], hex::encode(&with_new));
+    // У нового устройства ещё нет ключа sealed sender — в списке ключей
+    // только основное (если его ключ выложен).
+    assert!(found["devices"].as_array().map_or(0, Vec::len) <= 1);
     let account: Uuid = found["account_id"].as_str().unwrap().parse().unwrap();
     let (status, body) = get(&state, &format!("/v1/accounts/by-id/{account}/device-list")).await;
     assert_eq!(status, StatusCode::OK);
