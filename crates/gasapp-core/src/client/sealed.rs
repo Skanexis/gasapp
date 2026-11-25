@@ -321,12 +321,18 @@ impl<T: Transport> Client<T> {
         let peer = peer_account(account);
         let peer_device = target.device_id.as_str();
 
-        let access_key = self.storage.contact_access_key(&peer)?;
+        // Своим устройствам — свой ключ доступа: он общий для аккаунта.
+        let access_key = if *account == self.own_account(identity)? {
+            self.storage.own_access_key()?.map(|own| own.key)
+        } else {
+            self.storage.contact_access_key(&peer)?
+        };
 
         let (certificate, _) = self.ensure_certificate(identity, now, false)?;
         // 🔐 Гибрид X25519 + ML-KEM-1024: имя отправителя не раскроет
         // и тот, кто записал трафик сейчас и получит квантовый компьютер потом.
-        let sealed = sealed_sender::seal(&target.identity, &target.kem, &certificate, envelope, rng)?;
+        let sealed =
+            sealed_sender::seal(&target.identity, &target.kem, &certificate, envelope, rng)?;
 
         // 🔐 Без ключа доступа — тоже запечатано, но с proof-of-work
         // (см. описание модуля). Отправки за подписью здесь нет:
@@ -446,11 +452,13 @@ impl<T: Transport> Client<T> {
             // навсегда. Повтор здесь безопасен: он начнёт новую сессию
             // с новыми ключами — ни один ключ не используется дважды.
             self.deliver(identity, account, target, &outgoing.envelope, now, rng)?;
-            self.storage.save_session(session_id, &outgoing.session, now)?;
+            self.storage
+                .save_session(session_id, &outgoing.session, now)?;
         } else {
             // Сессия сохраняется до отправки — тот же порядок, что у любого
             // сообщения: потерянное состояние храповика хуже повторной попытки.
-            self.storage.save_session(session_id, &outgoing.session, now)?;
+            self.storage
+                .save_session(session_id, &outgoing.session, now)?;
             self.deliver(identity, account, target, &outgoing.envelope, now, rng)?;
         }
         self.storage
@@ -639,7 +647,13 @@ mod tests {
     fn initial_envelope_binds_by_sender_identity() {
         let certificate = certificate_for(peer());
 
-        assert!(certificate_matches(&own(), &certificate, &peer(), Some(&peer()), None));
+        assert!(certificate_matches(
+            &own(),
+            &certificate,
+            &peer(),
+            Some(&peer()),
+            None
+        ));
         assert!(
             !certificate_matches(&own(), &certificate, &peer(), Some(&stranger()), None),
             "чужой сертификат принят для конверта инициации"
@@ -653,7 +667,13 @@ mod tests {
         let peer_chat = derive_chat_id(&own(), &peer());
         let stranger_chat = derive_chat_id(&own(), &stranger());
 
-        assert!(certificate_matches(&own(), &certificate, &peer(), None, Some(&peer_chat)));
+        assert!(certificate_matches(
+            &own(),
+            &certificate,
+            &peer(),
+            None,
+            Some(&peer_chat)
+        ));
         assert!(
             !certificate_matches(&own(), &certificate, &peer(), None, Some(&stranger_chat)),
             "сертификат собеседника принят в чужой сессии"
@@ -668,14 +688,32 @@ mod tests {
         let certificate = certificate_for(device);
         let account_chat = derive_chat_id(&own(), &peer());
 
-        assert!(certificate_matches(&own(), &certificate, &peer(), None, Some(&account_chat)));
-        assert!(!certificate_matches(&own(), &certificate, &device, None, Some(&account_chat)));
+        assert!(certificate_matches(
+            &own(),
+            &certificate,
+            &peer(),
+            None,
+            Some(&account_chat)
+        ));
+        assert!(!certificate_matches(
+            &own(),
+            &certificate,
+            &device,
+            None,
+            Some(&account_chat)
+        ));
     }
 
     /// Без контекста привязать нельзя — и сертификат не принимается.
     #[test]
     fn unknown_context_never_binds() {
-        assert!(!certificate_matches(&own(), &certificate_for(peer()), &peer(), None, None));
+        assert!(!certificate_matches(
+            &own(),
+            &certificate_for(peer()),
+            &peer(),
+            None,
+            None
+        ));
     }
 
     /// Срок проверяется по времени очереди, если оно есть.

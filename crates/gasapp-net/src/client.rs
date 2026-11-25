@@ -1493,7 +1493,11 @@ impl<T: Transport> ApiClient<T> {
     /// [`GasAppError::SessionNotFound`] — списка нет (одно устройство);
     /// [`GasAppError::Network`] — сбой соединения.
     pub fn device_list_of(&self, account_id: &str) -> Result<crate::api::DeviceListResponse> {
-        parse(&self.send(Method::Get, format!("/v1/accounts/by-id/{account_id}/device-list"), None)?)
+        parse(&self.send(
+            Method::Get,
+            format!("/v1/accounts/by-id/{account_id}/device-list"),
+            None,
+        )?)
     }
 
     /// Новое устройство открывает ящик связывания со своим запросом.
@@ -1503,7 +1507,11 @@ impl<T: Transport> ApiClient<T> {
     /// [`GasAppError::UsernameTaken`] — ящик с таким nonce уже есть;
     /// [`GasAppError::Network`] — сбой соединения.
     pub fn link_open(&self, nonce: &str, request: &crate::api::LinkRequestBody) -> Result<()> {
-        self.send(Method::Post, format!("/v1/link/{nonce}"), Some(to_json(request)?))?;
+        self.send(
+            Method::Post,
+            format!("/v1/link/{nonce}"),
+            Some(to_json(request)?),
+        )?;
         Ok(())
     }
 
@@ -1553,8 +1561,16 @@ impl<T: Transport> ApiClient<T> {
     ///
     /// [`GasAppError::InvalidSignature`] — подпись не принята;
     /// [`GasAppError::UsernameTaken`] — список сменился, пока ждали.
-    pub fn link_complete(&self, nonce: &str, body: &crate::api::LinkCompleteBody) -> Result<RegisterResponse> {
-        parse(&self.send(Method::Post, format!("/v1/link/{nonce}/complete"), Some(to_json(body)?))?)
+    pub fn link_complete(
+        &self,
+        nonce: &str,
+        body: &crate::api::LinkCompleteBody,
+    ) -> Result<RegisterResponse> {
+        parse(&self.send(
+            Method::Post,
+            format!("/v1/link/{nonce}/complete"),
+            Some(to_json(body)?),
+        )?)
     }
 
     /// Основное устройство отключает другое.

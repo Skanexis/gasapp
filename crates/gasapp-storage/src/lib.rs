@@ -4342,7 +4342,10 @@ mod tests {
         );
 
         let attachments = plan("SELECT id FROM attachments WHERE message_id = x'00'");
-        assert!(attachments.contains("attachments_by_message"), "{attachments}");
+        assert!(
+            attachments.contains("attachments_by_message"),
+            "{attachments}"
+        );
 
         let expired = plan(
             "SELECT message_id FROM messages WHERE expires_at IS NOT NULL AND expires_at <= 5",

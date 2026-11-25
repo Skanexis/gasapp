@@ -82,6 +82,9 @@ const KIND_CALLBACK: u8 = 11;
 /// Тип содержимого: таймер исчезающих сообщений чата.
 const KIND_DISAPPEARING_TIMER: u8 = 12;
 
+/// Копия отправленного своим устройствам (`docs/protocol/MULTI-DEVICE.md`).
+const KIND_SENT: u8 = 13;
+
 /// Наибольший таймер исчезающих сообщений — год.
 ///
 /// 🔐 Значение приходит от собеседника. Без предела «таймер» на
@@ -150,6 +153,51 @@ fn read_access_key(reader: &mut Reader<'_>) -> Result<Content> {
         key,
         sender_username,
         device_list,
+    })
+}
+
+/// Копия отправленного: метка, ключ собеседника, имя (0/1 и текст),
+/// вложенное содержимое без padding.
+fn write_sent(
+    out: &mut Vec<u8>,
+    peer: &[u8; 32],
+    peer_username: Option<&str>,
+    content: &Content,
+) -> Result<()> {
+    if matches!(content, Content::Sent { .. }) {
+        return Err(GasAppError::Malformed);
+    }
+    out.push(KIND_SENT);
+    out.extend_from_slice(peer);
+    match peer_username {
+        Some(name) => {
+            out.push(1);
+            write_text(out, name)?;
+        }
+        None => out.push(0),
+    }
+    write_bytes(out, &content.to_unpadded_bytes()?)
+}
+
+/// Разбирает копию отправленного после метки вида.
+fn read_sent(reader: &mut Reader<'_>) -> Result<Content> {
+    let peer: [u8; 32] = reader
+        .take_slice(32)?
+        .try_into()
+        .map_err(|_| GasAppError::Malformed)?;
+    let peer_username = match reader.take_u8()? {
+        0 => None,
+        1 => Some(reader.take_text()?),
+        _ => return Err(GasAppError::Malformed),
+    };
+    let inner = Content::from_unpadded_bytes(&reader.take_blob()?)?;
+    if matches!(inner, Content::Sent { .. }) {
+        return Err(GasAppError::Malformed);
+    }
+    Ok(Content::Sent {
+        peer,
+        peer_username,
+        content: Box::new(inner),
     })
 }
 
@@ -348,6 +396,21 @@ pub enum Content {
         device_list: Option<Vec<u8>>,
     },
 
+    /// Копия отправленного — своим устройствам (`docs/protocol/MULTI-DEVICE.md`).
+    ///
+    /// Сообщение, отправленное собеседнику с одного устройства, уходит и
+    /// остальным устройствам аккаунта: обычными сессиями между своими
+    /// устройствами, сервер видит только шифротекст. Принимается только
+    /// от устройства своего же аккаунта.
+    Sent {
+        /// Ключ аккаунта собеседника, которому отправлено.
+        peer: [u8; 32],
+        /// Его имя — чтобы чат на этом устройстве был с именем.
+        peer_username: Option<String>,
+        /// Само отправленное содержимое (вложенная копия не допускается).
+        content: Box<Content>,
+    },
+
     /// Таймер исчезающих сообщений, заданный отправителем для чата.
     ///
     /// 🔐 Таймер общий для обоих: кто бы его ни поставил, сообщения
@@ -470,12 +533,22 @@ impl Content {
                 out.push(KIND_READ_RECEIPT);
                 out.extend_from_slice(until);
             }
+            Self::Sent {
+                peer,
+                peer_username,
+                content,
+            } => write_sent(&mut out, peer, peer_username.as_deref(), content)?,
             Self::AccessKey {
                 key,
                 sender_username,
                 device_list,
             } => {
-                write_access_key(&mut out, key, sender_username.as_deref(), device_list.as_deref())?;
+                write_access_key(
+                    &mut out,
+                    key,
+                    sender_username.as_deref(),
+                    device_list.as_deref(),
+                )?;
             }
             Self::KtHead { epoch, head } => {
                 out.push(KIND_KT_HEAD);
@@ -601,6 +674,7 @@ impl Content {
                 until: reader.take_id()?,
             },
             KIND_ACCESS_KEY => read_access_key(&mut reader)?,
+            KIND_SENT => read_sent(&mut reader)?,
             KIND_KT_HEAD => {
                 let (epoch, head) = take_kt_head(&mut reader)?;
                 Self::KtHead { epoch, head }
@@ -1202,6 +1276,36 @@ mod tests {
         let bytes = content.to_bytes().expect("сериализация");
 
         assert_eq!(Content::from_bytes(&bytes).expect("разбор"), content);
+    }
+
+    /// Копия отправленного переживает кодирование; вложенная копия —
+    /// нет.
+    #[test]
+    fn a_sent_copy_round_trips() {
+        let inner = Content::Text {
+            body: "привет".to_owned(),
+            reply_to: None,
+            id: [3; 16],
+        };
+        for name in [None, Some("bob".to_owned())] {
+            let content = Content::Sent {
+                peer: [8; 32],
+                peer_username: name,
+                content: Box::new(inner.clone()),
+            };
+            let bytes = content.to_bytes().expect("кодируется");
+            assert_eq!(Content::from_bytes(&bytes).expect("читается"), content);
+        }
+        let nested = Content::Sent {
+            peer: [8; 32],
+            peer_username: None,
+            content: Box::new(Content::Sent {
+                peer: [8; 32],
+                peer_username: None,
+                content: Box::new(inner),
+            }),
+        };
+        assert!(nested.to_bytes().is_err());
     }
 
     /// Список устройств едет в хвосте ключа доступа — с именем и без.

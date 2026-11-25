@@ -21,12 +21,16 @@ use std::sync::Mutex;
 use gasapp_net::api::{LinkCompleteBody, LinkGrantBody, LinkRequestBody, UnlinkBody};
 use gasapp_net::client::Transport;
 use gasapp_protocol::device_link::{self, LinkCode, LinkGrant, LinkSecrets, OpenedGrant};
-use gasapp_protocol::device_list::{check_succession, DeviceEntry, DeviceList, SignedDeviceList, MAX_DEVICES};
+use gasapp_protocol::device_list::{
+    check_succession, DeviceEntry, DeviceList, SignedDeviceList, MAX_DEVICES,
+};
 use gasapp_protocol::keys::IdentityKeyPair;
 use gasapp_protocol::pq_identity::PqIdentityKeyPair;
 use gasapp_protocol::prekeys;
 use gasapp_storage::devices::{KnownDevice, StoredDeviceList};
-use gasapp_types::{AccountId, DeviceId, GasAppError, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp};
+use gasapp_types::{
+    AccountId, DeviceId, GasAppError, PrivateKeyBytes, PublicKeyBytes, Result, Timestamp,
+};
 use rand_core::{CryptoRng, RngCore};
 
 use gasapp_protocol::content::ACCESS_KEY_LEN;
@@ -90,19 +94,38 @@ impl<T: Transport> Client<T> {
     ///
     /// * [`GasAppError::Malformed`] — устройство уже зарегистрировано;
     /// * [`GasAppError::Network`] — сервер недоступен.
-    pub fn start_device_link<R: RngCore + CryptoRng>(&self, now: Timestamp, rng: &mut R) -> Result<String> {
+    pub fn start_device_link<R: RngCore + CryptoRng>(
+        &self,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<String> {
         if self.storage.load_own_keys()?.is_some() {
             return Err(GasAppError::Malformed);
         }
         let identity = prekeys::generate_identity(rng)?;
         let pq = PqIdentityKeyPair::generate(rng);
         let device_id = DeviceId::generate();
-        let secrets = device_link::new_request(*device_id.as_uuid().as_bytes(), &identity, &pq, now.as_millis(), rng);
+        let secrets = device_link::new_request(
+            *device_id.as_uuid().as_bytes(),
+            &identity,
+            &pq,
+            now.as_millis(),
+            rng,
+        );
         let nonce = uuid::Uuid::from_bytes(secrets.request().nonce).to_string();
 
-        self.api.link_open(&nonce, &LinkRequestBody { request: hex(&secrets.request().encode()) })?;
+        self.api.link_open(
+            &nonce,
+            &LinkRequestBody {
+                request: hex(&secrets.request().encode()),
+            },
+        )?;
         let uri = secrets.request().code().to_uri();
-        *self.linking.pending.lock().map_err(|_| GasAppError::Storage)? = Some(PendingLink {
+        *self
+            .linking
+            .pending
+            .lock()
+            .map_err(|_| GasAppError::Storage)? = Some(PendingLink {
             secrets,
             identity,
             pq,
@@ -121,7 +144,11 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::Crypto`], [`GasAppError::InvalidSignature`] —
     ///   грант не для этого запроса или список устройств не сходится.
     pub fn poll_device_link(&self) -> Result<Option<LinkOffer>> {
-        let mut guard = self.linking.pending.lock().map_err(|_| GasAppError::Storage)?;
+        let mut guard = self
+            .linking
+            .pending
+            .lock()
+            .map_err(|_| GasAppError::Storage)?;
         let pending = guard.as_mut().ok_or(GasAppError::Uninitialized)?;
         if let Some(opened) = &pending.opened {
             return Ok(Some(LinkOffer {
@@ -151,7 +178,11 @@ impl<T: Transport> Client<T> {
     ///
     /// * [`GasAppError::Uninitialized`] — гранта ещё нет;
     /// * [`GasAppError::Network`] — сервер недоступен или отказал.
-    pub fn finish_device_link<R: RngCore + CryptoRng>(&self, now: Timestamp, rng: &mut R) -> Result<Account> {
+    pub fn finish_device_link<R: RngCore + CryptoRng>(
+        &self,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<Account> {
         let pending = self
             .linking
             .pending
@@ -172,7 +203,9 @@ impl<T: Transport> Client<T> {
         )?;
         let response = self.api.link_complete(
             &uuid::Uuid::from_bytes(nonce).to_string(),
-            &LinkCompleteBody { signature: hex(&signature) },
+            &LinkCompleteBody {
+                signature: hex(&signature),
+            },
         )?;
         let device_id = parse_uuid(&response.device_id).map(DeviceId::from_uuid)?;
         if device_id != pending.device_id {
@@ -208,12 +241,18 @@ impl<T: Transport> Client<T> {
         // сервер хранит их при устройстве (собеседники проверяют связку
         // по подписанному списку и привязке).
         request.pq_identity_key = Some(hex(&pending.pq.public()));
-        request.identity_binding = Some(hex(&gasapp_protocol::pq_identity::bind(identity, &pending.pq)?));
+        request.identity_binding = Some(hex(&gasapp_protocol::pq_identity::bind(
+            identity,
+            &pending.pq,
+        )?));
         let (kem_public, kem_signature) = self.sealed_kem_publication(identity, rng)?;
         request.sealed_kem_public = Some(kem_public);
         request.sealed_kem_signature = Some(kem_signature);
-        self.api
-            .publish_keys(&device_id.to_string(), &request, &DeviceSigner::new(identity, now))?;
+        self.api.publish_keys(
+            &device_id.to_string(),
+            &request,
+            &DeviceSigner::new(identity, now),
+        )?;
         self.storage.mark_own_sealed_kem_published(now)?;
 
         // Ключ доступа аккаунта — тот же, что у основного: выкладывается и
@@ -226,7 +265,9 @@ impl<T: Transport> Client<T> {
             .map_err(|_| GasAppError::Malformed)?;
         self.storage.init_own_access_key(&access_key)?;
         self.ensure_access_key(identity, now, rng)?;
-        self.storage.log_security_event("device_linked_to_account", None, now)?;
+        self.set_setting_bool(super::devices::MULTI_DEVICE_SETTING, true)?;
+        self.storage
+            .log_security_event("device_linked_to_account", None, now)?;
 
         Ok(Account {
             account_id,
@@ -246,11 +287,20 @@ impl<T: Transport> Client<T> {
     /// * [`GasAppError::InvalidSignature`] — запрос в ящике подменён;
     /// * [`GasAppError::Forbidden`] — это не основное устройство или
     ///   устройств уже предел.
-    pub fn prepare_device_link<R: RngCore + CryptoRng>(&self, uri: &str, now: Timestamp, rng: &mut R) -> Result<String> {
+    pub fn prepare_device_link<R: RngCore + CryptoRng>(
+        &self,
+        uri: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<String> {
         let code = LinkCode::parse(uri)?;
         code.check_fresh(now.as_millis())?;
         let nonce = uuid::Uuid::from_bytes(code.nonce).to_string();
-        let request = device_link::check_request(&code, &unhex(&self.api.link_request(&nonce)?.request)?, now.as_millis())?;
+        let request = device_link::check_request(
+            &code,
+            &unhex(&self.api.link_request(&nonce)?.request)?,
+            now.as_millis(),
+        )?;
 
         let (identity, pq) = self.primary_keys()?;
         let current = self.own_device_list(&identity, &pq, now)?;
@@ -265,13 +315,19 @@ impl<T: Transport> Client<T> {
         });
         let list = DeviceList {
             account_identity: *identity.public().public(),
-            version: current.version.checked_add(1).ok_or(GasAppError::Malformed)?,
+            version: current
+                .version
+                .checked_add(1)
+                .ok_or(GasAppError::Malformed)?,
             issued_at_millis: now.as_millis(),
             devices,
         }
         .sign(&identity, &pq)?;
 
-        let account_id = self.storage.get_account_id()?.ok_or(GasAppError::Uninitialized)?;
+        let account_id = self
+            .storage
+            .get_account_id()?
+            .ok_or(GasAppError::Uninitialized)?;
         // 🔐 Ключ доступа sealed sender — общий для всех устройств аккаунта:
         // собеседник хранит один ключ на аккаунт, и запечатанное сообщение
         // любому устройству проходит с ним.
@@ -285,7 +341,11 @@ impl<T: Transport> Client<T> {
             extra: access_key.to_vec(),
         };
         let seal = device_link::seal_grant(&request, &grant, rng)?;
-        *self.linking.prepared.lock().map_err(|_| GasAppError::Storage)? = Some(PreparedLink {
+        *self
+            .linking
+            .prepared
+            .lock()
+            .map_err(|_| GasAppError::Storage)? = Some(PreparedLink {
             nonce,
             body: LinkGrantBody {
                 grant: hex(&seal.sealed),
@@ -313,9 +373,15 @@ impl<T: Transport> Client<T> {
             .ok_or(GasAppError::Uninitialized)?;
         let (identity, _) = self.load_identity()?;
         let own = self.own_device_id()?.ok_or(GasAppError::Uninitialized)?;
-        self.api
-            .link_grant(&own, &prepared.nonce, &prepared.body, &DeviceSigner::new(&identity, now))?;
-        self.storage.log_security_event("device_link_approved", None, now)?;
+        self.api.link_grant(
+            &own,
+            &prepared.nonce,
+            &prepared.body,
+            &DeviceSigner::new(&identity, now),
+        )?;
+        self.set_setting_bool(super::devices::MULTI_DEVICE_SETTING, true)?;
+        self.storage
+            .log_security_event("device_link_approved", None, now)?;
         Ok(())
     }
 
@@ -384,21 +450,41 @@ impl<T: Transport> Client<T> {
         }
         let list = DeviceList {
             account_identity: *identity.public().public(),
-            version: current.version.checked_add(1).ok_or(GasAppError::Malformed)?,
+            version: current
+                .version
+                .checked_add(1)
+                .ok_or(GasAppError::Malformed)?,
             issued_at_millis: now.as_millis(),
-            devices: current.devices.into_iter().filter(|entry| entry.device_id != target).collect(),
+            devices: current
+                .devices
+                .into_iter()
+                .filter(|entry| entry.device_id != target)
+                .collect(),
         }
         .sign(&identity, &pq)?;
         let own = self.own_device_id()?.ok_or(GasAppError::Uninitialized)?;
         self.api.unlink_device(
             &own,
             device_id,
-            &UnlinkBody { device_list: hex(&list.to_bytes()) },
+            &UnlinkBody {
+                device_list: hex(&list.to_bytes()),
+            },
             &DeviceSigner::new(&identity, now),
         )?;
         self.save_list(identity.public().public(), &list, now)?;
-        self.storage.log_security_event("device_unlinked", None, now)?;
+        self.storage
+            .log_security_event("device_unlinked", None, now)?;
         Ok(())
+    }
+
+    /// Основное ли это устройство: его ключ — ключ аккаунта. Подключать
+    /// и отключать устройства можно только с него.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение не удалось.
+    pub fn is_primary_device(&self) -> Result<bool> {
+        Ok(self.storage.own_account_identity()?.is_none())
     }
 
     /// Ключи основного устройства (они же — ключи аккаунта).
@@ -413,7 +499,12 @@ impl<T: Transport> Client<T> {
     /// Действующий список своих устройств — с сервера, проверенный ключом
     /// аккаунта и правилом версий. Списка ещё нет — одно, это устройство
     /// (версия 0: первая подписанная будет 1).
-    fn own_device_list(&self, identity: &IdentityKeyPair, pq: &PqIdentityKeyPair, now: Timestamp) -> Result<DeviceList> {
+    fn own_device_list(
+        &self,
+        identity: &IdentityKeyPair,
+        pq: &PqIdentityKeyPair,
+        now: Timestamp,
+    ) -> Result<DeviceList> {
         let account = *identity.public().public();
         if let Some(list) = self.refresh_own_list(&account, &pq.public(), now)? {
             return Ok(list.list);
@@ -438,8 +529,16 @@ impl<T: Transport> Client<T> {
 
     /// Свой список с сервера — проверенный и запомненный. `None` — у
     /// аккаунта списка нет.
-    fn refresh_own_list(&self, account: &PublicKeyBytes, account_pq: &[u8], now: Timestamp) -> Result<Option<SignedDeviceList>> {
-        let account_id = self.storage.get_account_id()?.ok_or(GasAppError::Uninitialized)?;
+    fn refresh_own_list(
+        &self,
+        account: &PublicKeyBytes,
+        account_pq: &[u8],
+        now: Timestamp,
+    ) -> Result<Option<SignedDeviceList>> {
+        let account_id = self
+            .storage
+            .get_account_id()?
+            .ok_or(GasAppError::Uninitialized)?;
         let response = match self.api.device_list_of(&account_id.as_uuid().to_string()) {
             Ok(response) => response,
             Err(GasAppError::SessionNotFound) => return Ok(None),
@@ -447,13 +546,21 @@ impl<T: Transport> Client<T> {
         };
         let signed = SignedDeviceList::verify(&unhex(&response.device_list)?, account, account_pq)?;
         let stored = self.storage.device_list(account)?;
-        check_succession(stored.as_ref().map(|list| (list.version, list.digest)), &signed)?;
+        check_succession(
+            stored.as_ref().map(|list| (list.version, list.digest)),
+            &signed,
+        )?;
         self.save_list(account, &signed, now)?;
         Ok(Some(signed))
     }
 
     /// Запоминает проверенный список устройств аккаунта.
-    pub(crate) fn save_list(&self, account: &PublicKeyBytes, signed: &SignedDeviceList, now: Timestamp) -> Result<()> {
+    pub(crate) fn save_list(
+        &self,
+        account: &PublicKeyBytes,
+        signed: &SignedDeviceList,
+        now: Timestamp,
+    ) -> Result<()> {
         let devices: Vec<KnownDevice> = signed
             .list
             .devices
@@ -493,27 +600,49 @@ impl<T: Transport> Client<T> {
     /// Подпись, наличие устройства в списке и правило версий — всегда.
     /// Не сошлось — устройство остаётся незнакомым.
     pub(crate) fn learn_device_list(&self, device: &PublicKeyBytes, bytes: &[u8], now: Timestamp) {
-        let Some(split) = bytes.len().checked_sub(gasapp_protocol::pq_identity::HYBRID_SIGNATURE_LEN) else {
+        let Some(split) = bytes
+            .len()
+            .checked_sub(gasapp_protocol::pq_identity::HYBRID_SIGNATURE_LEN)
+        else {
             return;
         };
-        let Some(Ok(list)) = bytes.get(..split).map(DeviceList::decode) else { return };
-        let Some(primary) = list.devices.iter().find(|entry| entry.identity == list.account_identity) else {
+        let Some(Ok(list)) = bytes.get(..split).map(DeviceList::decode) else {
+            return;
+        };
+        let Some(primary) = list
+            .devices
+            .iter()
+            .find(|entry| entry.identity == list.account_identity)
+        else {
             return;
         };
         if !list.devices.iter().any(|entry| entry.identity == *device) {
             return;
         }
         let account = list.account_identity;
-        let known_hash = self.storage.contact_pq_hash(&super::peer_account(&account)).ok().flatten();
-        if known_hash.is_some_and(|hash| hash != gasapp_protocol::pq_identity::pq_identity_hash(&primary.pq_identity)) {
-            let _ = self.storage.log_security_event("device_list_pq_mismatch", None, now);
+        let known_hash = self
+            .storage
+            .contact_pq_hash(&super::peer_account(&account))
+            .ok()
+            .flatten();
+        if known_hash.is_some_and(|hash| {
+            hash != gasapp_protocol::pq_identity::pq_identity_hash(&primary.pq_identity)
+        }) {
+            let _ = self
+                .storage
+                .log_security_event("device_list_pq_mismatch", None, now);
             return;
         }
         let Ok(signed) = SignedDeviceList::verify(bytes, &account, &primary.pq_identity) else {
             return;
         };
         let stored = self.storage.device_list(&account).ok().flatten();
-        if check_succession(stored.as_ref().map(|list| (list.version, list.digest)), &signed).is_ok() {
+        if check_succession(
+            stored.as_ref().map(|list| (list.version, list.digest)),
+            &signed,
+        )
+        .is_ok()
+        {
             let _ = self.save_list(&account, &signed, now);
         }
     }

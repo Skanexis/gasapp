@@ -67,7 +67,8 @@ const KEM_PUBLIC_LEN: usize = MlKem768PublicKey::LEN;
 const KEM_CIPHERTEXT_LEN: usize = MlKem768PublicKey::CIPHERTEXT_LEN;
 const MAX_USERNAME_BYTES: usize = 64;
 /// Длина запроса: магия, версия, ящик, срок, устройство, ключи.
-const REQUEST_LEN: usize = 4 + 1 + NONCE_LEN + 8 + DEVICE_ID_LEN + 32 + PQ_PUBLIC_LEN + 32 + KEM_PUBLIC_LEN;
+const REQUEST_LEN: usize =
+    4 + 1 + NONCE_LEN + 8 + DEVICE_ID_LEN + 32 + PQ_PUBLIC_LEN + 32 + KEM_PUBLIC_LEN;
 /// Длина содержимого QR: версия, ящик, срок, хеш.
 const CODE_LEN: usize = 1 + NONCE_LEN + 8 + 32;
 /// Длина заголовка конверта: магия, эфемерный ключ, шифротекст ML-KEM, nonce.
@@ -216,7 +217,11 @@ impl LinkCode {
         bytes.extend_from_slice(&self.nonce);
         bytes.extend_from_slice(&self.expires_at_millis.to_be_bytes());
         bytes.extend_from_slice(&self.commitment);
-        let mut uri = String::with_capacity(LINK_SCHEME.len().saturating_add(bytes.len().saturating_mul(2)));
+        let mut uri = String::with_capacity(
+            LINK_SCHEME
+                .len()
+                .saturating_add(bytes.len().saturating_mul(2)),
+        );
         uri.push_str(LINK_SCHEME);
         for byte in bytes {
             let _ = write!(uri, "{byte:02x}");
@@ -230,7 +235,10 @@ impl LinkCode {
     ///
     /// [`GasAppError::Malformed`] — не ссылка связывания.
     pub fn parse(uri: &str) -> Result<Self> {
-        let hex = uri.trim().strip_prefix(LINK_SCHEME).ok_or(GasAppError::Malformed)?;
+        let hex = uri
+            .trim()
+            .strip_prefix(LINK_SCHEME)
+            .ok_or(GasAppError::Malformed)?;
         let bytes = decode_hex(hex)?;
         let mut reader = Reader(&bytes);
         if reader.array::<1>()? != [LINK_VERSION] {
@@ -254,7 +262,9 @@ impl LinkCode {
         let latest = now_millis
             .saturating_add(LINK_TTL_MILLIS)
             .saturating_add(CLOCK_SLACK_MILLIS);
-        if self.expires_at_millis < now_millis.saturating_sub(CLOCK_SLACK_MILLIS) || self.expires_at_millis > latest {
+        if self.expires_at_millis < now_millis.saturating_sub(CLOCK_SLACK_MILLIS)
+            || self.expires_at_millis > latest
+        {
             return Err(GasAppError::Malformed);
         }
         Ok(())
@@ -269,7 +279,11 @@ impl LinkCode {
 ///   ящик или срок запроса расходится с QR;
 /// * [`GasAppError::InvalidSignature`] — хеш запроса не совпал с QR:
 ///   запрос подменён.
-pub fn check_request(code: &LinkCode, request_bytes: &[u8], now_millis: i64) -> Result<LinkRequest> {
+pub fn check_request(
+    code: &LinkCode,
+    request_bytes: &[u8],
+    now_millis: i64,
+) -> Result<LinkRequest> {
     code.check_fresh(now_millis)?;
     let request = LinkRequest::decode(request_bytes)?;
     if request.nonce != code.nonce || request.expires_at_millis != code.expires_at_millis {
@@ -301,7 +315,8 @@ pub struct LinkGrant {
 impl LinkGrant {
     fn encode(&self) -> Result<Vec<u8>> {
         let name = self.username.as_bytes();
-        if name.is_empty() || name.len() > MAX_USERNAME_BYTES || self.extra.len() > MAX_EXTRA_BYTES {
+        if name.is_empty() || name.len() > MAX_USERNAME_BYTES || self.extra.len() > MAX_EXTRA_BYTES
+        {
             return Err(GasAppError::Malformed);
         }
         let mut out = Vec::new();
@@ -317,7 +332,8 @@ impl LinkGrant {
     fn decode(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader(bytes);
         let account_id = reader.array()?;
-        let username = String::from_utf8(reader.bytes(MAX_USERNAME_BYTES)?.to_vec()).map_err(|_| GasAppError::Malformed)?;
+        let username = String::from_utf8(reader.bytes(MAX_USERNAME_BYTES)?.to_vec())
+            .map_err(|_| GasAppError::Malformed)?;
         let grant = Self {
             account_id,
             username,
@@ -345,22 +361,40 @@ pub struct GrantSeal {
 ///
 /// * [`GasAppError::Malformed`] — грант не проходит пределы;
 /// * [`GasAppError::Crypto`] — ключ запроса негоден или сбой шифра.
-pub fn seal_grant<R: RngCore + CryptoRng>(request: &LinkRequest, grant: &LinkGrant, rng: &mut R) -> Result<GrantSeal> {
+pub fn seal_grant<R: RngCore + CryptoRng>(
+    request: &LinkRequest,
+    grant: &LinkGrant,
+    rng: &mut R,
+) -> Result<GrantSeal> {
     let plain = Zeroizing::new(grant.encode()?);
     let ephemeral = X25519PrivateKey::generate(rng);
-    let classical = Zeroizing::new(ephemeral.diffie_hellman(&X25519PublicKey::from_bytes(request.ephemeral)?)?);
-    let (post_quantum, kem_ciphertext) = MlKem768PublicKey::from_bytes(&request.kem_public)?.encapsulate(rng);
+    let classical =
+        Zeroizing::new(ephemeral.diffie_hellman(&X25519PublicKey::from_bytes(request.ephemeral)?)?);
+    let (post_quantum, kem_ciphertext) =
+        MlKem768PublicKey::from_bytes(&request.kem_public)?.encapsulate(rng);
     let post_quantum = Zeroizing::new(post_quantum);
     let ephemeral_public = ephemeral.public_key().as_bytes();
     let commitment = request.commitment();
-    let (key, code) = derive(&classical, &post_quantum, &commitment, &ephemeral_public, &kem_ciphertext)?;
+    let (key, code) = derive(
+        &classical,
+        &post_quantum,
+        &commitment,
+        &ephemeral_public,
+        &kem_ciphertext,
+    )?;
 
     let mut nonce = [0u8; AEAD_NONCE_LEN];
     rng.fill_bytes(&mut nonce);
     let cipher = Aes256Gcm::new_from_slice(key.as_ref()).map_err(|_| GasAppError::Crypto)?;
     let aad = aad(&commitment);
     let ciphertext = cipher
-        .encrypt(Nonce::from_slice(&nonce), Payload { msg: &plain, aad: &aad })
+        .encrypt(
+            Nonce::from_slice(&nonce),
+            Payload {
+                msg: &plain,
+                aad: &aad,
+            },
+        )
         .map_err(|_| GasAppError::Crypto)?;
 
     let mut sealed = Vec::with_capacity(SEALED_HEADER_LEN.saturating_add(ciphertext.len()));
@@ -400,21 +434,41 @@ pub fn open_grant(secrets: &LinkSecrets, sealed: &[u8]) -> Result<OpenedGrant> {
     let nonce: [u8; AEAD_NONCE_LEN] = reader.array()?;
     let ciphertext = reader.0;
 
-    let classical = Zeroizing::new(secrets.ephemeral.diffie_hellman(&X25519PublicKey::from_bytes(ephemeral_public)?)?);
+    let classical = Zeroizing::new(
+        secrets
+            .ephemeral
+            .diffie_hellman(&X25519PublicKey::from_bytes(ephemeral_public)?)?,
+    );
     let post_quantum = Zeroizing::new(secrets.kem.decapsulate(kem_ciphertext)?);
     let commitment = secrets.request.commitment();
-    let (key, code) = derive(&classical, &post_quantum, &commitment, &ephemeral_public, kem_ciphertext)?;
+    let (key, code) = derive(
+        &classical,
+        &post_quantum,
+        &commitment,
+        &ephemeral_public,
+        kem_ciphertext,
+    )?;
 
     let cipher = Aes256Gcm::new_from_slice(key.as_ref()).map_err(|_| GasAppError::Crypto)?;
     let aad = aad(&commitment);
     let plain = Zeroizing::new(
         cipher
-            .decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad: &aad })
+            .decrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: ciphertext,
+                    aad: &aad,
+                },
+            )
             .map_err(|_| GasAppError::Crypto)?,
     );
     let grant = LinkGrant::decode(&plain)?;
 
-    let device_list = SignedDeviceList::verify(&grant.device_list, &grant.account_identity, &grant.account_pq)?;
+    let device_list = SignedDeviceList::verify(
+        &grant.device_list,
+        &grant.account_identity,
+        &grant.account_pq,
+    )?;
     let me = &secrets.request;
     let listed = device_list
         .list
@@ -450,7 +504,12 @@ fn derive(
     ikm.extend_from_slice(post_quantum);
     // Информация связывает ключ с этим конвертом: эфемерным ключом и
     // шифротекстом ML-KEM.
-    let mut info = Vec::with_capacity(KEY_INFO.len().saturating_add(32).saturating_add(kem_ciphertext.len()));
+    let mut info = Vec::with_capacity(
+        KEY_INFO
+            .len()
+            .saturating_add(32)
+            .saturating_add(kem_ciphertext.len()),
+    );
     info.extend_from_slice(KEY_INFO);
     info.extend_from_slice(ephemeral.as_bytes());
     info.extend_from_slice(kem_ciphertext);
@@ -463,7 +522,9 @@ fn derive(
     code_info.extend_from_slice(CODE_INFO);
     code_info.extend_from_slice(&info);
     crate::aead::hkdf_sha256(Some(commitment), &ikm, &code_info, &mut code_bytes)?;
-    let number = u32::from_be_bytes(code_bytes).checked_rem(1_000_000).unwrap_or(0);
+    let number = u32::from_be_bytes(code_bytes)
+        .checked_rem(1_000_000)
+        .unwrap_or(0);
     Ok((key, format!("{number:06}")))
 }
 
@@ -507,7 +568,8 @@ impl<'a> Reader<'a> {
     }
 
     fn bytes(&mut self, limit: usize) -> Result<&'a [u8]> {
-        let length = usize::try_from(u32::from_be_bytes(self.array()?)).map_err(|_| GasAppError::Malformed)?;
+        let length = usize::try_from(u32::from_be_bytes(self.array()?))
+            .map_err(|_| GasAppError::Malformed)?;
         if length > limit {
             return Err(GasAppError::Malformed);
         }
@@ -563,7 +625,10 @@ mod tests {
         }
         .sign(&account.identity, &account.pq)
         .unwrap();
-        assert_eq!(list.list.device(&request.device_id).map(|d| d.identity), Some(request.identity));
+        assert_eq!(
+            list.list.device(&request.device_id).map(|d| d.identity),
+            Some(request.identity)
+        );
         LinkGrant {
             account_id: [7; 16],
             username: "anna_k".into(),
@@ -602,7 +667,12 @@ mod tests {
         let code = secrets.request().code();
         let request = secrets.request().encode();
 
-        assert!(check_request(&code, &request, NOW + LINK_TTL_MILLIS + CLOCK_SLACK_MILLIS + 1).is_err());
+        assert!(check_request(
+            &code,
+            &request,
+            NOW + LINK_TTL_MILLIS + CLOCK_SLACK_MILLIS + 1
+        )
+        .is_err());
 
         let mut far = code;
         far.expires_at_millis = NOW + 10 * LINK_TTL_MILLIS;
@@ -636,8 +706,10 @@ mod tests {
         let secrets = new_request([2; DEVICE_ID_LEN], &new.identity, &new.pq, NOW, &mut OsRng);
         let request = secrets.request().clone();
 
-        let genuine = seal_grant(&request, &grant_for(&account, &request, &new), &mut OsRng).unwrap();
-        let forged = seal_grant(&request, &grant_for(&attacker, &request, &new), &mut OsRng).unwrap();
+        let genuine =
+            seal_grant(&request, &grant_for(&account, &request, &new), &mut OsRng).unwrap();
+        let forged =
+            seal_grant(&request, &grant_for(&attacker, &request, &new), &mut OsRng).unwrap();
         let opened = open_grant(&secrets, &forged.sealed).unwrap();
         assert_ne!(opened.code, genuine.code);
     }
@@ -663,7 +735,10 @@ mod tests {
         .unwrap()
         .to_bytes();
         let sealed = seal_grant(&request, &wrong, &mut OsRng).unwrap();
-        assert!(matches!(open_grant(&secrets, &sealed.sealed), Err(GasAppError::InvalidSignature)));
+        assert!(matches!(
+            open_grant(&secrets, &sealed.sealed),
+            Err(GasAppError::InvalidSignature)
+        ));
 
         // Подменённый байт конверта.
         let mut tampered = seal_grant(&request, &grant, &mut OsRng).unwrap().sealed;

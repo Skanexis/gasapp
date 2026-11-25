@@ -371,7 +371,11 @@ fn find_one_time_kem(
 /// аккаунта) ключ сессии и есть идентификатор чата: так хранились все
 /// сессии до нескольких устройств, и переносить их не нужно.
 #[must_use]
-pub fn device_session_id(chat_id: &ChatId, peer_account: &PublicKeyBytes, peer_device: &PublicKeyBytes) -> ChatId {
+pub fn device_session_id(
+    chat_id: &ChatId,
+    peer_account: &PublicKeyBytes,
+    peer_device: &PublicKeyBytes,
+) -> ChatId {
     use sha2::{Digest, Sha256};
 
     if peer_account == peer_device {
@@ -605,7 +609,10 @@ mod tests {
         assert_eq!(device_session_id(&chat, &other, &other), chat);
         let linked = device_session_id(&chat, &other, &PublicKeyBytes::new([3; 32]));
         assert_ne!(linked, chat);
-        assert_ne!(linked, device_session_id(&chat, &other, &PublicKeyBytes::new([4; 32])));
+        assert_ne!(
+            linked,
+            device_session_id(&chat, &other, &PublicKeyBytes::new([4; 32]))
+        );
     }
 
     #[test]

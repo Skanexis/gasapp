@@ -341,7 +341,10 @@ fn sealed_report_request_matches_server_contract() {
         ..request
     };
     let json = serde_json::to_string(&request).unwrap();
-    assert_eq!(field_names(&json), vec!["certificate", "evidence", "reason"]);
+    assert_eq!(
+        field_names(&json),
+        vec!["certificate", "evidence", "reason"]
+    );
 }
 
 /// Ответ на жалобу разбирается в клиентский тип.

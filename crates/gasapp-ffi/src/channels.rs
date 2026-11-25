@@ -11,9 +11,9 @@
 //! ничем не подписанные: интерфейс показывает их как статистику.
 
 use gasapp_core::client::{
-    AccountRestriction, AttachmentFile, BotInfo, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry,
-    ChannelJoinRequestInfo, ChannelMember, ChannelPreview, ChannelRole, PendingChannelJoin,
-    CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
+    AccountRestriction, AttachmentFile, BotInfo, Channel, ChannelAdminInfo, ChannelAttachment,
+    ChannelEntry, ChannelJoinRequestInfo, ChannelMember, ChannelPreview, ChannelRole,
+    PendingChannelJoin, CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
 };
 use gasapp_types::Timestamp;
 

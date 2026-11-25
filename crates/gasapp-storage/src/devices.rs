@@ -42,7 +42,9 @@ pub struct StoredDeviceList {
 }
 
 fn key(bytes: Vec<u8>) -> Result<PublicKeyBytes> {
-    Ok(PublicKeyBytes::new(bytes.try_into().map_err(|_| GasAppError::Storage)?))
+    Ok(PublicKeyBytes::new(
+        bytes.try_into().map_err(|_| GasAppError::Storage)?,
+    ))
 }
 
 impl Storage {
@@ -70,7 +72,10 @@ impl Storage {
             )
             .map_err(storage_error)?;
         transaction
-            .execute("DELETE FROM device_keys WHERE account_identity = ?1", params![account.as_bytes()])
+            .execute(
+                "DELETE FROM device_keys WHERE account_identity = ?1",
+                params![account.as_bytes()],
+            )
             .map_err(storage_error)?;
         for device in devices {
             transaction
@@ -124,7 +129,11 @@ impl Storage {
             .map_err(storage_error)?;
         let rows = statement
             .query_map(params![account.as_bytes()], |row| {
-                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?, row.get::<_, Vec<u8>>(2)?))
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
             })
             .map_err(storage_error)?;
         rows.map(|row| {
@@ -184,12 +193,15 @@ impl Storage {
     pub fn own_account_identity(&self) -> Result<Option<(PublicKeyBytes, Vec<u8>)>> {
         let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
         let row: Option<(Vec<u8>, Vec<u8>)> = connection
-            .query_row("SELECT identity, pq_identity FROM own_account WHERE id = 1", [], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            .query_row(
+                "SELECT identity, pq_identity FROM own_account WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .optional()
             .map_err(storage_error)?;
-        row.map(|(identity, pq)| Ok((key(identity)?, pq))).transpose()
+        row.map(|(identity, pq)| Ok((key(identity)?, pq)))
+            .transpose()
     }
 }
 
@@ -219,26 +231,54 @@ mod tests {
         let now = Timestamp::from_millis(1);
 
         assert!(storage.device_list(&account).unwrap().is_none());
-        assert!(storage.account_of_device(&PublicKeyBytes::new([2; 32])).unwrap().is_none());
+        assert!(storage
+            .account_of_device(&PublicKeyBytes::new([2; 32]))
+            .unwrap()
+            .is_none());
 
-        let first = StoredDeviceList { version: 2, digest: [9; 32], signed: vec![1, 2, 3] };
-        storage.save_device_list(&account, &first, &[device(1), device(2)], now).unwrap();
+        let first = StoredDeviceList {
+            version: 2,
+            digest: [9; 32],
+            signed: vec![1, 2, 3],
+        };
+        storage
+            .save_device_list(&account, &first, &[device(1), device(2)], now)
+            .unwrap();
         assert_eq!(storage.device_list(&account).unwrap(), Some(first));
-        assert_eq!(storage.known_devices(&account).unwrap(), vec![device(1), device(2)]);
-        assert_eq!(storage.account_of_device(&PublicKeyBytes::new([2; 32])).unwrap(), Some(account));
+        assert_eq!(
+            storage.known_devices(&account).unwrap(),
+            vec![device(1), device(2)]
+        );
+        assert_eq!(
+            storage
+                .account_of_device(&PublicKeyBytes::new([2; 32]))
+                .unwrap(),
+            Some(account)
+        );
 
         // Устройство отключено — забыто.
-        let second = StoredDeviceList { version: 3, digest: [8; 32], signed: vec![4] };
-        storage.save_device_list(&account, &second, &[device(1)], now).unwrap();
+        let second = StoredDeviceList {
+            version: 3,
+            digest: [8; 32],
+            signed: vec![4],
+        };
+        storage
+            .save_device_list(&account, &second, &[device(1)], now)
+            .unwrap();
         assert_eq!(storage.known_devices(&account).unwrap(), vec![device(1)]);
-        assert!(storage.account_of_device(&PublicKeyBytes::new([2; 32])).unwrap().is_none());
+        assert!(storage
+            .account_of_device(&PublicKeyBytes::new([2; 32]))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn own_account_identity_is_absent_on_a_primary_device() {
         let (storage, _dir) = open_temp();
         assert!(storage.own_account_identity().unwrap().is_none());
-        storage.set_own_account_identity(&PublicKeyBytes::new([5; 32]), &[6, 6]).unwrap();
+        storage
+            .set_own_account_identity(&PublicKeyBytes::new([5; 32]), &[6, 6])
+            .unwrap();
         assert_eq!(
             storage.own_account_identity().unwrap(),
             Some((PublicKeyBytes::new([5; 32]), vec![6, 6]))

@@ -2315,7 +2315,10 @@ async fn a_report_carries_a_reason_and_sealed_evidence() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["recorded"], true);
-    assert_eq!(body["evidence_stored"], false, "без ключа админ-центра улики не хранятся");
+    assert_eq!(
+        body["evidence_stored"], false,
+        "без ключа админ-центра улики не хранятся"
+    );
 
     // Админ-центр завёл ключ — узел отдаёт его и принимает улики.
     sqlx::query("UPDATE admin_state SET evidence_key = $1 WHERE id = 1")
@@ -2336,7 +2339,10 @@ async fn a_report_carries_a_reason_and_sealed_evidence() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["recorded"], false, "повторная жалоба не считается второй");
+    assert_eq!(
+        body["recorded"], false,
+        "повторная жалоба не считается второй"
+    );
     assert_eq!(body["evidence_stored"], true);
 
     let account: Uuid = sqlx::query_scalar("SELECT account_id FROM devices WHERE device_id = $1")
@@ -2344,11 +2350,12 @@ async fn a_report_carries_a_reason_and_sealed_evidence() {
         .fetch_one(&state.pool)
         .await
         .unwrap();
-    let stored: Vec<u8> = sqlx::query_scalar("SELECT sealed FROM report_evidence WHERE reported_account = $1")
-        .bind(account)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap();
+    let stored: Vec<u8> =
+        sqlx::query_scalar("SELECT sealed FROM report_evidence WHERE reported_account = $1")
+            .bind(account)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
     assert_eq!(stored, sealed);
     let reason: Option<i16> =
         sqlx::query_scalar("SELECT reason FROM sealed_sender_reports WHERE reported_account = $1")

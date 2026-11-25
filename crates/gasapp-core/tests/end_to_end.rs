@@ -1146,7 +1146,11 @@ fn account_of(state: &ServerState, device_id: &str) -> Option<String> {
 }
 
 /// Связывание устройств — как `gasapp-server-api::linking`.
-fn link_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> Option<HttpResponse> {
+fn link_route(
+    state: &mut ServerState,
+    request: &HttpRequest,
+    signed: bool,
+) -> Option<HttpResponse> {
     let path = request.path.as_str();
     let body = request.body.as_deref().unwrap_or_default();
 
@@ -1178,7 +1182,9 @@ fn link_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> O
                 _ => plain(404, String::new()),
             },
             (Method::Post, "complete") => {
-                let Some((request, Some(_), Some((account, list)))) = state.link_boxes.remove(&nonce) else {
+                let Some((request, Some(_), Some((account, list)))) =
+                    state.link_boxes.remove(&nonce)
+                else {
                     return Some(plain(404, String::new()));
                 };
                 // Запрос: магия, версия, ящик, срок, устройство, ключ.
@@ -1186,9 +1192,16 @@ fn link_route(state: &mut ServerState, request: &HttpRequest, signed: bool) -> O
                 let device = uuid::Uuid::from_slice(bytes.get(29..45)?).ok()?.to_string();
                 let identity = hex::encode(bytes.get(45..77)?);
                 state.device_identity.insert(device.clone(), identity);
-                state.linked.entry(account.clone()).or_default().push(device.clone());
+                state
+                    .linked
+                    .entry(account.clone())
+                    .or_default()
+                    .push(device.clone());
                 state.device_lists.insert(account.clone(), list);
-                plain(200, format!(r#"{{"account_id":"{account}","device_id":"{device}"}}"#))
+                plain(
+                    200,
+                    format!(r#"{{"account_id":"{account}","device_id":"{device}"}}"#),
+                )
             }
             _ => plain(404, String::new()),
         });
@@ -1791,7 +1804,8 @@ impl Transport for FakeServer {
                     || path.starts_with("/v1/devices/")
                     || path.starts_with("/v1/accounts/by-id/") =>
             {
-                return Ok(link_route(&mut state, request, signed).unwrap_or_else(|| plain(400, String::new())));
+                return Ok(link_route(&mut state, request, signed)
+                    .unwrap_or_else(|| plain(400, String::new())));
             }
             // Боты — отдельной функцией (`bot_route`).
             (_, path) if path.starts_with("/v1/bots/") => {
@@ -1948,7 +1962,8 @@ impl Transport for FakeServer {
                         let device_id = state.devices.get(account_id).cloned().unwrap_or_default();
                         let pq = state.pq.get(identity_key).cloned();
                         let mut device_ids = vec![device_id.clone()];
-                        device_ids.extend(state.linked.get(account_id).cloned().unwrap_or_default());
+                        device_ids
+                            .extend(state.linked.get(account_id).cloned().unwrap_or_default());
                         let devices = if device_ids.len() > 1 {
                             device_ids
                                 .iter()
@@ -1957,7 +1972,9 @@ impl Transport for FakeServer {
                                     Some(gasapp_net::api::DiscoveredDevice {
                                         device_id: device.clone(),
                                         sealed_kem_public: bundle.sealed_kem_public.clone()?,
-                                        sealed_kem_signature: bundle.sealed_kem_signature.clone()?,
+                                        sealed_kem_signature: bundle
+                                            .sealed_kem_signature
+                                            .clone()?,
                                     })
                                 })
                                 .collect()
@@ -9370,7 +9387,10 @@ fn a_linked_device_receives_and_sends_in_the_same_chat() {
         .expect("запрос проверен");
     alice.approve_device_link(now()).expect("грант");
 
-    let offer = phone.poll_device_link().expect("опрос").expect("грант пришёл");
+    let offer = phone
+        .poll_device_link()
+        .expect("опрос")
+        .expect("грант пришёл");
     assert_eq!(offer.code, code, "цифры на двух экранах совпадают");
     assert_eq!(offer.username, "alice");
     let phone_device = phone
@@ -9386,13 +9406,25 @@ fn a_linked_device_receives_and_sends_in_the_same_chat() {
     );
     let devices = alice.own_devices(now()).expect("устройства");
     assert_eq!(devices.len(), 2);
-    assert!(devices.iter().any(|device| device.this_device && device.primary));
+    assert!(devices
+        .iter()
+        .any(|device| device.this_device && device.primary));
 
     // Боб пишет Алисе — приходит на оба устройства, в один чат.
     bob.send_message("alice", "hi both", later(1), &mut OsRng)
         .expect("отправлено");
-    assert_eq!(alice.receive_messages(&alice_device, later(2)).expect("приём"), 1);
-    assert_eq!(phone.receive_messages(&phone_device, later(2)).expect("приём"), 1);
+    assert_eq!(
+        alice
+            .receive_messages(&alice_device, later(2))
+            .expect("приём"),
+        1
+    );
+    assert_eq!(
+        phone
+            .receive_messages(&phone_device, later(2))
+            .expect("приём"),
+        1
+    );
     assert_eq!(texts_of(&phone), vec!["hi both".to_owned()]);
     assert_eq!(phone.chats().expect("чаты"), alice.chats().expect("чаты"));
 
@@ -9404,16 +9436,30 @@ fn a_linked_device_receives_and_sends_in_the_same_chat() {
     phone
         .send_message("bob", "from the phone", later(3), &mut OsRng)
         .expect("ответ отправлен");
-    assert_eq!(bob.receive_messages(&bob_device, later(4)).expect("приём"), 1);
-    assert_eq!(bob.chats().expect("чаты").len(), 1, "ответ — в чате с Алисой");
+    assert_eq!(
+        bob.receive_messages(&bob_device, later(4)).expect("приём"),
+        1
+    );
+    assert_eq!(
+        bob.chats().expect("чаты").len(),
+        1,
+        "ответ — в чате с Алисой"
+    );
     assert!(texts_of(&bob).contains(&"from the phone".to_owned()));
 
     // Отключение: дальше Боб пишет только основному устройству.
-    alice.unlink_device(&phone_device, later(5)).expect("отключено");
+    alice
+        .unlink_device(&phone_device, later(5))
+        .expect("отключено");
     assert_eq!(alice.own_devices(later(5)).expect("устройства").len(), 1);
     bob.send_message("alice", "only primary", later(6), &mut OsRng)
         .expect("отправлено");
-    assert_eq!(alice.receive_messages(&alice_device, later(7)).expect("приём"), 1);
+    assert_eq!(
+        alice
+            .receive_messages(&alice_device, later(7))
+            .expect("приём"),
+        1
+    );
     assert!(phone
         .receive_messages(&phone_device, later(7))
         .map_or(true, |received| received == 0));
@@ -9429,12 +9475,25 @@ fn only_the_primary_links_and_stale_codes_are_refused() {
 
     let phone = Client::new(server.clone(), open_storage(&dir, "phone.db"));
     let uri = phone.start_device_link(now(), &mut OsRng).expect("QR");
-    assert!(alice.prepare_device_link(&uri, later(120), &mut OsRng).is_err());
+    assert!(alice
+        .prepare_device_link(&uri, later(120), &mut OsRng)
+        .is_err());
 
-    let code = alice.prepare_device_link(&uri, now(), &mut OsRng).expect("запрос");
+    let code = alice
+        .prepare_device_link(&uri, now(), &mut OsRng)
+        .expect("запрос");
     alice.approve_device_link(now()).expect("грант");
-    assert_eq!(phone.poll_device_link().expect("опрос").expect("грант").code, code);
-    phone.finish_device_link(now(), &mut OsRng).expect("подключено");
+    assert_eq!(
+        phone
+            .poll_device_link()
+            .expect("опрос")
+            .expect("грант")
+            .code,
+        code
+    );
+    phone
+        .finish_device_link(now(), &mut OsRng)
+        .expect("подключено");
 
     let third = Client::new(server.clone(), open_storage(&dir, "third.db"));
     let uri = third.start_device_link(now(), &mut OsRng).expect("QR");
@@ -9442,4 +9501,88 @@ fn only_the_primary_links_and_stale_codes_are_refused() {
         phone.prepare_device_link(&uri, now(), &mut OsRng),
         Err(GasAppError::Forbidden)
     ));
+}
+
+/// Копии отправленного (`docs/protocol/MULTI-DEVICE.md`, §4): сообщение,
+/// отправленное с одного устройства, появляется исходящим и на другом —
+/// в том же чате; удаление «у всех» тоже доходит.
+#[test]
+fn sent_messages_appear_on_the_other_own_device() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let phone = Client::new(server.clone(), open_storage(&dir, "alice-phone.db"));
+    let uri = phone.start_device_link(now(), &mut OsRng).expect("QR");
+    alice
+        .prepare_device_link(&uri, now(), &mut OsRng)
+        .expect("запрос");
+    alice.approve_device_link(now()).expect("грант");
+    phone.poll_device_link().expect("опрос").expect("грант");
+    let phone_device = phone
+        .finish_device_link(now(), &mut OsRng)
+        .expect("подключено")
+        .device_id
+        .to_string();
+
+    // Основное пишет Бобу — копия на втором устройстве, исходящей.
+    let sent = alice
+        .send_message("bob", "from the laptop", later(1), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        bob.receive_messages(&bob_device, later(2)).expect("приём"),
+        1
+    );
+    assert_eq!(
+        phone
+            .receive_messages(&phone_device, later(2))
+            .expect("приём"),
+        1
+    );
+    let chat = phone.chats().expect("чаты")[0];
+    assert_eq!(chat, alice.chats().expect("чаты")[0], "тот же чат");
+    let copies = phone.messages(&chat, 10).expect("сообщения");
+    assert_eq!(copies.len(), 1);
+    assert_eq!(copies[0].text, "from the laptop");
+    assert!(copies[0].outgoing, "своё сообщение — исходящее");
+    assert_eq!(copies[0].message_id, sent);
+
+    // Второе устройство пишет — копия на основном.
+    let contact = phone.discover_contact("bob", later(3)).expect("Боб найден");
+    phone
+        .set_contact_verified(&contact.account_id, true, later(3))
+        .expect("сверен");
+    phone
+        .send_message("bob", "from the phone", later(3), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        alice
+            .receive_messages(&alice_device, later(4))
+            .expect("приём"),
+        1
+    );
+    let texts: Vec<String> = alice
+        .messages(&chat, 10)
+        .expect("сообщения")
+        .into_iter()
+        .filter(|message| message.outgoing)
+        .map(|message| message.text)
+        .collect();
+    assert_eq!(
+        texts,
+        vec!["from the laptop".to_owned(), "from the phone".to_owned()]
+    );
+
+    // Удаление у всех — и на втором устройстве.
+    alice
+        .delete_for_everyone("bob", &sent, later(5), &mut OsRng)
+        .expect("удалено");
+    phone
+        .receive_messages(&phone_device, later(6))
+        .expect("приём");
+    assert!(phone
+        .messages(&chat, 10)
+        .expect("сообщения")
+        .iter()
+        .all(|message| message.message_id != sent));
 }

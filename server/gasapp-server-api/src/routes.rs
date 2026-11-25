@@ -814,7 +814,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/link/:nonce/request", get(crate::linking::request))
         .route("/v1/link/:nonce/grant", get(crate::linking::take_grant))
         .route("/v1/link/:nonce/complete", post(crate::linking::complete))
-        .route("/v1/devices/:device_id/link/:nonce", put(crate::linking::grant))
+        .route(
+            "/v1/devices/:device_id/link/:nonce",
+            put(crate::linking::grant),
+        )
         .route(
             "/v1/devices/:device_id/linked/:target",
             axum::routing::delete(crate::linking::unlink),
@@ -1178,11 +1181,14 @@ async fn discovery(
         None => None,
     };
     let pq = repo::pq_identity_of(&state.pool, account.account_id).await?;
-    let device_list = gasapp_server_db::devices::device_list(&state.pool, account.account_id).await?;
+    let device_list =
+        gasapp_server_db::devices::device_list(&state.pool, account.account_id).await?;
     let mut discovered = Vec::new();
     if devices.len() > 1 {
         for device in &devices {
-            if let Some((public, signature)) = repo::sealed_kem_of(&state.pool, device.device_id).await? {
+            if let Some((public, signature)) =
+                repo::sealed_kem_of(&state.pool, device.device_id).await?
+            {
                 discovered.push(DiscoveredDevice {
                     device_id: device.device_id,
                     sealed_kem_public: hex::encode(public),
@@ -1493,7 +1499,8 @@ async fn publish_keys(
             let account = repo::account_of_device(&state.pool, device_id).await?;
             repo::set_pq_identity(&state.pool, account, &public, &binding).await?;
         } else {
-            gasapp_server_db::devices::set_device_pq(&state.pool, device_id, &public, &binding).await?;
+            gasapp_server_db::devices::set_device_pq(&state.pool, device_id, &public, &binding)
+                .await?;
         }
     }
 
@@ -1565,7 +1572,9 @@ async fn take_bundle(
     Ok(Json(BundleResponse {
         device_id: bundle.device_id,
         sealed_kem_public: sealed_kem.as_ref().map(|(public, _)| hex::encode(public)),
-        sealed_kem_signature: sealed_kem.as_ref().map(|(_, signature)| hex::encode(signature)),
+        sealed_kem_signature: sealed_kem
+            .as_ref()
+            .map(|(_, signature)| hex::encode(signature)),
         identity_key: hex::encode(bundle.identity_key),
         pq_identity_key: pq.as_ref().map(|(public, _)| hex::encode(public)),
         identity_binding: pq.as_ref().map(|(_, binding)| hex::encode(binding)),
@@ -1700,7 +1709,9 @@ static ACTIVITY_NOTED: std::sync::OnceLock<Mutex<ActivityDay>> = std::sync::Once
 fn activity_day() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs().checked_div(86_400).unwrap_or(0))
+        .map_or(0, |elapsed| {
+            elapsed.as_secs().checked_div(86_400).unwrap_or(0)
+        })
 }
 
 /// Отмечена ли уже активность устройства за сегодня.

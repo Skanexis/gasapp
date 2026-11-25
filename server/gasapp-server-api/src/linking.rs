@@ -184,12 +184,13 @@ pub(crate) async fn complete(
     crate::auth::verify_challenge_signature(&request.identity, &message, &signature)
         .map_err(|_| ApiError::Unauthorized)?;
 
-    let (account_id, device_id) = devices::complete_link(&state.pool, nonce)
-        .await
-        .map_err(|error| match error {
-            RepoError::Conflict => ApiError::Conflict,
-            other => other.into(),
-        })?;
+    let (account_id, device_id) =
+        devices::complete_link(&state.pool, nonce)
+            .await
+            .map_err(|error| match error {
+                RepoError::Conflict => ApiError::Conflict,
+                other => other.into(),
+            })?;
     Ok(Json(CompleteResponse {
         account_id,
         device_id,

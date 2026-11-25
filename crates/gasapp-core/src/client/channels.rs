@@ -381,8 +381,14 @@ pub(super) fn require_owner(stored: &StoredChannel) -> Result<()> {
 }
 
 /// Причины ограничения, которые интерфейс умеет назвать.
-pub const RESTRICTION_REASONS: [&str; 6] =
-    ["spam", "harassment", "csae", "impersonation", "illegal", "other"];
+pub const RESTRICTION_REASONS: [&str; 6] = [
+    "spam",
+    "harassment",
+    "csae",
+    "impersonation",
+    "illegal",
+    "other",
+];
 
 /// Заморозка либо блокировка аккаунта оператором.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -436,9 +442,14 @@ impl<T: Transport> Client<T> {
 
         Ok(status.restriction.map(|r| AccountRestriction {
             blocked: r.kind == "blocked",
-            until_millis: r.until.filter(|_| r.kind != "blocked").map(|secs| secs.saturating_mul(1000)),
+            until_millis: r
+                .until
+                .filter(|_| r.kind != "blocked")
+                .map(|secs| secs.saturating_mul(1000)),
             // 🔐 В интерфейс — только известный код, не произвольный текст сервера.
-            reason: r.reason.filter(|code| RESTRICTION_REASONS.contains(&code.as_str())),
+            reason: r
+                .reason
+                .filter(|code| RESTRICTION_REASONS.contains(&code.as_str())),
             via_owner: r.owner,
         }))
     }

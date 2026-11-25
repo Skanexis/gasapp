@@ -73,8 +73,8 @@ pub use blocks::ReportOutcome;
 pub use bots::{bot_username, BotInfo, BOT_SUFFIX, BOT_TOKEN_PREFIX};
 pub use channel_closed::{ChannelJoinRequestInfo, ChannelMember, PendingChannelJoin};
 pub use channels::{
-    AccountRestriction, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry, ChannelPreview, ChannelReaction,
-    ChannelRole, CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
+    AccountRestriction, Channel, ChannelAdminInfo, ChannelAttachment, ChannelEntry, ChannelPreview,
+    ChannelReaction, ChannelRole, CHANNEL_REACTIONS, MAX_CHANNEL_MEDIA_BYTES,
 };
 use gasapp_protocol::account_recovery::AccountRecoveryKey;
 use gasapp_protocol::pq_identity::PqIdentityKeyPair;
@@ -84,8 +84,8 @@ use gasapp_types::{
     PublicKeyBytes, Result, Timestamp,
 };
 pub use keyboards::ButtonCallback;
-pub use linking::{LinkOffer, OwnDevice};
 pub use kt::{KtSelfCheck, KtVerdict};
+pub use linking::{LinkOffer, OwnDevice};
 pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 pub use notify::{new_notify_token, PushProvider, NOTIFY_TOKEN_LEN};
 use rand_core::{CryptoRng, RngCore};
@@ -667,14 +667,12 @@ impl<T: Transport> Client<T> {
         // Тело сообщения — структурированное содержимое, а не голый
         // текст: получатель обязан отличить текст от реакции и правки,
         // и это различие лежит под шифрованием.
-        let plaintext = Plaintext::new(
-            Content::Text {
-                body: text.to_owned(),
-                reply_to: None,
-                id: *message_id.as_uuid().as_bytes(),
-            }
-            .to_bytes()?,
-        );
+        let content = Content::Text {
+            body: text.to_owned(),
+            reply_to: None,
+            id: *message_id.as_uuid().as_bytes(),
+        };
+        let plaintext = Plaintext::new(content.to_bytes()?);
 
         // Существующая сессия продолжается; иначе устанавливается новая.
         // Проверка идёт по хранилищу, а не по наличию контакта: сессия
@@ -701,7 +699,15 @@ impl<T: Transport> Client<T> {
         let delivered = self
             .peer_targets(&peer, &peer_identity, &peer_pq, &peer_kem, now)
             .and_then(|targets| {
-                self.send_to_devices(&identity, &chat_id, &peer_identity, &targets, &plaintext, now, rng)
+                self.send_to_devices(
+                    &identity,
+                    &chat_id,
+                    &peer_identity,
+                    &targets,
+                    &plaintext,
+                    now,
+                    rng,
+                )
             });
         if let Err(error) = delivered {
             let _ = self
@@ -712,6 +718,11 @@ impl<T: Transport> Client<T> {
 
         self.storage
             .set_message_status(&message_id, MessageStatus::Sent, now)?;
+
+        // Копия — своим устройствам (`client::devices`). Сбой не мешает
+        // сообщению: оно уже ушло собеседнику.
+        let _ =
+            self.copy_to_own_devices(&identity, &peer_identity, peer_username, &content, now, rng);
 
         // Сверка журнала ключей с собеседником (§9.7) — не чаще раза
         // в сутки. Сбой не мешает сообщению: оно уже ушло.
@@ -950,7 +961,30 @@ impl<T: Transport> Client<T> {
         // Каждому устройству собеседника — своя сессия и доставка
         // (`client::devices`).
         let targets = self.peer_targets(&peer, &peer_identity, &peer_pq, &peer_kem, now)?;
-        self.send_to_devices(&identity, &chat_id, &peer_identity, &targets, &plaintext, now, rng)?;
+        self.send_to_devices(
+            &identity,
+            &chat_id,
+            &peer_identity,
+            &targets,
+            &plaintext,
+            now,
+            rng,
+        )?;
+
+        // Видимое в переписке — копией своим устройствам.
+        if matches!(
+            content,
+            Content::Attachments { .. } | Content::Edit { .. } | Content::Delete { .. }
+        ) {
+            let _ = self.copy_to_own_devices(
+                &identity,
+                &peer_identity,
+                peer_username,
+                content,
+                now,
+                rng,
+            );
+        }
 
         Ok(chat_id)
     }
@@ -1091,7 +1125,10 @@ impl<T: Transport> Client<T> {
                 (None, Some(peer)) => {
                     let account = self.account_of(&peer)?;
                     let chat_id = derive_chat_id(&self.own_account(&identity)?, &account);
-                    (chat_id, session::device_session_id(&chat_id, &account, &peer))
+                    (
+                        chat_id,
+                        session::device_session_id(&chat_id, &account, &peer),
+                    )
                 }
                 (None, None) => {
                     dropped.push(envelope.envelope_id.clone());
@@ -1116,6 +1153,61 @@ impl<T: Transport> Client<T> {
                 }
                 silenced.push(envelope.envelope_id.clone());
                 continue;
+            }
+
+            // Своё устройство (`client::devices`): копии отправленного. Ни
+            // запроса на переписку, ни контакта с самим собой.
+            let from_device = incoming.sender_identity.or_else(|| {
+                certificate
+                    .as_ref()
+                    .map(|certificate| certificate.identity_key)
+            });
+            if let Some(device) = from_device {
+                if self.account_of(&device)? == self.own_account(&identity)? {
+                    self.storage
+                        .save_session(&session_id, &incoming.session, now)?;
+                    if let Some(initial) = incoming.initial {
+                        self.storage.remember_initial(
+                            initial.base_key.as_bytes(),
+                            initial.signed_pre_key.as_bytes(),
+                            now,
+                        )?;
+                    }
+                    let shown = match Content::from_bytes(incoming.plaintext.expose()) {
+                        Ok(Content::Sent {
+                            peer,
+                            peer_username,
+                            content,
+                        }) => self.apply_sent(
+                            &identity,
+                            &PublicKeyBytes::new(peer),
+                            peer_username.as_deref(),
+                            *content,
+                            now,
+                        )?,
+                        _ => false,
+                    };
+                    if let Some(consumed) = incoming.consumed_one_time {
+                        secrets.one_time.retain(|(id, _)| *id != consumed);
+                    }
+                    if let Some(consumed) = incoming.consumed_one_time_kem {
+                        secrets.one_time_kem.retain(|(id, _)| *id != consumed);
+                    }
+                    if incoming.consumed_one_time.is_some()
+                        || incoming.consumed_one_time_kem.is_some()
+                    {
+                        self.persist_secrets(&secrets, now)?;
+                    }
+                    self.api.acknowledge(
+                        device_id,
+                        &envelope.envelope_id,
+                        &DeviceSigner::new(&identity, now),
+                    )?;
+                    if shown {
+                        accepted = accepted.saturating_add(1);
+                    }
+                    continue;
+                }
             }
 
             // Доказательство для жалобы: сертификат уже проверен (подпись
@@ -1198,6 +1290,7 @@ impl<T: Transport> Client<T> {
                     | Content::Keyboard { .. }
                     | Content::Callback { .. }
                     | Content::DisappearingTimer { .. }
+                    | Content::Sent { .. }
             );
 
             match content {
@@ -1338,7 +1431,9 @@ impl<T: Transport> Client<T> {
                     self.kt_compare_peer_head(epoch, &head, now)?;
                 }
 
-                Content::Reaction { .. } | Content::Typing { .. } => {
+                // 🔐 Копия отправленного — только от своего устройства (ветка
+                // выше); от собеседника она ничего не значит.
+                Content::Sent { .. } | Content::Reaction { .. } | Content::Typing { .. } => {
                     // Ничего не сохраняется, но по разным причинам.
                     //
                     // Реакции приходят и снимаются многократно: держать
@@ -3094,6 +3189,18 @@ impl<T: Transport> Client<T> {
         let own = self.storage.get_account_id()?;
 
         Ok(chat == *chat_id && own.as_ref() != Some(&sender))
+    }
+
+    /// Своё ли сообщение этого чата — для копий правки и удаления со
+    /// своего устройства.
+    fn written_by_us(&self, message: &MessageId, chat_id: &ChatId) -> Result<bool> {
+        let Some((chat, sender)) = self.storage.message_origin(message)? else {
+            return Ok(false);
+        };
+
+        let own = self.storage.get_account_id()?;
+
+        Ok(chat == *chat_id && own.as_ref() == Some(&sender))
     }
 
     /// Сохраняет новое сообщение в хранилище.

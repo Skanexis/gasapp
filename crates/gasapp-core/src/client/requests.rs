@@ -147,9 +147,18 @@ impl<T: Transport> Client<T> {
 
         // Ключ доступа — каждому устройству, с которым уже есть сессия.
         for target in &targets {
-            let session_id = crate::session::device_session_id(chat_id, &advertised, &target.identity);
+            let session_id =
+                crate::session::device_session_id(chat_id, &advertised, &target.identity);
             if let Some(session) = self.storage.load_session(&session_id)? {
-                self.send_own_access_key(&identity, &advertised, &session_id, Some(session), target, now, rng)?;
+                self.send_own_access_key(
+                    &identity,
+                    &advertised,
+                    &session_id,
+                    Some(session),
+                    target,
+                    now,
+                    rng,
+                )?;
             }
         }
 

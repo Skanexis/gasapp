@@ -78,7 +78,9 @@ impl DeviceList {
     /// Устройство по идентификатору.
     #[must_use]
     pub fn device(&self, device_id: &[u8; DEVICE_ID_LEN]) -> Option<&DeviceEntry> {
-        self.devices.iter().find(|entry| &entry.device_id == device_id)
+        self.devices
+            .iter()
+            .find(|entry| &entry.device_id == device_id)
     }
 
     /// Проверяет правила списка.
@@ -97,11 +99,15 @@ impl DeviceList {
             if entry.device_id == [0; DEVICE_ID_LEN] || entry.pq_identity.len() != PQ_PUBLIC_LEN {
                 return Err(GasAppError::Malformed);
             }
-            let repeated = self.devices.iter().skip(index.saturating_add(1)).any(|other| {
-                other.device_id == entry.device_id
-                    || other.identity == entry.identity
-                    || other.pq_identity == entry.pq_identity
-            });
+            let repeated = self
+                .devices
+                .iter()
+                .skip(index.saturating_add(1))
+                .any(|other| {
+                    other.device_id == entry.device_id
+                        || other.identity == entry.identity
+                        || other.pq_identity == entry.pq_identity
+                });
             if repeated {
                 return Err(GasAppError::Malformed);
             }
@@ -122,7 +128,9 @@ impl DeviceList {
     pub fn encode(&self) -> Result<Vec<u8>> {
         self.validate()?;
         let count = u8::try_from(self.devices.len()).map_err(|_| GasAppError::Malformed)?;
-        let mut out = Vec::with_capacity(HEADER_LEN.saturating_add(ENTRY_LEN.saturating_mul(self.devices.len())));
+        let mut out = Vec::with_capacity(
+            HEADER_LEN.saturating_add(ENTRY_LEN.saturating_mul(self.devices.len())),
+        );
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(self.account_identity.as_bytes());
         out.extend_from_slice(&self.version.to_be_bytes());
@@ -183,7 +191,11 @@ impl DeviceList {
     /// * [`GasAppError::Malformed`] — ключ не тот, чей это список, или
     ///   нарушены правила списка;
     /// * [`GasAppError::Crypto`] — сбой подписи.
-    pub fn sign(&self, identity: &IdentityKeyPair, pq: &PqIdentityKeyPair) -> Result<SignedDeviceList> {
+    pub fn sign(
+        &self,
+        identity: &IdentityKeyPair,
+        pq: &PqIdentityKeyPair,
+    ) -> Result<SignedDeviceList> {
         if identity.public().public() != &self.account_identity {
             return Err(GasAppError::Malformed);
         }
@@ -232,7 +244,11 @@ impl SignedDeviceList {
     /// * [`GasAppError::Malformed`] — формат или правила списка;
     /// * [`GasAppError::InvalidSignature`] — подпись не сошлась либо
     ///   список чужого аккаунта.
-    pub fn verify(bytes: &[u8], account_identity: &PublicKeyBytes, account_pq: &[u8]) -> Result<Self> {
+    pub fn verify(
+        bytes: &[u8],
+        account_identity: &PublicKeyBytes,
+        account_pq: &[u8],
+    ) -> Result<Self> {
         let split = bytes
             .len()
             .checked_sub(HYBRID_SIGNATURE_LEN)
@@ -337,11 +353,17 @@ mod tests {
     fn a_signed_list_round_trips_and_verifies() {
         let primary = device(1);
         let phone = device(2);
-        let signed = list(&primary, &[&phone], 2).sign(&primary.identity, &primary.pq).unwrap();
+        let signed = list(&primary, &[&phone], 2)
+            .sign(&primary.identity, &primary.pq)
+            .unwrap();
         let bytes = signed.to_bytes();
 
-        let checked =
-            SignedDeviceList::verify(&bytes, primary.identity.public().public(), &primary.pq.public()).unwrap();
+        let checked = SignedDeviceList::verify(
+            &bytes,
+            primary.identity.public().public(),
+            &primary.pq.public(),
+        )
+        .unwrap();
         assert_eq!(checked, signed);
         assert!(checked.list.device(&phone.id).is_some());
     }
@@ -364,12 +386,17 @@ mod tests {
         assert!(SignedDeviceList::verify(&forged.to_bytes(), &account, &account_pq).is_err());
 
         // Подменён байт ключа устройства.
-        let mut bytes = list(&primary, &[&intruder], 3).sign(&primary.identity, &primary.pq).unwrap().to_bytes();
+        let mut bytes = list(&primary, &[&intruder], 3)
+            .sign(&primary.identity, &primary.pq)
+            .unwrap()
+            .to_bytes();
         bytes[HEADER_LEN + ENTRY_LEN + DEVICE_ID_LEN] ^= 1;
         assert!(SignedDeviceList::verify(&bytes, &account, &account_pq).is_err());
 
         // Подписать чужой список нельзя вовсе.
-        assert!(list(&primary, &[], 1).sign(&intruder.identity, &intruder.pq).is_err());
+        assert!(list(&primary, &[], 1)
+            .sign(&intruder.identity, &intruder.pq)
+            .is_err());
     }
 
     /// 🔐 Откат версии и два разных списка под одной версией.
@@ -377,9 +404,15 @@ mod tests {
     fn versions_only_grow() {
         let primary = device(1);
         let phone = device(2);
-        let v2 = list(&primary, &[&phone], 2).sign(&primary.identity, &primary.pq).unwrap();
-        let v3 = list(&primary, &[], 3).sign(&primary.identity, &primary.pq).unwrap();
-        let other_v3 = list(&primary, &[&phone], 3).sign(&primary.identity, &primary.pq).unwrap();
+        let v2 = list(&primary, &[&phone], 2)
+            .sign(&primary.identity, &primary.pq)
+            .unwrap();
+        let v3 = list(&primary, &[], 3)
+            .sign(&primary.identity, &primary.pq)
+            .unwrap();
+        let other_v3 = list(&primary, &[&phone], 3)
+            .sign(&primary.identity, &primary.pq)
+            .unwrap();
 
         assert!(check_succession(None, &v2).is_ok());
         assert!(check_succession(Some((2, v2.digest())), &v3).is_ok());

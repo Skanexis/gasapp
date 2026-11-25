@@ -2403,8 +2403,14 @@ async fn a_premium_owner_creates_a_bot() {
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
-    let (_, rival_list) =
-        signed(&state, &rival_key, "GET", &format!("/v1/bots/own/{rival_device}"), None).await;
+    let (_, rival_list) = signed(
+        &state,
+        &rival_key,
+        "GET",
+        &format!("/v1/bots/own/{rival_device}"),
+        None,
+    )
+    .await;
     assert!(rival_list.as_array().unwrap().is_empty());
 
     // Чужой токен и токен под другое имя не годятся — и настоящий не жгут.
@@ -3248,11 +3254,12 @@ async fn frozen_and_blocked_accounts_are_locked_out() {
         .fetch_one(&state.pool)
         .await
         .unwrap();
-    let username: String = sqlx::query_scalar("SELECT username FROM accounts WHERE account_id = $1")
-        .bind(owner_id)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap();
+    let username: String =
+        sqlx::query_scalar("SELECT username FROM accounts WHERE account_id = $1")
+            .bind(owner_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
 
     // Заморозка на неделю.
     sqlx::query(
@@ -3302,11 +3309,13 @@ async fn frozen_and_blocked_accounts_are_locked_out() {
     assert!(body["restriction"].get("until").is_none());
 
     // Срок вышел — ограничения нет, запросы проходят.
-    sqlx::query("UPDATE accounts SET restricted_until = now() - interval '1 minute' WHERE account_id = $1")
-        .bind(owner_id)
-        .execute(&state.pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE accounts SET restricted_until = now() - interval '1 minute' WHERE account_id = $1",
+    )
+    .bind(owner_id)
+    .execute(&state.pool)
+    .await
+    .unwrap();
     let (status, _) = signed(&state, &owner_key, "GET", &bots, None).await;
     assert_eq!(status, StatusCode::OK);
     let (_, body) = signed(&state, &owner_key, "GET", &status_of(owner_device), None).await;
@@ -3391,20 +3400,46 @@ async fn a_second_device_is_linked_and_unlinked() {
     let (status, _) = get(&state, &format!("/v1/link/{nonce}/grant")).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
-    let with_new = device_list(&owner_public, 2, &[(owner_device, owner_public), (new_device, new_public)]);
+    let with_new = device_list(
+        &owner_public,
+        2,
+        &[(owner_device, owner_public), (new_device, new_public)],
+    );
     let grant_uri = |device: Uuid| format!("/v1/devices/{device}/link/{nonce}");
-    let grant = |list: &[u8]| serde_json::json!({ "grant": "abcd", "device_list": hex::encode(list) });
+    let grant =
+        |list: &[u8]| serde_json::json!({ "grant": "abcd", "device_list": hex::encode(list) });
 
     // 🔐 Список без нового устройства и грант не основного устройства — отказ.
     let without_new = device_list(&owner_public, 2, &[(owner_device, owner_public)]);
-    let (status, _) = signed(&state, &owner_key, "PUT", &grant_uri(owner_device), Some(grant(&without_new))).await;
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "PUT",
+        &grant_uri(owner_device),
+        Some(grant(&without_new)),
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let stranger_key = device_key();
     let stranger_device = register(&state, &unique_name("stranger"), &stranger_key).await;
-    let (status, _) = signed(&state, &stranger_key, "PUT", &grant_uri(stranger_device), Some(grant(&with_new))).await;
+    let (status, _) = signed(
+        &state,
+        &stranger_key,
+        "PUT",
+        &grant_uri(stranger_device),
+        Some(grant(&with_new)),
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    let (status, _) = signed(&state, &owner_key, "PUT", &grant_uri(owner_device), Some(grant(&with_new))).await;
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "PUT",
+        &grant_uri(owner_device),
+        Some(grant(&with_new)),
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, body) = get(&state, &format!("/v1/link/{nonce}/grant")).await;
     assert_eq!(status, StatusCode::OK);
@@ -3415,15 +3450,30 @@ async fn a_second_device_is_linked_and_unlinked() {
     let mut message = b"GASAPP_LINK_COMPLETE_v1".to_vec();
     message.extend_from_slice(nonce.as_bytes());
     let forged = common::client_sign(&stranger_key, &message);
-    let (status, _) = post(&state, &complete, serde_json::json!({ "signature": hex::encode(forged) })).await;
+    let (status, _) = post(
+        &state,
+        &complete,
+        serde_json::json!({ "signature": hex::encode(forged) }),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let genuine = common::client_sign(&new_key, &message);
-    let (status, body) = post(&state, &complete, serde_json::json!({ "signature": hex::encode(genuine) })).await;
+    let (status, body) = post(
+        &state,
+        &complete,
+        serde_json::json!({ "signature": hex::encode(genuine) }),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body:?}");
     assert_eq!(body["device_id"], new_device.to_string());
 
     // Ящик одноразовый.
-    let (status, _) = post(&state, &complete, serde_json::json!({ "signature": hex::encode(genuine) })).await;
+    let (status, _) = post(
+        &state,
+        &complete,
+        serde_json::json!({ "signature": hex::encode(genuine) }),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Новое устройство работает своим ключом; discovery знает оба и список.
@@ -3441,15 +3491,33 @@ async fn a_second_device_is_linked_and_unlinked() {
     let (status, body) = get(&state, &format!("/v1/accounts/by-id/{account}/device-list")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["device_list"], hex::encode(&with_new));
-    let (status, _) = get(&state, &format!("/v1/accounts/by-id/{}/device-list", Uuid::new_v4())).await;
+    let (status, _) = get(
+        &state,
+        &format!("/v1/accounts/by-id/{}/device-list", Uuid::new_v4()),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Отключение: список новее и без устройства.
     let unlink = format!("/v1/devices/{owner_device}/linked/{new_device}");
     let only_owner = device_list(&owner_public, 3, &[(owner_device, owner_public)]);
-    let (status, _) = signed(&state, &owner_key, "DELETE", &unlink, Some(serde_json::json!({ "device_list": hex::encode(&with_new) }))).await;
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &unlink,
+        Some(serde_json::json!({ "device_list": hex::encode(&with_new) })),
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    let (status, _) = signed(&state, &owner_key, "DELETE", &unlink, Some(serde_json::json!({ "device_list": hex::encode(&only_owner) }))).await;
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &unlink,
+        Some(serde_json::json!({ "device_list": hex::encode(&only_owner) })),
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = signed(&state, &new_key, "GET", &status_of(new_device), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -3460,7 +3528,12 @@ async fn a_second_device_is_linked_and_unlinked() {
     // Просроченный ящик не отдаёт ничего.
     let late = Uuid::new_v4();
     let late_request = hex::encode(link_request(late, Uuid::new_v4(), &new_public));
-    post(&state, &format!("/v1/link/{late}"), serde_json::json!({ "request": late_request })).await;
+    post(
+        &state,
+        &format!("/v1/link/{late}"),
+        serde_json::json!({ "request": late_request }),
+    )
+    .await;
     sqlx::query("UPDATE link_boxes SET expires_at = now() - interval '1 second' WHERE nonce = $1")
         .bind(late)
         .execute(&state.pool)

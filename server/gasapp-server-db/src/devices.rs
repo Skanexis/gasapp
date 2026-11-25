@@ -188,11 +188,16 @@ async fn primary_account(
 }
 
 /// Устройства аккаунта.
-async fn account_devices(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> Result<Vec<Uuid>, RepoError> {
-    Ok(sqlx::query_scalar("SELECT device_id FROM devices WHERE account_id = $1")
-        .bind(account)
-        .fetch_all(&mut **tx)
-        .await?)
+async fn account_devices(
+    tx: &mut Transaction<'_, Postgres>,
+    account: Uuid,
+) -> Result<Vec<Uuid>, RepoError> {
+    Ok(
+        sqlx::query_scalar("SELECT device_id FROM devices WHERE account_id = $1")
+            .bind(account)
+            .fetch_all(&mut **tx)
+            .await?,
+    )
 }
 
 /// Проверяет новый список основного устройства: ключ аккаунта, версия
@@ -249,7 +254,10 @@ pub async fn put_grant(
         .devices
         .iter()
         .any(|(id, key)| *id == request.device_id && *key == request.identity);
-    if !new_listed || known.contains(&request.device_id) || !list_fits(&list, &identity, version, &known, Some(request.device_id)) {
+    if !new_listed
+        || known.contains(&request.device_id)
+        || !list_fits(&list, &identity, version, &known, Some(request.device_id))
+    {
         return Err(RepoError::Conflict);
     }
 
@@ -325,7 +333,8 @@ pub async fn complete_link(pool: &PgPool, nonce: Uuid) -> Result<(Uuid, Uuid), R
     .bind(nonce)
     .fetch_optional(&mut *tx)
     .await?;
-    let (request, Some(account), Some(list), Some(version)) = row.ok_or(RepoError::NotFound)? else {
+    let (request, Some(account), Some(list), Some(version)) = row.ok_or(RepoError::NotFound)?
+    else {
         return Err(RepoError::NotFound);
     };
     let request = parse_link_request(&request).ok_or(RepoError::NotFound)?;
@@ -384,7 +393,9 @@ pub async fn unlink_device(
         return Err(RepoError::NotFound);
     }
     let list = parse_device_list(device_list).ok_or(RepoError::Conflict)?;
-    if list.devices.iter().any(|(id, _)| *id == target) || !list_fits(&list, &identity, version, &known, None) {
+    if list.devices.iter().any(|(id, _)| *id == target)
+        || !list_fits(&list, &identity, version, &known, None)
+    {
         return Err(RepoError::Conflict);
     }
     sqlx::query("DELETE FROM devices WHERE device_id = $1 AND account_id = $2")
@@ -437,13 +448,20 @@ pub async fn is_primary(pool: &PgPool, device_id: Uuid) -> Result<bool, RepoErro
 /// # Errors
 ///
 /// [`RepoError::Database`] — сбой базы.
-pub async fn set_device_pq(pool: &PgPool, device_id: Uuid, public: &[u8], binding: &[u8]) -> Result<(), RepoError> {
-    sqlx::query("UPDATE devices SET pq_identity_key = $2, identity_binding = $3 WHERE device_id = $1")
-        .bind(device_id)
-        .bind(public)
-        .bind(binding)
-        .execute(pool)
-        .await?;
+pub async fn set_device_pq(
+    pool: &PgPool,
+    device_id: Uuid,
+    public: &[u8],
+    binding: &[u8],
+) -> Result<(), RepoError> {
+    sqlx::query(
+        "UPDATE devices SET pq_identity_key = $2, identity_binding = $3 WHERE device_id = $1",
+    )
+    .bind(device_id)
+    .bind(public)
+    .bind(binding)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -452,12 +470,16 @@ pub async fn set_device_pq(pool: &PgPool, device_id: Uuid, public: &[u8], bindin
 /// # Errors
 ///
 /// [`RepoError::Database`] — сбой базы.
-pub async fn device_pq(pool: &PgPool, device_id: Uuid) -> Result<Option<(Vec<u8>, Vec<u8>)>, RepoError> {
-    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> =
-        sqlx::query_as("SELECT pq_identity_key, identity_binding FROM devices WHERE device_id = $1")
-            .bind(device_id)
-            .fetch_optional(pool)
-            .await?;
+pub async fn device_pq(
+    pool: &PgPool,
+    device_id: Uuid,
+) -> Result<Option<(Vec<u8>, Vec<u8>)>, RepoError> {
+    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT pq_identity_key, identity_binding FROM devices WHERE device_id = $1",
+    )
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?;
     Ok(match row {
         Some((Some(public), Some(binding))) => Some((public, binding)),
         _ => None,
@@ -471,10 +493,12 @@ pub async fn device_pq(pool: &PgPool, device_id: Uuid) -> Result<Option<(Vec<u8>
 ///
 /// [`RepoError::Database`] — сбой базы.
 pub async fn device_list(pool: &PgPool, account: Uuid) -> Result<Option<Vec<u8>>, RepoError> {
-    Ok(sqlx::query_scalar("SELECT signed FROM device_lists WHERE account_id = $1")
-        .bind(account)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_scalar("SELECT signed FROM device_lists WHERE account_id = $1")
+            .bind(account)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 /// Читатель байтов без индексации.
@@ -516,7 +540,8 @@ mod tests {
 
     #[test]
     fn device_lists_are_parsed_strictly() {
-        let list = parse_device_list(&list_bytes([1; 32], 3, &[(1, [1; 32]), (2, [2; 32])])).unwrap();
+        let list =
+            parse_device_list(&list_bytes([1; 32], 3, &[(1, [1; 32]), (2, [2; 32])])).unwrap();
         assert_eq!(list.version, 3);
         assert_eq!(list.devices.len(), 2);
         assert_eq!(list.devices[1].0, Uuid::from_bytes([2; 16]));
@@ -525,7 +550,9 @@ mod tests {
         extra.insert(10, 0);
         assert!(parse_device_list(&extra).is_none());
         assert!(parse_device_list(&list_bytes([1; 32], 0, &[(1, [1; 32])])).is_none());
-        assert!(parse_device_list(&list_bytes([1; 32], 1, &[(1, [1; 32]), (1, [2; 32])])).is_none());
+        assert!(
+            parse_device_list(&list_bytes([1; 32], 1, &[(1, [1; 32]), (1, [2; 32])])).is_none()
+        );
         let six: Vec<(u8, [u8; 32])> = (1..=6).map(|i| (i, [i; 32])).collect();
         assert!(parse_device_list(&list_bytes([1; 32], 1, &six)).is_none());
     }

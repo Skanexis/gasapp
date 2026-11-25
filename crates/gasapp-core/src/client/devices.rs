@@ -23,8 +23,16 @@ use gasapp_storage::devices::{KnownDevice, StoredDeviceList};
 use gasapp_types::{ChatId, GasAppError, Plaintext, PublicKeyBytes, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 
-use super::{peer_account, unhex, Client};
+use gasapp_protocol::content::Content;
+use gasapp_storage::MessageStatus;
+use gasapp_types::MessageId;
+
+use super::{derive_chat_id, parse_public_key, peer_account, unhex, verified_sealed_kem, Client};
 use crate::session;
+
+/// Есть ли у аккаунта другие устройства — копии отправленного идут только
+/// тогда (иначе лишний запрос discovery на каждое сообщение).
+pub(crate) const MULTI_DEVICE_SETTING: &str = "multi_device";
 
 /// Устройство собеседника, которому доставляется сообщение.
 #[derive(Debug, Clone)]
@@ -118,15 +126,20 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
     ) -> Result<Vec<KnownDevice>> {
         let stored = self.storage.device_list(account)?;
-        match check_succession(stored.as_ref().map(|list| (list.version, list.digest)), signed) {
+        match check_succession(
+            stored.as_ref().map(|list| (list.version, list.digest)),
+            signed,
+        ) {
             Ok(()) => {}
             // Сервер отдаёт прошлую версию — доставляем по запомненной.
             Err(GasAppError::InvalidSignature) => {
-                self.storage.log_security_event("device_list_rollback", None, now)?;
+                self.storage
+                    .log_security_event("device_list_rollback", None, now)?;
                 return self.storage.known_devices(account);
             }
             Err(error) => {
-                self.storage.log_security_event("device_list_equivocation", None, now)?;
+                self.storage
+                    .log_security_event("device_list_equivocation", None, now)?;
                 return Err(error);
             }
         }
@@ -147,7 +160,8 @@ impl<T: Transport> Client<T> {
             if !before.is_empty() && devices.iter().any(|device| !before.contains(device)) {
                 // Подключено новое устройство собеседника — в журнал; в чате
                 // это покажет интерфейс (этап 5).
-                self.storage.log_security_event("contact_device_added", None, now)?;
+                self.storage
+                    .log_security_event("contact_device_added", None, now)?;
             }
             self.storage.save_device_list(
                 account,
@@ -185,7 +199,11 @@ impl<T: Transport> Client<T> {
     ) -> Result<()> {
         let mut delivered = 0usize;
         let mut first_error = None;
-        let shared = self.storage.access_key_shared_with(&peer_account(account))?;
+        // Свои устройства ключ доступа аккаунта уже знают.
+        let shared = *account == self.own_account(identity)?
+            || self
+                .storage
+                .access_key_shared_with(&peer_account(account))?;
 
         for target in targets {
             let session_id = session::device_session_id(chat_id, account, &target.identity);
@@ -193,11 +211,20 @@ impl<T: Transport> Client<T> {
                 let existing = self.storage.load_session(&session_id)?;
                 let state = match existing {
                     Some(state) if shared => state,
-                    other => self.send_own_access_key(identity, account, &session_id, other, target, now, rng)?,
+                    other => self.send_own_access_key(
+                        identity,
+                        account,
+                        &session_id,
+                        other,
+                        target,
+                        now,
+                        rng,
+                    )?,
                 };
                 let outgoing = session::continue_session(&state, plaintext)?;
                 // Сессия сохраняется до отправки: см. порядок операций.
-                self.storage.save_session(&session_id, &outgoing.session, now)?;
+                self.storage
+                    .save_session(&session_id, &outgoing.session, now)?;
                 self.deliver(identity, account, target, &outgoing.envelope, now, rng)
             })();
             match outcome {
@@ -216,13 +243,157 @@ impl<T: Transport> Client<T> {
     }
 }
 
+impl<T: Transport> Client<T> {
+    /// Копия отправленного — остальным своим устройствам.
+    ///
+    /// Свои устройства — по своему же подписанному списку из discovery:
+    /// ключ аккаунта и его половина сверяются со своими. Сбой не мешает
+    /// самому сообщению (вызывающий его не пробрасывает).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::IdentityChanged`] — discovery называет для своего
+    /// имени чужой ключ; прочие — как у отправки.
+    pub(crate) fn copy_to_own_devices<R: RngCore + CryptoRng>(
+        &self,
+        identity: &IdentityKeyPair,
+        peer: &PublicKeyBytes,
+        peer_username: &str,
+        content: &Content,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        if !self.setting_bool(MULTI_DEVICE_SETTING, false)? {
+            return Ok(());
+        }
+        let own = self.own_account(identity)?;
+        let username = self.own_username()?.ok_or(GasAppError::Uninitialized)?;
+        let found = self.discover_for_send(&username, now)?;
+        if parse_public_key(&found.identity_key)? != own {
+            return Err(GasAppError::IdentityChanged);
+        }
+        let (Some(pq), Some(binding)) = (&found.pq_identity_key, &found.identity_binding) else {
+            return Err(GasAppError::Uninitialized);
+        };
+        let pq = unhex(pq)?;
+        gasapp_protocol::pq_identity::verify_binding(&own, &pq, &unhex(binding)?)?;
+        if gasapp_protocol::pq_identity::pq_identity_hash(&pq) != self.own_pq_hash()? {
+            return Err(GasAppError::IdentityChanged);
+        }
+        let kem = verified_sealed_kem(&found, &own, &pq)?;
+        let me = self.own_device_id()?.unwrap_or_default();
+        let targets: Vec<Target> = self
+            .peer_targets(&found, &own, &pq, &kem, now)?
+            .into_iter()
+            .filter(|target| target.device_id != me)
+            .collect();
+        if targets.is_empty() {
+            return Ok(());
+        }
+        let plaintext = Plaintext::new(
+            Content::Sent {
+                peer: *peer.as_bytes(),
+                peer_username: Some(peer_username.to_owned()),
+                content: Box::new(content.clone()),
+            }
+            .to_bytes()?,
+        );
+        let self_chat = derive_chat_id(&own, &own);
+        self.send_to_devices(identity, &self_chat, &own, &targets, &plaintext, now, rng)
+    }
+
+    /// Копия, пришедшая со своего устройства: сообщение — как отправленное
+    /// отсюда, в чат с собеседником. Возвращает, появилось ли видимое.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — запись не удалась.
+    pub(crate) fn apply_sent(
+        &self,
+        identity: &IdentityKeyPair,
+        peer: &PublicKeyBytes,
+        peer_username: Option<&str>,
+        content: Content,
+        now: Timestamp,
+    ) -> Result<bool> {
+        let chat_id = derive_chat_id(&self.own_account(identity)?, peer);
+        // Чат с именем: имя — заявление, принимается, только если
+        // discovery называет для него тот же ключ.
+        if let Some(name) = peer_username {
+            let _ = self.accept_claimed_username(peer, name, &chat_id, now);
+        }
+        match content {
+            Content::Text { body, id, .. } => {
+                let message_id = MessageId::from_uuid(uuid::Uuid::from_bytes(id));
+                let stored = self.store_message(
+                    &chat_id,
+                    message_id,
+                    &body,
+                    now,
+                    true,
+                    MessageStatus::Sent,
+                )?;
+                if stored {
+                    self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                }
+                Ok(stored)
+            }
+            Content::Attachments {
+                body,
+                descriptors,
+                id,
+                ..
+            } => {
+                let message_id = MessageId::from_uuid(uuid::Uuid::from_bytes(id));
+                let stored = self.store_message(
+                    &chat_id,
+                    message_id,
+                    &body,
+                    now,
+                    true,
+                    MessageStatus::Sent,
+                )?;
+                if stored {
+                    self.store_descriptors(&message_id, &descriptors, now)?;
+                    self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                }
+                Ok(stored)
+            }
+            // Правка и удаление — только своих сообщений этого чата.
+            Content::Edit { target, body } => {
+                let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
+                if self.written_by_us(&target, &chat_id)? {
+                    self.storage.edit_message(&target, &body, now)?;
+                }
+                Ok(false)
+            }
+            Content::Delete { target } => {
+                let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
+                if self.written_by_us(&target, &chat_id)? {
+                    self.storage.delete_message(&target, now)?;
+                }
+                Ok(false)
+            }
+            _ => Ok(false),
+        }
+    }
+}
+
 /// Ключ sealed sender подключённого устройства из discovery — только
 /// с проверенной подписью ключей этого устройства.
 fn device_kem(peer: &DiscoveryResponse, device_id: &str, device: &KnownDevice) -> Option<Vec<u8>> {
-    let found = peer.devices.iter().find(|entry| entry.device_id == device_id)?;
+    let found = peer
+        .devices
+        .iter()
+        .find(|entry| entry.device_id == device_id)?;
     let public = unhex(&found.sealed_kem_public).ok()?;
     let signature = unhex(&found.sealed_kem_signature).ok()?;
-    gasapp_protocol::sealed_sender::verify_sealed_kem_key(&device.identity, &device.pq_identity, &public, &signature)
-        .ok()?;
+    gasapp_protocol::sealed_sender::verify_sealed_kem_key(
+        &device.identity,
+        &device.pq_identity,
+        &public,
+        &signature,
+    )
+    .ok()?;
     Some(public)
 }
