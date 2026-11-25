@@ -650,7 +650,7 @@ impl<T: Transport> Client<T> {
         // гибридной подписью (см. `verified_sealed_kem`).
         let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
 
-        let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
+        let chat_id = derive_chat_id(&self.own_account(&identity)?, &peer_identity);
 
         // Идентификатор выбирается до шифрования и уезжает внутри
         // содержимого: по нему собеседник найдёт сообщение, когда придёт
@@ -993,7 +993,7 @@ impl<T: Transport> Client<T> {
         let peer_pq = self.verified_peer_pq(&peer, &peer_identity, now)?;
         let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
 
-        let chat_id = derive_chat_id(identity.public().public(), &peer_identity);
+        let chat_id = derive_chat_id(&self.own_account(&identity)?, &peer_identity);
 
         let plaintext = Plaintext::new(content.to_bytes()?);
 
@@ -1149,7 +1149,7 @@ impl<T: Transport> Client<T> {
                 &identity,
                 certificate.as_ref(),
                 incoming.sender_identity.as_ref(),
-                known_chat.as_ref(),
+                known_chat.as_ref().map(|(chat, _)| chat),
                 now,
             )? {
                 dropped.push(envelope.envelope_id.clone());
@@ -1161,9 +1161,16 @@ impl<T: Transport> Client<T> {
             // подошедшей сессии. Раньше сообщения второго вида молча
             // отбрасывались, потому что identity в них нет по замыслу,
             // и ответная переписка не работала вовсе.
-            let chat_id = match (known_chat, incoming.sender_identity) {
-                (Some(chat_id), _) => chat_id,
-                (None, Some(peer)) => derive_chat_id(identity.public().public(), &peer),
+            //
+            // Чат — по ключам аккаунтов, сессия — с устройством отправителя
+            // (`docs/protocol/MULTI-DEVICE.md`).
+            let (chat_id, session_id) = match (known_chat, incoming.sender_identity) {
+                (Some(known), _) => known,
+                (None, Some(peer)) => {
+                    let account = self.account_of(&peer)?;
+                    let chat_id = derive_chat_id(&self.own_account(&identity)?, &account);
+                    (chat_id, session::device_session_id(&chat_id, &account, &peer))
+                }
                 (None, None) => {
                     dropped.push(envelope.envelope_id.clone());
                     continue;
@@ -1177,7 +1184,7 @@ impl<T: Transport> Client<T> {
             // Конверт подтверждается: в очереди он приходил бы снова.
             if self.storage.is_chat_blocked(&chat_id)? {
                 self.storage
-                    .save_session(&chat_id, &incoming.session, now)?;
+                    .save_session(&session_id, &incoming.session, now)?;
                 if let Some(initial) = incoming.initial {
                     self.storage.remember_initial(
                         initial.base_key.as_bytes(),
@@ -1197,12 +1204,17 @@ impl<T: Transport> Client<T> {
             }
 
             // Собеседник этого конверта: из конверта инициации либо
-            // из проверенного и привязанного сертификата.
-            let sender = incoming.sender_identity.or_else(|| {
-                certificate
-                    .as_ref()
-                    .map(|certificate| certificate.identity_key)
-            });
+            // из проверенного и привязанного сертификата — ключ его
+            // аккаунта, а не устройства.
+            let sender = incoming
+                .sender_identity
+                .or_else(|| {
+                    certificate
+                        .as_ref()
+                        .map(|certificate| certificate.identity_key)
+                })
+                .map(|device| self.account_of(&device))
+                .transpose()?;
 
             // 🔐 Запрос на переписку. Новый чат, начатый собеседником, —
             // запрос: отвечать (квитанциями, «печатает…») нельзя, пока
@@ -1220,7 +1232,8 @@ impl<T: Transport> Client<T> {
                 _ => {}
             }
 
-            if let Some(peer) = incoming.sender_identity {
+            if let Some(device) = incoming.sender_identity {
+                let peer = self.account_of(&device)?;
                 self.storage
                     .save_contact_identity(&peer_account(&peer), peer.as_bytes())?;
 
@@ -1231,7 +1244,7 @@ impl<T: Transport> Client<T> {
             }
 
             self.storage
-                .save_session(&chat_id, &incoming.session, now)?;
+                .save_session(&session_id, &incoming.session, now)?;
 
             // Запоминается вместе с сессией, которую конверт установил.
             if let Some(initial) = incoming.initial {
@@ -1597,7 +1610,7 @@ impl<T: Transport> Client<T> {
         };
 
         let (identity, _) = self.load_identity()?;
-        let chat_id = derive_chat_id(identity.public().public(), &link.identity);
+        let chat_id = derive_chat_id(&self.own_account(&identity)?, &link.identity);
 
         // 🔐 Смена ключа ищется по имени, а не по счёту.
         //
@@ -2066,7 +2079,7 @@ impl<T: Transport> Client<T> {
     /// [`GasAppError::Storage`] — чтение не удалось.
     pub fn safety_number(&self, contact: &AccountId) -> Result<String> {
         let (identity, _) = self.load_identity()?;
-        let own = *identity.public().public();
+        let own = self.own_account(&identity)?;
 
         let peer_bytes = self
             .storage
@@ -2184,9 +2197,11 @@ impl<T: Transport> Client<T> {
             <[u8; 32]>::try_from(row.identity_key.as_slice()),
         ) {
             (Some(chat), _) => Some(chat),
-            (None, Ok(identity)) => self.load_identity().ok().map(|(own, _)| {
-                derive_chat_id(own.public().public(), &PublicKeyBytes::new(identity))
-            }),
+            (None, Ok(identity)) => self
+                .load_identity()
+                .ok()
+                .and_then(|(own, _)| self.own_account(&own).ok())
+                .map(|own| derive_chat_id(&own, &PublicKeyBytes::new(identity))),
             (None, Err(_)) => None,
         };
 
@@ -2318,7 +2333,7 @@ impl<T: Transport> Client<T> {
         // что имя не известно вовсе.
         if known.is_empty() {
             let (own, _) = self.load_identity()?;
-            let chat_id = derive_chat_id(own.public().public(), advertised);
+            let chat_id = derive_chat_id(&self.own_account(&own)?, advertised);
 
             self.storage.save_contact(
                 &peer_account(advertised),
@@ -2349,7 +2364,7 @@ impl<T: Transport> Client<T> {
             // была видна, а не только отказ.
             let (own, _) = self.load_identity()?;
             let account = peer_account(advertised);
-            let chat_id = derive_chat_id(own.public().public(), advertised);
+            let chat_id = derive_chat_id(&self.own_account(&own)?, advertised);
 
             self.storage.save_contact(
                 &account,
@@ -3007,7 +3022,7 @@ impl<T: Transport> Client<T> {
         sender: Option<&PublicKeyBytes>,
         raw: &[u8],
         now: Timestamp,
-    ) -> Option<(session::IncomingMessage, Option<ChatId>)> {
+    ) -> Option<(session::IncomingMessage, Option<(ChatId, ChatId)>)> {
         // 🔐 Незапечатанный конверт не принимается вовсе. Сервер такие
         // не берёт (`/v1/sealed/messages` — единственный путь отправки),
         // значит положить его в очередь мог только тот, кто держит
@@ -3029,20 +3044,42 @@ impl<T: Transport> Client<T> {
         // сотня в очереди — на минуты. А подойти могла только одна
         // сессия: сертификат обязан быть привязан к чату
         // (`certificate_matches`), остальные отбрасывались бы всё равно.
-        let chat_id = derive_chat_id(identity.public().public(), sender);
-        let state = self.storage.load_session(&chat_id).ok()??;
+        //
+        // Чат — по ключам аккаунтов, сессия — с устройством из сертификата.
+        let account = self.account_of(sender).ok()?;
+        let chat_id = derive_chat_id(&self.own_account(identity).ok()?, &account);
+        let session_id = session::device_session_id(&chat_id, &account, sender);
+        let state = self.storage.load_session(&session_id).ok()??;
 
         session::receive(identity, secrets, Some(&state), raw, now)
             .ok()
-            .map(|incoming| (incoming, Some(chat_id)))
+            .map(|incoming| (incoming, Some((chat_id, session_id))))
     }
 
     /// Загружает identity-пару и секреты предключей.
-    /// Ключ — наш собственный identity-ключ.
+    /// Ключ — наш собственный: ключ этого устройства или своего аккаунта.
     fn is_own_identity(&self, key: &PublicKeyBytes) -> Result<bool> {
         let (identity, _) = self.load_identity()?;
 
-        Ok(identity.public().public().as_bytes() == key.as_bytes())
+        Ok(identity.public().public() == key || self.own_account(&identity)? == *key)
+    }
+
+    /// Ключ своего аккаунта (`docs/protocol/MULTI-DEVICE.md`): на основном
+    /// устройстве — ключ устройства, на подключённом — записанный при
+    /// связывании. Из него, а не из ключа устройства, считаются чаты и
+    /// код безопасности.
+    pub(crate) fn own_account(&self, identity: &IdentityKeyPair) -> Result<PublicKeyBytes> {
+        Ok(self
+            .storage
+            .own_account_identity()?
+            .map_or(*identity.public().public(), |(key, _)| key))
+    }
+
+    /// Аккаунт, которому принадлежит ключ устройства, — по проверенным
+    /// спискам устройств. Нет в списках — ключ устройства и есть ключ
+    /// аккаунта (аккаунт с одним устройством).
+    pub(crate) fn account_of(&self, device: &PublicKeyBytes) -> Result<PublicKeyBytes> {
+        Ok(self.storage.account_of_device(device)?.unwrap_or(*device))
     }
 
     fn load_identity(&self) -> Result<(IdentityKeyPair, PreKeySecrets)> {

@@ -507,12 +507,9 @@ impl<T: Transport> Client<T> {
             return Ok(true);
         };
 
-        if certificate_matches(
-            identity.public().public(),
-            certificate,
-            sender_identity,
-            known_chat,
-        ) {
+        let own = self.own_account(identity)?;
+        let account = self.account_of(&certificate.identity_key)?;
+        if certificate_matches(&own, certificate, &account, sender_identity, known_chat) {
             return Ok(true);
         }
 
@@ -583,15 +580,20 @@ impl<T: Transport> Client<T> {
 ///
 /// * у конверта инициации — с identity отправителя из самого PQXDH;
 /// * у сообщения в сессии — с собеседником этого чата.
+///
+/// `own_account` — ключ своего аккаунта, `certificate_account` — аккаунт
+/// устройства из сертификата (`docs/protocol/MULTI-DEVICE.md`): чат живёт
+/// по ключам аккаунтов, сертификат называет устройство.
 pub(super) fn certificate_matches(
-    own_identity: &PublicKeyBytes,
+    own_account: &PublicKeyBytes,
     certificate: &SenderCertificate,
+    certificate_account: &PublicKeyBytes,
     sender_identity: Option<&PublicKeyBytes>,
     known_chat: Option<&ChatId>,
 ) -> bool {
     match (sender_identity, known_chat) {
         (Some(sender), _) => *sender == certificate.identity_key,
-        (None, Some(chat)) => derive_chat_id(own_identity, &certificate.identity_key) == *chat,
+        (None, Some(chat)) => derive_chat_id(own_account, certificate_account) == *chat,
         (None, None) => false,
     }
 }
@@ -641,14 +643,9 @@ mod tests {
     fn initial_envelope_binds_by_sender_identity() {
         let certificate = certificate_for(peer());
 
-        assert!(certificate_matches(
-            &own(),
-            &certificate,
-            Some(&peer()),
-            None
-        ));
+        assert!(certificate_matches(&own(), &certificate, &peer(), Some(&peer()), None));
         assert!(
-            !certificate_matches(&own(), &certificate, Some(&stranger()), None),
+            !certificate_matches(&own(), &certificate, &peer(), Some(&stranger()), None),
             "чужой сертификат принят для конверта инициации"
         );
     }
@@ -660,27 +657,29 @@ mod tests {
         let peer_chat = derive_chat_id(&own(), &peer());
         let stranger_chat = derive_chat_id(&own(), &stranger());
 
-        assert!(certificate_matches(
-            &own(),
-            &certificate,
-            None,
-            Some(&peer_chat)
-        ));
+        assert!(certificate_matches(&own(), &certificate, &peer(), None, Some(&peer_chat)));
         assert!(
-            !certificate_matches(&own(), &certificate, None, Some(&stranger_chat)),
+            !certificate_matches(&own(), &certificate, &peer(), None, Some(&stranger_chat)),
             "сертификат собеседника принят в чужой сессии"
         );
+    }
+
+    /// Сертификат подключённого устройства привязывается к чату его
+    /// аккаунта (`docs/protocol/MULTI-DEVICE.md`).
+    #[test]
+    fn a_linked_device_binds_to_its_account_chat() {
+        let device = PublicKeyBytes::new([0x44; 32]);
+        let certificate = certificate_for(device);
+        let account_chat = derive_chat_id(&own(), &peer());
+
+        assert!(certificate_matches(&own(), &certificate, &peer(), None, Some(&account_chat)));
+        assert!(!certificate_matches(&own(), &certificate, &device, None, Some(&account_chat)));
     }
 
     /// Без контекста привязать нельзя — и сертификат не принимается.
     #[test]
     fn unknown_context_never_binds() {
-        assert!(!certificate_matches(
-            &own(),
-            &certificate_for(peer()),
-            None,
-            None
-        ));
+        assert!(!certificate_matches(&own(), &certificate_for(peer()), &peer(), None, None));
     }
 
     /// Срок проверяется по времени очереди, если оно есть.

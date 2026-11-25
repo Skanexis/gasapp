@@ -27,6 +27,7 @@
 pub mod backup;
 pub mod blocks;
 pub mod channels;
+pub mod devices;
 pub mod keyboards;
 pub mod kt;
 pub mod pq;
@@ -405,7 +406,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 22;
+    const SCHEMA_VERSION: i32 = 23;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1065,6 +1066,36 @@ impl Storage {
                             [],
                         )
                         .map_err(storage_error)?;
+                }
+                // 22 → 23: несколько устройств на аккаунте (`devices`,
+                // docs/protocol/MULTI-DEVICE.md) — списки устройств
+                // собеседников, справочник «устройство → аккаунт» и ключ
+                // своего аккаунта на подключённом устройстве.
+                23 => {
+                    for statement in [
+                        "CREATE TABLE IF NOT EXISTS device_lists (
+                             account_identity BLOB PRIMARY KEY,
+                             version          INTEGER NOT NULL,
+                             digest           BLOB NOT NULL,
+                             signed           BLOB NOT NULL,
+                             updated_at       INTEGER NOT NULL
+                         )",
+                        "CREATE TABLE IF NOT EXISTS device_keys (
+                             device_identity  BLOB PRIMARY KEY,
+                             account_identity BLOB NOT NULL,
+                             device_id        BLOB NOT NULL,
+                             pq_identity      BLOB NOT NULL
+                         )",
+                        "CREATE INDEX IF NOT EXISTS device_keys_by_account
+                             ON device_keys (account_identity)",
+                        "CREATE TABLE IF NOT EXISTS own_account (
+                             id          INTEGER PRIMARY KEY CHECK (id = 1),
+                             identity    BLOB NOT NULL,
+                             pq_identity BLOB NOT NULL
+                         )",
+                    ] {
+                        transaction.execute(statement, []).map_err(storage_error)?;
+                    }
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.

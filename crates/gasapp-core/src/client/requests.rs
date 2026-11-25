@@ -89,7 +89,7 @@ impl<T: Transport> Client<T> {
             return Ok(false);
         };
         let (identity, _) = self.load_identity()?;
-        let chat_id = derive_chat_id(identity.public().public(), &peer);
+        let chat_id = derive_chat_id(&self.own_account(&identity)?, &peer);
 
         Ok(self.storage.chat_request_state(&chat_id)? == Some(ChatRequest::Incoming))
     }
