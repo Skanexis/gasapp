@@ -337,7 +337,7 @@ No GasApp yet? The link shows where to get it.</string>
 
     <!-- Devices -->
     <string name="devices_section_current">Linked devices</string>
-    <string name="devices_note">Every linked device can read all of your messages. Device linking will come with multi-device sync; for now, your account works only on this device.</string>
+    <string name="devices_note">Every linked device can read all new messages. Device linking and unlinking are done from the main phone.</string>
 
     <!-- About -->
     <string name="about_section_version">Versions</string>
@@ -975,4 +975,44 @@ No GasApp yet? The link shows where to get it.</string>
     <string name="notifications_blocked">Notifications are turned off for GasApp in the phone settings.</string>
     <string name="notifications_tor">With Tor or a proxy, notifications arrive only while the app is open: a background check would go directly and reveal your IP address.</string>
     <string name="notifications_how">About every 15 minutes the phone asks the server whether anything is waiting — with a separate token that answers only “yes” or “no”. The server sees that your phone is online, as it would during any connection, and does not record when it asked. Messages themselves are fetched only when you open the app.</string>
+
+    <!-- Несколько устройств (docs/protocol/MULTI-DEVICE.md). -->
+    <string name="devices_intro">One account — up to five phones. Messages are encrypted separately for each device; the server cannot read them.</string>
+    <string name="devices_this_phone">This phone</string>
+    <string name="devices_phone">Phone · %1$s</string>
+    <string name="devices_primary">Main</string>
+    <string name="devices_linked">Linked</string>
+    <string name="devices_link">Link a device</string>
+    <string name="devices_link_hint">On the new phone, install GasApp and choose “Sign in from another phone” on the first screen — a QR code appears.</string>
+    <string name="devices_link_full">You already have five devices — unlink one to add another.</string>
+    <string name="devices_not_primary">This is a linked phone. Devices can be linked and unlinked only from the main phone.</string>
+    <string name="devices_note_history">Message history does not move to a new device: it gets messages from the moment it is linked.</string>
+    <string name="devices_note_privacy">The server knows how many devices you have, but not which one you write from.</string>
+    <string name="devices_unlink">Unlink</string>
+    <string name="devices_unlink_title">Unlink this device?</string>
+    <string name="devices_unlink_message">New messages will no longer reach it. Messages already on it stay there.</string>
+    <string name="devices_load_failed">The device list didn’t load. Check your connection.</string>
+    <string name="devices_compare_title">Compare the digits</string>
+    <string name="devices_compare_message">The new phone must show the same digits. If they don’t match, don’t link: the QR was swapped. The new phone gets access to all new messages.</string>
+    <string name="devices_compare_match">They match — link</string>
+    <string name="devices_compare_mismatch">They don’t match</string>
+    <string name="devices_mismatch_done">The digits didn’t match — the device was not linked.</string>
+    <string name="devices_approved">On the new phone, tap “Digits match” — and it signs in.</string>
+    <string name="devices_error_code">The code didn’t work or has expired. A new QR appears on the new phone — scan it.</string>
+    <string name="devices_error_restricted">Your account is restricted — linking is unavailable.</string>
+    <string name="scan_hint_device">Point the camera at the QR code on the new phone</string>
+    <string name="onboarding_link_continue">Show the code</string>
+    <string name="onboarding_link">Sign in from another phone</string>
+    <string name="link_title">Sign in from another phone</string>
+    <string name="link_intro">On your main phone: Settings → Devices → “Link a device”. Point the camera at this code.</string>
+    <string name="link_preparing">Preparing the code…</string>
+    <string name="link_waiting">Waiting for the main phone · code refreshes in %1$d s</string>
+    <string name="link_no_network">Can’t reach the server. Retrying…</string>
+    <string name="link_compare_intro">Signing in to @%1$s. The main phone shows the same digits.</string>
+    <string name="link_match">Digits match</string>
+    <string name="link_mismatch">They don’t match</string>
+    <string name="link_mismatch_done">The digits didn’t match — sign-in cancelled. Try again with the new QR.</string>
+    <string name="link_failed">Sign-in didn’t complete. Check your connection and scan the new QR with the main phone.</string>
+    <string name="link_history">Message history doesn’t move here — you get messages from the moment you sign in.</string>
+    <string name="link_qr_description">Code for linking this phone</string>
 </resources>

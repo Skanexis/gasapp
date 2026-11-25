@@ -1,16 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  Связанные устройства.
+  Устройства аккаунта (docs/protocol/MULTI-DEVICE.md).
 
-  🔐 Каждое связанное устройство читает переписку целиком. Список
-  показывает, сколько их и когда каждое выходило на связь: устройство,
-  о котором пользователь не помнит, — повод для тревоги, и увидеть его
-  он должен без усилий.
-
-  Связывание устройств появится в M7 вместе с протоколом из раздела
-  13.2. До тех пор список показывает только текущее устройство —
-  честное состояние, а не заглушка.
+  🔐 Каждое подключённое устройство читает новую переписку. Список
+  показывает, сколько их: устройство, о котором пользователь не помнит, —
+  повод для тревоги, и увидеть его он должен без усилий. Подключают и
+  отключают только с основного телефона.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -50,18 +46,71 @@
             android:padding="@dimen/screen_padding">
 
             <TextView
-                style="@style/GasAppSectionLabel"
-                android:text="@string/devices_section_current" />
-            <org.gasapp.app.components.GasAppGroup style="@style/GasAppGroup">
+                style="@style/GasAppText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/devices_intro" />
 
-                <include
-                    android:id="@+id/devices_this"
-                    layout="@layout/item_settings_row" />
-            </org.gasapp.app.components.GasAppGroup>
             <TextView
-                style="@style/GasAppCaption"
+                android:id="@+id/devices_status"
+                style="@style/GasAppText.Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_m"
-                android:text="@string/devices_note" />
+                android:visibility="gone"
+                tools:text="Цифры не совпали — устройство не подключено."
+                tools:visibility="visible" />
+
+            <TextView
+                style="@style/GasAppSectionLabel"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/devices_section_current" />
+
+            <org.gasapp.app.components.GasAppGroup
+                android:id="@+id/devices_list"
+                style="@style/GasAppGroup" />
+
+            <ProgressBar
+                android:id="@+id/devices_loading"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/space_m"
+                android:indeterminateTint="@color/accent_base" />
+
+            <org.gasapp.app.components.GasAppButton
+                android:id="@+id/devices_link"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/devices_link"
+                android:visibility="gone"
+                app:buttonVariant="primary"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/devices_link_hint"
+                style="@style/GasAppText.Caption.Muted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/devices_link_hint"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <TextView
+                style="@style/GasAppText.Caption.Muted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/devices_note_history" />
+
+            <TextView
+                style="@style/GasAppText.Caption.Muted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_s"
+                android:text="@string/devices_note_privacy" />
 
         </LinearLayout>
     </ScrollView>

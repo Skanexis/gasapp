@@ -221,6 +221,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".LinkDeviceActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".IdentityChangedActivity"
             android:exported="false" />
 

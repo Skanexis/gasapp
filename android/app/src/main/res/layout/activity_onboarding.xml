@@ -720,6 +720,16 @@
         android:text="@string/onboarding_recover"
         app:buttonVariant="ghost" />
 
+    <!-- Вход с другого своего телефона по QR (docs/protocol/MULTI-DEVICE.md). -->
+    <org.gasapp.app.components.GasAppButton
+        android:id="@+id/onboarding_link"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_l"
+        android:layout_marginEnd="@dimen/space_l"
+        android:text="@string/onboarding_link"
+        app:buttonVariant="ghost" />
+
     <org.gasapp.app.components.GasAppButton
         android:id="@+id/onboarding_next"
         android:layout_width="match_parent"

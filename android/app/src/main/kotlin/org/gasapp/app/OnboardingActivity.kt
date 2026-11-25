@@ -105,6 +105,12 @@ class OnboardingActivity : AppCompatActivity() {
     /** Путь: новый аккаунт или возвращение из копии. */
     private var restoring = false
 
+    /**
+     * Возвращение — не из копии, а с другого своего телефона по QR
+     * (`docs/protocol/MULTI-DEVICE.md`). Шаги те же: только PIN.
+     */
+    private var linking = false
+
     /** «Назад» с шага возвращает на предыдущий, а не закрывает экран. */
     private val stepBack = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() = previousStep()
@@ -171,10 +177,17 @@ class OnboardingActivity : AppCompatActivity() {
 
         findViewById<GasAppButton>(R.id.onboarding_start).setOnClickListener {
             restoring = false
+            linking = false
             showStep(Step.Username)
         }
         findViewById<GasAppButton>(R.id.onboarding_recover).setOnClickListener {
             restoring = true
+            linking = false
+            showStep(Step.Pin)
+        }
+        findViewById<GasAppButton>(R.id.onboarding_link).setOnClickListener {
+            restoring = true
+            linking = true
             showStep(Step.Pin)
         }
         findViewById<GasAppButton>(R.id.onboarding_next).setOnClickListener { usernameDone() }
@@ -199,6 +212,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         savedInstanceState?.let {
             restoring = it.getBoolean(STATE_RESTORING)
+            linking = it.getBoolean(STATE_LINKING)
             step = Step.entries[it.getInt(STATE_STEP)]
         }
 
@@ -240,6 +254,7 @@ class OnboardingActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         outState.putInt(STATE_STEP, step.ordinal)
         outState.putBoolean(STATE_RESTORING, restoring)
+        outState.putBoolean(STATE_LINKING, linking)
     }
 
     /**
@@ -264,6 +279,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.onboarding_start).isVisible = target == Step.Welcome
         findViewById<View>(R.id.onboarding_recover).isVisible = target == Step.Welcome
+        findViewById<View>(R.id.onboarding_link).isVisible = target == Step.Welcome
         findViewById<View>(R.id.onboarding_next).isVisible = target == Step.Username
         createButton.isVisible = target == Step.Pin
         confirmButton.isVisible = target == Step.Code
@@ -298,7 +314,13 @@ class OnboardingActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.onboarding_pin_title).setText(
             if (restoring) R.string.onboarding_restore_pin_title else R.string.onboarding_pin_title,
         )
-        createButton.setText(if (restoring) R.string.onboarding_restore_continue else R.string.onboarding_create)
+        createButton.setText(
+            when {
+                linking -> R.string.onboarding_link_continue
+                restoring -> R.string.onboarding_restore_continue
+                else -> R.string.onboarding_create
+            },
+        )
 
         placeNetwork(if (restoring) R.id.onboarding_page_pin else R.id.onboarding_page_username)
         scroll.scrollTo(0, 0)
@@ -893,8 +915,13 @@ class OnboardingActivity : AppCompatActivity() {
             opened
                 .onSuccess {
                     startActivity(
-                        Intent(this@OnboardingActivity, RestoreActivity::class.java)
-                            .putExtra(RestoreActivity.EXTRA_RECOVER_ACCOUNT, true),
+                        if (linking) {
+                            // Аккаунт придёт с основного телефона по QR.
+                            Intent(this@OnboardingActivity, LinkDeviceActivity::class.java)
+                        } else {
+                            Intent(this@OnboardingActivity, RestoreActivity::class.java)
+                                .putExtra(RestoreActivity.EXTRA_RECOVER_ACCOUNT, true)
+                        },
                     )
                     finish()
                 }
@@ -1189,6 +1216,7 @@ class OnboardingActivity : AppCompatActivity() {
     companion object {
         private const val STATE_STEP = "step"
         private const val STATE_RESTORING = "restoring"
+        private const val STATE_LINKING = "linking"
 
         /** Шагов у нового аккаунта: имя с почтой, PIN и код из письма. */
         private const val STEPS = 3

@@ -327,7 +327,7 @@
 
     <!-- Устройства. -->
     <string name="devices_section_current">Связанные устройства</string>
-    <string name="devices_note">Каждое связанное устройство читает переписку целиком. Связывание появится вместе с синхронизацией между устройствами; пока аккаунт доступен только отсюда.</string>
+    <string name="devices_note">Каждое подключённое устройство читает все новые сообщения. Подключают и отключают устройства с основного телефона.</string>
 
     <!-- О программе. -->
     <string name="about_section_version">Версии</string>
@@ -1028,4 +1028,44 @@
     <string name="notifications_blocked">Уведомления GasApp выключены в настройках телефона.</string>
     <string name="notifications_tor">С Tor или прокси уведомления приходят, только пока приложение открыто: фоновая проверка пошла бы напрямую и выдала бы ваш IP-адрес.</string>
     <string name="notifications_how">Примерно раз в 15 минут телефон спрашивает сервер, нет ли чего-то для него, — отдельным токеном, который отвечает только «да» или «нет». Сервер видит, что телефон в сети, как и при любом соединении, и не записывает, когда его спрашивали. Сами сообщения забираются, только когда вы открываете приложение.</string>
+
+    <!-- Несколько устройств (docs/protocol/MULTI-DEVICE.md). -->
+    <string name="devices_intro">Один аккаунт — до пяти телефонов. Сообщения шифруются для каждого устройства отдельно; сервер прочитать их не может.</string>
+    <string name="devices_this_phone">Этот телефон</string>
+    <string name="devices_phone">Телефон · %1$s</string>
+    <string name="devices_primary">Основной</string>
+    <string name="devices_linked">Подключён</string>
+    <string name="devices_link">Подключить устройство</string>
+    <string name="devices_link_hint">На новом телефоне установите GasApp и на первом экране выберите «Войти с другого телефона» — появится QR-код.</string>
+    <string name="devices_link_full">Устройств уже пять — чтобы подключить новое, отключите одно из них.</string>
+    <string name="devices_not_primary">Это подключённый телефон. Подключать и отключать устройства можно только с основного.</string>
+    <string name="devices_note_history">История переписки на новое устройство не переносится: там будут сообщения с момента подключения.</string>
+    <string name="devices_note_privacy">Сервер знает, сколько у вас устройств, но не знает, с какого из них вы пишете.</string>
+    <string name="devices_unlink">Отключить</string>
+    <string name="devices_unlink_title">Отключить устройство?</string>
+    <string name="devices_unlink_message">Новые сообщения на него больше не придут. Переписка, которая уже есть на нём, там и останется.</string>
+    <string name="devices_load_failed">Список устройств не загрузился. Проверьте связь.</string>
+    <string name="devices_compare_title">Сверьте цифры</string>
+    <string name="devices_compare_message">Такие же цифры должны быть на новом телефоне. Не совпадают — не подключайте: значит, QR подменили. Новый телефон получит доступ ко всем новым сообщениям.</string>
+    <string name="devices_compare_match">Совпадают — подключить</string>
+    <string name="devices_compare_mismatch">Не совпадают</string>
+    <string name="devices_mismatch_done">Цифры не совпали — устройство не подключено.</string>
+    <string name="devices_approved">На новом телефоне нажмите «Цифры совпадают» — и он войдёт в аккаунт.</string>
+    <string name="devices_error_code">Код не подошёл или устарел. На новом телефоне появится новый QR — отсканируйте его.</string>
+    <string name="devices_error_restricted">Аккаунт ограничен — подключение недоступно.</string>
+    <string name="scan_hint_device">Наведите камеру на QR-код на новом телефоне</string>
+    <string name="onboarding_link_continue">Показать код</string>
+    <string name="onboarding_link">Войти с другого телефона</string>
+    <string name="link_title">Вход с другого телефона</string>
+    <string name="link_intro">На основном телефоне: Настройки → Устройства → «Подключить устройство». Наведите камеру на этот код.</string>
+    <string name="link_preparing">Готовим код…</string>
+    <string name="link_waiting">Ждём основной телефон · код обновится через %1$d с</string>
+    <string name="link_no_network">Нет связи с сервером. Пробуем снова…</string>
+    <string name="link_compare_intro">Вход в @%1$s. Такие же цифры — на основном телефоне.</string>
+    <string name="link_match">Цифры совпадают</string>
+    <string name="link_mismatch">Не совпадают</string>
+    <string name="link_mismatch_done">Цифры не совпали — вход отменён. Попробуйте ещё раз с новым QR.</string>
+    <string name="link_failed">Вход не завершился. Проверьте связь и отсканируйте новый QR основным телефоном.</string>
+    <string name="link_history">История переписки сюда не переносится — будут сообщения с момента входа.</string>
+    <string name="link_qr_description">Код для подключения этого телефона</string>
 </resources>

@@ -266,7 +266,7 @@ Non hai GasApp? Il link ti mostra dove scaricarla.</string>
     <string name="storage_purged">Messaggi eliminati: %1$d</string>
     <string name="storage_cleared">File scaricati eliminati</string>
     <string name="devices_section_current">Dispositivi collegati</string>
-    <string name="devices_note">Ogni dispositivo collegato può leggere tutti i tuoi messaggi. Il collegamento dei dispositivi arriverà con la sincronizzazione multi-dispositivo; per ora il tuo account funziona solo su questo dispositivo.</string>
+    <string name="devices_note">Ogni dispositivo collegato può leggere tutti i nuovi messaggi. I dispositivi si collegano e scollegano dal telefono principale.</string>
     <string name="about_section_version">Versioni</string>
     <string name="about_section_legal">Licenza</string>
     <string name="about_app_version">App</string>
@@ -882,4 +882,44 @@ Non hai GasApp? Il link ti mostra dove scaricarla.</string>
     <string name="notifications_blocked">Le notifiche di GasApp sono disattivate nelle impostazioni del telefono.</string>
     <string name="notifications_tor">Con Tor o un proxy, le notifiche arrivano solo mentre l’app è aperta: un controllo in background andrebbe in diretta e rivelerebbe il tuo indirizzo IP.</string>
     <string name="notifications_how">Circa ogni 15 minuti il telefono chiede al server se c’è qualcosa in attesa, con un token separato che risponde solo «sì» o «no». Il server vede che il tuo telefono è online, come durante qualsiasi connessione, e non registra quando lo ha chiesto. I messaggi veri e propri vengono scaricati solo quando apri l’app.</string>
+
+    <!-- Несколько устройств (docs/protocol/MULTI-DEVICE.md). -->
+    <string name="devices_intro">Un account — fino a cinque telefoni. I messaggi sono cifrati separatamente per ogni dispositivo; il server non può leggerli.</string>
+    <string name="devices_this_phone">Questo telefono</string>
+    <string name="devices_phone">Telefono · %1$s</string>
+    <string name="devices_primary">Principale</string>
+    <string name="devices_linked">Collegato</string>
+    <string name="devices_link">Collega un dispositivo</string>
+    <string name="devices_link_hint">Sul nuovo telefono installa GasApp e scegli «Accedi da un altro telefono» nella prima schermata: apparirà un codice QR.</string>
+    <string name="devices_link_full">Hai già cinque dispositivi: scollegane uno per aggiungerne un altro.</string>
+    <string name="devices_not_primary">Questo è un telefono collegato. I dispositivi si collegano e scollegano solo dal telefono principale.</string>
+    <string name="devices_note_history">La cronologia dei messaggi non passa al nuovo dispositivo: riceve i messaggi dal momento del collegamento.</string>
+    <string name="devices_note_privacy">Il server sa quanti dispositivi hai, ma non da quale scrivi.</string>
+    <string name="devices_unlink">Scollega</string>
+    <string name="devices_unlink_title">Scollegare il dispositivo?</string>
+    <string name="devices_unlink_message">I nuovi messaggi non lo raggiungeranno più. I messaggi già presenti restano lì.</string>
+    <string name="devices_load_failed">L’elenco dei dispositivi non si è caricato. Controlla la connessione.</string>
+    <string name="devices_compare_title">Confronta le cifre</string>
+    <string name="devices_compare_message">Il nuovo telefono deve mostrare le stesse cifre. Se non coincidono, non collegare: il QR è stato sostituito. Il nuovo telefono avrà accesso a tutti i nuovi messaggi.</string>
+    <string name="devices_compare_match">Coincidono — collega</string>
+    <string name="devices_compare_mismatch">Non coincidono</string>
+    <string name="devices_mismatch_done">Le cifre non coincidevano: il dispositivo non è stato collegato.</string>
+    <string name="devices_approved">Sul nuovo telefono tocca «Le cifre coincidono» ed entrerà nell’account.</string>
+    <string name="devices_error_code">Il codice non è valido o è scaduto. Sul nuovo telefono apparirà un nuovo QR: scansionalo.</string>
+    <string name="devices_error_restricted">Il tuo account è limitato: il collegamento non è disponibile.</string>
+    <string name="scan_hint_device">Inquadra il codice QR sul nuovo telefono</string>
+    <string name="onboarding_link_continue">Mostra il codice</string>
+    <string name="onboarding_link">Accedi da un altro telefono</string>
+    <string name="link_title">Accedi da un altro telefono</string>
+    <string name="link_intro">Sul telefono principale: Impostazioni → Dispositivi → «Collega un dispositivo». Inquadra questo codice.</string>
+    <string name="link_preparing">Preparazione del codice…</string>
+    <string name="link_waiting">In attesa del telefono principale · il codice si aggiorna tra %1$d s</string>
+    <string name="link_no_network">Server non raggiungibile. Nuovo tentativo…</string>
+    <string name="link_compare_intro">Accesso a @%1$s. Il telefono principale mostra le stesse cifre.</string>
+    <string name="link_match">Le cifre coincidono</string>
+    <string name="link_mismatch">Non coincidono</string>
+    <string name="link_mismatch_done">Le cifre non coincidevano: accesso annullato. Riprova con il nuovo QR.</string>
+    <string name="link_failed">L’accesso non è stato completato. Controlla la connessione e scansiona il nuovo QR con il telefono principale.</string>
+    <string name="link_history">La cronologia non viene trasferita qui: riceverai i messaggi dal momento dell’accesso.</string>
+    <string name="link_qr_description">Codice per collegare questo telefono</string>
 </resources>

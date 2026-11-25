@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Вход с другого телефона (docs/protocol/MULTI-DEVICE.md): QR для
+  основного телефона, затем сверка шести цифр.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base"
+    android:orientation="vertical">
+
+    <LinearLayout style="@style/GasAppAppBar">
+
+        <ImageView
+            android:id="@+id/link_back"
+            style="@style/GasAppIconButton"
+            android:layout_marginStart="-12dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <TextView
+            android:id="@+id/link_title"
+            style="@style/GasAppAppBarTitle"
+            android:layout_marginStart="@dimen/space_s"
+            android:text="@string/link_title" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:defaultFocusHighlightEnabled="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/screen_padding">
+
+            <TextView
+                android:id="@+id/link_intro"
+                style="@style/GasAppText.Body.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/link_intro" />
+
+            <TextView
+                android:id="@+id/link_status"
+                style="@style/GasAppText.Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_m"
+                android:textColor="@color/status_error"
+                android:visibility="gone"
+                tools:text="Нет связи с сервером. Пробуем снова…"
+                tools:visibility="visible" />
+
+            <!-- Шаг 1: QR. Белое поле кода нужно камере для контраста. -->
+            <LinearLayout
+                android:id="@+id/link_qr_page"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <FrameLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:background="@drawable/bg_qr_card"
+                    android:padding="@dimen/space_m">
+
+                    <ImageView
+                        android:id="@+id/link_qr"
+                        android:layout_width="232dp"
+                        android:layout_height="232dp"
+                        android:contentDescription="@string/link_qr_description" />
+
+                    <ProgressBar
+                        android:id="@+id/link_qr_loading"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:layout_gravity="center"
+                        android:indeterminateTint="@color/bg_base" />
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/link_waiting"
+                    style="@style/GasAppText.Caption.Muted"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_m"
+                    android:fontFeatureSettings="tnum"
+                    android:gravity="center"
+                    android:text="@string/link_preparing" />
+            </LinearLayout>
+
+            <!-- Шаг 2: сверка цифр. -->
+            <LinearLayout
+                android:id="@+id/link_compare_page"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <TextView
+                    android:id="@+id/link_digits"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:background="@drawable/bg_panel_deep"
+                    android:fontFamily="@font/rubik"
+                    android:fontFeatureSettings="tnum"
+                    android:gravity="center"
+                    android:letterSpacing="0.12"
+                    android:paddingTop="18dp"
+                    android:paddingBottom="18dp"
+                    android:textColor="@color/accent_base"
+                    android:textSize="40sp"
+                    tools:text="482 913" />
+
+                <org.gasapp.app.components.GasAppButton
+                    android:id="@+id/link_match"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_l"
+                    android:text="@string/link_match"
+                    app:buttonVariant="primary"
+                    app:gasappButtonSize="large" />
+
+                <org.gasapp.app.components.GasAppButton
+                    android:id="@+id/link_mismatch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_s"
+                    android:text="@string/link_mismatch"
+                    app:buttonVariant="ghost" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/GasAppText.Caption.Muted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_l"
+                android:text="@string/link_history" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>
