@@ -1290,7 +1290,11 @@ impl Messenger {
     /// # Errors
     ///
     /// [`FfiError::Core`] — сервер недоступен.
-    pub fn flush_acknowledgements(&self, device_id: String, now_millis: i64) -> Result<(), FfiError> {
+    pub fn flush_acknowledgements(
+        &self,
+        device_id: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
         guard(|| client.flush_acknowledgements(&device_id, Timestamp::from_millis(now_millis)))
     }

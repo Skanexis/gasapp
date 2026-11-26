@@ -43,7 +43,7 @@ use gasapp_protocol::keys::SessionState;
 use gasapp_types::{
     AccountId, ChatId, Ciphertext, GasAppError, MessageId, Result, Secret, Timestamp,
 };
-use rusqlite::{params, Connection, OpenFlags};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 
 /// Сводит ошибку `SQLite` к [`GasAppError::Storage`], не раскрывая деталей.
 ///
@@ -411,7 +411,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 23;
+    const SCHEMA_VERSION: i32 = 24;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1101,6 +1101,21 @@ impl Storage {
                     ] {
                         transaction.execute(statement, []).map_err(storage_error)?;
                     }
+                }
+                24 => {
+                    // Обработанные конверты: повторно выданный сервером
+                    // (подтверждение не дошло — приложение выгрузили, сеть
+                    // оборвалась) подтверждается молча, а не считается
+                    // «нечитаемым» или повтором атаки.
+                    transaction
+                        .execute(
+                            "CREATE TABLE IF NOT EXISTS processed_envelopes (
+                                 envelope_id  TEXT PRIMARY KEY,
+                                 processed_at INTEGER NOT NULL
+                             )",
+                            [],
+                        )
+                        .map_err(storage_error)?;
                 }
                 // Будущие миграции добавляются сюда явными ветками.
                 // Недостижимо: `target_version` — это `SCHEMA_VERSION`.
@@ -3409,6 +3424,48 @@ impl Storage {
             )
             .map_err(storage_error)?;
 
+        Ok(())
+    }
+
+    /// Обработан ли уже конверт с этим идентификатором сервера.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение не удалось.
+    pub fn envelope_processed(&self, envelope_id: &str) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        connection
+            .query_row(
+                "SELECT 1 FROM processed_envelopes WHERE envelope_id = ?",
+                params![envelope_id],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|found| found.is_some())
+            .map_err(storage_error)
+    }
+
+    /// Отмечает конверт обработанным; отметки старше двух недель стираются
+    /// (сервер столько конверт не держит).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — запись не удалась.
+    pub fn mark_envelope_processed(&self, envelope_id: &str, now: Timestamp) -> Result<()> {
+        const KEEP_MILLIS: i64 = 14 * 24 * 60 * 60 * 1000;
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO processed_envelopes (envelope_id, processed_at) VALUES (?, ?)",
+                params![envelope_id, now.as_millis()],
+            )
+            .map_err(storage_error)?;
+        connection
+            .execute(
+                "DELETE FROM processed_envelopes WHERE processed_at < ?",
+                params![now.as_millis().saturating_sub(KEEP_MILLIS)],
+            )
+            .map_err(storage_error)?;
         Ok(())
     }
 

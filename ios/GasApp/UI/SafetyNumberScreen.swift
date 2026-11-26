@@ -125,6 +125,10 @@ struct SafetyNumberScreen: View {
             }
             digits = loaded.0
             qr = loaded.1
+        } catch FfiError.PeerUnconfirmed {
+            loadError = L10n.t("У собеседника ещё нет подтверждённого имени. Попросите его прислать свою ссылку или QR — тогда код появится.",
+                               "This contact has no confirmed username yet. Ask them to send their link or QR — then the code appears.",
+                               "Questo contatto non ha ancora un nome confermato. Chiedigli di inviarti il suo link o QR: poi il codice apparirà.")
         } catch FfiError.IdentityChanged {
             loadError = L10n.t("Сервер называет для \(name) другой ключ. Не пишите важного, пока не сверитесь лично.",
                                "The server names a different key for \(name). Don’t send anything important until you verify in person.",

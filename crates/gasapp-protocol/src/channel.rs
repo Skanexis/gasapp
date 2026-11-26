@@ -74,6 +74,33 @@ use crate::xeddsa::{XEdDSAPrivateKey, XEdDSAPublicKey, SIGNATURE_LEN};
 /// Схема и путь ссылки на канал.
 pub const LINK_PREFIX: &str = "gasapp://channel/";
 
+/// Веб-вид ссылки на канал: `https://gasapp.eu/c/#…` (страница сайта и
+/// Universal Links); закрытый — `https://gasapp.eu/c/#join/…`. Так ссылкой
+/// можно поделиться в другом мессенджере — `gasapp://` там не нажимается.
+pub const WEB_LINK_PREFIXES: [&str; 2] = ["https://gasapp.eu/c/#", "https://www.gasapp.eu/c/#"];
+
+/// Метка закрытого канала в веб-виде ссылки.
+pub const WEB_JOIN_MARK: &str = "join/";
+
+/// Ссылка на канал в виде для разбора: веб-вид → `gasapp://…`; прочее —
+/// как есть.
+#[must_use]
+pub fn app_link(input: &str) -> String {
+    let trimmed = input.trim();
+    for prefix in WEB_LINK_PREFIXES {
+        let matches = trimmed
+            .get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix));
+        if let (true, Some(rest)) = (matches, trimmed.get(prefix.len()..)) {
+            return match rest.strip_prefix(WEB_JOIN_MARK) {
+                Some(join) => format!("{}{join}", crate::channel_join::JOIN_LINK_PREFIX),
+                None => format!("{LINK_PREFIX}{rest}"),
+            };
+        }
+    }
+    trimmed.to_owned()
+}
+
 /// Длина идентификатора канала.
 pub const CHANNEL_ID_LEN: usize = 16;
 
@@ -393,8 +420,8 @@ impl ChannelAccess {
     ///
     /// [`GasAppError::Malformed`] — не ссылка на канал.
     pub fn parse(input: &str) -> Result<Self> {
+        let input = app_link(input);
         let rest = input
-            .trim()
             .strip_prefix(LINK_PREFIX)
             .ok_or(GasAppError::Malformed)?;
 
@@ -1601,5 +1628,20 @@ mod tests {
 
         assert_eq!(uuid, "12345678-9abc-def0-0123-456789abcdef");
         assert_eq!(parse_channel_id(&uuid).unwrap(), id);
+    }
+
+    /// Веб-вид ссылки (`https://gasapp.eu/c/#…`) разбирается так же, как
+    /// `gasapp://channel/…`; чужой сайт — нет.
+    #[test]
+    fn web_channel_links_parse_like_app_links() {
+        let uri = create(&mut OsRng).access.to_uri();
+        let payload = uri.strip_prefix(LINK_PREFIX).expect("префикс");
+        let web = format!("https://gasapp.eu/c/#{payload}");
+        assert_eq!(ChannelAccess::parse(&web).expect("веб-вид").to_uri(), uri);
+        assert!(ChannelAccess::parse(&format!("https://evil.example/c/#{payload}")).is_err());
+        assert_eq!(
+            app_link("https://GASAPP.EU/c/#join/abc"),
+            "gasapp://channel-join/abc"
+        );
     }
 }

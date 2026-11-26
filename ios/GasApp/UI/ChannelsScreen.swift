@@ -22,6 +22,9 @@ struct ChannelsScreen: View {
     /// Премиум — по сохранённому ответу сервера: без него ботов не показываем.
     @State private var premium = false
     @State private var opened: OpenedChannel?
+    /// Ссылка на закрытый канал: заявка уходит владельцу с вашим именем —
+    /// только после «Отправить».
+    @State private var confirmJoin: String?
     /// Нажатая в чате заявка на администрирование — подтверждение.
     @State private var appointing: AppointRequest?
 
@@ -138,6 +141,18 @@ struct ChannelsScreen: View {
             .gasScreen()
         }
         .task { await sync() }
+        .confirmationDialog(L10n.t("Отправить заявку в закрытый канал?", "Send a request to join this closed channel?", "Inviare una richiesta per entrare in questo canale chiuso?"),
+                            isPresented: Binding(get: { confirmJoin != nil }, set: { if !$0 { confirmJoin = nil } }),
+                            titleVisibility: .visible) {
+            Button(L10n.t("Отправить заявку", "Send request", "Invia richiesta")) {
+                if let link = confirmJoin { requestJoin(link) }
+                confirmJoin = nil
+            }
+        } message: {
+            Text(L10n.t("Владелец канала увидит ваше имя и решит, принять ли.",
+                        "The channel owner will see your username and decide whether to accept.",
+                        "Il proprietario del canale vedrà il tuo nome utente e deciderà se accettarti."))
+        }
         // Владелец нажал в чате заявку на администрирование — подтвердить.
         .onChange(of: model.pendingAdminRequest, initial: true) { _, request in
             guard let request else { return }
@@ -160,6 +175,19 @@ struct ChannelsScreen: View {
             model.pendingChannelLink = nil
             joinLink = link
             join()
+        }
+    }
+
+    private func requestJoin(_ link: String) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            do {
+                try await Background.run { try messenger.requestChannelJoin(link: link, nowMillis: CoreStore.nowMillis) }
+                message = L10n.t("Заявка отправлена владельцу канала", "Request sent to the channel owner", "Richiesta inviata al proprietario del canale")
+                await sync()
+            } catch {
+                message = L10n.t("Не удалось отправить заявку", "Could not send the request", "Impossibile inviare la richiesta")
+            }
         }
     }
 
@@ -236,9 +264,10 @@ struct ChannelsScreen: View {
         Task {
             do {
                 if isChannelJoinLink(text: link) {
-                    // Закрытый канал: заявка, владелец решает.
-                    try await Background.run { try messenger.requestChannelJoin(link: link, nowMillis: CoreStore.nowMillis) }
-                    message = L10n.t("Заявка отправлена владельцу канала", "Request sent to the channel owner", "Richiesta inviata al proprietario del canale")
+                    // Закрытый канал: заявка с вашим именем — сначала вопрос
+                    // (ссылку могли подсунуть, чтобы узнать, кто вы).
+                    confirmJoin = link
+                    return
                 } else if isChannelLink(text: link) {
                     let channel = try await Background.run { try messenger.joinChannel(link: link, nowMillis: CoreStore.nowMillis) }
                     message = nil

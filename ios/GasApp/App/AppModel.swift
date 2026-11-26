@@ -34,14 +34,22 @@ final class AppModel {
     /// Заявка на администрирование, нажатая владельцем канала в чате.
     var pendingAdminRequest: String?
 
-    /// Приложение открыли по ссылке.
+    /// Имя в ссылке не подтвердилось сервером (ключ другой) — предупредить:
+    /// контакт мог уже открыться по быстрому пути, без сети.
+    var linkWarning: String?
+
+    /// Приложение открыли по ссылке (другое приложение, сайт).
     func openURL(_ url: URL) {
-        _ = route(url)
+        _ = route(url, external: true)
     }
 
     /// Ссылка GasApp — в приложение (контакт — к чатам, канал — к
     /// каналам); `false` — чужая, её открывает система.
-    func route(_ url: URL) -> Bool {
+    ///
+    /// 🔐 `external` — ссылку открыло не нажатие в самом приложении:
+    /// `@имя` тогда не принимается (иначе любой сайт заставил бы доверять
+    /// ключу, который назвал сервер, — без участия человека).
+    func route(_ url: URL, external: Bool = false) -> Bool {
         switch AppLink(url) {
         case let .contact(link):
             pendingContactLink = link
@@ -50,6 +58,7 @@ final class AppModel {
             pendingChannelLink = link
             return true
         case let .mention(name):
+            guard !external else { return false }
             pendingMention = name
             return true
         case let .adminRequest(request):

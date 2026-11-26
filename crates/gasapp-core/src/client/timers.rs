@@ -122,10 +122,13 @@ impl<T: Transport> Client<T> {
         if announced == code || (announced < 0 && code == 0) {
             return;
         }
+        // Своим устройствам не копируется: у них свой общий таймер, а копия
+        // сделала бы этот чат у них явным.
         if self
-            .send_content(
+            .send_content_with(
                 peer_username,
                 &Content::DisappearingTimer { seconds },
+                false,
                 now,
                 rng,
             )

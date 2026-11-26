@@ -139,8 +139,9 @@ impl JoinLink {
     ///
     /// [`GasAppError::Malformed`] — это не ссылка закрытого канала.
     pub fn parse(input: &str) -> Result<Self> {
+        // Веб-вид (`https://gasapp.eu/c/#join/…`) — тоже: им делятся.
+        let input = crate::channel::app_link(input);
         let rest = input
-            .trim()
             .strip_prefix(JOIN_LINK_PREFIX)
             .ok_or(GasAppError::Malformed)?;
 

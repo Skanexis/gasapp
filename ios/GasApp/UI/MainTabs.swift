@@ -66,6 +66,15 @@ struct MainTabs: View {
         .onChange(of: model.pendingAdminRequest, initial: true) { _, request in
             if request != nil { tab = .channels }
         }
+        // 🔐 Имя из ссылки сервер связывает с другим ключом — возможна подмена.
+        .alert(L10n.t("Ссылка не подтвердилась", "The link didn’t check out", "Il link non è stato confermato"),
+               isPresented: Binding(get: { model.linkWarning != nil }, set: { if !$0 { model.linkWarning = nil } })) {
+            Button("OK", role: .cancel) { model.linkWarning = nil }
+        } message: {
+            Text(L10n.t("Сервер называет для «\(model.linkWarning ?? "")» другой ключ. Ссылку могли подделать: не пишите важного, пока не сверите код безопасности лично.",
+                        "The server names a different key for “\(model.linkWarning ?? "")”. The link may be forged: don’t send anything important until you compare the safety number in person.",
+                        "Il server indica una chiave diversa per «\(model.linkWarning ?? "")». Il link potrebbe essere falso: non inviare nulla di importante finché non confronti il numero di sicurezza di persona."))
+        }
         .onAppear { if pushed != nil { pushedShown = true } }
         .task { await checkRestriction() }
         .onChange(of: scenePhase) { _, phase in

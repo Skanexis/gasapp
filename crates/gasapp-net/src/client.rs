@@ -1675,19 +1675,22 @@ impl<T: Transport> ApiClient<T> {
             let body = to_json(&crate::api::AckBatchBody {
                 envelope_ids: chunk.to_vec(),
             })?;
-            let response = self.send_signed(
+            match self.send_signed(
                 Method::Post,
                 format!("/v1/messages/{device_id}/ack"),
                 Some(body),
                 signer,
-            )?;
-            if matches!(response.status, 404 | 405) {
-                for envelope_id in chunk {
-                    self.acknowledge(device_id, envelope_id, signer)?;
+            ) {
+                Ok(_) => {}
+                // Прежний сервер пачек не знает: 404 или 405 (`check_status`
+                // даёт `SessionNotFound` и `Malformed`) — по одному.
+                Err(GasAppError::SessionNotFound | GasAppError::Malformed) => {
+                    for envelope_id in chunk {
+                        self.acknowledge(device_id, envelope_id, signer)?;
+                    }
                 }
-                continue;
+                Err(error) => return Err(error),
             }
-            check_status(&response)?;
         }
         Ok(())
     }

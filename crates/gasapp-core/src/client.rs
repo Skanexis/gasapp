@@ -333,10 +333,12 @@ impl<T: Transport> Client<T> {
 
     /// Discovery для отправки: свежий ответ, а при отказе сети
     /// или сервера — последний известный (см. `Client::discovered`).
-    fn discover_for_send(&self, name: &str, now: Timestamp) -> Result<DiscoveryResponse> {
-        // Запрошенный заранее (открыт чат, человек печатает) — один раз и
-        // свежий: отправка — один сетевой запрос вместо двух. Проверяется
-        // он дальше ровно так же, как свежий.
+    /// Discovery для отправки сообщения (текст, вложение): запрошенный
+    /// заранее (открыт чат, человек печатает) — один раз и свежий, и
+    /// отправка — один сетевой запрос вместо двух. Проверяется он дальше
+    /// ровно так же, как свежий. Квитанции, «печатает» и прочее служебное
+    /// его не берут: он для сообщения, ради которого его и спросили.
+    fn discover_for_message(&self, name: &str, now: Timestamp) -> Result<DiscoveryResponse> {
         let prefetched = self
             .prefetched
             .lock()
@@ -348,7 +350,10 @@ impl<T: Transport> Client<T> {
                 return Ok(found);
             }
         }
+        self.discover_for_send(name, now)
+    }
 
+    fn discover_for_send(&self, name: &str, now: Timestamp) -> Result<DiscoveryResponse> {
         match self.api.discover(name) {
             Ok(found) => {
                 if let Ok(mut cache) = self.discovered.lock() {
@@ -689,7 +694,7 @@ impl<T: Transport> Client<T> {
         // только в приёме, когда нам присылают конверт инициации.
         let (identity, _) = self.load_identity()?;
 
-        let peer = self.discover_for_send(peer_username, now)?;
+        let peer = self.discover_for_message(peer_username, now)?;
         let peer_identity = parse_public_key(&peer.identity_key)?;
 
         // 🔐 До шифрования: ключ, названный сервером, обязан быть тем,
@@ -983,10 +988,29 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<ChatId> {
+        self.send_content_with(peer_username, content, true, now, rng)
+    }
+
+    /// [`Client::send_content`]; `copy_to_own` — копировать ли своим
+    /// устройствам (объявление общего таймера — нет: на них свой общий).
+    fn send_content_with<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        content: &Content,
+        copy_to_own: bool,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<ChatId> {
         let peer_username = &canonical_username(peer_username)?;
         let (identity, _) = self.load_identity()?;
+        let visible = matches!(content, Content::Attachments { .. });
 
-        let peer = self.discover_for_send(peer_username, now)?;
+        // Вложение — как текст: discovery, запрошенный заранее, годится.
+        let peer = if visible {
+            self.discover_for_message(peer_username, now)?
+        } else {
+            self.discover_for_send(peer_username, now)?
+        };
         let peer_identity = parse_public_key(&peer.identity_key)?;
 
         // 🔐 Та же проверка, что в `send_message`: реакция, правка
@@ -1002,6 +1026,12 @@ impl<T: Transport> Client<T> {
         let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
 
         let chat_id = derive_chat_id(&self.own_account(&identity)?, &peer_identity);
+
+        // Вложение в чате без своего таймера — общий срок собеседнику до
+        // него, как перед текстом (`client::timers`).
+        if visible {
+            self.announce_default_timer(peer_username, &chat_id, now, rng);
+        }
 
         let plaintext = Plaintext::new(content.to_bytes()?);
 
@@ -1029,13 +1059,15 @@ impl<T: Transport> Client<T> {
 
         // Видимое в переписке и таймер исчезающих — копией своим
         // устройствам: иначе на них сообщения жили бы вечно.
-        if matches!(
-            content,
-            Content::Attachments { .. }
-                | Content::Edit { .. }
-                | Content::Delete { .. }
-                | Content::DisappearingTimer { .. }
-        ) {
+        if copy_to_own
+            && matches!(
+                content,
+                Content::Attachments { .. }
+                    | Content::Edit { .. }
+                    | Content::Delete { .. }
+                    | Content::DisappearingTimer { .. }
+            )
+        {
             let _ = self.copy_to_own_devices(
                 &identity,
                 &peer_identity,
@@ -1082,7 +1114,9 @@ impl<T: Transport> Client<T> {
     ///
     /// Как у [`Client::receive_messages`].
     pub fn receive_messages_deferred(&self, device_id: &str, now: Timestamp) -> Result<usize> {
-        self.flush_acknowledgements(device_id, now)?;
+        // Не ушли — не беда: повторно выданное узнаётся по отметке
+        // «обработан» и подтверждается молча; приём не останавливается.
+        let _ = self.flush_acknowledgements(device_id, now);
         self.receive(device_id, now, true)
     }
 
@@ -1093,19 +1127,27 @@ impl<T: Transport> Client<T> {
     /// [`GasAppError::Network`] — сервер недоступен (подтверждения
     /// остаются и уйдут со следующим приёмом).
     pub fn flush_acknowledgements(&self, device_id: &str, now: Timestamp) -> Result<()> {
-        let pending = std::mem::take(&mut *self.deferred_acks.lock().map_err(|_| GasAppError::Storage)?);
+        let pending = std::mem::take(
+            &mut *self
+                .deferred_acks
+                .lock()
+                .map_err(|_| GasAppError::Storage)?,
+        );
         if pending.is_empty() {
             return Ok(());
         }
         let (identity, _) = self.load_identity()?;
-        if let Err(error) = self
-            .api
-            .acknowledge_batch(device_id, &pending, &DeviceSigner::new(&identity, now))
+        if let Err(error) =
+            self.api
+                .acknowledge_batch(device_id, &pending, &DeviceSigner::new(&identity, now))
         {
-            // Не ушли — вернуть: иначе сервер выдал бы конверты снова, а
-            // сессия уже ушла вперёд.
-            if let Ok(mut deferred) = self.deferred_acks.lock() {
-                deferred.extend(pending);
+            // Сеть — вернуть и попробовать со следующим приёмом. Иное (сервер
+            // отказал) — не копить: повторно выданное узнается по отметке
+            // «обработан» и подтвердится молча.
+            if matches!(error, GasAppError::Network) {
+                if let Ok(mut deferred) = self.deferred_acks.lock() {
+                    deferred.extend(pending);
+                }
             }
             return Err(error);
         }
@@ -1139,6 +1181,13 @@ impl<T: Transport> Client<T> {
         let mut acked: Vec<String> = Vec::new();
 
         for envelope in envelopes {
+            // Уже обработан (подтверждение тогда не дошло): сервер выдал его
+            // снова — подтвердить молча. Сессия ушла вперёд, и расшифровка
+            // дала бы ложное «нечитаемое» или «повтор» в журнале.
+            if self.storage.envelope_processed(&envelope.envelope_id)? {
+                acked.push(envelope.envelope_id.clone());
+                continue;
+            }
             let Ok(wire) = unhex(&envelope.ciphertext) else {
                 dropped.push(envelope.envelope_id.clone());
                 continue;
@@ -1198,6 +1247,8 @@ impl<T: Transport> Client<T> {
                 if self.storage.initial_accepted(initial.base_key.as_bytes())? {
                     self.storage
                         .log_security_event("initial_envelope_replayed", None, now)?;
+                    self.storage
+                        .mark_envelope_processed(&envelope.envelope_id, now)?;
                     acked.push(envelope.envelope_id.clone());
                     continue;
                 }
@@ -1306,6 +1357,8 @@ impl<T: Transport> Client<T> {
                     {
                         self.persist_secrets(&secrets, now)?;
                     }
+                    self.storage
+                        .mark_envelope_processed(&envelope.envelope_id, now)?;
                     acked.push(envelope.envelope_id.clone());
                     if shown {
                         accepted = accepted.saturating_add(1);
@@ -1581,6 +1634,8 @@ impl<T: Transport> Client<T> {
                 self.persist_secrets(&secrets, now)?;
             }
 
+            self.storage
+                .mark_envelope_processed(&envelope.envelope_id, now)?;
             acked.push(envelope.envelope_id.clone());
             if counts {
                 accepted = accepted.saturating_add(1);
@@ -1776,7 +1831,9 @@ impl<T: Transport> Client<T> {
                 // подделали, либо сервер называет чужой ключ; в обоих
                 // случаях добавлять нечего.
                 if advertised.as_bytes() != link.identity.as_bytes() {
-                    return Err(GasAppError::Malformed);
+                    // Отдельной ошибкой: интерфейс предупреждает о подмене
+                    // (контакт мог уже открыться по быстрому пути).
+                    return Err(GasAppError::IdentityChanged);
                 }
 
                 // 🔐 То же — для пост-квантовой половины: хеш в ссылке
@@ -1794,7 +1851,7 @@ impl<T: Transport> Client<T> {
                     if gasapp_protocol::pq_identity::pq_identity_hash(&pq_public)
                         != link.pq_identity_hash
                     {
-                        return Err(GasAppError::Malformed);
+                        return Err(GasAppError::IdentityChanged);
                     }
                 }
 
@@ -2368,7 +2425,9 @@ impl<T: Transport> Client<T> {
             .into_iter()
             .find(|row| row.account_id == *contact)
             .ok_or(GasAppError::Malformed)?;
-        let name = known.username.ok_or(GasAppError::Uninitialized)?;
+        // Без имени спросить сервер не о чем — своей ошибкой, чтобы
+        // интерфейс не говорил «нет связи».
+        let name = known.username.ok_or(GasAppError::PeerUnconfirmed)?;
         let identity = PublicKeyBytes::new(
             known
                 .identity_key
@@ -2629,7 +2688,15 @@ impl<T: Transport> Client<T> {
                 now,
             )?;
 
-            return Ok(false);
+            // Ключ уже подтверждён вне сервера (добавлен по QR или ссылке
+            // без сети, имя тогда не записывалось): имя теперь при нём, и
+            // подтверждение — его. Сервер назвал ровно этот ключ, иначе
+            // запись была бы другой.
+            return Ok(self.storage.active_contacts_by_username(name)?.iter().any(
+                |(_, identity, confirmed)| {
+                    *confirmed && identity.as_slice() == advertised.as_bytes()
+                },
+            ));
         }
 
         // Все действующие записи — один и тот же ключ: имя однозначно.

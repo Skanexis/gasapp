@@ -592,10 +592,10 @@ impl<T: Transport> Client<T> {
                 continue;
             };
             let mut state = Vec::new();
-            if let Some(seconds) = self.storage.get_disappearing_timer(&chat_id)? {
-                state.push(Content::DisappearingTimer {
-                    seconds: Some(seconds),
-                });
+            // Только своё у чата (и «выключено»): чат, что следует общему
+            // таймеру, следует ему и на новом устройстве.
+            if let Some(seconds) = self.storage.explicit_disappearing_timer(&chat_id)? {
+                state.push(Content::DisappearingTimer { seconds });
             }
             if self.storage.is_chat_blocked(&chat_id)? {
                 state.push(Content::Block { blocked: true });

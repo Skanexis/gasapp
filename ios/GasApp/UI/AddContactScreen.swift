@@ -10,6 +10,7 @@ import SwiftUI
 /// назвал бы сервер. Нажатое в приложении `@имя` работает как ссылка
 /// (`AppModel.route`).
 struct AddContactScreen: View {
+    @Environment(AppModel.self) private var model
     /// Контакт добавлен: имя и чат (если уже есть).
     let onAdded: (String, String?) -> Void
 
@@ -117,7 +118,7 @@ struct AddContactScreen: View {
                 let contact = try await Background.run {
                     try messenger.addContactFromLinkLocal(uri: text, nowMillis: CoreStore.nowMillis)
                 }
-                Background.detach { _ = try? messenger.addContactFromLink(uri: text, nowMillis: CoreStore.nowMillis) }
+                verifyLinkInBackground(text, name: contact.username ?? "", model: model)
                 working = false
                 onAdded(contact.username ?? "", contact.chatId)
             } catch {
@@ -126,6 +127,23 @@ struct AddContactScreen: View {
                                     "That isn’t a GasApp link or QR — or it’s your own.",
                                     "Non è un link o un QR di GasApp, oppure è il tuo.")
             }
+        }
+    }
+}
+
+/// Сверка имени из ссылки с сервером — в фоне, после быстрого добавления.
+/// Не совпало (ключ другой) — предупреждение: контакт уже открыт.
+@MainActor
+func verifyLinkInBackground(_ uri: String, name: String, model: AppModel) {
+    guard let messenger = try? CoreStore.shared.current() else { return }
+    Task {
+        do {
+            _ = try await Background.run { try messenger.addContactFromLink(uri: uri, nowMillis: CoreStore.nowMillis) }
+            Inbox.shared.hurry()
+        } catch FfiError.IdentityChanged {
+            model.linkWarning = name.isEmpty ? L10n.t("контакт", "contact", "contatto") : "@\(name)"
+        } catch {
+            // Нет связи — сверится при первой отправке (ключ из ссылки).
         }
     }
 }

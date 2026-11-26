@@ -152,10 +152,7 @@ struct ChatListScreen: View {
                 let contact = try await Background.run {
                     try messenger.addContactFromLinkLocal(uri: uri, nowMillis: CoreStore.nowMillis)
                 }
-                Background.detach {
-                    _ = try? messenger.addContactFromLink(uri: uri, nowMillis: CoreStore.nowMillis)
-                    Task { @MainActor in Inbox.shared.hurry() }
-                }
+                verifyLinkInBackground(uri, name: contact.username ?? "", model: model)
                 let name = contact.username ?? ""
                 path = [.chat(ChatRowModel(id: contact.chatId ?? "", name: name, preview: "", time: "",
                                            verified: false, isRequest: false, peerUsername: name))]

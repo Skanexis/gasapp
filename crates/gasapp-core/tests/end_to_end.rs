@@ -10045,7 +10045,10 @@ fn deferred_acknowledgements_show_messages_first() {
         1
     );
     assert_eq!(texts_of(&bob), vec!["instant".to_owned()], "видно сразу");
-    assert!(server.queue_len(&bob_device) > 0, "подтверждение ещё не ушло");
+    assert!(
+        server.queue_len(&bob_device) > 0,
+        "подтверждение ещё не ушло"
+    );
 
     // Следующий приём сначала подтверждает прежнее — повтора нет.
     assert_eq!(
@@ -10057,4 +10060,42 @@ fn deferred_acknowledgements_show_messages_first() {
     bob.flush_acknowledgements(&bob_device, later(3))
         .expect("подтверждено");
     assert_eq!(server.queue_len(&bob_device), 0);
+}
+
+/// Приложение выгрузили до подтверждения приёма: сервер выдаёт те же
+/// конверты снова. Они узнаются по отметке «обработан» и подтверждаются
+/// молча — без дублей и без ложных «нечитаемых» в журнале безопасности.
+#[test]
+fn redelivered_envelopes_are_acknowledged_silently() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "once", now(), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        bob.receive_messages_deferred(&bob_device, later(1))
+            .expect("приём"),
+        1
+    );
+    drop(bob);
+
+    // Перезапуск: подтверждения в памяти пропали, конверт — снова.
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    assert!(server.queue_len(&bob_device) > 0);
+    assert_eq!(
+        bob.receive_messages(&bob_device, later(2)).expect("приём"),
+        0
+    );
+    assert_eq!(texts_of(&bob), vec!["once".to_owned()], "без дубля");
+    assert_eq!(server.queue_len(&bob_device), 0, "подтверждён молча");
+    assert!(
+        bob.security_events(50)
+            .expect("журнал")
+            .iter()
+            .all(|(kind, _, _)| kind != "undecryptable_envelopes_dropped"
+                && kind != "initial_envelope_replayed"),
+        "ложное событие безопасности"
+    );
 }

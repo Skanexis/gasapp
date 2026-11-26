@@ -235,10 +235,11 @@ struct ChatScreen: View {
             // Прежде экран ждал ответа сервера (через Tor — секунды) и
             // всё это время был пуст.
             await refresh()
-            // Открыли чат — скорее всего, будут писать: discovery заранее.
-            prefetch(force: false)
             await inbox.receiveOnce()
             await refresh()
+            // Открыли чат — скорее всего, будут писать: discovery заранее
+            // (после приёма: он не должен ждать за этим запросом).
+            prefetch(force: false)
         }
         .onChange(of: inbox.revision) { _, _ in Task { await refresh() } }
         // Начали печатать — discovery собеседника заранее: отправка будет
@@ -570,8 +571,12 @@ struct ChatScreen: View {
             // В фоне, без ожидания: обновление экрана (и отправка, которая
             // его ждёт) не стоит за квитанцией — через Tor это секунды.
             receiptSentFor = id
-            Background.detach {
-                _ = try? messenger.sendReadReceipt(peerUsername: peer, untilMessageId: id, nowMillis: CoreStore.nowMillis)
+            Task {
+                let sent = (try? await Background.run {
+                    try messenger.sendReadReceipt(peerUsername: peer, untilMessageId: id, nowMillis: CoreStore.nowMillis)
+                }) != nil
+                // Не ушла — следующее обновление попробует снова.
+                if !sent, receiptSentFor == id { receiptSentFor = nil }
             }
         }
     }
