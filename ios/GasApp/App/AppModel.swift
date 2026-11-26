@@ -147,8 +147,14 @@ final class AppModel {
             return
         }
         guard phase == .unlocked, backgroundTask == .invalid else { return }
+        // ⚠️ Обработчик истечения обязан закончить задание ДО возврата.
+        // Прежде он лишь планировал запирание (`Task { … }`) и возвращался:
+        // iOS (~30 с фона, а автоблокировка по умолчанию — 60 с) считала
+        // задание брошенным и завершала приложение — при возврате вместо
+        // PIN был холодный запуск, будто приложение упало. Обработчик
+        // зовётся в главном потоке — запираем прямо в нём.
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "gasapp-autolock") { [weak self] in
-            Task { @MainActor in self?.finishBackgroundLock(force: true) }
+            MainActor.assumeIsolated { self?.finishBackgroundLock(force: true) }
         }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64((self?.autoLockAfter ?? 30) * 1_000_000_000))

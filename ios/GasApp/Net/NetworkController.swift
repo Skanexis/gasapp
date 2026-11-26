@@ -35,6 +35,14 @@ final class NetworkController: @unchecked Sendable {
     private var cached = NetworkController.stopped
     /// Начало текущей попытки подключения — отсчёт «долго не готов».
     private var attemptStarted = Date()
+    /// Когда подключение последний раз продвинулось (процент вырос или
+    /// Tor был готов). Блокировка — это «не движется», а не «долго»:
+    /// через мосты подключение законно идёт минуту и дольше.
+    private var lastProgressAt = Date()
+    private var lastPercent: UInt8 = 0
+    /// Когда Tor последний раз был готов: короткая потеря готовности
+    /// после долгой работы — не блокировка, Tor восстанавливается сам.
+    private var lastReadyAt = Date.distantPast
     /// Когда последний раз спрашивали мосты у Tor Project.
     private var lastFreshAttempt = Date.distantPast
     /// Идёт запрос свежих мостов — экранам: «Ищем рабочий мост».
@@ -158,13 +166,20 @@ final class NetworkController: @unchecked Sendable {
         lock.lock(); failuresInRow = 0; lock.unlock()
     }
 
-    /// Запрос не прошёл. Три сбоя подряд при «готовом» Tor — порт моста
-    /// мёртв (см. описание типа): Tor перезапускается.
+    /// Запрос не прошёл. Через Tor это обычное дело: цепочка до
+    /// onion-сервиса рвётся, и Tor сам строит новую за секунды. Поэтому
+    /// перезапуск — только когда порт моста мёртв (iOS забрала сокет у
+    /// приостановленного приложения) или сбоев подряд очень много.
+    /// Прежде Tor перезапускался после трёх сбоев — подключение заново с
+    /// нуля, полминуты без связи: «Tor постоянно выбивает».
     func requestFailed() {
         lock.lock(); defer { lock.unlock() }
         guard case .tor = mode ?? .direct else { return }
         failuresInRow += 1
         guard failuresInRow >= 3, cached.ready else { return }
+        if NetworkController.portAlive(cached.port), failuresInRow < Auto.hopelessFailures {
+            return
+        }
         failuresInRow = 0
         NetworkRoute.current = .closed
         startTorLocked(restart: .force)
@@ -206,6 +221,8 @@ final class NetworkController: @unchecked Sendable {
             serverOnion: AppConfig.serverOnion
         )
         attemptStarted = Date()
+        lastProgressAt = Date()
+        lastPercent = 0
         startWatcherLocked()
 
         waiter?.cancel()
@@ -317,8 +334,14 @@ final class NetworkController: @unchecked Sendable {
         static let freshKey = "gasapp.tor.freshBridges"
         static let useKey = "gasapp.tor.useBridges"
         static let maxFresh = 8
-        /// Сколько подключения без готовности считать блокировкой.
+        /// Сколько подключения напрямую без движения считать блокировкой.
         static let slow: TimeInterval = 25
+        /// То же через мосты: они медленнее, а перезапуск начинает заново.
+        static let slowBridges: TimeInterval = 75
+        /// Сколько после потери готовности ждать, пока Tor восстановится сам.
+        static let recover: TimeInterval = 90
+        /// Столько сбоев подряд при живом порту — всё-таки перезапуск.
+        static let hopelessFailures = 12
         /// Не чаще одного запроса к Tor Project за это время.
         static let freshRetry: TimeInterval = 90
     }
@@ -354,7 +377,10 @@ final class NetworkController: @unchecked Sendable {
         lastFreshAttempt = .distantPast
         NetworkRoute.current = .closed
         startTorLocked(restart: .force)
-        attemptStarted = Date().addingTimeInterval(-(Auto.slow - 10))
+        // Человек сам просит переподключить — не ждать восстановления,
+        // а свежие мосты искать почти сразу.
+        lastReadyAt = .distantPast
+        lastProgressAt = Date().addingTimeInterval(-(Auto.slow - 10))
     }
 
     private func startWatcherLocked() {
@@ -376,9 +402,24 @@ final class NetworkController: @unchecked Sendable {
         }
         guard wantsTor else { return false }
         let status = refresh()
-        guard status.running, !status.ready else { return true }
-        let blocked = lock.withLock {
-            status.stalled || Date().timeIntervalSince(attemptStarted) > Auto.slow
+        guard status.running else { return true }
+        let blocked: Bool = lock.withLock {
+            let now = Date()
+            if status.ready {
+                lastReadyAt = now
+                lastProgressAt = now
+                lastPercent = status.percent
+                return false
+            }
+            if status.percent > lastPercent {
+                lastPercent = status.percent
+                lastProgressAt = now
+            }
+            // Был готов только что — Tor восстанавливает цепочки сам.
+            if now.timeIntervalSince(lastReadyAt) < Auto.recover { return false }
+            // Блокировка — подключение не движется, а не «идёт долго».
+            let limit = status.bridges ? Auto.slowBridges : Auto.slow
+            return status.stalled || now.timeIntervalSince(lastProgressAt) > limit
         }
         if blocked { await escalate(viaBridges: status.bridges) }
         return true
@@ -416,7 +457,12 @@ final class NetworkController: @unchecked Sendable {
             let merged = (fetched + freshBridges).filter { seen.insert($0).inserted }
             UserDefaults.standard.set(Array(merged.prefix(Auto.maxFresh)), forKey: Auto.freshKey)
             useBridges = true
-            guard isNew, !cached.ready, case .tor = mode ?? .direct else { return }
+            // Перезапуск — только если подключение так и стоит: пока искали
+            // (до двух минут), оно могло пойти — обрывать его незачем,
+            // свежие мосты пригодятся при следующем запуске.
+            let limit = cached.bridges ? Auto.slowBridges : Auto.slow
+            guard isNew, !cached.ready, case .tor = mode ?? .direct,
+                  Date().timeIntervalSince(lastProgressAt) > limit else { return }
             NetworkRoute.current = .closed
             startTorLocked(restart: .force)
         }
