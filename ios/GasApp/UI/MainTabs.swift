@@ -56,6 +56,10 @@ struct MainTabs: View {
         .onChange(of: model.pendingContactLink, initial: true) { _, link in
             if link != nil { tab = .chats }
         }
+        // Ссылка на канал — к каналам: там вход или заявка.
+        .onChange(of: model.pendingChannelLink, initial: true) { _, link in
+            if link != nil { tab = .channels }
+        }
         .onAppear { if pushed != nil { pushedShown = true } }
         .task { await checkRestriction() }
         .onChange(of: scenePhase) { _, phase in

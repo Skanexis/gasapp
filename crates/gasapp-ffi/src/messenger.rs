@@ -843,6 +843,24 @@ impl Messenger {
 /// Контакты и поиск.
 #[uniffi::export]
 impl Messenger {
+    /// Добавляет контакт по ссылке или QR без сети — чат открывается
+    /// сразу; затем — [`Messenger::add_contact_from_link`] в фоне: сверка
+    /// имени с сервером. Без сетевого замка: не ждёт идущего приёма.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — ссылка не разбирается или своя.
+    pub fn add_contact_from_link_local(
+        &self,
+        uri: String,
+        now_millis: i64,
+    ) -> Result<FfiContact, FfiError> {
+        let client = self.reader()?;
+        let contact =
+            guard(|| client.add_contact_from_link_local(&uri, Timestamp::from_millis(now_millis)))?;
+        Ok(contact_to_ffi(&contact))
+    }
+
     /// Добавляет контакт по ссылке `gasapp://contact/...`.
     ///
     /// # 🔐 Про доверие к ссылке

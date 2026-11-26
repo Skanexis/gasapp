@@ -831,12 +831,22 @@ def build(out, base_url):
     add.mkdir(parents=True, exist_ok=True)
     for name in ("index.html", "add.js"):
         (add / name).write_bytes((ROOT / "tools/site-add" / name).read_bytes())
+    # Ссылки на канал https://gasapp.eu/c/#… — так же (tools/site-channel).
+    channel = out / "c"
+    channel.mkdir(parents=True, exist_ok=True)
+    for name in ("index.html", "c.js"):
+        (channel / name).write_bytes((ROOT / "tools/site-channel" / name).read_bytes())
     association = {
         "applinks": {
             "details": [
                 {
                     "appIDs": [IOS_APP_ID],
-                    "components": [{"/": "/add/*", "comment": "contact link"}, {"/": "/add"}],
+                    "components": [
+                        {"/": "/add/*", "comment": "contact link"},
+                        {"/": "/add"},
+                        {"/": "/c/*", "comment": "channel link"},
+                        {"/": "/c"},
+                    ],
                 }
             ]
         }

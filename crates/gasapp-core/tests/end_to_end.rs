@@ -9803,3 +9803,51 @@ fn a_stale_device_list_reaches_only_the_primary() {
         1
     );
 }
+
+/// По ссылке или QR контакт добавляется сразу, без сети: чат — тут же в
+/// списке чатов, имя из ссылки в базу не пишется до сверки с сервером;
+/// полная сверка следом даёт имя, и писать можно как обычно.
+#[test]
+fn a_link_contact_appears_in_chats_before_the_server_answers() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    alice
+        .register("alice", TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("Алиса");
+    bob.register("bob", TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("Боб");
+    let link = bob.own_contact_link().expect("ссылка Боба");
+
+    let quick = alice
+        .add_contact_from_link_local(&link, now())
+        .expect("добавлен без сети");
+    let chat = quick.chat_id.expect("чат");
+    assert_eq!(
+        quick.username.as_deref(),
+        Some("bob"),
+        "подсказка для заголовка"
+    );
+    assert_eq!(
+        alice.chats().expect("чаты"),
+        vec![chat],
+        "сразу в списке чатов"
+    );
+    assert!(
+        alice.contacts().expect("контакты")[0].username.is_none(),
+        "имя из ссылки не подтверждено сервером"
+    );
+
+    let full = alice
+        .add_contact_from_link(&link, later(1))
+        .expect("сверено");
+    assert_eq!(full.chat_id, Some(chat));
+    assert_eq!(
+        alice.contacts().expect("контакты")[0].username.as_deref(),
+        Some("bob")
+    );
+    alice
+        .send_message("bob", "hi", later(2), &mut OsRng)
+        .expect("ключ из ссылки — писать можно");
+}

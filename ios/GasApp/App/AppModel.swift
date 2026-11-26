@@ -24,10 +24,27 @@ final class AppModel {
     /// она просто лежит здесь.
     var pendingContactLink: String?
 
+    /// Ссылка на канал, с которой открыли приложение или которую нажали
+    /// в переписке. Ждёт экрана каналов: там — вход или заявка.
+    var pendingChannelLink: String?
+
     /// Приложение открыли по ссылке.
     func openURL(_ url: URL) {
-        if let link = ContactLinks.appLink(from: url.absoluteString) {
+        _ = route(url)
+    }
+
+    /// Ссылка GasApp — в приложение (контакт — к чатам, канал — к
+    /// каналам); `false` — чужая, её открывает система.
+    func route(_ url: URL) -> Bool {
+        switch AppLink(url) {
+        case let .contact(link):
             pendingContactLink = link
+            return true
+        case let .channel(link):
+            pendingChannelLink = link
+            return true
+        case nil:
+            return false
         }
     }
     /// Шторка поверх содержимого, пока приложение не активно: снимок для

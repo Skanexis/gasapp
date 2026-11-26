@@ -6,6 +6,7 @@ import SwiftUI
 /// Канал — аналог `ChannelActivity`: лента записей, реакции, медиа;
 /// владелец и админы публикуют.
 struct ChannelScreen: View {
+    @Environment(AppModel.self) private var model
     let channelId: String
     let title: String
 
@@ -84,6 +85,8 @@ struct ChannelScreen: View {
         }
         .gasScreen()
         .navigationTitle(title)
+        // Ссылка в записи: GasApp — в приложении, чужая — браузер.
+        .environment(\.openURL, OpenURLAction { url in model.route(url) ? .handled : .systemAction })
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: L10n.t("Поиск по каналу", "Search the channel", "Cerca nel canale"))
         .onChange(of: query) { _, text in search(text) }
@@ -358,7 +361,7 @@ struct ChannelPostView: View {
                 ChannelMediaView(channelId: channelId, attachment: attachment)
             }
             if !post.text.isEmpty {
-                Text(post.text).font(GasFont.text(16)).foregroundStyle(GasAppColor.textPrimary)
+                Text(LinkText.attributed(post.text, link: GasAppColor.accent)).font(GasFont.text(16)).foregroundStyle(GasAppColor.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 6) {
@@ -473,7 +476,7 @@ struct ChannelInfoSheet: View {
                     Section(L10n.t("Пригласить", "Invite", "Invita")) {
                         if let qr { QRView(matrix: qr).frame(maxWidth: 220).frame(maxWidth: .infinity) }
                         if let link {
-                            ShareLink(item: link) { Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up") }
+                            ShareLink(item: ChannelLinks.webLink(from: link)) { Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up") }
                         }
                     }
                     Section {

@@ -34,6 +34,7 @@ struct ButtonCell: Equatable, Hashable {
 /// сменившимся ключом оно отвергает. Экран лишь заранее показывает
 /// почему ([SendMode]) и ведёт к сверке кода безопасности.
 struct ChatScreen: View {
+    @Environment(AppModel.self) private var model
     let chatId: String
     let peerUsername: String
     let title: String
@@ -167,6 +168,9 @@ struct ChatScreen: View {
         // Ссылка из кнопки — только https (ядро отвергает иные схемы, данные
         // входа в адресе и подменные буквы); открыть её решает человек,
         // видя адрес целиком (как на Android).
+        // Ссылка в сообщении: контакт — добавить и открыть чат, канал —
+        // вступить; чужая — браузер.
+        .environment(\.openURL, OpenURLAction { url in model.route(url) ? .handled : .systemAction })
         .confirmationDialog(L10n.t("Открыть ссылку?", "Open the link?", "Aprire il link?"), isPresented: Binding(
             get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }
         ), titleVisibility: .visible) {
@@ -788,7 +792,10 @@ struct MessageBubble: View {
                 if !message.text.isEmpty {
                     // Пузырь — по тексту, а не во всю ширину: прежде
                     // .frame(maxWidth: .infinity) растягивал даже «ок».
-                    Text(message.text)
+                    // Ссылки — нажимаются: GasApp (контакт, канал) — в
+                    // приложении, остальные — в браузере (`AppModel.route`).
+                    Text(LinkText.attributed(message.text,
+                                             link: message.outgoing ? GasAppColor.bubbleOutgoingText : GasAppColor.accent))
                         .font(GasFont.text(16))
                         .foregroundStyle(message.outgoing ? GasAppColor.bubbleOutgoingText : GasAppColor.textPrimary)
                         .multilineTextAlignment(.leading)

@@ -122,8 +122,14 @@ struct ChatListScreen: View {
         guard let messenger = try? CoreStore.shared.current() else { return }
         Task {
             do {
+                // Сразу, без сети — чат открывается тут же; имя сверяется
+                // с сервером следом, в фоне.
                 let contact = try await Background.run {
-                    try messenger.addContactFromLink(uri: uri, nowMillis: CoreStore.nowMillis)
+                    try messenger.addContactFromLinkLocal(uri: uri, nowMillis: CoreStore.nowMillis)
+                }
+                Background.detach {
+                    _ = try? messenger.addContactFromLink(uri: uri, nowMillis: CoreStore.nowMillis)
+                    Task { @MainActor in Inbox.shared.hurry() }
                 }
                 let name = contact.username ?? ""
                 path = [.chat(ChatRowModel(id: contact.chatId ?? "", name: name, preview: "", time: "",
@@ -164,7 +170,8 @@ struct ChatListScreen: View {
                 return ChatRowModel(
                     id: chatId,
                     name: username.isEmpty ? String(chatId.prefix(8)) : username,
-                    preview: last?.text ?? "",
+                    // Чат без сообщений (добавили по ссылке или QR) — подсказка.
+                    preview: last?.text ?? L10n.t("Напишите первое сообщение", "Say hello", "Scrivi il primo messaggio"),
                     time: last.map { formatChatTime($0.timestamp) } ?? "",
                     verified: contact?.verified == true,
                     isRequest: (try? messenger.chatRequest(chatId: chatId)) == .incoming,

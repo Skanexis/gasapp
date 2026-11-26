@@ -151,7 +151,7 @@ struct ChannelManageScreen: View {
                             HStack {
                                 Label(L10n.t("Ссылка канала", "Channel link", "Link del canale"), systemImage: "link")
                                 Spacer()
-                                ShareLink(item: link) { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless)
+                                ShareLink(item: ChannelLinks.webLink(from: link)) { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless)
                             }
                         }
                         HStack(spacing: 4) {
@@ -185,7 +185,7 @@ struct ChannelManageScreen: View {
                             HStack {
                                 Text(link).font(.system(size: 13, design: .monospaced)).lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                ShareLink(item: link) { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless)
+                                ShareLink(item: ChannelLinks.webLink(from: link)) { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless)
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(L10n.t("Отозвать", "Revoke", "Revoca"), role: .destructive) { revoke(link) }

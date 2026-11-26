@@ -11,6 +11,7 @@ import UIKit
 /// 🔐 Записи каналов — шифротекст: ключ чтения приходит в ссылке и на
 /// сервер не попадает.
 struct ChannelsScreen: View {
+    @Environment(AppModel.self) private var model
     @State private var channels: [FfiChannel] = []
     @State private var loaded = false
     @State private var joinLink = ""
@@ -129,6 +130,14 @@ struct ChannelsScreen: View {
             .gasScreen()
         }
         .task { await sync() }
+        // Нажали ссылку на канал (в переписке, в другом приложении) — вход
+        // сразу, без «Вступить по ссылке» и вставки.
+        .onChange(of: model.pendingChannelLink, initial: true) { _, link in
+            guard let link else { return }
+            model.pendingChannelLink = nil
+            joinLink = link
+            join()
+        }
     }
 
     private func reload() async {
@@ -184,7 +193,9 @@ struct ChannelsScreen: View {
     }
 
     private func join() {
-        let link = joinLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Веб-ссылка (https://gasapp.eu/c/#…) — в вид для ядра.
+        let typed = joinLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        let link = ChannelLinks.appLink(from: typed) ?? typed
         joinLink = ""
         guard let messenger = try? CoreStore.shared.current() else { return }
         Task {
@@ -194,8 +205,12 @@ struct ChannelsScreen: View {
                     try await Background.run { try messenger.requestChannelJoin(link: link, nowMillis: CoreStore.nowMillis) }
                     message = L10n.t("Заявка отправлена владельцу канала", "Request sent to the channel owner", "Richiesta inviata al proprietario del canale")
                 } else if isChannelLink(text: link) {
-                    _ = try await Background.run { try messenger.joinChannel(link: link, nowMillis: CoreStore.nowMillis) }
+                    let channel = try await Background.run { try messenger.joinChannel(link: link, nowMillis: CoreStore.nowMillis) }
                     message = nil
+                    await sync()
+                    // Вступили — сразу в канал: за этим ссылку и открывали.
+                    opened = OpenedChannel(id: channel.channelId, title: channel.title)
+                    return
                 } else {
                     message = L10n.t("Это не ссылка на канал", "That isn’t a channel link", "Questo non è un link di un canale")
                     return

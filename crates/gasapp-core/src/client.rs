@@ -1559,6 +1559,75 @@ impl<T: Transport> Client<T> {
             .collect()
     }
 
+    /// Добавляет контакт по ссылке или QR **без сети** — чат открывается
+    /// сразу, а сверка имени с сервером ([`Client::add_contact_from_link`])
+    /// идёт следом, в фоне.
+    ///
+    /// Прежде чат открывался только после discovery — через Tor это
+    /// секунды, а пока шёл чужой сетевой запрос, и того дольше: «QR
+    /// добавляет очень долго».
+    ///
+    /// 🔐 Ключ — из ссылки, ему здесь и доверие (как в полной версии).
+    /// Имя из ссылки в базу **не** пишется: его подтвердит только сервер.
+    /// В ответе оно — подсказка для заголовка чата; отправить по нему на
+    /// другой ключ ядро не даст (ключ собеседника должен быть подтверждён).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Malformed`] — ссылка не разбирается или своя.
+    pub fn add_contact_from_link_local(&self, uri: &str, now: Timestamp) -> Result<Contact> {
+        let link = ContactLink::parse(uri)?;
+        if self.is_own_identity(&link.identity)? {
+            return Err(GasAppError::Malformed);
+        }
+        let hint = match &link.display_name {
+            Some(name) => Some(canonical_username(name)?),
+            None => None,
+        };
+        let account_id = peer_account(&link.identity);
+        let (identity, _) = self.load_identity()?;
+        let chat_id = derive_chat_id(&self.own_account(&identity)?, &link.identity);
+
+        self.storage.save_contact(
+            &account_id,
+            link.identity.as_bytes(),
+            None,
+            Some(&chat_id),
+            now,
+        )?;
+        self.storage.mark_contact_confirmed_by_link(&account_id)?;
+        if self
+            .storage
+            .contact_pq_hash(&account_id)?
+            .is_some_and(|known| known != link.pq_identity_hash)
+        {
+            self.storage
+                .log_security_event("pq_identity_changed", None, now)?;
+        }
+        self.storage
+            .set_contact_pq_hash(&account_id, &link.pq_identity_hash)?;
+        if !self
+            .storage
+            .list_chats(MAX_CHATS_TO_PROBE)?
+            .iter()
+            .any(|row| row.chat_id == chat_id)
+        {
+            self.storage.touch_chat(&chat_id, None, now)?;
+        }
+
+        Ok(Contact {
+            account_id,
+            identity: link.identity,
+            username: hint,
+            chat_id: Some(chat_id),
+            verified: false,
+            key_changed: false,
+            replaced: false,
+            key_confirmed: true,
+            kt_confirmed: false,
+        })
+    }
+
     /// Добавляет контакт по ссылке `gasapp://contact/...`.
     ///
     /// # 🔐 Что здесь проверяется
@@ -1704,6 +1773,18 @@ impl<T: Transport> Client<T> {
         }
         self.storage
             .set_contact_pq_hash(&account_id, &link.pq_identity_hash)?;
+
+        // Добавили по ссылке или QR — значит, сейчас будут писать: чат —
+        // сразу в списке чатов, а не только в контактах. Уже известный
+        // чат не трогается (его место в списке — по переписке).
+        if !self
+            .storage
+            .list_chats(MAX_CHATS_TO_PROBE)?
+            .iter()
+            .any(|row| row.chat_id == chat_id)
+        {
+            self.storage.touch_chat(&chat_id, None, now)?;
+        }
 
         Ok(Contact {
             account_id,

@@ -121,9 +121,12 @@ struct AddContactScreen: View {
         error = nil
         Task {
             do {
+                // Сразу, без сети: ключ — из QR; сверка имени с сервером —
+                // следом, в фоне (через Tor она занимает секунды).
                 let contact = try await Background.run {
-                    try messenger.addContactFromLink(uri: text, nowMillis: CoreStore.nowMillis)
+                    try messenger.addContactFromLinkLocal(uri: text, nowMillis: CoreStore.nowMillis)
                 }
+                Background.detach { _ = try? messenger.addContactFromLink(uri: text, nowMillis: CoreStore.nowMillis) }
                 working = false
                 onAdded(contact.username ?? "", contact.chatId)
             } catch {
