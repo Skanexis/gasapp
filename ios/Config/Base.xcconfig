@@ -10,7 +10,7 @@
 GASAPP_SERVER_URL = https:/$()/api.gasapp.eu
 
 // Onion-адрес сервера, «адрес.onion:443»; пусто — без onion.
-GASAPP_SERVER_ONION = kxgqz3c4roa3ib7yoidz4cioap5ti4fz63xe5a7e2iwu6ncfyqsxbhqd.onion:443
+GASAPP_SERVER_ONION = wiek32zh2g2tf2sgjuat6r3s34ihfzqykqrqntmvn62jmsid3ew3vxqd.onion:443
 
 // Сайт с документами (политика, условия, удаление аккаунта).
 GASAPP_DOCS_URL = https:/$()/gasapp.eu
