@@ -142,6 +142,8 @@ final class AppModel {
                 // забрать очередь (NetworkController, «Почему Tor
                 // перезапускается после фона»).
                 NetworkController.shared.didReturnToForeground(afterSeconds: Date().timeIntervalSince(since))
+                // Сокет уведомлений в фоне умирает — открыть заново сразу.
+                NotificationSocket.shared.reconnectNow()
                 Inbox.shared.hurry()
                 ConnectionStatus.shared.start()
             }

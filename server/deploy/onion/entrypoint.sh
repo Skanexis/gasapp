@@ -7,6 +7,17 @@
 #                       (`адрес:8444`, РАЗВЁРТЫВАНИЕ.md), не узел API напрямую
 #                       (TLS остаётся сквозным — onion его не заменяет).
 #   GASAPP_ONION_PORT  — порт onion-адреса, по умолчанию 443.
+#   GASAPP_ONION_SINGLE_HOP=1 — быстрый onion-сервис (single onion service):
+#                       со стороны сервера один узел Tor вместо трёх, путь
+#                       клиент → сервер — четыре узла вместо шести, каждый
+#                       запрос через Tor заметно быстрее. Скрывать, где стоит
+#                       сервер, незачем: gasapp.eu и так публичен; клиент
+#                       остаётся анонимным, как прежде. ⚠️ Это НОВЫЙ адрес:
+#                       tor не переводит прежний каталог в этот режим, поэтому
+#                       ключи — в /var/lib/tor/gasapp-fast. Новый адрес
+#                       вписывается в сборку приложения (gasappServerOnion);
+#                       прежний контейнер оставить, пока старые сборки в ходу.
+#                       С мостами не работает (сервер ходит к узлам напрямую).
 #   GASAPP_TOR_BRIDGES — там, где сеть Tor блокируют:
 #                       «snowflake» — официальные мосты snowflake из
 #                       образа (добывать ничего не нужно);
@@ -18,9 +29,13 @@ set -eu
 : "${GASAPP_UPSTREAM:?задайте GASAPP_UPSTREAM=узел:порт сервера GasApp}"
 ONION_PORT="${GASAPP_ONION_PORT:-443}"
 
-mkdir -p /var/lib/tor/gasapp
+SERVICE_DIR=/var/lib/tor/gasapp
+if [ "${GASAPP_ONION_SINGLE_HOP:-0}" = 1 ]; then
+  SERVICE_DIR=/var/lib/tor/gasapp-fast
+fi
+mkdir -p "$SERVICE_DIR"
 chown -R debian-tor:debian-tor /var/lib/tor
-chmod 0700 /var/lib/tor/gasapp
+chmod 0700 "$SERVICE_DIR"
 
 if [ "${GASAPP_TOR_BRIDGES:-}" = snowflake ]; then
   BRIDGES="$(cat /usr/share/gasapp/snowflake-bridges.txt)"
@@ -37,7 +52,17 @@ fi
   echo "DataDirectory /var/lib/tor"
   echo "Log notice stdout"
   echo
-  echo "HiddenServiceDir /var/lib/tor/gasapp"
+  if [ "${GASAPP_ONION_SINGLE_HOP:-0}" = 1 ]; then
+    if [ -n "$BRIDGES" ]; then
+      echo "GASAPP_ONION_SINGLE_HOP=1 несовместим с мостами" >&2
+      exit 1
+    fi
+    echo "# Быстрый onion-сервис: местоположение сервера не скрывается"
+    echo "# (оно публично), клиенты анонимны как прежде."
+    echo "HiddenServiceSingleHopMode 1"
+    echo "HiddenServiceNonAnonymousMode 1"
+  fi
+  echo "HiddenServiceDir $SERVICE_DIR"
   echo "HiddenServiceVersion 3"
   echo "HiddenServicePort ${ONION_PORT} ${GASAPP_UPSTREAM}"
 
@@ -53,7 +78,7 @@ fi
 
 # Адрес печатается, как только tor его создаст: его вписывают в сборку
 # приложения (gasappServerOnion).
-( while [ ! -s /var/lib/tor/gasapp/hostname ]; do sleep 1; done
-  echo "GasApp onion: $(cat /var/lib/tor/gasapp/hostname):${ONION_PORT}" ) &
+( while [ ! -s "$SERVICE_DIR/hostname" ]; do sleep 1; done
+  echo "GasApp onion: $(cat "$SERVICE_DIR/hostname"):${ONION_PORT}" ) &
 
 exec su -s /bin/sh debian-tor -c "tor -f /etc/tor/torrc"

@@ -34,7 +34,10 @@ final class Inbox {
     /// Сколько экранов переписки сейчас открыто.
     private var chatsOpen = 0
 
-    /// Экран чата появился: частый опрос, пока он открыт.
+    /// Открыт сокет уведомлений: о новом скажет сервер, опрос — страховка.
+    private static let socketInterval: Double = 60
+
+    /// Экран чата появился: частый опрос, пока он открыт (без сокета).
     func chatOpened() {
         chatsOpen += 1
         interval = Self.chatInterval
@@ -59,6 +62,8 @@ final class Inbox {
     private var wake: CheckedContinuation<Void, Never>?
 
     func start() {
+        // Сокет уведомлений — вместе с приёмом: новое приходит сразу.
+        NotificationSocket.shared.start()
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
@@ -94,6 +99,7 @@ final class Inbox {
     }
 
     func stop() {
+        NotificationSocket.shared.stop()
         loop?.cancel()
         loop = nil
         fire()
@@ -141,7 +147,12 @@ final class Inbox {
                 revision += 1
                 interval = Self.fastInterval
             } else {
-                interval = chatsOpen > 0 ? Self.chatInterval : min(ceiling, interval * 1.5)
+                if NotificationSocket.shared.connected {
+                    // Сокет открыт — новое придёт уведомлением сразу.
+                    interval = Self.socketInterval
+                } else {
+                    interval = chatsOpen > 0 ? Self.chatInterval : min(ceiling, interval * 1.5)
+                }
             }
         } catch {
             network.requestFailed()
