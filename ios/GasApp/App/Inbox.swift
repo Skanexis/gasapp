@@ -28,6 +28,23 @@ final class Inbox {
     /// быстро.
     private var interval: Double = Inbox.fastInterval
     private static let fastInterval: Double = 4
+    /// Открыт чат: собеседник отвечает прямо сейчас — опрос не замедляется
+    /// (на пуш при открытом чате надеяться нельзя: он доходит не всегда).
+    private static let chatInterval: Double = 3
+    /// Сколько экранов переписки сейчас открыто.
+    private var chatsOpen = 0
+
+    /// Экран чата появился: частый опрос, пока он открыт.
+    func chatOpened() {
+        chatsOpen += 1
+        interval = Self.chatInterval
+        fire()
+    }
+
+    /// Экран чата закрыт.
+    func chatClosed() {
+        chatsOpen = max(0, chatsOpen - 1)
+    }
     /// Потолок паузы в затишье. С пуш-уведомлениями он выше: о новом
     /// сообщении открытому приложению сообщает сам пуш
     /// (`Push.willPresent` зовёт `hurry()`), и опрос остаётся страховкой.
@@ -124,7 +141,7 @@ final class Inbox {
                 revision += 1
                 interval = Self.fastInterval
             } else {
-                interval = min(ceiling, interval * 1.5)
+                interval = chatsOpen > 0 ? Self.chatInterval : min(ceiling, interval * 1.5)
             }
         } catch {
             network.requestFailed()

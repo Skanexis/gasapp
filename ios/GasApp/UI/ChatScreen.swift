@@ -237,6 +237,9 @@ struct ChatScreen: View {
             await refresh()
         }
         .onChange(of: inbox.revision) { _, _ in Task { await refresh() } }
+        // Пока чат открыт — новые сообщения забираются каждые 3 секунды.
+        .onAppear { inbox.chatOpened() }
+        .onDisappear { inbox.chatClosed() }
     }
 
     // MARK: - Состояние
