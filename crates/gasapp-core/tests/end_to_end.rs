@@ -9851,3 +9851,46 @@ fn a_link_contact_appears_in_chats_before_the_server_answers() {
         .send_message("bob", "hi", later(2), &mut OsRng)
         .expect("ключ из ссылки — писать можно");
 }
+
+/// Нажатое в приложении `@имя` — как ссылка: чат в списке и отправка сразу,
+/// без сверки. Найденный иначе по имени собеседник — по-прежнему только
+/// после сверки (решение владельца, 2026-11-26).
+#[test]
+fn a_tapped_mention_lets_you_write_at_once() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    alice
+        .register("alice", TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("Алиса");
+    let bob_device = bob
+        .register("bob", TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("Боб")
+        .device_id
+        .to_string();
+
+    // Просто найден по имени — писать нельзя.
+    alice.discover_contact("bob", now()).expect("найден");
+    assert!(matches!(
+        alice.send_message("bob", "hi", later(1), &mut OsRng),
+        Err(GasAppError::PeerUnconfirmed)
+    ));
+
+    // Нажал @bob — можно.
+    let contact = alice
+        .add_contact_by_mention("@Bob", later(2))
+        .expect("по упоминанию");
+    assert!(contact.key_confirmed);
+    assert_eq!(
+        alice.chats().expect("чаты"),
+        vec![contact.chat_id.expect("чат")]
+    );
+    alice
+        .send_message("bob", "hi", later(3), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        bob.receive_messages(&bob_device, later(4)).expect("приём"),
+        1
+    );
+}

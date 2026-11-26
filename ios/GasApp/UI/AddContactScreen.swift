@@ -2,12 +2,13 @@
 
 import SwiftUI
 
-/// Новый контакт — аналог `AddContactActivity`: по имени, по ссылке
-/// или QR собеседника. Здесь же — своя ссылка и свой QR.
+/// Новый чат — по QR или ссылке собеседника. Здесь же — свой QR и своя
+/// ссылка, чтобы показать или отправить их.
 ///
-/// 🔐 Ссылка или QR несут ключ самого собеседника: контакт сразу
-/// подтверждён. По имени ключ называет сервер — писать можно будет
-/// после сверки кода безопасности.
+/// Поиска по имени нет (решение владельца, 2026-11-26): ключ из QR или
+/// ссылки — ключ самого собеседника, писать можно сразу; по имени ключ
+/// назвал бы сервер. Нажатое в приложении `@имя` работает как ссылка
+/// (`AppModel.route`).
 struct AddContactScreen: View {
     /// Контакт добавлен: имя и чат (если уже есть).
     let onAdded: (String, String?) -> Void
@@ -16,7 +17,6 @@ struct AddContactScreen: View {
         self.onAdded = onAdded
     }
 
-    @State private var username = ""
     @State private var link = ""
     @State private var error: String?
     @State private var working = false
@@ -29,24 +29,27 @@ struct AddContactScreen: View {
         ScrollView {
             VStack(spacing: 18) {
                 Card {
-                    Text(L10n.t("По имени", "By username", "Per nome utente")).font(GasFont.text(17, .bold))
+                    Text(L10n.t("Добавить собеседника", "Add someone", "Aggiungi qualcuno"))
+                        .font(GasFont.text(17, .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
-                    Field(title: L10n.t("Имя пользователя", "Username", "Nome utente"), text: $username, placeholder: "anna_k")
-                    GoldButton(title: L10n.t("Найти", "Find", "Cerca"), isLoading: working,
-                               isEnabled: !username.isEmpty) { discover() }
-                }
-
-                Card {
-                    Text(L10n.t("По ссылке или QR", "By link or QR", "Tramite link o QR")).font(GasFont.text(17, .bold))
-                        .foregroundStyle(GasAppColor.textPrimary)
-                    Text(L10n.t("Надёжнее всего: в ссылке — ключ самого собеседника.",
-                                "Most secure: the link carries the person’s own key.", "Il più sicuro: il link contiene la chiave della persona stessa."))
+                    Text(L10n.t("Отсканируйте QR на его телефоне или вставьте ссылку, которую он прислал.",
+                                "Scan the QR on their phone or paste the link they sent you.",
+                                "Scansiona il QR sul suo telefono o incolla il link che ti ha inviato."))
                         .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
-                    Field(title: L10n.t("Ссылка", "Link", "Link"), text: $link, placeholder: "gasapp://…")
+                    GoldButton(title: L10n.t("Сканировать QR", "Scan QR", "Scansiona QR"), isLoading: working) { scanning = true }
                     HStack(spacing: 10) {
-                        OutlineButton(title: L10n.t("Сканировать QR", "Scan QR", "Scansiona QR")) { scanning = true }
-                        GoldButton(title: L10n.t("Добавить", "Add", "Aggiungi"), isLoading: working,
-                                   isEnabled: !link.isEmpty) { addFromLink(link) }
+                        Field(title: L10n.t("Ссылка", "Link", "Link"), text: $link, placeholder: "https://gasapp.eu/add/#…")
+                    }
+                    HStack(spacing: 10) {
+                        OutlineButton(title: L10n.t("Вставить", "Paste", "Incolla")) {
+                            if let pasted = UIPasteboard.general.string {
+                                link = pasted
+                                addFromLink(pasted)
+                            }
+                        }
+                        OutlineButton(title: L10n.t("Добавить", "Add", "Aggiungi"), isEnabled: !link.isEmpty && !working) {
+                            addFromLink(link)
+                        }
                     }
                 }
 
@@ -55,19 +58,26 @@ struct AddContactScreen: View {
                 }
 
                 Card {
-                    Text(L10n.t("Ваш контакт", "Your contact", "Il tuo contatto")).font(GasFont.text(17, .bold))
+                    Text(L10n.t("Ваш QR", "Your QR", "Il tuo QR")).font(GasFont.text(17, .bold))
                         .foregroundStyle(GasAppColor.textPrimary)
+                    Text(L10n.t("Покажите его собеседнику или отправьте ссылку — и он сможет написать вам сразу.",
+                                "Show it to the other person or send the link — they can message you right away.",
+                                "Mostralo all’altra persona o invia il link: potrà scriverti subito."))
+                        .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
                     if let ownQR {
                         QRView(matrix: ownQR)
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 22).fill(.white))
                             .frame(maxWidth: 240).frame(maxWidth: .infinity)
+                    } else {
+                        ProgressView().tint(GasAppColor.accent).frame(maxWidth: .infinity).frame(height: 120)
                     }
                     if let ownLink {
                         ShareLink(item: ProfileSheet.shareText(username: ownName, link: ownLink)) {
-                            Label(L10n.t("Поделиться ссылкой", "Share link", "Condividi link"), systemImage: "square.and.arrow.up")
+                            Label(L10n.t("Отправить свою ссылку", "Send my link", "Invia il mio link"), systemImage: "square.and.arrow.up")
                                 .font(GasFont.text(16, .bold))
                                 .foregroundStyle(GasAppColor.accent)
+                                .frame(maxWidth: .infinity)
                         }
                     }
                 }
@@ -89,27 +99,8 @@ struct AddContactScreen: View {
             let uri = try messenger.ownContactLink()
             return (uri, try contactLinkQr(uri: uri))
         }) {
-            ownLink = own.0
+            ownLink = ContactLinks.webLink(from: own.0)
             ownQR = own.1
-        }
-    }
-
-    private func discover() {
-        guard let messenger = try? CoreStore.shared.current() else { return }
-        let name = (try? canonicalUsername(raw: username)) ?? username
-        working = true
-        error = nil
-        Task {
-            do {
-                let contact = try await Background.run {
-                    try messenger.discoverContact(username: name, nowMillis: CoreStore.nowMillis)
-                }
-                working = false
-                onAdded(contact.username ?? name, contact.chatId)
-            } catch {
-                working = false
-                self.error = L10n.t("Такого имени нет или нет связи.", "No such username, or no connection.", "Nome utente inesistente o nessuna connessione.")
-            }
         }
     }
 
@@ -131,7 +122,9 @@ struct AddContactScreen: View {
                 onAdded(contact.username ?? "", contact.chatId)
             } catch {
                 working = false
-                self.error = L10n.t("Ссылка не подошла.", "The link didn’t work.", "Il link non ha funzionato.")
+                self.error = L10n.t("Это не ссылка или QR GasApp — либо это ваш собственный.",
+                                    "That isn’t a GasApp link or QR — or it’s your own.",
+                                    "Non è un link o un QR di GasApp, oppure è il tuo.")
             }
         }
     }

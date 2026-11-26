@@ -28,6 +28,9 @@ final class AppModel {
     /// в переписке. Ждёт экрана каналов: там — вход или заявка.
     var pendingChannelLink: String?
 
+    /// Нажатое в приложении `@имя`: чат с этим человеком — сразу.
+    var pendingMention: String?
+
     /// Приложение открыли по ссылке.
     func openURL(_ url: URL) {
         _ = route(url)
@@ -42,6 +45,9 @@ final class AppModel {
             return true
         case let .channel(link):
             pendingChannelLink = link
+            return true
+        case let .mention(name):
+            pendingMention = name
             return true
         case nil:
             return false

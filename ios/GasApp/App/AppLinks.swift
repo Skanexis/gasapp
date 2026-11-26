@@ -54,10 +54,21 @@ enum ChannelLinks {
 enum AppLink: Equatable {
     case contact(String)
     case channel(String)
+    /// Нажатое `@имя` — как ссылка на контакт (см. `LinkText`).
+    case mention(String)
+
+    /// Схема, которой `LinkText` размечает `@имя` в тексте.
+    static let mentionPrefix = "gasapp://mention/"
 
     /// `nil` — чужая ссылка (её открывает система).
     init?(_ url: URL) {
         let text = url.absoluteString
+        if text.lowercased().hasPrefix(Self.mentionPrefix) {
+            let name = String(text.dropFirst(Self.mentionPrefix.count))
+            guard !name.isEmpty else { return nil }
+            self = .mention(name)
+            return
+        }
         if let contact = ContactLinks.appLink(from: text) {
             self = .contact(contact)
         } else if let channel = ChannelLinks.appLink(from: text) {
@@ -81,8 +92,26 @@ enum LinkText {
     /// Знаки, которыми фраза заканчивается, а адрес — нет.
     private static let trailing = CharacterSet(charactersIn: ".,;:!?)»”'\"")
 
+    /// `@имя` — по правилу имён (3–32 знака: латиница, цифры, «_»), не
+    /// посреди слова: адрес почты упоминанием не считается.
+    private static let mention = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9_@.])@([A-Za-z0-9_]{3,32})(?![A-Za-z0-9_])"#
+    )
+
     static func attributed(_ text: String, link color: Color) -> AttributedString {
         var result = AttributedString(text)
+        if text.contains("@"), let mention {
+            let whole = NSRange(text.startIndex..., in: text)
+            for match in mention.matches(in: text, range: whole) {
+                guard let range = Range(match.range, in: text),
+                      let nameRange = Range(match.range(at: 1), in: text),
+                      let url = URL(string: AppLink.mentionPrefix + text[nameRange].lowercased()),
+                      let lower = AttributedString.Index(range.lowerBound, within: result),
+                      let upper = AttributedString.Index(range.upperBound, within: result) else { continue }
+                result[lower..<upper].link = url
+                result[lower..<upper].foregroundColor = color
+            }
+        }
         guard let pattern, text.contains("://") else { return result }
         let whole = NSRange(text.startIndex..., in: text)
         for match in pattern.matches(in: text, range: whole) {

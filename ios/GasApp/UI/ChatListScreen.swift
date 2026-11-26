@@ -89,6 +89,12 @@ struct ChatListScreen: View {
                                    "Il link è danneggiato o incompleto.")
             }
         }
+        // Нажали @имя в записи или сообщении — сразу чат с ним.
+        .onChange(of: model.pendingMention, initial: true) { _, name in
+            guard let name else { return }
+            model.pendingMention = nil
+            openMention(name)
+        }
         // 🔐 Ссылка ничего не добавляет сама: сначала — вопрос. Имя в
         // ссылке предложил её автор, оно ничем не подтверждено.
         .alert(L10n.t("Добавить контакт?", "Add this contact?", "Aggiungere il contatto?"),
@@ -116,6 +122,25 @@ struct ChatListScreen: View {
             "В ссылке ключ этого человека: писать можно сразу, без доверия серверу. Добавляйте, только если ссылку прислал тот, кого вы знаете.",
             "The link carries this person’s key, so you can write right away without trusting the server. Add it only if someone you know sent it.",
             "Il link contiene la chiave di questa persona: puoi scrivere subito senza fidarti del server. Aggiungilo solo se te l’ha inviato qualcuno che conosci.")
+    }
+
+    private func openMention(_ name: String) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            do {
+                let contact = try await Background.run {
+                    try messenger.addContactByMention(username: name, nowMillis: CoreStore.nowMillis)
+                }
+                let username = contact.username ?? name
+                path = [.chat(ChatRowModel(id: contact.chatId ?? "", name: username, preview: "", time: "",
+                                           verified: contact.verified, isRequest: false, peerUsername: username))]
+                await reload()
+            } catch {
+                linkError = L10n.t("Не удалось открыть чат с @\(name): такого имени нет или нет связи.",
+                                   "Couldn’t open a chat with @\(name): no such name, or no connection.",
+                                   "Impossibile aprire una chat con @\(name): nome inesistente o nessuna connessione.")
+            }
+        }
     }
 
     private func addIncoming(_ uri: String) {

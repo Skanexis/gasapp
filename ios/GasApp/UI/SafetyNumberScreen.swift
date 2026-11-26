@@ -19,6 +19,8 @@ struct SafetyNumberScreen: View {
     @State private var verified = false
     @State private var scanning = false
     @State private var result: (String, Banner.Tone)?
+    @State private var loading = true
+    @State private var loadError: String?
     @Environment(\.dismiss) private var dismiss
 
     private var name: String { contact.username ?? L10n.t("собеседник", "contact", "contatto") }
@@ -31,7 +33,34 @@ struct SafetyNumberScreen: View {
                     .font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary)
                     .multilineTextAlignment(.center)
 
-                if let qr { QRView(matrix: qr).frame(maxWidth: 240) }
+                // Как сверять — по шагам: прежде было непонятно, что
+                // делать второму человеку.
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(L10n.t("Попросите \(name) открыть этот же экран: чат с вами → имя вверху → «Код безопасности».",
+                                 "Ask \(name) to open this same screen: the chat with you → name at the top → “Safety number”.",
+                                 "Chiedi a \(name) di aprire questa stessa schermata: chat con te → nome in alto → «Numero di sicurezza»."),
+                          systemImage: "1.circle.fill")
+                    Label(L10n.t("Отсканируйте QR на его телефоне — или сравните цифры вслух.",
+                                 "Scan the QR on their phone — or compare the digits out loud.",
+                                 "Scansiona il QR sul suo telefono, oppure confronta le cifre a voce."),
+                          systemImage: "2.circle.fill")
+                }
+                .font(GasFont.text(14))
+                .foregroundStyle(GasAppColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if loading {
+                    ProgressView().tint(GasAppColor.accent).frame(height: 240)
+                } else if let loadError {
+                    Banner(title: L10n.t("Код не получен", "No code yet", "Codice non disponibile"), message: loadError, tone: .warn)
+                    OutlineButton(title: L10n.t("Повторить", "Try again", "Riprova")) { Task { await load() } }
+                }
+                if let qr {
+                    QRView(matrix: qr)
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 22).fill(.white))
+                        .frame(maxWidth: 260)
+                }
 
                 Text(grouped)
                     .font(.system(size: 22, weight: .semibold, design: .monospaced))
@@ -86,13 +115,26 @@ struct SafetyNumberScreen: View {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let account = contact.accountId
         verified = contact.verified
-        if let loaded = try? await Background.run({ () -> (String, FfiQrMatrix) in
-            let number = try messenger.safetyNumberWith(accountId: account)
-            return (number, try safetyNumberQr(digits: number))
-        }) {
+        loading = true
+        loadError = nil
+        do {
+            let loaded = try await Background.run { () -> (String, FfiQrMatrix) in
+                // Ключ собеседника ещё не весь известен — ядро спросит сервер.
+                let number = try messenger.safetyNumberWith(accountId: account)
+                return (number, try safetyNumberQr(digits: number))
+            }
             digits = loaded.0
             qr = loaded.1
+        } catch FfiError.IdentityChanged {
+            loadError = L10n.t("Сервер называет для \(name) другой ключ. Не пишите важного, пока не сверитесь лично.",
+                               "The server names a different key for \(name). Don’t send anything important until you verify in person.",
+                               "Il server indica una chiave diversa per \(name). Non inviare nulla di importante finché non verifichi di persona.")
+        } catch {
+            loadError = L10n.t("Нет связи с сервером. Проверьте подключение и повторите.",
+                               "Can’t reach the server. Check your connection and try again.",
+                               "Server non raggiungibile. Controlla la connessione e riprova.")
         }
+        loading = false
     }
 
     private func compare(_ scanned: String) {

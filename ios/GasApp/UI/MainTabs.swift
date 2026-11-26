@@ -56,6 +56,9 @@ struct MainTabs: View {
         .onChange(of: model.pendingContactLink, initial: true) { _, link in
             if link != nil { tab = .chats }
         }
+        .onChange(of: model.pendingMention, initial: true) { _, name in
+            if name != nil { tab = .chats }
+        }
         // Ссылка на канал — к каналам: там вход или заявка.
         .onChange(of: model.pendingChannelLink, initial: true) { _, link in
             if link != nil { tab = .channels }

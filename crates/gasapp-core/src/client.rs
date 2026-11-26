@@ -1799,6 +1799,43 @@ impl<T: Transport> Client<T> {
         })
     }
 
+    /// Человек нажал `@имя` в приложении (в записи канала, в сообщении):
+    /// контакт заводится и годится для отправки сразу — как по ссылке.
+    ///
+    /// Решение владельца продукта (2026-11-26): поиска по имени в
+    /// приложении нет, а упоминание, которое человек увидел и нажал сам, —
+    /// приглашение написать. 🔐 Ключ при этом называет сервер (доверие при
+    /// первом использовании), поэтому событие пишется в журнал; если под
+    /// именем уже был другой ключ — подтверждения нет, нужна сверка.
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::discover_contact`].
+    pub fn add_contact_by_mention(&self, name: &str, now: Timestamp) -> Result<Contact> {
+        let mut contact = self.discover_contact(name, now)?;
+        if contact.key_changed || contact.replaced {
+            return Ok(contact);
+        }
+        if !contact.key_confirmed && !contact.verified {
+            self.storage
+                .mark_contact_confirmed_by_link(&contact.account_id)?;
+            self.storage
+                .log_security_event("contact_confirmed_by_mention", None, now)?;
+            contact.key_confirmed = true;
+        }
+        if let Some(chat_id) = contact.chat_id {
+            if !self
+                .storage
+                .list_chats(MAX_CHATS_TO_PROBE)?
+                .iter()
+                .any(|row| row.chat_id == chat_id)
+            {
+                self.storage.touch_chat(&chat_id, None, now)?;
+            }
+        }
+        Ok(contact)
+    }
+
     /// Находит собеседника по имени и записывает контактом — без отправки.
     ///
     /// Ключ, названный сервером, проходит те же проверки, что и при
@@ -2209,6 +2246,46 @@ impl<T: Transport> Client<T> {
         // 🔐 Гибридные отпечатки: сверка покрывает и пост-квантовую
         // половину (см. `client::pq`).
         Ok(self.hybrid_safety_number(&own, &peer)?.to_display_block())
+    }
+
+    /// Код безопасности — и когда пост-квантовая половина собеседника ещё
+    /// не известна (он только найден или только написал): тогда она
+    /// берётся у сервера, проверяется привязкой к известному ключу и
+    /// запоминается. Прежде экран сверки в этом случае был пустым — «моего
+    /// кода, чтобы сверить, вообще нет».
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::IdentityChanged`] — сервер называет для имени другой
+    ///   ключ или другую половину;
+    /// * [`GasAppError::Uninitialized`] — у собеседника нет имени или
+    ///   половины (старый клиент);
+    /// * [`GasAppError::Network`] — сервер недоступен.
+    pub fn safety_number_fetching(&self, contact: &AccountId, now: Timestamp) -> Result<String> {
+        match self.safety_number(contact) {
+            Err(GasAppError::Uninitialized) => {}
+            other => return other,
+        }
+        let known = self
+            .storage
+            .list_contacts(u32::MAX)?
+            .into_iter()
+            .find(|row| row.account_id == *contact)
+            .ok_or(GasAppError::Malformed)?;
+        let name = known.username.ok_or(GasAppError::Uninitialized)?;
+        let identity = PublicKeyBytes::new(
+            known
+                .identity_key
+                .as_slice()
+                .try_into()
+                .map_err(|_| GasAppError::Malformed)?,
+        );
+        let found = self.api.discover(&name)?;
+        if parse_public_key(&found.identity_key)? != identity {
+            return Err(GasAppError::IdentityChanged);
+        }
+        self.verified_peer_pq(&found, &identity, now)?;
+        self.safety_number(contact)
     }
 
     /// Отмечает контакт сверенным или снимает отметку.

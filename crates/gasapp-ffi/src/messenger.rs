@@ -843,6 +843,25 @@ impl Messenger {
 /// Контакты и поиск.
 #[uniffi::export]
 impl Messenger {
+    /// Нажали `@имя` в приложении: контакт, чат и отправка — сразу (см.
+    /// `Client::add_contact_by_mention`). Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — не имя; [`FfiError::Core`] — имени
+    /// нет или нет связи; [`FfiError::IdentityChanged`] — сервер называет
+    /// другой ключ.
+    pub fn add_contact_by_mention(
+        &self,
+        username: String,
+        now_millis: i64,
+    ) -> Result<FfiContact, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let contact =
+            guard(|| client.add_contact_by_mention(&username, Timestamp::from_millis(now_millis)))?;
+        Ok(contact_to_ffi(&contact))
+    }
+
     /// Добавляет контакт по ссылке или QR без сети — чат открывается
     /// сразу; затем — [`Messenger::add_contact_from_link`] в фоне: сверка
     /// имени с сервером. Без сетевого замка: не ждёт идущего приёма.
@@ -910,9 +929,22 @@ impl Messenger {
     /// не прочитались.
     pub fn safety_number_with(&self, account_id: String) -> Result<String, FfiError> {
         let account = parse_account_id(&account_id)?;
-        let client = self.reader()?;
-
-        guard(|| client.safety_number(&account))
+        let local = {
+            let client = self.reader()?;
+            guard(|| client.safety_number(&account))
+        };
+        // Половина ключа собеседника ещё не известна — спросить сервер
+        // (иначе экран сверки был пустым).
+        if matches!(local, Err(FfiError::Core(GasAppError::Uninitialized))) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
+                .unwrap_or_default();
+            let client = self.client()?;
+            return guard(|| client.safety_number_fetching(&account, Timestamp::from_millis(now)));
+        }
+        local
     }
 
     /// Отмечает контакт сверенным или снимает отметку.
