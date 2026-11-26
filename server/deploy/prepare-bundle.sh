@@ -219,7 +219,11 @@ GASAPP_PINS_FILE=/etc/gasapp/pins.txt"
     echo "inet_interfaces = ${lb}, 127.0.0.1"
     echo "mynetworks = 127.0.0.0/8 $(printf '%s/32 ' "${nodes[@]}" | sed 's/ $//')"
     echo
-    echo "== Onion-сервис на VPS-1 (/etc/tor/torrc):"
+    echo "== Onion-сервис на VPS-1 (/etc/tor/torrc) — быстрый, single onion:"
+    echo "SocksPort 0"
+    echo "HiddenServiceSingleHopMode 1"
+    echo "HiddenServiceNonAnonymousMode 1"
+    echo "HiddenServiceDir /var/lib/tor/gasapp-fast/"
     echo "HiddenServicePort 443 ${lb}:8444"
     echo
     echo "== Проверка здоровья узлов с VPS-1:"
