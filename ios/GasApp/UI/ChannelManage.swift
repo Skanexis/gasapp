@@ -27,6 +27,7 @@ struct ChannelManageScreen: View {
     @State private var banned: [FfiChannelMember] = []
     @State private var adminRequest = ""
     @State private var adminLabel = ""
+    @State private var scanningAdmin = false
     @State private var avatarItem: PhotosPickerItem?
     @State private var confirmPublic = false
     @State private var confirmClose = false
@@ -226,6 +227,9 @@ struct ChannelManageScreen: View {
                         } label: { Image(systemName: "doc.on.clipboard") }
                             .buttonStyle(.borderless)
                             .accessibilityLabel(L10n.t("Вставить", "Paste", "Incolla"))
+                        Button { scanningAdmin = true } label: { Image(systemName: "qrcode.viewfinder") }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(L10n.t("Сканировать QR", "Scan QR", "Scansiona QR"))
                     }
                     if isChannelAdminRequest(text: adminRequest) {
                         TextField(L10n.t("Имя для вас", "Name for you", "Nome per te"), text: $adminLabel)
@@ -237,9 +241,9 @@ struct ChannelManageScreen: View {
                 } header: {
                     Text(L10n.t("Администраторы", "Admins", "Admin"))
                 } footer: {
-                    Text(L10n.t("Администратор публикует записи. Заявку он берёт в сведениях канала и присылает вам. Свайп влево — снять.",
-                                "An admin can publish posts. They get the request in the channel info and send it to you. Swipe left to remove.",
-                                "Un admin può pubblicare post. Trova la richiesta nelle informazioni del canale e te la invia. Scorri a sinistra per rimuoverlo."))
+                    Text(L10n.t("Администратор публикует записи. Будущий админ открывает канал → ⓘ → «Стать администратором» и присылает вам заявку в чат — нажмите её. Или отсканируйте его QR. Свайп влево — снять.",
+                                "An admin can publish posts. The future admin opens the channel → ⓘ → “Become an admin” and sends you the request in a chat — tap it. Or scan their QR. Swipe left to remove.",
+                                "Un admin può pubblicare post. Il futuro admin apre il canale → ⓘ → «Diventa admin» e ti invia la richiesta in chat: toccala. Oppure scansiona il suo QR. Scorri a sinistra per rimuoverlo."))
                 }
 
                 Section {
@@ -337,6 +341,8 @@ struct ChannelManageScreen: View {
             Text(L10n.t("Ключ канала сменится: новые записи удалённый не прочтёт. То, что вышло раньше, он уже читал.",
                         "The channel key changes: they will not read new posts. What was published before, they have already read.", "La chiave del canale cambia: non leggerà i nuovi post. Ciò che è stato pubblicato prima l’ha già letto."))
         }
+        // QR заявки с телефона будущего админа.
+        .sheet(isPresented: $scanningAdmin) { QRScanner { code in adminRequest = code } }
         .onChange(of: avatarItem) { _, item in
             guard let item else { return }
             Task {
@@ -559,8 +565,9 @@ struct AdminRequestSheet: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                Text(L10n.t("Покажите этот код владельцу канала или отправьте ему строку. Секретов в ней нет, но она называет владельцу ваше устройство.",
-                            "Show this code to the channel owner or send them the text. It has no secrets, but it names your device to the owner.", "Mostra questo codice al proprietario del canale o inviagli il testo. Non contiene segreti, ma indica al proprietario il tuo dispositivo."))
+                Text(L10n.t("Отправьте заявку владельцу канала в чат GasApp — он нажмёт её и назначит вас. Или покажите ему этот QR. Секретов в заявке нет, но она называет владельцу ваше устройство.",
+                            "Send the request to the channel owner in a GasApp chat — they tap it and appoint you. Or show them this QR. It has no secrets, but it names your device to the owner.",
+                            "Invia la richiesta al proprietario del canale in una chat GasApp: la tocca e ti nomina. Oppure mostragli questo QR. Non contiene segreti, ma indica al proprietario il tuo dispositivo."))
                     .font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
                 if let qr { QRView(matrix: qr).frame(maxWidth: 260) }
                 if let request {

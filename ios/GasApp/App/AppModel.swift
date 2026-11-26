@@ -31,6 +31,9 @@ final class AppModel {
     /// Нажатое в приложении `@имя`: чат с этим человеком — сразу.
     var pendingMention: String?
 
+    /// Заявка на администрирование, нажатая владельцем канала в чате.
+    var pendingAdminRequest: String?
+
     /// Приложение открыли по ссылке.
     func openURL(_ url: URL) {
         _ = route(url)
@@ -48,6 +51,9 @@ final class AppModel {
             return true
         case let .mention(name):
             pendingMention = name
+            return true
+        case let .adminRequest(request):
+            pendingAdminRequest = request
             return true
         case nil:
             return false

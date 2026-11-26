@@ -56,6 +56,20 @@ enum AppLink: Equatable {
     case channel(String)
     /// Нажатое `@имя` — как ссылка на контакт (см. `LinkText`).
     case mention(String)
+    /// Заявка на администрирование канала, присланная владельцу в чат.
+    case adminRequest(String)
+
+    static let adminRequestPrefix = "gasapp://channel-admin/"
+
+    /// Канал заявки (UUID строчными) — по первой части заявки.
+    static func channelId(ofAdminRequest request: String) -> String? {
+        guard request.lowercased().hasPrefix(adminRequestPrefix) else { return nil }
+        let hex = request.dropFirst(adminRequestPrefix.count).prefix { $0 != "." }.lowercased()
+        guard hex.count == 32, hex.allSatisfy(\.isHexDigit) else { return nil }
+        let chars = Array(hex)
+        let parts = [0..<8, 8..<12, 12..<16, 16..<20, 20..<32].map { String(chars[$0]) }
+        return parts.joined(separator: "-")
+    }
 
     /// Схема, которой `LinkText` размечает `@имя` в тексте.
     static let mentionPrefix = "gasapp://mention/"
@@ -63,6 +77,10 @@ enum AppLink: Equatable {
     /// `nil` — чужая ссылка (её открывает система).
     init?(_ url: URL) {
         let text = url.absoluteString
+        if text.lowercased().hasPrefix(Self.adminRequestPrefix) {
+            self = .adminRequest(text)
+            return
+        }
         if text.lowercased().hasPrefix(Self.mentionPrefix) {
             let name = String(text.dropFirst(Self.mentionPrefix.count))
             guard !name.isEmpty else { return nil }
@@ -86,7 +104,7 @@ enum AppLink: Equatable {
 /// размечаются только найденные адреса.
 enum LinkText {
     private static let pattern = try? NSRegularExpression(
-        pattern: #"(gasapp://(contact|channel|channel-join)/[^\s]+|https?://[^\s]+)"#,
+        pattern: #"(gasapp://(contact|channel|channel-join|channel-admin)/[^\s]+|https?://[^\s]+)"#,
         options: [.caseInsensitive]
     )
     /// Знаки, которыми фраза заканчивается, а адрес — нет.

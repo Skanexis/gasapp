@@ -18,6 +18,8 @@ struct ChannelScreen: View {
     @State private var sending = false
     @State private var showInfo = false
     @State private var showManage = false
+    /// Заявки на вступление в закрытый канал — владельцу, прямо в канале.
+    @State private var joinRequests = 0
     @State private var message: String?
     /// Поиск по сохранённым записям — без сети (`searchChannelPosts`).
     @State private var query = ""
@@ -43,6 +45,24 @@ struct ChannelScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Заявки ждут решения — видно сразу, а не только в «Управлении».
+            if isOwner && joinRequests > 0 {
+                Button { showManage = true } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.crop.circle.badge.questionmark")
+                            .font(.system(size: 18, weight: .semibold))
+                        Text(L10n.t("Заявки на вступление: \(joinRequests)", "Join requests: \(joinRequests)", "Richieste di accesso: \(joinRequests)"))
+                            .font(GasFont.text(15, .semibold))
+                        Spacer()
+                        Text(L10n.t("Открыть", "Open", "Apri")).font(GasFont.text(14, .semibold))
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(GasAppColor.accentOn)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .background(GasAppColor.accent)
+                }
+                .buttonStyle(.plain)
+            }
             ScrollView {
                 LazyVStack(spacing: 10) {
                     if shown.isEmpty {
@@ -101,7 +121,7 @@ struct ChannelScreen: View {
                 Button { showInfo = true } label: { Image(systemName: "info.circle") }
             }
         }
-        .sheet(isPresented: $showManage, onDismiss: { Task { await reload() } }) {
+        .sheet(isPresented: $showManage, onDismiss: { Task { await reload(); await loadJoinRequests() } }) {
             NavigationStack {
                 ChannelManageScreen(channelId: channelId) { Task { await reload() } }
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) { showManage = false } } }
@@ -296,6 +316,18 @@ struct ChannelScreen: View {
         // Просмотры — общим числом, без того, кто смотрел.
         _ = try? await Background.run { try messenger.reportChannelSeen(channelId: id, nowMillis: CoreStore.nowMillis) }
         await reload()
+        await loadJoinRequests()
+    }
+
+    private func loadJoinRequests() async {
+        guard isOwner, channel?.closed == true, let messenger = try? CoreStore.shared.current() else {
+            joinRequests = 0
+            return
+        }
+        let id = channelId
+        joinRequests = (try? await Background.run {
+            try messenger.channelJoinRequests(channelId: id, nowMillis: CoreStore.nowMillis).count
+        }) ?? joinRequests
     }
 
     private func publish() {

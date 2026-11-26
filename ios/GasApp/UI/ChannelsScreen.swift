@@ -22,6 +22,14 @@ struct ChannelsScreen: View {
     /// Премиум — по сохранённому ответу сервера: без него ботов не показываем.
     @State private var premium = false
     @State private var opened: OpenedChannel?
+    /// Нажатая в чате заявка на администрирование — подтверждение.
+    @State private var appointing: AppointRequest?
+
+    struct AppointRequest: Identifiable {
+        let request: String
+        let channel: FfiChannel
+        var id: String { request }
+    }
 
     struct OpenedChannel: Hashable { let id: String; let title: String }
     /// Объяснение «нужен премиум» — вместо формы, которую всё равно не
@@ -130,6 +138,21 @@ struct ChannelsScreen: View {
             .gasScreen()
         }
         .task { await sync() }
+        // Владелец нажал в чате заявку на администрирование — подтвердить.
+        .onChange(of: model.pendingAdminRequest, initial: true) { _, request in
+            guard let request else { return }
+            model.pendingAdminRequest = nil
+            Task { await prepareAppoint(request) }
+        }
+        .sheet(item: $appointing) { pending in
+            NavigationStack {
+                AppointAdminSheet(request: pending.request, channel: pending.channel) {
+                    appointing = nil
+                    opened = OpenedChannel(id: pending.channel.channelId, title: pending.channel.title)
+                }
+            }
+            .presentationDetents([.medium])
+        }
         // Нажали ссылку на канал (в переписке, в другом приложении) — вход
         // сразу, без «Вступить по ссылке» и вставки.
         .onChange(of: model.pendingChannelLink, initial: true) { _, link in
@@ -138,6 +161,18 @@ struct ChannelsScreen: View {
             joinLink = link
             join()
         }
+    }
+
+    private func prepareAppoint(_ request: String) async {
+        await reload()
+        let wanted = AppLink.channelId(ofAdminRequest: request)
+        guard let channel = channels.first(where: { $0.channelId.lowercased() == wanted }), channel.role == .owner else {
+            message = L10n.t("Это заявка в канал, которым вы не владеете.",
+                             "This request is for a channel you don’t own.",
+                             "Questa richiesta è per un canale di cui non sei proprietario.")
+            return
+        }
+        appointing = AppointRequest(request: request, channel: channel)
     }
 
     private func reload() async {
@@ -597,6 +632,68 @@ struct CreateChannelSheet: View {
                 } else {
                     self.error = L10n.t("Нет связи с сервером", "No connection", "Nessuna connessione")
                 }
+            }
+        }
+    }
+}
+
+/// Владелец подтверждает заявку на администрирование, нажатую в чате.
+struct AppointAdminSheet: View {
+    let request: String
+    let channel: FfiChannel
+    let onDone: () -> Void
+
+    init(request: String, channel: FfiChannel, onDone: @escaping () -> Void) {
+        self.request = request
+        self.channel = channel
+        self.onDone = onDone
+    }
+
+    @State private var label = ""
+    @State private var working = false
+    @State private var error: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L10n.t("Сделать администратором «\(channel.title)»?", "Make an admin of “\(channel.title)”?", "Nominare admin di «\(channel.title)»?"))
+                .font(GasFont.text(18, .bold)).foregroundStyle(GasAppColor.textPrimary)
+            Text(L10n.t("Администратор публикует записи в канал. Снять его можно в «Управлении».",
+                        "An admin can publish posts. You can remove them in “Manage”.",
+                        "Un admin può pubblicare post. Puoi rimuoverlo in «Gestisci»."))
+                .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
+            Field(title: L10n.t("Как его подписать (видите только вы)", "Name (only you see it)", "Nome (lo vedi solo tu)"),
+                  text: $label, placeholder: "Anna")
+            if let error {
+                Banner(title: L10n.t("Не получилось", "Didn’t work", "Non ha funzionato"), message: error, tone: .error)
+            }
+            GoldButton(title: L10n.t("Назначить", "Appoint", "Nomina"), isLoading: working) { appoint() }
+        }
+        .padding(20)
+        .gasScreen()
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button(L10n.t("Отмена", "Cancel", "Annulla")) { dismiss() } }
+        }
+    }
+
+    private func appoint() {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let id = channel.channelId
+        let text = request
+        let name = label.trimmingCharacters(in: .whitespaces)
+        working = true
+        Task {
+            do {
+                _ = try await Background.run {
+                    try messenger.addChannelAdmin(channelId: id, request: text, label: name, nowMillis: CoreStore.nowMillis)
+                }
+                working = false
+                onDone()
+            } catch {
+                working = false
+                self.error = L10n.t("Заявка не подошла или нет связи. Попросите прислать её ещё раз.",
+                                    "The request didn’t work or there’s no connection. Ask them to send it again.",
+                                    "La richiesta non è valida o manca la connessione. Chiedi di inviarla di nuovo.")
             }
         }
     }
