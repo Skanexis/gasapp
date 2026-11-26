@@ -266,6 +266,11 @@ impl core::fmt::Debug for OwnKeys {
     }
 }
 
+/// Настройка: общий таймер исчезающих сообщений для всех чатов, секунды
+/// (0 — выключен). Чат с явным таймером (в том числе «выключено») ему не
+/// следует.
+pub const DEFAULT_DISAPPEARING_SETTING: &str = "default_disappearing_seconds";
+
 /// Строка списка чатов.
 #[derive(Debug, Clone)]
 pub struct ChatSummaryRow {
@@ -3398,11 +3403,64 @@ impl Storage {
             ON CONFLICT(chat_id) DO UPDATE SET
                 disappearing_timer = excluded.disappearing_timer
             ",
-                params![chat_id.as_bytes(), seconds],
+                // Явное значение чата — и «выключено» (0): оно сильнее общего
+                // таймера из настроек. NULL — «как в настройках».
+                params![chat_id.as_bytes(), seconds.unwrap_or(0)],
             )
             .map_err(storage_error)?;
 
         Ok(())
+    }
+
+    /// Чат снова следует общему таймеру из настроек
+    /// ([`DEFAULT_DISAPPEARING_SETTING`]).
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — запись не удалась.
+    pub fn follow_default_disappearing_timer(&self, chat_id: &ChatId) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        connection
+            .execute(
+                "UPDATE chat_states SET disappearing_timer = NULL WHERE chat_id = ?",
+                params![chat_id.as_bytes()],
+            )
+            .map_err(storage_error)?;
+        Ok(())
+    }
+
+    /// Таймер, заданный в самом чате: `None` — чат следует общему таймеру,
+    /// `Some(None)` — в чате выключено, `Some(Some(s))` — свой срок.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение не удалось.
+    pub fn explicit_disappearing_timer(&self, chat_id: &ChatId) -> Result<Option<Option<u32>>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        let mut statement = connection
+            .prepare_cached("SELECT disappearing_timer FROM chat_states WHERE chat_id = ?")
+            .map_err(storage_error)?;
+        let mut rows = statement
+            .query_map(params![chat_id.as_bytes()], |row| {
+                row.get::<_, Option<u32>>(0)
+            })
+            .map_err(storage_error)?;
+        Ok(rows
+            .next()
+            .transpose()
+            .map_err(storage_error)?
+            .flatten()
+            .map(|seconds| (seconds > 0).then_some(seconds)))
+    }
+
+    /// Общий таймер исчезающих сообщений из настроек: `None` — выключен.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение не удалось.
+    pub fn default_disappearing_timer(&self) -> Result<Option<u32>> {
+        let seconds = self.setting_int(DEFAULT_DISAPPEARING_SETTING, 0)?;
+        Ok(u32::try_from(seconds).ok().filter(|seconds| *seconds > 0))
     }
 
     /// Возвращает таймер исчезающих сообщений, если он задан.
@@ -3411,19 +3469,11 @@ impl Storage {
     ///
     /// [`GasAppError::Storage`] — чтение не удалось.
     pub fn get_disappearing_timer(&self, chat_id: &ChatId) -> Result<Option<u32>> {
-        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
-
-        let mut statement = connection
-            .prepare_cached("SELECT disappearing_timer FROM chat_states WHERE chat_id = ?")
-            .map_err(storage_error)?;
-
-        let mut rows = statement
-            .query_map(params![chat_id.as_bytes()], |row| {
-                row.get::<_, Option<u32>>(0)
-            })
-            .map_err(storage_error)?;
-
-        Ok(rows.next().transpose().map_err(storage_error)?.flatten())
+        // Действующий таймер: свой у чата, иначе — общий из настроек.
+        match self.explicit_disappearing_timer(chat_id)? {
+            Some(explicit) => Ok(explicit),
+            None => self.default_disappearing_timer(),
+        }
     }
 
     // --- Attachment repository ---

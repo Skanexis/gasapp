@@ -55,6 +55,8 @@ struct ChatScreen: View {
     @State private var mode: SendMode = .open
     @State private var contact: FfiContact?
     @State private var blocked = false
+    /// Таймер исчезающих в этом чате (для меню).
+    @State private var timer: FfiChatTimer?
     @State private var showSafety = false
     @State private var showProfile = false
     @State private var showReport = false
@@ -151,10 +153,24 @@ struct ChatScreen: View {
                     if !resolvedChatId.isEmpty {
                         // Исчезающие сообщения: ядро стирает их у обоих по сроку.
                         Menu(L10n.t("Исчезающие сообщения", "Disappearing messages", "Messaggi effimeri")) {
-                            Button(L10n.t("Выключить", "Off", "Disattivati")) { setTimer(0) }
-                            Button(L10n.t("Через час", "After 1 hour", "Dopo 1 ora")) { setTimer(3600) }
-                            Button(L10n.t("Через сутки", "After 1 day", "Dopo 1 giorno")) { setTimer(86_400) }
-                            Button(L10n.t("Через неделю", "After 1 week", "Dopo 1 settimana")) { setTimer(604_800) }
+                            // «Как в настройках» — чат следует общему таймеру;
+                            // остальное — своё для этого чата, оно сильнее.
+                            Button { followDefaultTimer() } label: {
+                                if timer?.followsDefault == true {
+                                    Label(L10n.t("Как в настройках", "As in Settings", "Come nelle impostazioni"), systemImage: "checkmark")
+                                } else {
+                                    Text(L10n.t("Как в настройках", "As in Settings", "Come nelle impostazioni"))
+                                }
+                            }
+                            ForEach(TimerChoice.all, id: \.seconds) { choice in
+                                Button { setTimer(choice.seconds) } label: {
+                                    if timer?.followsDefault == false && timer?.seconds == choice.seconds {
+                                        Label(choice.title, systemImage: "checkmark")
+                                    } else {
+                                        Text(choice.title)
+                                    }
+                                }
+                            }
                         }
                     }
                     if !resolvedChatId.isEmpty {
@@ -212,6 +228,7 @@ struct ChatScreen: View {
         }
         .task {
             resolvedChatId = chatId
+            await loadTimer()
             // Сначала — то, что уже лежит на телефоне: это мгновенно.
             // Прежде экран ждал ответа сервера (через Tor — секунды) и
             // всё это время был пуст.
@@ -318,6 +335,28 @@ struct ChatScreen: View {
         }
     }
 
+    private func loadTimer() async {
+        guard let messenger = try? CoreStore.shared.current(), !resolvedChatId.isEmpty else { return }
+        let chat = resolvedChatId
+        timer = try? await Background.run { try messenger.chatDisappearingTimer(chatId: chat) }
+    }
+
+    private func followDefaultTimer() {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let peer = peerUsername
+        Task {
+            let done = (try? await Background.run {
+                try messenger.followDefaultDisappearingTimer(peerUsername: peer, nowMillis: CoreStore.nowMillis)
+            }) != nil
+            await loadTimer()
+            toast = done
+                ? L10n.t("Как в настройках: \(TimerChoice.title(timer?.seconds ?? 0).lowercased())",
+                         "As in Settings: \(TimerChoice.title(timer?.seconds ?? 0).lowercased())",
+                         "Come nelle impostazioni: \(TimerChoice.title(timer?.seconds ?? 0).lowercased())")
+                : L10n.t("Не удалось изменить", "Could not change it", "Impossibile modificarlo")
+        }
+    }
+
     private func setTimer(_ seconds: UInt32) {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let peer = peerUsername
@@ -326,6 +365,7 @@ struct ChatScreen: View {
             let done = (try? await Background.run {
                 try messenger.setDisappearingTimer(peerUsername: peer, seconds: seconds, nowMillis: CoreStore.nowMillis)
             }) != nil
+            await loadTimer()
             toast = done
                 ? (seconds == 0 ? L10n.t("Исчезающие сообщения выключены", "Disappearing messages off", "Messaggi effimeri disattivati")
                                 : L10n.t("Новые сообщения будут исчезать у вас обоих", "New messages will disappear for both of you", "I nuovi messaggi spariranno per entrambi"))

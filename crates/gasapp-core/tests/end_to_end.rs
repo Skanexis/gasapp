@@ -35,7 +35,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use gasapp_core::client::{ChatRequest, Client, Contact};
+use gasapp_core::client::{ChatRequest, ChatTimer, Client, Contact};
 use gasapp_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
     RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
@@ -9892,5 +9892,53 @@ fn a_tapped_mention_lets_you_write_at_once() {
     assert_eq!(
         bob.receive_messages(&bob_device, later(4)).expect("приём"),
         1
+    );
+}
+
+/// Общий таймер из настроек: чат без своей настройки следует ему, и
+/// собеседник узнаёт срок до первого сообщения — исчезает у обоих; своя
+/// настройка чата (в том числе «выключено») сильнее общей.
+#[test]
+fn the_default_timer_covers_chats_without_their_own() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .set_default_disappearing_timer(Some(60))
+        .expect("общий таймер");
+    alice
+        .send_message("bob", "first", now(), &mut OsRng)
+        .expect("отправлено");
+    let chat = alice.chats().expect("чаты")[0];
+    assert_eq!(
+        alice.chat_disappearing_timer(&chat).expect("таймер"),
+        ChatTimer {
+            seconds: Some(60),
+            follows_default: true
+        }
+    );
+    bob.receive_messages(&bob_device, later(1)).expect("приём");
+    assert_eq!(texts_of(&bob), vec!["first".to_owned()]);
+    bob.purge_expired(later(1 + 61)).expect("очистка");
+    assert!(texts_of(&bob).is_empty(), "исчезло и у собеседника");
+    alice.purge_expired(later(61)).expect("очистка");
+    assert!(texts_of(&alice).is_empty(), "и у себя");
+
+    // В чате выключено — сильнее общего.
+    alice
+        .set_shared_disappearing_timer("bob", None, later(100), &mut OsRng)
+        .expect("выключено в чате");
+    alice
+        .send_message("bob", "stays", later(101), &mut OsRng)
+        .expect("отправлено");
+    alice.purge_expired(later(101 + 3600)).expect("очистка");
+    assert_eq!(texts_of(&alice), vec!["stays".to_owned()]);
+    assert_eq!(
+        alice.chat_disappearing_timer(&chat).expect("таймер"),
+        ChatTimer {
+            seconds: None,
+            follows_default: false
+        }
     );
 }

@@ -69,6 +69,7 @@ mod pq;
 mod requests;
 mod sealed;
 mod signup;
+mod timers;
 
 pub use blocks::ReportOutcome;
 pub use bots::{bot_username, BotInfo, BOT_SUFFIX, BOT_TOKEN_PREFIX};
@@ -91,6 +92,7 @@ pub use network::{SecurityReport, BACKUP_MAX_AGE_MILLIS, PROXY_SETTING};
 pub use notify::{new_notify_token, PushProvider, NOTIFY_TOKEN_LEN};
 use rand_core::{CryptoRng, RngCore};
 pub use signup::PendingRegistration;
+pub use timers::ChatTimer;
 
 use crate::session::{self, derive_chat_id};
 
@@ -659,6 +661,10 @@ impl<T: Transport> Client<T> {
         let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
 
         let chat_id = derive_chat_id(&self.own_account(&identity)?, &peer_identity);
+
+        // Чат без своего таймера следует общему: собеседник узнаёт срок
+        // до сообщения, чтобы оно исчезло и у него (`client::timers`).
+        self.announce_default_timer(peer_username, &chat_id, now, rng);
 
         // Идентификатор выбирается до шифрования и уезжает внутри
         // содержимого: по нему собеседник найдёт сообщение, когда придёт

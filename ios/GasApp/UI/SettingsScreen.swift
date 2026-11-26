@@ -20,6 +20,8 @@ struct SettingsScreen: View {
     @State private var autoLock = AppModel.autoLockSeconds
     @State private var presence = false
     @State private var presenceLoaded = false
+    /// Общий таймер исчезающих сообщений, секунды (0 — выключен).
+    @State private var defaultTimer: UInt32 = 0
     @State private var exportDocument: BackupDocument?
     @State private var exporting = false
     @State private var torStatus = ""
@@ -164,6 +166,22 @@ struct SettingsScreen: View {
                         Text(L10n.t("Через 5 мин", "After 5 min", "Dopo 5 min")).tag(300)
                     } label: {
                         SettingRow(icon: "lock.rotation", color: .indigo, title: L10n.t("Автоблокировка", "Auto-lock", "Blocco automatico"))
+                    }
+                    // Один срок для всех чатов; в самом чате можно задать свой
+                    // или выключить — он сильнее этого.
+                    Picker(selection: Binding(
+                        get: { defaultTimer },
+                        set: { value in setDefaultTimer(value) }
+                    )) {
+                        ForEach(TimerChoice.all, id: \.seconds) { choice in
+                            Text(choice.title).tag(choice.seconds)
+                        }
+                    } label: {
+                        SettingRow(icon: "timer", color: .orange,
+                                   title: L10n.t("Исчезающие сообщения", "Disappearing messages", "Messaggi effimeri"),
+                                   detail: L10n.t("Для всех чатов. В чате можно поставить своё",
+                                                  "For all chats. A chat can have its own",
+                                                  "Per tutte le chat. Una chat può avere il suo"))
                     }
                     Toggle(isOn: $presence) {
                         SettingRow(icon: "eye.fill", color: .teal, title: L10n.t("Показывать, что я в сети", "Show when I’m online", "Mostra quando sono online"))
@@ -341,6 +359,17 @@ struct SettingsScreen: View {
         return letters.isEmpty ? "G" : letters.uppercased()
     }
 
+    private func setDefaultTimer(_ seconds: UInt32) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let previous = defaultTimer
+        defaultTimer = seconds
+        Task {
+            if (try? await Background.run { try messenger.setDefaultDisappearingTimer(seconds: seconds) }) == nil {
+                defaultTimer = previous
+            }
+        }
+    }
+
     private func load() async {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let state = try? await Background.run { () -> (String?, FfiProxy) in
@@ -350,6 +379,7 @@ struct SettingsScreen: View {
         currentProxy = state?.1
         updateTorStatus()
         presence = (try? await Background.run { try messenger.presenceSharingEnabled() }) ?? false
+        defaultTimer = (try? await Background.run { try messenger.defaultDisappearingTimer() }) ?? 0
         presenceLoaded = true
         premium = (try? await Background.run { try messenger.premiumCached() }) ?? false
     }
@@ -525,5 +555,25 @@ struct SettingIcon: View {
             .frame(width: 30, height: 30)
             .background(RoundedRectangle(cornerRadius: 8).fill(color.gradient))
             .accessibilityHidden(true)
+    }
+}
+
+/// Сроки исчезающих сообщений — одни и те же в настройках и в чате.
+enum TimerChoice {
+    struct Option: Hashable {
+        let seconds: UInt32
+        let title: String
+    }
+
+    static let all: [Option] = [
+        Option(seconds: 0, title: L10n.t("Выключены", "Off", "Disattivati")),
+        Option(seconds: 3600, title: L10n.t("Через час", "After 1 hour", "Dopo 1 ora")),
+        Option(seconds: 86_400, title: L10n.t("Через сутки", "After 1 day", "Dopo 1 giorno")),
+        Option(seconds: 604_800, title: L10n.t("Через неделю", "After 1 week", "Dopo 1 settimana")),
+    ]
+
+    static func title(_ seconds: UInt32) -> String {
+        all.first { $0.seconds == seconds }?.title
+            ?? L10n.t("Через \(seconds) с", "After \(seconds) s", "Dopo \(seconds) s")
     }
 }

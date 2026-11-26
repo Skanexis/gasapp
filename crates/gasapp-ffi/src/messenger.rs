@@ -838,6 +838,65 @@ impl Messenger {
         })
         .map(|chat| chat.as_uuid().to_string())
     }
+
+    /// Общий таймер исчезающих сообщений для всех чатов, секунды; 0 —
+    /// выключен. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn default_disappearing_timer(&self) -> Result<u32, FfiError> {
+        let client = self.reader()?;
+        guard(|| client.default_disappearing_timer()).map(|seconds| seconds.unwrap_or(0))
+    }
+
+    /// Меняет общий таймер (0 — выключить). Чаты со своей настройкой не
+    /// меняются; собеседники остальных узнают срок с ближайшим сообщением.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — срок больше года либо запись не удалась.
+    pub fn set_default_disappearing_timer(&self, seconds: u32) -> Result<(), FfiError> {
+        let client = self.reader()?;
+        guard(|| client.set_default_disappearing_timer((seconds > 0).then_some(seconds)))
+    }
+
+    /// Таймер чата: действующий срок (0 — не исчезают) и следует ли чат
+    /// общему таймеру. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — чат не разобран.
+    pub fn chat_disappearing_timer(&self, chat_id: String) -> Result<FfiChatTimer, FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+        guard(|| client.chat_disappearing_timer(&chat)).map(|timer| FfiChatTimer {
+            seconds: timer.seconds.unwrap_or(0),
+            follows_default: timer.follows_default,
+        })
+    }
+
+    /// Чат снова следует общему таймеру. Сетевой вызов: собеседник узнаёт
+    /// срок сразу.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — отправка не удалась.
+    pub fn follow_default_disappearing_timer(
+        &self,
+        peer_username: String,
+        now_millis: i64,
+    ) -> Result<String, FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        guard(|| {
+            client.follow_default_disappearing_timer(
+                &peer_username,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+        .map(|chat| chat.as_uuid().to_string())
+    }
 }
 
 /// Контакты и поиск.
@@ -1842,4 +1901,13 @@ mod transport_error_tests {
 
         assert!(lifted.is_err(), "UniFFI научился поднимать плоские ошибки");
     }
+}
+
+/// Таймер исчезающих сообщений чата.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChatTimer {
+    /// Действующий срок в секундах; 0 — сообщения не исчезают.
+    pub seconds: u32,
+    /// Чат следует общему таймеру из настроек.
+    pub follows_default: bool,
 }
