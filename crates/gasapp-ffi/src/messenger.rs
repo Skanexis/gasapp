@@ -1280,6 +1280,22 @@ impl Messenger {
         })
     }
 
+    /// Заранее — discovery собеседника для следующей отправки (чат открыт,
+    /// человек печатает): отправка — один сетевой запрос вместо двух.
+    /// Сетевой вызов; сбой не страшен — отправка спросит сама.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn prefetch_discovery(
+        &self,
+        peer_username: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        guard(|| client.prefetch_discovery(&peer_username, Timestamp::from_millis(now_millis)))
+    }
+
     /// Заголовки подписи для рукопожатия сокета уведомлений.
     ///
     /// Возвращает пары «имя заголовка — значение», которые платформа

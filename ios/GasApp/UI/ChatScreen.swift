@@ -57,6 +57,8 @@ struct ChatScreen: View {
     @State private var blocked = false
     /// Таймер исчезающих в этом чате (для меню).
     @State private var timer: FfiChatTimer?
+    /// Когда последний раз заранее спрашивали discovery собеседника.
+    @State private var lastPrefetch = Date.distantPast
     @State private var showSafety = false
     @State private var showProfile = false
     @State private var showReport = false
@@ -233,10 +235,17 @@ struct ChatScreen: View {
             // Прежде экран ждал ответа сервера (через Tor — секунды) и
             // всё это время был пуст.
             await refresh()
+            // Открыли чат — скорее всего, будут писать: discovery заранее.
+            prefetch(force: false)
             await inbox.receiveOnce()
             await refresh()
         }
         .onChange(of: inbox.revision) { _, _ in Task { await refresh() } }
+        // Начали печатать — discovery собеседника заранее: отправка будет
+        // одним запросом вместо двух.
+        .onChange(of: draft) { old, new in
+            if old.isEmpty && !new.isEmpty { prefetch(force: false) }
+        }
         // Пока чат открыт — новые сообщения забираются каждые 3 секунды.
         .onAppear { inbox.chatOpened() }
         .onDisappear { inbox.chatClosed() }
@@ -336,6 +345,18 @@ struct ChatScreen: View {
                 Label(L10n.t("Удалить у всех", "Delete for everyone", "Elimina per tutti"), systemImage: "trash")
             }
         }
+    }
+
+    /// Discovery собеседника заранее (`prefetchDiscovery`): ядро возьмёт его
+    /// для следующей отправки один раз и не старше 20 секунд, проверив как
+    /// свежий. Не чаще раза в 15 секунд.
+    private func prefetch(force: Bool) {
+        guard !peerUsername.isEmpty, mode == .open,
+              force || Date().timeIntervalSince(lastPrefetch) > 15,
+              let messenger = try? CoreStore.shared.current() else { return }
+        lastPrefetch = Date()
+        let peer = peerUsername
+        Background.detach { _ = try? messenger.prefetchDiscovery(peerUsername: peer, nowMillis: CoreStore.nowMillis) }
     }
 
     private func loadTimer() async {
@@ -546,10 +567,11 @@ struct ChatScreen: View {
         // принятия запроса: незнакомец не должен узнать, что прочли.
         // Одна отметка на новое входящее, а не на каждое обновление экрана.
         if mode == .open, let id = snap.lastIncoming, id != receiptSentFor {
-            if (try? await Background.run {
-                try messenger.sendReadReceipt(peerUsername: peer, untilMessageId: id, nowMillis: CoreStore.nowMillis)
-            }) != nil {
-                receiptSentFor = id
+            // В фоне, без ожидания: обновление экрана (и отправка, которая
+            // его ждёт) не стоит за квитанцией — через Tor это секунды.
+            receiptSentFor = id
+            Background.detach {
+                _ = try? messenger.sendReadReceipt(peerUsername: peer, untilMessageId: id, nowMillis: CoreStore.nowMillis)
             }
         }
     }
@@ -590,6 +612,7 @@ struct ChatScreen: View {
                     try messenger.sendMessage(peerUsername: peer, text: text, nowMillis: CoreStore.nowMillis)
                 }
                 inbox.touch()
+                prefetch(force: true)
                 await refresh()
             } catch {
                 messages.removeAll { $0.id == local.id }

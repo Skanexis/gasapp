@@ -113,6 +113,8 @@ struct ServerState {
     plain_accepted: usize,
     /// Сколько раз устройство публиковало предключи.
     publishes: HashMap<String, usize>,
+    /// Сколько раз спрашивали discovery по имени.
+    discoveries: usize,
     /// Подключённые устройства аккаунта (`docs/protocol/MULTI-DEVICE.md`).
     linked: HashMap<String, Vec<String>>,
     /// Подписанные списки устройств по аккаунту, hex.
@@ -394,6 +396,11 @@ impl FakeServer {
             bundle.one_time.clear();
             bundle.one_time_kem.clear();
         }
+    }
+
+    /// Сколько раз спрашивали discovery по имени.
+    fn discovery_count(&self) -> usize {
+        self.state.borrow().discoveries
     }
 
     /// Подтверждения доставки начнут отказывать после `count` успешных.
@@ -1965,6 +1972,7 @@ impl Transport for FakeServer {
                 (429, String::new())
             }
             (Method::Get, path) if path.starts_with("/v1/discovery/username/") => {
+                state.discoveries += 1;
                 let username = path.trim_start_matches("/v1/discovery/username/");
 
                 match state.accounts.get(username) {
@@ -9974,5 +9982,47 @@ fn the_default_timer_covers_chats_without_their_own() {
             seconds: None,
             follows_default: false
         }
+    );
+}
+
+/// Discovery заранее: следующая отправка берёт его один раз и только
+/// свежим (не старше 20 секунд); проверки — те же, что у свежего ответа.
+#[test]
+fn a_prefetched_discovery_serves_one_fresh_send() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, _bob, _alice_device, _bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "warm-up", now(), &mut OsRng)
+        .expect("сессия");
+    let before = server.discovery_count();
+    alice.prefetch_discovery("@Bob", later(1)).expect("заранее");
+    assert_eq!(server.discovery_count(), before + 1);
+    alice
+        .send_message("bob", "fast", later(2), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        server.discovery_count(),
+        before + 1,
+        "отправка без своего discovery"
+    );
+    alice
+        .send_message("bob", "again", later(3), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        server.discovery_count(),
+        before + 2,
+        "заранее — только на одну отправку"
+    );
+
+    alice.prefetch_discovery("bob", later(10)).expect("заранее");
+    alice
+        .send_message("bob", "stale", later(10 + 21), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        server.discovery_count(),
+        before + 4,
+        "старше 20 секунд — спрашивается заново"
     );
 }

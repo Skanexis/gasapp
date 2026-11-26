@@ -273,6 +273,10 @@ pub struct PreKeyMaintenance {
     pub remaining_one_time: u32,
 }
 
+/// Сколько живёт заранее запрошенный discovery
+/// ([`Client::prefetch_discovery`]).
+const PREFETCH_TTL_MILLIS: i64 = 20_000;
+
 /// Клиент GasApp.
 pub struct Client<T: Transport> {
     api: ApiClient<T>,
@@ -295,6 +299,10 @@ pub struct Client<T: Transport> {
     /// как в свежем, и подписаны владельцем. Иначе посторонний отрезал
     /// бы человека от собеседников, выбирая бюджет его имени.
     discovered: Mutex<HashMap<String, (DiscoveryResponse, Timestamp)>>,
+    /// Discovery, запрошенный заранее для следующей отправки
+    /// ([`Client::prefetch_discovery`]): берётся один раз и не старше
+    /// [`PREFETCH_TTL_MILLIS`].
+    prefetched: Mutex<HashMap<String, (DiscoveryResponse, Timestamp)>>,
 
     /// Связывание устройств — только в памяти (`client::linking`).
     linking: linking::LinkState,
@@ -314,6 +322,7 @@ impl<T: Transport> Client<T> {
             // только повторная аутентификация.
             vault: Mutex::new(VaultGuard::new(Timestamp::from_millis(0))),
             discovered: Mutex::new(HashMap::new()),
+            prefetched: Mutex::new(HashMap::new()),
             linking: linking::LinkState::default(),
         }
     }
@@ -321,6 +330,21 @@ impl<T: Transport> Client<T> {
     /// Discovery для отправки: свежий ответ, а при отказе сети
     /// или сервера — последний известный (см. `Client::discovered`).
     fn discover_for_send(&self, name: &str, now: Timestamp) -> Result<DiscoveryResponse> {
+        // Запрошенный заранее (открыт чат, человек печатает) — один раз и
+        // свежий: отправка — один сетевой запрос вместо двух. Проверяется
+        // он дальше ровно так же, как свежий.
+        let prefetched = self
+            .prefetched
+            .lock()
+            .ok()
+            .and_then(|mut cache| cache.remove(name));
+        if let Some((found, at)) = prefetched {
+            let age = now.as_millis().saturating_sub(at.as_millis());
+            if (0..=PREFETCH_TTL_MILLIS).contains(&age) {
+                return Ok(found);
+            }
+        }
+
         match self.api.discover(name) {
             Ok(found) => {
                 if let Ok(mut cache) = self.discovered.lock() {
@@ -341,6 +365,27 @@ impl<T: Transport> Client<T> {
                 .ok_or(GasAppError::Network),
             Err(error) => Err(error),
         }
+    }
+
+    /// Заранее — discovery собеседника для следующей отправки: чат открыт
+    /// или человек печатает. Отправка возьмёт его один раз, если он не
+    /// старше 20 секунд, и проверит так же, как свежий (ключ, половина,
+    /// список устройств): дыр это не открывает — только экономит запрос.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сервер недоступен (не страшно: отправка
+    /// спросит сама).
+    pub fn prefetch_discovery(&self, peer_username: &str, now: Timestamp) -> Result<()> {
+        let name = canonical_username(peer_username)?;
+        let found = self.api.discover(&name)?;
+        if let Ok(mut cache) = self.discovered.lock() {
+            cache.insert(name.clone(), (found.clone(), now));
+        }
+        if let Ok(mut cache) = self.prefetched.lock() {
+            cache.insert(name, (found, now));
+        }
+        Ok(())
     }
 
     /// Просит сервер прислать на почту код подтверждения — первый шаг
