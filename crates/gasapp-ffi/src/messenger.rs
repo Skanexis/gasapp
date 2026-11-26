@@ -528,8 +528,11 @@ impl Messenger {
     pub fn receive_messages(&self, device_id: String, now_millis: i64) -> Result<u32, FfiError> {
         let client = self.client.lock().map_err(|_| FfiError::Panic)?;
 
-        let count =
-            guard(|| client.receive_messages(&device_id, Timestamp::from_millis(now_millis)))?;
+        // Сообщения — сразу, подтверждение сервера — следом
+        // (`flush_acknowledgements`): показ не ждёт сетевого запроса.
+        let count = guard(|| {
+            client.receive_messages_deferred(&device_id, Timestamp::from_millis(now_millis))
+        })?;
         // Основное устройство: история новому своему устройству, если оно
         // уже вошло (этап 4б). Сбой не мешает приёму — повтор в следующий раз.
         let _ = guard(|| {
@@ -1278,6 +1281,18 @@ impl Messenger {
             envelopes: report.envelopes,
             attachments: report.attachments,
         })
+    }
+
+    /// Отправляет отложенные подтверждения приёма (после
+    /// [`Messenger::receive_messages`], когда новое уже показано). Сбой не
+    /// страшен: они уйдут со следующим приёмом.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен.
+    pub fn flush_acknowledgements(&self, device_id: String, now_millis: i64) -> Result<(), FfiError> {
+        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        guard(|| client.flush_acknowledgements(&device_id, Timestamp::from_millis(now_millis)))
     }
 
     /// Заранее — discovery собеседника для следующей отправки (чат открыт,

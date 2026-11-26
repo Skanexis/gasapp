@@ -143,6 +143,9 @@ final class Inbox {
             }
             network.requestSucceeded()
             lastError = nil
+            // Новое уже сохранено и сейчас покажется; подтверждение сервера —
+            // следом, в фоне (ядро отложило его, чтобы показ не ждал).
+            Background.detach { _ = try? messenger.flushAcknowledgements(deviceId: device, nowMillis: CoreStore.nowMillis) }
             if received > 0 {
                 revision += 1
                 interval = Self.fastInterval

@@ -303,6 +303,9 @@ pub struct Client<T: Transport> {
     /// ([`Client::prefetch_discovery`]): берётся один раз и не старше
     /// [`PREFETCH_TTL_MILLIS`].
     prefetched: Mutex<HashMap<String, (DiscoveryResponse, Timestamp)>>,
+    /// Подтверждения приёма, отложенные до показа сообщений
+    /// ([`Client::receive_messages_deferred`]).
+    deferred_acks: Mutex<Vec<String>>,
 
     /// Связывание устройств — только в памяти (`client::linking`).
     linking: linking::LinkState,
@@ -323,6 +326,7 @@ impl<T: Transport> Client<T> {
             vault: Mutex::new(VaultGuard::new(Timestamp::from_millis(0))),
             discovered: Mutex::new(HashMap::new()),
             prefetched: Mutex::new(HashMap::new()),
+            deferred_acks: Mutex::new(Vec::new()),
             linking: linking::LinkState::default(),
         }
     }
@@ -1063,8 +1067,53 @@ impl<T: Transport> Client<T> {
     // расшифровка, привязка, разбор, применение, подтверждение. Шаги идут
     // строго подряд и делят состояние цикла; дробление на функции
     // протаскивало бы через каждую половину этого состояния.
-    #[allow(clippy::too_many_lines)]
     pub fn receive_messages(&self, device_id: &str, now: Timestamp) -> Result<usize> {
+        self.receive(device_id, now, false)
+    }
+
+    /// Приём для интерфейса: сообщения сохраняются и показываются сразу, а
+    /// подтверждение сервера — следом ([`Client::flush_acknowledgements`]),
+    /// не задерживая показ на сетевой запрос.
+    ///
+    /// Неотправленные подтверждения прошлого приёма уходят до запроса
+    /// очереди: иначе сервер выдал бы те же конверты снова.
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::receive_messages`].
+    pub fn receive_messages_deferred(&self, device_id: &str, now: Timestamp) -> Result<usize> {
+        self.flush_acknowledgements(device_id, now)?;
+        self.receive(device_id, now, true)
+    }
+
+    /// Отправляет отложенные подтверждения приёма одним запросом.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сервер недоступен (подтверждения
+    /// остаются и уйдут со следующим приёмом).
+    pub fn flush_acknowledgements(&self, device_id: &str, now: Timestamp) -> Result<()> {
+        let pending = std::mem::take(&mut *self.deferred_acks.lock().map_err(|_| GasAppError::Storage)?);
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let (identity, _) = self.load_identity()?;
+        if let Err(error) = self
+            .api
+            .acknowledge_batch(device_id, &pending, &DeviceSigner::new(&identity, now))
+        {
+            // Не ушли — вернуть: иначе сервер выдал бы конверты снова, а
+            // сессия уже ушла вперёд.
+            if let Ok(mut deferred) = self.deferred_acks.lock() {
+                deferred.extend(pending);
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn receive(&self, device_id: &str, now: Timestamp, defer_acks: bool) -> Result<usize> {
         let (identity, mut secrets) = self.load_identity()?;
         let envelopes = self
             .api
@@ -1542,8 +1591,17 @@ impl<T: Transport> Client<T> {
 
         acked.extend(silenced);
         acked.extend(dropped.iter().cloned());
-        self.api
-            .acknowledge_batch(device_id, &acked, &DeviceSigner::new(&identity, now))?;
+        if defer_acks {
+            // Всё уже сохранено — подтверждение уйдёт следом, а сообщения
+            // покажутся сейчас.
+            self.deferred_acks
+                .lock()
+                .map_err(|_| GasAppError::Storage)?
+                .extend(acked);
+        } else {
+            self.api
+                .acknowledge_batch(device_id, &acked, &DeviceSigner::new(&identity, now))?;
+        }
 
         if !dropped.is_empty() {
             // Одно событие на приём, а не на конверт: сотня мусорных

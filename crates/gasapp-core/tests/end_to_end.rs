@@ -10026,3 +10026,35 @@ fn a_prefetched_discovery_serves_one_fresh_send() {
         "старше 20 секунд — спрашивается заново"
     );
 }
+
+/// Приём для интерфейса: сообщение видно сразу, подтверждение сервера —
+/// следом; не ушедшее подтверждение уходит до следующего запроса очереди —
+/// дублей и «нечитаемых» повторов нет.
+#[test]
+fn deferred_acknowledgements_show_messages_first() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "instant", now(), &mut OsRng)
+        .expect("отправлено");
+    assert_eq!(
+        bob.receive_messages_deferred(&bob_device, later(1))
+            .expect("приём"),
+        1
+    );
+    assert_eq!(texts_of(&bob), vec!["instant".to_owned()], "видно сразу");
+    assert!(server.queue_len(&bob_device) > 0, "подтверждение ещё не ушло");
+
+    // Следующий приём сначала подтверждает прежнее — повтора нет.
+    assert_eq!(
+        bob.receive_messages_deferred(&bob_device, later(2))
+            .expect("приём"),
+        0
+    );
+    assert_eq!(texts_of(&bob), vec!["instant".to_owned()]);
+    bob.flush_acknowledgements(&bob_device, later(3))
+        .expect("подтверждено");
+    assert_eq!(server.queue_len(&bob_device), 0);
+}
