@@ -128,6 +128,7 @@ TEXT = {
         "index_title": "Conversations the server can't read",
         "index_lead": "GasApp is an end-to-end encrypted messenger. No phone number, Tor built in, open source.",
         "store_soon": "Coming soon",
+        "store_get": "Download on the",
         "hero_note": "No ads, no analytics, no phone number.",
         "logo_alt": "GasApp",
         "promises": (
@@ -210,6 +211,7 @@ TEXT = {
         "index_title": "Переписка, которую не может прочитать даже сервер",
         "index_lead": "GasApp — мессенджер со сквозным шифрованием. Без номера телефона, со встроенным Tor и открытым кодом.",
         "store_soon": "Скоро",
+        "store_get": "Загрузите в",
         "hero_note": "Без рекламы, аналитики и номера телефона.",
         "logo_alt": "GasApp",
         "promises": (
@@ -649,12 +651,17 @@ def footer(page, language):
     )
 
 
+# Страница приложения в App Store (вышло 2026-11).
+APP_STORE_URL = "https://apps.apple.com/us/app/gasapp-encrypted/id6833851369"
+
+
 def store_badges(text):
     soon = html.escape(text["store_soon"])
+    get = html.escape(text["store_get"])
     return (
         '<div class="hero-actions">'
+        f'<a class="store" href="{APP_STORE_URL}" rel="noopener">{icon("phone")}<span><small>{get}</small><b>App Store</b></span></a>'
         f'<span class="store" aria-disabled="true">{icon("phone")}<span><small>Google Play</small><b>{soon}</b></span></span>'
-        f'<span class="store" aria-disabled="true">{icon("phone")}<span><small>App Store</small><b>{soon}</b></span></span>'
         "</div>"
     )
 
