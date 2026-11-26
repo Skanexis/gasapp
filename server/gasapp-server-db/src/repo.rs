@@ -838,6 +838,33 @@ pub async fn acknowledge_envelope(
     Ok(())
 }
 
+/// Подтверждение доставки пачкой: одним запросом — все конверты приёма.
+///
+/// Через Tor каждый запрос — секунда-две; подтверждать по одному значило
+/// держать приём (и отправку за ним) по секунде на каждое сообщение.
+/// Удаляются только конверты этого устройства.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn acknowledge_envelopes(
+    pool: &PgPool,
+    device_id: Uuid,
+    envelope_ids: &[Uuid],
+) -> Result<u64, RepoError> {
+    if envelope_ids.is_empty() {
+        return Ok(0);
+    }
+    Ok(sqlx::query(
+        "DELETE FROM envelopes WHERE destination_device_id = $1 AND envelope_id = ANY($2)",
+    )
+    .bind(device_id)
+    .bind(envelope_ids)
+    .execute(pool)
+    .await?
+    .rows_affected())
+}
+
 /// Что исчезло вместе с аккаунтом.
 ///
 /// Возвращается пользователю: право на удаление, подтверждённое

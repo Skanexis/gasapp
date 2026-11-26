@@ -127,8 +127,13 @@ final class AppModel {
         switch scene {
         case .active:
             coverVisible = false
-            // Соединения не пережили фон — новые при первом запросе.
-            if backgroundSince != nil { PlatformTransport.resetConnections() }
+            // Соединения не пережили долгий фон — новые при первом запросе.
+            // После короткого (ответить в другом приложении и вернуться)
+            // тёплое соединение живо: через Tor новое — это новая встреча
+            // с onion-сервисом, секунды ожидания на ровном месте.
+            if let since = backgroundSince, Date().timeIntervalSince(since) > 20 {
+                PlatformTransport.resetConnections()
+            }
             if let since = backgroundSince, Date().timeIntervalSince(since) > autoLockAfter, phase == .unlocked {
                 lock()
             }

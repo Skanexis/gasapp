@@ -1039,6 +1039,10 @@ impl<T: Transport> Client<T> {
         // в журнал безопасности не идут — это не «нечитаемые», а
         // отброшенные по решению человека.
         let mut silenced: Vec<String> = Vec::new();
+        // Принятые конверты подтверждаются одним запросом в конце приёма:
+        // по одному — секунда-две через Tor на каждое сообщение, и всё это
+        // время приём держал ядро (отправка ждала за ним).
+        let mut acked: Vec<String> = Vec::new();
 
         for envelope in envelopes {
             let Ok(wire) = unhex(&envelope.ciphertext) else {
@@ -1100,11 +1104,7 @@ impl<T: Transport> Client<T> {
                 if self.storage.initial_accepted(initial.base_key.as_bytes())? {
                     self.storage
                         .log_security_event("initial_envelope_replayed", None, now)?;
-                    self.api.acknowledge(
-                        device_id,
-                        &envelope.envelope_id,
-                        &DeviceSigner::new(&identity, now),
-                    )?;
+                    acked.push(envelope.envelope_id.clone());
                     continue;
                 }
             }
@@ -1212,11 +1212,7 @@ impl<T: Transport> Client<T> {
                     {
                         self.persist_secrets(&secrets, now)?;
                     }
-                    self.api.acknowledge(
-                        device_id,
-                        &envelope.envelope_id,
-                        &DeviceSigner::new(&identity, now),
-                    )?;
+                    acked.push(envelope.envelope_id.clone());
                     if shown {
                         accepted = accepted.saturating_add(1);
                     }
@@ -1491,11 +1487,7 @@ impl<T: Transport> Client<T> {
                 self.persist_secrets(&secrets, now)?;
             }
 
-            self.api.acknowledge(
-                device_id,
-                &envelope.envelope_id,
-                &DeviceSigner::new(&identity, now),
-            )?;
+            acked.push(envelope.envelope_id.clone());
             if counts {
                 accepted = accepted.saturating_add(1);
             }
@@ -1503,17 +1495,12 @@ impl<T: Transport> Client<T> {
 
         self.persist_secrets(&secrets, now)?;
 
-        for envelope_id in &silenced {
-            self.api
-                .acknowledge(device_id, envelope_id, &DeviceSigner::new(&identity, now))?;
-        }
+        acked.extend(silenced);
+        acked.extend(dropped.iter().cloned());
+        self.api
+            .acknowledge_batch(device_id, &acked, &DeviceSigner::new(&identity, now))?;
 
         if !dropped.is_empty() {
-            for envelope_id in &dropped {
-                self.api
-                    .acknowledge(device_id, envelope_id, &DeviceSigner::new(&identity, now))?;
-            }
-
             // Одно событие на приём, а не на конверт: сотня мусорных
             // конвертов не должна вытеснить из журнала остальные события.
             self.storage.log_security_event(

@@ -895,6 +895,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/messages/:device_id/:envelope_id",
             axum::routing::delete(ack_message),
         )
+        .route("/v1/messages/:device_id/ack", post(ack_messages))
         // Вложения: шифроблоб внутрь, шифроблоб наружу.
         //
         // 🔐 Тело — сырые байты, а не JSON с hex: hex удваивает объём,
@@ -1881,6 +1882,37 @@ async fn ack_message(
     }
 
     repo::acknowledge_envelope(&state.pool, device_id, envelope_id).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Сколько конвертов подтверждается одним запросом.
+const MAX_ACK_BATCH: usize = 200;
+
+/// Подтверждение доставки пачкой.
+#[derive(Debug, Deserialize)]
+pub struct AckBatch {
+    /// Конверты, которые устройство приняло.
+    pub envelope_ids: Vec<Uuid>,
+}
+
+/// Подтверждение доставки пачкой: все конверты приёма — одним запросом.
+///
+/// 🔐 Как и по одному: подпись устройства, и удаляются только его конверты.
+async fn ack_messages(
+    State(state): State<Arc<AppState>>,
+    device: crate::authz::AuthenticatedDevice,
+    Path(device_id): Path<Uuid>,
+    Json(body): Json<AckBatch>,
+) -> Result<StatusCode, ApiError> {
+    if device.device_id != device_id {
+        return Err(ApiError::Unauthorized);
+    }
+    if body.envelope_ids.len() > MAX_ACK_BATCH {
+        return Err(ApiError::PayloadTooLarge);
+    }
+
+    repo::acknowledge_envelopes(&state.pool, device_id, &body.envelope_ids).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

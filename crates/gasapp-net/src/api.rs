@@ -886,3 +886,10 @@ pub struct ChannelReactRequest {
 fn is_zero(value: &u64) -> bool {
     *value == 0
 }
+
+/// Подтверждение доставки пачкой.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AckBatchBody {
+    /// Принятые конверты.
+    pub envelope_ids: Vec<String>,
+}

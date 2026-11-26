@@ -490,6 +490,71 @@ async fn envelope_delivery_round_trip() {
     assert_eq!(empty.as_array().map(Vec::len), Some(0), "конверт не удалён");
 }
 
+/// Подтверждение пачкой: все конверты приёма одним запросом; чужое
+/// устройство и чужие конверты не удаляются, слишком большая пачка —
+/// отказ.
+#[tokio::test]
+async fn envelopes_are_acknowledged_in_a_batch() {
+    let state = require_state!();
+    let (device_id, private) = register_signing_device(&state, &unique_name("erin"), 0x24).await;
+    let (other_id, other) = register_signing_device(&state, &unique_name("fred"), 0x25).await;
+
+    let mut ids = Vec::new();
+    for payload in [b"one".as_slice(), b"two", b"three"] {
+        let (status, envelope_id) = enqueue_sealed(&state, device_id, payload).await;
+        assert_eq!(status, StatusCode::OK);
+        ids.push(envelope_id.as_str().unwrap().to_owned());
+    }
+    let ack = format!("/v1/messages/{device_id}/ack");
+
+    // Чужое устройство не подтверждает за это.
+    let (status, _) = call_signed_json(
+        &state,
+        &other,
+        "POST",
+        &ack,
+        Some(serde_json::json!({ "envelope_ids": ids })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let _ = other_id;
+
+    let too_many: Vec<Uuid> = (0..201).map(|_| Uuid::new_v4()).collect();
+    let (status, _) = call_signed_json(
+        &state,
+        &private,
+        "POST",
+        &ack,
+        Some(serde_json::json!({ "envelope_ids": too_many })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    let (status, _) = call_signed_json(
+        &state,
+        &private,
+        "POST",
+        &ack,
+        Some(serde_json::json!({ "envelope_ids": ids.get(..2).unwrap() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, left) = call_signed_json(
+        &state,
+        &private,
+        "GET",
+        &format!("/v1/messages/{device_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        left.as_array().map(Vec::len),
+        Some(1),
+        "остался неподтверждённый"
+    );
+}
+
 /// 🔐 Незапечатанной отправки нет — ни без подписи, ни с ней.
 ///
 /// Сначала `POST /v1/messages` был без подписи: любой клал конверты

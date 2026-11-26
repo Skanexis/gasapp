@@ -284,7 +284,7 @@ impl EmbeddedTor {
             listener,
             Arc::new(Arti {
                 client: Arc::clone(&client),
-                isolated: false,
+                isolation: None,
             }),
             Arc::clone(&destinations),
             Some(Arc::clone(&credentials)),
@@ -293,7 +293,10 @@ impl EmbeddedTor {
             isolated_listener,
             Arc::new(Arti {
                 client,
-                isolated: true,
+                isolation: Some(std::sync::Mutex::new((
+                    std::time::Instant::now(),
+                    IsolationToken::new(),
+                ))),
             }),
             destinations,
             Some(credentials),
@@ -316,7 +319,7 @@ impl EmbeddedTor {
     }
 
     /// Порт моста для анонимных запросов: каждое соединение идёт своей
-    /// цепочкой Tor (см. `Arti::isolated`).
+    /// цепочкой Tor (см. `Arti::isolation`).
     #[must_use]
     pub const fn isolated_port(&self) -> u16 {
         self.isolated_port
@@ -505,16 +508,38 @@ async fn warm_onion<R: tor_rtcompat::Runtime>(client: Arc<TorClient<R>>, host: S
     }
 }
 
+/// Сколько анонимные соединения делят одну изолированную цепочку.
+///
+/// Прежде у каждого соединения была своя: через onion-сервис это новая
+/// встреча — секунды на каждое вложение, альбом из пяти фото грузился
+/// полминуты. Минута общей цепочки связывает между собой только то, что
+/// и так связано временем (фото одного альбома), и по-прежнему отделяет
+/// анонимные запросы от запросов за подписью устройства.
+const ISOLATION_WINDOW: Duration = Duration::from_mins(1);
+
 /// Соединитель через Arti.
 ///
-/// `isolated` — каждое соединение в своей изоляции Arti, то есть на
-/// своей цепочке. Для анонимных запросов (sealed sender, вложения,
-/// поиск, журнал ключей): иначе они шли бы той же цепочкой, что
-/// запросы за подписью устройства, и сервер связал бы их по выходному
-/// узлу и времени.
+/// `isolation` — анонимные запросы (вложения и прочее без подписи) идут
+/// своей изолированной цепочкой, сменяемой раз в [`ISOLATION_WINDOW`]:
+/// иначе они шли бы той же цепочкой, что запросы за подписью устройства,
+/// и сервер связал бы их по выходному узлу и времени.
 struct Arti<R: tor_rtcompat::Runtime> {
     client: Arc<TorClient<R>>,
-    isolated: bool,
+    isolation: Option<std::sync::Mutex<(std::time::Instant, IsolationToken)>>,
+}
+
+impl<R: tor_rtcompat::Runtime> Arti<R> {
+    /// Изоляция анонимного соединения: текущая, а по истечении окна — новая.
+    fn isolation_token(&self) -> Option<IsolationToken> {
+        let slot = self.isolation.as_ref()?;
+        let Ok(mut slot) = slot.lock() else {
+            return Some(IsolationToken::new());
+        };
+        if slot.0.elapsed() > ISOLATION_WINDOW {
+            *slot = (std::time::Instant::now(), IsolationToken::new());
+        }
+        Some(slot.1)
+    }
 }
 
 impl<R: tor_rtcompat::Runtime> Connector for Arti<R> {
@@ -524,8 +549,8 @@ impl<R: tor_rtcompat::Runtime> Connector for Arti<R> {
         let client = Arc::clone(&self.client);
         let target = (target.host.clone(), target.port);
         let mut prefs = StreamPrefs::new();
-        if self.isolated {
-            prefs.set_isolation(IsolationToken::new());
+        if let Some(token) = self.isolation_token() {
+            prefs.set_isolation(token);
         }
         // Onion-сервис сервера (см. `Allowlist::via_onion`): Arti по
         // умолчанию к ним не ходит, разрешение — явное и только для

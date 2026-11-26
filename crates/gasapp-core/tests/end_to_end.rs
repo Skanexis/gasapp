@@ -2140,6 +2140,40 @@ impl Transport for FakeServer {
                     None => (404, String::new()),
                 }
             }
+            // Подтверждение доставки пачкой — как `ack_messages` сервера.
+            (Method::Post, path) if path.starts_with("/v1/messages/") && path.ends_with("/ack") => {
+                let device_id = path
+                    .trim_start_matches("/v1/messages/")
+                    .trim_end_matches("/ack")
+                    .to_owned();
+                let ids = request
+                    .body
+                    .as_deref()
+                    .and_then(|body| {
+                        serde_json::from_str::<gasapp_net::api::AckBatchBody>(body).ok()
+                    })
+                    .map(|batch| batch.envelope_ids)
+                    .unwrap_or_default();
+                // Сбой после `n` подтверждений — как прежде по одному.
+                let allowed = state
+                    .acks_before_failure
+                    .map_or(ids.len(), |left| left.min(ids.len()));
+                if let Some(left) = state.acks_before_failure.as_mut() {
+                    *left -= allowed;
+                }
+                if let Some(queue) = state.queues.get_mut(&device_id) {
+                    queue.retain(|envelope| {
+                        !ids.iter()
+                            .take(allowed)
+                            .any(|id| *id == envelope.envelope_id)
+                    });
+                }
+                if allowed < ids.len() {
+                    (500, String::new())
+                } else {
+                    (204, String::new())
+                }
+            }
             // 🔐 Незапечатанной отправки у сервера нет: заглушка, как
             // и сервер, её не принимает, но считает попытки — тесты
             // проверяют, что клиент их не делает вовсе.

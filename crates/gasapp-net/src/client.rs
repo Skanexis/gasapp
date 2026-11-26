@@ -133,6 +133,9 @@ pub trait Transport {
 /// Заголовок с решением proof-of-work анонимной загрузки.
 pub const UPLOAD_POW_HEADER: &str = "x-gasapp-upload-pow";
 
+/// Сколько конвертов подтверждается одним запросом (предел сервера).
+const ACK_BATCH: usize = 200;
+
 /// Клиент серверного API.
 pub struct ApiClient<T: Transport> {
     transport: T,
@@ -1654,6 +1657,39 @@ impl<T: Transport> ApiClient<T> {
         )?;
 
         check_status(&response)
+    }
+
+    /// Подтверждает доставку пачкой — одним запросом на сотню конвертов.
+    /// Прежний сервер пачек не знает (404/405) — тогда по одному.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] при сбое соединения.
+    pub fn acknowledge_batch(
+        &self,
+        device_id: &str,
+        envelope_ids: &[String],
+        signer: &dyn crate::auth::RequestSigner,
+    ) -> Result<()> {
+        for chunk in envelope_ids.chunks(ACK_BATCH) {
+            let body = to_json(&crate::api::AckBatchBody {
+                envelope_ids: chunk.to_vec(),
+            })?;
+            let response = self.send_signed(
+                Method::Post,
+                format!("/v1/messages/{device_id}/ack"),
+                Some(body),
+                signer,
+            )?;
+            if matches!(response.status, 404 | 405) {
+                for envelope_id in chunk {
+                    self.acknowledge(device_id, envelope_id, signer)?;
+                }
+                continue;
+            }
+            check_status(&response)?;
+        }
+        Ok(())
     }
 
     /// Сколько одноразовых предключей осталось у устройства на сервере.
