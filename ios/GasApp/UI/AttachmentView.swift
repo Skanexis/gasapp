@@ -36,11 +36,22 @@ struct AttachmentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .onTapGesture { fullScreen = true }
             } else if let file {
-                ShareLink(item: AttachmentFile(data: file), preview: SharePreview(L10n.t("Файл", "File", "File"))) {
-                    Label(L10n.t("Файл · \(formatBytes(Int64(file.count)))",
-                                 "File · \(formatBytes(Int64(file.count)))", "File · \(formatBytes(Int64(file.count)))"),
-                          systemImage: "doc.fill")
-                        .foregroundStyle(GasAppColor.accent)
+                ShareLink(item: AttachmentFile(data: file),
+                          preview: SharePreview(info?.name ?? L10n.t("Файл", "File", "File"))) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.fill").font(.system(size: 22))
+                            .foregroundStyle(GasAppColor.accentOn)
+                            .frame(width: 42, height: 42)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(GasAppColor.accent))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(info?.name ?? L10n.t("Файл", "File", "File"))
+                                .font(GasFont.text(15, .semibold)).foregroundStyle(GasAppColor.textPrimary)
+                                .lineLimit(2).multilineTextAlignment(.leading)
+                            Text(formatBytes(Int64(file.count)))
+                                .font(GasFont.text(12)).foregroundStyle(GasAppColor.textTertiary)
+                        }
+                    }
+                    .frame(maxWidth: 240, alignment: .leading)
                 }
             } else if failed {
                 Label(L10n.t("Вложение недоступно", "Attachment unavailable", "Allegato non disponibile"), systemImage: "exclamationmark.triangle")

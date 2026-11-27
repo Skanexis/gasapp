@@ -26,6 +26,7 @@
 //! | GIF | кадры, палитры, управление, повтор анимации | комментарии, XMP и прочие расширения |
 //! | MP4 / MOV / M4A / 3GP | дорожки и данные | `udta`, `meta`, `uuid`, `XMP_` затираются на месте; время в заголовках обнуляется |
 //! | MP3 | звук | `ID3v2`, `ID3v1`, `APEv2` |
+//! | PDF | страницы, шрифты, структура | автор, программа, название, тема, ключевые слова, даты (`/Info`), пакеты XMP — затираются на месте |
 //!
 //! # Почему MP4 затирается на месте, а не вырезается
 //!
@@ -42,10 +43,15 @@
 //! файлы отвергаются ([`GasAppError::Malformed`]); платформа перед
 //! отправкой перекодирует их в JPEG.
 //!
-//! ⚠️ Документы (PDF, Word и прочее) не разбираются: в них метаданные
-//! — часть формата, и «удалить автора» из PDF без его переписывания
-//! нельзя. Такие файлы проходят как есть ([`Format::Unknown`]), и
-//! интерфейс об этом предупреждает.
+//! ⚠️ PDF — на месте, как MP4: перекрёстные ссылки адресуют объекты
+//! абсолютными смещениями, поэтому значения полей `/Info` и пакеты XMP
+//! забиваются пробелами той же длины. Поля внутри сжатых потоков
+//! объектов (PDF 1.5+) не видны без распаковки и остаются — так пишут
+//! немногие программы.
+//!
+//! ⚠️ Word, Excel и прочие архивы ZIP не разбираются: их свойства —
+//! сжатые файлы внутри архива. Такие файлы проходят как есть
+//! ([`Format::Unknown`]), и интерфейс об этом предупреждает.
 //!
 //! ⚠️ Содержимое кадра не трогается: лица, номера, отражения,
 //! водяные знаки и шум конкретной матрицы камеры остаются. Это
@@ -76,6 +82,8 @@ pub enum Format {
     IsoMedia,
     /// MP3.
     Mp3,
+    /// PDF.
+    Pdf,
     /// Формат не распознан — содержимое не изменено.
     Unknown,
 }
@@ -85,7 +93,7 @@ impl Format {
     /// только время съёмки и устройство.
     #[must_use]
     pub const fn is_media(self) -> bool {
-        !matches!(self, Self::Unknown)
+        !matches!(self, Self::Unknown | Self::Pdf)
     }
 }
 
@@ -118,6 +126,8 @@ pub fn detect(bytes: &[u8]) -> Format {
         Format::IsoMedia
     } else if starts(b"ID3") || is_mpeg_audio_sync(bytes) {
         Format::Mp3
+    } else if starts(b"%PDF-") {
+        Format::Pdf
     } else {
         Format::Unknown
     }
@@ -140,6 +150,7 @@ pub fn scrub(bytes: &[u8]) -> Result<Scrubbed> {
         Format::Gif => gif(bytes)?,
         Format::IsoMedia => iso_media(bytes)?,
         Format::Mp3 => mp3(bytes)?,
+        Format::Pdf => pdf(bytes),
         Format::Unknown => bytes.to_vec(),
     };
 
@@ -147,6 +158,126 @@ pub fn scrub(bytes: &[u8]) -> Result<Scrubbed> {
         bytes: cleaned,
         format,
     })
+}
+
+// ---------------------------------------------------------------------------
+//  PDF: значения `/Info` и XMP — пробелами той же длины.
+// ---------------------------------------------------------------------------
+
+/// Поля словаря `/Info`, которые говорят о человеке и его программе.
+const PDF_INFO_KEYS: [&[u8]; 9] = [
+    b"/Author",
+    b"/Creator",
+    b"/Producer",
+    b"/Title",
+    b"/Subject",
+    b"/Keywords",
+    b"/CreationDate",
+    b"/ModDate",
+    b"/Company",
+];
+
+fn find_from(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    haystack
+        .get(from..)?
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|at| at.saturating_add(from))
+}
+
+/// Разделитель PDF: после имени поля должен стоять он, иначе это другое
+/// имя (`/Titles`).
+const fn pdf_delimiter(byte: u8) -> bool {
+    matches!(
+        byte,
+        b' ' | b'\t' | b'\r' | b'\n' | b'\x0C' | b'\0' | b'(' | b'<' | b'/' | b'['
+    )
+}
+
+/// Конец строки `( … )` с вложенными скобками и `\`-экранами, начиная
+/// с открывающей; нет конца — `None`.
+fn pdf_literal_end(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut at = open;
+    while at < bytes.len() {
+        match bytes.get(at) {
+            Some(b'\\') => at = at.saturating_add(1),
+            Some(b'(') => depth = depth.saturating_add(1),
+            Some(b')') => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+        at = at.saturating_add(1);
+    }
+    None
+}
+
+fn blank(bytes: &mut [u8], from: usize, to: usize) {
+    if let Some(range) = bytes.get_mut(from..to) {
+        range.fill(b' ');
+    }
+}
+
+fn pdf(bytes: &[u8]) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+
+    for key in PDF_INFO_KEYS {
+        let mut from = 0;
+        while let Some(at) = find_from(&out, key, from) {
+            from = at.saturating_add(key.len());
+            if !out.get(from).copied().is_some_and(pdf_delimiter) {
+                continue;
+            }
+            let mut value = from;
+            while out.get(value).is_some_and(u8::is_ascii_whitespace) {
+                value = value.saturating_add(1);
+            }
+            match out.get(value) {
+                Some(b'(') => {
+                    if let Some(end) = pdf_literal_end(&out, value) {
+                        blank(&mut out, value.saturating_add(1), end);
+                        from = end;
+                    }
+                }
+                // `<…>` — шестнадцатеричная строка; `<<` — словарь, не трогаем.
+                Some(b'<') if out.get(value.saturating_add(1)) != Some(&b'<') => {
+                    if let Some(end) = find_from(&out, b">", value) {
+                        blank(&mut out, value.saturating_add(1), end);
+                        from = end;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Пакеты XMP — целиком, от начала до конца пакета.
+    for (open, close) in [
+        (&b"<?xpacket begin"[..], &b"<?xpacket end"[..]),
+        (&b"<x:xmpmeta"[..], &b"</x:xmpmeta>"[..]),
+    ] {
+        let mut from = 0;
+        while let Some(start) = find_from(&out, open, from) {
+            let Some(end) = find_from(&out, close, start) else {
+                break;
+            };
+            // До `?>` либо до конца закрывающего тега.
+            let after = end.saturating_add(close.len());
+            let stop = if close.starts_with(b"<?") {
+                find_from(&out, b"?>", end).map_or(after, |at| at.saturating_add(2))
+            } else {
+                after
+            };
+            blank(&mut out, start, stop);
+            from = stop;
+        }
+    }
+
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -1129,19 +1260,75 @@ mod tests {
 
     #[test]
     fn unknown_formats_pass_unchanged() {
-        let pdf = b"%PDF-1.7 /Author (Ivanov)".to_vec();
-        let cleaned = scrub(&pdf).expect("как есть");
+        let docx = b"PK\x03\x04docProps/core.xml Ivanov".to_vec();
+        let cleaned = scrub(&docx).expect("как есть");
 
         assert_eq!(cleaned.format, Format::Unknown);
-        assert_eq!(cleaned.bytes, pdf);
+        assert_eq!(cleaned.bytes, docx);
         assert!(!cleaned.format.is_media());
+    }
+
+    fn sample_pdf() -> Vec<u8> {
+        b"%PDF-1.7\n1 0 obj\n<< /Title (Report (draft)) /Author (Ivan \\) Ivanov) /Producer <4D532057> \
+          /CreationDate (D:20260101) /Titles (keep) /Pages 2 0 R >>\nendobj\n\
+          3 0 obj\n<< /Type /Metadata /Subtype /XML /Length 80 >>\nstream\n\
+          <?xpacket begin='x'?><x:xmpmeta><dc:creator>Ivanov</dc:creator></x:xmpmeta><?xpacket end='w'?>\n\
+          endstream\nendobj\ntrailer << /Info 1 0 R >>\n%%EOF"
+            .to_vec()
+    }
+
+    /// 🔐 PDF теряет автора, программу, название, даты и XMP, но не длину:
+    /// перекрёстные ссылки на объекты остаются верными.
+    #[test]
+    fn pdf_loses_info_and_xmp_in_place() {
+        let original = sample_pdf();
+        let cleaned = scrub(&original).expect("PDF");
+
+        assert_eq!(cleaned.format, Format::Pdf);
+        assert!(!cleaned.format.is_media());
+        assert_eq!(cleaned.bytes.len(), original.len(), "смещения сдвинулись");
+        for leak in [
+            &b"Ivanov"[..],
+            b"Report",
+            b"draft",
+            b"4D532057",
+            b"20260101",
+            b"xmpmeta",
+            b"xpacket",
+        ] {
+            assert!(
+                !contains(&cleaned.bytes, leak),
+                "осталось {:?}",
+                String::from_utf8_lossy(leak)
+            );
+        }
+        // Структура и чужие поля — на месте.
+        for kept in [
+            &b"/Title ("[..],
+            b"/Author (",
+            b"/Producer <",
+            b"/Titles (keep)",
+            b"/Pages 2 0 R",
+            b"endstream",
+            b"%%EOF",
+        ] {
+            assert!(
+                contains(&cleaned.bytes, kept),
+                "пропало {:?}",
+                String::from_utf8_lossy(kept)
+            );
+        }
+        assert_eq!(
+            scrub(&cleaned.bytes).expect("повторно").bytes,
+            cleaned.bytes
+        );
     }
 
     /// 🔐 Любая порча — ошибка или корректный вывод, но не паника
     /// и не бесконечный цикл.
     #[test]
     fn corrupted_inputs_never_panic() {
-        let samples = [sample_jpeg(), sample_mp4()];
+        let samples = [sample_jpeg(), sample_mp4(), sample_pdf()];
         let mut state = 0x5EED_u64;
 
         for sample in &samples {

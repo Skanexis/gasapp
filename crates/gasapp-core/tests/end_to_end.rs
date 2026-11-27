@@ -3767,6 +3767,37 @@ fn replies_and_reactions_are_seen_by_both() {
         .all(|message| message.message_id != question || message.reactions.is_empty()));
 }
 
+/// Маленький JPEG с EXIF: геометка и модель телефона, `tag` — отличие
+/// одного снимка от другого.
+fn jpeg_with_gps(tag: u8) -> Vec<u8> {
+    fn segment(marker: u8, payload: &[u8]) -> Vec<u8> {
+        let len = u16::try_from(payload.len() + 2).expect("длина");
+        let mut out = vec![0xFF, marker];
+        out.extend_from_slice(&len.to_be_bytes());
+        out.extend_from_slice(payload);
+        out
+    }
+    let mut jpeg = vec![0xFF, 0xD8];
+    jpeg.extend(segment(0xE0, b"JFIF\0\x01\x02\0\0\x01\0\x01\0\0"));
+    jpeg.extend(segment(
+        0xE1,
+        b"Exif\0\0MM\0\x2AGPS 55.7558N 37.6173E Pixel 8 Pro",
+    ));
+    jpeg.extend(segment(0xDB, &[0u8; 65]));
+    jpeg.extend(segment(0xC0, &[8, 0, 16, 0, 16, 1, 1, 0x11, 0]));
+    jpeg.extend(segment(0xC4, &[0u8; 20]));
+    jpeg.extend(segment(0xDA, &[1, 1, 0, 0, 63, 0]));
+    jpeg.extend_from_slice(&[0x12, tag, 0x34]);
+    jpeg.extend_from_slice(&[0xFF, 0xD9]);
+    jpeg
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
 /// Фото профиля уходит собеседнику перед сообщением и показывается у
 /// него — после принятия переписки; новое фото — разом всем.
 #[test]
@@ -3776,12 +3807,16 @@ fn a_profile_photo_reaches_the_people_you_write_to() {
     let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
 
     alice
-        .set_profile_photo(Some(&[0xFF, 0xD8, 1]), now())
+        .set_profile_photo(Some(&jpeg_with_gps(1)), now())
         .expect("фото");
-    assert_eq!(
-        alice.own_profile_photo().expect("своё"),
-        Some(vec![0xFF, 0xD8, 1])
-    );
+    // 🔐 Своё фото — уже без геометки и модели телефона.
+    let first = alice.own_profile_photo().expect("своё").expect("есть");
+    assert!(!contains(&first, b"GPS") && !contains(&first, b"Pixel"));
+    assert!(contains(&first, &[0x12, 1, 0x34]), "кадр на месте");
+    // Не картинка — не фото.
+    assert!(alice
+        .set_profile_photo(Some(b"not an image"), now())
+        .is_err());
     alice
         .send_message("bob", "привет", now(), &mut OsRng)
         .expect("отправка");
@@ -3793,7 +3828,7 @@ fn a_profile_photo_reaches_the_people_you_write_to() {
     bob.accept_chat(&chat, now(), &mut OsRng).expect("принято");
     assert_eq!(
         bob.profile_photos().expect("фото"),
-        vec![(chat, vec![0xFF, 0xD8, 1])]
+        vec![(chat, first.clone())]
     );
 
     // Уже ушло — повторно не нужно.
@@ -3801,7 +3836,7 @@ fn a_profile_photo_reaches_the_people_you_write_to() {
 
     // Новое фото — всем, с кем переписка, сразу.
     alice
-        .set_profile_photo(Some(&[0xFF, 0xD8, 2]), later(5))
+        .set_profile_photo(Some(&jpeg_with_gps(2)), later(5))
         .expect("фото");
     assert_eq!(
         alice.profile_photo_targets().expect("кому"),
@@ -3814,7 +3849,10 @@ fn a_profile_photo_reaches_the_people_you_write_to() {
     bob.receive_messages(&bob_device, later(6)).expect("приём");
     assert_eq!(
         bob.profile_photos().expect("фото"),
-        vec![(chat, vec![0xFF, 0xD8, 2])]
+        vec![(
+            chat,
+            alice.own_profile_photo().expect("своё").expect("есть")
+        )]
     );
 
     // Снятое фото снимается и у собеседника.

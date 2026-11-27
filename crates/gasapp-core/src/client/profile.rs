@@ -19,6 +19,7 @@
 //! а не картинка: файл качается и расшифровывается один раз и хранится в
 //! зашифрованной базе.
 
+use gasapp_media::scrub::{self, Format};
 use gasapp_net::client::Transport;
 use gasapp_protocol::content::{Content, MAX_PROFILE_PHOTO_BYTES};
 use gasapp_storage::requests::ChatRequest;
@@ -61,6 +62,10 @@ impl<T: Transport> Client<T> {
     /// [`GasAppError::Malformed`] — картинка больше предела;
     /// [`GasAppError::Storage`] — запись не удалась.
     pub fn set_profile_photo(&self, image: Option<&[u8]>, now: Timestamp) -> Result<()> {
+        // 🔐 Без метаданных: фото уходит всем, с кем переписка, и геометка
+        // или модель телефона в нём ушли бы им всем.
+        let cleaned = image.map(clean_photo).transpose()?;
+        let image = cleaned.as_deref();
         if image.is_some_and(|bytes| bytes.is_empty() || bytes.len() > MAX_PROFILE_PHOTO_BYTES) {
             return Err(GasAppError::Malformed);
         }
@@ -104,8 +109,15 @@ impl<T: Transport> Client<T> {
             return Ok(());
         }
         let version = i64::try_from(version).map_err(|_| GasAppError::Malformed)?;
-        let image = (!image.is_empty()).then_some(image);
-        self.storage.set_profile_photo(chat_id, image, version)?;
+        // Чужое фото — тоже без метаданных (вдруг клиент собеседника их
+        // не убрал) и только картинкой: иное не сохраняется вовсе.
+        let cleaned = if image.is_empty() {
+            None
+        } else {
+            Some(clean_photo(image)?)
+        };
+        self.storage
+            .set_profile_photo(chat_id, cleaned.as_deref(), version)?;
         Ok(())
     }
 
@@ -298,4 +310,13 @@ impl<T: Transport> Client<T> {
         self.storage
             .cached_channel_avatar(&stored.channel_id, &descriptor)
     }
+}
+
+/// Фото профиля без метаданных; не JPEG и не PNG — отказ.
+fn clean_photo(bytes: &[u8]) -> Result<Vec<u8>> {
+    let cleaned = scrub::scrub(bytes)?;
+    if !matches!(cleaned.format, Format::Jpeg | Format::Png) {
+        return Err(GasAppError::Malformed);
+    }
+    Ok(cleaned.bytes)
 }

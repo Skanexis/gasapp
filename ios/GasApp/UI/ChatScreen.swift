@@ -3,6 +3,7 @@
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Сообщение на экране: из ядра или только что набранное (ещё не ушло).
 struct MessageRow: Identifiable, Equatable {
@@ -94,6 +95,12 @@ struct ChatScreen: View {
     @State private var knownAttachments: [String: [Data]] = [:]
     @State private var photo: PhotosPickerItem?
     @State private var sendingPhoto = false
+    /// Выбор файла.
+    @State private var pickingFile = false
+    /// Файл, у которого свойства документа очистить нельзя, — ждёт «да».
+    @State private var pendingFile: (data: Data, name: String)?
+    /// Что пересылаем.
+    @State private var forwarding: MessageRow?
     @State private var editing: MessageRow?
     @State private var editText = ""
     @Environment(\.dismiss) private var dismiss
@@ -164,7 +171,32 @@ struct ChatScreen: View {
             }
             ChatComposer(draft: $draft, photo: $photo, enabled: mode == .open, sendingPhoto: sendingPhoto,
                          onSend: { send() }, onPhoto: { sendPhoto($0) },
-                         onVoice: { sendVoice($0, duration: $1, waveform: $2) })
+                         onVoice: { sendVoice($0, duration: $1, waveform: $2) },
+                         onFile: { pickingFile = true })
+                .fileImporter(isPresented: $pickingFile, allowedContentTypes: [.item]) { result in
+                    if case let .success(url) = result { pickFile(url) }
+                }
+                .confirmationDialog(L10n.t("Отправить как есть?", "Send as is?", "Inviare così?"),
+                                    isPresented: Binding(get: { pendingFile != nil }, set: { if !$0 { pendingFile = nil } }),
+                                    titleVisibility: .visible) {
+                    Button(L10n.t("Отправить", "Send", "Invia")) {
+                        if let file = pendingFile { sendFile(file.data, name: file.name) }
+                        pendingFile = nil
+                    }
+                } message: {
+                    Text(L10n.t("Из фото, видео, звука и PDF GasApp удаляет метаданные сам. В этом файле свойства документа (автор, компания, программа) могут остаться — их видит собеседник.",
+                                "GasApp strips metadata from photos, video, audio and PDF itself. This file may keep document properties (author, company, app) that the recipient can see.",
+                                "GasApp rimuove da solo i metadati da foto, video, audio e PDF. Questo file può conservare le proprietà del documento (autore, azienda, app) visibili al destinatario."))
+                }
+                .sheet(item: $forwarding) { message in
+                    NavigationStack {
+                        ContactPickerSheet(title: L10n.t("Переслать", "Forward", "Inoltra"), exclude: []) { name in
+                            forwarding = nil
+                            forward(message, to: name)
+                        }
+                    }
+                    .presentationDetents([.medium, .large])
+                }
         }
         .gasScreen()
         .navigationTitle(title)
@@ -369,6 +401,11 @@ struct ChatScreen: View {
             Button {
                 withAnimation(.snappy(duration: 0.2)) { replying = message }
             } label: { Label(L10n.t("Ответить", "Reply", "Rispondi"), systemImage: "arrowshape.turn.up.left") }
+            if !message.text.isEmpty {
+                Button { forwarding = message } label: {
+                    Label(L10n.t("Переслать", "Forward", "Inoltra"), systemImage: "arrowshape.turn.up.right")
+                }
+            }
         }
         if message.outgoing {
             // Статус словами — то, что значки говорят знаками.
@@ -512,6 +549,70 @@ struct ChatScreen: View {
                 await refresh()
             } catch {
                 toast = L10n.t("Фото не отправлено", "Photo not sent", "Foto non inviata")
+            }
+        }
+    }
+
+    /// Выбран файл: метаданные известных форматов ядро удалит само; у
+    /// прочих (Word, Excel…) свойства документа могут остаться — сначала
+    /// спросить.
+    private func pickFile(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+            toast = L10n.t("Файл не открылся", "Could not open the file", "Impossibile aprire il file")
+            return
+        }
+        guard data.count <= 100 * 1024 * 1024 else {
+            toast = L10n.t("Файл больше 100 МБ", "The file is over 100 MB", "Il file supera i 100 MB")
+            return
+        }
+        let name = url.lastPathComponent
+        let cleaned: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "m4a", "m4v", "3gp", "mp3", "pdf"]
+        if cleaned.contains(url.pathExtension.lowercased()) {
+            sendFile(data, name: name)
+        } else {
+            pendingFile = (data, name)
+        }
+    }
+
+    private func sendFile(_ data: Data, name: String) {
+        guard let messenger = try? CoreStore.shared.current(), let device = CoreStore.shared.deviceId else { return }
+        let peer = peerUsername
+        sendingPhoto = true
+        toast = nil
+        Task {
+            defer { sendingPhoto = false }
+            let file = FfiAttachmentFile(kind: .document, bytes: data, name: name, description: nil,
+                                         durationMillis: nil, waveform: nil)
+            do {
+                try await Background.run {
+                    try messenger.sendAttachment(peerUsername: peer, deviceId: device, file: file, body: "",
+                                                 nowMillis: CoreStore.nowMillis)
+                }
+                inbox.touch()
+                await refresh()
+            } catch {
+                toast = L10n.t("Файл не отправлен — нет связи или формат повреждён", "File not sent — no connection or a damaged format",
+                               "File non inviato: nessuna connessione o formato danneggiato")
+            }
+        }
+    }
+
+    /// Переслать текст другому собеседнику — новым сообщением от себя.
+    private func forward(_ message: MessageRow, to name: String) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let text = message.text
+        Task {
+            do {
+                _ = try await Background.run {
+                    try messenger.sendMessage(peerUsername: name, text: text, nowMillis: CoreStore.nowMillis)
+                }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                toast = L10n.t("Переслано @\(name)", "Forwarded to @\(name)", "Inoltrato a @\(name)")
+                inbox.touch()
+            } catch {
+                toast = L10n.t("Не переслано — нет связи", "Not forwarded — no connection", "Non inoltrato: nessuna connessione")
             }
         }
     }
@@ -1145,6 +1246,9 @@ struct ChatComposer: View {
     let onPhoto: (PhotosPickerItem) -> Void
     /// Записали голосовое: звук, длительность, огибающая.
     var onVoice: (Data, UInt32, [UInt8]) -> Void = { _, _, _ in }
+    /// Выбрать файл.
+    var onFile: () -> Void = {}
+    @State private var pickingPhoto = false
 
     @State private var recorder = VoiceRecorder.shared
     /// Палец уехал влево — отпустить значит отменить.
@@ -1192,16 +1296,26 @@ struct ChatComposer: View {
     /// Фото и поле ввода.
     @ViewBuilder
     private var inputs: some View {
-        PhotosPicker(selection: $photo, matching: .images) {
+        // «Скрепка»: фото или файл, как в Telegram.
+        Menu {
+            Button { pickingPhoto = true } label: {
+                Label(L10n.t("Фото", "Photo", "Foto"), systemImage: "photo.on.rectangle.angled")
+            }
+            Button(action: onFile) {
+                Label(L10n.t("Файл", "File", "File"), systemImage: "doc.fill")
+            }
+        } label: {
             if sendingPhoto {
                 ProgressView().tint(GasAppColor.accent).frame(width: 30, height: 30)
             } else {
-                Image(systemName: "photo.on.rectangle.angled").font(.system(size: 24))
+                Image(systemName: "paperclip").font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(GasAppColor.accent)
+                    .frame(width: 30, height: 30)
             }
         }
         .disabled(sendingPhoto)
-        .accessibilityLabel(L10n.t("Отправить фото", "Send a photo", "Invia una foto"))
+        .accessibilityLabel(L10n.t("Вложение", "Attach", "Allega"))
+        .photosPicker(isPresented: $pickingPhoto, selection: $photo, matching: .images)
         .onChange(of: photo) { _, item in
             if let item { onPhoto(item) }
         }
