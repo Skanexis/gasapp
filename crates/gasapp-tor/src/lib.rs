@@ -40,12 +40,13 @@ pub mod moat;
 pub mod socks;
 pub mod webtunnel;
 
+use std::collections::VecDeque;
 use std::future::Future;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use arti_client::config::pt::TransportConfigBuilder;
 use arti_client::config::{BoolOrAuto, BridgeConfigBuilder, CfgPath, TorClientConfigBuilder};
@@ -69,6 +70,19 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Предел паузы между попытками бутстрапа.
 const RETRY_MAX: Duration = Duration::from_mins(1);
+
+/// Сколько изоляций держать прогретыми для анонимных соединений с
+/// onion-сервисом сервера ([`WarmPool`]): отправка — discovery и конверт,
+/// плюс квитанция.
+const WARM_POOL: usize = 3;
+
+/// Сколько прогретая изоляция годна: Arti держит цепочку встречи десять
+/// минут после последнего использования (`tor-hsclient`,
+/// `RETAIN_CIRCUIT_AFTER_LAST_USE`), берём с запасом.
+const WARM_MAX_AGE: Duration = Duration::from_mins(8);
+
+/// Как часто пул проверяет, не устарели ли прогретые изоляции.
+const WARM_CHECK: Duration = Duration::from_mins(1);
 
 /// Настройки встроенного Tor.
 #[derive(Debug, Clone)]
@@ -280,11 +294,24 @@ impl EmbeddedTor {
             runtime.spawn(warm_onion(Arc::clone(&client), host, port));
         }
 
+        // Анонимные соединения с onion-сервисом — на заранее прогретых
+        // изоляциях (`WarmPool`): каждая по-прежнему одна на соединение.
+        let warm = Arc::new(WarmPool::default());
+        let onion_targets = destinations.onion_targets();
+        if !onion_targets.is_empty() {
+            runtime.spawn(keep_warm(
+                Arc::clone(&client),
+                Arc::clone(&warm),
+                onion_targets,
+            ));
+        }
+
         runtime.spawn(bridge::serve(
             listener,
             Arc::new(Arti {
                 client: Arc::clone(&client),
                 isolated: false,
+                warm: None,
             }),
             Arc::clone(&destinations),
             Some(Arc::clone(&credentials)),
@@ -294,6 +321,7 @@ impl EmbeddedTor {
             Arc::new(Arti {
                 client,
                 isolated: true,
+                warm: Some(warm),
             }),
             destinations,
             Some(credentials),
@@ -517,6 +545,117 @@ async fn warm_onion<R: tor_rtcompat::Runtime>(client: Arc<TorClient<R>>, host: S
 struct Arti<R: tor_rtcompat::Runtime> {
     client: Arc<TorClient<R>>,
     isolated: bool,
+    /// Прогретые изоляции — только у анонимного порта.
+    warm: Option<Arc<WarmPool>>,
+}
+
+/// Прогретые изоляции для анонимных соединений с onion-сервисом сервера.
+///
+/// Каждое анонимное соединение идёт в своей изоляции Arti, а у Arti
+/// состояние onion-сервиса своё на каждую изоляцию: дескриптор, точка
+/// знакомства, цепочка встречи — заново, 5–15 секунд через Tor. Отправка
+/// сообщения — два таких соединения (discovery и конверт): 20–30 секунд.
+///
+/// Пул строит эти цепочки заранее, в фоне, по одной и с паузами: изоляция
+/// соединяется с сервисом (соединение сразу закрывается), а потом
+/// отдаётся ровно одному настоящему соединению. 🔐 Как и прежде, одна
+/// изоляция — одно соединение: сервер не свяжет соседние анонимные
+/// запросы общей цепочкой. Случайные паузы между постройками — чтобы
+/// и время появления цепочек не складывало их в одну пачку.
+#[derive(Default)]
+struct WarmPool {
+    ready: std::sync::Mutex<VecDeque<Warm>>,
+    /// Изоляцию забрали — пора строить замену.
+    taken: tokio::sync::Notify,
+}
+
+struct Warm {
+    target: (String, u16),
+    token: IsolationToken,
+    at: Instant,
+}
+
+impl WarmPool {
+    /// Свежая прогретая изоляция для назначения — один раз.
+    fn take(&self, target: &(String, u16)) -> Option<IsolationToken> {
+        let token = {
+            let mut ready = self.ready.lock().ok()?;
+            ready.retain(|warm| warm.at.elapsed() < WARM_MAX_AGE);
+            let position = ready.iter().position(|warm| &warm.target == target)?;
+            ready.remove(position)?.token
+        };
+        self.taken.notify_one();
+        Some(token)
+    }
+
+    /// Сколько свежих изоляций к назначению.
+    fn fresh(&self, target: &(String, u16)) -> usize {
+        self.ready.lock().map_or(WARM_POOL, |mut ready| {
+            ready.retain(|warm| warm.at.elapsed() < WARM_MAX_AGE);
+            ready.iter().filter(|warm| &warm.target == target).count()
+        })
+    }
+
+    fn put(&self, target: (String, u16), token: IsolationToken) {
+        if let Ok(mut ready) = self.ready.lock() {
+            ready.push_back(Warm {
+                target,
+                token,
+                at: Instant::now(),
+            });
+        }
+    }
+}
+
+/// Держит пул полным: по одной изоляции, со случайной паузой между ними.
+async fn keep_warm<R: tor_rtcompat::Runtime>(
+    client: Arc<TorClient<R>>,
+    pool: Arc<WarmPool>,
+    targets: Vec<(String, u16)>,
+) {
+    while client.bootstrap().await.is_err() {
+        tokio::time::sleep(RETRY_FIRST).await;
+    }
+
+    let mut first = true;
+    loop {
+        for target in &targets {
+            while pool.fresh(target) < WARM_POOL {
+                if !first {
+                    tokio::time::sleep(warm_jitter()).await;
+                }
+                first = false;
+
+                let token = IsolationToken::new();
+                let mut prefs = StreamPrefs::new();
+                prefs.set_isolation(token);
+                prefs.connect_to_onion_services(BoolOrAuto::Explicit(true));
+                match client.connect_with_prefs(target.clone(), &prefs).await {
+                    // Соединение не нужно — нужна цепочка, она остаётся у Arti.
+                    Ok(stream) => {
+                        drop(stream);
+                        pool.put(target.clone(), token);
+                    }
+                    Err(error) => {
+                        tracing::debug!(kind = ?error.kind(), "tor: warm isolation failed");
+                        tokio::time::sleep(RETRY_FIRST).await;
+                        break;
+                    }
+                }
+            }
+        }
+
+        tokio::select! {
+            () = pool.taken.notified() => {}
+            () = tokio::time::sleep(WARM_CHECK) => {}
+        }
+    }
+}
+
+/// Случайная пауза 2–12 секунд между постройками.
+fn warm_jitter() -> Duration {
+    use rand_core::RngCore as _;
+    Duration::from_millis(2_000 + u64::from(rand_core::OsRng.next_u32() % 10_000))
 }
 
 impl<R: tor_rtcompat::Runtime> Connector for Arti<R> {
@@ -527,7 +666,13 @@ impl<R: tor_rtcompat::Runtime> Connector for Arti<R> {
         let target = (target.host.clone(), target.port);
         let mut prefs = StreamPrefs::new();
         if self.isolated {
-            prefs.set_isolation(IsolationToken::new());
+            // Прогретая изоляция, если есть (`WarmPool`), иначе новая.
+            let token = self
+                .warm
+                .as_ref()
+                .and_then(|pool| pool.take(&target))
+                .unwrap_or_else(IsolationToken::new);
+            prefs.set_isolation(token);
         }
         // Onion-сервис сервера (см. `Allowlist::via_onion`): Arti по
         // умолчанию к ним не ходит, разрешение — явное и только для

@@ -1446,6 +1446,33 @@ impl Messenger {
             .collect())
     }
 
+    /// Назначает собеседника администратором своего канала — без
+    /// заявки: ключ уходит ему внутри сквозного шифрования, канал у него
+    /// появляется сам. Сетевой вызов.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::PeerUnconfirmed`] / [`FfiError::IdentityChanged`] —
+    /// ключ собеседника не сверен; [`FfiError::Core`] — сервер недоступен
+    /// либо человек не владелец канала.
+    pub fn appoint_channel_admin(
+        &self,
+        channel_id: String,
+        peer_username: String,
+        now_millis: i64,
+    ) -> Result<Vec<FfiChannelAdmin>, FfiError> {
+        let client = self.client()?;
+        let admins = guard(|| {
+            client.appoint_channel_admin(
+                &channel_id,
+                &peer_username,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })?;
+        Ok(admins.into_iter().map(FfiChannelAdmin::from).collect())
+    }
+
     /// Заявка на администрирование канала — строка, которую читатель
     /// показывает владельцу. Без сети.
     ///

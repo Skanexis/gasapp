@@ -2955,6 +2955,55 @@ impl Storage {
         checkpoint_truncate(&connection)
     }
 
+    /// Своё неотправленное сообщение — убрать (перед повтором отправки:
+    /// повтор — это новое сообщение того же текста). Чужие и ушедшие не
+    /// трогаются: `false`.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение или удаление не удалось.
+    pub fn discard_failed_message(&self, id: &MessageId, now: Timestamp) -> Result<bool> {
+        let failed = {
+            let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+            connection
+                .query_row(
+                    "SELECT 1 FROM messages
+                      WHERE message_id = ? AND sender_id != chat_id AND status = ?",
+                    params![id.as_bytes(), MessageStatus::Failed.as_u8()],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(storage_error)?
+                .is_some()
+        };
+        if failed {
+            self.delete_message(id, now)?;
+        }
+        Ok(failed)
+    }
+
+    /// Свои сообщения, застрявшие «отправляется» (приложение выгрузили
+    /// посреди отправки), — «не отправлено»: их можно повторить.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — запись не удалась.
+    pub fn fail_stale_sends(&self, before: Timestamp, now: Timestamp) -> Result<usize> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        connection
+            .execute(
+                "UPDATE messages SET status = ?, updated_at = ?
+                  WHERE status = ? AND sender_id != chat_id AND timestamp < ?",
+                params![
+                    MessageStatus::Failed.as_u8(),
+                    now.as_millis(),
+                    MessageStatus::Pending.as_u8(),
+                    before.as_millis()
+                ],
+            )
+            .map_err(storage_error)
+    }
+
     // --- Contact repository ---
 
     /// Сохраняет identity-ключ контакта.
@@ -4221,6 +4270,50 @@ mod tests {
             loaded.first().map(|m| m.status),
             Some(MessageStatus::Delivered)
         );
+    }
+
+    /// Застрявшее «отправляется» старше порога — «не отправлено»; входящие
+    /// и свежие не трогаются; убрать можно только своё неотправленное.
+    #[test]
+    fn stale_sends_fail_and_only_failed_ones_are_discarded() {
+        let (storage, _dir, _path) = open_temp(&test_key());
+        let chat = ChatId::generate();
+        let save = |id: MessageId, sender: AccountId, at: i64| {
+            storage
+                .save_message(&StoredMessage {
+                    id,
+                    chat_id: chat,
+                    sender_id: sender,
+                    timestamp: Timestamp::from_millis(at),
+                    content: Ciphertext::new(vec![1]),
+                    status: MessageStatus::Pending,
+                    message_type: 0,
+                    expires_at: None,
+                })
+                .unwrap();
+        };
+        let (old, fresh, incoming) = (
+            MessageId::generate(),
+            MessageId::generate(),
+            MessageId::generate(),
+        );
+        save(old, AccountId::generate(), 1_000);
+        save(fresh, AccountId::generate(), 9_000);
+        save(incoming, AccountId::from_uuid(*chat.as_uuid()), 1_000);
+
+        assert_eq!(
+            storage
+                .fail_stale_sends(
+                    Timestamp::from_millis(5_000),
+                    Timestamp::from_millis(10_000)
+                )
+                .unwrap(),
+            1
+        );
+        assert!(!storage.discard_failed_message(&fresh, now()).unwrap());
+        assert!(!storage.discard_failed_message(&incoming, now()).unwrap());
+        assert!(storage.discard_failed_message(&old, now()).unwrap());
+        assert_eq!(storage.load_messages(&chat, 10).unwrap().len(), 2);
     }
 
     /// Удалённое сообщение больше не возвращается.

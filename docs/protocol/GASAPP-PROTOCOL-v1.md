@@ -508,6 +508,16 @@ Clients fetch heads and proofs **anonymously** (no device signature, a
 separate Tor circuit per connection), so the server cannot tell who is
 checking and must show everyone the same tree.
 
+*Pre-built circuits.* With a fresh Tor isolation per anonymous connection
+the client also rebuilds the onion-service rendezvous (descriptor, intro,
+rendezvous circuit) every time — 5–15 s. The embedded Tor therefore keeps
+up to three isolations **pre-connected** to the server's onion service,
+built one at a time with random 2–12 s gaps and discarded after 8 minutes
+(Arti retains a rendezvous circuit 10 minutes after last use). Each
+isolation still carries exactly one real connection, so the unlinkability
+argument above is unchanged; the gaps keep circuit creation times from
+grouping them.
+
 * **Chain.** A client stores verified heads and accepts a new head only if
   `head(e) = H(e, root(e), head(previous))` continues its stored chain.
   A mismatch is a security event (`kt_log_forked`). The chain must not lag
@@ -620,6 +630,18 @@ device and shows the owner a request
 An administrator can publish, edit and delete posts and upload media.
 The description (title, pin, avatar, admin list), the public handle and
 the channel's deletion stay with the owner.
+
+**Appointing without a request.** The owner may instead pick a contact:
+the owner's device generates the Ed25519 key pair itself, sends the
+contact a message `ChannelAdmin { link, signing_key }` (content kind 16,
+inside the end-to-end session, never copied to the owner's own devices),
+then performs steps 1–2 above for the contact's primary device. The
+contact's client joins the channel by `link` and stores `signing_key`.
+The owner knows the administrator's key, which grants nothing new: the
+owner signs the description and can already publish. Requirements: the
+contact's key must be confirmed (§9.6), and a grant arriving in a chat
+the recipient has not accepted (a message request) waits for acceptance
+and is dropped after 7 days; one from a blocked chat is discarded.
 
 To remove an administrator the owner first tells the server to stop
 accepting their posts, then reads the channel's last sequence number `n`

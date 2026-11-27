@@ -36,8 +36,8 @@ use gasapp_media::attachment::{self, AttachmentKey};
 use gasapp_media::descriptor::{AttachmentDescriptor, AttachmentKind};
 use gasapp_media::scrub;
 use gasapp_net::api::{
-    BundleResponse, DiscoveryResponse, EmailCodeRequest, PublishKeysRequest, RecoverAccountRequest,
-    RegisterRequest, RegisterResponse,
+    BundleResponse, DiscoveryResponse, EmailCodeRequest, EnvelopeResponse, PublishKeysRequest,
+    RecoverAccountRequest, RegisterRequest, RegisterResponse,
 };
 use gasapp_net::client::{ApiClient, Transport};
 use gasapp_net::pow;
@@ -54,6 +54,7 @@ use gasapp_storage::{MessageStatus, Storage, StoredMessage, VaultFileRow};
 use crate::backup::{BackupOutcome, BackupService, RestoreOutcome};
 use crate::vault::{SealedVaultFile, Vault, VaultGuard};
 
+mod admin_grants;
 mod blocks;
 mod bots;
 mod channel_closed;
@@ -306,6 +307,9 @@ pub struct Client<T: Transport> {
     /// Подтверждения приёма, отложенные до показа сообщений
     /// ([`Client::receive_messages_deferred`]).
     deferred_acks: Mutex<Vec<String>>,
+    /// Отложенное после отправки: собеседник, его имя, содержимое
+    /// ([`Client::send_message_deferred`]).
+    post_send: Mutex<Vec<(PublicKeyBytes, String, Content)>>,
 
     /// Связывание устройств — только в памяти (`client::linking`).
     linking: linking::LinkState,
@@ -327,6 +331,7 @@ impl<T: Transport> Client<T> {
             discovered: Mutex::new(HashMap::new()),
             prefetched: Mutex::new(HashMap::new()),
             deferred_acks: Mutex::new(Vec::new()),
+            post_send: Mutex::new(Vec::new()),
             linking: linking::LinkState::default(),
         }
     }
@@ -374,6 +379,22 @@ impl<T: Transport> Client<T> {
                 .ok_or(GasAppError::Network),
             Err(error) => Err(error),
         }
+    }
+
+    /// Есть ли свежий заранее запрошенный discovery для отправки этому
+    /// собеседнику ([`Client::prefetch_discovery`]).
+    #[must_use]
+    pub fn has_prefetched(&self, peer_username: &str, now: Timestamp) -> bool {
+        let Ok(name) = canonical_username(peer_username) else {
+            return false;
+        };
+        self.prefetched
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&name).map(|(_, at)| *at))
+            .is_some_and(|at| {
+                (0..=PREFETCH_TTL_MILLIS).contains(&now.as_millis().saturating_sub(at.as_millis()))
+            })
     }
 
     /// Заранее — discovery собеседника для следующей отправки: чат открыт
@@ -688,12 +709,147 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<MessageId> {
+        self.send_message_with(peer_username, text, false, now, rng)
+    }
+
+    /// Отправка для интерфейса: возвращается, как только сообщение
+    /// доставлено, а копии своим устройствам и сверка журнала ключей —
+    /// следом ([`Client::run_post_send`]): часики у сообщения не ждут того,
+    /// от чего оно не зависит.
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::send_message`].
+    pub fn send_message_deferred<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        text: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<MessageId> {
+        self.send_message_with(peer_username, text, true, now, rng)
+    }
+
+    /// Отложенное после отправки ([`Client::send_message_deferred`]):
+    /// копии своим устройствам и сверка журнала ключей.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — ключи не прочитались.
+    pub fn run_post_send<R: RngCore + CryptoRng>(&self, now: Timestamp, rng: &mut R) -> Result<()> {
+        let jobs = std::mem::take(&mut *self.post_send.lock().map_err(|_| GasAppError::Storage)?);
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        let (identity, _) = self.load_identity()?;
+        for (peer_identity, peer_username, content) in jobs {
+            let _ = self.copy_to_own_devices(
+                &identity,
+                &peer_identity,
+                &peer_username,
+                &content,
+                now,
+                rng,
+            );
+            let _ = self.kt_gossip_head(&peer_username, now, rng);
+        }
+        Ok(())
+    }
+
+    fn send_message_with<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        text: &str,
+        defer_post_send: bool,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<MessageId> {
         let peer_username = &canonical_username(peer_username)?;
 
         // Секреты предключей при отправке не нужны: они участвуют
         // только в приёме, когда нам присылают конверт инициации.
         let (identity, _) = self.load_identity()?;
 
+        // Идентификатор выбирается до шифрования и уезжает внутри
+        // содержимого: по нему собеседник найдёт сообщение, когда придёт
+        // правка, удаление или квитанция (см. `Content::Text::id`).
+        let message_id = MessageId::generate();
+
+        // Чат с этим именем уже известен — сообщение в переписке сразу,
+        // «отправляется», ещё до сети: discovery через Tor — секунды, и
+        // прежде вышедший из чата за это время не находил сообщения вовсе,
+        // а сбой discovery терял его бесследно.
+        let early_chat = self.known_chat_of(peer_username, &identity)?;
+        if let Some(chat_id) = &early_chat {
+            // Переписку начинаем мы — отметка до записи: запись заводит
+            // состояние чата, и `note_outgoing` после неё уже не узнал бы,
+            // что чат новый. Принятие чужого запроса — только после
+            // проверок ключа (`deliver_text`).
+            if self.storage.chat_request_state(chat_id)?.is_none()
+                && self.storage.load_session(chat_id)?.is_none()
+            {
+                self.storage
+                    .set_chat_request_state(chat_id, ChatRequest::Outgoing)?;
+            }
+            self.store_message(chat_id, message_id, text, now, true, MessageStatus::Pending)?;
+            self.storage.touch_chat(chat_id, Some(&message_id), now)?;
+        }
+        let sent = self.deliver_text(
+            peer_username,
+            text,
+            message_id,
+            &identity,
+            early_chat.as_ref(),
+            defer_post_send,
+            now,
+            rng,
+        );
+        if early_chat.is_some() {
+            match &sent {
+                Ok(_) => {}
+                // 🔐 Ключ не сверен или сменился: этому ключу сообщение не
+                // уйдёт и повтором — текст возвращается в поле ввода, а не
+                // висит «не отправлено» с предложением повторить.
+                Err(GasAppError::IdentityChanged | GasAppError::PeerUnconfirmed) => {
+                    let _ = self.storage.delete_message(&message_id, now);
+                }
+                Err(_) => {
+                    let _ =
+                        self.storage
+                            .set_message_status(&message_id, MessageStatus::Failed, now);
+                }
+            }
+        }
+        sent
+    }
+
+    /// Чат с известным по имени собеседником — без сети.
+    fn known_chat_of(
+        &self,
+        peer_username: &str,
+        identity: &IdentityKeyPair,
+    ) -> Result<Option<ChatId>> {
+        let Some(peer) = self.storage.contact_identity_by_username(peer_username)? else {
+            return Ok(None);
+        };
+        let Ok(peer) = <[u8; 32]>::try_from(peer.as_slice()).map(PublicKeyBytes::new) else {
+            return Ok(None);
+        };
+        Ok(Some(derive_chat_id(&self.own_account(identity)?, &peer)))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn deliver_text<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        text: &str,
+        message_id: MessageId,
+        identity: &IdentityKeyPair,
+        early_chat: Option<&ChatId>,
+        defer_post_send: bool,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<MessageId> {
         let peer = self.discover_for_message(peer_username, now)?;
         let peer_identity = parse_public_key(&peer.identity_key)?;
 
@@ -714,16 +870,17 @@ impl<T: Transport> Client<T> {
         // гибридной подписью (см. `verified_sealed_kem`).
         let peer_kem = verified_sealed_kem(&peer, &peer_identity, &peer_pq)?;
 
-        let chat_id = derive_chat_id(&self.own_account(&identity)?, &peer_identity);
+        let chat_id = derive_chat_id(&self.own_account(identity)?, &peer_identity);
+
+        // Записанное заранее лежит в другом чате (ключ под этим именем
+        // сменился и был принят) — переносится сюда.
+        if early_chat.is_some_and(|early| *early != chat_id) {
+            self.storage.delete_message(&message_id, now)?;
+        }
 
         // Чат без своего таймера следует общему: собеседник узнаёт срок
         // до сообщения, чтобы оно исчезло и у него (`client::timers`).
         self.announce_default_timer(peer_username, &chat_id, now, rng);
-
-        // Идентификатор выбирается до шифрования и уезжает внутри
-        // содержимого: по нему собеседник найдёт сообщение, когда придёт
-        // правка, удаление или квитанция (см. `Content::Text::id`).
-        let message_id = MessageId::generate();
 
         // Тело сообщения — структурированное содержимое, а не голый
         // текст: получатель обязан отличить текст от реакции и правки,
@@ -761,7 +918,7 @@ impl<T: Transport> Client<T> {
             .peer_targets(&peer, &peer_identity, &peer_pq, &peer_kem, now)
             .and_then(|targets| {
                 self.send_to_devices(
-                    &identity,
+                    identity,
                     &chat_id,
                     &peer_identity,
                     &targets,
@@ -780,10 +937,19 @@ impl<T: Transport> Client<T> {
         self.storage
             .set_message_status(&message_id, MessageStatus::Sent, now)?;
 
+        if defer_post_send {
+            // Сообщение ушло — остальное следом (`run_post_send`).
+            self.post_send
+                .lock()
+                .map_err(|_| GasAppError::Storage)?
+                .push((peer_identity, peer_username.to_owned(), content));
+            return Ok(message_id);
+        }
+
         // Копия — своим устройствам (`client::devices`). Сбой не мешает
         // сообщению: оно уже ушло собеседнику.
         let _ =
-            self.copy_to_own_devices(&identity, &peer_identity, peer_username, &content, now, rng);
+            self.copy_to_own_devices(identity, &peer_identity, peer_username, &content, now, rng);
 
         // Сверка журнала ключей с собеседником (§9.7) — не чаще раза
         // в сутки. Сбой не мешает сообщению: оно уже ушло.
@@ -1120,6 +1286,42 @@ impl<T: Transport> Client<T> {
         self.receive(device_id, now, true)
     }
 
+    /// Сетевая половина приёма для интерфейса: отложенные подтверждения
+    /// и очередь сервера. Состояния сессий не касается — платформа зовёт
+    /// её вне общего замка ядра, и отправка не ждёт за медленным Tor.
+    /// Вторая половина — [`Client::process_incoming`].
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::receive_messages`].
+    pub fn fetch_incoming(&self, device_id: &str, now: Timestamp) -> Result<Vec<EnvelopeResponse>> {
+        // Не ушли — не беда: повторно выданное узнаётся по отметке
+        // «обработан» и подтверждается молча; приём не останавливается.
+        let _ = self.flush_acknowledgements(device_id, now);
+        let (identity, _) = self.load_identity()?;
+        self.api
+            .fetch_envelopes(device_id, &DeviceSigner::new(&identity, now))
+    }
+
+    /// Вторая половина приёма ([`Client::fetch_incoming`]): расшифровка и
+    /// сохранение — под замком ядра; подтверждения — отложенные
+    /// ([`Client::flush_acknowledgements`]).
+    ///
+    /// Два приёма, забравшие одни и те же конверты, не дублируют
+    /// сообщений: второй узнаёт их по отметке «обработан».
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::receive_messages`].
+    pub fn process_incoming(
+        &self,
+        device_id: &str,
+        envelopes: Vec<EnvelopeResponse>,
+        now: Timestamp,
+    ) -> Result<usize> {
+        self.process(device_id, envelopes, now, true)
+    }
+
     /// Отправляет отложенные подтверждения приёма одним запросом.
     ///
     /// # Errors
@@ -1154,12 +1356,23 @@ impl<T: Transport> Client<T> {
         Ok(())
     }
 
-    #[allow(clippy::too_many_lines)]
     fn receive(&self, device_id: &str, now: Timestamp, defer_acks: bool) -> Result<usize> {
-        let (identity, mut secrets) = self.load_identity()?;
+        let (identity, _) = self.load_identity()?;
         let envelopes = self
             .api
             .fetch_envelopes(device_id, &DeviceSigner::new(&identity, now))?;
+        self.process(device_id, envelopes, now, defer_acks)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn process(
+        &self,
+        device_id: &str,
+        envelopes: Vec<EnvelopeResponse>,
+        now: Timestamp,
+        defer_acks: bool,
+    ) -> Result<usize> {
+        let (identity, mut secrets) = self.load_identity()?;
 
         let mut accepted = 0usize;
 
@@ -1450,6 +1663,7 @@ impl<T: Transport> Client<T> {
                     | Content::Sent { .. }
                     | Content::History { .. }
                     | Content::Block { .. }
+                    | Content::ChannelAdmin { .. }
             );
 
             match content {
@@ -1588,6 +1802,13 @@ impl<T: Transport> Client<T> {
                     // 🔐 Своя вершина той же эпохи обязана совпасть:
                     // иначе сервер показывает одному из двоих свою ветку.
                     self.kt_compare_peer_head(epoch, &head, now)?;
+                }
+
+                // Назначение администратором канала — применится после
+                // приёма (сеть), см. `client::admin_grants`. Негодное —
+                // просто не запоминается.
+                Content::ChannelAdmin { link, signing_key } => {
+                    let _ = self.note_admin_grant(&chat_id, &link, &signing_key, now);
                 }
 
                 // 🔐 Копия отправленного — только от своего устройства (ветка

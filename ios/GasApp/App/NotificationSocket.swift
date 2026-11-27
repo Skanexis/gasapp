@@ -117,6 +117,9 @@ final class NotificationSocket {
         // Открылся ли: сервер отвечает на пинг.
         guard await ping(socket) else { return false }
         connected = true
+        // Сервер ответил — значит, связь есть: «Нет связи» от прошлой
+        // ошибки приёма снимается сразу.
+        Inbox.shared.serverReachable()
         // Пока сокета не было, могло прийти — забрать сразу.
         Inbox.shared.hurry()
 

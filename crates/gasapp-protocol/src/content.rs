@@ -91,6 +91,12 @@ const KIND_HISTORY: u8 = 14;
 /// Блокировка собеседника — своим устройствам (только внутри копии).
 const KIND_BLOCK: u8 = 15;
 
+/// Назначение администратором канала (см. [`Content::ChannelAdmin`]).
+const KIND_CHANNEL_ADMIN: u8 = 16;
+
+/// Предел ссылки канала в назначении администратором.
+pub const MAX_CHANNEL_LINK_BYTES: usize = 4 * 1024;
+
 /// Сколько сообщений истории в одной пачке. Объём это не ограничивает:
 /// 200 текстов на пределе в бакет padding (256 КиБ) не влезут — пачки по
 /// объёму режет отправитель (`client::history`), а слишком большую
@@ -176,7 +182,10 @@ fn write_sent(
     peer_username: Option<&str>,
     content: &Content,
 ) -> Result<()> {
-    if matches!(content, Content::Sent { .. } | Content::History { .. }) {
+    if matches!(
+        content,
+        Content::Sent { .. } | Content::History { .. } | Content::ChannelAdmin { .. }
+    ) {
         return Err(GasAppError::Malformed);
     }
     out.push(KIND_SENT);
@@ -203,7 +212,10 @@ fn read_sent(reader: &mut Reader<'_>) -> Result<Content> {
         _ => return Err(GasAppError::Malformed),
     };
     let inner = Content::from_unpadded_bytes(&reader.take_blob()?)?;
-    if matches!(inner, Content::Sent { .. } | Content::History { .. }) {
+    if matches!(
+        inner,
+        Content::Sent { .. } | Content::History { .. } | Content::ChannelAdmin { .. }
+    ) {
         return Err(GasAppError::Malformed);
     }
     Ok(Content::Sent {
@@ -533,6 +545,22 @@ pub enum Content {
         blocked: bool,
     },
 
+    /// Владелец канала назначает собеседника администратором — без
+    /// заявки: ссылка на канал и ключ подписи администратора, который
+    /// владелец завёл для него и уже вписал в описание канала.
+    ///
+    /// 🔐 Ключ едет только внутри сквозного шифрования, и только этому
+    /// собеседнику: копий своим устройствам владельца нет (внутри
+    /// [`Content::Sent`] не принимается). Владелец ключ знает — но он и
+    /// так подписывает канал целиком; читатели проверяют записи по
+    /// ключам из описания, подписанного владельцем.
+    ChannelAdmin {
+        /// Ссылка-доступ к каналу (`gasapp://channel/…`).
+        link: String,
+        /// Секретный ключ подписи администратора (Ed25519).
+        signing_key: [u8; 32],
+    },
+
     /// Таймер исчезающих сообщений, заданный отправителем для чата.
     ///
     /// 🔐 Таймер общий для обоих: кто бы его ни поставил, сообщения
@@ -664,6 +692,9 @@ impl Content {
             Self::Block { blocked } => {
                 out.push(KIND_BLOCK);
                 out.push(u8::from(*blocked));
+            }
+            Self::ChannelAdmin { link, signing_key } => {
+                write_channel_admin(&mut out, link, signing_key)?;
             }
             Self::AccessKey {
                 key,
@@ -800,6 +831,7 @@ impl Content {
                     _ => return Err(GasAppError::Malformed),
                 },
             },
+            KIND_CHANNEL_ADMIN => read_channel_admin(&mut reader)?,
             KIND_KT_HEAD => {
                 let (epoch, head) = take_kt_head(&mut reader)?;
                 Self::KtHead { epoch, head }
@@ -856,6 +888,31 @@ fn write_text(out: &mut Vec<u8>, text: &str) -> Result<()> {
     }
 
     write_bytes(out, text.as_bytes())
+}
+
+/// Назначение администратором канала ([`Content::ChannelAdmin`]).
+fn write_channel_admin(out: &mut Vec<u8>, link: &str, signing_key: &[u8; 32]) -> Result<()> {
+    if link.len() > MAX_CHANNEL_LINK_BYTES {
+        return Err(GasAppError::Malformed);
+    }
+    out.push(KIND_CHANNEL_ADMIN);
+    write_bytes(out, link.as_bytes())?;
+    out.extend_from_slice(signing_key);
+    Ok(())
+}
+
+fn read_channel_admin(reader: &mut Reader<'_>) -> Result<Content> {
+    let link = reader.take_blob()?;
+    if link.len() > MAX_CHANNEL_LINK_BYTES {
+        return Err(GasAppError::Malformed);
+    }
+    Ok(Content::ChannelAdmin {
+        link: String::from_utf8(link).map_err(|_| GasAppError::Malformed)?,
+        signing_key: reader
+            .take_slice(32)?
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?,
+    })
 }
 
 /// Записывает блок с длиной.
@@ -1496,6 +1553,30 @@ mod tests {
     }
 
     /// Блокировка внутри копии переживает кодирование.
+    #[test]
+    fn a_channel_admin_grant_round_trips_but_never_as_a_copy() {
+        let grant = Content::ChannelAdmin {
+            link: "gasapp://channel/abc".to_owned(),
+            signing_key: [7; 32],
+        };
+        let bytes = grant.to_bytes().expect("кодируется");
+        assert_eq!(Content::from_bytes(&bytes).expect("читается"), grant);
+
+        // 🔐 Копией своим устройствам ключ администратора не едет.
+        let copy = Content::Sent {
+            peer: [4; 32],
+            peer_username: None,
+            content: Box::new(grant),
+        };
+        assert!(copy.to_bytes().is_err());
+
+        let too_long = Content::ChannelAdmin {
+            link: "x".repeat(MAX_CHANNEL_LINK_BYTES + 1),
+            signing_key: [7; 32],
+        };
+        assert!(too_long.to_bytes().is_err());
+    }
+
     #[test]
     fn a_block_copy_round_trips() {
         for blocked in [true, false] {

@@ -51,6 +51,9 @@ struct ChatScreen: View {
     @State private var inbox = Inbox.shared
     @State private var resolvedChatId = ""
     @State private var messages: [MessageRow] = []
+    /// Отправляемые, которых ещё нет в базе: обновление списка (приём,
+    /// квитанция) их не стирает — прежде сообщение мигало и пропадало.
+    @State private var inFlight: [MessageRow] = []
     @State private var draft = ""
     @State private var mode: SendMode = .open
     @State private var contact: FfiContact?
@@ -324,7 +327,7 @@ struct ChatScreen: View {
             Button { retry(message) } label: {
                 Label(L10n.t("Отправить ещё раз", "Send again", "Invia di nuovo"), systemImage: "arrow.clockwise")
             }
-            Button(role: .destructive) { messages.removeAll { $0.id == message.id } } label: {
+            Button(role: .destructive) { discard(message) } label: {
                 Label(L10n.t("Убрать", "Remove", "Rimuovi"), systemImage: "trash")
             }
         }
@@ -552,7 +555,19 @@ struct ChatScreen: View {
         if resolvedChatId != snap.chatId { resolvedChatId = snap.chatId }
         contact = snap.contact
         if blocked != snap.blocked { blocked = snap.blocked }
-        if messages != snap.rows { messages = snap.rows }
+        // Отправляемые, которых в базе ещё нет, остаются на экране.
+        var rows = snap.rows
+        for local in inFlight where !rows.contains(where: {
+            $0.outgoing && $0.text == local.text && $0.timestamp >= local.timestamp - 5_000
+        }) {
+            rows.append(local)
+        }
+        // Неудачные из этого экрана (первое сообщение, базы ещё нет) — тоже.
+        for failed in messages where failed.id.hasPrefix("local-") && failed.status == .failed
+            && !rows.contains(where: { $0.id == failed.id }) {
+            rows.append(failed)
+        }
+        if messages != rows { messages = rows }
         // Контакта нет или он не прочитался — ключ не подтверждён:
         // отправку это не откроет, её всё равно решает ядро.
         let decided = SendMode.decide(
@@ -589,13 +604,24 @@ struct ChatScreen: View {
         }
     }
 
-    /// Не ушедшее — ещё раз: ядро повтора не знает, поэтому это новая
-    /// отправка того же текста, а неудачная строка убирается.
+    /// Не ушедшее — ещё раз: повтор — новая отправка того же текста, а
+    /// неудачное убирается из базы (`discardFailedMessage`), без дублей.
     private func retry(_ message: MessageRow) {
         guard message.status == .failed, !message.text.isEmpty else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        messages.removeAll { $0.id == message.id }
+        discard(message)
         send(text: message.text)
+    }
+
+    /// Убрать неотправленное — и с экрана, и из базы.
+    private func discard(_ message: MessageRow) {
+        messages.removeAll { $0.id == message.id }
+        inFlight.removeAll { $0.id == message.id }
+        guard !message.id.hasPrefix("local-"), let messenger = try? CoreStore.shared.current() else { return }
+        let id = message.id
+        Background.detach {
+            _ = try? messenger.discardFailedMessage(messageId: id, nowMillis: CoreStore.nowMillis)
+        }
     }
 
     private func send() {
@@ -616,33 +642,45 @@ struct ChatScreen: View {
         } ?? true
         let local = MessageRow(id: "local-\(UUID().uuidString)", text: text, timestamp: now,
                                outgoing: true, status: .pending, time: formatChatTime(now), startsDay: startsDay)
-        messages.append(local)
+        withAnimation(.snappy(duration: 0.22)) { messages.append(local) }
+        inFlight.append(local)
         let peer = peerUsername
-
         Task {
             do {
                 _ = try await Background.run {
                     try messenger.sendMessage(peerUsername: peer, text: text, nowMillis: CoreStore.nowMillis)
                 }
+                inFlight.removeAll { $0.id == local.id }
                 inbox.touch()
-                prefetch(force: true)
                 await refresh()
+                // Копии своим устройствам и сверка журнала — уже после
+                // галочки: сообщение их не ждёт.
+                Background.detach { _ = try? messenger.runPostSend(nowMillis: CoreStore.nowMillis) }
+                prefetch(force: true)
             } catch {
-                messages.removeAll { $0.id == local.id }
+                inFlight.removeAll { $0.id == local.id }
                 switch error as? FfiError {
                 case .IdentityChanged, .PeerUnconfirmed:
                     // 🔐 Ядро отвергло ключ: текст возвращается в поле —
-                    // он не ушёл никуда.
+                    // он не ушёл никуда (ядро его и не хранит).
+                    messages.removeAll { $0.id == local.id }
                     draft = text
                     toast = L10n.t("Сначала сверьте код безопасности", "Compare the safety number first", "Prima confronta il numero di sicurezza")
                     await refresh()
                 default:
                     // Крест, а не молчание: «отправленное», но не ушедшее
-                    // сообщение — худший исход.
-                    var failed = local
-                    failed.status = .failed
-                    messages.append(failed)
-                    toast = L10n.t("Не отправлено — нет связи", "Not sent — no connection", "Non inviato: nessuna connessione")
+                    // сообщение — худший исход. Ядро уже записало его «не
+                    // отправлено»; нет в базе (первое сообщение) — крест здесь.
+                    await refresh()
+                    if !messages.contains(where: { $0.outgoing && $0.text == text && $0.status == .failed }) {
+                        var failed = local
+                        failed.status = .failed
+                        messages.removeAll { $0.id == local.id }
+                        messages.append(failed)
+                    }
+                    toast = L10n.t("Не отправлено — нет связи. Нажмите на сообщение, чтобы повторить",
+                                   "Not sent — no connection. Tap the message to retry",
+                                   "Non inviato: nessuna connessione. Tocca il messaggio per riprovare")
                 }
             }
         }

@@ -542,6 +542,38 @@ impl Storage {
 
         Ok(())
     }
+
+    /// Текстовые настройки с ключами на этот префикс.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение не удалось.
+    pub fn settings_text_with_prefix(&self, prefix: &str) -> Result<Vec<(String, String)>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        let mut statement = connection
+            .prepare("SELECT key, value FROM settings_text WHERE substr(key, 1, ?) = ?")
+            .map_err(storage_error)?;
+        let rows = statement
+            .query_map(params![prefix.chars().count(), prefix], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage_error)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(storage_error)
+    }
+
+    /// Удаляет текстовую настройку.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — запись не удалась.
+    pub fn delete_setting_text(&self, key: &str) -> Result<()> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        connection
+            .execute("DELETE FROM settings_text WHERE key = ?", params![key])
+            .map_err(storage_error)?;
+        Ok(())
+    }
 }
 
 /// Переводит байты из базы в массив нужной длины.

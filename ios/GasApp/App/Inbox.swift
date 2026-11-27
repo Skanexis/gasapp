@@ -65,6 +65,11 @@ final class Inbox {
         // Сокет уведомлений — вместе с приёмом: новое приходит сразу.
         NotificationSocket.shared.start()
         guard loop == nil else { return }
+        // Застрявшие «отправляется» (приложение выгрузили посреди отправки)
+        // — «не отправлено», с повтором по нажатию.
+        if let messenger = try? CoreStore.shared.current() {
+            Background.detach { _ = try? messenger.failStaleSends(nowMillis: CoreStore.nowMillis) }
+        }
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -95,6 +100,9 @@ final class Inbox {
     /// сделал или приложение снова на экране.
     func hurry() {
         interval = Self.fastInterval
+        // Приём идёт — цикл не ждёт будильника, и зов потерялся бы:
+        // приём повторится сразу после текущего (`receiveOnce`).
+        if receiving != nil { again = true }
         fire()
     }
 
@@ -114,14 +122,25 @@ final class Inbox {
     /// Приём уже идёт — дождаться его, а не начинать ещё один.
     func receiveOnce() async {
         if let receiving {
+            // Позвали посреди приёма (уведомление сокета о новом конверте):
+            // идущий приём мог забрать очередь до него — после него ещё
+            // один. Прежде такой зов терялся, и сообщение ждало следующего
+            // опроса — до минуты при открытом сокете.
+            again = true
             await receiving.value
             return
         }
-        let task = Task { await self.receiveNow() }
-        receiving = task
-        await task.value
-        receiving = nil
+        repeat {
+            again = false
+            let task = Task { await self.receiveNow() }
+            receiving = task
+            await task.value
+            receiving = nil
+        } while again
     }
+
+    /// Звали ли приём, пока он шёл.
+    @ObservationIgnored private var again = false
 
     private func receiveNow() async {
         guard let device = CoreStore.shared.deviceId,
@@ -142,7 +161,10 @@ final class Inbox {
                 try messenger.receiveMessages(deviceId: device, nowMillis: CoreStore.nowMillis)
             }
             network.requestSucceeded()
+            failuresInRow = 0
             lastError = nil
+            // Сеть есть — дошёл ли токен уведомлений до сервера.
+            Push.shared.retryPending()
             // Новое уже сохранено и сейчас покажется; подтверждение сервера —
             // следом, в фоне (ядро отложило его, чтобы показ не ждал).
             Background.detach { _ = try? messenger.flushAcknowledgements(deviceId: device, nowMillis: CoreStore.nowMillis) }
@@ -159,9 +181,18 @@ final class Inbox {
             }
         } catch {
             network.requestFailed()
-            // Сбой — тоже повод реже: прежде при недоступном сервере
-            // опрос шёл каждые четыре секунды без конца — и батарея, и
-            // сервер, которому и так плохо, получали поток повторов.
+            failuresInRow += 1
+            // Один сбой через Tor — обычное дело (цепочка перестроилась):
+            // повтор почти сразу и без «Нет связи». Прежде одна ошибка
+            // держала «Нет связи» до следующего удачного приёма — до минуты,
+            // хотя Tor уже был подключён.
+            if failuresInRow < 2 {
+                interval = Self.fastInterval
+                return
+            }
+            // Сбой подряд — реже: прежде при недоступном сервере опрос шёл
+            // каждые четыре секунды без конца — и батарея, и сервер, которому
+            // и так плохо, получали поток повторов.
             interval = min(Self.slowInterval, interval * 1.5)
             lastError = ClockCheck.off
                 ? L10n.t("Неверное время на телефоне", "Phone clock is wrong", "L’orologio del telefono è sbagliato")
@@ -173,6 +204,19 @@ final class Inbox {
     func touch() {
         revision += 1
         hurry()
+    }
+
+    /// Сбоев приёма подряд: «Нет связи» — только со второго.
+    private var failuresInRow = 0
+
+    /// Сервер ответил по другому пути (сокет уведомлений открыт): связь
+    /// есть — старая ошибка приёма больше не правда.
+    func serverReachable() {
+        failuresInRow = 0
+        if lastError != nil {
+            lastError = nil
+            ConnectionStatus.shared.refresh()
+        }
     }
 
     /// Счётчик «прочитано»: чат открыли — значки списка и вкладки гаснут.

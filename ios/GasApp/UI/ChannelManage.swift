@@ -25,9 +25,8 @@ struct ChannelManageScreen: View {
     @State private var admins: [FfiChannelAdmin] = []
     @State private var subscribers: [FfiChannelMember] = []
     @State private var banned: [FfiChannelMember] = []
-    @State private var adminRequest = ""
-    @State private var adminLabel = ""
-    @State private var scanningAdmin = false
+    /// Выбор собеседника в администраторы.
+    @State private var choosingAdmin = false
     @State private var avatarItem: PhotosPickerItem?
     @State private var confirmPublic = false
     @State private var confirmClose = false
@@ -218,32 +217,16 @@ struct ChannelManageScreen: View {
                             Button(L10n.t("Снять", "Remove", "Rimuovi"), role: .destructive) { removeAdmin(admin) }
                         }
                     }
-                    HStack {
-                        TextField(L10n.t("Заявка администратора", "Admin request", "Richiesta di admin"), text: $adminRequest, axis: .vertical)
-                            .font(.system(size: 13, design: .monospaced)).lineLimit(1...3)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Button {
-                            if let text = UIPasteboard.general.string { adminRequest = text }
-                        } label: { Image(systemName: "doc.on.clipboard") }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(L10n.t("Вставить", "Paste", "Incolla"))
-                        Button { scanningAdmin = true } label: { Image(systemName: "qrcode.viewfinder") }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(L10n.t("Сканировать QR", "Scan QR", "Scansiona QR"))
-                    }
-                    if isChannelAdminRequest(text: adminRequest) {
-                        TextField(L10n.t("Имя для вас", "Name for you", "Nome per te"), text: $adminLabel)
-                        Button { addAdmin() } label: {
-                            Label(L10n.t("Назначить", "Appoint", "Nomina"), systemImage: "person.badge.plus")
-                                .font(GasFont.text(16, .semibold))
-                        }
+                    Button { choosingAdmin = true } label: {
+                        Label(L10n.t("Назначить администратора", "Appoint an admin", "Nomina un admin"), systemImage: "person.badge.plus")
+                            .font(GasFont.text(16, .semibold))
                     }
                 } header: {
                     Text(L10n.t("Администраторы", "Admins", "Admin"))
                 } footer: {
-                    Text(L10n.t("Администратор публикует записи. Будущий админ открывает канал → ⓘ → «Стать администратором» и присылает вам заявку в чат — нажмите её. Или отсканируйте его QR. Свайп влево — снять.",
-                                "An admin can publish posts. The future admin opens the channel → ⓘ → “Become an admin” and sends you the request in a chat — tap it. Or scan their QR. Swipe left to remove.",
-                                "Un admin può pubblicare post. Il futuro admin apre il canale → ⓘ → «Diventa admin» e ti invia la richiesta in chat: toccala. Oppure scansiona il suo QR. Scorri a sinistra per rimuoverlo."))
+                    Text(L10n.t("Администратор публикует, правит и удаляет записи. Выберите собеседника — канал появится у него сам, уже с правом писать. Свайп влево — снять.",
+                                "An admin publishes, edits and deletes posts. Pick a contact — the channel appears for them with posting rights. Swipe left to remove.",
+                                "Un admin pubblica, modifica ed elimina i post. Scegli un contatto: il canale gli apparirà già con i permessi di pubblicazione. Scorri a sinistra per rimuoverlo."))
                 }
 
                 Section {
@@ -341,8 +324,18 @@ struct ChannelManageScreen: View {
             Text(L10n.t("Ключ канала сменится: новые записи удалённый не прочтёт. То, что вышло раньше, он уже читал.",
                         "The channel key changes: they will not read new posts. What was published before, they have already read.", "La chiave del canale cambia: non leggerà i nuovi post. Ciò che è stato pubblicato prima l’ha già letto."))
         }
-        // QR заявки с телефона будущего админа.
-        .sheet(isPresented: $scanningAdmin) { QRScanner { code in adminRequest = code } }
+        .sheet(isPresented: $choosingAdmin) {
+            NavigationStack {
+                ContactPickerSheet(
+                    title: L10n.t("Кого назначить", "Appoint whom", "Chi nominare"),
+                    exclude: Set(admins.filter(\.active).map(\.label))
+                ) { name in
+                    choosingAdmin = false
+                    appoint(name)
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
         .onChange(of: avatarItem) { _, item in
             guard let item else { return }
             Task {
@@ -450,6 +443,10 @@ struct ChannelManageScreen: View {
 
     static func explain(_ error: FfiError) -> String {
         switch error {
+        case .PeerUnconfirmed, .IdentityChanged:
+            return L10n.t("Ключ собеседника не сверен. Напишите ему или сверьте код безопасности — и назначьте снова.",
+                          "This contact’s key isn’t verified. Message them or compare the safety number, then try again.",
+                          "La chiave del contatto non è verificata. Scrivigli o confronta il numero di sicurezza, poi riprova.")
         case .UsernameTaken:
             return L10n.t("Это имя уже занято.", "That name is taken.", "Questo nome è già in uso.")
         case .InvalidArgument:
@@ -517,15 +514,13 @@ struct ChannelManageScreen: View {
         }
     }
 
-    private func addAdmin() {
+    /// Назначить собеседника — без заявки (`appointChannelAdmin`): ключ
+    /// уходит ему в переписке, канал у него появляется сам.
+    private func appoint(_ username: String) {
         let id = channelId
-        let request = adminRequest.trimmingCharacters(in: .whitespacesAndNewlines)
-        let label = adminLabel.trimmingCharacters(in: .whitespaces)
-        run(L10n.t("Администратор назначен", "Admin appointed", "Admin nominato")) {
-            _ = try $0.addChannelAdmin(channelId: id, request: request, label: label, nowMillis: CoreStore.nowMillis)
+        run(L10n.t("@\(username) — администратор", "@\(username) is now an admin", "@\(username) è ora admin")) {
+            _ = try $0.appointChannelAdmin(channelId: id, peerUsername: username, nowMillis: CoreStore.nowMillis)
         }
-        adminRequest = ""
-        adminLabel = ""
     }
 
     private func removeAdmin(_ admin: FfiChannelAdmin) {
@@ -590,6 +585,78 @@ struct AdminRequestSheet: View {
             if let request {
                 qr = try? channelAdminRequestQr(request: request)
             }
+        }
+    }
+}
+
+/// Выбор собеседника из своих контактов — для назначения администратором.
+struct ContactPickerSheet: View {
+    let title: String
+    /// Кого не предлагать (уже назначенные — по имени).
+    let exclude: Set<String>
+    let onPick: (String) -> Void
+
+    @State private var contacts: [FfiContact] = []
+    @State private var query = ""
+    @State private var loaded = false
+    @Environment(\.dismiss) private var dismiss
+
+    private var shown: [FfiContact] {
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return contacts.filter { contact in
+            guard let name = contact.username, !exclude.contains(name) else { return false }
+            return needle.isEmpty || name.contains(needle)
+        }
+    }
+
+    var body: some View {
+        List {
+            if loaded && shown.isEmpty {
+                Text(contacts.isEmpty
+                     ? L10n.t("Контактов пока нет. Добавьте человека по ссылке или QR.",
+                              "No contacts yet. Add someone by link or QR.",
+                              "Ancora nessun contatto. Aggiungi qualcuno tramite link o QR.")
+                     : L10n.t("Никого не нашлось", "No one found", "Nessuno trovato"))
+                    .font(GasFont.text(15)).foregroundStyle(GasAppColor.textTertiary)
+                    .listRowBackground(GasAppColor.bgCard)
+            }
+            ForEach(shown, id: \.accountId) { contact in
+                let name = contact.username ?? ""
+                Button { onPick(name) } label: {
+                    HStack(spacing: 12) {
+                        Avatar(name: name, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("@\(name)").font(GasFont.text(16, .semibold)).foregroundStyle(GasAppColor.textPrimary)
+                            if contact.verified {
+                                Label(L10n.t("ключ сверен", "key verified", "chiave verificata"), systemImage: "checkmark.seal.fill")
+                                    .font(GasFont.text(12)).foregroundStyle(GasAppColor.ok)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "person.badge.plus").foregroundStyle(GasAppColor.accent)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(GasAppColor.bgCard)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(GasAppColor.bgBase.ignoresSafeArea())
+        .searchable(text: $query, prompt: L10n.t("Имя", "Name", "Nome"))
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button(L10n.t("Отмена", "Cancel", "Annulla")) { dismiss() }
+            }
+        }
+        .task {
+            guard let messenger = try? CoreStore.shared.current() else { return }
+            let all = (try? await Background.run { try messenger.contacts() }) ?? []
+            contacts = all.filter { !$0.replaced && !$0.keyChanged && $0.username != nil }
+                .sorted { ($0.username ?? "") < ($1.username ?? "") }
+            loaded = true
         }
     }
 }

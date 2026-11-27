@@ -343,10 +343,15 @@ impl From<gasapp_storage::MessageStatus> for FfiDeliveryStatus {
 /// PIN — до него хранилище зашифровано и открыть его нечем.
 #[derive(uniffi::Object)]
 pub struct Messenger {
-    // Mutex, а не RwLock: операции клиента изменяют состояние сессий,
-    // и параллельная отправка двух сообщений в один чат провернула бы
-    // храповик дважды из одного состояния, потеряв одно из них.
-    client: Mutex<Client<ForeignTransport>>,
+    /// Клиент. Работа с ним — под замком [`Messenger::core`]
+    /// ([`Messenger::client`]); без замка — только сетевые шаги, которые
+    /// состояния сессий не касаются (очередь сервера, discovery).
+    client: Client<ForeignTransport>,
+    /// Замок ядра. Mutex, а не RwLock: операции клиента изменяют
+    /// состояние сессий, и параллельная отправка двух сообщений в один
+    /// чат провернула бы храповик дважды из одного состояния, потеряв
+    /// одно из них.
+    core: Mutex<()>,
 
     /// Клиент для локальных чтений — своё соединение с той же базой.
     ///
@@ -359,6 +364,20 @@ pub struct Messenger {
     reader: Mutex<Client<Offline>>,
     /// Путь базы — чтобы переоткрыть читающее соединение после смены ключа.
     database_path: String,
+}
+
+/// Клиент под замком ядра ([`Messenger::client`]).
+pub(crate) struct Locked<'a> {
+    _guard: std::sync::MutexGuard<'a, ()>,
+    client: &'a Client<ForeignTransport>,
+}
+
+impl std::ops::Deref for Locked<'_> {
+    type Target = Client<ForeignTransport>;
+
+    fn deref(&self) -> &Self::Target {
+        self.client
+    }
 }
 
 /// Транспорт без сети — у клиента локальных чтений.
@@ -377,10 +396,11 @@ impl Messenger {
     /// обращается к клиенту так же часто, как этот: повторять
     /// `lock().map_err(...)` в каждой точке входа значит однажды
     /// написать иначе и получить панику через границу FFI.
-    pub(crate) fn client(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, Client<ForeignTransport>>, FfiError> {
-        self.client.lock().map_err(|_| FfiError::Panic)
+    pub(crate) fn client(&self) -> Result<Locked<'_>, FfiError> {
+        Ok(Locked {
+            _guard: self.core.lock().map_err(|_| FfiError::Panic)?,
+            client: &self.client,
+        })
     }
 
     /// Блокировка — своим устройствам (`docs/protocol/MULTI-DEVICE.md`):
@@ -428,7 +448,8 @@ impl Messenger {
         let reading = guard(|| Storage::new(&database_path, &key))?;
 
         Ok(Self {
-            client: Mutex::new(Client::new(ForeignTransport { inner: transport }, storage)),
+            client: Client::new(ForeignTransport { inner: transport }, storage),
+            core: Mutex::new(()),
             reader: Mutex::new(Client::new(Offline, reading)),
             database_path,
         })
@@ -447,7 +468,7 @@ impl Messenger {
     /// [`FfiError::Core`] — сервер недоступен, письмо запрошено слишком
     /// рано либо сервер не смог его отправить.
     pub fn request_email_code(&self, email: String) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| client.request_email_code(&email))
     }
@@ -474,7 +495,7 @@ impl Messenger {
         email_code: String,
         now_millis: i64,
     ) -> Result<FfiAccount, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         let account = guard(|| {
             client.register(
@@ -505,18 +526,33 @@ impl Messenger {
         text: String,
         now_millis: i64,
     ) -> Result<String, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let now = Timestamp::from_millis(now_millis);
+        // Discovery — вне замка ядра (сетевой запрос, состояния сессий не
+        // касается): если приём держит ядро, отправка не ждёт за ним ещё
+        // и этот запрос. Сбой не страшен — отправка спросит сама.
+        if !self.client.has_prefetched(&peer_username, now) {
+            let _ = guard(|| self.client.prefetch_discovery(&peer_username, now));
+        }
+        let client = self.client()?;
 
+        // Копии своим устройствам и сверка журнала — после ответа
+        // (`run_post_send`): часики у сообщения их не ждут.
         let message_id = guard(|| {
-            client.send_message(
-                &peer_username,
-                &text,
-                Timestamp::from_millis(now_millis),
-                &mut rand_core::OsRng,
-            )
+            client.send_message_deferred(&peer_username, &text, now, &mut rand_core::OsRng)
         })?;
 
         Ok(message_id.to_string())
+    }
+
+    /// Отложенное после отправки: копии своим устройствам, сверка журнала
+    /// ключей. Платформа зовёт в фоне после `send_message`.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — ключи не прочитались.
+    pub fn run_post_send(&self, now_millis: i64) -> Result<(), FfiError> {
+        let client = self.client()?;
+        guard(|| client.run_post_send(Timestamp::from_millis(now_millis), &mut rand_core::OsRng))
     }
 
     /// Забирает входящие сообщения и возвращает их число.
@@ -526,18 +562,26 @@ impl Messenger {
     /// [`FfiError::Core`] — сервер недоступен либо аккаунт не
     /// зарегистрирован.
     pub fn receive_messages(&self, device_id: String, now_millis: i64) -> Result<u32, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let now = Timestamp::from_millis(now_millis);
+        // Очередь сервера — вне замка ядра: через Tor это секунды, и
+        // отправка всё это время ждала бы за приёмом.
+        let envelopes = guard(|| self.client.fetch_incoming(&device_id, now))?;
+        let client = self.client()?;
 
         // Сообщения — сразу, подтверждение сервера — следом
         // (`flush_acknowledgements`): показ не ждёт сетевого запроса.
-        let count = guard(|| {
-            client.receive_messages_deferred(&device_id, Timestamp::from_millis(now_millis))
-        })?;
+        let count = guard(|| client.process_incoming(&device_id, envelopes, now))?;
         // Основное устройство: история новому своему устройству, если оно
         // уже вошло (этап 4б). Сбой не мешает приёму — повтор в следующий раз.
         let _ = guard(|| {
             client.send_pending_history(Timestamp::from_millis(now_millis), &mut rand_core::OsRng)
         });
+        // Назначения администратором канала — канал добавляется сам, уже с
+        // правом писать. Сеть; только когда назначение пришло.
+        let _ = guard(|| client.apply_admin_grants(now));
+        // Отложенное после отправки, если платформа не позвала его сама
+        // (`run_post_send`): копии своим устройствам не теряются.
+        let _ = guard(|| client.run_post_send(now, &mut rand_core::OsRng));
 
         u32::try_from(count).map_err(|_| FfiError::InvalidArgument)
     }
@@ -580,6 +624,34 @@ impl Messenger {
         guard(|| client.mark_chat_read(&chat, Timestamp::from_millis(now_millis)))
     }
 
+    /// Убирает своё неотправленное сообщение — перед повтором отправки
+    /// (повтор — новое сообщение того же текста). Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор не разобран.
+    pub fn discard_failed_message(
+        &self,
+        message_id: String,
+        now_millis: i64,
+    ) -> Result<bool, FfiError> {
+        let id = parse_message_id(&message_id)?;
+        let client = self.reader()?;
+        guard(|| client.discard_failed_message(&id, Timestamp::from_millis(now_millis)))
+    }
+
+    /// Застрявшие «отправляется» дольше пяти минут — «не отправлено»
+    /// (приложение выгрузили посреди отправки). Без сети; при запуске.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — запись не удалась.
+    pub fn fail_stale_sends(&self, now_millis: i64) -> Result<u32, FfiError> {
+        let client = self.reader()?;
+        let count = guard(|| client.fail_stale_sends(Timestamp::from_millis(now_millis)))?;
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
     /// Непрочитанные входящие по чатам — для значков списка и вкладки.
     /// Без сети.
     ///
@@ -604,7 +676,7 @@ impl Messenger {
     /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
     pub fn accept_chat(&self, chat_id: String, now_millis: i64) -> Result<(), FfiError> {
         let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.accept_chat(
@@ -622,7 +694,7 @@ impl Messenger {
     /// [`FfiError::InvalidArgument`] — идентификатор чата не разобран.
     pub fn decline_chat(&self, chat_id: String, now_millis: i64) -> Result<(), FfiError> {
         let parsed = uuid::Uuid::parse_str(&chat_id).map_err(|_| FfiError::InvalidArgument)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.decline_chat(
@@ -731,7 +803,7 @@ impl Messenger {
     ///   ([`GasAppError::Uninitialized`]) либо сеть недоступна.
     pub fn report_chat(&self, chat_id: String, now_millis: i64) -> Result<bool, FfiError> {
         let chat = parse_chat(&chat_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         let outcome = guard(|| client.report_chat(&chat, Timestamp::from_millis(now_millis)))?;
 
@@ -758,7 +830,7 @@ impl Messenger {
         now_millis: i64,
     ) -> Result<FfiReportOutcome, FfiError> {
         let chat = parse_chat(&chat_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
         let evidence = gasapp_protocol::report_evidence::Evidence {
             quotes: quotes
                 .into_iter()
@@ -829,7 +901,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — удаление не удалось.
     pub fn purge_expired(&self, now_millis: i64) -> Result<u32, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         let removed = guard(|| client.purge_expired(Timestamp::from_millis(now_millis)))?;
 
@@ -855,7 +927,7 @@ impl Messenger {
         seconds: u32,
         now_millis: i64,
     ) -> Result<String, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.set_shared_disappearing_timer(
@@ -918,7 +990,7 @@ impl Messenger {
         peer_username: String,
         now_millis: i64,
     ) -> Result<String, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
         guard(|| {
             client.follow_default_disappearing_timer(
                 &peer_username,
@@ -946,7 +1018,7 @@ impl Messenger {
         username: String,
         now_millis: i64,
     ) -> Result<FfiContact, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
         let contact =
             guard(|| client.add_contact_by_mention(&username, Timestamp::from_millis(now_millis)))?;
         Ok(contact_to_ffi(&contact))
@@ -993,7 +1065,7 @@ impl Messenger {
         uri: String,
         now_millis: i64,
     ) -> Result<FfiContact, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         let contact =
             guard(|| client.add_contact_from_link(&uri, Timestamp::from_millis(now_millis)))?;
@@ -1031,8 +1103,12 @@ impl Messenger {
                 .ok()
                 .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
                 .unwrap_or_default();
-            let client = self.client()?;
-            return guard(|| client.safety_number_fetching(&account, Timestamp::from_millis(now)));
+            // Вне замка ядра: discovery и запись половины ключа собеседника
+            // сессий не касаются, а через Tor запрос не ждёт за приёмом.
+            return guard(|| {
+                self.client
+                    .safety_number_fetching(&account, Timestamp::from_millis(now))
+            });
         }
         local
     }
@@ -1053,7 +1129,7 @@ impl Messenger {
         now_millis: i64,
     ) -> Result<(), FfiError> {
         let account = parse_account_id(&account_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.set_contact_verified(&account, verified, Timestamp::from_millis(now_millis))
@@ -1074,7 +1150,7 @@ impl Messenger {
         username: String,
         now_millis: i64,
     ) -> Result<FfiContact, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| client.discover_contact(&username, Timestamp::from_millis(now_millis)))
             .map(|contact| contact_to_ffi(&contact))
@@ -1182,7 +1258,7 @@ impl Messenger {
             .as_slice()
             .try_into()
             .map_err(|_| FfiError::InvalidArgument)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
         // Чтения ждут, пока идёт перешифровка: на полпути страницы базы
         // уже под новым ключом, и читающее соединение со старым ключом
         // видело бы мусор.
@@ -1223,7 +1299,7 @@ impl Messenger {
     /// не сохраняются: иначе клиент считал бы опубликованным то,
     /// чего сервер не видел.
     pub fn maintain_prekeys(&self, now_millis: i64) -> Result<FfiPreKeyMaintenance, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         let report = guard(|| {
             client.maintain_prekeys(
@@ -1269,7 +1345,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — аккаунта нет либо чтение не удалось.
     pub fn export_data(&self, now_millis: i64) -> Result<String, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| client.export_data(gasapp_types::Timestamp::from_millis(now_millis)))
     }
@@ -1299,7 +1375,7 @@ impl Messenger {
     /// соединиться. В последнем случае аккаунт цел и попытку можно
     /// повторить.
     pub fn delete_account(&self, now_millis: i64) -> Result<FfiAccountDeletion, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         let report =
             guard(|| client.delete_account(gasapp_types::Timestamp::from_millis(now_millis)))?;
@@ -1323,8 +1399,11 @@ impl Messenger {
         device_id: String,
         now_millis: i64,
     ) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
-        guard(|| client.flush_acknowledgements(&device_id, Timestamp::from_millis(now_millis)))
+        // Вне замка ядра: сетевой запрос над своим списком подтверждений.
+        guard(|| {
+            self.client
+                .flush_acknowledgements(&device_id, Timestamp::from_millis(now_millis))
+        })
     }
 
     /// Заранее — discovery собеседника для следующей отправки (чат открыт,
@@ -1339,8 +1418,11 @@ impl Messenger {
         peer_username: String,
         now_millis: i64,
     ) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
-        guard(|| client.prefetch_discovery(&peer_username, Timestamp::from_millis(now_millis)))
+        // Вне замка ядра: сетевой запрос, состояния сессий не касается.
+        guard(|| {
+            self.client
+                .prefetch_discovery(&peer_username, Timestamp::from_millis(now_millis))
+        })
     }
 
     /// Заголовки подписи для рукопожатия сокета уведомлений.
@@ -1364,7 +1446,7 @@ impl Messenger {
         device_id: String,
         now_millis: i64,
     ) -> Result<Vec<FfiHeader>, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         let headers = guard(|| {
             client.socket_auth_headers(&device_id, gasapp_types::Timestamp::from_millis(now_millis))
@@ -1450,7 +1532,7 @@ impl Messenger {
         now_millis: i64,
     ) -> Result<(), FfiError> {
         let target = parse_message_id(&target_message_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.send_reaction(
@@ -1482,7 +1564,7 @@ impl Messenger {
         now_millis: i64,
     ) -> Result<(), FfiError> {
         let target = parse_message_id(&target_message_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.edit_message(
@@ -1514,7 +1596,7 @@ impl Messenger {
         now_millis: i64,
     ) -> Result<(), FfiError> {
         let target = parse_message_id(&target_message_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.delete_for_everyone(
@@ -1541,7 +1623,7 @@ impl Messenger {
         active: bool,
         now_millis: i64,
     ) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.send_typing(
@@ -1572,7 +1654,7 @@ impl Messenger {
         now_millis: i64,
     ) -> Result<(), FfiError> {
         let until = parse_message_id(&until_message_id)?;
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             client.send_read_receipt(
@@ -1595,7 +1677,7 @@ impl Messenger {
     ///
     /// [`FfiError::Core`] — запись не удалась.
     pub fn set_presence_sharing(&self, enabled: bool) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| client.set_presence_sharing(enabled))
     }
@@ -1782,7 +1864,7 @@ impl Messenger {
         body: String,
         now_millis: i64,
     ) -> Result<(), FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
         let file = gasapp_core::client::AttachmentFile::from(file);
 
         guard(|| {
@@ -1836,7 +1918,7 @@ impl Messenger {
         descriptor: Vec<u8>,
         now_millis: i64,
     ) -> Result<Vec<u8>, FfiError> {
-        let client = self.client.lock().map_err(|_| FfiError::Panic)?;
+        let client = self.client()?;
 
         guard(|| {
             let descriptor =

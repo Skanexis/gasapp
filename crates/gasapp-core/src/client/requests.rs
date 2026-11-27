@@ -93,6 +93,34 @@ impl<T: Transport> Client<T> {
         self.storage.mark_chat_read(chat_id, now).map(|_| ())
     }
 
+    /// Убирает своё неотправленное сообщение (перед повтором: повтор —
+    /// новое сообщение того же текста). Ушедшие и чужие — `false`.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — запись не удалась.
+    pub fn discard_failed_message(
+        &self,
+        id: &gasapp_types::MessageId,
+        now: Timestamp,
+    ) -> Result<bool> {
+        self.storage.discard_failed_message(id, now)
+    }
+
+    /// Свои сообщения, «отправляющиеся» дольше пяти минут (приложение
+    /// выгрузили посреди отправки), — «не отправлено», с повтором.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — запись не удалась.
+    pub fn fail_stale_sends(&self, now: Timestamp) -> Result<usize> {
+        const STALE_MILLIS: i64 = 5 * 60 * 1000;
+        self.storage.fail_stale_sends(
+            Timestamp::from_millis(now.as_millis().saturating_sub(STALE_MILLIS)),
+            now,
+        )
+    }
+
     /// Непрочитанные входящие по чатам (запросы незнакомцев — тоже).
     ///
     /// # Errors

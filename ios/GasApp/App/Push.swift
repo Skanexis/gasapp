@@ -95,14 +95,32 @@ final class Push: NSObject, UNUserNotificationCenterDelegate {
         #else
         let provider = FfiPushProvider.apns
         #endif
+        guard !sending else { return }
+        sending = true
+        lastAttempt = Date()
         Task.detached(priority: .userInitiated) {
-            if (try? messenger.registerPushToken(provider: provider, token: hex, nowMillis: CoreStore.nowMillis)) != nil {
-                await MainActor.run {
-                    SecureStore.set(1, for: Push.registeredKey)
-                    Push.shared.registeredCache = nil
-                }
+            let done = (try? messenger.registerPushToken(provider: provider, token: hex, nowMillis: CoreStore.nowMillis)) != nil
+            await MainActor.run {
+                Push.shared.sending = false
+                guard done else { return }
+                // Названо — повторять незачем до следующего токена от Apple.
+                if Push.shared.pendingToken == hex { Push.shared.pendingToken = nil }
+                SecureStore.set(1, for: Push.registeredKey)
+                Push.shared.registeredCache = nil
             }
         }
+    }
+
+    private var sending = false
+    private var lastAttempt = Date.distantPast
+
+    /// Токен ещё не дошёл до сервера — ещё раз, когда сеть есть (`Inbox`
+    /// после удачного приёма). Прежде токен отправлялся один раз сразу
+    /// после входа: через Tor в этот миг цепочка ещё строится, запрос
+    /// падал молча — и до следующего входа уведомлений не было вовсе.
+    func retryPending() {
+        guard pendingToken != nil, Date().timeIntervalSince(lastAttempt) > 20 else { return }
+        send()
     }
 
     // MARK: - UNUserNotificationCenterDelegate

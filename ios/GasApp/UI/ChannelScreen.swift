@@ -515,11 +515,11 @@ struct ChannelInfoSheet: View {
                         Toggle(L10n.t("Без уведомлений", "Muted", "Silenziato"), isOn: Binding(
                             get: { channel.muted }, set: { mute($0) }
                         ))
-                        if channel.role == .reader {
-                            Button(L10n.t("Стать администратором", "Become an admin", "Diventa admin")) { showAdminRequest = true }
-                        } else if channel.role == .adminPending {
-                            Text(L10n.t("Заявка у владельца: ждём, когда он назначит вас администратором.",
-                                        "Request is with the owner: waiting for them to appoint you.", "La richiesta è presso il proprietario: in attesa che ti nomini."))
+                        // Администратором назначает владелец сам (без заявки):
+                        // канал тогда приходит с правом писать.
+                        if channel.role == .adminPending {
+                            Text(L10n.t("Ждём, когда владелец подтвердит вас администратором.",
+                                        "Waiting for the owner to confirm you as an admin.", "In attesa che il proprietario ti confermi come admin."))
                                 .font(GasFont.text(13)).foregroundStyle(GasAppColor.textSecondary)
                         }
                         if channel.role != .owner {

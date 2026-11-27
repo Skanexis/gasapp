@@ -6849,6 +6849,49 @@ fn a_failed_send_keeps_the_message_as_failed() {
     assert!(bob.receive_messages(&bob_device, now()).expect("приём") >= 1);
 }
 
+/// Сообщение известному собеседнику записывается до сети: сбой discovery
+/// (через Tor — секунды, за которые человек успевает выйти из чата)
+/// оставляет его в переписке «не отправленным», а не теряет. Повтор
+/// убирает неудачное и отправляет тот же текст новым сообщением.
+#[test]
+fn a_send_that_fails_at_discovery_keeps_the_message() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob) = unconfirmed_pair(&server, &dir);
+    confirm_pair(&alice, "alice", &bob, "bob");
+
+    server.state.borrow_mut().discovery_refused = true;
+    assert!(alice
+        .send_message_deferred("bob", "early", now(), &mut OsRng)
+        .is_err());
+
+    let chat = *alice.chats().expect("чаты").first().expect("чат с Бобом");
+    let messages = alice.messages(&chat, 10).expect("переписка");
+    assert_eq!(messages.len(), 1, "текст не должен теряться");
+    assert_eq!(messages[0].text, "early");
+    assert_eq!(messages[0].status, MessageStatus::Failed);
+
+    server.state.borrow_mut().discovery_refused = false;
+    assert!(alice
+        .discard_failed_message(&messages[0].message_id, now())
+        .expect("убрано"));
+    alice
+        .send_message_deferred("bob", "early", now(), &mut OsRng)
+        .expect("отправлено");
+    alice.run_post_send(now(), &mut OsRng).expect("следом");
+
+    let messages = alice.messages(&chat, 10).expect("переписка");
+    assert_eq!(messages.len(), 1, "повтор не дублирует");
+    assert_eq!(messages[0].status, MessageStatus::Sent);
+    // Ушедшее не убирается.
+    assert!(!alice
+        .discard_failed_message(&messages[0].message_id, now())
+        .expect("чтение"));
+
+    let bob_device = bob.own_device_id().expect("устройство").expect("есть");
+    assert!(bob.receive_messages(&bob_device, now()).expect("приём") >= 1);
+}
+
 // ---------------------------------------------------------------------------
 //  Почта при регистрации
 // ---------------------------------------------------------------------------
@@ -7917,6 +7960,86 @@ fn an_admin_posts_and_readers_accept_it() {
     // Уходя, администратор канал не удаляет.
     admin.leave_channel(&channel_id, now()).expect("уход");
     assert!(server.state.borrow().channels.contains_key(&channel_id));
+}
+
+/// Владелец назначает администратором собеседника — без заявки: ключ
+/// приходит ему в переписке, канал появляется сам, уже с правом писать,
+/// и читатели его записи принимают.
+#[test]
+fn an_owner_appoints_a_contact_without_a_request() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, admin) = author_and_reader(&server, &dir);
+    confirm_pair(&owner, "author", &admin, "reader");
+    let channel = owner
+        .create_channel("Канал", "", now(), &mut OsRng)
+        .expect("канал");
+    let reader = bystander(
+        &server,
+        &dir,
+        &owner.channel_link(&channel.channel_id).expect("ссылка"),
+    );
+
+    // Переписка уже есть: будущий администратор писал владельцу.
+    admin
+        .send_message("author", "привет", now(), &mut OsRng)
+        .expect("сообщение");
+    let owner_device = owner.own_device_id().expect("устройство").expect("есть");
+    owner.receive_messages(&owner_device, now()).expect("приём");
+
+    let admins = owner
+        .appoint_channel_admin(&channel.channel_id, "reader", now(), &mut OsRng)
+        .expect("назначение");
+    assert_eq!(admins.len(), 1);
+    assert_eq!(admins[0].label, "reader");
+
+    let admin_device = admin.own_device_id().expect("устройство").expect("есть");
+    admin.receive_messages(&admin_device, now()).expect("приём");
+    assert_eq!(admin.apply_admin_grants(now()).expect("применение"), 1);
+    assert_eq!(admin.apply_admin_grants(now()).expect("повтор"), 0);
+
+    let appointed = admin.channel(&channel.channel_id).expect("канал появился");
+    assert!(appointed.can_post() && !appointed.owned());
+    post_text(&admin, &channel.channel_id, "от администратора");
+    reader
+        .sync_channel(&channel.channel_id, now())
+        .expect("синхронизация");
+    assert_eq!(
+        texts(&reader, &channel.channel_id),
+        vec!["от администратора"]
+    );
+}
+
+/// 🔐 Назначение от того, кто сам начал переписку (запрос), не применяется,
+/// пока переписку не приняли: иначе любой подписывал бы людей на свои
+/// каналы. Принял — канал появляется.
+#[test]
+fn an_appointment_in_a_request_waits_for_acceptance() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, admin) = author_and_reader(&server, &dir);
+    confirm_pair(&owner, "author", &admin, "reader");
+    let channel = owner
+        .create_channel("Канал", "", now(), &mut OsRng)
+        .expect("канал");
+
+    owner
+        .appoint_channel_admin(&channel.channel_id, "reader", now(), &mut OsRng)
+        .expect("назначение");
+    let admin_device = admin.own_device_id().expect("устройство").expect("есть");
+    admin.receive_messages(&admin_device, now()).expect("приём");
+    assert_eq!(admin.apply_admin_grants(now()).expect("ждёт"), 0);
+    assert!(admin.channel(&channel.channel_id).is_err());
+
+    let chat = *admin.chats().expect("чаты").first().expect("запрос");
+    admin
+        .accept_chat(&chat, now(), &mut OsRng)
+        .expect("принято");
+    assert_eq!(admin.apply_admin_grants(now()).expect("применение"), 1);
+    assert!(admin
+        .channel(&channel.channel_id)
+        .expect("канал появился")
+        .can_post());
 }
 
 /// 🔐 Сервер не назначает администраторов: запись, подписанная ключом,
