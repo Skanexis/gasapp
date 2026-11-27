@@ -101,6 +101,12 @@ struct ChatScreen: View {
     @State private var pendingFile: (data: Data, name: String)?
     /// Что пересылаем.
     @State private var forwarding: MessageRow?
+    /// Поиск по переписке: строка, найденные (старые → новые) и текущее.
+    @State private var searching = false
+    @State private var searchText = ""
+    @State private var hits: [String] = []
+    @State private var hitIndex = 0
+    @FocusState private var searchFocused: Bool
     @State private var editing: MessageRow?
     @State private var editText = ""
     @Environment(\.dismiss) private var dismiss
@@ -120,6 +126,13 @@ struct ChatScreen: View {
                                           quote: message.replyTo.flatMap { id in messages.first { $0.id == id } },
                                           onReaction: { react(message, $0) })
                                 .id(message.id)
+                                .overlay {
+                                    if searching, hits.indices.contains(hitIndex), hits[hitIndex] == message.id {
+                                        RoundedRectangle(cornerRadius: 18).stroke(GasAppColor.accent, lineWidth: 2)
+                                            .padding(-3)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
                                 .modifier(SwipeToReply(enabled: mode == .open && !message.id.hasPrefix("local-")) {
                                     withAnimation(.snappy(duration: 0.2)) { replying = message }
                                 })
@@ -142,6 +155,15 @@ struct ChatScreen: View {
                 // Переписка открывается на последнем сообщении, а не сверху.
                 .defaultScrollAnchor(.bottom)
                 .scrollDismissesKeyboard(.interactively)
+                .onChange(of: hitIndex) { _, index in
+                    guard searching, hits.indices.contains(index) else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(hits[index], anchor: .center) }
+                }
+                .onChange(of: hits) { _, found in
+                    guard let last = found.indices.last else { return }
+                    hitIndex = last
+                    withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(found[last], anchor: .center) }
+                }
                 .onChange(of: messages.count) { before, _ in
                     guard let last = messages.last else { return }
                     // Открытие чата — сразу на месте, без проезда по всей
@@ -198,6 +220,11 @@ struct ChatScreen: View {
                     .presentationDetents([.medium, .large])
                 }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if searching { searchBar.transition(.move(edge: .top).combined(with: .opacity)) }
+        }
+        .animation(.snappy(duration: 0.2), value: searching)
+        .onChange(of: searchText) { _, text in findHits(text) }
         .gasScreen()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -219,6 +246,10 @@ struct ChatScreen: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        searching = true
+                        searchFocused = true
+                    } label: { Label(L10n.t("Поиск в чате", "Search in chat", "Cerca nella chat"), systemImage: "magnifyingglass") }
                     if contact != nil {
                         Button(L10n.t("Код безопасности", "Safety number", "Numero di sicurezza")) { showSafety = true }
                     }
@@ -1016,6 +1047,67 @@ struct ChatScreen: View {
         }
     }
 
+    // MARK: - Поиск в чате
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(GasAppColor.textTertiary)
+                TextField(L10n.t("Поиск в чате", "Search in chat", "Cerca nella chat"), text: $searchText)
+                    .focused($searchFocused)
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.search)
+                    .onSubmit { step(-1) }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))
+            if !searchText.isEmpty {
+                Text(hits.isEmpty ? L10n.t("нет", "none", "nessuno") : "\(hitIndex + 1)/\(hits.count)")
+                    .font(GasFont.text(13, .semibold)).monospacedDigit()
+                    .foregroundStyle(GasAppColor.textSecondary)
+                Button { step(-1) } label: { Image(systemName: "chevron.up") }
+                    .disabled(hitIndex <= 0)
+                    .accessibilityLabel(L10n.t("Раньше", "Earlier", "Precedente"))
+                Button { step(1) } label: { Image(systemName: "chevron.down") }
+                    .disabled(hitIndex >= hits.count - 1)
+                    .accessibilityLabel(L10n.t("Позже", "Later", "Successivo"))
+            }
+            Button(L10n.t("Готово", "Done", "Fine")) {
+                searching = false
+                searchText = ""
+                hits = []
+            }
+            .font(GasFont.text(15, .semibold))
+        }
+        .foregroundStyle(GasAppColor.accent)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(GasAppColor.bgRaised)
+    }
+
+    /// Найденное — по загруженной переписке, сразу, без сети и ядра.
+    private func findHits(_ text: String) {
+        let needle = text.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else {
+            hits = []
+            return
+        }
+        hits = messages.filter { $0.text.localizedCaseInsensitiveContains(needle) }.map(\.id)
+    }
+
+    private func step(_ delta: Int) {
+        let next = hitIndex + delta
+        guard hits.indices.contains(next) else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        hitIndex = next
+    }
+
+    /// Сколько вложений — под строкой «Медиа и файлы».
+    private var mediaSummary: String {
+        let count = messages.reduce(0) { $0 + $1.attachments.count }
+        return count == 0 ? L10n.t("Пока ничего", "Nothing yet", "Ancora niente")
+                          : L10n.t("Вложений: \(count)", "Attachments: \(count)", "Allegati: \(count)")
+    }
+
     // MARK: - Профиль собеседника
 
     private var profileSheet: some View {
@@ -1039,6 +1131,16 @@ struct ChatScreen: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .listRowBackground(Color.clear)
+                }
+
+                Section {
+                    NavigationLink {
+                        ChatMediaScreen(messages: messages)
+                    } label: {
+                        SettingRow(icon: "photo.on.rectangle.angled", color: .purple,
+                                   title: L10n.t("Медиа и файлы", "Media and files", "Media e file"),
+                                   detail: mediaSummary)
+                    }
                 }
 
                 Section {
