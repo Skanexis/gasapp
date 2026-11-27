@@ -129,6 +129,19 @@ pub struct ChatMessage {
     pub outgoing: bool,
     /// Статус доставки.
     pub status: MessageStatus,
+    /// На какое сообщение это отвечает (цитата).
+    pub reply_to: Option<MessageId>,
+    /// Реакции: своя и собеседника.
+    pub reactions: Vec<Reaction>,
+}
+
+/// Реакция на сообщение.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reaction {
+    /// Эмодзи.
+    pub emoji: String,
+    /// Своя ли.
+    pub mine: bool,
 }
 
 /// Контакт в том виде, в каком его показывает приложение.
@@ -714,7 +727,7 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<MessageId> {
-        self.send_message_with(peer_username, text, false, now, rng)
+        self.send_message_with(peer_username, text, None, false, now, rng)
     }
 
     /// Отправка для интерфейса: возвращается, как только сообщение
@@ -732,7 +745,23 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<MessageId> {
-        self.send_message_with(peer_username, text, true, now, rng)
+        self.send_message_with(peer_username, text, None, true, now, rng)
+    }
+
+    /// Ответ на сообщение (цитата) — как [`Client::send_message_deferred`].
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::send_message`].
+    pub fn send_reply_deferred<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        text: &str,
+        reply_to: &MessageId,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<MessageId> {
+        self.send_message_with(peer_username, text, Some(*reply_to), true, now, rng)
     }
 
     /// Отложенное после отправки ([`Client::send_message_deferred`]):
@@ -765,6 +794,7 @@ impl<T: Transport> Client<T> {
         &self,
         peer_username: &str,
         text: &str,
+        reply_to: Option<MessageId>,
         defer_post_send: bool,
         now: Timestamp,
         rng: &mut R,
@@ -797,11 +827,15 @@ impl<T: Transport> Client<T> {
                     .set_chat_request_state(chat_id, ChatRequest::Outgoing)?;
             }
             self.store_message(chat_id, message_id, text, now, true, MessageStatus::Pending)?;
+            if let Some(target) = &reply_to {
+                self.storage.set_reply(&message_id, target)?;
+            }
             self.storage.touch_chat(chat_id, Some(&message_id), now)?;
         }
         let sent = self.deliver_text(
             peer_username,
             text,
+            reply_to,
             message_id,
             &identity,
             early_chat.as_ref(),
@@ -848,6 +882,7 @@ impl<T: Transport> Client<T> {
         &self,
         peer_username: &str,
         text: &str,
+        reply_to: Option<MessageId>,
         message_id: MessageId,
         identity: &IdentityKeyPair,
         early_chat: Option<&ChatId>,
@@ -894,7 +929,7 @@ impl<T: Transport> Client<T> {
         // и это различие лежит под шифрованием.
         let content = Content::Text {
             body: text.to_owned(),
-            reply_to: None,
+            reply_to: reply_to.map(|target| *target.as_uuid().as_bytes()),
             id: *message_id.as_uuid().as_bytes(),
         };
         let plaintext = Plaintext::new(content.to_bytes()?);
@@ -919,6 +954,9 @@ impl<T: Transport> Client<T> {
             true,
             MessageStatus::Pending,
         )?;
+        if let Some(target) = &reply_to {
+            self.storage.set_reply(&message_id, target)?;
+        }
         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
 
         let delivered = self
@@ -982,7 +1020,6 @@ impl<T: Transport> Client<T> {
         now: Timestamp,
         rng: &mut R,
     ) -> Result<()> {
-        // Чат здесь не нужен: своя копия таких сообщений не хранится.
         self.send_content(
             peer_username,
             &Content::Reaction {
@@ -992,6 +1029,10 @@ impl<T: Transport> Client<T> {
             now,
             rng,
         )?;
+
+        // Своя реакция — у себя, под сообщением.
+        let emoji = (!emoji.is_empty()).then_some(emoji);
+        self.storage.set_reaction(target, true, emoji, now)?;
 
         Ok(())
     }
@@ -1677,7 +1718,7 @@ impl<T: Transport> Client<T> {
             // интерфейс по счёту перечитывает чат — галочки и фото меняются.
 
             match content {
-                Content::Text { body, id, .. } => {
+                Content::Text { body, id, reply_to } => {
                     // Под идентификатором отправителя: иначе его правки
                     // и удаления здесь не нашли бы сообщения.
                     let message_id = MessageId::from_uuid(uuid::Uuid::from_bytes(id));
@@ -1695,6 +1736,12 @@ impl<T: Transport> Client<T> {
                     )? {
                         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
                         self.queue_delivery(&chat_id, message_id);
+                        if let Some(target) = reply_to {
+                            self.storage.set_reply(
+                                &message_id,
+                                &MessageId::from_uuid(uuid::Uuid::from_bytes(target)),
+                            )?;
+                        }
                     }
                 }
 
@@ -1842,10 +1889,20 @@ impl<T: Transport> Client<T> {
 
                 // 🔐 Копия отправленного — только от своего устройства (ветка
                 // выше); от собеседника она ничего не значит.
+                // Реакция — только на сообщение этого чата; пустая снимает.
+                Content::Reaction { target, emoji } => {
+                    let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
+                    if self.storage.message_origin(&target)?.map(|(chat, _)| chat) == Some(chat_id)
+                        && !emoji.chars().any(char::is_control)
+                    {
+                        let emoji = (!emoji.is_empty()).then_some(emoji.as_str());
+                        self.storage.set_reaction(&target, false, emoji, now)?;
+                    }
+                }
+
                 Content::Sent { .. }
                 | Content::History { .. }
                 | Content::Block { .. }
-                | Content::Reaction { .. }
                 | Content::Typing { .. } => {
                     // Ничего не сохраняется, но по разным причинам.
                     //
@@ -1943,6 +2000,19 @@ impl<T: Transport> Client<T> {
     pub fn messages(&self, chat_id: &ChatId, limit: u32) -> Result<Vec<ChatMessage>> {
         let stored = self.storage.load_messages(chat_id, limit)?;
         let own = self.storage.get_account_id()?;
+        // Ответы и реакции — одним запросом на чат, а не на сообщение.
+        let replies: HashMap<MessageId, MessageId> =
+            self.storage.replies_in_chat(chat_id)?.into_iter().collect();
+        let mut reactions: HashMap<MessageId, Vec<Reaction>> = HashMap::new();
+        for reaction in self.storage.reactions_in_chat(chat_id)? {
+            reactions
+                .entry(reaction.message_id)
+                .or_default()
+                .push(Reaction {
+                    emoji: reaction.emoji,
+                    mine: reaction.mine,
+                });
+        }
 
         stored
             .into_iter()
@@ -1955,6 +2025,8 @@ impl<T: Transport> Client<T> {
                     timestamp: message.timestamp,
                     outgoing: own.as_ref() == Some(&message.sender_id),
                     status: message.status,
+                    reply_to: replies.get(&message.id).copied(),
+                    reactions: reactions.remove(&message.id).unwrap_or_default(),
                 })
             })
             .collect()
@@ -3125,6 +3197,8 @@ impl<T: Transport> Client<T> {
                         timestamp: message.timestamp,
                         outgoing: own.as_ref() == Some(&message.sender_id),
                         status: message.status,
+                        reply_to: None,
+                        reactions: Vec::new(),
                     },
                 })
             })

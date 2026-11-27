@@ -20,6 +20,21 @@ struct MessageRow: Identifiable, Equatable {
     var time = ""
     /// С этого сообщения начинается день: над ним — плашка с датой.
     var startsDay = false
+    /// На какое сообщение отвечает (цитата).
+    var replyTo: String?
+    /// Реакции: своя и собеседника.
+    var reactions: [ReactionCell] = []
+}
+
+/// Реакция под сообщением.
+struct ReactionCell: Equatable, Hashable {
+    let emoji: String
+    let mine: Bool
+}
+
+/// Быстрые реакции — по долгому нажатию, как в Telegram.
+enum QuickReactions {
+    static let all = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🙏", "👎"]
 }
 
 /// Кнопка бота: подпись и признак ссылки — ссылка не открывается сама.
@@ -55,6 +70,8 @@ struct ChatScreen: View {
     /// квитанция) их не стирает — прежде сообщение мигало и пропадало.
     @State private var inFlight: [MessageRow] = []
     @State private var draft = ""
+    /// На что отвечаем (свайп вправо или «Ответить»).
+    @State private var replying: MessageRow?
     @State private var mode: SendMode = .open
     @State private var contact: FfiContact?
     @State private var blocked = false
@@ -92,8 +109,13 @@ struct ChatScreen: View {
                             if message.startsDay {
                                 DaySeparator(date: Self.date(of: message))
                             }
-                            MessageBubble(message: message)
+                            MessageBubble(message: message,
+                                          quote: message.replyTo.flatMap { id in messages.first { $0.id == id } },
+                                          onReaction: { react(message, $0) })
                                 .id(message.id)
+                                .modifier(SwipeToReply(enabled: mode == .open && !message.id.hasPrefix("local-")) {
+                                    withAnimation(.snappy(duration: 0.2)) { replying = message }
+                                })
                                 .contextMenu { messageMenu(message) }
                                 .onTapGesture { if message.status == .failed { retry(message) } }
                                 // Новое въезжает снизу; записанное в базе своё
@@ -134,6 +156,12 @@ struct ChatScreen: View {
             // Поле ввода — отдельным видом, и текст сюда идёт привязкой:
             // этот экран набираемого не читает, поэтому нажатие клавиши
             // перерисовывает одно поле, а не всю переписку.
+            if let replying {
+                ReplyBar(message: replying, peer: peerUsername.isEmpty ? title : peerUsername) {
+                    withAnimation(.snappy(duration: 0.2)) { self.replying = nil }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             ChatComposer(draft: $draft, photo: $photo, enabled: mode == .open, sendingPhoto: sendingPhoto,
                          onSend: { send() }, onPhoto: { sendPhoto($0) })
         }
@@ -325,6 +353,22 @@ struct ChatScreen: View {
 
     @ViewBuilder
     private func messageMenu(_ message: MessageRow) -> some View {
+        if mode == .open && !message.id.hasPrefix("local-") && message.status != .failed {
+            ControlGroup {
+                ForEach(QuickReactions.all.prefix(4), id: \.self) { emoji in
+                    Button(emoji) { react(message, emoji) }
+                }
+            }
+            .controlGroupStyle(.compactMenu)
+            Menu {
+                ForEach(QuickReactions.all.dropFirst(4), id: \.self) { emoji in
+                    Button(emoji) { react(message, emoji) }
+                }
+            } label: { Label(L10n.t("Ещё реакции", "More reactions", "Altre reazioni"), systemImage: "face.smiling") }
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { replying = message }
+            } label: { Label(L10n.t("Ответить", "Reply", "Rispondi"), systemImage: "arrowshape.turn.up.left") }
+        }
         if message.outgoing {
             // Статус словами — то, что значки говорят знаками.
             Text(MessageBubble.statusText(message.status))
@@ -546,7 +590,9 @@ struct ChatScreen: View {
                 rows.append(MessageRow(id: id, text: message.text, timestamp: message.timestamp,
                                        outgoing: message.outgoing, status: message.status,
                                        attachments: descriptors, buttons: buttons,
-                                       time: formatChatTime(message.timestamp), startsDay: startsDay))
+                                       time: formatChatTime(message.timestamp), startsDay: startsDay,
+                                       replyTo: message.replyTo,
+                                       reactions: message.reactions.map { ReactionCell(emoji: $0.emoji, mine: $0.mine) }))
             }
             return Snapshot(chatId: chat, contact: found, rows: rows,
                             lastIncoming: list.last(where: { !$0.outgoing })?.messageId,
@@ -618,6 +664,32 @@ struct ChatScreen: View {
         }
     }
 
+    /// Реакция: та же своя — снять, иная — поставить. На экране сразу,
+    /// собеседнику — следом; не ушла — вернуть как было.
+    private func react(_ message: MessageRow, _ emoji: String) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let current = message.reactions.first { $0.mine }?.emoji
+        let next = current == emoji ? "" : emoji
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            var updated = messages[index].reactions.filter { !$0.mine }
+            if !next.isEmpty { updated.append(ReactionCell(emoji: next, mine: true)) }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { messages[index].reactions = updated }
+        }
+        let peer = peerUsername
+        let target = message.id
+        Task {
+            let done = (try? await Background.run {
+                try messenger.sendReaction(peerUsername: peer, targetMessageId: target, emoji: next,
+                                           nowMillis: CoreStore.nowMillis)
+            }) != nil
+            if !done {
+                toast = L10n.t("Реакция не ушла — нет связи", "Reaction not sent — no connection", "Reazione non inviata: nessuna connessione")
+            }
+            await refresh()
+        }
+    }
+
     /// Не ушедшее — ещё раз: повтор — новая отправка того же текста, а
     /// неудачное убирается из базы (`discardFailedMessage`), без дублей.
     private func retry(_ message: MessageRow) {
@@ -654,8 +726,11 @@ struct ChatScreen: View {
         let startsDay = messages.last.map {
             !Calendar.current.isDate(Self.date(of: $0), inSameDayAs: Date(timeIntervalSince1970: TimeInterval(now) / 1000))
         } ?? true
+        let reply = replying?.id
+        if replying != nil { withAnimation(.snappy(duration: 0.2)) { replying = nil } }
         let local = MessageRow(id: "local-\(UUID().uuidString)", text: text, timestamp: now,
-                               outgoing: true, status: .pending, time: formatChatTime(now), startsDay: startsDay)
+                               outgoing: true, status: .pending, time: formatChatTime(now), startsDay: startsDay,
+                               replyTo: reply)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { messages.append(local) }
         inFlight.append(local)
@@ -663,7 +738,11 @@ struct ChatScreen: View {
         Task {
             do {
                 _ = try await Background.run {
-                    try messenger.sendMessage(peerUsername: peer, text: text, nowMillis: CoreStore.nowMillis)
+                    if let reply {
+                        try messenger.sendReply(peerUsername: peer, text: text, replyTo: reply, nowMillis: CoreStore.nowMillis)
+                    } else {
+                        try messenger.sendMessage(peerUsername: peer, text: text, nowMillis: CoreStore.nowMillis)
+                    }
                 }
                 inFlight.removeAll { $0.id == local.id }
                 inbox.touch()
@@ -909,6 +988,10 @@ struct ChatScreen: View {
 
 struct MessageBubble: View {
     let message: MessageRow
+    /// Сообщение, на которое этот ответ (если оно в загруженной переписке).
+    var quote: MessageRow?
+    /// Нажали на реакцию под сообщением.
+    var onReaction: (String) -> Void = { _ in }
 
     /// Время пузыря: посчитанное при чтении переписки, иначе — здесь.
     private var time: String {
@@ -919,6 +1002,9 @@ struct MessageBubble: View {
         HStack {
             if message.outgoing { Spacer(minLength: 56) }
             VStack(alignment: .trailing, spacing: 3) {
+                if message.replyTo != nil {
+                    QuoteView(quote: quote, onOutgoing: message.outgoing)
+                }
                 ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, descriptor in
                     AttachmentView(descriptor: descriptor)
                 }
@@ -977,6 +1063,15 @@ struct MessageBubble: View {
                 }
             }
             .padding(.bottom, message.status == .failed ? 18 : 0)
+            // Реакции — плашкой под краем пузыря, как в Telegram.
+            .overlay(alignment: message.outgoing ? .bottomLeading : .bottomTrailing) {
+                if !message.reactions.isEmpty {
+                    ReactionChips(reactions: message.reactions, onTap: onReaction)
+                        .offset(y: 16)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                }
+            }
+            .padding(.bottom, message.reactions.isEmpty ? 0 : 18)
             if !message.outgoing { Spacer(minLength: 56) }
         }
     }
@@ -1347,5 +1442,151 @@ struct ReportSheet: View {
             }
         }
         return nil
+    }
+}
+
+
+/// Цитата в пузыре ответа.
+struct QuoteView: View {
+    let quote: MessageRow?
+    let onOutgoing: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2).fill(GasAppColor.accent).frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(quote.map { $0.outgoing ? L10n.t("Вы", "You", "Tu") : L10n.t("Собеседник", "Them", "Contatto") }
+                     ?? L10n.t("Ответ", "Reply", "Risposta"))
+                    .font(GasFont.text(12, .bold)).foregroundStyle(GasAppColor.accent)
+                Text(quote.map { $0.text.isEmpty ? L10n.t("📎 Вложение", "📎 Attachment", "📎 Allegato") : $0.text }
+                     ?? L10n.t("Сообщение недоступно", "Message unavailable", "Messaggio non disponibile"))
+                    .font(GasFont.text(13))
+                    .foregroundStyle(onOutgoing ? GasAppColor.bubbleOutgoingText.opacity(0.8) : GasAppColor.textSecondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 5).padding(.horizontal, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill((onOutgoing ? Color.black : GasAppColor.accent).opacity(0.1)))
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Реакции под пузырём: одинаковые — одной плашкой с числом; своя —
+/// с золотой рамкой, нажатие снимает или ставит такую же.
+struct ReactionChips: View {
+    let reactions: [ReactionCell]
+    let onTap: (String) -> Void
+
+    struct Chip: Identifiable {
+        let emoji: String
+        var count: Int
+        var mine: Bool
+        var id: String { emoji }
+    }
+
+    private var grouped: [Chip] {
+        var groups: [Chip] = []
+        for reaction in reactions {
+            if let index = groups.firstIndex(where: { $0.emoji == reaction.emoji }) {
+                groups[index].count += 1
+                groups[index].mine = groups[index].mine || reaction.mine
+            } else {
+                groups.append(Chip(emoji: reaction.emoji, count: 1, mine: reaction.mine))
+            }
+        }
+        return groups
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(grouped) { item in
+                Button { onTap(item.emoji) } label: {
+                    HStack(spacing: 3) {
+                        Text(item.emoji).font(.system(size: 14))
+                        if item.count > 1 {
+                            Text("\(item.count)").font(GasFont.text(12, .bold)).foregroundStyle(GasAppColor.textPrimary)
+                        }
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(GasAppColor.bgRaised))
+                    .overlay(Capsule().stroke(item.mine ? GasAppColor.accent : GasAppColor.bgBase, lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.mine
+                    ? L10n.t("Ваша реакция \(item.emoji)", "Your reaction \(item.emoji)", "La tua reazione \(item.emoji)")
+                    : L10n.t("Реакция \(item.emoji)", "Reaction \(item.emoji)", "Reazione \(item.emoji)"))
+            }
+        }
+    }
+}
+
+/// Полоска «ответ на…» над полем ввода.
+struct ReplyBar: View {
+    let message: MessageRow
+    let peer: String
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrowshape.turn.up.left.fill").foregroundStyle(GasAppColor.accent)
+            RoundedRectangle(cornerRadius: 2).fill(GasAppColor.accent).frame(width: 3, height: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(message.outgoing ? L10n.t("Ответ себе", "Replying to yourself", "Rispondi a te")
+                                      : L10n.t("Ответ @\(peer)", "Reply to @\(peer)", "Rispondi a @\(peer)"))
+                    .font(GasFont.text(13, .bold)).foregroundStyle(GasAppColor.accent)
+                Text(message.text.isEmpty ? L10n.t("📎 Вложение", "📎 Attachment", "📎 Allegato") : message.text)
+                    .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary).lineLimit(1)
+            }
+            Spacer()
+            Button(action: onCancel) {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(GasAppColor.textTertiary)
+            }
+            .accessibilityLabel(L10n.t("Не отвечать", "Cancel reply", "Annulla risposta"))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(GasAppColor.bgRaised)
+    }
+}
+
+/// Свайп вправо по сообщению — ответить, как в Telegram и WhatsApp.
+/// Только горизонтальный жест: прокрутка ленты им не перехватывается.
+struct SwipeToReply: ViewModifier {
+    let enabled: Bool
+    let onReply: () -> Void
+    @State private var offset: CGFloat = 0
+    @State private var armed = false
+
+    private static let trigger: CGFloat = 56
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .background(alignment: .leading) {
+                Image(systemName: "arrowshape.turn.up.left.circle.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(GasAppColor.accent)
+                    .opacity(Double(min(offset / Self.trigger, 1)))
+                    .scaleEffect(armed ? 1.15 : 0.8)
+                    .padding(.leading, 4)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
+                    .onChanged { value in
+                        guard enabled, value.translation.width > 0,
+                              abs(value.translation.width) > abs(value.translation.height) * 1.6 else { return }
+                        offset = min(value.translation.width * 0.6, Self.trigger + 14)
+                        let nowArmed = offset >= Self.trigger
+                        if nowArmed != armed {
+                            armed = nowArmed
+                            if nowArmed { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+                        }
+                    }
+                    .onEnded { _ in
+                        if armed { onReply() }
+                        armed = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { offset = 0 }
+                    }
+            )
     }
 }

@@ -217,6 +217,40 @@ pub struct FfiMessage {
     pub outgoing: bool,
     /// Статус доставки.
     pub status: FfiDeliveryStatus,
+    /// На какое сообщение отвечает (цитата), UUID.
+    pub reply_to: Option<String>,
+    /// Реакции: своя и собеседника.
+    pub reactions: Vec<FfiReaction>,
+}
+
+/// Реакция на сообщение.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiReaction {
+    /// Эмодзи.
+    pub emoji: String,
+    /// Своя ли.
+    pub mine: bool,
+}
+
+impl From<gasapp_core::client::ChatMessage> for FfiMessage {
+    fn from(message: gasapp_core::client::ChatMessage) -> Self {
+        Self {
+            message_id: message.message_id.to_string(),
+            text: message.text,
+            timestamp: message.timestamp.as_millis(),
+            outgoing: message.outgoing,
+            status: message.status.into(),
+            reply_to: message.reply_to.map(|id| id.to_string()),
+            reactions: message
+                .reactions
+                .into_iter()
+                .map(|reaction| FfiReaction {
+                    emoji: reaction.emoji,
+                    mine: reaction.mine,
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Контакт для показа в интерфейсе.
@@ -512,6 +546,31 @@ impl Messenger {
             device_id: account.device_id.to_string(),
             username: account.username,
         })
+    }
+
+    /// Ответ на сообщение (цитата) — как `send_message`.
+    ///
+    /// # Errors
+    ///
+    /// Как у `send_message`; [`FfiError::InvalidArgument`] — идентификатор
+    /// не разобран.
+    pub fn send_reply(
+        &self,
+        peer_username: String,
+        text: String,
+        reply_to: String,
+        now_millis: i64,
+    ) -> Result<String, FfiError> {
+        let target = parse_message_id(&reply_to)?;
+        let now = Timestamp::from_millis(now_millis);
+        if !self.client.has_prefetched(&peer_username, now) {
+            let _ = guard(|| self.client.prefetch_discovery(&peer_username, now));
+        }
+        let client = self.client()?;
+        let message_id = guard(|| {
+            client.send_reply_deferred(&peer_username, &text, &target, now, &mut rand_core::OsRng)
+        })?;
+        Ok(message_id.to_string())
     }
 
     /// Отправляет сообщение контакту по имени.
@@ -870,16 +929,7 @@ impl Messenger {
 
         let messages = guard(|| client.messages(&ChatId::from_uuid(parsed), limit))?;
 
-        Ok(messages
-            .into_iter()
-            .map(|message| FfiMessage {
-                message_id: message.message_id.to_string(),
-                text: message.text,
-                timestamp: message.timestamp.as_millis(),
-                outgoing: message.outgoing,
-                status: message.status.into(),
-            })
-            .collect())
+        Ok(messages.into_iter().map(FfiMessage::from).collect())
     }
 }
 
@@ -1588,13 +1638,7 @@ impl Messenger {
             .into_iter()
             .map(|hit| FfiSearchHit {
                 chat_id: hit.chat_id.to_string(),
-                message: FfiMessage {
-                    message_id: hit.message.message_id.to_string(),
-                    text: hit.message.text,
-                    timestamp: hit.message.timestamp.as_millis(),
-                    outgoing: hit.message.outgoing,
-                    status: hit.message.status.into(),
-                },
+                message: FfiMessage::from(hit.message),
             })
             .collect())
     }

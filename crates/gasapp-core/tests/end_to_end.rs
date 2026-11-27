@@ -35,7 +35,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use gasapp_core::client::{ChatRequest, ChatTimer, Client, Contact};
+use gasapp_core::client::{ChatRequest, ChatTimer, Client, Contact, Reaction};
 use gasapp_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
     RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
@@ -3684,6 +3684,87 @@ fn a_delivery_receipt_marks_messages_delivered() {
         statuses,
         vec![MessageStatus::Delivered, MessageStatus::Delivered]
     );
+}
+
+/// Ответ с цитатой и реакции: у обоих одно и то же — на какое сообщение
+/// ответ и чья какая реакция; новая реакция заменяет прежнюю, пустая
+/// снимает; реакция на сообщение чужого чата не принимается.
+#[test]
+fn replies_and_reactions_are_seen_by_both() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let question = alice
+        .send_message("bob", "как дела?", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let bob_chat = bob.chats().expect("чаты")[0];
+    bob.accept_chat(&bob_chat, now(), &mut OsRng)
+        .expect("принято");
+
+    let answer = bob
+        .send_reply_deferred("alice", "отлично", &question, now(), &mut OsRng)
+        .expect("ответ");
+    bob.send_reaction("alice", &question, "👍", now(), &mut OsRng)
+        .expect("реакция");
+    bob.send_reaction("alice", &question, "❤️", now(), &mut OsRng)
+        .expect("другая");
+    alice.receive_messages(&alice_device, now()).expect("приём");
+    alice
+        .send_reaction("bob", &answer, "😂", now(), &mut OsRng)
+        .expect("реакция");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    let alice_chat = alice.chats().expect("чаты")[0];
+    let seen_by_alice = alice.messages(&alice_chat, 10).expect("переписка");
+    let reply = seen_by_alice
+        .iter()
+        .find(|message| message.message_id == answer)
+        .expect("ответ дошёл");
+    assert_eq!(reply.reply_to, Some(question));
+    assert_eq!(
+        reply.reactions,
+        vec![Reaction {
+            emoji: "😂".to_owned(),
+            mine: true
+        }]
+    );
+    let asked = seen_by_alice
+        .iter()
+        .find(|message| message.message_id == question)
+        .expect("вопрос");
+    assert_eq!(
+        asked.reactions,
+        vec![Reaction {
+            emoji: "❤️".to_owned(),
+            mine: false
+        }]
+    );
+
+    let seen_by_bob = bob.messages(&bob_chat, 10).expect("переписка");
+    let own_reply = seen_by_bob
+        .iter()
+        .find(|message| message.message_id == answer)
+        .expect("свой ответ");
+    assert_eq!(own_reply.reply_to, Some(question));
+    assert_eq!(
+        own_reply.reactions,
+        vec![Reaction {
+            emoji: "😂".to_owned(),
+            mine: false
+        }]
+    );
+
+    // Снять — пустой строкой.
+    bob.send_reaction("alice", &question, "", now(), &mut OsRng)
+        .expect("снята");
+    alice.receive_messages(&alice_device, now()).expect("приём");
+    assert!(alice
+        .messages(&alice_chat, 10)
+        .expect("переписка")
+        .iter()
+        .all(|message| message.message_id != question || message.reactions.is_empty()));
 }
 
 /// Фото профиля уходит собеседнику перед сообщением и показывается у

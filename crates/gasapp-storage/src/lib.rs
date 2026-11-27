@@ -32,6 +32,7 @@ pub mod keyboards;
 pub mod kt;
 pub mod pq;
 pub mod profile;
+pub mod reactions;
 pub mod requests;
 pub mod sealed;
 
@@ -412,7 +413,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 26;
+    const SCHEMA_VERSION: i32 = 27;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1145,6 +1146,25 @@ impl Storage {
                                 chat_id BLOB PRIMARY KEY,
                                 image BLOB NOT NULL,
                                 version INTEGER NOT NULL
+                            );",
+                        )
+                        .map_err(storage_error)?;
+                }
+                27 => {
+                    // Реакции (своя и собеседника на сообщение) и ответы —
+                    // на какое сообщение отвечает это (`reactions`).
+                    transaction
+                        .execute_batch(
+                            "CREATE TABLE IF NOT EXISTS message_reactions (
+                                message_id BLOB NOT NULL,
+                                mine INTEGER NOT NULL,
+                                emoji TEXT NOT NULL,
+                                updated_at INTEGER NOT NULL,
+                                PRIMARY KEY (message_id, mine)
+                            );
+                            CREATE TABLE IF NOT EXISTS message_replies (
+                                message_id BLOB PRIMARY KEY,
+                                reply_to BLOB NOT NULL
                             );",
                         )
                         .map_err(storage_error)?;
