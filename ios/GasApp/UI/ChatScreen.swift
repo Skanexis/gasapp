@@ -96,7 +96,12 @@ struct ChatScreen: View {
                                 .id(message.id)
                                 .contextMenu { messageMenu(message) }
                                 .onTapGesture { if message.status == .failed { retry(message) } }
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                // Новое въезжает снизу; записанное в базе своё
+                                // сменяет строку «отправляется» растворением, на
+                                // том же месте, без прыжка.
+                                .transition(message.outgoing && !message.id.hasPrefix("local-")
+                                    ? .opacity
+                                    : .move(edge: .bottom).combined(with: .opacity))
                             if !message.buttons.isEmpty {
                                 MessageButtons(rows: message.buttons) { row, column in press(message, row: row, column: column) }
                             }
@@ -140,7 +145,8 @@ struct ChatScreen: View {
                 // Нажатие на имя — профиль собеседника, как в любом мессенджере.
                 Button { showProfile = true } label: {
                     HStack(spacing: 8) {
-                        Avatar(name: peerUsername.isEmpty ? title : peerUsername, size: 30)
+                        Avatar(name: peerUsername.isEmpty ? title : peerUsername, size: 30,
+                               image: PhotoStore.shared.chats[resolvedChatId])
                         VStack(alignment: .leading, spacing: 0) {
                             Text(title).font(GasFont.text(16, .bold)).foregroundStyle(GasAppColor.textPrimary)
                             Text(verificationLabel.0).font(GasFont.text(11, .semibold)).foregroundStyle(verificationLabel.1)
@@ -567,7 +573,15 @@ struct ChatScreen: View {
             && !rows.contains(where: { $0.id == failed.id }) {
             rows.append(failed)
         }
-        if messages != rows { messages = rows }
+        if messages != rows {
+            // Новое сообщение въезжает снизу, смена статуса — пружинкой;
+            // первая загрузка — без анимации (экран просто открылся).
+            if messages.isEmpty {
+                messages = rows
+            } else {
+                withAnimation(.snappy(duration: 0.28)) { messages = rows }
+            }
+        }
         // Контакта нет или он не прочитался — ключ не подтверждён:
         // отправку это не откроет, её всё равно решает ядро.
         let decided = SendMode.decide(
@@ -642,7 +656,8 @@ struct ChatScreen: View {
         } ?? true
         let local = MessageRow(id: "local-\(UUID().uuidString)", text: text, timestamp: now,
                                outgoing: true, status: .pending, time: formatChatTime(now), startsDay: startsDay)
-        withAnimation(.snappy(duration: 0.22)) { messages.append(local) }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { messages.append(local) }
         inFlight.append(local)
         let peer = peerUsername
         Task {
@@ -803,7 +818,8 @@ struct ChatScreen: View {
             List {
                 Section {
                     VStack(spacing: 10) {
-                        Avatar(name: peerUsername.isEmpty ? title : peerUsername, size: 92)
+                        Avatar(name: peerUsername.isEmpty ? title : peerUsername, size: 92,
+                               image: PhotoStore.shared.chats[resolvedChatId])
                         Text(peerUsername.isEmpty ? title : "@\(peerUsername)")
                             .font(GasFont.display(24)).foregroundStyle(GasAppColor.textPrimary)
                         Label(verificationLabel.0, systemImage: contact?.verified == true ? "checkmark.seal.fill" : "key.fill")
@@ -919,8 +935,16 @@ struct MessageBubble: View {
                 }
                 HStack(spacing: 4) {
                     Text(time)
-                    if message.outgoing { statusIcon }
+                    if message.outgoing {
+                        // Смена статуса — пружинкой: видно, что галочка
+                        // появилась, а не была всегда.
+                        statusIcon
+                            .font(.system(size: 11, weight: .bold))
+                            .id(message.status)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
                 }
+                .animation(.spring(response: 0.32, dampingFraction: 0.62), value: message.status)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(message.outgoing
                     ? "\(time), \(Self.statusText(message.status))"
@@ -978,8 +1002,8 @@ struct MessageBubble: View {
     static func statusText(_ status: FfiDeliveryStatus) -> String {
         switch status {
         case .pending: L10n.t("Отправляется…", "Sending…", "Invio…")
-        case .sent: L10n.t("Отправлено на сервер", "Sent to the server", "Inviato al server")
-        case .delivered: L10n.t("Доставлено", "Delivered", "Consegnato")
+        case .sent: L10n.t("Отправлено, ещё не доставлено", "Sent, not delivered yet", "Inviato, non ancora consegnato")
+        case .delivered: L10n.t("Доставлено на телефон собеседника", "Delivered to their phone", "Consegnato al suo telefono")
         case .read: L10n.t("Прочитано", "Read", "Letto")
         case .failed: L10n.t("Не отправлено", "Not sent", "Non inviato")
         }

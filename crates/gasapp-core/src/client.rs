@@ -67,6 +67,7 @@ mod linking;
 mod network;
 mod notify;
 mod pq;
+mod profile;
 mod requests;
 mod sealed;
 mod signup;
@@ -310,6 +311,9 @@ pub struct Client<T: Transport> {
     /// Отложенное после отправки: собеседник, его имя, содержимое
     /// ([`Client::send_message_deferred`]).
     post_send: Mutex<Vec<(PublicKeyBytes, String, Content)>>,
+    /// Квитанции доставки, ждущие отправки: чат → последнее принятое
+    /// ([`Client::send_delivery_receipts`]).
+    pending_deliveries: Mutex<HashMap<ChatId, MessageId>>,
 
     /// Связывание устройств — только в памяти (`client::linking`).
     linking: linking::LinkState,
@@ -332,6 +336,7 @@ impl<T: Transport> Client<T> {
             prefetched: Mutex::new(HashMap::new()),
             deferred_acks: Mutex::new(Vec::new()),
             post_send: Mutex::new(Vec::new()),
+            pending_deliveries: Mutex::new(HashMap::new()),
             linking: linking::LinkState::default(),
         }
     }
@@ -881,6 +886,8 @@ impl<T: Transport> Client<T> {
         // Чат без своего таймера следует общему: собеседник узнаёт срок
         // до сообщения, чтобы оно исчезло и у него (`client::timers`).
         self.announce_default_timer(peer_username, &chat_id, now, rng);
+        // Своё фото — если собеседник ещё не получил последнее.
+        self.announce_profile_photo(peer_username, &chat_id, now, rng);
 
         // Тело сообщения — структурированное содержимое, а не голый
         // текст: получатель обязан отличить текст от реакции и правки,
@@ -1197,6 +1204,7 @@ impl<T: Transport> Client<T> {
         // него, как перед текстом (`client::timers`).
         if visible {
             self.announce_default_timer(peer_username, &chat_id, now, rng);
+            self.announce_profile_photo(peer_username, &chat_id, now, rng);
         }
 
         let plaintext = Plaintext::new(content.to_bytes()?);
@@ -1665,6 +1673,8 @@ impl<T: Transport> Client<T> {
                     | Content::Block { .. }
                     | Content::ChannelAdmin { .. }
             );
+            // Квитанции (прочтения, доставки) и фото профиля считаются:
+            // интерфейс по счёту перечитывает чат — галочки и фото меняются.
 
             match content {
                 Content::Text { body, id, .. } => {
@@ -1684,6 +1694,7 @@ impl<T: Transport> Client<T> {
                         MessageStatus::Delivered,
                     )? {
                         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                        self.queue_delivery(&chat_id, message_id);
                     }
                 }
 
@@ -1713,6 +1724,7 @@ impl<T: Transport> Client<T> {
                         self.store_descriptors(&message_id, &descriptors, now)?;
 
                         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
+                        self.queue_delivery(&chat_id, message_id);
                     }
                 }
 
@@ -1809,6 +1821,23 @@ impl<T: Transport> Client<T> {
                 // просто не запоминается.
                 Content::ChannelAdmin { link, signing_key } => {
                     let _ = self.note_admin_grant(&chat_id, &link, &signing_key, now);
+                }
+
+                // Фото собеседника (`client::profile`). Негодное — мимо.
+                Content::ProfilePhoto { image, version } => {
+                    let _ = self.note_profile_photo(&chat_id, &image, version);
+                }
+
+                // Две галочки: наши сообщения дошли до его телефона.
+                Content::DeliveryReceipt { until } => {
+                    if let Some(own) = self.storage.get_account_id()? {
+                        self.storage.mark_delivered_until(
+                            &chat_id,
+                            &own,
+                            &MessageId::from_uuid(uuid::Uuid::from_bytes(until)),
+                            now,
+                        )?;
+                    }
                 }
 
                 // 🔐 Копия отправленного — только от своего устройства (ветка

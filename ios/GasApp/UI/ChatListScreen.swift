@@ -13,6 +13,8 @@ struct ChatRowModel: Identifiable, Hashable {
     let peerUsername: String
     /// Непрочитанных входящих.
     var unread: Int = 0
+    /// Статус последнего сообщения, если оно своё (галочки в списке).
+    var lastOutgoing: FfiDeliveryStatus?
 }
 
 /// Список переписок — аналог `ChatListActivity`.
@@ -221,18 +223,24 @@ struct ChatListScreen: View {
                 return ChatRowModel(
                     id: chatId,
                     name: username.isEmpty ? String(chatId.prefix(8)) : username,
-                    // Чат без сообщений (добавили по ссылке или QR) — подсказка.
-                    preview: last?.text ?? L10n.t("Напишите первое сообщение", "Say hello", "Scrivi il primo messaggio"),
+                    // Чат без сообщений (добавили по ссылке или QR) — подсказка;
+                    // сообщение без текста — фото или файл.
+                    preview: last.map { $0.text.isEmpty ? L10n.t("📎 Вложение", "📎 Attachment", "📎 Allegato") : $0.text }
+                        ?? L10n.t("Напишите первое сообщение", "Say hello", "Scrivi il primo messaggio"),
                     time: last.map { formatChatTime($0.timestamp) } ?? "",
                     verified: contact?.verified == true,
                     isRequest: (try? messenger.chatRequest(chatId: chatId)) == .incoming,
                     peerUsername: username,
-                    unread: unread[chatId] ?? 0
+                    unread: unread[chatId] ?? 0,
+                    lastOutgoing: last.flatMap { $0.outgoing ? $0.status : nil }
                 )
             }
         }) ?? rows
         // Только изменившееся: присваивание — перерисовка списка.
-        if rows != loadedRows { rows = loadedRows }
+        if rows != loadedRows {
+            // Чат с новым сообщением поднимается наверх плавно, как в Telegram.
+            if rows.isEmpty { rows = loadedRows } else { withAnimation(.snappy(duration: 0.3)) { rows = loadedRows } }
+        }
         if !loaded { loaded = true }
     }
 }
@@ -248,10 +256,11 @@ func formatChatTime(_ millis: Int64) -> String {
 
 struct ChatRowView: View {
     let row: ChatRowModel
+    @State private var photos = PhotoStore.shared
 
     var body: some View {
         HStack(spacing: 12) {
-            Avatar(name: row.peerUsername.isEmpty ? row.name : row.peerUsername, size: 52)
+            Avatar(name: row.peerUsername.isEmpty ? row.name : row.peerUsername, size: 52, image: photos.chats[row.id])
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(row.name).font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
@@ -264,7 +273,10 @@ struct ChatRowView: View {
                     Text(row.time).font(GasFont.text(13, row.unread > 0 ? .semibold : .regular))
                         .foregroundStyle(row.unread > 0 ? GasAppColor.accent : GasAppColor.textTertiary)
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    if let status = row.lastOutgoing, !row.isRequest {
+                        ChatListStatus(status: status)
+                    }
                     Text(row.isRequest ? L10n.t("Запрос на переписку", "Message request", "Richiesta di messaggio") : row.preview)
                         .font(GasFont.text(15, row.isRequest || row.unread > 0 ? .semibold : .regular))
                         .foregroundStyle(row.isRequest ? GasAppColor.warn
@@ -288,5 +300,27 @@ struct ChatRowView: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+
+/// Статус своего последнего сообщения в списке чатов — теми же знаками,
+/// что в переписке.
+struct ChatListStatus: View {
+    let status: FfiDeliveryStatus
+
+    var body: some View {
+        Group {
+            switch status {
+            case .pending: Image(systemName: "clock")
+            case .sent: Image(systemName: "checkmark")
+            case .delivered: DoubleCheck()
+            case .read: DoubleCheck().foregroundStyle(GasAppColor.accent)
+            case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(GasAppColor.error)
+            }
+        }
+        .font(.system(size: 12, weight: .bold))
+        .foregroundStyle(GasAppColor.textTertiary)
+        .accessibilityLabel(MessageBubble.statusText(status))
     }
 }

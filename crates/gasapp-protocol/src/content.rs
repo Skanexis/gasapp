@@ -97,6 +97,15 @@ const KIND_CHANNEL_ADMIN: u8 = 16;
 /// Предел ссылки канала в назначении администратором.
 pub const MAX_CHANNEL_LINK_BYTES: usize = 4 * 1024;
 
+/// Фото профиля (см. [`Content::ProfilePhoto`]).
+const KIND_PROFILE_PHOTO: u8 = 17;
+
+/// Квитанция доставки (см. [`Content::DeliveryReceipt`]).
+const KIND_DELIVERY_RECEIPT: u8 = 18;
+
+/// Предел фото профиля: маленький квадрат JPEG, а не снимок.
+pub const MAX_PROFILE_PHOTO_BYTES: usize = 96 * 1024;
+
 /// Сколько сообщений истории в одной пачке. Объём это не ограничивает:
 /// 200 текстов на пределе в бакет padding (256 КиБ) не влезут — пачки по
 /// объёму режет отправитель (`client::history`), а слишком большую
@@ -561,6 +570,28 @@ pub enum Content {
         signing_key: [u8; 32],
     },
 
+    /// Фото профиля отправителя — тем, с кем он переписывается.
+    ///
+    /// 🔐 Внутри сквозного шифрования: сервер фото не видит и не знает,
+    /// что оно сменилось. Пустая картинка — фото снято. Версия — время
+    /// смены: старое письмо не вернёт снятое или прежнее фото.
+    ProfilePhoto {
+        /// JPEG, не больше [`MAX_PROFILE_PHOTO_BYTES`]; пусто — снято.
+        image: Vec<u8>,
+        /// Время смены, миллисекунды.
+        version: u64,
+    },
+
+    /// Квитанция доставки: сообщения отправителя квитанции в этом чате до
+    /// названного включительно дошли до телефона получателя (две галочки).
+    ///
+    /// В отличие от квитанции прочтения не говорит, что их видели, — только
+    /// что телефон их принял. Не уходит в непринятый запрос на переписку.
+    DeliveryReceipt {
+        /// Последнее доставленное сообщение.
+        until: [u8; MESSAGE_ID_LEN],
+    },
+
     /// Таймер исчезающих сообщений, заданный отправителем для чата.
     ///
     /// 🔐 Таймер общий для обоих: кто бы его ни поставил, сообщения
@@ -683,19 +714,6 @@ impl Content {
                 out.push(KIND_READ_RECEIPT);
                 out.extend_from_slice(until);
             }
-            Self::Sent {
-                peer,
-                peer_username,
-                content,
-            } => write_sent(&mut out, peer, peer_username.as_deref(), content)?,
-            Self::History { items } => write_history(&mut out, items)?,
-            Self::Block { blocked } => {
-                out.push(KIND_BLOCK);
-                out.push(u8::from(*blocked));
-            }
-            Self::ChannelAdmin { link, signing_key } => {
-                write_channel_admin(&mut out, link, signing_key)?;
-            }
             Self::AccessKey {
                 key,
                 sender_username,
@@ -708,33 +726,62 @@ impl Content {
                     device_list.as_deref(),
                 )?;
             }
+            Self::Keyboard { target, keyboard } => write_targeted(
+                &mut out,
+                KIND_KEYBOARD,
+                target,
+                keyboard,
+                crate::keyboard::MAX_KEYBOARD_BYTES,
+            )?,
+            Self::Callback { target, data } => write_targeted(
+                &mut out,
+                KIND_CALLBACK,
+                target,
+                data,
+                crate::keyboard::MAX_DATA_BYTES,
+            )?,
+            Self::DisappearingTimer { seconds } => write_disappearing_timer(&mut out, *seconds)?,
+            // Служебное — отдельно (`write_service`).
+            _ => self.write_service(&mut out)?,
+        }
+
+        Ok(out)
+    }
+
+    /// Служебное содержимое: копии своим устройствам, история, блокировка,
+    /// назначение администратором, фото профиля, квитанция доставки,
+    /// вершина журнала ключей.
+    fn write_service(&self, out: &mut Vec<u8>) -> Result<()> {
+        match self {
+            Self::Sent {
+                peer,
+                peer_username,
+                content,
+            } => write_sent(out, peer, peer_username.as_deref(), content)?,
+            Self::History { items } => write_history(out, items)?,
+            Self::Block { blocked } => {
+                out.push(KIND_BLOCK);
+                out.push(u8::from(*blocked));
+            }
+            Self::ChannelAdmin { link, signing_key } => {
+                write_channel_admin(out, link, signing_key)?;
+            }
+            Self::ProfilePhoto { image, version } => {
+                write_profile_photo(out, image, *version)?;
+            }
+            Self::DeliveryReceipt { until } => {
+                out.push(KIND_DELIVERY_RECEIPT);
+                out.extend_from_slice(until);
+            }
             Self::KtHead { epoch, head } => {
                 out.push(KIND_KT_HEAD);
                 out.extend_from_slice(&epoch.to_be_bytes());
                 out.extend_from_slice(head);
             }
-            Self::Keyboard { target, keyboard } => {
-                if keyboard.len() > crate::keyboard::MAX_KEYBOARD_BYTES {
-                    return Err(GasAppError::Malformed);
-                }
-
-                out.push(KIND_KEYBOARD);
-                out.extend_from_slice(target);
-                write_bytes(&mut out, keyboard)?;
-            }
-            Self::Callback { target, data } => {
-                if data.len() > crate::keyboard::MAX_DATA_BYTES {
-                    return Err(GasAppError::Malformed);
-                }
-
-                out.push(KIND_CALLBACK);
-                out.extend_from_slice(target);
-                write_bytes(&mut out, data)?;
-            }
-            Self::DisappearingTimer { seconds } => write_disappearing_timer(&mut out, *seconds)?,
+            // Остальное пишет `to_unpadded_bytes`; сюда оно не попадает.
+            _ => return Err(GasAppError::Malformed),
         }
-
-        Ok(out)
+        Ok(())
     }
 
     /// Разбирает содержимое, пришедшее от собеседника.
@@ -832,6 +879,10 @@ impl Content {
                 },
             },
             KIND_CHANNEL_ADMIN => read_channel_admin(&mut reader)?,
+            KIND_PROFILE_PHOTO => read_profile_photo(&mut reader)?,
+            KIND_DELIVERY_RECEIPT => Self::DeliveryReceipt {
+                until: reader.take_id()?,
+            },
             KIND_KT_HEAD => {
                 let (epoch, head) = take_kt_head(&mut reader)?;
                 Self::KtHead { epoch, head }
@@ -899,6 +950,45 @@ fn write_channel_admin(out: &mut Vec<u8>, link: &str, signing_key: &[u8; 32]) ->
     write_bytes(out, link.as_bytes())?;
     out.extend_from_slice(signing_key);
     Ok(())
+}
+
+/// Блок данных к сообщению (клавиатура бота, нажатие кнопки).
+fn write_targeted(
+    out: &mut Vec<u8>,
+    kind: u8,
+    target: &[u8; MESSAGE_ID_LEN],
+    data: &[u8],
+    limit: usize,
+) -> Result<()> {
+    if data.len() > limit {
+        return Err(GasAppError::Malformed);
+    }
+    out.push(kind);
+    out.extend_from_slice(target);
+    write_bytes(out, data)
+}
+
+fn write_profile_photo(out: &mut Vec<u8>, image: &[u8], version: u64) -> Result<()> {
+    if image.len() > MAX_PROFILE_PHOTO_BYTES {
+        return Err(GasAppError::Malformed);
+    }
+    out.push(KIND_PROFILE_PHOTO);
+    out.extend_from_slice(&version.to_be_bytes());
+    write_bytes(out, image)
+}
+
+fn read_profile_photo(reader: &mut Reader<'_>) -> Result<Content> {
+    let version = u64::from_be_bytes(
+        reader
+            .take_slice(8)?
+            .try_into()
+            .map_err(|_| GasAppError::Malformed)?,
+    );
+    let image = reader.take_blob()?;
+    if image.len() > MAX_PROFILE_PHOTO_BYTES {
+        return Err(GasAppError::Malformed);
+    }
+    Ok(Content::ProfilePhoto { image, version })
 }
 
 fn read_channel_admin(reader: &mut Reader<'_>) -> Result<Content> {
@@ -1553,6 +1643,30 @@ mod tests {
     }
 
     /// Блокировка внутри копии переживает кодирование.
+    #[test]
+    fn a_profile_photo_and_a_delivery_receipt_round_trip() {
+        for content in [
+            Content::ProfilePhoto {
+                image: vec![0xFF, 0xD8, 1, 2],
+                version: 1_760_000_000_000,
+            },
+            Content::ProfilePhoto {
+                image: Vec::new(),
+                version: 7,
+            },
+            Content::DeliveryReceipt { until: [5; 16] },
+        ] {
+            let bytes = content.to_bytes().expect("кодируется");
+            assert_eq!(Content::from_bytes(&bytes).expect("читается"), content);
+        }
+        assert!(Content::ProfilePhoto {
+            image: vec![0; MAX_PROFILE_PHOTO_BYTES + 1],
+            version: 1,
+        }
+        .to_bytes()
+        .is_err());
+    }
+
     #[test]
     fn a_channel_admin_grant_round_trips_but_never_as_a_copy() {
         let grant = Content::ChannelAdmin {

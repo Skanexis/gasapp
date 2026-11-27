@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -33,6 +34,11 @@ struct SettingsScreen: View {
     @State private var confirmWipe = false
     @State private var confirmExport = false
     @State private var premium = false
+    @State private var photos = PhotoStore.shared
+    @State private var photoItem: PhotosPickerItem?
+    @State private var photoMenu = false
+    @State private var pickingPhoto = false
+    @State private var savingPhoto = false
 
     /// 🔐 Действия только для владельца (аудит 2026-10-02, A-3; как
     /// `Reauth.require` на Android): включать защиту можно сразу,
@@ -63,21 +69,78 @@ struct SettingsScreen: View {
         }
     }
 
+    /// Своё фото: квадрат 384 точки, JPEG до 90 КБ, без EXIF.
+    private func saveOwnPhoto(_ raw: Data?) {
+        savingPhoto = true
+        Task {
+            defer { savingPhoto = false }
+            var jpeg: Data?
+            if let raw {
+                jpeg = await Task.detached(priority: .userInitiated) { PhotoStore.squareJPEG(raw) }.value
+                guard jpeg != nil else {
+                    error = L10n.t("Фото не открылось", "Could not open the photo", "Impossibile aprire la foto")
+                    return
+                }
+            }
+            do {
+                try await photos.setOwn(jpeg)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } catch {
+                self.error = L10n.t("Не удалось сохранить фото", "Could not save the photo", "Impossibile salvare la foto")
+            }
+        }
+    }
+
     var body: some View {
         Form {
             // Профиль — карточкой сверху, как в системных настройках.
             Section {
                 VStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.3), Color(red: 1, green: 0.62, blue: 0.11)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Text(initials).font(GasFont.display(30))
-                            .foregroundStyle(Color(red: 0.16, green: 0.07, blue: 0))
+                    // Фото профиля: нажать — сменить или убрать. Видят его
+                    // только те, с кем вы переписываетесь.
+                    Button { photoMenu = true } label: {
+                        ZStack(alignment: .bottomTrailing) {
+                            ZStack {
+                                if let own = photos.own {
+                                    Image(uiImage: own).resizable().scaledToFill()
+                                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                                } else {
+                                    Circle()
+                                        .fill(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.3), Color(red: 1, green: 0.62, blue: 0.11)],
+                                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    Text(initials).font(GasFont.display(30))
+                                        .foregroundStyle(Color(red: 0.16, green: 0.07, blue: 0))
+                                }
+                                if savingPhoto {
+                                    Color.black.opacity(0.35)
+                                    ProgressView().tint(.white)
+                                }
+                            }
+                            .frame(width: 92, height: 92)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color(red: 0.54, green: 0.2, blue: 0.08), lineWidth: 3))
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(GasAppColor.accentOn)
+                                .frame(width: 30, height: 30)
+                                .background(Circle().fill(GasAppColor.accent))
+                                .overlay(Circle().stroke(GasAppColor.bgCard, lineWidth: 2))
+                        }
+                        .animation(.easeInOut(duration: 0.25), value: photos.own != nil)
                     }
-                    .frame(width: 84, height: 84)
-                    .overlay(Circle().stroke(Color(red: 0.54, green: 0.2, blue: 0.08), lineWidth: 3))
-                    .accessibilityHidden(true)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.t("Фото профиля", "Profile photo", "Foto del profilo"))
+                    .confirmationDialog(L10n.t("Фото профиля", "Profile photo", "Foto del profilo"), isPresented: $photoMenu) {
+                        Button(photos.own == nil ? L10n.t("Выбрать фото", "Choose photo", "Scegli foto")
+                                                 : L10n.t("Сменить фото", "Change photo", "Cambia foto")) { pickingPhoto = true }
+                        if photos.own != nil {
+                            Button(L10n.t("Убрать фото", "Remove photo", "Rimuovi foto"), role: .destructive) { saveOwnPhoto(nil) }
+                        }
+                    } message: {
+                        Text(L10n.t("Фото видят только те, с кем вы переписываетесь: оно уходит им зашифрованным, сервер его не видит.",
+                                    "Only people you chat with see it: it’s sent to them encrypted, the server never sees it.",
+                                    "Lo vedono solo le persone con cui chatti: viene inviata cifrata, il server non la vede."))
+                    }
                     Text(username.isEmpty ? "—" : "@\(username)")
                         .font(GasFont.display(24))
                         .foregroundStyle(GasAppColor.textPrimary)
@@ -338,7 +401,17 @@ struct SettingsScreen: View {
             }
         }
         .task { await load() }
+        .task { await photos.reloadOwn() }
         .onAppear { Task { await load() } }
+        .photosPicker(isPresented: $pickingPhoto, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                let raw = try? await item.loadTransferable(type: Data.self)
+                photoItem = nil
+                if let raw { saveOwnPhoto(raw) }
+            }
+        }
         .sheet(isPresented: $askPinForBiometric) {
             PinConfirmSheet(title: L10n.t("PIN для \(Biometric.name)", "PIN for \(Biometric.name)", "PIN per \(Biometric.name)")) { pin in
                 enableBiometric(pin: pin)

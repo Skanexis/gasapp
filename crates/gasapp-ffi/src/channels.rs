@@ -1019,6 +1019,38 @@ impl Messenger {
         .map_err(malformed_is_invalid)
     }
 
+    /// Картинка аватара канала: из базы, а в первый раз — скачать и
+    /// расшифровать (в описании канала — лишь ссылка на файл). `None` —
+    /// аватара нет.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — сервер недоступен либо канала нет.
+    pub fn channel_avatar_image(
+        &self,
+        channel_id: String,
+        now_millis: i64,
+    ) -> Result<Option<Vec<u8>>, FfiError> {
+        // Вне замка ядра: скачивание файла сессий не касается.
+        guard(|| {
+            self.client
+                .channel_avatar_image(&channel_id, Timestamp::from_millis(now_millis))
+        })
+    }
+
+    /// Картинка аватара канала — только из базы, без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — канала нет на устройстве.
+    pub fn cached_channel_avatar_image(
+        &self,
+        channel_id: String,
+    ) -> Result<Option<Vec<u8>>, FfiError> {
+        let client = self.reader()?;
+        guard(|| client.cached_channel_avatar_image(&channel_id))
+    }
+
     /// Скачивает и расшифровывает медиа канала по описанию из записи
     /// либо аватара. Сетевой вызов: открытый канал — без подписи
     /// устройства, закрытый — за подписью, как участник.

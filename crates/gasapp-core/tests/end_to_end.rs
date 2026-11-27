@@ -3638,6 +3638,113 @@ fn alice_and_bob(
     (alice, bob, alice_device, bob_device)
 }
 
+/// Две галочки: принявший сообщение подтверждает доставку — но не в
+/// непринятый запрос на переписку.
+#[test]
+fn a_delivery_receipt_marks_messages_delivered() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let sent = alice
+        .send_message("bob", "привет", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    // 🔐 Запрос не принят — незнакомец не узнаёт, что телефон онлайн.
+    assert_eq!(
+        bob.send_delivery_receipts(now(), &mut OsRng)
+            .expect("квитанции"),
+        0
+    );
+
+    let bob_chat = bob.chats().expect("чаты")[0];
+    bob.accept_chat(&bob_chat, now(), &mut OsRng)
+        .expect("принято");
+    let second = alice
+        .send_message("bob", "ещё", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    assert_eq!(
+        bob.send_delivery_receipts(now(), &mut OsRng)
+            .expect("квитанции"),
+        1
+    );
+
+    alice.receive_messages(&alice_device, now()).expect("приём");
+    let alice_chat = alice.chats().expect("чаты")[0];
+    let statuses: Vec<_> = alice
+        .messages(&alice_chat, 10)
+        .expect("переписка")
+        .into_iter()
+        .filter(|message| message.message_id == sent || message.message_id == second)
+        .map(|message| message.status)
+        .collect();
+    assert_eq!(
+        statuses,
+        vec![MessageStatus::Delivered, MessageStatus::Delivered]
+    );
+}
+
+/// Фото профиля уходит собеседнику перед сообщением и показывается у
+/// него — после принятия переписки; новое фото — разом всем.
+#[test]
+fn a_profile_photo_reaches_the_people_you_write_to() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, _alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .set_profile_photo(Some(&[0xFF, 0xD8, 1]), now())
+        .expect("фото");
+    assert_eq!(
+        alice.own_profile_photo().expect("своё"),
+        Some(vec![0xFF, 0xD8, 1])
+    );
+    alice
+        .send_message("bob", "привет", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    // 🔐 Из непринятого запроса фото не показывается.
+    assert!(bob.profile_photos().expect("фото").is_empty());
+    let chat = bob.chats().expect("чаты")[0];
+    bob.accept_chat(&chat, now(), &mut OsRng).expect("принято");
+    assert_eq!(
+        bob.profile_photos().expect("фото"),
+        vec![(chat, vec![0xFF, 0xD8, 1])]
+    );
+
+    // Уже ушло — повторно не нужно.
+    assert!(alice.profile_photo_targets().expect("кому").is_empty());
+
+    // Новое фото — всем, с кем переписка, сразу.
+    alice
+        .set_profile_photo(Some(&[0xFF, 0xD8, 2]), later(5))
+        .expect("фото");
+    assert_eq!(
+        alice.profile_photo_targets().expect("кому"),
+        vec!["bob".to_owned()]
+    );
+    alice
+        .share_profile_photo_with("bob", later(5), &mut OsRng)
+        .expect("отправлено");
+    assert!(alice.profile_photo_targets().expect("кому").is_empty());
+    bob.receive_messages(&bob_device, later(6)).expect("приём");
+    assert_eq!(
+        bob.profile_photos().expect("фото"),
+        vec![(chat, vec![0xFF, 0xD8, 2])]
+    );
+
+    // Снятое фото снимается и у собеседника.
+    alice.set_profile_photo(None, later(10)).expect("снято");
+    alice
+        .share_profile_photo_with("bob", later(10), &mut OsRng)
+        .expect("отправлено");
+    bob.receive_messages(&bob_device, later(11)).expect("приём");
+    assert!(bob.profile_photos().expect("фото").is_empty());
+}
+
 /// Тексты сообщений единственного чата клиента.
 fn texts_of(client: &Client<FakeServer>) -> Vec<String> {
     let chat = client.chats().expect("чаты")[0];

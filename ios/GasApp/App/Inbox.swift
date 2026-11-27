@@ -139,6 +139,9 @@ final class Inbox {
         } while again
     }
 
+    /// Когда последний раз перечитывали фото собеседников.
+    @ObservationIgnored private var photosCheckedAt = Date.distantPast
+
     /// Звали ли приём, пока он шёл.
     @ObservationIgnored private var again = false
 
@@ -168,6 +171,14 @@ final class Inbox {
             // Новое уже сохранено и сейчас покажется; подтверждение сервера —
             // следом, в фоне (ядро отложило его, чтобы показ не ждал).
             Background.detach { _ = try? messenger.flushAcknowledgements(deviceId: device, nowMillis: CoreStore.nowMillis) }
+            // Две галочки собеседнику — за принятое (ядро шлёт, только если
+            // есть что; не в непринятые запросы).
+            Background.detach { _ = try? messenger.sendDeliveryReceipts(nowMillis: CoreStore.nowMillis) }
+            // Фото собеседников: пришло новое — с сообщением, а то и одно.
+            if received > 0 || Date().timeIntervalSince(photosCheckedAt) > 30 {
+                photosCheckedAt = Date()
+                Task { await PhotoStore.shared.reloadChats() }
+            }
             if received > 0 {
                 revision += 1
                 interval = Self.fastInterval

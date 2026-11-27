@@ -948,6 +948,27 @@ the pairwise session, so the server sees neither labels nor presses:
 A URL button sends nothing to the author: the app shows the full link
 and opens it only on the user's confirmation.
 
+### 9.11. Profile photos and delivery receipts
+
+**Profile photo** (content kind 17): `ProfilePhoto { version: u64, image }`,
+a square JPEG of at most 96 KiB; an empty image removes the photo. It
+travels inside the end-to-end session like any message, so the server
+neither sees the photo nor learns that it changed. A client sends its
+current photo before the first message after a change (per chat) and,
+on request, to every accepted, unblocked chat it has messages in — never
+to people it has not written to. A receiver keeps the newest `version`
+per chat, so a delayed older photo cannot replace a newer one or revive
+a removed one. Photos from unaccepted message requests and blocked chats
+are not shown (decoding an image from a stranger is avoidable attack
+surface).
+
+**Delivery receipt** (content kind 18): `DeliveryReceipt { until }` —
+the sender's messages in this chat up to `until` reached the receiver's
+device (two ticks). Sent automatically after receiving, one per chat per
+batch, except into unaccepted message requests and blocked chats. Unlike
+read receipts (kind 7) it does not depend on presence sharing: it says
+the phone received the messages, not that anyone saw them.
+
 ## 10. Security Considerations
 
 ### 10.1. Forward Secrecy

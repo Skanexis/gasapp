@@ -292,7 +292,7 @@ struct ChannelRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Avatar(name: channel.title, size: 52, image: channel.avatar.flatMap { UIImage(data: $0) })
+            ChannelAvatar(channel: channel, size: 52)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(channel.title).font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
@@ -512,7 +512,7 @@ struct CreateChannelSheet: View {
         .onChange(of: avatarItem) { _, item in
             guard let item else { return }
             Task {
-                if let raw = try? await item.loadTransferable(type: Data.self), let clean = ChatScreen.strippedJPEG(raw) {
+                if let raw = try? await item.loadTransferable(type: Data.self), let clean = PhotoStore.squareJPEG(raw, side: 512, limit: 250_000) {
                     avatar = clean
                 }
                 avatarItem = nil
@@ -624,6 +624,7 @@ struct CreateChannelSheet: View {
                     stage = L10n.t("Ставлю аватар…", "Setting the picture…", "Imposto l’immagine…")
                     if let updated = try? await Background.run({ try messenger.setChannelAvatar(channelId: id, image: picture, nowMillis: CoreStore.nowMillis) }) {
                         channel = updated
+                        PhotoStore.shared.channelAvatarChanged(id, image: picture)
                     } else {
                         unfinished.append(L10n.t("аватар", "picture", "immagine"))
                     }

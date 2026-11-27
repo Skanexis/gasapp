@@ -346,7 +346,7 @@ pub struct Messenger {
     /// Клиент. Работа с ним — под замком [`Messenger::core`]
     /// ([`Messenger::client`]); без замка — только сетевые шаги, которые
     /// состояния сессий не касаются (очередь сервера, discovery).
-    client: Client<ForeignTransport>,
+    pub(crate) client: Client<ForeignTransport>,
     /// Замок ядра. Mutex, а не RwLock: операции клиента изменяют
     /// состояние сессий, и параллельная отправка двух сообщений в один
     /// чат провернула бы храповик дважды из одного состояния, потеряв
@@ -1406,6 +1406,92 @@ impl Messenger {
         })
     }
 
+    /// Своё фото профиля. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn own_profile_photo(&self) -> Result<Option<Vec<u8>>, FfiError> {
+        let client = self.reader()?;
+        guard(|| client.own_profile_photo())
+    }
+
+    /// Ставит своё фото профиля (`None` — снимает). Без сети: собеседники
+    /// получат его перед следующим сообщением, а сразу — через
+    /// `profile_photo_targets` и `share_profile_photo_with`.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — картинка больше 96 КБ либо запись не удалась.
+    pub fn set_profile_photo(
+        &self,
+        image: Option<Vec<u8>>,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client()?;
+        guard(|| client.set_profile_photo(image.as_deref(), Timestamp::from_millis(now_millis)))
+    }
+
+    /// Фото собеседников по чатам. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn chat_photos(&self) -> Result<Vec<FfiChatPhoto>, FfiError> {
+        let client = self.reader()?;
+        Ok(guard(|| client.profile_photos())?
+            .into_iter()
+            .map(|(chat, image)| FfiChatPhoto {
+                chat_id: chat.to_string(),
+                image,
+            })
+            .collect())
+    }
+
+    /// Собеседники, которым своё фото ещё не ушло. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn profile_photo_targets(&self) -> Result<Vec<String>, FfiError> {
+        let client = self.reader()?;
+        guard(|| client.profile_photo_targets())
+    }
+
+    /// Своё фото — одному собеседнику. Сеть; платформа зовёт по одному
+    /// на каждого из `profile_photo_targets`, в фоне.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — такого собеседника нет.
+    pub fn share_profile_photo_with(
+        &self,
+        peer_username: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let client = self.client()?;
+        guard(|| {
+            client.share_profile_photo_with(
+                &peer_username,
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Квитанции доставки за принятое (две галочки у собеседника). Сеть;
+    /// платформа зовёт в фоне после приёма.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn send_delivery_receipts(&self, now_millis: i64) -> Result<u32, FfiError> {
+        let client = self.client()?;
+        guard(|| {
+            client.send_delivery_receipts(Timestamp::from_millis(now_millis), &mut rand_core::OsRng)
+        })
+    }
+
     /// Заранее — discovery собеседника для следующей отправки (чат открыт,
     /// человек печатает): отправка — один сетевой запрос вместо двух.
     /// Сетевой вызов; сбой не страшен — отправка спросит сама.
@@ -2055,6 +2141,15 @@ pub struct FfiChatTimer {
     pub seconds: u32,
     /// Чат следует общему таймеру из настроек.
     pub follows_default: bool,
+}
+
+/// Фото собеседника в чате.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChatPhoto {
+    /// Чат, UUID.
+    pub chat_id: String,
+    /// JPEG.
+    pub image: Vec<u8>,
 }
 
 /// Непрочитанные в чате.

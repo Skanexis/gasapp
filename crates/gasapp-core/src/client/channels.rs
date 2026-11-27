@@ -1489,6 +1489,12 @@ impl<T: Transport> Client<T> {
         };
 
         let written = self.write_meta(&stored, now, rng, |meta| meta.avatar.clone_from(&avatar));
+        // Своя картинка известна — качать её обратно незачем.
+        if let (Ok(_), Some(bytes)) = (&written, image) {
+            let _ = self
+                .storage
+                .cache_channel_avatar(&stored.channel_id, &avatar, bytes);
+        }
 
         // Нужен один блоб: при успехе лишний — прежний, при сбое — новый.
         let stale = match &written {

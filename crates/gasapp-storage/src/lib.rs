@@ -31,6 +31,7 @@ pub mod devices;
 pub mod keyboards;
 pub mod kt;
 pub mod pq;
+pub mod profile;
 pub mod requests;
 pub mod sealed;
 
@@ -411,7 +412,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 25;
+    const SCHEMA_VERSION: i32 = 26;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1126,6 +1127,25 @@ impl Storage {
                         .execute(
                             "UPDATE messages SET status = 3 WHERE sender_id = chat_id AND status != 3",
                             [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                26 => {
+                    // Картинки: расшифрованный аватар канала (в описании
+                    // канала — лишь ссылка на зашифрованный файл) и фото
+                    // профиля — своё и собеседников (`profile`).
+                    transaction
+                        .execute_batch(
+                            "CREATE TABLE IF NOT EXISTS channel_avatars (
+                                channel_id BLOB PRIMARY KEY,
+                                descriptor BLOB NOT NULL,
+                                image BLOB NOT NULL
+                            );
+                            CREATE TABLE IF NOT EXISTS profile_photos (
+                                chat_id BLOB PRIMARY KEY,
+                                image BLOB NOT NULL,
+                                version INTEGER NOT NULL
+                            );",
                         )
                         .map_err(storage_error)?;
                 }

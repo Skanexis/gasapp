@@ -50,8 +50,11 @@ struct ChannelManageScreen: View {
                 VStack(spacing: 10) {
                     PhotosPicker(selection: $avatarItem, matching: .images) {
                         ZStack(alignment: .bottomTrailing) {
-                            Avatar(name: channel?.title ?? title, size: 84,
-                                   image: channel?.avatar.flatMap { UIImage(data: $0) })
+                            if let channel {
+                                ChannelAvatar(channel: channel, size: 84)
+                            } else {
+                                Avatar(name: title, size: 84)
+                            }
                             Image(systemName: "camera.fill")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(GasAppColor.accentOn)
@@ -339,7 +342,10 @@ struct ChannelManageScreen: View {
         .onChange(of: avatarItem) { _, item in
             guard let item else { return }
             Task {
-                if let raw = try? await item.loadTransferable(type: Data.self), let clean = ChatScreen.strippedJPEG(raw) {
+                // Аватар — квадрат 512 точек: в списке он кружок, а исходный
+                // снимок каждый читатель качал бы целиком.
+                if let raw = try? await item.loadTransferable(type: Data.self),
+                   let clean = PhotoStore.squareJPEG(raw, side: 512, limit: 250_000) {
                     setAvatar(clean)
                 }
                 avatarItem = nil
@@ -471,6 +477,7 @@ struct ChannelManageScreen: View {
         let id = channelId
         run(image == nil ? L10n.t("Аватар убран", "Avatar removed", "Avatar rimosso") : L10n.t("Аватар обновлён", "Avatar updated", "Avatar aggiornato")) {
             _ = try $0.setChannelAvatar(channelId: id, image: image, nowMillis: CoreStore.nowMillis)
+            Task { @MainActor in PhotoStore.shared.channelAvatarChanged(id, image: image) }
         }
     }
 
