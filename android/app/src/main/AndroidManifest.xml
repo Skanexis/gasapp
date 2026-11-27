@@ -24,6 +24,8 @@
       приложение работает: контакт добавляется по @имени.
     -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Голосовые: только пока человек записывает; запись не хранится. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!--

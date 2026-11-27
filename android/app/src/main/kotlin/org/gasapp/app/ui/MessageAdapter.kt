@@ -80,6 +80,15 @@ data class MessageItem(
 
     /** Ряды кнопок под сообщением; пусто — кнопок нет. */
     val buttons: List<List<MessageButton>> = emptyList(),
+
+    /** Ответ ли это (цитата над текстом). */
+    val isReply: Boolean = false,
+
+    /** Текст сообщения, на которое ответ; `null` — его нет в переписке. */
+    val quote: String? = null,
+
+    /** Реакции: эмодзи и своя ли. */
+    val reactions: List<Pair<String, Boolean>> = emptyList(),
 )
 
 /**
@@ -126,6 +135,8 @@ data class AttachmentPreview(
     val size: Long,
     /** Тип вложения. */
     val kind: AttachmentKindMark,
+    /** Длительность голосового, миллисекунды. */
+    val durationMillis: Long? = null,
 ) {
     // equals и hashCode переопределены, потому что data class сравнил
     // бы описание по ссылке.
@@ -136,7 +147,8 @@ data class AttachmentPreview(
         return descriptor.contentEquals(other.descriptor) &&
             name == other.name &&
             size == other.size &&
-            kind == other.kind
+            kind == other.kind &&
+            durationMillis == other.durationMillis
     }
 
     override fun hashCode(): Int {
@@ -153,6 +165,7 @@ data class AttachmentPreview(
 enum class AttachmentKindMark {
     Image,
     Video,
+    Voice,
     Document,
 }
 
@@ -360,19 +373,28 @@ class MessageAdapter(
 
             val context = attachmentRow.context
 
-            attachmentName.text = attachment.name ?: context.getString(
-                when (attachment.kind) {
-                    AttachmentKindMark.Image -> R.string.attachment_image
-                    AttachmentKindMark.Video -> R.string.attachment_video
-                    AttachmentKindMark.Document -> R.string.attachment_document
-                },
-            )
+            // Голосовое — «Голосовое · 0:12»: имя файла ему ни к чему.
+            attachmentName.text = if (attachment.kind == AttachmentKindMark.Voice) {
+                context.getString(R.string.voice_message)
+            } else {
+                attachment.name ?: context.getString(
+                    when (attachment.kind) {
+                        AttachmentKindMark.Image -> R.string.attachment_image
+                        AttachmentKindMark.Video -> R.string.attachment_video
+                        else -> R.string.attachment_document
+                    },
+                )
+            }
 
-            attachmentSize.text = FileSize.format(itemView.context, attachment.size)
+            attachmentSize.text = attachment.durationMillis
+                ?.takeIf { attachment.kind == AttachmentKindMark.Voice }
+                ?.let { millis -> "%d:%02d".format(millis / 60_000, (millis / 1000) % 60) }
+                ?: FileSize.format(itemView.context, attachment.size)
 
             attachmentIcon.setImageResource(
                 when (attachment.kind) {
                     AttachmentKindMark.Image, AttachmentKindMark.Video -> R.drawable.ic_image
+                    AttachmentKindMark.Voice -> R.drawable.ic_mic
                     AttachmentKindMark.Document -> R.drawable.ic_file
                 },
             )
@@ -435,6 +457,28 @@ class MessageAdapter(
             }
         }
 
+        /** Цитата ответа — первой в пузыре. */
+        private val quote: TextView = TextView(view.context).apply {
+            visibility = View.GONE
+            textSize = 13f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            val pad = (6 * view.resources.displayMetrics.density).toInt()
+            setPadding(pad * 2, pad, pad, pad)
+            background = GradientDrawable().apply {
+                cornerRadius = 8 * view.resources.displayMetrics.density
+                setColor(ContextCompat.getColor(view.context, R.color.accent_base) and 0x00FFFFFF or 0x26000000)
+            }
+            bubble.addView(
+                this,
+                0,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { bottomMargin = pad },
+            )
+        }
+
         /** Ряды кнопок — последним в пузыре, под текстом и временем. */
         private val buttons: LinearLayout = LinearLayout(view.context).apply {
             orientation = LinearLayout.VERTICAL
@@ -446,6 +490,40 @@ class MessageAdapter(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )
+        }
+
+        /** Реакции — строкой в самом низу пузыря: «👍 ❤️ 2». */
+        private val reactionsView: TextView = TextView(view.context).apply {
+            visibility = View.GONE
+            textSize = 14f
+            val pad = (4 * view.resources.displayMetrics.density).toInt()
+            setPadding(0, pad, 0, 0)
+            bubble.addView(
+                this,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        private fun bindExtras(message: MessageItem) {
+            quote.visibility = if (message.isReply) View.VISIBLE else View.GONE
+            if (message.isReply) {
+                quote.text = message.quote?.ifEmpty { null }
+                    ?: itemView.context.getString(R.string.reply_unavailable)
+                quote.setTextColor(if (message.outgoing) outgoingInk else incomingInk)
+            }
+            reactionsView.visibility = if (message.reactions.isEmpty()) View.GONE else View.VISIBLE
+            if (message.reactions.isNotEmpty()) {
+                // Одинаковые — одной группой с числом; своя — первой.
+                reactionsView.text = message.reactions
+                    .sortedByDescending { it.second }
+                    .groupBy { it.first }
+                    .map { (emoji, all) -> if (all.size > 1) "$emoji ${all.size}" else emoji }
+                    .joinToString("  ")
+                reactionsView.setTextColor(if (message.outgoing) outgoingInk else incomingInk)
+            }
         }
 
         /**
@@ -528,6 +606,7 @@ class MessageAdapter(
 
             bindAttachment(message.attachment)
             bindButtons(message)
+            bindExtras(message)
 
             editedMark.visibility = if (message.edited) View.VISIBLE else View.GONE
 

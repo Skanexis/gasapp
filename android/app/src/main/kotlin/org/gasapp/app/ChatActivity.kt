@@ -66,6 +66,26 @@ class ChatActivity : AppCompatActivity() {
     private var blocked = false
     private lateinit var keyChangeBanner: LinearLayout
 
+    /** На что отвечаем (меню сообщения → «Ответить»). */
+    private var replyingTo: MessageItem? = null
+    private lateinit var replyBar: TextView
+
+    /** Закреплённое сообщение чата (у обоих). */
+    private var pinnedId: String? = null
+    private lateinit var pinnedBar: TextView
+
+    /** Последнее показанное — для цитат, закрепа и пересылки. */
+    private var shownMessages: List<MessageItem> = emptyList()
+
+    private val voiceRecorder by lazy { org.gasapp.app.core.VoiceRecorder(this) }
+
+    /** Разрешение на микрофон — только когда человек решил записать. */
+    private val askMicrophone = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) recordVoice() else GasAppToast.show(this, R.string.mic_denied, GasAppToast.Tone.Warning)
+    }
+
     /** Сверял ли пользователь safety number этого контакта. */
     private var wasVerified: Boolean = false
 
@@ -223,6 +243,7 @@ class ChatActivity : AppCompatActivity() {
 
         sendButton.setOnClickListener { send() }
         findViewById<ImageView>(R.id.attach_button).setOnClickListener { chooseAttachment() }
+        setUpBars()
         findViewById<ImageView>(R.id.chat_menu).setOnClickListener { showChatMenu() }
 
         // 🔐 Индикатор набора не отправляется. Приложение собеседника
@@ -241,11 +262,220 @@ class ChatActivity : AppCompatActivity() {
      * системные диалоги: для фото и видео — Photo Picker, который
      * показывает только галерею и не даёт доступа к остальным файлам.
      */
+    /**
+     * Полоска «ответ на…» над полем ввода и плашка закрепа над перепиской —
+     * в коде, а не в раскладке: обе редки и прячутся.
+     */
+    private fun setUpBars() {
+        val density = resources.displayMetrics.density
+        val pad = (12 * density).toInt()
+        fun bar(): TextView = TextView(this).apply {
+            visibility = View.GONE
+            setPadding(pad, pad / 2, pad, pad / 2)
+            setBackgroundColor(getColor(R.color.bg_raised))
+            setTextColor(getColor(R.color.text_primary))
+            textSize = 14f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        replyBar = bar().apply { setOnClickListener { setReplying(null) } }
+        pinnedBar = bar().apply {
+            setOnClickListener {
+                val index = shownMessages.indexOfFirst { it.messageId == pinnedId }
+                if (index >= 0) messageList.smoothScrollToPosition(index)
+            }
+            setOnLongClickListener {
+                pin(null)
+                true
+            }
+        }
+        val inputRow = findViewById<View>(R.id.input_row)
+        (inputRow.parent as? android.view.ViewGroup)?.let { parent ->
+            parent.addView(replyBar, parent.indexOfChild(inputRow))
+            parent.addView(pinnedBar, parent.indexOfChild(messageList))
+        }
+    }
+
+    private fun setReplying(message: MessageItem?) {
+        replyingTo = message
+        replyBar.visibility = if (message == null) View.GONE else View.VISIBLE
+        if (message != null) {
+            val whom = if (message.outgoing) getString(R.string.reply_cancel) else peerUsername.ifEmpty { chatName() }
+            replyBar.text = "↩ " + getString(R.string.reply_to, whom) + "\n" +
+                message.text.ifEmpty { getString(R.string.attachment_document) } + "   ✕"
+            input.requestFocus()
+        }
+    }
+
+    private fun showPinned() {
+        val pinned = shownMessages.firstOrNull { it.messageId == pinnedId }
+        pinnedBar.visibility = if (pinned == null) View.GONE else View.VISIBLE
+        if (pinned != null) {
+            pinnedBar.text = "📌 " + getString(R.string.pinned_title) + "\n" +
+                pinned.text.ifEmpty { getString(R.string.attachment_document) }
+        }
+    }
+
+    /** Закрепить у обоих (`null` — открепить): на экране сразу. */
+    private fun pin(messageId: String?) {
+        val previous = pinnedId
+        pinnedId = messageId
+        showPinned()
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().pinMessage(peerUsername, messageId, System.currentTimeMillis()) }.isSuccess
+            }
+            if (!done) {
+                pinnedId = previous
+                showPinned()
+                GasAppToast.show(this@ChatActivity, R.string.pin_failed, GasAppToast.Tone.Error)
+            }
+        }
+    }
+
+    /** Реакция: та же своя — снять, иная — поставить. */
+    private fun react(message: MessageItem, emoji: String) {
+        val own = message.reactions.firstOrNull { it.second }?.first
+        val next = if (own == emoji) "" else emoji
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().sendReaction(peerUsername, message.messageId, next, System.currentTimeMillis())
+                }.isSuccess
+            }
+            if (!done) GasAppToast.show(this@ChatActivity, R.string.reaction_failed, GasAppToast.Tone.Error)
+            reload()
+        }
+    }
+
+    /** Переслать: выбрать собеседника из контактов. */
+    private fun chooseForward(message: MessageItem) {
+        lifecycleScope.launch {
+            val names = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().contacts() }.getOrDefault(emptyList())
+                    .filter { !it.replaced && !it.keyChanged }
+                    .mapNotNull { it.username }
+                    .distinct()
+                    .sorted()
+            }
+            if (names.isEmpty()) {
+                GasAppToast.show(this@ChatActivity, R.string.no_contacts_yet, GasAppToast.Tone.Info)
+                return@launch
+            }
+            val sheet = GasAppSheet.on(this@ChatActivity, R.string.forward_to)
+            for (name in names) {
+                sheet.action("@$name", R.drawable.ic_send) { forward(message, name) }
+            }
+            sheet.show()
+        }
+    }
+
+    private fun forward(message: MessageItem, name: String) {
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching {
+                    val now = System.currentTimeMillis()
+                    if (message.attachment != null) {
+                        Core.messenger().forwardMessage(name, message.messageId, now)
+                    } else {
+                        Core.messenger().sendMessage(name, message.text, now)
+                    }
+                }.isSuccess
+            }
+            GasAppToast.show(
+                this@ChatActivity,
+                if (done) R.string.forwarded else R.string.forward_failed,
+                if (done) GasAppToast.Tone.Success else GasAppToast.Tone.Error,
+            )
+        }
+    }
+
+    /** Голосовое: запись, «Отправить» — уходит, «Отмена» — стирается. */
+    private fun recordVoice() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            askMicrophone.launch(android.Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        if (!voiceRecorder.start()) {
+            GasAppToast.show(this, R.string.mic_denied, GasAppToast.Tone.Warning)
+            return
+        }
+        val label = TextView(this).apply {
+            textSize = 18f
+            setTextColor(getColor(R.color.text_primary))
+            val pad = (24 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+        val ticker = object : Runnable {
+            override fun run() {
+                val seconds = voiceRecorder.elapsedMillis / 1000
+                label.text = getString(R.string.voice_recording, "%d:%02d".format(seconds / 60, seconds % 60))
+                if (voiceRecorder.recording) label.postDelayed(this, 250)
+            }
+        }
+        ticker.run()
+        android.app.AlertDialog.Builder(this)
+            .setView(label)
+            .setCancelable(false)
+            .setPositiveButton(R.string.voice_send) { _, _ ->
+                voiceRecorder.finish()?.let(::sendVoice)
+            }
+            .setNegativeButton(R.string.voice_cancel) { _, _ -> voiceRecorder.cancel() }
+            .show()
+    }
+
+    private fun sendVoice(voice: org.gasapp.app.core.VoiceRecorder.Voice) {
+        val device = Core.deviceId ?: return
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().sendAttachment(
+                        peerUsername,
+                        device,
+                        FfiAttachmentFile(
+                            kind = FfiAttachmentKind.VOICE,
+                            bytes = voice.audio,
+                            name = "voice.m4a",
+                            description = null,
+                            durationMillis = voice.durationMillis.toUInt(),
+                            waveform = voice.waveform,
+                        ),
+                        "",
+                        System.currentTimeMillis(),
+                    )
+                }.isSuccess
+            }
+            if (done) reload() else GasAppToast.show(this@ChatActivity, R.string.voice_failed, GasAppToast.Tone.Error)
+        }
+    }
+
+    /** Голосовое в пузыре: скачать в память и играть; повторное нажатие — стоп. */
+    private fun playVoice(attachment: AttachmentPreview) {
+        val device = Core.deviceId ?: return
+        if (org.gasapp.app.core.VoicePlayer.playing?.contentEquals(attachment.descriptor) == true) {
+            org.gasapp.app.core.VoicePlayer.stop()
+            return
+        }
+        lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching {
+                    Core.messenger().fetchAttachment(device, attachment.descriptor, System.currentTimeMillis())
+                }.getOrNull()
+            }
+            if (bytes == null || !org.gasapp.app.core.VoicePlayer.toggle(attachment.descriptor, bytes)) {
+                GasAppToast.show(this@ChatActivity, R.string.voice_play_failed, GasAppToast.Tone.Error)
+            }
+        }
+    }
+
     private fun chooseAttachment() {
         GasAppSheet.on(this, R.string.attach)
             .action(getString(R.string.attach_photo), R.drawable.ic_image) {
                 pickMedia.launch(arrayOf("image/*", "video/*"))
             }
+            .action(getString(R.string.attach_voice), R.drawable.ic_mic) { recordVoice() }
             .action(getString(R.string.attach_file), R.drawable.ic_file) {
                 pickDocument.launch(arrayOf("*/*"))
             }
@@ -638,6 +868,8 @@ class ChatActivity : AppCompatActivity() {
         // Показать «отправлено» до подтверждения значило бы соврать
         // пользователю о состоянии его переписки.
         val localId = "${MessageAdapter.LOCAL_ID_PREFIX}${System.currentTimeMillis()}"
+        val reply = replyingTo
+        setReplying(null)
         adapter.append(
             MessageItem(
                 messageId = localId,
@@ -646,6 +878,8 @@ class ChatActivity : AppCompatActivity() {
                 outgoing = true,
                 status = DeliveryMark.Pending,
                 timestampMillis = System.currentTimeMillis(),
+                isReply = reply != null,
+                quote = reply?.text,
             ),
         )
 
@@ -657,8 +891,13 @@ class ChatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val sent = withContext(Dispatchers.IO) {
                 runCatching {
-                    Core.messenger()
-                        .sendMessage(peerUsername, text, System.currentTimeMillis())
+                    if (reply != null) {
+                        Core.messenger()
+                            .sendReply(peerUsername, text, reply.messageId, System.currentTimeMillis())
+                    } else {
+                        Core.messenger()
+                            .sendMessage(peerUsername, text, System.currentTimeMillis())
+                    }
                 }
             }
 
@@ -762,7 +1001,8 @@ class ChatActivity : AppCompatActivity() {
         runCatching {
             val messenger = Core.messenger()
 
-            messenger.messages(chatId, limit).map { message ->
+            val raw = messenger.messages(chatId, limit)
+            raw.map { message ->
                 val id = message.messageId
 
                 val attached = attachmentCache[id] ?: runCatching { messenger.attachmentsOf(id) }
@@ -786,6 +1026,15 @@ class ChatActivity : AppCompatActivity() {
                 }
 
                 message.toItem(attached?.preview, buttons)
+            }.let { items ->
+                // Цитата — текст сообщения, на которое ответ, из этой же
+                // переписки; нет его здесь — «сообщение недоступно».
+                val texts = items.associate { it.messageId to it.text }
+                val replies = raw.associate { it.messageId to it.replyTo }
+                items.map { item ->
+                    val target = replies[item.messageId] ?: return@map item
+                    item.copy(isReply = true, quote = texts[target])
+                }
             }
         }.getOrDefault(emptyList())
 
@@ -803,6 +1052,13 @@ class ChatActivity : AppCompatActivity() {
         val atEnd = !messageList.canScrollVertically(1)
 
         adapter.submit(messages)
+        shownMessages = messages
+        lifecycleScope.launch {
+            pinnedId = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().pinnedMessage(chatId) }.getOrNull()
+            }
+            showPinned()
+        }
 
         // К новому сообщению переписка едет, только если человек и так
         // был внизу: читающего старое не сдёргивает.
@@ -947,6 +1203,7 @@ class ChatActivity : AppCompatActivity() {
             },
             attachment = attachment,
             buttons = buttons,
+            reactions = reactions.map { it.emoji to it.mine },
         )
 
     /**
@@ -1021,9 +1278,10 @@ class ChatActivity : AppCompatActivity() {
                 kind = when (parsed.kind) {
                     FfiAttachmentKind.IMAGE -> AttachmentKindMark.Image
                     FfiAttachmentKind.VIDEO -> AttachmentKindMark.Video
-                    FfiAttachmentKind.VOICE -> AttachmentKindMark.Document
+                    FfiAttachmentKind.VOICE -> AttachmentKindMark.Voice
                     FfiAttachmentKind.DOCUMENT -> AttachmentKindMark.Document
                 },
+                durationMillis = parsed.durationMillis?.toLong(),
             )
         }.getOrNull()
 
@@ -1243,15 +1501,26 @@ class ChatActivity : AppCompatActivity() {
      * ему откажут, значит предлагать то, чего он сделать не может.
      */
     private fun showMessageActions(message: MessageItem) {
-        // ⚠️ Пункта «Реакция» нет, пока реакции не хранятся и не
-        // показываются: ни у отправителя, ни у получателя ядро их
-        // не сохраняет. Прежде пункт был, реакция уходила и пропадала,
-        // а пользователь считал, что собеседник её видит. Прежний
-        // выбор эмодзи — в истории этого файла.
+        // Реакции теперь хранятся и показываются у обоих (ядро, 2026-11).
         val sheet = GasAppSheet.on(this, R.string.message_actions)
-            .action(getString(R.string.message_copy), R.drawable.ic_copy) {
-                copyMessage(message)
+        val sent = !message.messageId.startsWith(MessageAdapter.LOCAL_ID_PREFIX) &&
+            message.status != DeliveryMark.Failed
+        if (sent && sendMode == SendGuard.Mode.OPEN) {
+            for (emoji in QUICK_REACTIONS) {
+                sheet.emoji(emoji, emoji) { react(message, emoji) }
             }
+            sheet.action(getString(R.string.message_reply), R.drawable.ic_chat) { setReplying(message) }
+            sheet.action(
+                getString(if (pinnedId == message.messageId) R.string.message_unpin else R.string.message_pin),
+                R.drawable.ic_pin,
+            ) { pin(if (pinnedId == message.messageId) null else message.messageId) }
+        }
+        if (sent && (message.text.isNotEmpty() || message.attachment != null)) {
+            sheet.action(getString(R.string.message_forward), R.drawable.ic_send) { chooseForward(message) }
+        }
+        sheet.action(getString(R.string.message_copy), R.drawable.ic_copy) {
+            copyMessage(message)
+        }
 
         if (message.outgoing) {
             sheet.action(getString(R.string.message_edit), R.drawable.ic_edit) {
@@ -1384,6 +1653,10 @@ class ChatActivity : AppCompatActivity() {
      * решение осознанное, и место известно ему.
      */
     private fun openAttachment(attachment: AttachmentPreview) {
+        if (attachment.kind == AttachmentKindMark.Voice) {
+            playVoice(attachment)
+            return
+        }
         if (Core.deviceId == null) {
             GasAppToast.show(this, R.string.attachment_download_failed, GasAppToast.Tone.Error)
 
@@ -1526,6 +1799,9 @@ class ChatActivity : AppCompatActivity() {
 
 
     companion object {
+        /** Быстрые реакции в меню сообщения — как на iOS. */
+        private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🔥")
+
         /** Прозрачность недоступной кнопки вложения. */
         private const val DISABLED_ALPHA = 0.3f
 
