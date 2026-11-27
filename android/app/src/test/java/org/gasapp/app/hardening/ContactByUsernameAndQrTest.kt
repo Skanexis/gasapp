@@ -84,6 +84,8 @@ class ContactByUsernameAndQrTest {
                 "android.permission.RECEIVE_BOOT_COMPLETED",
                 // Только для встроенного сканера QR, запрашивается в момент сканирования.
                 "android.permission.CAMERA",
+                // Голосовые: запрашивается, когда человек решил записать.
+                "android.permission.RECORD_AUDIO",
                 // Добавляет androidx.biometric: вход по отпечатку на старых версиях.
                 "android.permission.USE_FINGERPRINT",
             ),

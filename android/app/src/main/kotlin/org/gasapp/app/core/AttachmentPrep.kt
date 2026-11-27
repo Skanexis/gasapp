@@ -61,7 +61,11 @@ object AttachmentPrep {
      * (PDF, Word) они — часть формата, и интерфейс должен это сказать.
      */
     fun isMediaMime(mime: String?): Boolean =
-        mime != null && (mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/"))
+        mime != null && (
+            mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
+                // PDF ядро тоже чистит: автор, программа, даты, XMP (2026-11).
+                mime == "application/pdf"
+            )
 
     private fun toJpeg(bytes: ByteArray): ByteArray {
         val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, _, _ ->

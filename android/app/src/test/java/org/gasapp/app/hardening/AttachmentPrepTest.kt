@@ -37,13 +37,15 @@ class AttachmentPrepTest {
         assertFalse(AttachmentPrep.isHeif(ByteArray(0)))
     }
 
-    /** Предупреждение о метаданных — для всего, кроме фото, видео и звука. */
+    /** Предупреждение о метаданных — для всего, что ядро не чистит само. */
     @Test
     fun documents_are_not_media() {
         assertTrue(AttachmentPrep.isMediaMime("image/jpeg"))
         assertTrue(AttachmentPrep.isMediaMime("video/mp4"))
         assertTrue(AttachmentPrep.isMediaMime("audio/mpeg"))
-        assertFalse(AttachmentPrep.isMediaMime("application/pdf"))
+        // PDF ядро чистит (автор, программа, даты, XMP).
+        assertTrue(AttachmentPrep.isMediaMime("application/pdf"))
+        assertFalse(AttachmentPrep.isMediaMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
         assertFalse(AttachmentPrep.isMediaMime(null))
     }
 }

@@ -434,13 +434,12 @@ class ChatActivity : AppCompatActivity() {
             }
         }
         ticker.run()
-        android.app.AlertDialog.Builder(this)
-            .setView(label)
-            .setCancelable(false)
-            .setPositiveButton(R.string.voice_send) { _, _ ->
-                voiceRecorder.finish()?.let(::sendVoice)
-            }
-            .setNegativeButton(R.string.voice_cancel) { _, _ -> voiceRecorder.cancel() }
+        GasAppDialog(this)
+            .title(R.string.attach_voice)
+            .content(label)
+            .cancelable(false)
+            .secondary(R.string.voice_cancel) { voiceRecorder.cancel() }
+            .primary(R.string.voice_send) { voiceRecorder.finish()?.let(::sendVoice) }
             .show()
     }
 

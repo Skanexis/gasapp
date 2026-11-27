@@ -19,6 +19,8 @@ class ReadMarksTest {
         timestamp = at,
         outgoing = outgoing,
         status = FfiDeliveryStatus.DELIVERED,
+        replyTo = null,
+        reactions = emptyList(),
     )
 
     @Test
