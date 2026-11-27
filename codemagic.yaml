@@ -20,6 +20,19 @@
 #   ASC_KEY_P8     — содержимое AuthKey_….p8 целиком (Secure)
 #   CERTIFICATE_PRIVATE_KEY — V:\gasapp\apple\ios-distribution-key.pem целиком
 # Адрес сервера, onion и пины — из tools/release.conf (не секрет).
+#
+# android-check — Kotlin компилируется и юнит-тесты Android (Robolectric,
+# проверки защиты) проходят. Секретов не нужно, ядро Rust не собирается.
+#
+# android-release — подписанные APK (сайт, тестовые телефоны) и AAB
+# (Google Play): ядро Rust под четыре ABI, затем Gradle. Нужно:
+#   Codemagic → gasapp → App settings → Code signing identities → Android
+#   keystores → загрузить gasapp-release.jks (с флешки V:) под именем
+#   gasapp_keystore, указать пароль и псевдоним (gasapp). Codemagic
+#   отдаёт их сборке переменными CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD,
+#   CM_KEY_ALIAS, CM_KEY_PASSWORD — в репозиторий и журнал они не попадают.
+#   Необязательно: переменная PLAY_SIGNING_CERT_SHA256 (группа android_release)
+#   — отпечаток ключа Google Play (play-app-signing-sha256.txt с флешки).
 
 workflows:
   ios-check:
@@ -180,3 +193,113 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+
+  android-check:
+    name: Android check (compile + unit tests)
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      java: 21
+    cache:
+      cache_paths:
+        - $HOME/.gradle/caches
+        - $HOME/.m2/repository
+    scripts:
+      - name: Kotlin и юнит-тесты (Robolectric, проверки защиты)
+        script: |
+          set -euo pipefail
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:compileFossDebugKotlin :app:testFossDebugUnitTest
+    artifacts:
+      - android/app/build/reports/tests/**
+
+  android-release:
+    name: Android → signed APK + AAB
+    instance_type: linux_x2
+    max_build_duration: 120
+    environment:
+      java: 21
+      android_signing:
+        - gasapp_keystore
+      groups:
+        - android_release
+    cache:
+      cache_paths:
+        - $HOME/.cargo/registry
+        - $HOME/.rustup/toolchains
+        - $HOME/.gradle/caches
+    scripts:
+      - name: Ключ подписи на месте
+        script: |
+          missing=""
+          for v in CM_KEYSTORE_PATH CM_KEYSTORE_PASSWORD CM_KEY_ALIAS CM_KEY_PASSWORD; do
+            [ -n "${!v:-}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "Нет ключа подписи:$missing — Codemagic → gasapp → Code signing identities → Android keystores → gasapp_keystore"
+            exit 1
+          fi
+      - name: Настройки выпуска совпадают с tools/release.conf
+        script: python3 tools/apply-release-config.py --check
+      - name: NDK (та же версия, что в build.gradle и Dockerfile.android)
+        script: |
+          set -euo pipefail
+          NDK=$(sed -n 's/^ *ndkVersion *= *"\(.*\)"/\1/p' android/app/build.gradle)
+          SDKMANAGER=$(ls "$ANDROID_SDK_ROOT"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$SDKMANAGER" --install "ndk;$NDK" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK" >> "$CM_ENV"
+          echo "NDK $NDK"
+      - name: Rust (версия — из rust-toolchain.toml) и cargo-ndk
+        script: |
+          set -euo pipefail
+          if ! command -v rustup > /dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+          fi
+          source "$HOME/.cargo/env"
+          channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal
+          rustup target add --toolchain "$channel" \
+            aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+          command -v cargo-ndk > /dev/null 2>&1 || cargo install cargo-ndk --locked
+      - name: Ядро Rust для Android (четыре ABI, релиз) и привязки Kotlin
+        script: |
+          source "$HOME/.cargo/env"
+          bash tools/build-rust-android.sh
+      - name: APK и AAB
+        script: |
+          set -euo pipefail
+          conf() { sed -n "s/^$1=//p" tools/release.conf | tail -1; }
+          # Код версии растёт сам (как номер сборки iOS): ГГММДДЧЧ и десятки
+          # минут, UTC — меньше 2^31, Google Play не отвергнет как повтор.
+          CODE="$(date -u +%y%m%d%H)$(( 10#$(date -u +%M) / 10 ))"
+          echo "Версия $(conf VERSION_NAME), код $CODE"
+          export ORG_GRADLE_PROJECT_gasappKeystorePassword="$CM_KEYSTORE_PASSWORD"
+          export ORG_GRADLE_PROJECT_gasappKeyPassword="$CM_KEY_PASSWORD"
+          props=(
+            -PgasappKeystore="$CM_KEYSTORE_PATH"
+            -PgasappKeyAlias="$CM_KEY_ALIAS"
+            -PgasappServerUrl="$(conf SERVER_URL)"
+            -PgasappDocsUrl="$(conf DOCS_URL)"
+            -PgasappVersionName="$(conf VERSION_NAME)"
+            -PgasappVersionCode="$CODE"
+          )
+          onion="$(conf SERVER_ONION)"
+          [ -n "$onion" ] && props+=(-PgasappServerOnion="$onion")
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleFossRelease "${props[@]}"
+          play=()
+          [ -n "${PLAY_SIGNING_CERT_SHA256:-}" ] && play=(-PgasappSigningCertSha256="$PLAY_SIGNING_CERT_SHA256")
+          ./gradlew --no-daemon bundleGmsRelease "${props[@]}" "${play[@]}"
+      - name: Подпись APK
+        script: |
+          set -euo pipefail
+          APKSIGNER=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
+          for apk in android/app/build/outputs/apk/foss/release/*.apk; do
+            "$APKSIGNER" verify --print-certs "$apk" | grep -m1 "SHA-256"
+          done
+    artifacts:
+      - android/app/build/outputs/apk/foss/release/*.apk
+      - android/app/build/outputs/bundle/gmsRelease/*.aab
+      - android/app/build/outputs/mapping/**/mapping.txt
