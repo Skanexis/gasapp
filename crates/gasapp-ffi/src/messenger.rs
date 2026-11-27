@@ -683,6 +683,63 @@ impl Messenger {
         guard(|| client.mark_chat_read(&chat, Timestamp::from_millis(now_millis)))
     }
 
+    /// Закрепить чат наверху списка или открепить. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — чат не разобран.
+    pub fn set_chat_pinned(
+        &self,
+        chat_id: String,
+        pinned: bool,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+        guard(|| client.set_chat_pinned(&chat, pinned, Timestamp::from_millis(now_millis)))
+    }
+
+    /// Чат «без звука» — новое в нём не зовёт значком вкладки. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — чат не разобран.
+    pub fn set_chat_muted(&self, chat_id: String, muted: bool) -> Result<(), FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+        guard(|| client.set_chat_muted(&chat, muted))
+    }
+
+    /// Закреплённые и «без звука» чаты. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn chat_prefs(&self) -> Result<Vec<FfiChatPrefs>, FfiError> {
+        let client = self.reader()?;
+        Ok(guard(|| client.chat_prefs())?
+            .into_iter()
+            .map(|prefs| FfiChatPrefs {
+                chat_id: prefs.chat_id.to_string(),
+                pinned_at: prefs.pinned_at,
+                muted: prefs.muted,
+            })
+            .collect())
+    }
+
+    /// Удаляет переписку у себя: собеседник ничего не узнаёт, писать можно
+    /// сразу. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — чат не разобран.
+    pub fn clear_chat(&self, chat_id: String, now_millis: i64) -> Result<(), FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        // Основным клиентом: удаление не должно разойтись с идущим приёмом.
+        let client = self.client()?;
+        guard(|| client.clear_chat(&chat, Timestamp::from_millis(now_millis)))
+    }
+
     /// Убирает своё неотправленное сообщение — перед повтором отправки
     /// (повтор — новое сообщение того же текста). Без сети.
     ///
@@ -2188,6 +2245,17 @@ pub struct FfiChatTimer {
     pub seconds: u32,
     /// Чат следует общему таймеру из настроек.
     pub follows_default: bool,
+}
+
+/// Настройки чата в списке.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChatPrefs {
+    /// Чат, UUID.
+    pub chat_id: String,
+    /// Когда закреплён, миллисекунды (0 — не закреплён).
+    pub pinned_at: i64,
+    /// Без звука.
+    pub muted: bool,
 }
 
 /// Фото собеседника в чате.

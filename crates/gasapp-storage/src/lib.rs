@@ -27,6 +27,7 @@
 pub mod backup;
 pub mod blocks;
 pub mod channels;
+pub mod chat_prefs;
 pub mod devices;
 pub mod keyboards;
 pub mod kt;
@@ -413,7 +414,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 27;
+    const SCHEMA_VERSION: i32 = 28;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1165,6 +1166,18 @@ impl Storage {
                             CREATE TABLE IF NOT EXISTS message_replies (
                                 message_id BLOB PRIMARY KEY,
                                 reply_to BLOB NOT NULL
+                            );",
+                        )
+                        .map_err(storage_error)?;
+                }
+                28 => {
+                    // Закреплённые и «без звука» чаты (`chat_prefs`).
+                    transaction
+                        .execute_batch(
+                            "CREATE TABLE IF NOT EXISTS chat_prefs (
+                                chat_id BLOB PRIMARY KEY,
+                                pinned_at INTEGER NOT NULL DEFAULT 0,
+                                muted INTEGER NOT NULL DEFAULT 0
                             );",
                         )
                         .map_err(storage_error)?;

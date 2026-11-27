@@ -4758,6 +4758,48 @@ fn sender_keeps_its_own_attachment() {
     assert_eq!(reopened, original);
 }
 
+/// Переписка, удалённая у себя, пропадает из списка, но сессия остаётся:
+/// новое сообщение уходит и приходит, как прежде.
+#[test]
+fn a_cleared_chat_keeps_working() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    alice
+        .send_message("bob", "раз", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let chat = alice.chats().expect("чаты")[0];
+    alice
+        .set_chat_pinned(&chat, true, now())
+        .expect("закреплён");
+    alice.set_chat_muted(&chat, true).expect("без звука");
+    assert_eq!(alice.chat_prefs().expect("настройки").len(), 1);
+
+    alice.clear_chat(&chat, now()).expect("удалена");
+    assert!(alice.chats().expect("чаты").is_empty());
+    assert!(alice.chat_prefs().expect("настройки").is_empty());
+
+    alice
+        .send_message("bob", "два", later(1), &mut OsRng)
+        .expect("снова пишется");
+    assert_eq!(texts_of(&alice), vec!["два"]);
+    bob.receive_messages(&bob_device, later(2)).expect("приём");
+    assert_eq!(texts_of(&bob), vec!["раз", "два"]);
+
+    // И ответ доходит до очищенного чата.
+    let bob_chat = bob.chats().expect("чаты")[0];
+    bob.accept_chat(&bob_chat, later(3), &mut OsRng)
+        .expect("принято");
+    bob.send_message("alice", "три", later(3), &mut OsRng)
+        .expect("ответ");
+    alice
+        .receive_messages(&alice_device, later(4))
+        .expect("приём");
+    assert_eq!(texts_of(&alice), vec!["два", "три"]);
+}
+
 /// Голосовое доходит с длительностью и огибающей громкости: получатель
 /// рисует его до загрузки звука, а звук открывается тем же.
 #[test]

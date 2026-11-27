@@ -15,6 +15,10 @@ struct ChatRowModel: Identifiable, Hashable {
     var unread: Int = 0
     /// Статус последнего сообщения, если оно своё (галочки в списке).
     var lastOutgoing: FfiDeliveryStatus?
+    /// Закреплён наверху (когда, мс; 0 — нет).
+    var pinnedAt: Int64 = 0
+    /// Без звука.
+    var muted = false
 }
 
 /// Список переписок — аналог `ChatListActivity`.
@@ -30,9 +34,11 @@ struct ChatListScreen: View {
     @State private var linkError: String?
     /// «Все» или «Непрочитанные».
     @State private var onlyUnread = false
+    /// Чат, который просят удалить, — ждёт подтверждения.
+    @State private var deleting: ChatRowModel?
 
     private var shown: [ChatRowModel] { onlyUnread ? rows.filter { $0.unread > 0 || $0.isRequest } : rows }
-    private var unreadChats: Int { rows.filter { $0.unread > 0 }.count }
+    private var unreadChats: Int { rows.filter { $0.unread > 0 && !$0.muted }.count }
 
     enum Route: Hashable {
         case chat(ChatRowModel)
@@ -69,8 +75,34 @@ struct ChatListScreen: View {
                 }
                 ForEach(shown) { row in
                     NavigationLink(value: Route.chat(row)) { ChatRowView(row: row) }
-                        .listRowBackground(GasAppColor.bgBase)
+                        .listRowBackground(row.pinnedAt > 0 ? GasAppColor.bgRaised.opacity(0.55) : GasAppColor.bgBase)
                         .listRowSeparatorTint(GasAppColor.line)
+                        // Свайп вправо — прочитано и закрепить, влево — звук
+                        // и удалить: как в Telegram.
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            if row.unread > 0 {
+                                Button { markRead(row) } label: {
+                                    Label(L10n.t("Прочитано", "Read", "Letto"), systemImage: "checkmark.message.fill")
+                                }
+                                .tint(GasAppColor.info)
+                            }
+                            Button { setPinned(row, !(row.pinnedAt > 0)) } label: {
+                                Label(row.pinnedAt > 0 ? L10n.t("Открепить", "Unpin", "Sblocca")
+                                                       : L10n.t("Закрепить", "Pin", "Fissa"),
+                                      systemImage: row.pinnedAt > 0 ? "pin.slash.fill" : "pin.fill")
+                            }
+                            .tint(GasAppColor.ok)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { deleting = row } label: {
+                                Label(L10n.t("Удалить", "Delete", "Elimina"), systemImage: "trash.fill")
+                            }
+                            Button { setMuted(row, !row.muted) } label: {
+                                Label(row.muted ? L10n.t("Со звуком", "Unmute", "Riattiva") : L10n.t("Без звука", "Mute", "Silenzia"),
+                                      systemImage: row.muted ? "bell.fill" : "bell.slash.fill")
+                            }
+                            .tint(GasAppColor.warn)
+                        }
                 }
             }
             .listStyle(.plain)
@@ -143,6 +175,58 @@ struct ChatListScreen: View {
         }
         .onChange(of: inbox.revision) { _, _ in Task { await reload() } }
         .onChange(of: inbox.readRevision) { _, _ in Task { await reload() } }
+        .confirmationDialog(L10n.t("Удалить переписку?", "Delete this chat?", "Eliminare la chat?"),
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button(L10n.t("Удалить у меня", "Delete for me", "Elimina per me"), role: .destructive) {
+                if let row = deleting { clearChat(row) }
+                deleting = nil
+            }
+        } message: {
+            Text(L10n.t("Сообщения и файлы удалятся с этого телефона. У собеседника всё останется, и написать ему можно будет сразу.",
+                        "Messages and files are removed from this phone. Nothing changes for them, and you can write again any time.",
+                        "Messaggi e file vengono eliminati da questo telefono. Per l’altra persona non cambia nulla e puoi riscrivere subito."))
+        }
+    }
+
+    private func markRead(_ row: ChatRowModel) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            _ = try? await Background.run { try messenger.markChatRead(chatId: row.id, nowMillis: CoreStore.nowMillis) }
+            inbox.readChanged()
+            await reload()
+        }
+    }
+
+    private func setPinned(_ row: ChatRowModel, _ pinned: Bool) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Task {
+            _ = try? await Background.run {
+                try messenger.setChatPinned(chatId: row.id, pinned: pinned, nowMillis: CoreStore.nowMillis)
+            }
+            await reload()
+        }
+    }
+
+    private func setMuted(_ row: ChatRowModel, _ muted: Bool) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            _ = try? await Background.run { try messenger.setChatMuted(chatId: row.id, muted: muted) }
+            inbox.readChanged()
+            await reload()
+        }
+    }
+
+    private func clearChat(_ row: ChatRowModel) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        withAnimation(.snappy(duration: 0.25)) { rows.removeAll { $0.id == row.id } }
+        Task {
+            _ = try? await Background.run { try messenger.clearChat(chatId: row.id, nowMillis: CoreStore.nowMillis) }
+            inbox.readChanged()
+            await reload()
+        }
     }
 
     private var incomingMessage: String {
@@ -213,8 +297,10 @@ struct ChatListScreen: View {
             for item in (try? messenger.chatUnreadCounts()) ?? [] { unread[item.chatId] = Int(item.count) }
             var byChat: [String: FfiContact] = [:]
             for contact in contacts { if let chat = contact.chatId { byChat[chat] = contact } }
+            var prefs: [String: FfiChatPrefs] = [:]
+            for item in (try? messenger.chatPrefs()) ?? [] { prefs[item.chatId] = item }
 
-            return try messenger.chats().map { chatId in
+            let list = try messenger.chats().map { chatId in
                 // Превью — одно последнее сообщение: прежде ради него
                 // расшифровывалась сотня на каждый чат при каждом обновлении.
                 let last = try messenger.messages(chatId: chatId, limit: 1).last
@@ -232,9 +318,15 @@ struct ChatListScreen: View {
                     isRequest: (try? messenger.chatRequest(chatId: chatId)) == .incoming,
                     peerUsername: username,
                     unread: unread[chatId] ?? 0,
-                    lastOutgoing: last.flatMap { $0.outgoing ? $0.status : nil }
+                    lastOutgoing: last.flatMap { $0.outgoing ? $0.status : nil },
+                    pinnedAt: prefs[chatId]?.pinnedAt ?? 0,
+                    muted: prefs[chatId]?.muted ?? false
                 )
             }
+            // Закреплённые — наверху (позже закреплённый — выше), остальные —
+            // по последней активности, как отдало ядро.
+            let pinned = list.filter { $0.pinnedAt > 0 }.sorted { $0.pinnedAt > $1.pinnedAt }
+            return pinned + list.filter { $0.pinnedAt == 0 }
         }) ?? rows
         // Только изменившееся: присваивание — перерисовка списка.
         if rows != loadedRows {
@@ -264,6 +356,10 @@ struct ChatRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(row.name).font(GasFont.text(17, .bold)).foregroundStyle(GasAppColor.textPrimary)
+                    if row.muted {
+                        Image(systemName: "bell.slash.fill").font(.system(size: 11)).foregroundStyle(GasAppColor.textTertiary)
+                            .accessibilityLabel(L10n.t("Без звука", "Muted", "Silenziato"))
+                    }
                     // 🔐 Зелёная отметка — только у лично сверенных.
                     if row.verified {
                         Image(systemName: "checkmark.seal.fill").foregroundStyle(GasAppColor.ok).font(.system(size: 13))
@@ -291,8 +387,12 @@ struct ChatRowView: View {
                             .foregroundStyle(GasAppColor.accentOn)
                             .padding(.horizontal, 7)
                             .frame(minWidth: 22, minHeight: 22)
-                            .background(Capsule().fill(GasAppColor.accent))
+                            .background(Capsule().fill(row.muted ? GasAppColor.textTertiary : GasAppColor.accent))
                             .accessibilityLabel(L10n.t("Новых: \(row.unread)", "\(row.unread) new", "\(row.unread) nuovi"))
+                    } else if row.pinnedAt > 0 {
+                        Image(systemName: "pin.fill").font(.system(size: 12)).foregroundStyle(GasAppColor.textTertiary)
+                            .rotationEffect(.degrees(45))
+                            .accessibilityLabel(L10n.t("Закреплён", "Pinned", "Fissato"))
                     }
                 }
             }

@@ -121,6 +121,7 @@ struct MainTabs: View {
         unreadPosts = Int(min(count, 999))
         // Чаты с новым — числом чатов, а не сообщений (как в Telegram).
         let chats = (try? await Background.run { try messenger.chatUnreadCounts() }) ?? []
-        unreadChats = chats.filter { $0.count > 0 }.count
+        let muted = Set(((try? await Background.run { try messenger.chatPrefs() }) ?? []).filter(\.muted).map(\.chatId))
+        unreadChats = chats.filter { $0.count > 0 && !muted.contains($0.chatId) }.count
     }
 }

@@ -93,6 +93,43 @@ impl<T: Transport> Client<T> {
         self.storage.mark_chat_read(chat_id, now).map(|_| ())
     }
 
+    /// Закрепить чат наверху списка или открепить. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — запись не удалась.
+    pub fn set_chat_pinned(&self, chat_id: &ChatId, pinned: bool, now: Timestamp) -> Result<()> {
+        self.storage.set_chat_pinned(chat_id, pinned.then_some(now))
+    }
+
+    /// Чат «без звука». Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — запись не удалась.
+    pub fn set_chat_muted(&self, chat_id: &ChatId, muted: bool) -> Result<()> {
+        self.storage.set_chat_muted(chat_id, muted)
+    }
+
+    /// Закреплённые и «без звука» чаты. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — чтение не удалось.
+    pub fn chat_prefs(&self) -> Result<Vec<gasapp_storage::chat_prefs::ChatPrefs>> {
+        self.storage.chat_prefs()
+    }
+
+    /// Удаляет переписку у себя (собеседник ничего не узнаёт); писать
+    /// можно сразу — сессия и контакт остаются. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — удаление не удалось.
+    pub fn clear_chat(&self, chat_id: &ChatId, now: Timestamp) -> Result<()> {
+        self.storage.clear_chat(chat_id, now)
+    }
+
     /// Убирает своё неотправленное сообщение (перед повтором: повтор —
     /// новое сообщение того же текста). Ушедшие и чужие — `false`.
     ///
