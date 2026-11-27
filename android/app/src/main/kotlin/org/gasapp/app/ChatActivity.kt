@@ -900,7 +900,13 @@ class ChatActivity : AppCompatActivity() {
                                 .receiveMessages(device, System.currentTimeMillis())
                         }
                     }
-                    if (outcome.isSuccess) NotificationHub.fetched(startedAt)
+                    if (outcome.isSuccess) {
+                        NotificationHub.fetched(startedAt)
+                        // Две галочки собеседнику — за принятое, в фоне.
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            runCatching { Core.messenger().sendDeliveryReceipts(System.currentTimeMillis()) }
+                        }
+                    }
                     val received = outcome.getOrDefault(0u)
 
                     // По уведомлению сервера экран перечитывается всегда: пришедшее

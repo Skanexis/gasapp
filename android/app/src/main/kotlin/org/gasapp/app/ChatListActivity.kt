@@ -325,7 +325,13 @@ class ChatListActivity : AppCompatActivity() {
                     val fetched = withContext(Dispatchers.IO) {
                         runCatching { Core.messenger().receiveMessages(device, System.currentTimeMillis()) }.isSuccess
                     }
-                    if (fetched) NotificationHub.fetched(startedAt)
+                    if (fetched) {
+                        NotificationHub.fetched(startedAt)
+                        // Две галочки собеседнику — за принятое, в фоне.
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            runCatching { Core.messenger().sendDeliveryReceipts(System.currentTimeMillis()) }
+                        }
+                    }
 
                     // Перечитывается всегда, а не только при новых
                     // сообщениях: приём меняет и статусы, и запросы.
