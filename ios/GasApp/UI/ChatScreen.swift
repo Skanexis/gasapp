@@ -163,7 +163,8 @@ struct ChatScreen: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             ChatComposer(draft: $draft, photo: $photo, enabled: mode == .open, sendingPhoto: sendingPhoto,
-                         onSend: { send() }, onPhoto: { sendPhoto($0) })
+                         onSend: { send() }, onPhoto: { sendPhoto($0) },
+                         onVoice: { sendVoice($0, duration: $1, waveform: $2) })
         }
         .gasScreen()
         .navigationTitle(title)
@@ -511,6 +512,30 @@ struct ChatScreen: View {
                 await refresh()
             } catch {
                 toast = L10n.t("Фото не отправлено", "Photo not sent", "Foto non inviata")
+            }
+        }
+    }
+
+    /// Голосовое — вложением «голос» с длительностью и огибающей.
+    private func sendVoice(_ audio: Data, duration: UInt32, waveform: [UInt8]) {
+        guard let messenger = try? CoreStore.shared.current(), let device = CoreStore.shared.deviceId else { return }
+        let peer = peerUsername
+        sendingPhoto = true
+        toast = nil
+        Task {
+            defer { sendingPhoto = false }
+            let file = FfiAttachmentFile(kind: .voice, bytes: audio, name: "voice.m4a", description: nil,
+                                         durationMillis: duration, waveform: Data(waveform))
+            do {
+                try await Background.run {
+                    try messenger.sendAttachment(peerUsername: peer, deviceId: device, file: file, body: "",
+                                                 nowMillis: CoreStore.nowMillis)
+                }
+                inbox.touch()
+                await refresh()
+            } catch {
+                toast = L10n.t("Голосовое не отправлено — нет связи", "Voice message not sent — no connection",
+                               "Vocale non inviato: nessuna connessione")
             }
         }
     }
@@ -1118,6 +1143,14 @@ struct ChatComposer: View {
     let sendingPhoto: Bool
     let onSend: () -> Void
     let onPhoto: (PhotosPickerItem) -> Void
+    /// Записали голосовое: звук, длительность, огибающая.
+    var onVoice: (Data, UInt32, [UInt8]) -> Void = { _, _, _ in }
+
+    @State private var recorder = VoiceRecorder.shared
+    /// Палец уехал влево — отпустить значит отменить.
+    @State private var cancelArmed = false
+    @State private var micDenied = false
+    @State private var starting = false
 
     private var canSend: Bool {
         enabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1125,47 +1158,138 @@ struct ChatComposer: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            PhotosPicker(selection: $photo, matching: .images) {
-                if sendingPhoto {
-                    ProgressView().tint(GasAppColor.accent).frame(width: 30, height: 30)
-                } else {
-                    Image(systemName: "photo.on.rectangle.angled").font(.system(size: 24))
-                        .foregroundStyle(GasAppColor.accent)
-                }
+            if recorder.recording {
+                recordingPanel
+            } else {
+                inputs
             }
-            .disabled(sendingPhoto)
-            .accessibilityLabel(L10n.t("Отправить фото", "Send a photo", "Invia una foto"))
-            .onChange(of: photo) { _, item in
-                if let item { onPhoto(item) }
+            // Пусто — микрофон, есть текст — «отправить», как в Telegram.
+            if canSend {
+                sendButton
+            } else {
+                micButton
             }
-            TextField(L10n.t("Сообщение", "Message", "Messaggio"), text: $draft, axis: .vertical)
-                .font(GasFont.text(16))
-                .lineLimit(1...6)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(GasAppColor.bgCard))
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(canSend ? GasAppColor.accent.opacity(0.4) : GasAppColor.line, lineWidth: 1))
-                .foregroundStyle(GasAppColor.textPrimary)
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onSend()
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(canSend ? GasAppColor.accentOn : GasAppColor.textTertiary)
-                    .frame(width: 40, height: 40)
-                    .background(Circle().fill(canSend ? GasAppColor.accent : GasAppColor.bgCard))
-                    .scaleEffect(canSend ? 1 : 0.92)
-            }
-            .disabled(!canSend)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: canSend)
-            .accessibilityLabel(L10n.t("Отправить", "Send", "Invia"))
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(GasAppColor.bgRaised)
         .overlay(alignment: .top) { Rectangle().fill(GasAppColor.line).frame(height: 1) }
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.4)
+        .animation(.snappy(duration: 0.2), value: recorder.recording)
+        .animation(.snappy(duration: 0.2), value: canSend)
+        .alert(L10n.t("Нет доступа к микрофону", "No microphone access", "Nessun accesso al microfono"), isPresented: $micDenied) {
+            Button(L10n.t("Настройки", "Settings", "Impostazioni")) {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(L10n.t("Разрешите микрофон для GasApp в настройках iPhone, чтобы записывать голосовые.",
+                        "Allow the microphone for GasApp in iPhone Settings to record voice messages.",
+                        "Consenti il microfono a GasApp nelle Impostazioni dell\u{2019}iPhone per registrare i vocali."))
+        }
+    }
+
+    /// Фото и поле ввода.
+    @ViewBuilder
+    private var inputs: some View {
+        PhotosPicker(selection: $photo, matching: .images) {
+            if sendingPhoto {
+                ProgressView().tint(GasAppColor.accent).frame(width: 30, height: 30)
+            } else {
+                Image(systemName: "photo.on.rectangle.angled").font(.system(size: 24))
+                    .foregroundStyle(GasAppColor.accent)
+            }
+        }
+        .disabled(sendingPhoto)
+        .accessibilityLabel(L10n.t("Отправить фото", "Send a photo", "Invia una foto"))
+        .onChange(of: photo) { _, item in
+            if let item { onPhoto(item) }
+        }
+        TextField(L10n.t("Сообщение", "Message", "Messaggio"), text: $draft, axis: .vertical)
+            .font(GasFont.text(16))
+            .lineLimit(1...6)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(GasAppColor.bgCard))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(canSend ? GasAppColor.accent.opacity(0.4) : GasAppColor.line, lineWidth: 1))
+            .foregroundStyle(GasAppColor.textPrimary)
+    }
+
+    /// Идёт запись: красная точка в такт голосу, время, «влево — отмена».
+    private var recordingPanel: some View {
+        HStack(spacing: 10) {
+            Circle().fill(GasAppColor.error)
+                .frame(width: 10, height: 10)
+                .scaleEffect(1 + recorder.level * 0.6)
+                .animation(.easeOut(duration: 0.08), value: recorder.level)
+            Text(String(format: "%d:%02d", Int(recorder.elapsed) / 60, Int(recorder.elapsed) % 60))
+                .font(GasFont.text(16, .semibold)).monospacedDigit()
+                .foregroundStyle(GasAppColor.textPrimary)
+            Spacer()
+            Label(cancelArmed ? L10n.t("Отпустите — отмена", "Release to cancel", "Rilascia per annullare")
+                              : L10n.t("Влево — отмена", "Slide left to cancel", "Scorri a sinistra per annullare"),
+                  systemImage: "chevron.left")
+                .font(GasFont.text(14, .semibold))
+                .foregroundStyle(cancelArmed ? GasAppColor.error : GasAppColor.textTertiary)
+            Spacer()
+        }
+        .frame(height: 40)
+        .transition(.move(edge: .leading).combined(with: .opacity))
+    }
+
+    /// Микрофон: держать — запись, отпустить — отправить, увести влево —
+    /// отменить.
+    private var micButton: some View {
+        Image(systemName: "mic.fill")
+            .font(.system(size: 18, weight: .bold))
+            .foregroundStyle(recorder.recording ? GasAppColor.accentOn : GasAppColor.accent)
+            .frame(width: 40, height: 40)
+            .background(Circle().fill(recorder.recording ? GasAppColor.error : GasAppColor.bgCard))
+            .scaleEffect(recorder.recording ? 1.35 : 1)
+            .offset(x: recorder.recording ? -8 : 0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: recorder.recording)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !recorder.recording && !starting {
+                            starting = true
+                            Task {
+                                let started = await recorder.start()
+                                starting = false
+                                if !started { micDenied = true }
+                            }
+                        }
+                        cancelArmed = value.translation.width < -90
+                    }
+                    .onEnded { _ in
+                        let cancel = cancelArmed
+                        cancelArmed = false
+                        guard recorder.recording else { return }
+                        if cancel {
+                            recorder.cancel()
+                        } else if let voice = recorder.finish() {
+                            onVoice(voice.0, voice.1, voice.2)
+                        }
+                    }
+            )
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel(L10n.t("Голосовое: удерживайте, чтобы записать", "Voice message: hold to record",
+                                       "Vocale: tieni premuto per registrare"))
+    }
+
+    private var sendButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onSend()
+        } label: {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(GasAppColor.accentOn)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(GasAppColor.accent))
+        }
+        .transition(.scale.combined(with: .opacity))
+        .accessibilityLabel(L10n.t("Отправить", "Send", "Invia"))
     }
 }
 

@@ -4758,6 +4758,57 @@ fn sender_keeps_its_own_attachment() {
     assert_eq!(reopened, original);
 }
 
+/// Голосовое доходит с длительностью и огибающей громкости: получатель
+/// рисует его до загрузки звука, а звук открывается тем же.
+#[test]
+fn a_voice_message_arrives_with_its_waveform() {
+    use gasapp_core::client::AttachmentFile;
+    use gasapp_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+    let audio = vec![0x42u8; 4000];
+    let waveform: Vec<u8> = (0..100)
+        .map(|step| u8::try_from(step * 2).unwrap_or(0))
+        .collect();
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_device,
+            &AttachmentFile {
+                kind: AttachmentKind::Voice,
+                bytes: audio.clone(),
+                name: Some("voice.m4a".to_owned()),
+                description: None,
+                duration_millis: Some(3_500),
+                waveform: Some(waveform.clone()),
+            },
+            "",
+            now(),
+            &mut OsRng,
+        )
+        .expect("голосовое отправлено");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+
+    let chat = bob.chats().expect("чаты")[0];
+    let message = bob.messages(&chat, 10).expect("переписка").remove(0);
+    let descriptors = bob.attachments_of(&message.message_id).expect("описания");
+    assert_eq!(descriptors.len(), 1);
+    assert_eq!(descriptors[0].kind, AttachmentKind::Voice);
+    assert_eq!(descriptors[0].duration_millis, Some(3_500));
+    assert_eq!(
+        descriptors[0].waveform.as_deref(),
+        Some(waveform.as_slice())
+    );
+    assert_eq!(
+        bob.fetch_attachment(&bob_device, &descriptors[0], now())
+            .expect("звук"),
+        audio
+    );
+}
+
 /// Проводит первый обмен: после него оба знают ключи доступа друг друга.
 ///
 /// Возвращает клиентов и их устройства.

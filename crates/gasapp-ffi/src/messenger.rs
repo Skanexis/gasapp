@@ -1935,6 +1935,8 @@ pub struct FfiAttachmentInfo {
     pub description: Option<String>,
     /// Длительность в миллисекундах — у голосовых и видео.
     pub duration_millis: Option<u32>,
+    /// Огибающая громкости голосового (до 256 точек, 0–255).
+    pub waveform: Option<Vec<u8>>,
 }
 
 /// Разбирает описание вложения для показа.
@@ -1960,6 +1962,7 @@ pub fn parse_attachment_descriptor(descriptor: Vec<u8>) -> Result<FfiAttachmentI
         size: parsed.size,
         description: parsed.description,
         duration_millis: parsed.duration_millis,
+        waveform: parsed.waveform,
     })
 }
 

@@ -65,6 +65,8 @@
 		</dict>
 	</array>
 	<!-- Камера — только для сканирования QR контакта и safety number. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone records voice messages while you hold the mic button. Recordings are sent end-to-end encrypted and are not kept on the phone.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>The camera is used to scan a contact’s QR code, a safety number or the code of your new phone. Camera images are not sent anywhere.</string>
 	<!-- Face ID — только чтобы открыть переписку вместо PIN (по желанию). -->

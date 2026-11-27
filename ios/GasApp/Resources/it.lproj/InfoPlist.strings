@@ -2,3 +2,4 @@
 "NSCameraUsageDescription" = "La fotocamera serve per scansionare il codice QR di un contatto, un numero di sicurezza o il codice del tuo nuovo telefono. Le immagini della fotocamera non vengono inviate da nessuna parte.";
 "NSFaceIDUsageDescription" = "Face ID sblocca i tuoi messaggi al posto del PIN. Si attiva nelle Impostazioni.";
 "NSPhotoLibraryUsageDescription" = "Per inviare la foto che scegli. I metadati (luogo, dispositivo) vengono rimossi prima dell’invio.";
+"NSMicrophoneUsageDescription" = "Il microfono registra i messaggi vocali mentre tieni premuto il pulsante. Le registrazioni sono inviate cifrate end-to-end e non restano sul telefono.";

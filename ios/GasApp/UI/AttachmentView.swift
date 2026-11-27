@@ -18,12 +18,17 @@ struct AttachmentView: View {
     @State private var file: Data?
     @State private var failed = false
     @State private var fullScreen = false
+    /// Что это за вложение (из описания, без сети): голосовое рисуется
+    /// своим пузырём ещё до загрузки звука.
+    @State private var info: FfiAttachmentInfo?
 
     init(descriptor: Data) { self.descriptor = descriptor }
 
     var body: some View {
         Group {
-            if let image {
+            if let info, info.kind == .voice {
+                VoiceBubble(descriptor: descriptor, info: info, audio: file, failed: failed)
+            } else if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
@@ -67,6 +72,7 @@ struct AttachmentView: View {
     }
 
     private func load() async {
+        if info == nil { info = try? parseAttachmentDescriptor(descriptor: descriptor) }
         // Готовая картинка — сразу, без повторного декодирования: при
         // прокрутке пузырь появляется на экране много раз.
         if let ready = AttachmentCache.shared.image(descriptor) {
@@ -96,6 +102,11 @@ struct AttachmentView: View {
     /// в главном потоке, прямо во время прокрутки, — лента дёргалась на
     /// каждой фотографии.
     private func apply(_ bytes: Data) async {
+        // Голосовое — звук, картинкой его не разбирать.
+        if info?.kind == .voice {
+            file = bytes
+            return
+        }
         if let ready = await AttachmentCache.shared.prepared(descriptor, from: bytes) {
             image = ready
         } else {
