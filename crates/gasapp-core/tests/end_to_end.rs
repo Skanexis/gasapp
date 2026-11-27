@@ -10099,3 +10099,52 @@ fn redelivered_envelopes_are_acknowledged_silently() {
         "ложное событие безопасности"
     );
 }
+
+/// Алиса добавила Боба по его QR и написала. У Боба — счётчик нового и
+/// запрос; принял запрос — может сразу ответить (ключ — тот, которым
+/// Алиса начала переписку), без «сверьте код». Открыл чат — прочитано.
+#[test]
+fn accepting_a_qr_contacts_request_lets_you_reply() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let alice = Client::new(server.clone(), open_storage(&dir, "alice.db"));
+    let bob = Client::new(server.clone(), open_storage(&dir, "bob.db"));
+    let alice_device = alice
+        .register("alice", TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("Алиса")
+        .device_id
+        .to_string();
+    let bob_device = bob
+        .register("bob", TEST_EMAIL, TEST_EMAIL_CODE, now(), &mut OsRng)
+        .expect("Боб")
+        .device_id
+        .to_string();
+
+    let link = bob.own_contact_link().expect("QR Боба");
+    alice.add_contact_from_link(&link, now()).expect("по QR");
+    alice
+        .send_message("bob", "привет по QR", later(1), &mut OsRng)
+        .expect("отправлено");
+
+    bob.receive_messages(&bob_device, later(2)).expect("приём");
+    let chat = bob.chats().expect("чаты")[0];
+    assert_eq!(bob.unread_counts().expect("счётчик"), vec![(chat, 1)]);
+    assert_eq!(
+        bob.chat_request(&chat).expect("запрос"),
+        Some(ChatRequest::Incoming)
+    );
+
+    bob.accept_chat(&chat, later(3), &mut OsRng)
+        .expect("принят");
+    bob.send_message("alice", "привет!", later(4), &mut OsRng)
+        .expect("ответ без сверки");
+    assert_eq!(
+        alice
+            .receive_messages(&alice_device, later(5))
+            .expect("приём"),
+        1
+    );
+
+    bob.mark_chat_read(&chat, later(6)).expect("прочитан");
+    assert!(bob.unread_counts().expect("счётчик").is_empty());
+}

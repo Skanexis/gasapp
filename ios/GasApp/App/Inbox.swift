@@ -174,4 +174,13 @@ final class Inbox {
         revision += 1
         hurry()
     }
+
+    /// Счётчик «прочитано»: чат открыли — значки списка и вкладки гаснут.
+    /// Отдельно от `revision`: на неё подписан сам чат, и отметка
+    /// «прочитано» по ней перечитывала бы чат по кругу.
+    private(set) var readRevision = 0
+
+    func readChanged() {
+        readRevision += 1
+    }
 }

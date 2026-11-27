@@ -411,7 +411,7 @@ pub struct Storage {
 
 impl Storage {
     /// Текущая версия схемы базы данных.
-    const SCHEMA_VERSION: i32 = 24;
+    const SCHEMA_VERSION: i32 = 25;
     /// Создает новое хранилище и инициализирует базу данных.
     ///
     /// # Arguments
@@ -1113,6 +1113,18 @@ impl Storage {
                                  envelope_id  TEXT PRIMARY KEY,
                                  processed_at INTEGER NOT NULL
                              )",
+                            [],
+                        )
+                        .map_err(storage_error)?;
+                }
+                25 => {
+                    // Непрочитанные — по статусу входящего (`mark_chat_read`):
+                    // всё, что лежало до обновления, считается прочитанным,
+                    // иначе после обновления весь архив стал бы «новым».
+                    // Входящее помечено идентификатором чата (`store_message`).
+                    transaction
+                        .execute(
+                            "UPDATE messages SET status = 3 WHERE sender_id = chat_id AND status != 3",
                             [],
                         )
                         .map_err(storage_error)?;
@@ -3425,6 +3437,52 @@ impl Storage {
             .map_err(storage_error)?;
 
         Ok(())
+    }
+
+    /// Входящие чата прочитаны (чат открыт): счётчик непрочитанных — ноль.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — запись не удалась.
+    pub fn mark_chat_read(&self, chat_id: &ChatId, now: Timestamp) -> Result<usize> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        connection
+            .execute(
+                "UPDATE messages SET status = 3, updated_at = ?
+                  WHERE chat_id = ? AND sender_id = chat_id AND status != 3",
+                params![now.as_millis(), chat_id.as_bytes()],
+            )
+            .map_err(storage_error)
+    }
+
+    /// Непрочитанные входящие по чатам — одним запросом для списка чатов.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение не удалось.
+    pub fn unread_counts(&self) -> Result<Vec<(ChatId, u32)>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        let mut statement = connection
+            .prepare_cached(
+                "SELECT chat_id, COUNT(*) FROM messages
+                  WHERE sender_id = chat_id AND status != 3
+                  GROUP BY chat_id",
+            )
+            .map_err(storage_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(storage_error)?;
+        let mut counts = Vec::new();
+        for row in rows {
+            let (chat, count) = row.map_err(storage_error)?;
+            counts.push((
+                ChatId::from_uuid(uuid_from_slice(&chat)?),
+                u32::try_from(count).unwrap_or(u32::MAX),
+            ));
+        }
+        Ok(counts)
     }
 
     /// Обработан ли уже конверт с этим идентификатором сервера.

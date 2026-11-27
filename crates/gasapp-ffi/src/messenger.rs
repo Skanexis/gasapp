@@ -569,6 +569,34 @@ impl Messenger {
         Ok(state.map_or(FfiChatRequest::Settled, FfiChatRequest::from))
     }
 
+    /// Чат открыт — его входящие прочитаны. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — чат не разобран.
+    pub fn mark_chat_read(&self, chat_id: String, now_millis: i64) -> Result<(), FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+        guard(|| client.mark_chat_read(&chat, Timestamp::from_millis(now_millis)))
+    }
+
+    /// Непрочитанные входящие по чатам — для значков списка и вкладки.
+    /// Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — чтение не удалось.
+    pub fn chat_unread_counts(&self) -> Result<Vec<FfiChatUnread>, FfiError> {
+        let client = self.reader()?;
+        Ok(guard(|| client.unread_counts())?
+            .into_iter()
+            .map(|(chat, count)| FfiChatUnread {
+                chat_id: chat.as_uuid().to_string(),
+                count,
+            })
+            .collect())
+    }
+
     /// Принимает запрос на переписку (см. `Client::accept_chat`).
     ///
     /// # Errors
@@ -1945,4 +1973,13 @@ pub struct FfiChatTimer {
     pub seconds: u32,
     /// Чат следует общему таймеру из настроек.
     pub follows_default: bool,
+}
+
+/// Непрочитанные в чате.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiChatUnread {
+    /// Чат, UUID.
+    pub chat_id: String,
+    /// Сколько входящих не прочитано.
+    pub count: u32,
 }

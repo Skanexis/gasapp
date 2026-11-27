@@ -11,6 +11,8 @@ struct ChatRowModel: Identifiable, Hashable {
     let verified: Bool
     let isRequest: Bool
     let peerUsername: String
+    /// Непрочитанных входящих.
+    var unread: Int = 0
 }
 
 /// Список переписок — аналог `ChatListActivity`.
@@ -24,6 +26,11 @@ struct ChatListScreen: View {
     @State private var incomingLink: String?
     @State private var incomingName: String?
     @State private var linkError: String?
+    /// «Все» или «Непрочитанные».
+    @State private var onlyUnread = false
+
+    private var shown: [ChatRowModel] { onlyUnread ? rows.filter { $0.unread > 0 || $0.isRequest } : rows }
+    private var unreadChats: Int { rows.filter { $0.unread > 0 }.count }
 
     enum Route: Hashable {
         case chat(ChatRowModel)
@@ -34,12 +41,31 @@ struct ChatListScreen: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                if !rows.isEmpty {
+                    // Все чаты или только с новым — как в Telegram.
+                    Picker("", selection: $onlyUnread) {
+                        Text(L10n.t("Все", "All", "Tutte")).tag(false)
+                        Text(unreadChats > 0
+                             ? L10n.t("Непрочитанные · \(unreadChats)", "Unread · \(unreadChats)", "Non lette · \(unreadChats)")
+                             : L10n.t("Непрочитанные", "Unread", "Non lette")).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(GasAppColor.bgBase)
+                    .listRowSeparator(.hidden)
+                }
                 if loaded && rows.isEmpty {
                     emptyState
                         .listRowBackground(GasAppColor.bgBase)
                         .listRowSeparator(.hidden)
                 }
-                ForEach(rows) { row in
+                if onlyUnread && shown.isEmpty && !rows.isEmpty {
+                    Text(L10n.t("Всё прочитано", "All caught up", "Tutto letto"))
+                        .font(GasFont.text(15)).foregroundStyle(GasAppColor.textTertiary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 40)
+                        .listRowBackground(GasAppColor.bgBase)
+                        .listRowSeparator(.hidden)
+                }
+                ForEach(shown) { row in
                     NavigationLink(value: Route.chat(row)) { ChatRowView(row: row) }
                         .listRowBackground(GasAppColor.bgBase)
                         .listRowSeparatorTint(GasAppColor.line)
@@ -114,6 +140,7 @@ struct ChatListScreen: View {
             Text(linkError ?? "")
         }
         .onChange(of: inbox.revision) { _, _ in Task { await reload() } }
+        .onChange(of: inbox.readRevision) { _, _ in Task { await reload() } }
     }
 
     private var incomingMessage: String {
@@ -180,6 +207,8 @@ struct ChatListScreen: View {
         let loadedRows: [ChatRowModel] = (try? await Background.run {
             // Собеседник чата — по контакту: имя и отметка сверки.
             let contacts = try messenger.contacts()
+            var unread: [String: Int] = [:]
+            for item in (try? messenger.chatUnreadCounts()) ?? [] { unread[item.chatId] = Int(item.count) }
             var byChat: [String: FfiContact] = [:]
             for contact in contacts { if let chat = contact.chatId { byChat[chat] = contact } }
 
@@ -197,7 +226,8 @@ struct ChatListScreen: View {
                     time: last.map { formatChatTime($0.timestamp) } ?? "",
                     verified: contact?.verified == true,
                     isRequest: (try? messenger.chatRequest(chatId: chatId)) == .incoming,
-                    peerUsername: username
+                    peerUsername: username,
+                    unread: unread[chatId] ?? 0
                 )
             }
         }) ?? rows
@@ -231,12 +261,28 @@ struct ChatRowView: View {
                             .accessibilityLabel(L10n.t("Сверен", "Verified", "Verificato"))
                     }
                     Spacer()
-                    Text(row.time).font(GasFont.text(13)).foregroundStyle(GasAppColor.textTertiary)
+                    Text(row.time).font(GasFont.text(13, row.unread > 0 ? .semibold : .regular))
+                        .foregroundStyle(row.unread > 0 ? GasAppColor.accent : GasAppColor.textTertiary)
                 }
-                Text(row.isRequest ? L10n.t("Запрос на переписку", "Message request", "Richiesta di messaggio") : row.preview)
-                    .font(GasFont.text(15, row.isRequest ? .semibold : .regular))
-                    .foregroundStyle(row.isRequest ? GasAppColor.warn : GasAppColor.textSecondary)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(row.isRequest ? L10n.t("Запрос на переписку", "Message request", "Richiesta di messaggio") : row.preview)
+                        .font(GasFont.text(15, row.isRequest || row.unread > 0 ? .semibold : .regular))
+                        .foregroundStyle(row.isRequest ? GasAppColor.warn
+                                         : row.unread > 0 ? GasAppColor.textPrimary : GasAppColor.textSecondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    // Новое — значком с числом, как в Telegram.
+                    if row.unread > 0 {
+                        Text(row.unread > 99 ? "99+" : "\(row.unread)")
+                            .font(GasFont.text(13, .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(GasAppColor.accentOn)
+                            .padding(.horizontal, 7)
+                            .frame(minWidth: 22, minHeight: 22)
+                            .background(Capsule().fill(GasAppColor.accent))
+                            .accessibilityLabel(L10n.t("Новых: \(row.unread)", "\(row.unread) new", "\(row.unread) nuovi"))
+                    }
+                }
             }
         }
         .padding(.vertical, 8)

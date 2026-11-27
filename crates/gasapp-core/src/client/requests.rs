@@ -57,12 +57,49 @@ impl<T: Transport> Client<T> {
         self.storage
             .set_chat_request_state(chat_id, ChatRequest::Settled)?;
 
+        // Принять запрос — решить писать этому человеку (как нажатое @имя,
+        // решение владельца 2026-11-27). Ключ — тот, которым он сам начал
+        // переписку (сессия доказала владение им), а не названный сервером;
+        // без этого ответить было нельзя: «сверьте код», и тот, кто добавил
+        // по QR, видел молчание.
+        if let Some(contact) = self
+            .storage
+            .list_contacts(u32::MAX)?
+            .into_iter()
+            .find(|contact| contact.chat_id.as_ref() == Some(chat_id))
+        {
+            if !contact.verified && !contact.confirmed_by_link && !contact.confirmed_by_kt {
+                self.storage
+                    .mark_contact_confirmed_by_link(&contact.account_id)?;
+                self.storage
+                    .log_security_event("contact_confirmed_by_acceptance", None, now)?;
+            }
+        }
+
         // Ключ доступа — только собеседнику этого чата и только если
         // сервер называет для его имени тот же ключ, что у сессии.
         // Иначе согласие ушло бы тому, кого назвал сервер.
         let _ = self.share_access_key_in(chat_id, now, rng);
 
         Ok(())
+    }
+
+    /// Чат открыт — входящие прочитаны (счётчик непрочитанных).
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — запись не удалась.
+    pub fn mark_chat_read(&self, chat_id: &ChatId, now: Timestamp) -> Result<()> {
+        self.storage.mark_chat_read(chat_id, now).map(|_| ())
+    }
+
+    /// Непрочитанные входящие по чатам (запросы незнакомцев — тоже).
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — чтение не удалось.
+    pub fn unread_counts(&self) -> Result<Vec<(ChatId, u32)>> {
+        self.storage.unread_counts()
     }
 
     /// Отклоняет запрос: переписка удаляется, в ответ не уходит ничего.

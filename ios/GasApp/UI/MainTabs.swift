@@ -8,6 +8,9 @@ struct MainTabs: View {
     @State private var tab: Tab
     /// Непрочитанные записи каналов — число на вкладке, как на Android.
     @State private var unreadPosts: Int = 0
+    /// Чатов с непрочитанным — значок вкладки «Чаты».
+    @State private var unreadChats: Int = 0
+    @State private var inbox = Inbox.shared
     /// Заморозка либо блокировка оператором — тогда экран объяснения
     /// поверх всего.
     @State private var restriction: FfiAccountRestriction?
@@ -30,6 +33,7 @@ struct MainTabs: View {
         TabView(selection: $tab) {
             ChatListScreen()
                 .tabItem { Label(L10n.t("Чаты", "Chats", "Chat"), systemImage: "bubble.left.and.bubble.right.fill") }
+                .badge(unreadChats)
                 .tag(Tab.chats)
             ChannelsScreen()
                 .tabItem { Label(L10n.t("Каналы", "Channels", "Canali"), systemImage: "megaphone.fill") }
@@ -52,6 +56,9 @@ struct MainTabs: View {
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
         .task(id: tab) { await countUnread() }
+        // Пришло новое или чат прочитан — значок сразу, без смены вкладки.
+        .onChange(of: inbox.revision) { _, _ in Task { await countUnread() } }
+        .onChange(of: inbox.readRevision) { _, _ in Task { await countUnread() } }
         // Открыли по ссылке на контакт — к чатам: там подтверждение.
         .onChange(of: model.pendingContactLink, initial: true) { _, link in
             if link != nil { tab = .chats }
@@ -112,5 +119,8 @@ struct MainTabs: View {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let count = (try? await Background.run { try messenger.unreadChannelPosts() }) ?? 0
         unreadPosts = Int(min(count, 999))
+        // Чаты с новым — числом чатов, а не сообщений (как в Telegram).
+        let chats = (try? await Background.run { try messenger.chatUnreadCounts() }) ?? []
+        unreadChats = chats.filter { $0.count > 0 }.count
     }
 }

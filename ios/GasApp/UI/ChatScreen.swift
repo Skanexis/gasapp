@@ -567,6 +567,14 @@ struct ChatScreen: View {
         // Отметка «прочитано» — до последнего входящего, и только после
         // принятия запроса: незнакомец не должен узнать, что прочли.
         // Одна отметка на новое входящее, а не на каждое обновление экрана.
+        // Чат на экране — его входящие прочитаны (значок в списке гаснет).
+        if !snap.chatId.isEmpty {
+            let chat = snap.chatId
+            Background.detach {
+                _ = try? messenger.markChatRead(chatId: chat, nowMillis: CoreStore.nowMillis)
+                Task { @MainActor in Inbox.shared.readChanged() }
+            }
+        }
         if mode == .open, let id = snap.lastIncoming, id != receiptSentFor {
             // В фоне, без ожидания: обновление экрана (и отправка, которая
             // его ждёт) не стоит за квитанцией — через Tor это секунды.
