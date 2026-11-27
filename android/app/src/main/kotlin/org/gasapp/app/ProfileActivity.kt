@@ -7,12 +7,14 @@ import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.gasapp.app.components.GasAppButton
+import org.gasapp.app.components.GasAppSheet
 import org.gasapp.app.components.GasAppToast
 import org.gasapp.app.core.ContactLinks
 import org.gasapp.app.core.Core
@@ -60,9 +62,136 @@ class ProfileActivity : AppCompatActivity() {
         findViewById<GasAppButton>(R.id.profile_copy).setOnClickListener { copyUsername() }
         findViewById<GasAppButton>(R.id.profile_share).setOnClickListener { shareUsername() }
         findViewById<GasAppButton>(R.id.profile_share_link).setOnClickListener { shareContactLink() }
+        findViewById<TextView>(R.id.profile_avatar).setOnClickListener { choosePhoto() }
 
         loadProfile()
+        showOwnPhoto()
     }
+
+    /**
+     * Фото профиля: видят только те, с кем переписка, — оно уходит им под
+     * сквозным шифрованием; сервер его не видит. Метаданные снимка ядро
+     * вычищает само, а здесь фото ещё и перерисовывается квадратом.
+     */
+    private fun choosePhoto() {
+        GasAppSheet.on(this, getString(R.string.profile_photo) + "\n" + getString(R.string.profile_photo_hint))
+            .action(getString(R.string.profile_photo_choose), R.drawable.ic_image) {
+                pickPhoto.launch(arrayOf("image/*"))
+            }
+            .action(getString(R.string.profile_photo_remove), R.drawable.ic_trash, destructive = true) {
+                savePhoto(null)
+            }
+            .show()
+    }
+
+    private val pickPhoto = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            val jpeg = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let(::squareJpeg)
+                }.getOrNull()
+            }
+            if (jpeg == null) {
+                GasAppToast.show(this@ProfileActivity, R.string.profile_photo_failed, GasAppToast.Tone.Error)
+            } else {
+                savePhoto(jpeg)
+            }
+        }
+    }
+
+    private fun savePhoto(jpeg: ByteArray?) {
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().setProfilePhoto(jpeg, System.currentTimeMillis()) }.isSuccess
+            }
+            if (!done) {
+                GasAppToast.show(this@ProfileActivity, R.string.profile_photo_failed, GasAppToast.Tone.Error)
+                return@launch
+            }
+            GasAppToast.show(this@ProfileActivity, R.string.profile_photo_saved, GasAppToast.Tone.Success)
+            showOwnPhoto()
+            // Тем, с кем переписка, — сразу, по одному: ядро между ними
+            // свободно для сообщений.
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val messenger = Core.messenger()
+                    for (name in messenger.profilePhotoTargets()) {
+                        runCatching { messenger.shareProfilePhotoWith(name, System.currentTimeMillis()) }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showOwnPhoto() {
+        lifecycleScope.launch {
+            val bitmap = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().ownProfilePhoto() }.getOrNull()
+                    ?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+            }
+            val avatar = findViewById<TextView>(R.id.profile_avatar)
+            if (bitmap != null) {
+                avatar.text = ""
+                avatar.background = androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+                    .create(resources, bitmap)
+                    .apply { isCircular = true }
+            } else {
+                avatar.text = initialsOf(username.orEmpty())
+                org.gasapp.app.ui.paintAvatar(avatar, username.orEmpty())
+            }
+        }
+    }
+
+    /** Квадрат 384 точки по центру, JPEG до 90 КБ; поворот снимка учтён. */
+    private fun squareJpeg(raw: ByteArray): ByteArray? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= PHOTO_SIDE) sample *= 2
+        val decoded = android.graphics.BitmapFactory.decodeByteArray(
+            raw,
+            0,
+            raw.size,
+            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+        ) ?: return null
+        val rotation = runCatching {
+            when (
+                android.media.ExifInterface(raw.inputStream())
+                    .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)
+            ) {
+                android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        }.getOrDefault(0)
+        val side = minOf(decoded.width, decoded.height)
+        val matrix = android.graphics.Matrix().apply {
+            val scale = PHOTO_SIDE.toFloat() / side
+            postScale(scale, scale)
+            postRotate(rotation.toFloat())
+        }
+        val square = android.graphics.Bitmap.createBitmap(
+            decoded,
+            (decoded.width - side) / 2,
+            (decoded.height - side) / 2,
+            side,
+            side,
+            matrix,
+            true,
+        )
+        var quality = 85
+        while (quality >= 35) {
+            val out = java.io.ByteArrayOutputStream()
+            square.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
+            if (out.size() <= PHOTO_LIMIT) return out.toByteArray()
+            quality -= 10
+        }
+        return null
+    }
+
 
     /** 🔐 Код с ключом не остаётся на экране, уходящем в фон. */
     override fun onStop() {
@@ -178,5 +307,9 @@ class ProfileActivity : AppCompatActivity() {
          * View сообщает ширину только после укладки, а код строится сразу.
          */
         const val QR_FALLBACK_PX = 700
+
+        /** Фото профиля: сторона квадрата и предел JPEG. */
+        const val PHOTO_SIDE = 384
+        const val PHOTO_LIMIT = 90_000
     }
 }

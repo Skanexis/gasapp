@@ -942,10 +942,8 @@ class ChannelActivity : AppCompatActivity() {
                 confirmLeave(owned = true)
             }
         } else {
-            // Действующему администратору проситься незачем.
-            if (current.role != FfiChannelRole.ADMIN) {
-                sheet.action(getString(R.string.channel_admin_request), R.drawable.ic_key) { showAdminRequest() }
-            }
+            // Администратором назначает владелец сам — выбирая собеседника;
+            // заявок больше нет (решение владельца 2026-11-27).
             sheet.action(getString(R.string.channel_report), R.drawable.ic_block) { chooseReportReason() }
             sheet.action(getString(R.string.channel_leave), R.drawable.ic_trash, destructive = true) {
                 confirmLeave(owned = false)
@@ -1332,16 +1330,48 @@ class ChannelActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Назначить администратора — выбрать собеседника: ключ подписи уходит
+     * ему внутри сквозного шифрования, канал у него появляется сам, уже с
+     * правом писать (`appointChannelAdmin`).
+     */
     private fun chooseAdminSource() {
-        GasAppSheet.on(this, R.string.channel_admin_add)
-            .action(getString(R.string.channel_admin_paste), R.drawable.ic_link) { promptAdmin(request = "") }
-            .action(getString(R.string.channel_admin_scan), R.drawable.ic_qr) {
-                picking = true
-                scanAdmin.launch(
-                    ScanActivity.Request(R.string.channel_admin_scan, R.string.channel_admin_scan_hint),
-                )
+        lifecycleScope.launch {
+            val names = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().contacts() }.getOrDefault(emptyList())
+                    .filter { !it.replaced && !it.keyChanged }
+                    .mapNotNull { it.username }
+                    .distinct()
+                    .sorted()
             }
-            .show()
+            if (names.isEmpty()) {
+                GasAppToast.show(this@ChannelActivity, R.string.no_contacts_yet, GasAppToast.Tone.Info)
+                return@launch
+            }
+            val sheet = GasAppSheet.on(this@ChannelActivity, R.string.appoint_admin)
+            for (name in names) {
+                sheet.action("@$name", R.drawable.ic_users) { appointAdmin(name) }
+            }
+            sheet.show()
+        }
+    }
+
+    private fun appointAdmin(name: String) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().appointChannelAdmin(channelId, name, System.currentTimeMillis()) }
+            }
+            when (result.exceptionOrNull()) {
+                null -> GasAppToast.show(
+                    this@ChannelActivity,
+                    getString(R.string.appoint_admin_done, name),
+                    GasAppToast.Tone.Success,
+                )
+                is uniffi.gasapp.FfiException.PeerUnconfirmed, is uniffi.gasapp.FfiException.IdentityChanged ->
+                    GasAppToast.show(this@ChannelActivity, R.string.appoint_admin_unconfirmed, GasAppToast.Tone.Warning)
+                else -> GasAppToast.show(this@ChannelActivity, R.string.ffi_error, GasAppToast.Tone.Error)
+            }
+        }
     }
 
     private val scanAdmin = registerForActivityResult(ScanActivity.Contract()) { payload ->

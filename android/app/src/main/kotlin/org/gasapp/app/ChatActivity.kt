@@ -244,6 +244,7 @@ class ChatActivity : AppCompatActivity() {
         sendButton.setOnClickListener { send() }
         findViewById<ImageView>(R.id.attach_button).setOnClickListener { chooseAttachment() }
         setUpBars()
+        showPeerPhoto()
         findViewById<ImageView>(R.id.chat_menu).setOnClickListener { showChatMenu() }
 
         // 🔐 Индикатор набора не отправляется. Приложение собеседника
@@ -293,6 +294,23 @@ class ChatActivity : AppCompatActivity() {
         (inputRow.parent as? android.view.ViewGroup)?.let { parent ->
             parent.addView(replyBar, parent.indexOfChild(inputRow))
             parent.addView(pinnedBar, parent.indexOfChild(messageList))
+        }
+    }
+
+    /** Фото собеседника в шапке — если он его прислал. */
+    private fun showPeerPhoto() {
+        lifecycleScope.launch {
+            val photo = withContext(Dispatchers.IO) {
+                runCatching { Core.messenger().chatPhotos().firstOrNull { it.chatId == chatId }?.image }
+                    .getOrNull()
+                    ?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+            } ?: return@launch
+            findViewById<TextView>(R.id.chat_avatar).apply {
+                text = ""
+                background = androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+                    .create(resources, photo)
+                    .apply { isCircular = true }
+            }
         }
     }
 
