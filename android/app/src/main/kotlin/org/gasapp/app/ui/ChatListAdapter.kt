@@ -36,6 +36,12 @@ data class ChatSummary(
     val online: Boolean = false,
     /** 🔐 Непринятый входящий запрос на переписку. */
     val request: Boolean = false,
+    /** Закреплён наверху. */
+    val pinned: Boolean = false,
+    /** Без звука. */
+    val muted: Boolean = false,
+    /** Фото собеседника (уже уменьшенное). */
+    val photo: android.graphics.Bitmap? = null,
 )
 
 /**
@@ -44,8 +50,11 @@ data class ChatSummary(
  * 🔐 Держит расшифрованные превью, поэтому очищается при уходе
  * с экрана — см. [ChatListAdapter.clear].
  */
-class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
-    RecyclerView.Adapter<ChatListAdapter.ViewHolder>() {
+class ChatListAdapter(
+    private val onClick: (ChatSummary) -> Unit,
+    /** Долгое нажатие: закрепить, без звука, прочитано, удалить. */
+    private val onLongClick: (ChatSummary) -> Unit = {},
+) : RecyclerView.Adapter<ChatListAdapter.ViewHolder>() {
 
     private val chats = mutableListOf<ChatSummary>()
 
@@ -104,7 +113,7 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_chat, parent, false)
 
-        return ViewHolder(view, onClick)
+        return ViewHolder(view, onClick, onLongClick)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -117,6 +126,7 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
     class ViewHolder(
         view: View,
         private val onClick: (ChatSummary) -> Unit,
+        private val onLongClick: (ChatSummary) -> Unit,
     ) : RecyclerView.ViewHolder(view) {
 
         private val avatar: TextView = view.findViewById(R.id.chat_avatar)
@@ -142,6 +152,10 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
 
         init {
             itemView.setOnClickListener { bound?.let(onClick) }
+            itemView.setOnLongClickListener {
+                bound?.let(onLongClick)
+                true
+            }
         }
 
         /** Заполняет строку данными чата. */
@@ -151,7 +165,26 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
             // Инициалы, а не фото: см. комментарий в раскладке.
             avatar.text = initialsOf(chat.name)
             paintAvatar(avatar, chat.name)
+            // Фото собеседника — кругом поверх инициалов (оно приходит
+            // от него самого, под сквозным шифрованием).
+            chat.photo?.let { bitmap ->
+                avatar.text = ""
+                avatar.background = androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+                    .create(itemView.resources, bitmap)
+                    .apply { isCircular = true }
+            }
             name.text = chat.name
+            // Закреп и «без звука» — значками после имени.
+            name.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                0,
+                0,
+                when {
+                    chat.muted -> R.drawable.ic_bell_off
+                    chat.pinned -> R.drawable.ic_pin_small
+                    else -> 0
+                },
+                0,
+            )
             preview.text = chat.preview
             // Запрос виден в списке сразу: иначе незнакомец выглядел бы
             // обычной перепиской, а согласия у него ещё нет.
@@ -185,6 +218,8 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
 
             if (chat.unread > 0) {
                 unread.visibility = View.VISIBLE
+                // «Без звука» — серый счётчик: новое есть, но не зовёт.
+                unread.alpha = if (chat.muted) MUTED_ALPHA else 1f
 
                 // Через формат локали, а не `toString()`: в части локалей
                 // цифры пишутся другими знаками, и счётчик оказывался бы
@@ -194,5 +229,9 @@ class ChatListAdapter(private val onClick: (ChatSummary) -> Unit) :
                 unread.visibility = View.GONE
             }
         }
+    }
+
+    private companion object {
+        const val MUTED_ALPHA = 0.45f
     }
 }

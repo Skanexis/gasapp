@@ -17,6 +17,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.gasapp.app.components.GasAppDialog
+import org.gasapp.app.components.GasAppSheet
 import org.gasapp.app.core.Core
 import org.gasapp.app.core.ReadMarks
 import org.gasapp.app.core.SecureWindow
@@ -92,7 +94,7 @@ class ChatListActivity : AppCompatActivity() {
             action = R.string.chat_list_empty_action,
         ) { promptNewChat() }
 
-        adapter = ChatListAdapter(onClick = ::openChat)
+        adapter = ChatListAdapter(onClick = ::openChat, onLongClick = ::showChatActions)
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
         list.addItemDecoration(RowDivider(this))
@@ -352,6 +354,9 @@ class ChatListActivity : AppCompatActivity() {
             // Собеседник каждого чата: имя, которым ему отвечают,
             // и отметка о сверке.
             val contacts = messenger.contacts().associateBy { it.chatId }
+            val prefs = runCatching { messenger.chatPrefs() }.getOrDefault(emptyList()).associateBy { it.chatId }
+            val photos = runCatching { messenger.chatPhotos() }.getOrDefault(emptyList())
+                .associate { it.chatId to photoOf(it.chatId, it.image) }
 
             messenger.chats().map { chatId ->
                 // Превью — последнее сообщение. Счётчик считает сам
@@ -368,15 +373,76 @@ class ChatListActivity : AppCompatActivity() {
                     // начало идентификатора — этого хватает, чтобы
                     // отличать чаты друг от друга.
                     name = username.ifEmpty { chatId.take(CHAT_LABEL_CHARS) },
-                    preview = last?.text.orEmpty(),
+                    preview = last?.let { message ->
+                        message.text.ifEmpty { "📎 " + getString(R.string.attachment_document) }
+                    }.orEmpty(),
                     time = last?.let { timeFormat.format(java.time.Instant.ofEpochMilli(it.timestamp)) }.orEmpty(),
                     verified = contact?.verified == true,
                     peerUsername = username,
                     request = runCatching { messenger.chatRequest(chatId) }.getOrNull() == FfiChatRequest.INCOMING,
                     unread = runCatching { ReadMarks.unread(messenger, chatId, last) }.getOrDefault(0),
+                    pinned = (prefs[chatId]?.pinnedAt ?: 0L) > 0L,
+                    muted = prefs[chatId]?.muted == true,
+                    photo = photos[chatId],
                 )
+            }.let { chats ->
+                // Закреплённые — наверху (позже закреплённый — выше).
+                val pinnedAt = { chat: ChatSummary -> prefs[chat.chatId]?.pinnedAt ?: 0L }
+                chats.filter { it.pinned }.sortedByDescending(pinnedAt) + chats.filterNot { it.pinned }
             }
         }.getOrDefault(emptyList())
+
+    /** Уменьшенное фото — один раз на картинку (кеш по чату и содержимому). */
+    private fun photoOf(chatId: String, image: ByteArray): android.graphics.Bitmap? {
+        val key = chatId + ":" + image.contentHashCode()
+        photoCache[key]?.let { return it }
+        val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+        return android.graphics.BitmapFactory.decodeByteArray(image, 0, image.size, options)
+            ?.also { photoCache[key] = it }
+    }
+
+    private val photoCache = java.util.concurrent.ConcurrentHashMap<String, android.graphics.Bitmap>()
+
+    /** Долгое нажатие на чат: закрепить, без звука, прочитано, удалить у себя. */
+    private fun showChatActions(chat: ChatSummary) {
+        val sheet = GasAppSheet.on(this, chat.name)
+        sheet.action(getString(if (chat.pinned) R.string.chat_unpin else R.string.chat_pin), R.drawable.ic_pin) {
+            changeChat { it.setChatPinned(chat.chatId, !chat.pinned, System.currentTimeMillis()) }
+        }
+        sheet.action(
+            getString(if (chat.muted) R.string.chat_unmute else R.string.chat_mute),
+            if (chat.muted) R.drawable.ic_bell else R.drawable.ic_bell_off,
+        ) {
+            changeChat { it.setChatMuted(chat.chatId, !chat.muted) }
+        }
+        if (chat.unread > 0) {
+            sheet.action(getString(R.string.chat_mark_read), R.drawable.ic_check) {
+                changeChat { messenger ->
+                    val now = System.currentTimeMillis()
+                    messenger.markChatRead(chat.chatId, now)
+                    ReadMarks.markRead(messenger, chat.chatId, now)
+                }
+            }
+        }
+        sheet.action(getString(R.string.chat_delete), R.drawable.ic_trash, destructive = true) {
+            GasAppDialog(this)
+                .title(R.string.chat_delete_title)
+                .message(R.string.chat_delete_body)
+                .secondary()
+                .primary(R.string.chat_delete, GasAppDialog.Tone.Danger) {
+                    changeChat { it.clearChat(chat.chatId, System.currentTimeMillis()) }
+                }
+                .show()
+        }
+        sheet.show()
+    }
+
+    private fun changeChat(action: (uniffi.gasapp.Messenger) -> Unit) {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) { runCatching { action(Core.messenger()) } }
+            showLocal()
+        }
+    }
 
     /**
      * Новый собеседник — экран с @именем и сканером QR.
