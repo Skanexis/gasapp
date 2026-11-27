@@ -55,6 +55,12 @@ class ChatListActivity : AppCompatActivity() {
     private lateinit var list: RecyclerView
     private lateinit var empty: View
 
+    /** «Все» или только с непрочитанным — как в Telegram. */
+    private var onlyUnread = false
+    private var allChats: List<ChatSummary> = emptyList()
+    private lateinit var filterAll: TextView
+    private lateinit var filterUnread: TextView
+
     /**
      * Новый конверт — повод забрать очередь: так появляется чат от
      * человека, который написал впервые. Сокет общий на все экраны
@@ -85,6 +91,7 @@ class ChatListActivity : AppCompatActivity() {
         setContentView(R.layout.activity_chat_list)
 
         list = findViewById(R.id.chat_list)
+        setUpFilter()
         empty = findViewById(R.id.chat_list_empty)
         EmptyState.bind(
             empty,
@@ -454,8 +461,59 @@ class ChatListActivity : AppCompatActivity() {
         startActivity(Intent(this, AddContactActivity::class.java))
     }
 
+    /** Переключатель «Все / Непрочитанные» над списком — в коде: он один. */
+    private fun setUpFilter() {
+        val density = resources.displayMetrics.density
+        fun chip(text: Int, unread: Boolean): TextView = TextView(this).apply {
+            setText(text)
+            textSize = 14f
+            val padX = (14 * density).toInt()
+            val padY = (6 * density).toInt()
+            setPadding(padX, padY, padX, padY)
+            setOnClickListener {
+                onlyUnread = unread
+                render(allChats)
+            }
+        }
+        filterAll = chip(R.string.chat_filter_all, false)
+        filterUnread = chip(R.string.chat_filter_unread, true)
+        val row = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            val pad = (12 * density).toInt()
+            setPadding(pad, pad / 2, pad, pad / 2)
+            addView(filterAll)
+            addView(filterUnread, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = (8 * density).toInt() })
+        }
+        (list.parent as? android.view.ViewGroup)?.let { parent ->
+            parent.addView(row, parent.indexOfChild(list))
+        }
+        paintFilter()
+    }
+
+    private fun paintFilter() {
+        for ((chip, active) in listOf(filterAll to !onlyUnread, filterUnread to onlyUnread)) {
+            chip.setTextColor(getColor(if (active) R.color.accent_on else R.color.text_secondary))
+            chip.background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 100f
+                setColor(getColor(if (active) R.color.accent_base else R.color.bg_card))
+            }
+        }
+        val unreadCount = allChats.count { it.unread > 0 && !it.muted }
+        filterUnread.text = if (unreadCount > 0) {
+            getString(R.string.chat_filter_unread) + " · " + unreadCount
+        } else {
+            getString(R.string.chat_filter_unread)
+        }
+    }
+
     private fun render(chats: List<ChatSummary>) {
-        adapter.submit(chats)
+        allChats = chats
+        paintFilter()
+        val shown = if (onlyUnread) chats.filter { it.unread > 0 || it.request } else chats
+        adapter.submit(shown)
 
         val hasChats = chats.isNotEmpty()
         list.visibility = if (hasChats) View.VISIBLE else View.GONE
