@@ -103,6 +103,9 @@ const KIND_PROFILE_PHOTO: u8 = 17;
 /// Квитанция доставки (см. [`Content::DeliveryReceipt`]).
 const KIND_DELIVERY_RECEIPT: u8 = 18;
 
+/// Закреплённое сообщение чата (см. [`Content::Pin`]).
+const KIND_PIN: u8 = 19;
+
 /// Предел фото профиля: маленький квадрат JPEG, а не снимок.
 pub const MAX_PROFILE_PHOTO_BYTES: usize = 96 * 1024;
 
@@ -592,6 +595,12 @@ pub enum Content {
         until: [u8; MESSAGE_ID_LEN],
     },
 
+    /// Закрепить сообщение чата у обоих (`None` — открепить).
+    Pin {
+        /// Сообщение этого чата.
+        target: Option<[u8; MESSAGE_ID_LEN]>,
+    },
+
     /// Таймер исчезающих сообщений, заданный отправителем для чата.
     ///
     /// 🔐 Таймер общий для обоих: кто бы его ни поставил, сообщения
@@ -773,6 +782,10 @@ impl Content {
                 out.push(KIND_DELIVERY_RECEIPT);
                 out.extend_from_slice(until);
             }
+            Self::Pin { target } => {
+                out.push(KIND_PIN);
+                write_optional_id(out, target.as_ref());
+            }
             Self::KtHead { epoch, head } => {
                 out.push(KIND_KT_HEAD);
                 out.extend_from_slice(&epoch.to_be_bytes());
@@ -857,13 +870,7 @@ impl Content {
                 target: reader.take_id()?,
             },
             KIND_TYPING => Self::Typing {
-                active: match reader.take_u8()? {
-                    0 => false,
-                    1 => true,
-                    // Иное значение означает чужую реализацию:
-                    // булев флаг имеет ровно два состояния.
-                    _ => return Err(GasAppError::Malformed),
-                },
+                active: take_flag(&mut reader)?,
             },
             KIND_READ_RECEIPT => Self::ReadReceipt {
                 until: reader.take_id()?,
@@ -872,16 +879,15 @@ impl Content {
             KIND_SENT => read_sent(&mut reader)?,
             KIND_HISTORY => read_history(&mut reader)?,
             KIND_BLOCK => Self::Block {
-                blocked: match reader.take_u8()? {
-                    0 => false,
-                    1 => true,
-                    _ => return Err(GasAppError::Malformed),
-                },
+                blocked: take_flag(&mut reader)?,
             },
             KIND_CHANNEL_ADMIN => read_channel_admin(&mut reader)?,
             KIND_PROFILE_PHOTO => read_profile_photo(&mut reader)?,
             KIND_DELIVERY_RECEIPT => Self::DeliveryReceipt {
                 until: reader.take_id()?,
+            },
+            KIND_PIN => Self::Pin {
+                target: reader.take_optional_id()?,
             },
             KIND_KT_HEAD => {
                 let (epoch, head) = take_kt_head(&mut reader)?;
@@ -1132,6 +1138,15 @@ impl<'a> Reader<'a> {
 }
 
 /// Эпоха и вершина журнала ключей ([`Content::KtHead`]).
+/// Булев флаг: ровно 0 или 1. Иное значение — чужая реализация.
+fn take_flag(reader: &mut Reader<'_>) -> Result<bool> {
+    match reader.take_u8()? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(GasAppError::Malformed),
+    }
+}
+
 fn take_kt_head(reader: &mut Reader<'_>) -> Result<(u64, [u8; KT_HEAD_LEN])> {
     let epoch = u64::from_be_bytes(
         reader
@@ -1655,6 +1670,10 @@ mod tests {
                 version: 7,
             },
             Content::DeliveryReceipt { until: [5; 16] },
+            Content::Pin {
+                target: Some([6; 16]),
+            },
+            Content::Pin { target: None },
         ] {
             let bytes = content.to_bytes().expect("кодируется");
             assert_eq!(Content::from_bytes(&bytes).expect("читается"), content);

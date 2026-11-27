@@ -21,6 +21,7 @@
 //! (`PeerUnconfirmed`).
 
 use gasapp_net::client::Transport;
+use gasapp_protocol::content::Content;
 use gasapp_types::{canonical_username, ChatId, PublicKeyBytes, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 
@@ -91,6 +92,86 @@ impl<T: Transport> Client<T> {
     /// [`gasapp_types::GasAppError::Storage`] — запись не удалась.
     pub fn mark_chat_read(&self, chat_id: &ChatId, now: Timestamp) -> Result<()> {
         self.storage.mark_chat_read(chat_id, now).map(|_| ())
+    }
+
+    /// Закрепляет сообщение чата у обоих (`None` — открепить). Сеть.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::SessionNotFound`] — сообщения нет или
+    /// оно из другого чата; остальное — как у отправки сообщения.
+    pub fn pin_message<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        target: Option<&gasapp_types::MessageId>,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let content = Content::Pin {
+            target: target.map(|id| *id.as_uuid().as_bytes()),
+        };
+        let expected = match target {
+            Some(id) => Some(
+                self.storage
+                    .message_origin(id)?
+                    .map(|(chat, _)| chat)
+                    .ok_or(gasapp_types::GasAppError::SessionNotFound)?,
+            ),
+            None => None,
+        };
+        // Сообщение из другого чата — до сети: собеседнику незачем знать
+        // даже идентификатор чужого сообщения.
+        let (identity, _) = self.load_identity()?;
+        if let (Some(expected), Some(known)) = (
+            expected,
+            self.known_chat_of(&canonical_username(peer_username)?, &identity)?,
+        ) {
+            if expected != known {
+                return Err(gasapp_types::GasAppError::SessionNotFound);
+            }
+        }
+        let chat = self.send_content_with(peer_username, &content, false, now, rng)?;
+        if expected.is_some_and(|expected| expected != chat) {
+            return Err(gasapp_types::GasAppError::SessionNotFound);
+        }
+        self.note_pin(&chat, target)
+    }
+
+    /// Закреп пришёл (или поставлен своим): только сообщение этого чата.
+    pub(crate) fn note_pin(
+        &self,
+        chat_id: &ChatId,
+        target: Option<&gasapp_types::MessageId>,
+    ) -> Result<()> {
+        let key = pin_key(chat_id);
+        match target {
+            Some(id) => {
+                if self.storage.message_origin(id)?.map(|(chat, _)| chat) == Some(*chat_id) {
+                    self.storage.set_setting_text(&key, &id.to_string())?;
+                }
+                Ok(())
+            }
+            None => self.storage.delete_setting_text(&key),
+        }
+    }
+
+    /// Закреплённое сообщение чата — если оно ещё есть. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`gasapp_types::GasAppError::Storage`] — чтение не удалось.
+    pub fn pinned_message(&self, chat_id: &ChatId) -> Result<Option<gasapp_types::MessageId>> {
+        let Some(text) = self.storage.setting_text(&pin_key(chat_id))? else {
+            return Ok(None);
+        };
+        let Ok(uuid) = text.parse() else {
+            return Ok(None);
+        };
+        let id = gasapp_types::MessageId::from_uuid(uuid);
+        Ok(
+            (self.storage.message_origin(&id)?.map(|(chat, _)| chat) == Some(*chat_id))
+                .then_some(id),
+        )
     }
 
     /// Закрепить чат наверху списка или открепить. Без сети.
@@ -266,4 +347,9 @@ impl<T: Transport> Client<T> {
 
         Ok(())
     }
+}
+
+/// Настройка: закреплённое сообщение чата.
+fn pin_key(chat_id: &ChatId) -> String {
+    format!("pinned_msg:{chat_id}")
 }

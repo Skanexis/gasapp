@@ -4796,6 +4796,125 @@ fn sender_keeps_its_own_attachment() {
     assert_eq!(reopened, original);
 }
 
+/// Закреп — у обоих; откреп — тоже; чужое сообщение не закрепить.
+#[test]
+fn a_pinned_message_is_pinned_for_both() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+
+    let important = alice
+        .send_message("bob", "адрес встречи", now(), &mut OsRng)
+        .expect("отправка");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let bob_chat = bob.chats().expect("чаты")[0];
+    bob.accept_chat(&bob_chat, now(), &mut OsRng)
+        .expect("принято");
+
+    bob.pin_message("alice", Some(&important), now(), &mut OsRng)
+        .expect("закреплено");
+    assert_eq!(
+        bob.pinned_message(&bob_chat).expect("закреп"),
+        Some(important)
+    );
+    alice.receive_messages(&alice_device, now()).expect("приём");
+    let alice_chat = alice.chats().expect("чаты")[0];
+    assert_eq!(
+        alice.pinned_message(&alice_chat).expect("закреп"),
+        Some(important)
+    );
+
+    // Несуществующее сообщение не закрепляется.
+    assert!(bob
+        .pin_message(
+            "alice",
+            Some(&gasapp_types::MessageId::generate()),
+            now(),
+            &mut OsRng
+        )
+        .is_err());
+
+    alice
+        .pin_message("bob", None, now(), &mut OsRng)
+        .expect("откреплено");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    assert_eq!(bob.pinned_message(&bob_chat).expect("закреп"), None);
+    assert_eq!(alice.pinned_message(&alice_chat).expect("закреп"), None);
+}
+
+/// Пересланное вложение уходит теми же описаниями — без повторной
+/// загрузки — и открывается у получателя; текст при нём сохраняется.
+#[test]
+fn a_forwarded_attachment_opens_without_a_new_upload() {
+    use gasapp_core::client::AttachmentFile;
+    use gasapp_media::descriptor::AttachmentKind;
+
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("каталог");
+    let (alice, bob, alice_device, bob_device) = alice_and_bob(&server, &dir);
+    let original = vec![0x5Au8; 3000];
+
+    alice
+        .send_attachment(
+            "bob",
+            &alice_device,
+            &AttachmentFile {
+                kind: AttachmentKind::Document,
+                bytes: original.clone(),
+                name: Some("plan.txt".to_owned()),
+                description: None,
+                duration_millis: None,
+                waveform: None,
+            },
+            "вот план",
+            now(),
+            &mut OsRng,
+        )
+        .expect("отправлено");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let bob_chat = bob.chats().expect("чаты")[0];
+    bob.accept_chat(&bob_chat, now(), &mut OsRng)
+        .expect("принято");
+    let received = bob.messages(&bob_chat, 10).expect("переписка").remove(0);
+
+    let uploads = server
+        .state
+        .borrow()
+        .requests
+        .iter()
+        .filter(|(path, _)| path.starts_with("/v1/attachments/blob"))
+        .count();
+    bob.forward_message("alice", &received.message_id, now(), &mut OsRng)
+        .expect("переслано");
+    let after = server
+        .state
+        .borrow()
+        .requests
+        .iter()
+        .filter(|(path, _)| path.starts_with("/v1/attachments/blob"))
+        .count();
+    assert_eq!(uploads, after, "переслать — не значит загрузить заново");
+
+    alice.receive_messages(&alice_device, now()).expect("приём");
+    let alice_chat = alice.chats().expect("чаты")[0];
+    let forwarded = alice
+        .messages(&alice_chat, 10)
+        .expect("переписка")
+        .into_iter()
+        .find(|message| !message.outgoing)
+        .expect("пересланное пришло");
+    assert_eq!(forwarded.text, "вот план");
+    let descriptors = alice
+        .attachments_of(&forwarded.message_id)
+        .expect("описания");
+    assert_eq!(
+        alice
+            .fetch_attachment(&alice_device, &descriptors[0], now())
+            .expect("файл"),
+        original
+    );
+}
+
 /// Переписка, удалённая у себя, пропадает из списка, но сессия остаётся:
 /// новое сообщение уходит и приходит, как прежде.
 #[test]

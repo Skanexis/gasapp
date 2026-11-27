@@ -1875,6 +1875,12 @@ impl<T: Transport> Client<T> {
                     let _ = self.note_profile_photo(&chat_id, &image, version);
                 }
 
+                // Закреп у обоих — только сообщение этого чата.
+                Content::Pin { target } => {
+                    let target = target.map(|id| MessageId::from_uuid(uuid::Uuid::from_bytes(id)));
+                    self.note_pin(&chat_id, target.as_ref())?;
+                }
+
                 // Две галочки: наши сообщения дошли до его телефона.
                 Content::DeliveryReceipt { until } => {
                     if let Some(own) = self.storage.get_account_id()? {
@@ -2420,8 +2426,68 @@ impl<T: Transport> Client<T> {
     ) -> Result<()> {
         let descriptor = self.upload_attachment(device_id, file, now, rng)?;
 
-        let encoded = descriptor.to_bytes()?;
+        self.send_descriptors(peer_username, &[descriptor.to_bytes()?], body, now, rng)
+    }
 
+    /// Пересылает сообщение с вложениями другому собеседнику — теми же
+    /// описаниями: зашифрованный файл уже лежит на сервере и качается
+    /// анонимно по адресу, повторная загрузка не нужна. Файл живёт там
+    /// тридцать дней с первой загрузки.
+    ///
+    /// 🔐 Сервер не узнаёт о пересылке ничего: новый конверт выглядит как
+    /// любое сообщение, ключ файла едет внутри сквозного шифрования.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::SessionNotFound`] — сообщения нет либо в нём нет
+    /// вложений; остальное — как у [`Client::send_message`].
+    pub fn forward_message<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        message_id: &MessageId,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        let descriptors: Vec<Vec<u8>> = self
+            .storage
+            .load_attachments(message_id)?
+            .into_iter()
+            .filter_map(|row| row.descriptor)
+            .filter(|encoded| AttachmentDescriptor::from_bytes(encoded).is_ok())
+            .collect();
+        if descriptors.is_empty() {
+            return Err(GasAppError::SessionNotFound);
+        }
+        let body = self.storage.message_text(message_id)?.unwrap_or_default();
+        self.send_descriptors(peer_username, &descriptors, &body, now, rng)
+    }
+
+    /// Отправляет уже загруженное вложение ([`Client::upload_attachment`]):
+    /// платформа грузит файл вне замка ядра — через Tor это минуты, и всё
+    /// это время не уходили бы и не приходили сообщения.
+    ///
+    /// # Errors
+    ///
+    /// Как у [`Client::send_message`].
+    pub fn send_uploaded<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        descriptor: &AttachmentDescriptor,
+        body: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
+        self.send_descriptors(peer_username, &[descriptor.to_bytes()?], body, now, rng)
+    }
+
+    fn send_descriptors<R: RngCore + CryptoRng>(
+        &self,
+        peer_username: &str,
+        descriptors: &[Vec<u8>],
+        body: &str,
+        now: Timestamp,
+        rng: &mut R,
+    ) -> Result<()> {
         // Общий с получателем идентификатор — как у текста.
         let message_id = MessageId::generate();
 
@@ -2429,7 +2495,7 @@ impl<T: Transport> Client<T> {
             peer_username,
             &Content::Attachments {
                 body: body.to_owned(),
-                descriptors: vec![encoded.clone()],
+                descriptors: descriptors.to_vec(),
                 reply_to: None,
                 id: *message_id.as_uuid().as_bytes(),
             },
@@ -2444,7 +2510,7 @@ impl<T: Transport> Client<T> {
         // Сохраняется после отправки: запись о неушедшем сообщении
         // показала бы в переписке то, чего собеседник не получал.
         self.store_message(&chat_id, message_id, body, now, true, MessageStatus::Sent)?;
-        self.store_descriptors(&message_id, &[encoded], now)?;
+        self.store_descriptors(&message_id, descriptors, now)?;
         self.storage.touch_chat(&chat_id, Some(&message_id), now)?;
 
         Ok(())

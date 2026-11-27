@@ -672,6 +672,41 @@ impl Messenger {
         Ok(state.map_or(FfiChatRequest::Settled, FfiChatRequest::from))
     }
 
+    /// Закрепляет сообщение у обоих (`None` — открепить). Сеть.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор не разобран;
+    /// [`FfiError::Core`] — сообщение из другого чата либо нет связи.
+    pub fn pin_message(
+        &self,
+        peer_username: String,
+        message_id: Option<String>,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let target = message_id.as_deref().map(parse_message_id).transpose()?;
+        let client = self.client()?;
+        guard(|| {
+            client.pin_message(
+                &peer_username,
+                target.as_ref(),
+                Timestamp::from_millis(now_millis),
+                &mut rand_core::OsRng,
+            )
+        })
+    }
+
+    /// Закреплённое сообщение чата, UUID. Без сети.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — чат не разобран.
+    pub fn pinned_message(&self, chat_id: String) -> Result<Option<String>, FfiError> {
+        let chat = parse_chat(&chat_id)?;
+        let client = self.reader()?;
+        Ok(guard(|| client.pinned_message(&chat))?.map(|id| id.to_string()))
+    }
+
     /// Чат открыт — его входящие прочитаны. Без сети.
     ///
     /// # Errors
@@ -2054,19 +2089,47 @@ impl Messenger {
         body: String,
         now_millis: i64,
     ) -> Result<(), FfiError> {
-        let client = self.client()?;
         let file = gasapp_core::client::AttachmentFile::from(file);
+        let now = Timestamp::from_millis(now_millis);
 
+        // Шифрование и загрузка — вне замка ядра: сессий не касаются, а
+        // через Tor идут минутами; сообщения всё это время ходят.
+        let descriptor = guard(|| {
+            self.client
+                .upload_attachment(&device_id, &file, now, &mut rand_core::OsRng)
+        })?;
+        let client = self.client()?;
         guard(|| {
-            client.send_attachment(
+            client.send_uploaded(
                 &peer_username,
-                &device_id,
-                &file,
+                &descriptor,
                 &body,
-                Timestamp::from_millis(now_millis),
+                now,
                 &mut rand_core::OsRng,
             )
         })
+    }
+
+    /// Пересылает сообщение с вложениями другому собеседнику — без
+    /// повторной загрузки (файл на сервере тридцать дней с первой).
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::InvalidArgument`] — идентификатор не разобран;
+    /// [`FfiError::Core`] — вложений нет либо отправка не удалась.
+    pub fn forward_message(
+        &self,
+        peer_username: String,
+        message_id: String,
+        now_millis: i64,
+    ) -> Result<(), FfiError> {
+        let id = parse_message_id(&message_id)?;
+        let now = Timestamp::from_millis(now_millis);
+        if !self.client.has_prefetched(&peer_username, now) {
+            let _ = guard(|| self.client.prefetch_discovery(&peer_username, now));
+        }
+        let client = self.client()?;
+        guard(|| client.forward_message(&peer_username, &id, now, &mut rand_core::OsRng))
     }
 
     /// Возвращает описания вложений сообщения.

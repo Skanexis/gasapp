@@ -969,6 +969,16 @@ batch, except into unaccepted message requests and blocked chats. Unlike
 read receipts (kind 7) it does not depend on presence sharing: it says
 the phone received the messages, not that anyone saw them.
 
+**Pinned message** (content kind 19): `Pin { target }` pins a message of
+this chat for both parties, or unpins with an absent `target`. A receiver
+accepts only a message that belongs to the same chat.
+
+**Forwarding.** A forwarded attachment reuses the original descriptors:
+the encrypted blob is already on the server and is downloaded without
+authentication by its location, so no second upload is needed and the
+server cannot tell a forward from any other message. The blob still
+expires 30 days after its first upload.
+
 ## 10. Security Considerations
 
 ### 10.1. Forward Secrecy

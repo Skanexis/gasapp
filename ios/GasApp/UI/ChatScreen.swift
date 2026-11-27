@@ -107,6 +107,10 @@ struct ChatScreen: View {
     @State private var hits: [String] = []
     @State private var hitIndex = 0
     @FocusState private var searchFocused: Bool
+    /// Закреплённое сообщение чата (у обоих).
+    @State private var pinnedId: String?
+    /// Куда прокрутить (нажали на закреп).
+    @State private var scrollTarget: String?
     @State private var editing: MessageRow?
     @State private var editText = ""
     @Environment(\.dismiss) private var dismiss
@@ -155,6 +159,11 @@ struct ChatScreen: View {
                 // Переписка открывается на последнем сообщении, а не сверху.
                 .defaultScrollAnchor(.bottom)
                 .scrollDismissesKeyboard(.interactively)
+                .onChange(of: scrollTarget) { _, target in
+                    guard let target else { return }
+                    withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(target, anchor: .center) }
+                    scrollTarget = nil
+                }
                 .onChange(of: hitIndex) { _, index in
                     guard searching, hits.indices.contains(index) else { return }
                     withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(hits[index], anchor: .center) }
@@ -221,8 +230,13 @@ struct ChatScreen: View {
                 }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if searching { searchBar.transition(.move(edge: .top).combined(with: .opacity)) }
+            if searching {
+                searchBar.transition(.move(edge: .top).combined(with: .opacity))
+            } else if let pinned = pinnedId.flatMap({ id in messages.first { $0.id == id } }) {
+                pinnedBar(pinned).transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
+        .animation(.snappy(duration: 0.2), value: pinnedId)
         .animation(.snappy(duration: 0.2), value: searching)
         .onChange(of: searchText) { _, text in findHits(text) }
         .gasScreen()
@@ -432,7 +446,11 @@ struct ChatScreen: View {
             Button {
                 withAnimation(.snappy(duration: 0.2)) { replying = message }
             } label: { Label(L10n.t("Ответить", "Reply", "Rispondi"), systemImage: "arrowshape.turn.up.left") }
-            if !message.text.isEmpty {
+            Button { pin(pinnedId == message.id ? nil : message.id) } label: {
+                Label(pinnedId == message.id ? L10n.t("Открепить", "Unpin", "Sblocca") : L10n.t("Закрепить", "Pin", "Fissa"),
+                      systemImage: pinnedId == message.id ? "pin.slash" : "pin")
+            }
+            if !message.text.isEmpty || !message.attachments.isEmpty {
                 Button { forwarding = message } label: {
                     Label(L10n.t("Переслать", "Forward", "Inoltra"), systemImage: "arrowshape.turn.up.right")
                 }
@@ -630,14 +648,21 @@ struct ChatScreen: View {
         }
     }
 
-    /// Переслать текст другому собеседнику — новым сообщением от себя.
+    /// Переслать другому собеседнику — новым сообщением от себя; вложения
+    /// — теми же файлами, без повторной загрузки.
     private func forward(_ message: MessageRow, to name: String) {
         guard let messenger = try? CoreStore.shared.current() else { return }
         let text = message.text
+        let id = message.id
+        let withFiles = !message.attachments.isEmpty
         Task {
             do {
-                _ = try await Background.run {
-                    try messenger.sendMessage(peerUsername: name, text: text, nowMillis: CoreStore.nowMillis)
+                try await Background.run {
+                    if withFiles {
+                        try messenger.forwardMessage(peerUsername: name, messageId: id, nowMillis: CoreStore.nowMillis)
+                    } else {
+                        _ = try messenger.sendMessage(peerUsername: name, text: text, nowMillis: CoreStore.nowMillis)
+                    }
                 }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 toast = L10n.t("Переслано @\(name)", "Forwarded to @\(name)", "Inoltrato a @\(name)")
@@ -758,6 +783,11 @@ struct ChatScreen: View {
 
         if !snap.attachments.isEmpty {
             knownAttachments.merge(snap.attachments) { _, fresh in fresh }
+        }
+        if !snap.chatId.isEmpty {
+            let chat = snap.chatId
+            let pinned = try? await Background.run { try messenger.pinnedMessage(chatId: chat) }
+            if pinnedId != pinned { pinnedId = pinned }
         }
         // Присваивается только изменившееся: каждое присваивание —
         // перерисовка экрана, а перечитывание чаще всего ничего не меняет.
@@ -1043,6 +1073,50 @@ struct ChatScreen: View {
                 }
             } catch {
                 toast = L10n.t("Кнопка не сработала", "The button didn’t work", "Il pulsante non ha funzionato")
+            }
+        }
+    }
+
+    // MARK: - Закреп
+
+    private func pinnedBar(_ message: MessageRow) -> some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2).fill(GasAppColor.accent).frame(width: 3, height: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L10n.t("Закреплённое", "Pinned", "Fissato"))
+                    .font(GasFont.text(12, .bold)).foregroundStyle(GasAppColor.accent)
+                Text(message.text.isEmpty ? L10n.t("📎 Вложение", "📎 Attachment", "📎 Allegato") : message.text)
+                    .font(GasFont.text(14)).foregroundStyle(GasAppColor.textPrimary).lineLimit(1)
+            }
+            Spacer()
+            Button { pin(nil) } label: {
+                Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(GasAppColor.textTertiary)
+                    .frame(width: 30, height: 30)
+            }
+            .accessibilityLabel(L10n.t("Открепить", "Unpin", "Sblocca"))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 6)
+        .background(GasAppColor.bgRaised)
+        .overlay(alignment: .bottom) { Rectangle().fill(GasAppColor.line).frame(height: 1) }
+        .contentShape(Rectangle())
+        .onTapGesture { scrollTarget = message.id }
+    }
+
+    /// Закрепить у обоих (`nil` — открепить): на экране сразу.
+    private func pin(_ id: String?) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        let previous = pinnedId
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        pinnedId = id
+        let peer = peerUsername
+        Task {
+            let done = (try? await Background.run {
+                try messenger.pinMessage(peerUsername: peer, messageId: id, nowMillis: CoreStore.nowMillis)
+            }) != nil
+            if !done {
+                pinnedId = previous
+                toast = L10n.t("Не закреплено — нет связи", "Not pinned — no connection", "Non fissato: nessuna connessione")
             }
         }
     }

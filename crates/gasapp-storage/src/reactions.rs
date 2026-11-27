@@ -6,7 +6,7 @@
 //! пустая снимает. Ответ — ссылка сообщения на то, на которое оно отвечает.
 
 use gasapp_types::{ChatId, GasAppError, MessageId, Result, Timestamp};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension as _};
 
 use crate::{storage_error, uuid_from_slice, Storage};
 
@@ -89,6 +89,24 @@ impl Storage {
             });
         }
         Ok(reactions)
+    }
+
+    /// Текст сообщения — для пересылки.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Storage`] — чтение не удалось.
+    pub fn message_text(&self, message_id: &MessageId) -> Result<Option<String>> {
+        let connection = self.connection.lock().map_err(|_| GasAppError::Storage)?;
+        connection
+            .query_row(
+                "SELECT content FROM messages WHERE message_id = ?",
+                params![message_id.as_bytes()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map(|content| content.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
+            .map_err(storage_error)
     }
 
     /// Запоминает, на какое сообщение отвечает это.
