@@ -125,15 +125,17 @@ impl Storage {
             )
             .map_err(storage_error)?;
 
-        transaction
-            .execute(
-                "DELETE FROM attachments
-                 WHERE message_id IN (SELECT message_id FROM messages WHERE chat_id = ?)",
-                params![chat],
-            )
-            .map_err(storage_error)?;
-
         for statement in [
+            "DELETE FROM attachments
+             WHERE message_id IN (SELECT message_id FROM messages WHERE chat_id = ?)",
+            // Реакции, ответы, фото незнакомца и настройки чата — тоже
+            // (аудит 2026-11-28): отказ не оставляет от переписки следов.
+            "DELETE FROM message_reactions
+             WHERE message_id IN (SELECT message_id FROM messages WHERE chat_id = ?)",
+            "DELETE FROM message_replies
+             WHERE message_id IN (SELECT message_id FROM messages WHERE chat_id = ?)",
+            "DELETE FROM profile_photos WHERE chat_id = ?",
+            "DELETE FROM chat_prefs WHERE chat_id = ?",
             "DELETE FROM messages WHERE chat_id = ?",
             "DELETE FROM sessions WHERE chat_id = ?",
             "DELETE FROM chat_states WHERE chat_id = ?",
@@ -149,6 +151,20 @@ impl Storage {
                 .execute(statement, params![chat])
                 .map_err(storage_error)?;
         }
+
+        // 🔐 Закреп и назначения администратором из этой переписки:
+        // назначение от незнакомца, которому отказали, не должно
+        // примениться после отказа (аудит 2026-11-28).
+        let chat_text = chat_id.to_string();
+        transaction
+            .execute(
+                "DELETE FROM settings_text
+                 WHERE key = 'pinned_msg:' || ?1
+                    OR (substr(key, 1, 12) = 'admin_grant:'
+                        AND substr(value, 1, length(?1) + 1) = ?1 || char(10))",
+                params![chat_text],
+            )
+            .map_err(storage_error)?;
 
         transaction.commit().map_err(storage_error)?;
 

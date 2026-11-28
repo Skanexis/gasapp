@@ -8480,6 +8480,68 @@ fn an_appointment_in_a_request_waits_for_acceptance() {
         .can_post());
 }
 
+/// 🔐 Назначение применяется, только пока ключ стоит действующим
+/// в описании, подписанном владельцем: иначе любой собеседник мог бы
+/// прислать ссылку на чужой канал со случайным ключом, и телефон сам
+/// вступил бы в канал (аудит 2026-11-28). Снятое до применения
+/// назначение канал не добавляет.
+#[test]
+fn an_appointment_not_in_the_owners_description_is_not_applied() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, admin) = author_and_reader(&server, &dir);
+    confirm_pair(&owner, "author", &admin, "reader");
+    let channel = owner
+        .create_channel("Канал", "", now(), &mut OsRng)
+        .expect("канал");
+    admin
+        .send_message("author", "привет", now(), &mut OsRng)
+        .expect("сообщение");
+    let owner_device = owner.own_device_id().expect("устройство").expect("есть");
+    owner.receive_messages(&owner_device, now()).expect("приём");
+
+    let admins = owner
+        .appoint_channel_admin(&channel.channel_id, "reader", now(), &mut OsRng)
+        .expect("назначение");
+    owner
+        .remove_channel_admin(
+            &channel.channel_id,
+            &admins[0].verify_key,
+            now(),
+            &mut OsRng,
+        )
+        .expect("снят");
+
+    let admin_device = admin.own_device_id().expect("устройство").expect("есть");
+    admin.receive_messages(&admin_device, now()).expect("приём");
+    assert_eq!(admin.apply_admin_grants(now()).expect("не применено"), 0);
+    assert!(admin.channel(&channel.channel_id).is_err());
+}
+
+/// 🔐 Отказ от запроса стирает и назначение из него: отклонённый
+/// незнакомец не подписывает человека на свой канал (аудит 2026-11-28).
+#[test]
+fn declining_a_request_drops_its_appointment() {
+    let dir = tempfile::tempdir().expect("каталог");
+    let server = FakeServer::new();
+    let (owner, admin) = author_and_reader(&server, &dir);
+    confirm_pair(&owner, "author", &admin, "reader");
+    let channel = owner
+        .create_channel("Канал", "", now(), &mut OsRng)
+        .expect("канал");
+
+    owner
+        .appoint_channel_admin(&channel.channel_id, "reader", now(), &mut OsRng)
+        .expect("назначение");
+    let admin_device = admin.own_device_id().expect("устройство").expect("есть");
+    admin.receive_messages(&admin_device, now()).expect("приём");
+    let chat = *admin.chats().expect("чаты").first().expect("запрос");
+    admin.decline_chat(&chat, now()).expect("отказ");
+
+    assert_eq!(admin.apply_admin_grants(now()).expect("нечего"), 0);
+    assert!(admin.channel(&channel.channel_id).is_err());
+}
+
 /// 🔐 Сервер не назначает администраторов: запись, подписанная ключом,
 /// которого нет в описании владельца, читателями не принимается.
 #[test]

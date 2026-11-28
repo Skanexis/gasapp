@@ -109,6 +109,11 @@ fn device_bytes(text: &str) -> Result<[u8; 16]> {
     Ok(*parse_uuid(text)?.as_bytes())
 }
 
+/// Сколько бит работы за ящик связывания самое большее — как верх
+/// лестницы узла (`pow::link_difficulty`); решатель ищет до 2^28 попыток.
+/// Больше узел не потребует, а подменённый — не займёт телефон надолго.
+const MAX_LINK_DIFFICULTY: u32 = 27;
+
 impl<T: Transport> Client<T> {
     /// Новое устройство: заводит свои ключи и запрос, открывает ящик и
     /// возвращает ссылку для QR (живёт 60 секунд).
@@ -138,11 +143,19 @@ impl<T: Transport> Client<T> {
         let nonce = uuid::Uuid::from_bytes(secrets.request().nonce).to_string();
         let request = secrets.request().encode();
         // Работа за ящик: открыть его можно без входа (см. `pow::LINK_DIFFICULTY`).
-        let pow_nonce = gasapp_net::pow::solve(
-            &gasapp_net::pow::link_challenge(&request),
-            gasapp_net::pow::LINK_DIFFICULTY,
-        )
-        .ok_or(GasAppError::Crypto)?;
+        // Цена растёт, когда ящики забивают (аудит 2026-11-28): узел
+        // называет текущую. Не ответил — базовая; больше 28 бит не
+        // считаем — иначе узел мог бы занять телефон работой надолго.
+        let difficulty = self
+            .api
+            .link_challenge()
+            .map_or(gasapp_net::pow::LINK_DIFFICULTY, |challenge| {
+                challenge.difficulty
+            })
+            .clamp(gasapp_net::pow::LINK_DIFFICULTY, MAX_LINK_DIFFICULTY);
+        let pow_nonce =
+            gasapp_net::pow::solve(&gasapp_net::pow::link_challenge(&request), difficulty)
+                .ok_or(GasAppError::Crypto)?;
 
         self.api.link_open(
             &nonce,

@@ -485,6 +485,19 @@ that. Receiving is not blocked.
 Since §9.7 a key is also confirmed by the key log when it has stood there
 unchanged for a day.
 
+**Trust on first use, by the user's own action.** Two actions also confirm a
+key the server named, because the user explicitly chose to write to that
+person: tapping an `@name` mention they saw in a message or channel post,
+and accepting an incoming message request (the key is the one that started
+the session; the claimed name is checked against discovery). This is trust
+on first use, as in Signal: a server that lies about a name the user has
+never seen before can intercept that first conversation. It cannot do so
+silently for a name already known under another key (`IdentityChanged`),
+the key log is still consulted, and each such confirmation is written to the
+security log (`contact_confirmed_by_mention`,
+`contact_confirmed_by_acceptance`). Comparing the safety number removes the
+residual risk.
+
 ### 9.7. Key transparency
 
 The server keeps a public log of `username → identity`. Every epoch
@@ -969,15 +982,38 @@ batch, except into unaccepted message requests and blocked chats. Unlike
 read receipts (kind 7) it does not depend on presence sharing: it says
 the phone received the messages, not that anyone saw them.
 
+*Cost.* A receipt tells the peer when the phone was online, and its timing
+tells the server more than sealed sender alone would: a device fetches its
+queue and moments later sends an envelope to another device, which over many
+messages links the two (the statistical disclosure attack on sealed sender,
+Martiny et al., NDSS 2021). Signal and WhatsApp accept the same cost for
+delivery ticks; Tor hides the network address but not this timing.
+
 **Pinned message** (content kind 19): `Pin { target }` pins a message of
 this chat for both parties, or unpins with an absent `target`. A receiver
 accepts only a message that belongs to the same chat.
 
 **Forwarding.** A forwarded attachment reuses the original descriptors:
 the encrypted blob is already on the server and is downloaded without
-authentication by its location, so no second upload is needed and the
-server cannot tell a forward from any other message. The blob still
-expires 30 days after its first upload.
+authentication by its location, so no second upload is needed. The blob
+still expires 30 days after its first upload.
+
+*Cost.* The server sees the same blob location downloaded again. It cannot
+read the file, and downloads carry no account (over Tor, no network address
+either), but the timing of "downloaded by one recipient, then by another"
+can hint that those two people are in contact, and the original sender,
+colluding with the server, can learn that their file travelled further.
+Padmé padding of attachments hides identical files by length only when they are
+uploaded separately; a forward is not a separate upload.
+
+**Metadata scrubbing.** Before upload the core removes metadata from JPEG,
+PNG, WebP, GIF, MP4/MOV, MP3 and, partially, PDF: `/Info` values and XMP
+stored uncompressed are blanked in place, but values in compressed object
+streams, compressed XMP and images embedded in the PDF are not rewritten.
+Clients therefore warn before sending a PDF and any other format the core
+does not scrub. A profile photo is accepted only as JPEG or PNG with sides
+of at most 1024 pixels, checked from the header before any platform decoder
+sees it.
 
 ## 10. Security Considerations
 

@@ -1899,7 +1899,7 @@ impl<T: Transport> Client<T> {
                 Content::Reaction { target, emoji } => {
                     let target = MessageId::from_uuid(uuid::Uuid::from_bytes(target));
                     if self.storage.message_origin(&target)?.map(|(chat, _)| chat) == Some(chat_id)
-                        && !emoji.chars().any(char::is_control)
+                        && !emoji.chars().any(|c| c.is_control() || is_bidi_control(c))
                     {
                         let emoji = (!emoji.is_empty()).then_some(emoji.as_str());
                         self.storage.set_reaction(&target, false, emoji, now)?;
@@ -4355,6 +4355,16 @@ pub fn safety_number_of(own: &PublicKeyBytes, peer: &PublicKeyBytes) -> String {
     let peer_print = Fingerprint::compute(peer, peer_account(peer).as_bytes());
 
     SafetyNumber::new(&own_print, &peer_print).to_display_block()
+}
+
+/// Невидимые знаки направления текста (U+202E и родня): в реакции они
+/// переворачивали бы соседний текст в интерфейсе (аудит 2026-11-28).
+/// Соединитель U+200D не здесь: из него собраны составные эмодзи.
+const fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
 }
 
 fn peer_account(identity: &PublicKeyBytes) -> AccountId {

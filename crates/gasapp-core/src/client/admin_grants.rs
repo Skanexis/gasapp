@@ -18,9 +18,15 @@
 //!   устройствам владельца нет;
 //! * владелец ключ знает — но он и так подписывает канал целиком; читатели
 //!   принимают записи по ключам из описания, подписанного владельцем;
+//! * назначение применяется, только когда ключ стоит действующим
+//!   в описании канала, подписанном владельцем: иначе любой собеседник
+//!   мог бы прислать ссылку на чужой канал со случайным ключом, и телефон
+//!   сам вступил бы в канал и подписался на него за подписью устройства
+//!   (аудит 2026-11-28). Пока владелец не обновил описание — ждём;
 //! * назначение от незнакомца (запрос на переписку) не применяется, пока
-//!   переписку не приняли, и забывается через неделю; от заблокированного —
-//!   отбрасывается.
+//!   переписку не приняли, и забывается через неделю; отказ от переписки
+//!   стирает его ([`gasapp_storage::Storage::delete_chat`]); от
+//!   заблокированного — отбрасывается.
 
 use gasapp_net::client::Transport;
 use gasapp_protocol::channel::{self, AdminRequest, ChannelAccess};
@@ -160,32 +166,66 @@ impl<T: Transport> Client<T> {
         let chat = ChatId::from_uuid(chat.parse().map_err(|_| GasAppError::Malformed)?);
         let at: i64 = at.parse().map_err(|_| GasAppError::Malformed)?;
         let signing_key: [u8; 32] = unhex(key)?.try_into().map_err(|_| GasAppError::Malformed)?;
+        // Ждать не дольше недели — ни принятия переписки, ни описания.
+        let wait = if now.as_millis().saturating_sub(at) > GRANT_TTL_MILLIS {
+            Grant::Dropped
+        } else {
+            Grant::Later
+        };
 
         if self.storage.is_chat_blocked(&chat)? {
             return Ok(Grant::Dropped);
         }
-        // 🔐 Назначение от незнакомца — только после принятия переписки.
-        if self.storage.chat_request_state(&chat)? == Some(ChatRequest::Incoming) {
-            return Ok(if now.as_millis().saturating_sub(at) > GRANT_TTL_MILLIS {
-                Grant::Dropped
-            } else {
-                Grant::Later
-            });
+        // 🔐 Только из принятой переписки (своей или принятого запроса):
+        // от незнакомца — после принятия; переписки нет (отказали,
+        // удалили) — назначения тоже.
+        match self.storage.chat_request_state(&chat)? {
+            Some(ChatRequest::Settled | ChatRequest::Outgoing) => {}
+            Some(ChatRequest::Incoming) => return Ok(wait),
+            None => return Ok(Grant::Dropped),
+        }
+
+        // 🔐 Ключ должен стоять действующим в описании, подписанном
+        // владельцем: только тогда назначение — от владельца, и только
+        // тогда канал добавляется сам (аудит 2026-11-28).
+        let access = ChannelAccess::parse(link)?;
+        let verify_key = channel::verify_key_of(PrivateKeyBytes::new(signing_key))?;
+        if !self.listed_as_admin(&access, verify_key.as_bytes())? {
+            return Ok(wait);
         }
 
         let channel = self.join_channel(link, now)?;
         let stored = self.stored_channel(&channel.channel_id)?;
-        // Свой канал ключом администратора не портится.
-        if role_of(&stored) == ChannelRole::Owner {
-            return Ok(Grant::Dropped);
+        match role_of(&stored) {
+            // Свой канал ключом администратора не портится; уже
+            // назначен — менять нечего.
+            ChannelRole::Owner | ChannelRole::Admin => return Ok(Grant::Dropped),
+            // Ключа нет или он без права (снят, подброшен) — ставится
+            // проверенный.
+            ChannelRole::Reader | ChannelRole::Pending => {}
         }
         self.storage
-            .set_channel_signing_key(&stored.channel_id, &signing_key)?;
+            .replace_channel_signing_key(&stored.channel_id, &signing_key)?;
         self.storage
             .log_security_event("channel_admin_granted", None, now)?;
         // Свежее описание — с ключом в списке администраторов.
         let _ = self.sync_stored(&self.stored_channel(&channel.channel_id)?, false, now);
         Ok(Grant::Applied)
+    }
+
+    /// Стоит ли ключ действующим администратором в описании канала,
+    /// которое отдаёт сервер, — подписанном владельцем (ключ владельца —
+    /// из ссылки). Сеть; в канал при этом не вступаем.
+    fn listed_as_admin(&self, access: &ChannelAccess, verify_key: &[u8; 32]) -> Result<bool> {
+        let info = self.api.channel_info(&access.channel_uuid())?;
+        if unhex(&info.verify_key)? != access.verify_key.as_bytes() {
+            return Err(GasAppError::InvalidSignature);
+        }
+        let meta = access.open_meta(&unhex(&info.meta)?)?;
+        Ok(meta
+            .admins
+            .iter()
+            .any(|admin| admin.verify_key.as_bytes() == verify_key && admin.until.is_none()))
     }
 }
 

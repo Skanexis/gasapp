@@ -232,6 +232,12 @@ impl<T: Transport> Client<T> {
                 .lock()
                 .map_err(|_| GasAppError::Storage)?,
         );
+        // ⚠️ Квитанция выдаёт собеседнику, когда телефон был в сети, а
+        // серверу — по времени — кто кому пишет: забрал очередь и сразу
+        // отправил конверт (статистическая атака на sealed sender,
+        // Martiny et al., NDSS 2021). Как у Signal и WhatsApp, доставка
+        // подтверждается всегда; цена описана в §9.11 спецификации
+        // (аудит 2026-11-28).
         if pending.is_empty() {
             return Ok(0);
         }
@@ -312,11 +318,25 @@ impl<T: Transport> Client<T> {
     }
 }
 
+/// Наибольшая сторона фото профиля, точек. Приложения шлют 384.
+const MAX_PHOTO_SIDE: u32 = 1024;
+
 /// Фото профиля без метаданных; не JPEG и не PNG — отказ.
+///
+/// 🔐 Размеры проверяются по заголовку до того, как картинку увидит
+/// декодер платформы: 96 КБ PNG может объявить 30000×30000 точек и
+/// уронить приложение при каждом открытии чата (аудит 2026-11-28).
 fn clean_photo(bytes: &[u8]) -> Result<Vec<u8>> {
     let cleaned = scrub::scrub(bytes)?;
     if !matches!(cleaned.format, Format::Jpeg | Format::Png) {
         return Err(GasAppError::Malformed);
     }
-    Ok(cleaned.bytes)
+    match scrub::image_size(&cleaned.bytes) {
+        Some((width, height))
+            if (1..=MAX_PHOTO_SIDE).contains(&width) && (1..=MAX_PHOTO_SIDE).contains(&height) =>
+        {
+            Ok(cleaned.bytes)
+        }
+        _ => Err(GasAppError::Malformed),
+    }
 }

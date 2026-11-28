@@ -1503,6 +1503,17 @@ impl<T: Transport> ApiClient<T> {
         )?)
     }
 
+    /// Цена ящика связывания сейчас. Без подписи — устройства ещё нет.
+    ///
+    /// # Errors
+    ///
+    /// [`GasAppError::Network`] — сбой соединения.
+    pub fn link_challenge(&self) -> Result<crate::api::LinkChallengeResponse> {
+        let response = self.send(Method::Get, "/v1/linking/challenge".to_owned(), None)?;
+
+        parse(&response)
+    }
+
     /// Новое устройство открывает ящик связывания со своим запросом.
     ///
     /// # Errors

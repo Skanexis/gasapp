@@ -160,6 +160,62 @@ pub fn scrub(bytes: &[u8]) -> Result<Scrubbed> {
     })
 }
 
+/// Ширина и высота картинки JPEG или PNG — из заголовка, без
+/// декодирования.
+///
+/// 🔐 Нужна, чтобы отвергнуть «бомбу по размерам»: PNG на 96 КБ может
+/// объявить 30000×30000 точек, и декодер платформы, разворачивая его
+/// в память, уронит приложение (аудит 2026-11-28). `None` — не JPEG
+/// и не PNG либо заголовок не разбирается.
+#[must_use]
+pub fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    match detect(bytes) {
+        Format::Png => {
+            // Сигнатура (8), длина (4), «IHDR» (4), ширина, высота.
+            if bytes.get(12..16) != Some(b"IHDR") {
+                return None;
+            }
+            Some((u32_be(bytes, 16).ok()?, u32_be(bytes, 20).ok()?))
+        }
+        Format::Jpeg => jpeg_size(bytes),
+        _ => None,
+    }
+}
+
+/// Размер из первого заголовка кадра (`SOFn`) JPEG — до начала скана.
+fn jpeg_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    let mut pos: usize = 2;
+    loop {
+        if byte(bytes, pos).ok()? != 0xFF {
+            return None;
+        }
+        let mut marker = byte(bytes, pos.checked_add(1)?).ok()?;
+        // Заполняющие 0xFF перед маркером.
+        while marker == 0xFF {
+            pos = pos.checked_add(1)?;
+            marker = byte(bytes, pos.checked_add(1)?).ok()?;
+        }
+        pos = pos.checked_add(2)?;
+        match marker {
+            0x01 | 0xD0..=0xD7 => {}
+            JPEG_SOS | JPEG_EOI => return None,
+            // SOF0…SOF15, кроме DHT (C4), JPG (C8) и DAC (CC).
+            0xC0..=0xCF if !matches!(marker, 0xC4 | 0xC8 | 0xCC) => {
+                let height = u16_be(bytes, pos.checked_add(3)?).ok()?;
+                let width = u16_be(bytes, pos.checked_add(5)?).ok()?;
+                return Some((u32::from(width), u32::from(height)));
+            }
+            _ => {
+                let len = usize::from(u16_be(bytes, pos).ok()?);
+                if len < 2 {
+                    return None;
+                }
+                pos = pos.checked_add(len)?;
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 //  PDF: значения `/Info` и XMP — пробелами той же длины.
 // ---------------------------------------------------------------------------
@@ -237,18 +293,23 @@ fn pdf(bytes: &[u8]) -> Vec<u8> {
                 value = value.saturating_add(1);
             }
             match out.get(value) {
+                // Конца нет — дальше его не будет и у следующих: без этого
+                // файл из одних незакрытых `/Author (` разбирался бы за
+                // квадрат длины (аудит 2026-11-28).
                 Some(b'(') => {
-                    if let Some(end) = pdf_literal_end(&out, value) {
-                        blank(&mut out, value.saturating_add(1), end);
-                        from = end;
-                    }
+                    let Some(end) = pdf_literal_end(&out, value) else {
+                        break;
+                    };
+                    blank(&mut out, value.saturating_add(1), end);
+                    from = end;
                 }
                 // `<…>` — шестнадцатеричная строка; `<<` — словарь, не трогаем.
                 Some(b'<') if out.get(value.saturating_add(1)) != Some(&b'<') => {
-                    if let Some(end) = find_from(&out, b">", value) {
-                        blank(&mut out, value.saturating_add(1), end);
-                        from = end;
-                    }
+                    let Some(end) = find_from(&out, b">", value) else {
+                        break;
+                    };
+                    blank(&mut out, value.saturating_add(1), end);
+                    from = end;
                 }
                 _ => {}
             }
@@ -1060,6 +1121,21 @@ mod tests {
         out.extend_from_slice(data);
         out.extend_from_slice(&[0, 0, 0, 0]); // CRC не проверяется
         out
+    }
+
+    #[test]
+    fn image_size_reads_jpeg_and_png_headers() {
+        assert_eq!(image_size(&sample_jpeg()), Some((16, 16)));
+
+        let mut ihdr = [0u8; 13];
+        ihdr[..4].copy_from_slice(&30_000u32.to_be_bytes());
+        ihdr[4..8].copy_from_slice(&20_000u32.to_be_bytes());
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        png.extend(png_chunk(*b"IHDR", &ihdr));
+        assert_eq!(image_size(&png), Some((30_000, 20_000)));
+
+        assert_eq!(image_size(b"GIF89a"), None);
+        assert_eq!(image_size(&[0xFF, 0xD8, 0xFF]), None);
     }
 
     #[test]

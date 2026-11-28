@@ -400,6 +400,14 @@ pub struct EmailCodeRequest {
     pub window: u64,
 }
 
+/// Цена ящика связывания устройств сейчас.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkChallengeResponse {
+    /// Сколько ведущих нулевых бит требует узел: растёт с заполнением
+    /// ящиков (аудит 2026-11-28).
+    pub difficulty: u32,
+}
+
 /// Условия запроса письма с кодом.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmailChallengeResponse {

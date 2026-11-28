@@ -2898,18 +2898,34 @@ impl Storage {
         // Приложение глотает ошибку чистки (`Core.kt`), так что сбой был
         // молчаливым: переписка, которую считали исчезнувшей, копилась
         // на диске.
-        transaction
-            .execute(
-                "
-            DELETE FROM attachments
-            WHERE message_id IN (
-                SELECT message_id FROM messages
-                WHERE expires_at IS NOT NULL AND expires_at <= ?
-            )
-            ",
-                params![now.as_millis()],
-            )
-            .map_err(storage_error)?;
+        // Реакции (со временем) и связи «ответ на» исчезают вместе
+        // с сообщением — иначе от исчезнувшей переписки оставался бы
+        // след: кто, когда и на что отвечал (аудит 2026-11-28).
+        for statement in [
+            "DELETE FROM attachments
+             WHERE message_id IN (
+                 SELECT message_id FROM messages
+                 WHERE expires_at IS NOT NULL AND expires_at <= ?1
+             )",
+            "DELETE FROM message_reactions
+             WHERE message_id IN (
+                 SELECT message_id FROM messages
+                 WHERE expires_at IS NOT NULL AND expires_at <= ?1
+             )",
+            "DELETE FROM message_replies
+             WHERE message_id IN (
+                 SELECT message_id FROM messages
+                 WHERE expires_at IS NOT NULL AND expires_at <= ?1
+             )
+                OR reply_to IN (
+                 SELECT message_id FROM messages
+                 WHERE expires_at IS NOT NULL AND expires_at <= ?1
+             )",
+        ] {
+            transaction
+                .execute(statement, params![now.as_millis()])
+                .map_err(storage_error)?;
+        }
 
         // Одним запросом: чистка по одному сообщению пережила бы сбой
         // посреди себя, оставив часть истёкших на диске.
@@ -2989,19 +3005,18 @@ impl Storage {
         // описания здесь не удалялись вовсе, и для сообщения с файлом
         // запрос ниже отвергался: «удалить у меня» и «удалить у всех»
         // падали ошибкой хранилища.
-        transaction
-            .execute(
-                "DELETE FROM attachments WHERE message_id = ?",
-                params![id.as_bytes()],
-            )
-            .map_err(storage_error)?;
-
-        transaction
-            .execute(
-                "DELETE FROM messages WHERE message_id = ?",
-                params![id.as_bytes()],
-            )
-            .map_err(storage_error)?;
+        // Реакции и связи «ответ на» — вместе с сообщением (аудит
+        // 2026-11-28): иначе удалённое оставляло след.
+        for statement in [
+            "DELETE FROM attachments WHERE message_id = ?1",
+            "DELETE FROM message_reactions WHERE message_id = ?1",
+            "DELETE FROM message_replies WHERE message_id = ?1 OR reply_to = ?1",
+            "DELETE FROM messages WHERE message_id = ?1",
+        ] {
+            transaction
+                .execute(statement, params![id.as_bytes()])
+                .map_err(storage_error)?;
+        }
 
         transaction.commit().map_err(storage_error)?;
 

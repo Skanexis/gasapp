@@ -47,7 +47,10 @@ delivered (30 days at most), then nothing.
 **Not covered.** Post-quantum protection applies to session setup only, not
 to the ratchet. A key that only the server named is not trusted for
 sending: it must be confirmed by a contact link/QR, a safety-number check,
-or the key-transparency log.
+or the key-transparency log — or, as trust on first use, by the user
+tapping an `@name` mention or accepting a message request (protocol §9.6).
+Delivery receipts and forwarded attachments leak timing to the server
+(protocol §9.11).
 
 ## Channels
 
