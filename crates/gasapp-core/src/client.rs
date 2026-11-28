@@ -327,6 +327,9 @@ pub struct Client<T: Transport> {
     /// Квитанции доставки, ждущие отправки: чат → последнее принятое
     /// ([`Client::send_delivery_receipts`]).
     pending_deliveries: Mutex<HashMap<ChatId, MessageId>>,
+    /// Открытый ключ улик к жалобам, вшитый сборкой
+    /// ([`Client::pin_report_evidence_key`]); `None` — сборка его не знает.
+    evidence_pin: Mutex<Option<[u8; 32]>>,
 
     /// Связывание устройств — только в памяти (`client::linking`).
     linking: linking::LinkState,
@@ -350,6 +353,7 @@ impl<T: Transport> Client<T> {
             deferred_acks: Mutex::new(Vec::new()),
             post_send: Mutex::new(Vec::new()),
             pending_deliveries: Mutex::new(HashMap::new()),
+            evidence_pin: Mutex::new(None),
             linking: linking::LinkState::default(),
         }
     }

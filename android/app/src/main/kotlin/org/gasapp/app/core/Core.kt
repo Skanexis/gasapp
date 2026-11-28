@@ -86,6 +86,9 @@ object Core {
 
         messenger = opened
         openedKey.remember(key)
+        // 🔐 Ключ улик к жалобам — из сборки, а не от узла (аудит
+        // 2026-11-28): взломанный узел не подставит свой.
+        runCatching { opened.pinReportEvidenceKey(BuildConfig.GASAPP_EVIDENCE_KEY.ifBlank { null }) }
 
         // 🔐 Прокси применяется сразу после открытия базы — до первого
         // сетевого запроса. Настройка живёт в зашифрованной базе, поэтому

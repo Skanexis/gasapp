@@ -33,4 +33,8 @@ DEVELOPMENT_TEAM =
 // Версия, которую видит человек (tools/release.conf).
 MARKETING_VERSION = 1.2
 
+// 🔐 Открытый ключ улик к жалобам (tools/release.conf, EVIDENCE_KEY):
+// ядро запечатывает улики только под него. Пусто — первый ключ от узла.
+GASAPP_EVIDENCE_KEY =
+
 #include? "Local.xcconfig"

@@ -961,6 +961,19 @@ impl Messenger {
         Ok(outcome.recorded)
     }
 
+    /// 🔐 Открытый ключ улик к жалобам, вшитый сборкой (`EVIDENCE_KEY`
+    /// в `tools/release.conf`, 64 знака hex). Вызывается сразу после
+    /// открытия базы; пусто или `None` — сборка ключа не знает: тогда
+    /// телефон верит первому ключу от узла и не принимает подмену.
+    ///
+    /// # Errors
+    ///
+    /// [`FfiError::Core`] — не 32 байта hex.
+    pub fn pin_report_evidence_key(&self, key_hex: Option<String>) -> Result<(), FfiError> {
+        let client = self.client()?;
+        guard(|| client.pin_report_evidence_key(key_hex.as_deref()))
+    }
+
     /// 🔐 Жалоба с причиной и уликами. Улики — сообщения обидчика и
     /// скриншоты (JPEG без метаданных), которые жалобщик решил показать;
     /// они запечатываются здесь ключом оператора, сервер хранит шифр.

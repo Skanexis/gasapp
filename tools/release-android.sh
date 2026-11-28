@@ -241,6 +241,8 @@ props=(
   -PgasappVersionCode="$VERSION_CODE"
 )
 [ -n "$SERVER_ONION" ] && props+=(-PgasappServerOnion="$SERVER_ONION")
+EVIDENCE_KEY=$(conf EVIDENCE_KEY)
+[ -n "$EVIDENCE_KEY" ] && props+=(-PgasappEvidenceKey="$EVIDENCE_KEY")
 
 gradle() {
   docker run --rm -m 8g \

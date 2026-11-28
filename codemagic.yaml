@@ -291,6 +291,8 @@ workflows:
           )
           onion="$(conf SERVER_ONION)"
           [ -n "$onion" ] && props+=(-PgasappServerOnion="$onion")
+          evidence="$(conf EVIDENCE_KEY)"
+          [ -n "$evidence" ] && props+=(-PgasappEvidenceKey="$evidence")
           cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleFossRelease "${props[@]}"

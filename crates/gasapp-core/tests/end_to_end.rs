@@ -38,7 +38,7 @@ use std::collections::HashMap;
 use gasapp_core::client::{ChatRequest, ChatTimer, Client, Contact, Reaction};
 use gasapp_net::api::{
     BundleResponse, CertificateResponse, DiscoveryResponse, EnvelopeResponse, PublishKeysRequest,
-    RegisterRequest, RegisterResponse, SealedAccessRequest, SealedReportRequest,
+    RegisterRequest, RegisterResponse, ReportKeyResponse, SealedAccessRequest, SealedReportRequest,
     SealedReportResponse, SealedSendRequest,
 };
 use gasapp_net::client::{HttpRequest, HttpResponse, Method, Transport};
@@ -150,6 +150,9 @@ struct ServerState {
     /// Жалобы: (устройство жалобщика, устройство отправителя из
     /// проверенного сертификата) — одна пара учитывается один раз.
     reports: Vec<(String, [u8; 16])>,
+    /// Открытый ключ улик, который отдаёт узел (hex); `None` — улик не
+    /// принимает.
+    evidence_key: Option<String>,
 
     /// Адреса почты, на которые клиенты просили код.
     email_code_requests: Vec<String>,
@@ -2228,13 +2231,20 @@ impl Transport for FakeServer {
                         200,
                         serde_json::to_string(&SealedReportResponse {
                             recorded,
-                            evidence_stored: false,
+                            evidence_stored: request.evidence.is_some(),
                             total_reporters,
                         })
                         .unwrap_or_default(),
                     )
                 }
             }
+            (Method::Get, "/v1/sealed/report-key") => (
+                200,
+                serde_json::to_string(&ReportKeyResponse {
+                    key: state.evidence_key.clone(),
+                })
+                .unwrap_or_default(),
+            ),
             (Method::Get, path) if path.starts_with("/v1/sealed/certificate/") => {
                 let device_id = path
                     .trim_start_matches("/v1/sealed/certificate/")
@@ -7254,6 +7264,58 @@ fn a_blocked_contact_is_silenced_and_can_be_reported() {
     // Жалоба учитывается один раз.
     assert!(bob.report_chat(&chat, now()).expect("жалоба").recorded);
     assert!(!bob.report_chat(&chat, now()).expect("повтор").recorded);
+}
+
+/// 🔐 Улики уходят только под ключ, закреплённый сборкой, а без
+/// закрепления — под первый увиденный: узел, подменивший ключ, улик не
+/// получает, хотя жалоба учитывается (аудит 2026-11-28, S-4).
+#[test]
+fn report_evidence_goes_only_under_a_trusted_key() {
+    let server = FakeServer::new();
+    let dir = tempfile::tempdir().expect("временный каталог");
+    let (alice, bob) = unconfirmed_pair(&server, &dir);
+    confirm_pair(&alice, "alice", &bob, "bob");
+    let bob_device = bob.own_device_id().expect("устройство").expect("есть");
+    alice
+        .send_message("bob", "hello", now(), &mut OsRng)
+        .expect("отправлено");
+    bob.receive_messages(&bob_device, now()).expect("приём");
+    let chat = *bob.chats().expect("чаты").first().expect("чат с Алисой");
+    let evidence = gasapp_protocol::report_evidence::Evidence {
+        quotes: vec![gasapp_protocol::report_evidence::Quote {
+            sent_at_millis: 1,
+            text: "hello".to_owned(),
+        }],
+        images: Vec::new(),
+    };
+    let report = |client: &Client<FakeServer>| {
+        client
+            .report_chat_with_evidence(&chat, Some(1), &evidence, now(), &mut OsRng)
+            .expect("жалоба")
+            .evidence_stored
+    };
+    let operator = hex::encode([0x11u8; 32]);
+    let impostor = hex::encode([0x22u8; 32]);
+
+    // Без закрепления: первый ключ запоминается…
+    server.state.borrow_mut().evidence_key = Some(operator.clone());
+    assert!(report(&bob));
+    // …подменённый узлом — нет.
+    server.state.borrow_mut().evidence_key = Some(impostor.clone());
+    assert!(!report(&bob));
+    assert!(bob
+        .security_events(50)
+        .expect("журнал")
+        .iter()
+        .any(|(kind, _, _)| kind == "report_evidence_key_mismatch"));
+
+    // Сборка закрепила ключ — годится только он, что бы ни помнил телефон.
+    assert!(bob.pin_report_evidence_key(Some("abcd")).is_err());
+    bob.pin_report_evidence_key(Some(&impostor))
+        .expect("закреплено");
+    assert!(report(&bob));
+    server.state.borrow_mut().evidence_key = Some(operator);
+    assert!(!report(&bob));
 }
 
 /// Сбой сети посреди отправки не теряет текст: сообщение остаётся

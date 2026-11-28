@@ -9,7 +9,8 @@
 * android/app/src/release/res/xml/network_security_config.xml — пины
   и expiration (адрес, onion и версию Android берёт из release.conf
   сама сборка, tools/release-android.sh);
-* ios/Config/Base.xcconfig — адрес, сайт, onion, пины, expiration.
+* ios/Config/Base.xcconfig — адрес, сайт, onion, пины, expiration,
+  ключ улик.
 
 С --check ничего не меняет и выходит с кодом 1, если файлы расходятся
 с release.conf (так его зовут скрипт выпуска и сборка TestFlight).
@@ -58,6 +59,9 @@ def validate(c: dict[str, str]) -> list[str]:
     onion = c.get("SERVER_ONION", "")
     if onion and not re.fullmatch(r"[a-z2-7]{56}\.onion:\d{1,5}", onion):
         problems.append("SERVER_ONION: «56 знаков.onion:443»")
+    evidence = c.get("EVIDENCE_KEY", "")
+    if evidence and not re.fullmatch(r"[0-9a-f]{64}", evidence):
+        problems.append("EVIDENCE_KEY: 64 знака hex в нижнем регистре (gasapp-server-admin evidence-public-key)")
     for key in ("PIN_PRIMARY", "PIN_BACKUP"):
         pin = c[key]
         try:
@@ -100,6 +104,7 @@ def render_ios(text: str, c: dict[str, str]) -> str:
         "GASAPP_DOCS_URL": c["DOCS_URL"],
         "GASAPP_PINS": f'{c["PIN_PRIMARY"]},{c["PIN_BACKUP"]}',
         "GASAPP_PIN_EXPIRATION": c["PIN_EXPIRATION"],
+        "GASAPP_EVIDENCE_KEY": c.get("EVIDENCE_KEY", ""),
         "MARKETING_VERSION": c["VERSION_NAME"],
     }
     for key, value in settings.items():

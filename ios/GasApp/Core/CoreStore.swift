@@ -177,6 +177,9 @@ final class CoreStore: @unchecked Sendable {
         )
         messenger = opened
         openedKey.remember(key)
+        // 🔐 Ключ улик к жалобам — из сборки, а не от узла (аудит
+        // 2026-11-28): взломанный узел не подставит свой.
+        try? opened.pinReportEvidenceKey(keyHex: AppConfig.evidenceKey)
 
         // 🔐 Режим сети — сразу после открытия базы и до первого запроса:
         // настройка живёт в зашифрованной базе, раньше её не прочитать,

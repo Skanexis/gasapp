@@ -26,7 +26,10 @@ use gasapp_storage::blocks::BlockedChat;
 use gasapp_types::{ChatId, GasAppError, Result, Timestamp};
 use rand_core::{CryptoRng, RngCore};
 
-use super::{hex, Client, DeviceSigner};
+use super::{hex, unhex, Client, DeviceSigner};
+
+/// Ключ улик, которому телефон поверил первым (без закрепления сборкой).
+const EVIDENCE_KEY_SETTING: &str = "report_evidence_key";
 
 /// Итог жалобы.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,12 +119,71 @@ impl<T: Transport> Client<T> {
         )
     }
 
+    /// Открытый ключ улик, вшитый сборкой (`tools/release.conf`,
+    /// `EVIDENCE_KEY`). Вызывается приложением сразу после открытия базы;
+    /// 64 знака hex; `None` или пусто — сборка ключа не знает (отладочная).
+    ///
+    /// 🔐 Ключ, который отдаёт узел (`/v1/sealed/report-key`), без этого
+    /// принимался как есть: взломанный узел API — он смотрит в интернет —
+    /// подставил бы свой и читал бы улики: цитаты переписки и скриншоты
+    /// (аудит 2026-11-28, S-4). С закреплённым ключом улики уходят только
+    /// под него.
+    ///
+    /// # Errors
+    ///
+    /// * [`GasAppError::Malformed`] — не 32 байта hex;
+    /// * [`GasAppError::Storage`] — замок отравлен.
+    pub fn pin_report_evidence_key(&self, key_hex: Option<&str>) -> Result<()> {
+        let key = match key_hex.map(str::trim) {
+            None | Some("") => None,
+            Some(text) => Some(
+                <[u8; 32]>::try_from(unhex(text)?.as_slice())
+                    .map_err(|_| GasAppError::Malformed)?,
+            ),
+        };
+        *self.evidence_pin.lock().map_err(|_| GasAppError::Storage)? = key;
+        Ok(())
+    }
+
+    /// Ключ, под которым можно запечатать улики, — из предложенного узлом.
+    ///
+    /// * Сборка закрепила ключ — годится только он: другой ключ от узла —
+    ///   подмена, улики не уходят (жалоба — уходит).
+    /// * Не закрепила — доверие при первом использовании: первый ключ
+    ///   запоминается, другой потом не принимается. Ротацию ключа
+    ///   оператор проводит новой сборкой с новым закреплённым ключом.
+    ///
+    /// Каждая подмена пишется в журнал безопасности.
+    fn trusted_evidence_key(&self, offered: [u8; 32], now: Timestamp) -> Result<Option<[u8; 32]>> {
+        let pin = *self.evidence_pin.lock().map_err(|_| GasAppError::Storage)?;
+        let remembered = self
+            .storage
+            .setting_text(EVIDENCE_KEY_SETTING)?
+            .and_then(|text| unhex(&text).ok())
+            .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok());
+        let expected = match (pin, remembered) {
+            (Some(pin), _) => pin,
+            (None, Some(remembered)) => remembered,
+            (None, None) => offered,
+        };
+        if offered != expected {
+            self.storage
+                .log_security_event("report_evidence_key_mismatch", None, now)?;
+            return Ok(None);
+        }
+        if remembered != Some(offered) {
+            self.storage
+                .set_setting_text(EVIDENCE_KEY_SETTING, &hex(&offered))?;
+        }
+        Ok(Some(offered))
+    }
+
     /// Жалоба с причиной и уликами.
     ///
-    /// 🔐 Улики запечатываются ключом оператора, который сервер отдаёт
-    /// по `/v1/sealed/report-key`. Сервер, подменивший ключ, прочитал бы
-    /// улики сам, — но он и есть их адресат: оператор. Узлы и база видят
-    /// только шифр.
+    /// 🔐 Улики запечатываются ключом оператора. Узел его отдаёт
+    /// (`/v1/sealed/report-key`), но принимается он, только если совпадает
+    /// с закреплённым сборкой или — без закрепления — с первым увиденным
+    /// ([`Self::pin_report_evidence_key`]). Узлы и база видят только шифр.
     ///
     /// # Errors
     ///
@@ -159,12 +221,20 @@ impl<T: Transport> Client<T> {
         } else {
             // Старый сервер маршрута ключа не знает — жалоба уходит без
             // улик, а не не уходит вовсе.
-            self.api
+            let offered = self
+                .api
                 .report_evidence_key()
                 .ok()
                 .and_then(|response| response.key)
                 .and_then(|key| hex::decode(key).ok())
-                .and_then(|key| <[u8; 32]>::try_from(key.as_slice()).ok())
+                .and_then(|key| <[u8; 32]>::try_from(key.as_slice()).ok());
+            // 🔐 Ключ узла — только если ему можно верить (аудит
+            // 2026-11-28): подменённый — жалоба без улик.
+            let trusted = match offered {
+                Some(key) => self.trusted_evidence_key(key, now)?,
+                None => None,
+            };
+            trusted
                 .map(|key| report_evidence::seal(&key, evidence, rng))
                 .transpose()?
                 .map(|sealed| hex(&sealed))

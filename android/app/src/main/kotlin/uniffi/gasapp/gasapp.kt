@@ -1158,6 +1158,8 @@ internal open class UniffiVTableCallbackInterfaceHttpTransport(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1434,6 +1436,8 @@ fun uniffi_gasapp_checksum_method_messenger_pending_registration(
 fun uniffi_gasapp_checksum_method_messenger_pin_channel_post(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_pin_message(
+): Short
+fun uniffi_gasapp_checksum_method_messenger_pin_report_evidence_key(
 ): Short
 fun uniffi_gasapp_checksum_method_messenger_pinned_message(
 ): Short
@@ -1836,6 +1840,8 @@ fun uniffi_gasapp_fn_method_messenger_pending_registration(`ptr`: Pointer,uniffi
 fun uniffi_gasapp_fn_method_messenger_pin_channel_post(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`seq`: Long,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_gasapp_fn_method_messenger_pin_message(`ptr`: Pointer,`peerUsername`: RustBuffer.ByValue,`messageId`: RustBuffer.ByValue,`nowMillis`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_gasapp_fn_method_messenger_pin_report_evidence_key(`ptr`: Pointer,`keyHex`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_gasapp_fn_method_messenger_pinned_message(`ptr`: Pointer,`chatId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -2590,6 +2596,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_pin_message() != 23983.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_gasapp_checksum_method_messenger_pin_report_evidence_key() != 38502.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_gasapp_checksum_method_messenger_pinned_message() != 58466.toShort()) {
@@ -4669,6 +4678,18 @@ public interface MessengerInterface {
      * [`FfiError::Core`] — сообщение из другого чата либо нет связи.
      */
     fun `pinMessage`(`peerUsername`: kotlin.String, `messageId`: kotlin.String?, `nowMillis`: kotlin.Long)
+    
+    /**
+     * 🔐 Открытый ключ улик к жалобам, вшитый сборкой (`EVIDENCE_KEY`
+     * в `tools/release.conf`, 64 знака hex). Вызывается сразу после
+     * открытия базы; пусто или `None` — сборка ключа не знает: тогда
+     * телефон верит первому ключу от узла и не принимает подмену.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — не 32 байта hex.
+     */
+    fun `pinReportEvidenceKey`(`keyHex`: kotlin.String?)
     
     /**
      * Закреплённое сообщение чата, UUID. Без сети.
@@ -7698,6 +7719,28 @@ open class Messenger: Disposable, AutoCloseable, MessengerInterface
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_pin_message(
         it, FfiConverterString.lower(`peerUsername`),FfiConverterOptionalString.lower(`messageId`),FfiConverterLong.lower(`nowMillis`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * 🔐 Открытый ключ улик к жалобам, вшитый сборкой (`EVIDENCE_KEY`
+     * в `tools/release.conf`, 64 знака hex). Вызывается сразу после
+     * открытия базы; пусто или `None` — сборка ключа не знает: тогда
+     * телефон верит первому ключу от узла и не принимает подмену.
+     *
+     * # Errors
+     *
+     * [`FfiError::Core`] — не 32 байта hex.
+     */
+    @Throws(FfiException::class)override fun `pinReportEvidenceKey`(`keyHex`: kotlin.String?)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_gasapp_fn_method_messenger_pin_report_evidence_key(
+        it, FfiConverterOptionalString.lower(`keyHex`),_status)
 }
     }
     

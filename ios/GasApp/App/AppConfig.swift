@@ -24,6 +24,13 @@ enum AppConfig {
         return onion.isEmpty ? nil : onion
     }
 
+    /// 🔐 Открытый ключ улик к жалобам (64 знака hex) или nil — ядро
+    /// запечатывает улики только под него (`pinReportEvidenceKey`).
+    static var evidenceKey: String? {
+        let key = value("GASAPPEvidenceKey")
+        return key.isEmpty ? nil : key
+    }
+
     static var docsURL: URL { URL(string: value("GASAPPDocsURL")) ?? URL(string: "https://gasapp.eu")! }
 
     static var pins: PinSet {

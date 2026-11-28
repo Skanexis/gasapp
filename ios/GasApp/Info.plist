@@ -91,5 +91,7 @@
 	<string>$(GASAPP_PINS)</string>
 	<key>GASAPPPinExpiration</key>
 	<string>$(GASAPP_PIN_EXPIRATION)</string>
+	<key>GASAPPEvidenceKey</key>
+	<string>$(GASAPP_EVIDENCE_KEY)</string>
 </dict>
 </plist>

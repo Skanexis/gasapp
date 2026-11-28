@@ -131,6 +131,12 @@ android {
         // не может, а TLS и пиннинг к домену сервера остаются в силе.
         buildConfigField "String", "GASAPP_SERVER_ONION",
                 "\"${project.findProperty('gasappServerOnion') ?: ''}\""
+        // 🔐 Открытый ключ улик к жалобам (64 знака hex, EVIDENCE_KEY
+        // в tools/release.conf): ядро запечатывает улики только под него,
+        // а не под тот, что отдаёт узел (аудит 2026-11-28). Пусто — телефон
+        // верит первому ключу от узла.
+        buildConfigField "String", "GASAPP_EVIDENCE_KEY",
+                "\"${project.findProperty('gasappEvidenceKey') ?: ''}\""
         // 🔐 Эталон подписи для проверки во время работы (MASVS
         // RESILIENCE-2.1, `core/AppSignature.kt`). Пусто в отладочной
         // сборке: подписывать её нашим ключом никто не будет, и сверять
