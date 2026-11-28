@@ -24,7 +24,7 @@ use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use crate::authz::AuthenticatedDevice;
-use crate::channels::owner_of;
+use crate::channels::{owner_of, primary_owner_of};
 use crate::pow;
 use crate::routes::{decode_hex, decode_pq_identity, ApiError, AppState, RegisterResponse};
 
@@ -98,7 +98,9 @@ pub(crate) async fn create(
     Path(device_id): Path<Uuid>,
     Json(request): Json<BotNameRequest>,
 ) -> Result<Json<BotTokenResponse>, ApiError> {
-    let (account_id, premium) = owner_of(&state, device, device_id).await?;
+    // 🔐 Ботов заводит и удаляет только не подключённое устройство (аудит
+    // 2026-11-28, см. `channels::primary_owner_of`).
+    let (account_id, premium) = primary_owner_of(&state, device, device_id).await?;
 
     if !premium {
         return Err(ApiError::Forbidden);
@@ -159,7 +161,7 @@ pub(crate) async fn delete(
     Path(device_id): Path<Uuid>,
     Json(request): Json<BotNameRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let (account_id, _) = primary_owner_of(&state, device, device_id).await?;
 
     bots::delete_bot(&state.pool, account_id, &request.username).await?;
 

@@ -111,3 +111,31 @@ fn the_server_process_runs_the_purge() {
         "main.rs не запускает retention::run: сроки хранения не исполняются"
     );
 }
+
+/// 🔐 Просроченные ящики связывания удаляет расписание, а не только
+/// открытие следующего ящика (аудит 2026-11-28).
+#[tokio::test]
+async fn a_purge_removes_expired_link_boxes() {
+    let state = require_state!();
+    let pool = &state.pool;
+    let nonce = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO link_boxes (nonce, request, expires_at)
+         VALUES ($1, $2, now() - interval '1 minute')",
+    )
+    .bind(nonce)
+    .bind(vec![0u8; 77])
+    .execute(pool)
+    .await
+    .unwrap();
+
+    // Число удалённых не сверяется: соседний тест чистит ту же базу и
+    // мог успеть первым.
+    retention::purge_once(pool).await.unwrap();
+
+    assert!(
+        !exists(pool, "link_boxes", "nonce", nonce).await,
+        "просроченный ящик остался"
+    );
+}

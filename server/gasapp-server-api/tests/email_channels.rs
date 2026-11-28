@@ -3216,7 +3216,12 @@ async fn a_notify_token_answers_only_whether_mail_waits() {
     let (status, _) = post(&state, "/v1/notify/check", check([0x11; 32])).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    // Частый опрос упирается в предел.
+    // Частый опрос упирается в предел. Отказы бюджет владельца не тратят
+    // (аудит 2026-11-28): до предела — ещё две проверки верным токеном.
+    for _ in 0..2 {
+        let (status, _) = post(&state, "/v1/notify/check", check(token)).await;
+        assert_eq!(status, StatusCode::OK);
+    }
     let (status, _) = post(&state, "/v1/notify/check", check(token)).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 
@@ -3236,6 +3241,58 @@ async fn a_notify_token_answers_only_whether_mail_waits() {
         .await
         .unwrap();
     assert_eq!(left, 0);
+}
+
+/// 🔐 Мусорные проверки с чужим токеном не выбирают бюджет владельца
+/// (аудит 2026-11-28).
+///
+/// Идентификатор устройства discovery отдаёт любому по имени. Прежде
+/// предел стоял до проверки токена и считался по устройству: четыре
+/// мусорных запроса в минуту — и телефон владельца получал `429`, то есть
+/// не узнавал о новых сообщениях.
+#[tokio::test]
+async fn junk_checks_do_not_starve_the_owners_notify_budget() {
+    use sha2::{Digest as _, Sha256};
+
+    let (state, _mailer) = require_state!();
+    let private = device_key();
+    let device = register(&state, &unique_name("notifyjunk"), &private).await;
+    let token = [0x6Bu8; 32];
+    let check =
+        |token: [u8; 32]| serde_json::json!({ "device_id": device, "token": hex::encode(token) });
+
+    let body = serde_json::json!({ "token_hash": hex::encode(Sha256::digest(token)) });
+    let (status, _) = signed(
+        &state,
+        &private,
+        "PUT",
+        &format!("/v1/notify/{device}"),
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Посторонний заваливает проверку мусором — сверх бюджета отказов
+    // ему уже `429`, а не `401`.
+    let mut statuses = Vec::new();
+    let attempts = gasapp_server_api::notify::NOTIFY_FAILURES_PER_MINUTE.saturating_add(5);
+    for junk in 0..attempts {
+        let wrong = [u8::try_from(junk).unwrap(); 32];
+        statuses.push(post(&state, "/v1/notify/check", check(wrong)).await.0);
+    }
+    assert!(statuses
+        .iter()
+        .all(|status| *status == StatusCode::UNAUTHORIZED
+            || *status == StatusCode::TOO_MANY_REQUESTS));
+    assert_eq!(statuses.last(), Some(&StatusCode::TOO_MANY_REQUESTS));
+
+    // А владелец со своим токеном проверяет очередь как прежде — весь свой
+    // бюджет.
+    for _ in 0..gasapp_server_api::notify::NOTIFY_CHECKS_PER_MINUTE {
+        let (status, answer) = post(&state, "/v1/notify/check", check(token)).await;
+        assert_eq!(status, StatusCode::OK, "мусор отнял бюджет владельца");
+        assert_eq!(answer["pending"], false);
+    }
 }
 
 /// Заморозка и блокировка оператором: запросы аккаунта и его ботов
@@ -3572,6 +3629,8 @@ async fn a_second_device_is_linked_and_unlinked() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+    // 🔐 Сокет уведомлений отключённого закрывается (аудит 2026-11-28).
+    let mut socket = state.hub.connect_for_test(new_device).await;
     let (status, _) = signed(
         &state,
         &owner_key,
@@ -3581,6 +3640,10 @@ async fn a_second_device_is_linked_and_unlinked() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(
+        socket.recv().await.is_none(),
+        "сокет отключённого устройства пережил отключение"
+    );
     let (status, _) = signed(&state, &new_key, "GET", &status_of(new_device), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let (_, found) = get(&state, &format!("/v1/discovery/username/{owner_name}")).await;
@@ -3615,4 +3678,140 @@ async fn a_second_device_is_linked_and_unlinked() {
         .unwrap();
     let (status, _) = get(&state, &format!("/v1/link/{late}/request")).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Подключённое устройство аккаунта — сразу строкой в базе, без ящика:
+/// здесь проверяется не связывание, а то, что такому устройству позволено.
+/// Подпись членства — нули: её проверяют клиенты, сервер смотрит лишь,
+/// что она есть.
+async fn linked_device(state: &Arc<AppState>, primary: Uuid) -> (DeviceKey, Uuid) {
+    let key = device_key();
+    let public = public_key(&key);
+    let device = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, account_id, identity_key, membership)
+         SELECT $1, account_id, $2, $3 FROM devices WHERE device_id = $4",
+    )
+    .bind(device)
+    .bind(public.as_slice())
+    .bind(vec![0u8; 64])
+    .bind(primary)
+    .execute(&state.pool)
+    .await
+    .unwrap();
+
+    (key, device)
+}
+
+/// 🔐 Подключённое устройство не удаляет аккаунт (аудит 2026-11-28,
+/// `MULTI-DEVICE.md` §2): второй телефон, потерянный или украденный, не
+/// уносит аккаунт. Основное удаляет — и сокеты обоих устройств закрываются.
+#[tokio::test]
+async fn a_linked_device_cannot_delete_the_account() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_device = register(&state, &unique_name("keeper"), &owner_key).await;
+    let (linked_key, linked) = linked_device(&state, owner_device).await;
+    let devices_left = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM devices
+              WHERE account_id = (SELECT account_id FROM devices WHERE device_id = $1)",
+        )
+        .bind(owner_device)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap()
+    };
+
+    let (status, _) = signed(
+        &state,
+        &linked_key,
+        "DELETE",
+        &format!("/v1/accounts/{linked}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(devices_left().await, 2, "аккаунт пострадал от отказа");
+
+    let mut primary_socket = state.hub.connect_for_test(owner_device).await;
+    let mut linked_socket = state.hub.connect_for_test(linked).await;
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &format!("/v1/accounts/{owner_device}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(primary_socket.recv().await.is_none());
+    assert!(
+        linked_socket.recv().await.is_none(),
+        "сокет подключённого устройства пережил удаление аккаунта"
+    );
+}
+
+/// 🔐 Подключённое устройство не ведёт каналы владельца и не заводит
+/// ботов (аудит 2026-11-28): описание, удаление, администраторы, боты —
+/// `403`. Основное устройство — как прежде.
+#[tokio::test]
+async fn a_linked_device_cannot_run_the_owners_channel() {
+    let (state, _mailer) = require_state!();
+    let owner_key = device_key();
+    let owner_device = premium_account(&state, &owner_key).await;
+    let (linked_key, linked) = linked_device(&state, owner_device).await;
+    let channel_id = Uuid::new_v4();
+
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "POST",
+        &format!("/v1/channels/own/{owner_device}"),
+        Some(channel_body(channel_id)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let own = format!("/v1/channels/own/{linked}/{channel_id}");
+    let attempts = [
+        (
+            "PUT",
+            own.clone(),
+            Some(serde_json::json!({ "meta": hex::encode(b"hijacked") })),
+        ),
+        ("DELETE", own.clone(), None),
+        (
+            "POST",
+            format!("{own}/admins"),
+            Some(serde_json::json!({
+                "device_id": Uuid::new_v4(),
+                "verify_key": hex::encode([0x33u8; 32]),
+            })),
+        ),
+        (
+            "POST",
+            format!("/v1/bots/own/{linked}"),
+            Some(serde_json::json!({ "username": bot_name() })),
+        ),
+    ];
+    for (method, uri, body) in attempts {
+        let (status, _) = signed(&state, &linked_key, method, &uri, body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}");
+    }
+
+    // Канал цел, описание прежнее; основное устройство удаляет его.
+    let (status, info) = get(&state, &format!("/v1/channels/feed/{channel_id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(info["meta"], hex::encode(b"encrypted-meta"));
+    let (status, _) = signed(
+        &state,
+        &owner_key,
+        "DELETE",
+        &format!("/v1/channels/own/{owner_device}/{channel_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
 }

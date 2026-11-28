@@ -191,7 +191,7 @@ pub async fn reported_accounts(pool: &PgPool) -> Result<Vec<ReportedAccount>, sq
         "SELECT a.account_id,
                 a.username,
                 to_char(a.active_month, 'YYYY-MM'),
-                count(DISTINCT r.complainant_device),
+                count(DISTINCT r.complainant_account),
                 count(DISTINCT r.certificate_hash),
                 to_char(min(r.created_at), 'YYYY-MM-DD HH24:00'),
                 to_char(max(r.created_at), 'YYYY-MM-DD HH24:00')
@@ -199,7 +199,7 @@ pub async fn reported_accounts(pool: &PgPool) -> Result<Vec<ReportedAccount>, sq
            JOIN accounts a ON a.account_id = r.reported_account
           GROUP BY a.account_id, a.username, a.active_month
           ORDER BY count(DISTINCT r.certificate_hash) DESC,
-                   count(DISTINCT r.complainant_device) DESC,
+                   count(DISTINCT r.complainant_account) DESC,
                    max(r.created_at) DESC
           LIMIT 200",
     )
@@ -259,7 +259,7 @@ pub async fn account_by_username(
                 a.username,
                 to_char(a.active_month, 'YYYY-MM'),
                 (SELECT count(*) FROM devices d WHERE d.account_id = a.account_id),
-                (SELECT count(DISTINCT r.complainant_device)
+                (SELECT count(DISTINCT r.complainant_account)
                    FROM sealed_sender_reports r
                   WHERE r.reported_account = a.account_id),
                 (SELECT count(DISTINCT r.certificate_hash)
@@ -323,12 +323,15 @@ pub async fn delete_account(
     let mut tx = pool.begin().await?;
 
     let reporters: i64 = sqlx::query_scalar(
-        "SELECT count(DISTINCT complainant_device)
+        "SELECT count(DISTINCT complainant_account)
            FROM sealed_sender_reports WHERE reported_account = $1",
     )
     .bind(account_id)
     .fetch_one(&mut *tx)
     .await?;
+
+    // Сокеты устройств аккаунта и его ботов — закрыть (аудит 2026-11-28).
+    crate::moderation::evict_sockets(&mut tx, account_id).await?;
 
     let removed = sqlx::query("DELETE FROM accounts WHERE account_id = $1")
         .bind(account_id)
@@ -364,7 +367,7 @@ pub async fn dismiss_reports(pool: &PgPool, account_id: Uuid) -> Result<i64, sql
     let mut tx = pool.begin().await?;
 
     let reporters: i64 = sqlx::query_scalar(
-        "SELECT count(DISTINCT complainant_device)
+        "SELECT count(DISTINCT complainant_account)
            FROM sealed_sender_reports WHERE reported_account = $1",
     )
     .bind(account_id)

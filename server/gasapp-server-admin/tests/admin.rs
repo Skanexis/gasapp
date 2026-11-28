@@ -332,7 +332,11 @@ async fn a_reported_account_is_deleted_and_logged_without_its_name() {
 }
 
 /// Дело: двое независимых жалобщиков, два сертификата, причина — спам.
-async fn case_page_counts_signals(state: &Arc<AdminState>, session: &str, spam_account: Uuid) -> String {
+async fn case_page_counts_signals(
+    state: &Arc<AdminState>,
+    session: &str,
+    spam_account: Uuid,
+) -> String {
     let (status, html, _) = send(
         state,
         get(&format!("/reports/account/{spam_account}"), session),
@@ -368,17 +372,17 @@ async fn an_account_is_found_by_exact_name_only() {
     let session = login(&state).await;
 
     let (_, html, _) = send(&state, get(&format!("/account?username=@{name}"), &session)).await;
-    assert!(html.contains("Last active") && html.contains("Reporters"), "найден по точному имени");
+    assert!(
+        html.contains("Last active") && html.contains("Reporters"),
+        "найден по точному имени"
+    );
 
     let (_, html, _) = send(
         &state,
         get(&format!("/account?username={}", &name[..6]), &session),
     )
     .await;
-    assert!(
-        html.contains("No account @"),
-        "по части имени не находится"
-    );
+    assert!(html.contains("No account @"), "по части имени не находится");
 }
 
 /// Заморозка, блокировка и снятие — из дела и с карточки аккаунта:
@@ -396,16 +400,32 @@ async fn an_account_is_frozen_blocked_and_released() {
         gasapp_server_db::repo::register_account(&state.pool, &name, &key(), &key(), &key())
             .await
             .expect("аккаунт");
-    let (_, complainant) =
-        gasapp_server_db::repo::register_account(&state.pool, &format!("hurt{suffix}"), &key(), &key(), &key())
-            .await
-            .expect("жалобщик");
-    gasapp_server_db::repo::record_sealed_sender_report(&state.pool, account, device, complainant, &[7; 32], Some(4))
-        .await
-        .expect("жалоба");
+    let (_, complainant) = gasapp_server_db::repo::register_account(
+        &state.pool,
+        &format!("hurt{suffix}"),
+        &key(),
+        &key(),
+        &key(),
+    )
+    .await
+    .expect("жалобщик");
+    gasapp_server_db::repo::record_sealed_sender_report(
+        &state.pool,
+        account,
+        device,
+        complainant,
+        &[7; 32],
+        Some(4),
+    )
+    .await
+    .expect("жалоба");
 
     let session = login(&state).await;
-    let (_, html, _) = send(&state, get(&format!("/reports/account/{account}"), &session)).await;
+    let (_, html, _) = send(
+        &state,
+        get(&format!("/reports/account/{account}"), &session),
+    )
+    .await;
     assert!(html.contains("Freeze account") && html.contains("Block account"));
     let csrf = csrf_of(&html);
     let until = || async {
@@ -426,22 +446,33 @@ async fn an_account_is_frozen_blocked_and_released() {
         format!("csrf={csrf}&username={name}&measure=freeze&days=365&reason=spam"),
         format!("csrf={csrf}&username={name}&measure=block&reason=spam"),
     ] {
-        assert_eq!(send(&state, post(&restrict, &session, &bad)).await.0, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            send(&state, post(&restrict, &session, &bad)).await.0,
+            StatusCode::BAD_REQUEST
+        );
     }
 
     let (status, _, location) = send(
         &state,
-        post(&restrict, &session, &format!("csrf={csrf}&username={name}&measure=freeze&days=7&reason=harassment&back=case")),
+        post(
+            &restrict,
+            &session,
+            &format!(
+                "csrf={csrf}&username={name}&measure=freeze&days=7&reason=harassment&back=case"
+            ),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(location.as_deref(), Some("/reports?done=frozen"));
     assert_eq!(until().await.as_deref(), Some("week"));
-    let open: i64 = sqlx::query_scalar("SELECT count(*) FROM sealed_sender_reports WHERE reported_account = $1")
-        .bind(account)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap();
+    let open: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM sealed_sender_reports WHERE reported_account = $1",
+    )
+    .bind(account)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
     assert_eq!(open, 0, "дело закрыто");
 
     let (_, card, _) = send(&state, get(&format!("/account?username={name}"), &session)).await;
@@ -449,26 +480,95 @@ async fn an_account_is_frozen_blocked_and_released() {
 
     let (_, _, location) = send(
         &state,
-        post(&restrict, &session, &format!("csrf={csrf}&username={name}&measure=block&reason=harassment&confirm=yes")),
+        post(
+            &restrict,
+            &session,
+            &format!("csrf={csrf}&username={name}&measure=block&reason=harassment&confirm=yes"),
+        ),
     )
     .await;
-    assert_eq!(location, Some(format!("/account?username={name}&done=blocked")));
+    assert_eq!(
+        location,
+        Some(format!("/account?username={name}&done=blocked"))
+    );
     assert_eq!(until().await.as_deref(), Some("blocked"));
 
     let (_, _, location) = send(
         &state,
-        post(&format!("/accounts/{account}/lift"), &session, &format!("csrf={csrf}&username={name}")),
+        post(
+            &format!("/accounts/{account}/lift"),
+            &session,
+            &format!("csrf={csrf}&username={name}"),
+        ),
     )
     .await;
-    assert_eq!(location, Some(format!("/account?username={name}&done=lifted")));
+    assert_eq!(
+        location,
+        Some(format!("/account?username={name}&done=lifted"))
+    );
     assert_eq!(until().await, None);
 
     for action in ["account_frozen", "account_blocked", "restriction_lifted"] {
-        let logged: i64 = sqlx::query_scalar("SELECT count(*) FROM admin_actions WHERE action = $1")
-            .bind(action)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap();
+        let logged: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM admin_actions WHERE action = $1")
+                .bind(action)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
         assert!(logged >= 1, "{action} в журнале");
     }
+}
+
+/// 🔐 Заморозка просит узлы закрыть открытые сокеты аккаунта (аудит
+/// 2026-11-28): подпись устройства узел проверяет только при открытии
+/// сокета, и без этого замороженный получал бы уведомления дальше.
+#[tokio::test]
+async fn freezing_asks_the_nodes_to_close_the_sockets() {
+    let Some(state) = state().await else {
+        eprintln!("GASAPP_TEST_DATABASE_URL не задан — тест пропущен");
+        return;
+    };
+
+    let suffix = &Uuid::new_v4().simple().to_string()[..10];
+    let (account, device) = gasapp_server_db::repo::register_account(
+        &state.pool,
+        &format!("loud{suffix}"),
+        &key(),
+        &key(),
+        &key(),
+    )
+    .await
+    .expect("аккаунт");
+
+    let mut listener = sqlx::postgres::PgListener::connect_with(&state.pool)
+        .await
+        .expect("слушатель");
+    listener
+        .listen(gasapp_server_admin::moderation::EVICT_CHANNEL)
+        .await
+        .expect("подписка");
+
+    assert!(gasapp_server_admin::moderation::restrict(
+        &state.pool,
+        account,
+        gasapp_server_admin::moderation::Measure::Freeze(1),
+        gasapp_server_admin::queries::Reason::Spam,
+    )
+    .await
+    .expect("заморозка"));
+
+    // Канал общий для всех тестов: ждём своё устройство.
+    let evicted = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let notification = listener.recv().await.expect("уведомление");
+            if notification.payload() == device.to_string() {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(
+        evicted.is_ok(),
+        "узлы не попросили закрыть сокет замороженного"
+    );
 }

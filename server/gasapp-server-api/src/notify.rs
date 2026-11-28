@@ -43,6 +43,11 @@ const TOKEN_LEN: usize = 32;
 /// которому время прихода сообщения читалось бы с точностью до секунд.
 pub const NOTIFY_CHECKS_PER_MINUTE: u32 = 4;
 
+/// Сколько отвергнутых проверок (неверный токен) принимается в минуту на
+/// устройство. Свой бюджет, не владельца: сверх него — `429` вместо `401`,
+/// а владелец со своим токеном этого не замечает.
+pub const NOTIFY_FAILURES_PER_MINUTE: u32 = 20;
+
 /// Запрос на регистрацию токена.
 #[derive(Debug, Deserialize)]
 pub struct NotifyTokenRequest {
@@ -105,6 +110,19 @@ pub(crate) async fn unregister(
 ///
 /// 🔐 Без подписи: в фоне подписывать нечем. Неизвестное устройство и
 /// неверный токен дают один и тот же отказ.
+///
+/// # 🔐 Почему токен проверяется раньше предела
+///
+/// Прежде предел стоял первым и считался по устройству. Идентификатор
+/// устройства discovery отдаёт любому по имени, и четыре мусорных запроса
+/// в минуту выбирали бюджет владельца: его телефон получал `429` и не
+/// узнавал о новых сообщениях (аудит 2026-11-28).
+///
+/// Теперь верный токен тратит бюджет владельца
+/// ([`AppState::notify_limiter`]), а неверный — отдельный бюджет отказов
+/// ([`AppState::notify_failures_limiter`]): мусор отнять у владельца
+/// нечего. Цена — запрос к базе на каждую попытку; это поиск по ключу,
+/// а перебирать 256-битный токен бессмысленно.
 pub(crate) async fn check(
     State(state): State<Arc<AppState>>,
     Json(request): Json<NotifyCheckRequest>,
@@ -115,24 +133,26 @@ pub(crate) async fn check(
         return Err(ApiError::BadRequest);
     }
 
-    // Предел — до обращения к базе: перебор токена не должен стоить
-    // серверу запроса на каждую попытку.
-    {
-        let key = rate_limit::key_from_addr(&state.limiter_salt, &request.device_id.to_string());
-        let mut limiter = state
-            .notify_limiter
-            .lock()
-            .map_err(|_| ApiError::Internal)?;
+    let hash: [u8; 32] = Sha256::digest(&token).into();
+    let answer = gasapp_server_db::notify::pending(&state.pool, request.device_id, &hash).await?;
 
-        if !limiter.allow(key, now_millis()) {
-            return Err(ApiError::TooManyRequests);
-        }
+    let limiter = if answer.is_some() {
+        &state.notify_limiter
+    } else {
+        &state.notify_failures_limiter
+    };
+    let allowed = {
+        let key = rate_limit::key_from_addr(&state.limiter_salt, &request.device_id.to_string());
+        let mut limiter = limiter.lock().map_err(|_| ApiError::Internal)?;
+
+        limiter.allow(key, now_millis())
+    };
+
+    if !allowed {
+        return Err(ApiError::TooManyRequests);
     }
 
-    let hash: [u8; 32] = Sha256::digest(&token).into();
-
-    gasapp_server_db::notify::pending(&state.pool, request.device_id, &hash)
-        .await?
+    answer
         .map(|pending| Json(NotifyCheckResponse { pending }))
         .ok_or(ApiError::Unauthorized)
 }

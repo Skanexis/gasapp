@@ -293,9 +293,12 @@ async fn summary_page(State(state): State<Arc<AdminState>>, headers: HeaderMap) 
     };
 
     match insights::dashboard(&state.pool).await {
-        Ok(dashboard) => {
-            Html(layout("Overview", &csrf, &insights::dashboard_html(&dashboard, bytes))).into_response()
-        }
+        Ok(dashboard) => Html(layout(
+            "Overview",
+            &csrf,
+            &insights::dashboard_html(&dashboard, bytes),
+        ))
+        .into_response(),
         Err(error) => database_error(&error),
     }
 }
@@ -362,7 +365,12 @@ async fn journal_page(State(state): State<Arc<AdminState>>, headers: HeaderMap) 
         return Redirect::to("/login").into_response();
     };
     match insights::journal(&state.pool).await {
-        Ok(rows) => Html(layout("Journal", &csrf, &insights::journal_html(&rows, reason_label))).into_response(),
+        Ok(rows) => Html(layout(
+            "Journal",
+            &csrf,
+            &insights::journal_html(&rows, reason_label),
+        ))
+        .into_response(),
         Err(error) => database_error(&error),
     }
 }
@@ -372,7 +380,12 @@ async fn health_page(State(state): State<Arc<AdminState>>, headers: HeaderMap) -
         return Redirect::to("/login").into_response();
     };
     match insights::health(&state.pool).await {
-        Ok(health) => Html(layout("Health", &csrf, &insights::health_html(&health, bytes))).into_response(),
+        Ok(health) => Html(layout(
+            "Health",
+            &csrf,
+            &insights::health_html(&health, bytes),
+        ))
+        .into_response(),
         Err(error) => database_error(&error),
     }
 }
@@ -646,8 +659,16 @@ async fn restrict_account(
 
     match moderation::restrict(&state.pool, account_id, measure, reason).await {
         Ok(_) => {
-            let done = if measure == moderation::Measure::Block { "blocked" } else { "frozen" };
-            tracing::info!(reason = reason.code(), done, "админ-центр: аккаунт ограничен");
+            let done = if measure == moderation::Measure::Block {
+                "blocked"
+            } else {
+                "frozen"
+            };
+            tracing::info!(
+                reason = reason.code(),
+                done,
+                "админ-центр: аккаунт ограничен"
+            );
             if form.back.as_deref() == Some("case") {
                 Redirect::to(&format!("/reports?done={done}")).into_response()
             } else {
@@ -822,10 +843,17 @@ fn layout(title: &str, csrf: &str, body: &str) -> String {
             } else {
                 ("", "")
             };
-            let shown = if *label == "Account" { "Find account" } else { label };
+            let shown = if *label == "Account" {
+                "Find account"
+            } else {
+                label
+            };
             // Внешняя страница (Beszel) — в новой вкладке, без Referer.
             let (external, arrow) = if href.starts_with("http") {
-                (" target=\"_blank\" rel=\"noopener noreferrer\"", icon("external-link"))
+                (
+                    " target=\"_blank\" rel=\"noopener noreferrer\"",
+                    icon("external-link"),
+                )
             } else {
                 ("", String::new())
             };
@@ -868,7 +896,12 @@ fn layout(title: &str, csrf: &str, body: &str) -> String {
 
 fn login_html(error: Option<&str>) -> String {
     let error = error
-        .map(|text| format!("<div class=\"alert alert-danger\" role=\"alert\">{}</div>", escape(text)))
+        .map(|text| {
+            format!(
+                "<div class=\"alert alert-danger\" role=\"alert\">{}</div>",
+                escape(text)
+            )
+        })
         .unwrap_or_default();
 
     format!(
@@ -1005,7 +1038,10 @@ fn account_html(view: &AccountView<'_>) -> String {
         _ => None,
     };
     if let Some(text) = flash {
-        let _ = write!(html, "<div class=\"alert alert-success\" role=\"status\">{text}</div>");
+        let _ = write!(
+            html,
+            "<div class=\"alert alert-success\" role=\"status\">{text}</div>"
+        );
     }
 
     match (view.wanted, view.card) {
@@ -1036,7 +1072,10 @@ fn account_html(view: &AccountView<'_>) -> String {
     html
 }
 
-fn account_head(card: &queries::AccountCard, restricted: Option<&moderation::Restricted>) -> String {
+fn account_head(
+    card: &queries::AccountCard,
+    restricted: Option<&moderation::Restricted>,
+) -> String {
     let mut badges = String::new();
     if card.bot_owner.is_some() {
         badges.push_str("<span class=\"badge bg-info-lt\">bot</span>");
@@ -1073,12 +1112,34 @@ fn cases_plural(count: i64, one: &str, many: &str) -> String {
 fn account_stats(card: &queries::AccountCard) -> String {
     format!(
         "<div class=\"row row-cards mb-3\">{}{}{}{}</div>",
-        insights::stat("flag", if card.reporters > 0 { "bad" } else { "ok" }, "Reporters",
-                       &card.reporters.to_string(), "different people"),
-        insights::stat("shield-lock", "info", "Certificates", &card.certificates.to_string(),
-                       "distinct sender proofs"),
-        insights::stat("broadcast", "pink", "Channels", &card.channels.to_string(), "owned"),
-        insights::stat("robot", "gold", "Bots", &card.bots.to_string(), "created by this account"),
+        insights::stat(
+            "flag",
+            if card.reporters > 0 { "bad" } else { "ok" },
+            "Reporters",
+            &card.reporters.to_string(),
+            "different people"
+        ),
+        insights::stat(
+            "shield-lock",
+            "info",
+            "Certificates",
+            &card.certificates.to_string(),
+            "distinct sender proofs"
+        ),
+        insights::stat(
+            "broadcast",
+            "pink",
+            "Channels",
+            &card.channels.to_string(),
+            "owned"
+        ),
+        insights::stat(
+            "robot",
+            "gold",
+            "Bots",
+            &card.bots.to_string(),
+            "created by this account"
+        ),
     )
 }
 
@@ -1310,15 +1371,23 @@ mod tests {
             count: 1,
             reporters: 1,
         };
-        let frozen = moderation::Restricted { blocked: false, until: Some("2026-11-20 14:00".into()),
-            reason: Some("spam".into()) };
+        let frozen = moderation::Restricted {
+            blocked: false,
+            until: Some("2026-11-20 14:00".into()),
+            reason: Some("spam".into()),
+        };
         let pages = [
             login_html(Some("Invalid operator token.")),
             insights::dashboard_html(&insights::Dashboard::default(), bytes),
             cases::queue_html(&[report], 1, Some("deleted")),
             channel_reports_html(&[channel], "csrf"),
-            account_html(&AccountView { wanted: Some("alice"), card: Some(&account), restricted: Some(&frozen),
-                done: Some("frozen"), csrf: "csrf" }),
+            account_html(&AccountView {
+                wanted: Some("alice"),
+                card: Some(&account),
+                restricted: Some(&frozen),
+                done: Some("frozen"),
+                csrf: "csrf",
+            }),
             transparency_html(&[action]),
         ];
         assert!(pages[2].contains("href=\"/reports/account/"));
@@ -1339,48 +1408,189 @@ mod tests {
     /// Без переменной — ничего не делает.
     #[test]
     fn preview_pages() {
-        let Ok(dir) = std::env::var("ADMIN_PREVIEW_DIR") else { return };
+        let Ok(dir) = std::env::var("ADMIN_PREVIEW_DIR") else {
+            return;
+        };
         let dashboard = insights::Dashboard {
-            accounts: 1284, bots: 12, premium: 37, active_this_month: 642, active_last_month: 211,
-            dormant: 431, channels: 96, public_channels: 21, closed_channels: 14, posts: 5120,
-            subscriptions: 8803, reported_accounts: 2, reported_channels: 1, devices: 1284,
-            envelopes: 318, oldest_envelope_hours: Some(9), attachments: 702,
-            attachments_bytes: 3_400_000_000, database_bytes: 912_000_000, kt_epoch: Some(4410),
-            activity: vec![("2026-06".into(), 40), ("2026-07".into(), 88), ("2026-08".into(), 120),
-                           ("2026-09".into(), 203), ("2026-10".into(), 211), ("2026-11".into(), 642)],
+            accounts: 1284,
+            bots: 12,
+            premium: 37,
+            active_this_month: 642,
+            active_last_month: 211,
+            dormant: 431,
+            channels: 96,
+            public_channels: 21,
+            closed_channels: 14,
+            posts: 5120,
+            subscriptions: 8803,
+            reported_accounts: 2,
+            reported_channels: 1,
+            devices: 1284,
+            envelopes: 318,
+            oldest_envelope_hours: Some(9),
+            attachments: 702,
+            attachments_bytes: 3_400_000_000,
+            database_bytes: 912_000_000,
+            kt_epoch: Some(4410),
+            activity: vec![
+                ("2026-06".into(), 40),
+                ("2026-07".into(), 88),
+                ("2026-08".into(), 120),
+                ("2026-09".into(), 203),
+                ("2026-10".into(), 211),
+                ("2026-11".into(), 642),
+            ],
         };
         let accounts = vec![
-            insights::AccountRow { account_id: Uuid::nil(), username: "anna_k".into(), active_month: "2026-11".into(),
-                premium: true, bot: false, devices: 1, channels: 3, reporters: 0, restricted: None },
-            insights::AccountRow { account_id: Uuid::nil(), username: "news_bot".into(), active_month: "2026-11".into(),
-                premium: false, bot: true, devices: 1, channels: 0, reporters: 0, restricted: None },
-            insights::AccountRow { account_id: Uuid::nil(), username: "spammer42".into(), active_month: "2026-10".into(),
-                premium: false, bot: false, devices: 1, channels: 0, reporters: 4, restricted: Some(false) },
+            insights::AccountRow {
+                account_id: Uuid::nil(),
+                username: "anna_k".into(),
+                active_month: "2026-11".into(),
+                premium: true,
+                bot: false,
+                devices: 1,
+                channels: 3,
+                reporters: 0,
+                restricted: None,
+            },
+            insights::AccountRow {
+                account_id: Uuid::nil(),
+                username: "news_bot".into(),
+                active_month: "2026-11".into(),
+                premium: false,
+                bot: true,
+                devices: 1,
+                channels: 0,
+                reporters: 0,
+                restricted: None,
+            },
+            insights::AccountRow {
+                account_id: Uuid::nil(),
+                username: "spammer42".into(),
+                active_month: "2026-10".into(),
+                premium: false,
+                bot: false,
+                devices: 1,
+                channels: 0,
+                reporters: 4,
+                restricted: Some(false),
+            },
         ];
         let channels = vec![
-            insights::ChannelRow { channel_id: Uuid::nil(), handle: Some("gas_news".into()), owner: "anna_k".into(),
-                closed: false, created: "2026-10-12".into(), subscribers: 3120, posts: 214, reports: 0 },
-            insights::ChannelRow { channel_id: Uuid::nil(), handle: None, owner: "mark".into(),
-                closed: true, created: "2026-11-02".into(), subscribers: 48, posts: 12, reports: 1 },
+            insights::ChannelRow {
+                channel_id: Uuid::nil(),
+                handle: Some("gas_news".into()),
+                owner: "anna_k".into(),
+                closed: false,
+                created: "2026-10-12".into(),
+                subscribers: 3120,
+                posts: 214,
+                reports: 0,
+            },
+            insights::ChannelRow {
+                channel_id: Uuid::nil(),
+                handle: None,
+                owner: "mark".into(),
+                closed: true,
+                created: "2026-11-02".into(),
+                subscribers: 48,
+                posts: 12,
+                reports: 1,
+            },
         ];
-        let health = insights::Health { version: "16.4".into(), uptime: "12 d 4 h".into(), connections: 9,
-            database_bytes: 912_000_000, envelopes: 318, oldest_envelope_hours: Some(9),
-            tables: vec![("attachments".into(), 3_400_000_000), ("envelopes".into(), 220_000_000)] };
-        let journal = vec![insights::JournalRow { hour: "2026-11-12 21:00".into(), action: "account_deleted".into(),
-            reason: "spam".into(), reporters: 4 }];
-        let card = queries::AccountCard { account_id: Uuid::nil(), username: "spammer42".into(),
-            active_month: "2026-11".into(), devices: 1, reporters: 4, certificates: 3, premium: false,
-            channels: 0, bots: 0, bot_owner: None };
-        let frozen = moderation::Restricted { blocked: false, until: Some("2026-11-20 14:00".into()),
-            reason: Some("spam".into()) };
+        let health = insights::Health {
+            version: "16.4".into(),
+            uptime: "12 d 4 h".into(),
+            connections: 9,
+            database_bytes: 912_000_000,
+            envelopes: 318,
+            oldest_envelope_hours: Some(9),
+            tables: vec![
+                ("attachments".into(), 3_400_000_000),
+                ("envelopes".into(), 220_000_000),
+            ],
+        };
+        let journal = vec![insights::JournalRow {
+            hour: "2026-11-12 21:00".into(),
+            action: "account_deleted".into(),
+            reason: "spam".into(),
+            reporters: 4,
+        }];
+        let card = queries::AccountCard {
+            account_id: Uuid::nil(),
+            username: "spammer42".into(),
+            active_month: "2026-11".into(),
+            devices: 1,
+            reporters: 4,
+            certificates: 3,
+            premium: false,
+            channels: 0,
+            bots: 0,
+            bot_owner: None,
+        };
+        let frozen = moderation::Restricted {
+            blocked: false,
+            until: Some("2026-11-20 14:00".into()),
+            reason: Some("spam".into()),
+        };
         let pages = [
-            ("overview", layout("Overview", "c", &insights::dashboard_html(&dashboard, bytes))),
-            ("accounts", layout("Accounts", "c", &insights::accounts_html(&accounts, insights::AccountView::All, "", 0, true, "c"))),
-            ("channels", layout("Channels", "c", &insights::channels_html(&channels, insights::ChannelView::All, "", 0, false))),
-            ("health", layout("Health", "c", &insights::health_html(&health, bytes))),
-            ("journal", layout("Journal", "c", &insights::journal_html(&journal, reason_label))),
-            ("account", layout("Account", "c", &account_html(&AccountView {
-                wanted: Some("spammer42"), card: Some(&card), restricted: Some(&frozen), done: Some("frozen"), csrf: "c" }))),
+            (
+                "overview",
+                layout(
+                    "Overview",
+                    "c",
+                    &insights::dashboard_html(&dashboard, bytes),
+                ),
+            ),
+            (
+                "accounts",
+                layout(
+                    "Accounts",
+                    "c",
+                    &insights::accounts_html(
+                        &accounts,
+                        insights::AccountView::All,
+                        "",
+                        0,
+                        true,
+                        "c",
+                    ),
+                ),
+            ),
+            (
+                "channels",
+                layout(
+                    "Channels",
+                    "c",
+                    &insights::channels_html(&channels, insights::ChannelView::All, "", 0, false),
+                ),
+            ),
+            (
+                "health",
+                layout("Health", "c", &insights::health_html(&health, bytes)),
+            ),
+            (
+                "journal",
+                layout(
+                    "Journal",
+                    "c",
+                    &insights::journal_html(&journal, reason_label),
+                ),
+            ),
+            (
+                "account",
+                layout(
+                    "Account",
+                    "c",
+                    &account_html(&AccountView {
+                        wanted: Some("spammer42"),
+                        card: Some(&card),
+                        restricted: Some(&frozen),
+                        done: Some("frozen"),
+                        csrf: "c",
+                    }),
+                ),
+            ),
         ];
         for (name, html) in pages {
             let _ = std::fs::write(format!("{dir}/{name}.html"), html);

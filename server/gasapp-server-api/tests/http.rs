@@ -2037,6 +2037,12 @@ async fn recovery_rebinds_the_account_and_keeps_the_name() {
     let username = unique_name("phoenix");
     let keys = recovery_keys(0x41);
     let (account_id, old_device) = register_with_recovery(&state, &username, &keys).await;
+    // 🔐 Сокет прежнего устройства — того самого потерянного телефона —
+    // перепривязка закрывает (аудит 2026-11-28).
+    let mut old_socket = state
+        .hub
+        .connect_for_test(old_device.parse().unwrap())
+        .await;
 
     let (status, body) = call(
         &state,
@@ -2046,6 +2052,10 @@ async fn recovery_rebinds_the_account_and_keeps_the_name() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "перепривязка: {body:?}");
+    assert!(
+        old_socket.recv().await.is_none(),
+        "сокет прежнего устройства пережил перепривязку"
+    );
     assert_eq!(
         body["account_id"].as_str(),
         Some(account_id.as_str()),

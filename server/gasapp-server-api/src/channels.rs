@@ -396,7 +396,29 @@ pub(crate) async fn owner_of(
         .map_err(|_| ApiError::Unauthorized)
 }
 
-/// Декодирует hex-поле с пределом длины.
+/// Аккаунт подписавшего устройства — только если это не подключённое
+/// устройство.
+///
+/// 🔐 Для действий, которыми ведут канал целиком: изменить описание и
+/// публичность, удалить канал, назначить и снять администратора, удалить
+/// подписчика и снять запрет (аудит 2026-11-28). Подключённое устройство —
+/// второй телефон; ключи администратора канала ему не передаются
+/// (`docs/protocol/MULTI-DEVICE.md` §4), а потерянный или украденный, он
+/// не должен отнимать у владельца канал. Отказ — `403`.
+pub(crate) async fn primary_owner_of(
+    state: &AppState,
+    device: AuthenticatedDevice,
+    device_id: Uuid,
+) -> Result<(Uuid, bool), ApiError> {
+    let owner = owner_of(state, device, device_id).await?;
+
+    if gasapp_server_db::devices::is_linked(&state.pool, device_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    Ok(owner)
+}
+
 /// Разбирает удостоверение участника: ровно
 /// [`channels::MEMBER_APPROVAL_BYTES`] байт либо ничего.
 fn decode_approval(hex_text: Option<&str>) -> Result<Option<Vec<u8>>, ApiError> {
@@ -566,7 +588,7 @@ pub(crate) async fn update(
     Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<UpdateChannelRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let (account_id, _) = primary_owner_of(&state, device, device_id).await?;
 
     if let Some(meta) = &request.meta {
         let meta = decode_bounded(meta, MAX_META_BYTES)?;
@@ -623,7 +645,7 @@ pub(crate) async fn delete(
     device: AuthenticatedDevice,
     Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let (account_id, _) = primary_owner_of(&state, device, device_id).await?;
 
     channels::delete_channel(&state.pool, account_id, channel_id).await?;
 
@@ -973,7 +995,7 @@ pub(crate) async fn add_admin(
     Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<AddAdminRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let (account_id, _) = primary_owner_of(&state, device, device_id).await?;
     let verify_key = admin_key(&request.verify_key)?;
 
     channels::add_admin(
@@ -1000,7 +1022,7 @@ pub(crate) async fn remove_admin(
     Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<RemoveAdminRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let (account_id, _) = primary_owner_of(&state, device, device_id).await?;
     let verify_key = admin_key(&request.verify_key)?;
 
     channels::remove_admin(&state.pool, account_id, channel_id, &verify_key).await?;
@@ -1452,7 +1474,7 @@ pub(crate) async fn remove_subscriber(
     Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<MemberRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let (account_id, _) = primary_owner_of(&state, device, device_id).await?;
 
     channels::remove_subscriber(&state.pool, account_id, channel_id, request.account_id)
         .await
@@ -1492,7 +1514,7 @@ pub(crate) async fn unban(
     Path((device_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<MemberRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let (account_id, _) = owner_of(&state, device, device_id).await?;
+    let (account_id, _) = primary_owner_of(&state, device, device_id).await?;
 
     channels::unban(&state.pool, account_id, channel_id, request.account_id).await?;
 

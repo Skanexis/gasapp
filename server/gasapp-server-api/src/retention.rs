@@ -43,9 +43,13 @@ pub struct Purged {
     pub accounts: u64,
     /// Истёкших кодов подтверждения почты (миграция 0017).
     pub email_codes: u64,
+    /// Просроченных ящиков связывания устройств (миграция 0032).
+    pub link_boxes: u64,
+    /// Улик к жалобам старше 30 дней (миграция 0030).
+    pub evidence: u64,
 }
 
-/// Удаляет истёкшие конверты и вложения — один раз.
+/// Удаляет истёкшее — конверты, вложения, коды, ящики, улики — один раз.
 ///
 /// # Errors
 ///
@@ -56,6 +60,10 @@ pub async fn purge_once(pool: &PgPool) -> Result<Purged, RepoError> {
         attachments: repo::purge_expired_attachments(pool).await?,
         accounts: repo::purge_inactive_accounts(pool).await?,
         email_codes: gasapp_server_db::email::purge_expired_codes(pool).await?,
+        // 🔐 Ящики и улики прежде удалялись только попутно — при открытии
+        // следующего ящика и при новой жалобе (аудит 2026-11-28).
+        link_boxes: gasapp_server_db::devices::purge_expired_boxes(pool).await?,
+        evidence: repo::purge_old_evidence(pool).await?,
     })
 }
 
@@ -72,11 +80,17 @@ pub async fn run(pool: PgPool) {
 
         match purge_once(&pool).await {
             // Только числа: ни идентификаторов, ни устройств.
-            Ok(purged) if purged.envelopes > 0 || purged.attachments > 0 || purged.accounts > 0 => {
+            Ok(purged)
+                if purged.envelopes > 0
+                    || purged.attachments > 0
+                    || purged.accounts > 0
+                    || purged.evidence > 0 =>
+            {
                 tracing::info!(
                     envelopes = purged.envelopes,
                     attachments = purged.attachments,
                     accounts = purged.accounts,
+                    evidence = purged.evidence,
                     "удалено истёкшее"
                 );
             }

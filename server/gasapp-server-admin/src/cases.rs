@@ -453,22 +453,26 @@ pub struct CaseRow {
 }
 
 /// Сигналы — общая часть запросов очереди и дела.
+///
+/// 🔐 Жалобщики считаются по аккаунтам (`complainant_account`, миграция
+/// 0033), а не по устройствам: у человека до пяти устройств, и прежде он
+/// выглядел здесь пятью людьми, а отключённое устройство уносило его
+/// жалобы (аудит 2026-11-28). Кто именно жаловался, очередь и дело
+/// по-прежнему не показывают — только числа.
 const SIGNALS_SQL: &str = "
-    count(DISTINCT r.complainant_device) AS reporters,
+    count(DISTINCT r.complainant_account) AS reporters,
     count(DISTINCT r.certificate_hash) AS certificates,
     count(*) AS reports,
     count(DISTINCT date_trunc('day', r.created_at)) AS days,
     (SELECT max(n) FROM (SELECT count(*) AS n FROM sealed_sender_reports h
         WHERE h.reported_account = a.account_id GROUP BY h.created_at) AS hours) AS peak_hour,
-    count(DISTINCT r.complainant_device) FILTER (WHERE r.complainant_device IN (
-        SELECT s.complainant_device FROM sealed_sender_reports s
-         GROUP BY s.complainant_device HAVING count(DISTINCT s.reported_account) >= 5)) AS serial_reporters,
+    count(DISTINCT r.complainant_account) FILTER (WHERE r.complainant_account IN (
+        SELECT s.complainant_account FROM sealed_sender_reports s
+         GROUP BY s.complainant_account HAVING count(DISTINCT s.reported_account) >= 5)) AS serial_reporters,
     (SELECT count(DISTINCT back.reported_account) FROM sealed_sender_reports back
-       JOIN devices own ON own.device_id = back.complainant_device
-      WHERE own.account_id = a.account_id
+      WHERE back.complainant_account = a.account_id
         AND back.reported_account IN (
-            SELECT them.account_id FROM sealed_sender_reports theirs
-              JOIN devices them ON them.device_id = theirs.complainant_device
+            SELECT theirs.complainant_account FROM sealed_sender_reports theirs
              WHERE theirs.reported_account = a.account_id)) AS mutual,
     (SELECT count(*) FROM report_evidence e WHERE e.reported_account = a.account_id) AS evidence,
     count(*) FILTER (WHERE r.reason = 3) AS r3,
@@ -1307,12 +1311,36 @@ mod tests {
     /// Превью очереди и дела для глаз (`ADMIN_PREVIEW_DIR`).
     #[test]
     fn preview_case_pages() {
-        let Ok(dir) = std::env::var("ADMIN_PREVIEW_DIR") else { return };
+        let Ok(dir) = std::env::var("ADMIN_PREVIEW_DIR") else {
+            return;
+        };
         let key = EvidenceKey::from_hex(&"07".repeat(32)).unwrap_or_else(|| unreachable!());
         let spam = "You won a 500 EUR voucher! Claim it today at https://bit.ly/gift-claim";
-        let first = seal_like_phone(&key, &plain_quotes(&[(1_762_900_000_000, spam), (1_762_900_060_000, "Hurry, the offer ends tonight")]));
-        let second = seal_like_phone(&key, &plain_quotes(&[(1_762_990_000_000, "You won a 900 EUR voucher! Claim it today at https://bit.ly/gift-claim")]));
-        let mut signals = Signals { reporters: 4, certificates: 3, reports: 4, days: 3, peak_hour: 2, serial_reporters: 0, mutual: 0, evidence: 2, ..Signals::default() };
+        let first = seal_like_phone(
+            &key,
+            &plain_quotes(&[
+                (1_762_900_000_000, spam),
+                (1_762_900_060_000, "Hurry, the offer ends tonight"),
+            ]),
+        );
+        let second = seal_like_phone(
+            &key,
+            &plain_quotes(&[(
+                1_762_990_000_000,
+                "You won a 900 EUR voucher! Claim it today at https://bit.ly/gift-claim",
+            )]),
+        );
+        let mut signals = Signals {
+            reporters: 4,
+            certificates: 3,
+            reports: 4,
+            days: 3,
+            peak_hour: 2,
+            serial_reporters: 0,
+            mutual: 0,
+            evidence: 2,
+            ..Signals::default()
+        };
         signals.reasons = [0, 3, 0, 0, 0, 0, 1];
         let case = Case {
             account_id: Uuid::nil(),
@@ -1322,21 +1350,64 @@ mod tests {
             first_report: "2026-11-10 09:00".into(),
             last_report: "2026-11-12 21:00".into(),
             signals: signals.clone(),
-            timeline: vec![("11-10".into(), 1), ("11-11".into(), 2), ("11-12".into(), 1)],
-            sealed: vec![("2026-11-10 09:00".into(), first), ("2026-11-12 21:00".into(), second)],
+            timeline: vec![
+                ("11-10".into(), 1),
+                ("11-11".into(), 2),
+                ("11-12".into(), 1),
+            ],
+            sealed: vec![
+                ("2026-11-10 09:00".into(), first),
+                ("2026-11-12 21:00".into(), second),
+            ],
             ..Case::default()
         };
-        let mut urgent = Signals { reporters: 1, certificates: 1, reports: 1, days: 1, peak_hour: 1, ..Signals::default() };
+        let mut urgent = Signals {
+            reporters: 1,
+            certificates: 1,
+            reports: 1,
+            days: 1,
+            peak_hour: 1,
+            ..Signals::default()
+        };
         urgent.reasons[0] = 1;
-        let weak = Signals { reporters: 1, certificates: 1, reports: 1, days: 1, peak_hour: 1, reasons: [0, 0, 1, 0, 0, 0, 0], ..Signals::default() };
+        let weak = Signals {
+            reporters: 1,
+            certificates: 1,
+            reports: 1,
+            days: 1,
+            peak_hour: 1,
+            reasons: [0, 0, 1, 0, 0, 0, 0],
+            ..Signals::default()
+        };
         let rows = vec![
-            CaseRow { account_id: Uuid::nil(), username: "promo_gifts".into(), last_report: "2026-11-12 21:00".into(), signals },
-            CaseRow { account_id: Uuid::nil(), username: "night_owl".into(), last_report: "2026-11-12 23:00".into(), signals: urgent },
-            CaseRow { account_id: Uuid::nil(), username: "marco_r".into(), last_report: "2026-11-11 14:00".into(), signals: weak },
+            CaseRow {
+                account_id: Uuid::nil(),
+                username: "promo_gifts".into(),
+                last_report: "2026-11-12 21:00".into(),
+                signals,
+            },
+            CaseRow {
+                account_id: Uuid::nil(),
+                username: "night_owl".into(),
+                last_report: "2026-11-12 23:00".into(),
+                signals: urgent,
+            },
+            CaseRow {
+                account_id: Uuid::nil(),
+                username: "marco_r".into(),
+                last_report: "2026-11-11 14:00".into(),
+                signals: weak,
+            },
         ];
         let mut rows = rows;
         rows.sort_by_key(|case| assess(&case.signals, 0).0);
-        let _ = std::fs::write(format!("{dir}/reports.html"), crate::layout("Reports", "c", &queue_html(&rows, 1, None)));
-        let _ = std::fs::write(format!("{dir}/case.html"), crate::layout("Reports", "c", &case_html(&case, Some(&key), "c")));
+        let _ = std::fs::write(
+            format!("{dir}/reports.html"),
+            crate::layout("Reports", "c", &queue_html(&rows, 1, None)),
+        );
+        let _ = std::fs::write(
+            format!("{dir}/case.html"),
+            crate::layout("Reports", "c", &case_html(&case, Some(&key), "c")),
+        );
     }
 }

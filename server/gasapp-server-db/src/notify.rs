@@ -8,6 +8,7 @@
 //! по нему спрашивали.
 
 use sqlx::PgPool;
+use subtle::ConstantTimeEq as _;
 use uuid::Uuid;
 
 use crate::repo::RepoError;
@@ -53,6 +54,11 @@ pub async fn delete_token(pool: &PgPool, device_id: Uuid) -> Result<(), RepoErro
 /// `None` — устройства нет либо токен не тот: вызывающий отвечает на оба
 /// случая одинаково.
 ///
+/// Хеш берётся по ключу устройства и сравнивается за постоянное время
+/// (аудит 2026-11-28): проверка идёт раньше ограничителя, и время ответа
+/// не должно подсказывать, сколько байт хеша совпало. Очередь смотрится
+/// только для верного токена.
+///
 /// # Errors
 ///
 /// [`RepoError::Database`] — сбой базы.
@@ -61,15 +67,27 @@ pub async fn pending(
     device_id: Uuid,
     token_hash: &[u8; 32],
 ) -> Result<Option<bool>, RepoError> {
-    Ok(sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM envelopes e
-                         WHERE e.destination_device_id = t.device_id
-                           AND e.expires_at > now())
-           FROM notify_tokens t
-          WHERE t.device_id = $1 AND t.token_hash = $2",
-    )
-    .bind(device_id)
-    .bind(token_hash.as_slice())
-    .fetch_optional(pool)
-    .await?)
+    let stored: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT token_hash FROM notify_tokens WHERE device_id = $1")
+            .bind(device_id)
+            .fetch_optional(pool)
+            .await?;
+
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+
+    if !bool::from(stored.as_slice().ct_eq(token_hash.as_slice())) {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM envelopes
+                             WHERE destination_device_id = $1 AND expires_at > now())",
+        )
+        .bind(device_id)
+        .fetch_one(pool)
+        .await?,
+    ))
 }

@@ -901,7 +901,8 @@ pub struct AccountDeletion {
 ///
 /// Это и есть удаление аккаунта, а не выход с одного телефона.
 /// Остальные устройства узнают об этом, когда их подпись перестанет
-/// приниматься.
+/// приниматься. Поэтому API принимает удаление только от не
+/// подключённого устройства (`devices::is_linked`, аудит 2026-11-28).
 ///
 /// # ⚠️ Что переживает удаление
 ///
@@ -1336,6 +1337,12 @@ pub async fn check_sealed_sender_access(
 /// Возвращает `false`, если такая жалоба уже была: повторная от того
 /// же жалобщика на того же отправителя не считается второй.
 ///
+/// 🔐 «Тот же» — по аккаунтам, а не по устройствам (аудит 2026-11-28,
+/// миграция 0033): жалоба с каждого из пяти своих устройств или на
+/// каждое из устройств обидчика — всё равно одна жалоба одного человека.
+/// Устройство обидчика хранится как метка: его отключение или
+/// восстановление аккаунта жалобу больше не стирает.
+///
 /// # Errors
 ///
 /// [`RepoError::Database`] — сбой базы.
@@ -1347,12 +1354,17 @@ pub async fn record_sealed_sender_report(
     certificate_hash: &[u8; 32],
     reason: Option<i16>,
 ) -> Result<bool, RepoError> {
+    // Аккаунт жалобщика — из его устройства, в том же запросе: нет
+    // устройства — нет и жалобы.
     let result = sqlx::query(
         "
         INSERT INTO sealed_sender_reports
-            (report_id, reported_account, reported_device, complainant_device, certificate_hash, reason)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (complainant_device, reported_device) DO NOTHING
+            (report_id, reported_account, reported_device, complainant_device,
+             complainant_account, certificate_hash, reason)
+        SELECT $1, $2, $3, $4, d.account_id, $5, $6
+          FROM devices d
+         WHERE d.device_id = $4
+        ON CONFLICT (complainant_account, reported_account) DO NOTHING
         ",
     )
     .bind(Uuid::new_v4())
@@ -1370,10 +1382,11 @@ pub async fn record_sealed_sender_report(
     if !recorded && reason.is_some() {
         sqlx::query(
             "UPDATE sealed_sender_reports SET reason = $3
-              WHERE complainant_device = $1 AND reported_device = $2 AND reason IS NULL",
+              WHERE complainant_account = (SELECT account_id FROM devices WHERE device_id = $1)
+                AND reported_account = $2 AND reason IS NULL",
         )
         .bind(complainant_device)
-        .bind(reported_device)
+        .bind(reported_account)
         .bind(reason)
         .execute(pool)
         .await?;
@@ -1397,21 +1410,65 @@ pub async fn report_evidence_key(pool: &PgPool) -> Result<Option<Vec<u8>>, RepoE
     Ok(key.flatten())
 }
 
-/// Сохраняет запечатанные улики жалобщика (повторные заменяют
-/// прежние) и удаляет улики старше 30 дней.
+/// Потолок всех запечатанных улик вместе, байты.
+///
+/// 🔐 Улика — до 1,9 МБ, и приложить её может любой аккаунт к жалобе на
+/// любой другой (аудит 2026-11-28). Без потолка поток жалоб с уликами
+/// занимал бы диск, как анонимные вложения без своего потолка. Два
+/// гигабайта — тысяча улик предельного размера за тридцать дней.
+pub const MAX_REPORT_EVIDENCE_TOTAL_BYTES: i64 = 2 * 1024 * 1024 * 1024;
+
+/// Сколько живут улики (миграция 0030).
+const REPORT_EVIDENCE_DAYS: i32 = 30;
+
+/// Сохраняет запечатанные улики жалобщика; повторные заменяют прежние.
 ///
 /// # Errors
 ///
-/// [`RepoError::Database`] — сбой базы.
+/// * [`RepoError::QuotaExceeded`] — общий потолок улик исчерпан
+///   ([`MAX_REPORT_EVIDENCE_TOTAL_BYTES`]);
+/// * [`RepoError::Database`] — сбой базы.
 pub async fn store_report_evidence(
     pool: &PgPool,
     reported_account: Uuid,
     complainant_device: Uuid,
     sealed: &[u8],
 ) -> Result<(), RepoError> {
-    sqlx::query("DELETE FROM report_evidence WHERE created_at < now() - interval '30 days'")
-        .execute(pool)
-        .await?;
+    store_report_evidence_capped(
+        pool,
+        reported_account,
+        complainant_device,
+        sealed,
+        MAX_REPORT_EVIDENCE_TOTAL_BYTES,
+    )
+    .await
+}
+
+/// [`store_report_evidence`] с явным потолком — его проверяют тесты:
+/// заполнить настоящие два гигабайта в тесте нельзя.
+///
+/// Гонка двух жалоб даёт небольшое превышение, а не обход — как у
+/// потолка вложений.
+///
+/// # Errors
+///
+/// Как у [`store_report_evidence`].
+pub async fn store_report_evidence_capped(
+    pool: &PgPool,
+    reported_account: Uuid,
+    complainant_device: Uuid,
+    sealed: &[u8],
+    ceiling: i64,
+) -> Result<(), RepoError> {
+    let used: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(octet_length(sealed)), 0)::bigint FROM report_evidence",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if used.saturating_add(i64::try_from(sealed.len()).unwrap_or(i64::MAX)) > ceiling {
+        return Err(RepoError::QuotaExceeded);
+    }
 
     sqlx::query(
         "INSERT INTO report_evidence (reported_account, complainant_device, sealed)
@@ -1428,10 +1485,30 @@ pub async fn store_report_evidence(
     Ok(())
 }
 
+/// Удаляет улики старше 30 дней (миграция 0030).
+///
+/// Вызывается расписанием сроков хранения (`retention`). Прежде улики
+/// удалялись только при новой жалобе и при открытии центра жалоб: без
+/// того и другого они жили сколько угодно (аудит 2026-11-28).
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn purge_old_evidence(pool: &PgPool) -> Result<u64, RepoError> {
+    let result =
+        sqlx::query("DELETE FROM report_evidence WHERE created_at < now() - $1 * interval '1 day'")
+            .bind(REPORT_EVIDENCE_DAYS)
+            .execute(pool)
+            .await?;
+
+    Ok(result.rows_affected())
+}
+
 /// Сколько разных людей пожаловались на аккаунт.
 ///
 /// Считаются жалобщики, а не жалобы: один человек, пожаловавшийся
-/// десять раз, — это один недовольный, а не десять.
+/// десять раз, — это один недовольный, а не десять. И не устройства:
+/// человек с пятью устройствами — тоже один (аудит 2026-11-28).
 ///
 /// # Errors
 ///
@@ -1442,7 +1519,7 @@ pub async fn sealed_sender_report_count(
 ) -> Result<i64, RepoError> {
     let row: (i64,) = sqlx::query_as(
         "
-        SELECT count(DISTINCT complainant_device)
+        SELECT count(DISTINCT complainant_account)
         FROM sealed_sender_reports
         WHERE reported_account = $1
         ",

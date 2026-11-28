@@ -26,7 +26,21 @@ pub const LINK_TTL_SECS: i64 = 120;
 
 /// Сколько ящиков может быть открыто разом — предел против забивания
 /// базы без подписи.
-pub const MAX_OPEN_BOXES: i64 = 10_000;
+///
+/// 🔐 Прежде было 10 000: при двухминутном сроке это 84 ящика в секунду,
+/// и тот, кто держал их занятыми, отрезал от связывания всех (аудит
+/// 2026-11-28). Запрос — 3,2 КБ, двести тысяч ящиков — около 650 МБ, а
+/// цену удержания поднимает работа, растущая с заполнением
+/// (`pow::link_difficulty` в API).
+pub const MAX_OPEN_BOXES: i64 = 200_000;
+
+/// Сколько выданных, но не завершённых грантов может быть у аккаунта.
+///
+/// 🔐 Грант — до 1,2 МБ. Ящики открываются без входа, и без этого предела
+/// один аккаунт, открыв тысячи ящиков, записал бы в каждый грант
+/// предельного размера (аудит 2026-11-28). Больше подключаемых устройств,
+/// чем `MAX_DEVICES - 1`, у аккаунта не бывает.
+pub const MAX_PENDING_GRANTS: i64 = 4;
 
 /// Длина подписи списка: XEdDSA (64) + ML-DSA-65 (3309).
 const LIST_SIGNATURE_LEN: usize = 64 + 3309;
@@ -154,6 +168,39 @@ pub async fn open_box(pool: &PgPool, nonce: Uuid, request: &[u8]) -> Result<(), 
     Ok(())
 }
 
+/// Сколько ящиков открыто сейчас — по нему API назначает цену открытия
+/// следующего (`pow::link_difficulty`).
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn open_boxes(pool: &PgPool) -> Result<i64, RepoError> {
+    Ok(
+        sqlx::query_scalar("SELECT count(*) FROM link_boxes WHERE expires_at > now()")
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+/// Удаляет просроченные ящики связывания.
+///
+/// Вызывается расписанием сроков хранения (`retention`): прежде ящики
+/// удалялись только при открытии следующего, и последние из них — с
+/// открытыми ключами нового устройства и грантом — лежали, пока кто-нибудь
+/// не открыл новый (аудит 2026-11-28).
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn purge_expired_boxes(pool: &PgPool) -> Result<u64, RepoError> {
+    Ok(
+        sqlx::query("DELETE FROM link_boxes WHERE expires_at <= now()")
+            .execute(pool)
+            .await?
+            .rows_affected(),
+    )
+}
+
 /// Запрос из ящика — основному устройству, сканирующему QR.
 ///
 /// # Errors
@@ -234,6 +281,8 @@ fn list_fits(
 /// * [`RepoError::NotFound`] — ящика нет, срок вышел или грант уже выдан;
 /// * [`RepoError::Conflict`] — устройство не основное, список не того
 ///   аккаунта, не новее текущего, без нового устройства или с чужими;
+/// * [`RepoError::QuotaExceeded`] — у аккаунта уже
+///   [`MAX_PENDING_GRANTS`] незавершённых грантов;
 /// * [`RepoError::Database`] — сбой базы.
 pub async fn put_grant(
     pool: &PgPool,
@@ -257,6 +306,18 @@ pub async fn put_grant(
     let (account, identity, version) = primary_account(&mut tx, primary_device)
         .await?
         .ok_or(RepoError::Conflict)?;
+    // Строка аккаунта заперта выше (`FOR UPDATE`): два гранта одного
+    // аккаунта предел не обойдут.
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM link_boxes
+          WHERE account_id = $1 AND expires_at > now() AND grant_blob IS NOT NULL",
+    )
+    .bind(account)
+    .fetch_one(&mut *tx)
+    .await?;
+    if pending >= MAX_PENDING_GRANTS {
+        return Err(RepoError::QuotaExceeded);
+    }
     let list = parse_device_list(device_list).ok_or(RepoError::Conflict)?;
     let known = account_devices(&mut tx, account).await?;
     let new_listed = list
@@ -519,6 +580,48 @@ pub async fn is_primary(pool: &PgPool, device_id: Uuid) -> Result<bool, RepoErro
     )
     .bind(device_id)
     .fetch_one(pool)
+    .await?)
+}
+
+/// Подключено ли устройство по QR (`complete_link`), а не заведено
+/// регистрацией или восстановлением аккаунта.
+///
+/// 🔐 По нему API отказывает подключённому устройству в действиях над
+/// аккаунтом целиком — удалить аккаунт, вести свои каналы, заводить и
+/// удалять ботов (аудит 2026-11-28, `MULTI-DEVICE.md` §2): второй телефон,
+/// потерянный или украденный, не должен уносить аккаунт.
+///
+/// Признак — подпись членства: она есть только у подключённых. Не
+/// [`is_primary`]: у ботов (и у аккаунтов тестов) ключ устройства не
+/// совпадает с ключом аккаунта, а подключёнными они от этого не
+/// становятся.
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn is_linked(pool: &PgPool, device_id: Uuid) -> Result<bool, RepoError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM devices WHERE device_id = $1 AND membership IS NOT NULL)",
+    )
+    .bind(device_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Устройства аккаунта и его ботов — те, чьи сокеты закрываются, когда
+/// аккаунт удаляют (боты уходят вместе с владельцем).
+///
+/// # Errors
+///
+/// [`RepoError::Database`] — сбой базы.
+pub async fn account_and_bot_devices(pool: &PgPool, account: Uuid) -> Result<Vec<Uuid>, RepoError> {
+    Ok(sqlx::query_scalar(
+        "SELECT d.device_id FROM devices d
+          WHERE d.account_id = $1
+             OR d.account_id IN (SELECT b.account_id FROM bots b WHERE b.owner_id = $1)",
+    )
+    .bind(account)
+    .fetch_all(pool)
     .await?)
 }
 

@@ -165,7 +165,10 @@ impl Hub {
 
     /// Закрывает сокет удалённого устройства.
     ///
-    /// 🔐 Вызывается после удаления аккаунта. Без этого сокет,
+    /// 🔐 Вызывается после удаления аккаунта, отключения устройства и
+    /// перепривязки аккаунта, а по каналу [`EVICT_CHANNEL`] — и после
+    /// заморозки или блокировки в админ-центре (аудит 2026-11-28; через
+    /// [`evict_everywhere`] — на всех узлах). Без этого сокет,
     /// открытый до удаления, продолжал бы жить: подпись проверяется
     /// один раз, при апгрейде, и переставшее существовать устройство
     /// так и получало бы уведомления — то есть удаление аккаунта
@@ -368,7 +371,7 @@ async fn run_listener(
     health: &crate::health::HealthState,
 ) -> Result<(), sqlx::Error> {
     let mut listener = sqlx::postgres::PgListener::connect_with(pool).await?;
-    listener.listen(NOTIFY_CHANNEL).await?;
+    listener.listen_all([NOTIFY_CHANNEL, EVICT_CHANNEL]).await?;
 
     health.listener_connected();
     tracing::info!(channel = NOTIFY_CHANNEL, "слушатель уведомлений запущен");
@@ -382,7 +385,50 @@ async fn run_listener(
             continue;
         };
 
-        hub.notify(device_id).await;
+        if notification.channel() == EVICT_CHANNEL {
+            hub.evict(device_id).await;
+        } else {
+            hub.notify(device_id).await;
+        }
+    }
+}
+
+/// Канал `LISTEN/NOTIFY`, по которому узлы и админ-центр просят закрыть
+/// сокет устройства (см. [`Hub::evict`]).
+///
+/// 🔐 Хаб держит соединения только своего процесса: устройство,
+/// отключённое через узел A, держало бы сокет на узле B, а заморозка в
+/// админ-центре — отдельном процессе — не закрывала бы ни одного
+/// (аудит 2026-11-28). Подпись проверяется один раз, при апгрейде,
+/// поэтому без выселения поток уведомлений жил бы до разрыва связи.
+///
+/// ⚠️ Имя продублировано в админ-центре (`gasapp-server-admin`,
+/// `moderation::EVICT_CHANNEL`): общий крейт ради одной строки не нужен.
+pub const EVICT_CHANNEL: &str = "gasapp_evict";
+
+/// Просит все узлы кластера закрыть сокет устройства.
+///
+/// # Errors
+///
+/// Ошибка рассылки. Вызывающий журналирует её и продолжает: устройство
+/// уже удалено или ограничено, и новый сокет оно не откроет.
+pub async fn broadcast_evict(pool: &sqlx::PgPool, device_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(EVICT_CHANNEL)
+        .bind(device_id.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+}
+
+/// Закрывает сокеты устройств на этом узле и просит о том же остальные.
+pub async fn evict_everywhere(hub: &Hub, pool: &sqlx::PgPool, devices: &[Uuid]) {
+    for device_id in devices {
+        hub.evict(*device_id).await;
+
+        if let Err(error) = broadcast_evict(pool, *device_id).await {
+            tracing::warn!(%error, "не удалось разослать закрытие сокета");
+        }
     }
 }
 

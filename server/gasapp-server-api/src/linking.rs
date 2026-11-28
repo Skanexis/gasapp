@@ -3,7 +3,8 @@
 //! Связывание и отключение устройств (`docs/protocol/MULTI-DEVICE.md`, §3, §5).
 //!
 //! ```text
-//! B (новое):   POST /v1/link/{nonce}            запрос — открытые ключи
+//! B (новое):   GET  /v1/linking/challenge       текущая цена ящика
+//!              POST /v1/link/{nonce}            запрос — открытые ключи
 //! A (основное): GET  /v1/link/{nonce}/request    по nonce из QR
 //!              PUT  /v1/devices/{A}/link/{nonce} грант и список с B (подпись A)
 //! B:           GET  /v1/link/{nonce}/grant       шифротекст для B
@@ -44,6 +45,14 @@ pub struct LinkRequestBody {
     pub request: String,
     /// Решение работы над `pow::link_challenge(request)`.
     pub pow_nonce: u64,
+}
+
+/// Условия открытия ящика.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LinkChallengeResponse {
+    /// Сколько ведущих нулевых бит требует узел прямо сейчас (не меньше
+    /// `pow::LINK_DIFFICULTY`).
+    pub difficulty: u32,
 }
 
 /// Запрос из ящика.
@@ -121,10 +130,15 @@ pub(crate) async fn open(
         return Err(ApiError::BadRequest);
     }
     // 🔐 Работа за ящик: без неё один клиент занимал бы все ящики.
+    // Сначала — по базовой цене, без базы: мусор отсекается даром. Затем —
+    // по текущей, растущей с заполнением (аудит 2026-11-28).
+    let challenge = crate::pow::link_challenge(&request);
+    crate::pow::verify(&challenge, body.pow_nonce, crate::pow::LINK_DIFFICULTY)
+        .map_err(|_| ApiError::Unauthorized)?;
     crate::pow::verify(
-        &crate::pow::link_challenge(&request),
+        &challenge,
         body.pow_nonce,
-        crate::pow::LINK_DIFFICULTY,
+        current_difficulty(&state).await?,
     )
     .map_err(|_| ApiError::Unauthorized)?;
     devices::open_box(&state.pool, nonce, &request)
@@ -134,6 +148,27 @@ pub(crate) async fn open(
             other => other.into(),
         })?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Цена открытия ящика сейчас — по заполнению (`pow::link_difficulty`).
+async fn current_difficulty(state: &AppState) -> Result<u32, ApiError> {
+    let open = devices::open_boxes(&state.pool).await?;
+
+    Ok(crate::pow::link_difficulty(
+        u32::try_from(open).unwrap_or(u32::MAX),
+        u32::try_from(devices::MAX_OPEN_BOXES).unwrap_or(u32::MAX),
+    ))
+}
+
+/// Условия открытия ящика — без подписи: у нового устройства ещё нет
+/// аккаунта. Как у письма с кодом (`/v1/accounts/email/challenge`),
+/// цена растёт с нагрузкой узла; клиент спрашивает её перед работой.
+pub(crate) async fn challenge(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<LinkChallengeResponse>, ApiError> {
+    Ok(Json(LinkChallengeResponse {
+        difficulty: current_difficulty(&state).await?,
+    }))
 }
 
 /// Основное устройство берёт запрос по nonce из QR.
@@ -233,7 +268,6 @@ pub(crate) async fn device_list_of(
     }))
 }
 
-/// Основное устройство отключает другое.
 /// Основное устройство переподписывает свой список (тот же состав).
 pub(crate) async fn refresh(
     State(state): State<Arc<AppState>>,
@@ -254,6 +288,7 @@ pub(crate) async fn refresh(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Основное устройство отключает другое.
 pub(crate) async fn unlink(
     State(state): State<Arc<AppState>>,
     device: AuthenticatedDevice,
@@ -270,5 +305,9 @@ pub(crate) async fn unlink(
             RepoError::Conflict => ApiError::Forbidden,
             other => other.into(),
         })?;
+    // 🔐 Сокет отключённого закрывается на всех узлах (аудит 2026-11-28):
+    // подпись проверяется только при апгрейде, и без этого отключённый
+    // телефон так и получал бы уведомления.
+    crate::hub::evict_everywhere(&state.hub, &state.pool, &[target]).await;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -849,3 +849,160 @@ async fn an_account_inactive_for_eleven_months_stays() {
 
     assert!(repo::find_by_username(&pool, &name).await.is_ok());
 }
+
+/// Ещё одно устройство аккаунта — подключённое (с подписью членства),
+/// строкой в базе.
+async fn extra_device(pool: &PgPool, account: Uuid) -> Uuid {
+    let device = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, account_id, identity_key, membership)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(device)
+    .bind(account)
+    .bind(key().to_vec())
+    .bind(vec![0u8; 64])
+    .execute(pool)
+    .await
+    .unwrap();
+
+    device
+}
+
+/// 🔐 Жалоба переживает устройства обидчика и жалобщика, а считаются по
+/// ней люди, а не устройства (аудит 2026-11-28, миграция 0033).
+///
+/// Прежде `reported_device` и `complainant_device` ссылались на `devices`
+/// с каскадом: отключив устройство, с которого слал спам, или восстановив
+/// аккаунт, обидчик стирал жалобы на себя, а человек с пятью устройствами
+/// считался пятью жалобщиками.
+#[tokio::test]
+async fn reports_outlive_devices_and_count_accounts() {
+    let pool = require_pool!();
+    let (reported, reported_device) =
+        repo::register_account(&pool, &unique_name("quinn"), &key(), &key(), &key())
+            .await
+            .unwrap();
+    let (complainant, complainant_device) =
+        repo::register_account(&pool, &unique_name("rosa"), &key(), &key(), &key())
+            .await
+            .unwrap();
+    let second_reported = extra_device(&pool, reported).await;
+    let second_complainant = extra_device(&pool, complainant).await;
+
+    assert!(repo::record_sealed_sender_report(
+        &pool,
+        reported,
+        second_reported,
+        complainant_device,
+        &key(),
+        None,
+    )
+    .await
+    .unwrap());
+    // Со своего другого устройства на другое устройство обидчика — та же
+    // жалоба, только с уточнённой причиной.
+    assert!(!repo::record_sealed_sender_report(
+        &pool,
+        reported,
+        reported_device,
+        second_complainant,
+        &key(),
+        Some(2),
+    )
+    .await
+    .unwrap());
+    assert_eq!(
+        repo::sealed_sender_report_count(&pool, reported)
+            .await
+            .unwrap(),
+        1
+    );
+
+    // Устройство обидчика отключено, устройство жалобщика тоже — жалоба
+    // на месте.
+    sqlx::query("DELETE FROM devices WHERE device_id = ANY($1)")
+        .bind(vec![second_reported, complainant_device])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let reason: Option<i16> =
+        sqlx::query_scalar("SELECT reason FROM sealed_sender_reports WHERE reported_account = $1")
+            .bind(reported)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reason, Some(2), "жалоба ушла вместе с устройством");
+
+    // Удаление аккаунта жалобщика уносит его жалобы.
+    repo::delete_account(&pool, second_complainant)
+        .await
+        .unwrap();
+    assert_eq!(
+        repo::sealed_sender_report_count(&pool, reported)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+/// 🔐 Улики: общий потолок, срок в 30 дней — расписанием, и уход вместе
+/// с устройством жалобщика (аудит 2026-11-28).
+#[tokio::test]
+async fn evidence_has_a_ceiling_and_leaves_with_the_complainant() {
+    let pool = require_pool!();
+    let (reported, _) = repo::register_account(&pool, &unique_name("sven"), &key(), &key(), &key())
+        .await
+        .unwrap();
+    let (_, complainant_device) =
+        repo::register_account(&pool, &unique_name("tove"), &key(), &key(), &key())
+            .await
+            .unwrap();
+    let sealed = [7u8; 64];
+    let stored = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM report_evidence WHERE reported_account = $1",
+        )
+        .bind(reported)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+
+    // Потолок исчерпан — улики не приняты.
+    let refused =
+        repo::store_report_evidence_capped(&pool, reported, complainant_device, &sealed, 0).await;
+    assert!(matches!(refused, Err(RepoError::QuotaExceeded)));
+    assert_eq!(stored().await, 0);
+
+    repo::store_report_evidence(&pool, reported, complainant_device, &sealed)
+        .await
+        .unwrap();
+    assert_eq!(stored().await, 1);
+
+    // Старше 30 дней — уходят при очистке.
+    sqlx::query(
+        "UPDATE report_evidence SET created_at = now() - interval '31 days'
+          WHERE reported_account = $1",
+    )
+    .bind(reported)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Число удалённых не сверяется: очистку мог успеть сделать соседний
+    // набор тестов — база общая.
+    repo::purge_old_evidence(&pool).await.unwrap();
+    assert_eq!(stored().await, 0);
+
+    // Свежие — уходят вместе с устройством жалобщика.
+    repo::store_report_evidence(&pool, reported, complainant_device, &sealed)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM devices WHERE device_id = $1")
+        .bind(complainant_device)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored().await, 0, "улики пережили жалобщика");
+}

@@ -152,8 +152,12 @@ pub struct AppState {
     /// Ограничитель действий читателя канала — по жетону подписчика.
     pub channel_reader_limiter: Mutex<RateLimiter>,
     /// Ограничитель проверок очереди по токену уведомлений — по
-    /// устройству (см. [`crate::notify`]).
+    /// устройству (см. [`crate::notify`]). Тратится только верным токеном.
     pub notify_limiter: Mutex<RateLimiter>,
+    /// Ограничитель отвергнутых проверок очереди (неверный токен) — по
+    /// устройству. 🔐 Отдельный: чужой мусор не тратит бюджет владельца
+    /// (аудит 2026-11-28).
+    pub notify_failures_limiter: Mutex<RateLimiter>,
 }
 
 /// Сколько вложений узел принимает одновременно.
@@ -266,6 +270,10 @@ impl AppState {
             ))),
             notify_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
                 crate::notify::NOTIFY_CHECKS_PER_MINUTE,
+                nodes,
+            ))),
+            notify_failures_limiter: Mutex::new(RateLimiter::new(rate_limit::per_node(
+                crate::notify::NOTIFY_FAILURES_PER_MINUTE,
                 nodes,
             ))),
         }
@@ -808,6 +816,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         // связывания — без подписи (nonce из QR), грант и отключение —
         // за подписью основного устройства.
         .route("/v1/link/:nonce", post(crate::linking::open))
+        // Цена ящика растёт с заполнением; клиент спрашивает её перед
+        // работой. Отдельный путь: рядом с `/v1/link/:nonce` он совпал
+        // бы с параметром.
+        .route("/v1/linking/challenge", get(crate::linking::challenge))
         // Список устройств по аккаунту из сертификата отправителя: так
         // получатель узнаёт, чьё это новое устройство.
         .route(
@@ -1354,6 +1366,15 @@ async fn recover_account(
         return Err(refuse(&state));
     }
 
+    // 🔐 Прежние устройства перепривязка удаляет — их сокеты закрываются
+    // (аудит 2026-11-28): иначе потерянный или украденный телефон, ради
+    // которого аккаунт и восстанавливают, получал бы уведомления дальше.
+    let previous: Vec<Uuid> = repo::list_devices(&state.pool, account.account_id)
+        .await?
+        .into_iter()
+        .map(|device| device.device_id)
+        .collect();
+
     let device_id = repo::rebind_account(
         &state.pool,
         account.account_id,
@@ -1366,6 +1387,8 @@ async fn recover_account(
         },
     )
     .await?;
+
+    crate::hub::evict_everywhere(&state.hub, &state.pool, &previous).await;
 
     Ok(Json(RegisterResponse {
         account_id: account.account_id,
@@ -1857,9 +1880,22 @@ async fn delete_account(
         return Err(ApiError::Unauthorized);
     }
 
+    // 🔐 Аккаунт удаляет только основное устройство (аудит 2026-11-28,
+    // docs/protocol/MULTI-DEVICE.md §2). Подключённое — второй телефон;
+    // потерянный или украденный, он уносил аккаунт вместе с каналами и
+    // ботами. Отключить его может основное; само оно получает `403`.
+    if gasapp_server_db::devices::is_linked(&state.pool, device_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Сокеты закрываются у всех устройств аккаунта и его ботов, не только
+    // у подписавшего: остальные тоже перестали существовать.
+    let account = repo::account_of_device(&state.pool, device_id).await?;
+    let devices = gasapp_server_db::devices::account_and_bot_devices(&state.pool, account).await?;
+
     let report = repo::delete_account(&state.pool, device_id).await?;
 
-    state.hub.evict(device_id).await;
+    crate::hub::evict_everywhere(&state.hub, &state.pool, &devices).await;
 
     Ok(Json(AccountDeletedResponse {
         devices: report.devices,
@@ -2339,8 +2375,11 @@ async fn report_sealed_sender(
     let reported_device = Uuid::from_bytes(device_bytes);
 
     // Жалоба на себя — либо ошибка клиента, либо попытка накрутить
-    // счётчик. И то и другое не должно попадать в статистику.
-    if reported_device == device_id {
+    // счётчик. И то и другое не должно попадать в статистику. «На себя» —
+    // и на своё другое устройство: жалобы считаются по аккаунтам.
+    if reported_device == device_id
+        || reported_account == repo::account_of_device(&state.pool, device_id).await?
+    {
         return Err(ApiError::BadRequest);
     }
 
@@ -2385,10 +2424,20 @@ async fn report_sealed_sender(
     )
     .await?;
 
+    // Потолок улик исчерпан — жалоба учтена, улики нет: так и сказано в
+    // ответе (`evidence_stored`), а не отказом всей жалобы.
     let evidence_stored = match evidence {
         Some(sealed) if repo::report_evidence_key(&state.pool).await?.is_some() => {
-            repo::store_report_evidence(&state.pool, reported_account, device_id, &sealed).await?;
-            true
+            match repo::store_report_evidence(&state.pool, reported_account, device_id, &sealed)
+                .await
+            {
+                Ok(()) => true,
+                Err(RepoError::QuotaExceeded) => {
+                    tracing::warn!("потолок улик исчерпан, улики не приняты");
+                    false
+                }
+                Err(other) => return Err(other.into()),
+            }
         }
         _ => false,
     };

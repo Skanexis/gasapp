@@ -23,12 +23,48 @@ use std::fmt::Write as _;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::escape;
 use crate::icon;
 use crate::queries::Reason;
-use crate::escape;
 
 /// На сколько дней можно заморозить.
 pub const FREEZE_DAYS: [i32; 3] = [1, 7, 30];
+
+/// Канал, по которому узлы API закрывают сокеты устройств
+/// (`gasapp-server-api`, `hub::EVICT_CHANNEL` — то же имя).
+pub const EVICT_CHANNEL: &str = "gasapp_evict";
+
+/// Просит узлы API закрыть сокеты устройств аккаунта и его ботов.
+///
+/// 🔐 Подпись устройства узел проверяет один раз, при открытии сокета:
+/// без этого замороженный, заблокированный или удалённый аккаунт так и
+/// получал бы уведомления о конвертах по уже открытому сокету (аудит
+/// 2026-11-28). Новый сокет ограниченному аккаунту не откроется — узел
+/// ответит `423`.
+///
+/// В транзакции: Postgres разошлёт уведомления при фиксации, а откат не
+/// закроет ничего. Вызывается до удаления строк — потом устройств уже
+/// не найти.
+///
+/// # Errors
+///
+/// Ошибка базы.
+pub(crate) async fn evict_sockets(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    account_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "SELECT pg_notify($1, d.device_id::text)
+           FROM devices d
+          WHERE d.account_id = $2
+             OR d.account_id IN (SELECT b.account_id FROM bots b WHERE b.owner_id = $2)",
+    )
+    .bind(EVICT_CHANNEL)
+    .bind(account_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
 
 /// Действующее ограничение аккаунта.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -56,7 +92,9 @@ impl Measure {
     pub fn parse(measure: &str, days: Option<i32>) -> Option<Self> {
         match measure {
             "block" => Some(Self::Block),
-            "freeze" => days.filter(|days| FREEZE_DAYS.contains(days)).map(Self::Freeze),
+            "freeze" => days
+                .filter(|days| FREEZE_DAYS.contains(days))
+                .map(Self::Freeze),
             _ => None,
         }
     }
@@ -74,7 +112,10 @@ impl Measure {
 /// # Errors
 ///
 /// Ошибка базы.
-pub async fn restriction(pool: &PgPool, account_id: Uuid) -> Result<Option<Restricted>, sqlx::Error> {
+pub async fn restriction(
+    pool: &PgPool,
+    account_id: Uuid,
+) -> Result<Option<Restricted>, sqlx::Error> {
     let row: Option<(Option<bool>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT restricted_until = 'infinity'::timestamptz,
                 CASE WHEN restricted_until <> 'infinity'::timestamptz
@@ -130,9 +171,10 @@ pub async fn restrict(
     if updated == 0 {
         return Ok(false);
     }
+    evict_sockets(&mut tx, account_id).await?;
 
     let reporters: i64 = sqlx::query_scalar(
-        "SELECT count(DISTINCT complainant_device) FROM sealed_sender_reports WHERE reported_account = $1",
+        "SELECT count(DISTINCT complainant_account) FROM sealed_sender_reports WHERE reported_account = $1",
     )
     .bind(account_id)
     .fetch_one(&mut *tx)
@@ -187,7 +229,10 @@ pub async fn lift(pool: &PgPool, account_id: Uuid) -> Result<bool, sqlx::Error> 
 pub fn status_badge(restricted: Option<&Restricted>) -> String {
     match restricted {
         Some(Restricted { blocked: true, .. }) => {
-            format!("<span class=\"badge badge-blocked\">{} Blocked</span>", icon("ban"))
+            format!(
+                "<span class=\"badge badge-blocked\">{} Blocked</span>",
+                icon("ban")
+            )
         }
         Some(Restricted { until, .. }) => format!(
             "<span class=\"badge badge-frozen\">{} Frozen until {}</span>",
@@ -199,20 +244,27 @@ pub fn status_badge(restricted: Option<&Restricted>) -> String {
 }
 
 fn reason_options(suggested: Reason) -> String {
-    Reason::FOR_DELETION.iter().fold(String::new(), |mut out, reason| {
-        let selected = if *reason == suggested { " selected" } else { "" };
-        let _ = write!(
-            out,
-            "<option value=\"{}\"{selected}>{}</option>",
-            reason.code(),
-            escape(reason.label())
-        );
-        out
-    })
+    Reason::FOR_DELETION
+        .iter()
+        .fold(String::new(), |mut out, reason| {
+            let selected = if *reason == suggested {
+                " selected"
+            } else {
+                ""
+            };
+            let _ = write!(
+                out,
+                "<option value=\"{}\"{selected}>{}</option>",
+                reason.code(),
+                escape(reason.label())
+            );
+            out
+        })
 }
 
 fn reason_label(code: Option<&str>) -> &'static str {
-    code.and_then(Reason::parse).map_or("not recorded", Reason::label)
+    code.and_then(Reason::parse)
+        .map_or("not recorded", Reason::label)
 }
 
 /// Где оператор принимает решение: дело (`dismiss` — есть кнопка
@@ -300,7 +352,11 @@ fn dismiss_tile(decision: &Decision<'_>) -> String {
 fn freeze_tile(decision: &Decision<'_>) -> String {
     let days = FREEZE_DAYS.iter().fold(String::new(), |mut out, days| {
         let selected = if *days == 7 { " selected" } else { "" };
-        let label = if *days == 1 { "1 day".to_owned() } else { format!("{days} days") };
+        let label = if *days == 1 {
+            "1 day".to_owned()
+        } else {
+            format!("{days} days")
+        };
         let _ = write!(out, "<option value=\"{days}\"{selected}>{label}</option>");
         out
     });
@@ -366,7 +422,11 @@ mod tests {
 
     #[test]
     fn decision_shows_lift_only_when_restricted() {
-        let frozen = Restricted { blocked: false, until: Some("2026-11-20 14:00".into()), reason: Some("spam".into()) };
+        let frozen = Restricted {
+            blocked: false,
+            until: Some("2026-11-20 14:00".into()),
+            reason: Some("spam".into()),
+        };
         let mut decision = Decision {
             account_id: Uuid::nil(),
             username: "spammer42",
@@ -377,14 +437,23 @@ mod tests {
         };
         let open = decision_html(&decision);
         assert!(!open.contains("Lift restriction"));
-        assert!(open.contains("Freeze account") && open.contains("Block account") && open.contains("Dismiss reports"));
+        assert!(
+            open.contains("Freeze account")
+                && open.contains("Block account")
+                && open.contains("Dismiss reports")
+        );
 
         decision.restricted = Some(&frozen);
         let html = decision_html(&decision);
-        assert!(html.contains("Lift restriction") && html.contains("frozen until 2026-11-20 14:00"));
+        assert!(
+            html.contains("Lift restriction") && html.contains("frozen until 2026-11-20 14:00")
+        );
         assert!(html.contains("Freeze instead") && html.contains("Block account"));
 
-        let blocked = Restricted { blocked: true, ..Restricted::default() };
+        let blocked = Restricted {
+            blocked: true,
+            ..Restricted::default()
+        };
         decision.restricted = Some(&blocked);
         assert!(!decision_html(&decision).contains("Block account"));
     }
