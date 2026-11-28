@@ -70,9 +70,6 @@ struct MainTabs: View {
         .onChange(of: model.pendingChannelLink, initial: true) { _, link in
             if link != nil { tab = .channels }
         }
-        .onChange(of: model.pendingAdminRequest, initial: true) { _, request in
-            if request != nil { tab = .channels }
-        }
         // 🔐 Имя из ссылки сервер связывает с другим ключом — возможна подмена.
         .alert(L10n.t("Ссылка не подтвердилась", "The link didn’t check out", "Il link non è stato confermato"),
                isPresented: Binding(get: { model.linkWarning != nil }, set: { if !$0 { model.linkWarning = nil } })) {

@@ -140,7 +140,8 @@ Non hai GasApp? Il link ti mostra dove scaricarla.</string>
     <string name="attach_file">Documento</string>
     <string name="attach_cancel">Annulla</string>
     <string name="attach_sending">Invio dell’allegato…</string>
-    <string name="attach_document_metadata">Invio in corso. Foto, video e audio vengono inviati senza posizione, modello della fotocamera e nome del file, ma un documento conserva i propri metadati, come l’autore e il programma con cui è stato creato.</string>
+    <string name="attach_as_is_title">Inviare così?</string>
+    <string name="attach_as_is_body">GasApp rimuove automaticamente i metadati solo da foto JPEG, PNG, WebP, GIF e HEIC, video MP4 e MOV e audio MP3 e M4A. Questo file può conservare i propri metadati (autore, programma, posizione, fotocamera), visibili al destinatario.</string>
     <string name="attach_failed">Impossibile inviare l’allegato</string>
     <string name="attach_too_large">Il file supera i 100 MB</string>
     <string name="attach_unreadable">Impossibile leggere il file</string>
@@ -705,7 +706,7 @@ Non hai GasApp? Il link ti mostra dove scaricarla.</string>
     <string name="channel_media_failed">Impossibile ottenere il file: nessuna connessione, il post è stato eliminato o il file è stato modificato sul server.</string>
     <string name="channel_attach_limit">Un post contiene fino a 10 file</string>
     <string name="channel_attach_too_large">Il file supera i %1$d MB</string>
-    <string name="channel_attach_document_metadata">Foto e video vengono pubblicati senza posizione né modello della fotocamera. Un documento conserva i propri metadati: autore, cronologia delle modifiche.</string>
+    <string name="channel_attach_as_is_body">GasApp rimuove automaticamente i metadati solo da foto JPEG, PNG, WebP, GIF e HEIC, video MP4 e MOV e audio MP3 e M4A. Questo file può conservare i propri metadati (autore, programma, posizione, fotocamera), visibili a ogni lettore del canale.</string>
     <string name="channel_publishing_files">Cifratura e caricamento dei file…</string>
     <string name="channel_search">Cerca nei post</string>
     <string name="channel_search_hint">Parola o frase</string>

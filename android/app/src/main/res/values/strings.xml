@@ -187,7 +187,8 @@ No GasApp yet? The link shows where to get it.</string>
     <string name="attach_file">Document</string>
     <string name="attach_cancel">Cancel</string>
     <string name="attach_sending">Sending attachment…</string>
-    <string name="attach_document_metadata">Sending. Photos, videos and audio are sent without location, camera model or file name — but a document keeps its own metadata, such as the author and the program it was made in.</string>
+    <string name="attach_as_is_title">Send as is?</string>
+    <string name="attach_as_is_body">GasApp strips metadata itself only from JPEG, PNG, WebP, GIF and HEIC photos, MP4 and MOV videos and MP3 and M4A audio. This file may keep its own metadata (author, program, location, camera) — the recipient can see it.</string>
     <string name="attach_failed">Could not send the attachment</string>
     <string name="attach_too_large">The file is larger than 100 MB</string>
     <string name="attach_unreadable">Could not read the file</string>
@@ -798,7 +799,7 @@ No GasApp yet? The link shows where to get it.</string>
     <string name="channel_media_failed">Could not get the file: no connection, the post was deleted, or the file was changed on the server.</string>
     <string name="channel_attach_limit">A post holds up to 10 files</string>
     <string name="channel_attach_too_large">The file is larger than %1$d MB</string>
-    <string name="channel_attach_document_metadata">Photos and videos are published without location or camera model. A document keeps its own metadata: author, edit history.</string>
+    <string name="channel_attach_as_is_body">GasApp strips metadata itself only from JPEG, PNG, WebP, GIF and HEIC photos, MP4 and MOV videos and MP3 and M4A audio. This file may keep its own metadata (author, program, location, camera) — every reader of the channel can see it.</string>
     <string name="channel_publishing_files">Encrypting and uploading the files…</string>
     <string name="channel_search">Search the posts</string>
     <string name="channel_search_hint">Word or phrase</string>

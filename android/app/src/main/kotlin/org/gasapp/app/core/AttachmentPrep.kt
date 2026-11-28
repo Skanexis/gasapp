@@ -57,15 +57,20 @@ object AttachmentPrep {
     fun prepare(bytes: ByteArray): ByteArray = if (isHeif(bytes)) toJpeg(bytes) else bytes
 
     /**
-     * Метаданные удаляет ядро только у фото, видео и звука. У документов
-     * (PDF, Word) они — часть формата, и интерфейс должен это сказать.
+     * 🔐 Очистится ли файл с таким MIME сам — без вопроса человеку.
+     *
+     * Ядро (`gasapp_media::scrub`) чистит только JPEG, PNG, WebP, GIF,
+     * ISO-медиа (MP4, MOV, M4A, 3GP) и MP3; HEIC/AVIF перекодируются
+     * здесь в JPEG ([prepare]). Всё прочее — TIFF, DNG, FLAC, OGG, WAV,
+     * MKV, WebM, документы — уходит как есть, со своими метаданными
+     * (аудит 2026-11-28: раньше «чистым» считался любой MIME вида
+     * image, audio или video).
+     *
+     * PDF ядро чистит лишь отчасти: сжатые потоки объектов и XMP в них
+     * остаются. Поэтому PDF — тоже с вопросом.
      */
-    fun isMediaMime(mime: String?): Boolean =
-        mime != null && (
-            mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
-                // PDF ядро тоже чистит: автор, программа, даты, XMP (2026-11).
-                mime == "application/pdf"
-            )
+    fun isCleanedMime(mime: String?): Boolean =
+        mime != null && mime.substringBefore(';').trim().lowercase() in CLEANED_MIMES
 
     private fun toJpeg(bytes: ByteArray): ByteArray {
         val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, _, _ ->
@@ -114,6 +119,18 @@ object AttachmentPrep {
     private const val AVATAR_SIDE = 512
 
     private const val AVATAR_QUALITY = 88
+
+    /** MIME, у которых метаданные удаляются наверняка (см. [isCleanedMime]). */
+    private val CLEANED_MIMES = setOf(
+        // Фото: ядро.
+        "image/jpeg", "image/jpg", "image/pjpeg", "image/png", "image/webp", "image/gif",
+        // Фото: перекодируются в JPEG здесь.
+        "image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence", "image/avif",
+        // Видео: ISO-медиа.
+        "video/mp4", "video/quicktime", "video/3gpp", "video/3gpp2", "video/x-m4v",
+        // Звук: ISO-медиа и MP3.
+        "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/3gpp", "audio/mpeg", "audio/mp3",
+    )
 
     private val HEIF_BRANDS = setOf("heic", "heix", "hevc", "heim", "heis", "hevm", "mif1", "msf1", "avif")
 

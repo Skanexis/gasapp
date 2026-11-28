@@ -678,15 +678,25 @@ class ChannelActivity : AppCompatActivity() {
      * Читает выбранный файл и прикладывает его к будущей записи.
      *
      * 🔐 Файл читается в память, а не во временный файл: копия на диске
-     * лежала бы открытой вне зашифрованного хранилища. Метаданные фото
-     * и видео ядро удалит перед шифрованием; у документов они — часть
-     * формата, и человек узнаёт об этом сейчас, до публикации.
+     * лежала бы открытой вне зашифрованного хранилища. Метаданные
+     * известных форматов фото, видео и звука ядро удалит перед
+     * шифрованием; у прочих файлов (TIFF, WebM, PDF, Word…) они
+     * остаются, и человек решает сейчас, до публикации (аудит 2026-11-28).
      */
     private fun attach(uri: Uri, kind: FfiAttachmentKind) {
-        if (!AttachmentPrep.isMediaMime(contentResolver.getType(uri))) {
-            GasAppToast.show(this, R.string.channel_attach_document_metadata, GasAppToast.Tone.Warning)
+        if (AttachmentPrep.isCleanedMime(contentResolver.getType(uri))) {
+            attachApproved(uri, kind)
+        } else {
+            GasAppDialog(this)
+                .title(R.string.attach_as_is_title)
+                .message(R.string.channel_attach_as_is_body)
+                .secondary()
+                .primary(R.string.attach) { attachApproved(uri, kind) }
+                .show()
         }
+    }
 
+    private fun attachApproved(uri: Uri, kind: FfiAttachmentKind) {
         lifecycleScope.launch {
             val limit = channelMediaLimit().toLong()
 

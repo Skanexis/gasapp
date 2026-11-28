@@ -27,12 +27,12 @@ final class AppModel {
     /// Ссылка на канал, с которой открыли приложение или которую нажали
     /// в переписке. Ждёт экрана каналов: там — вход или заявка.
     var pendingChannelLink: String?
+    /// [pendingChannelLink] пришла снаружи (сайт, другое приложение):
+    /// вступление в открытый канал — только после вопроса (аудит 2026-11-28).
+    var pendingChannelLinkExternal = false
 
     /// Нажатое в приложении `@имя`: чат с этим человеком — сразу.
     var pendingMention: String?
-
-    /// Заявка на администрирование, нажатая владельцем канала в чате.
-    var pendingAdminRequest: String?
 
     /// Имя в ссылке не подтвердилось сервером (ключ другой) — предупредить:
     /// контакт мог уже открыться по быстрому пути, без сети.
@@ -55,14 +55,12 @@ final class AppModel {
             pendingContactLink = link
             return true
         case let .channel(link):
+            pendingChannelLinkExternal = external
             pendingChannelLink = link
             return true
         case let .mention(name):
             guard !external else { return false }
             pendingMention = name
-            return true
-        case let .adminRequest(request):
-            pendingAdminRequest = request
             return true
         case nil:
             return false
@@ -71,6 +69,14 @@ final class AppModel {
     /// Шторка поверх содержимого, пока приложение не активно: снимок для
     /// переключателя приложений не покажет переписку.
     var coverVisible = false
+
+    /// Шторка — и в корне, и в своём окне поверх листов и алертов
+    /// ([PrivacyShield], аудит 2026-11-28). Окно поднимается сразу, в
+    /// том же такте: снимок для переключателя не ждёт перерисовки SwiftUI.
+    private func setCover(_ visible: Bool) {
+        coverVisible = visible
+        PrivacyShield.shared.setInactive(visible)
+    }
 
     /// Сколько можно пробыть в фоне без повторного PIN.
     var autoLockAfter: TimeInterval { TimeInterval(Self.autoLockSeconds) }
@@ -89,6 +95,8 @@ final class AppModel {
 
     init() {
         phase = CoreStore.shared.hasAccount ? .locked : .onboarding
+        // 🔐 Недописанные голосовые прошлых сеансов (аудит 2026-11-28).
+        VoiceRecorder.sweepLeftovers()
     }
 
     /// После успешного PIN или регистрации.
@@ -120,6 +128,10 @@ final class AppModel {
         Inbox.shared.stop()
         // 🔐 Расшифрованные вложения — только до блокировки.
         AttachmentCache.shared.clear()
+        // 🔐 Голосовое: запись стирается, проигрыватель замолкает — запертое
+        // приложение не пишет и не играет (аудит 2026-11-28).
+        VoiceRecorder.shared.discard()
+        VoicePlayer.shared.stop()
         CoreStore.shared.close()
         phase = CoreStore.shared.hasAccount ? .locked : .onboarding
     }
@@ -127,6 +139,8 @@ final class AppModel {
     /// 🔐 Всё стёрто (удаление аккаунта, стирание после неверных PIN).
     func didWipe() {
         AttachmentCache.shared.clear()
+        VoiceRecorder.shared.discard()
+        VoicePlayer.shared.stop()
         Inbox.shared.stop()
         CoreStore.shared.wipe()
         phase = .onboarding
@@ -135,7 +149,7 @@ final class AppModel {
     func scenePhaseChanged(_ scene: ScenePhase) {
         switch scene {
         case .active:
-            coverVisible = false
+            setCover(false)
             // Соединения не пережили долгий фон — новые при первом запросе.
             // После короткого (ответить в другом приложении и вернуться)
             // тёплое соединение живо: через Tor новое — это новая встреча
@@ -158,9 +172,9 @@ final class AppModel {
             }
             backgroundSince = nil
         case .inactive:
-            coverVisible = true
+            setCover(true)
         case .background:
-            coverVisible = true
+            setCover(true)
             // 🔋 В фоне полосе подключения обновляться незачем.
             ConnectionStatus.shared.stop()
             backgroundSince = backgroundSince ?? Date()
@@ -174,7 +188,7 @@ final class AppModel {
             VaultFiles.clearOpened()
             scheduleBackgroundLock()
         @unknown default:
-            coverVisible = true
+            setCover(true)
         }
     }
 

@@ -327,8 +327,12 @@ final class NetworkController: @unchecked Sendable {
     //    только известные перестали работать.
     //
     // 🔐 Свежие мосты — вне зашифрованной базы (как на Android): они
-    // нужны и до PIN. Выдают они лишь то, что приложение ходит в Tor
-    // через мосты, — это же видно по каталогу Tor на устройстве.
+    // нужны и до PIN. Лежат они в Keychain, «после первой разблокировки,
+    // только на этом устройстве»: не уходят в резервные копии и не
+    // читаются из файлов приложения (аудит 2026-11-28; прежде —
+    // UserDefaults, то есть plist в открытом виде). Выдают они лишь то,
+    // что приложение ходит в Tor через мосты, — это же видно по каталогу
+    // Tor на устройстве.
 
     private enum Auto {
         static let freshKey = "gasapp.tor.freshBridges"
@@ -347,12 +351,43 @@ final class NetworkController: @unchecked Sendable {
     }
 
     private var freshBridges: [String] {
-        UserDefaults.standard.stringArray(forKey: Auto.freshKey) ?? []
+        get {
+            Self.migrateBridgeDefaults()
+            guard let data = SecureStore.data(Auto.freshKey),
+                  let list = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+            return list
+        }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue) else { return }
+            SecureStore.set(data, for: Auto.freshKey, access: .afterFirstUnlock)
+        }
     }
 
     private var useBridges: Bool {
-        get { UserDefaults.standard.bool(forKey: Auto.useKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Auto.useKey) }
+        get {
+            Self.migrateBridgeDefaults()
+            return SecureStore.int(Auto.useKey) == 1
+        }
+        set { SecureStore.set(newValue ? 1 : 0, for: Auto.useKey, access: .afterFirstUnlock) }
+    }
+
+    /// Однократный перенос из UserDefaults версий до аудита 2026-11-28:
+    /// записали в Keychain — стёрли из UserDefaults. Keychain недоступен
+    /// (телефон ещё ни разу не разблокирован после загрузки) — значение
+    /// остаётся на месте до следующего раза.
+    private static func migrateBridgeDefaults() {
+        let defaults = UserDefaults.standard
+        if let legacy = defaults.stringArray(forKey: Auto.freshKey) {
+            if let data = try? JSONEncoder().encode(legacy),
+               SecureStore.set(data, for: Auto.freshKey, access: .afterFirstUnlock) {
+                defaults.removeObject(forKey: Auto.freshKey)
+            }
+        }
+        if defaults.object(forKey: Auto.useKey) != nil {
+            if SecureStore.set(defaults.bool(forKey: Auto.useKey) ? 1 : 0, for: Auto.useKey, access: .afterFirstUnlock) {
+                defaults.removeObject(forKey: Auto.useKey)
+            }
+        }
     }
 
     /// Мосты запуска: свежие — первыми, затем строки прежних версий,
@@ -455,7 +490,7 @@ final class NetworkController: @unchecked Sendable {
             let isNew = fetched.contains { !known.contains($0) }
             var seen = Set<String>()
             let merged = (fetched + freshBridges).filter { seen.insert($0).inserted }
-            UserDefaults.standard.set(Array(merged.prefix(Auto.maxFresh)), forKey: Auto.freshKey)
+            freshBridges = Array(merged.prefix(Auto.maxFresh))
             useBridges = true
             // Перезапуск — только если подключение так и стоит: пока искали
             // (до двух минут), оно могло пойти — обрывать его незачем,

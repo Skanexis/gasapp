@@ -173,7 +173,8 @@
     <string name="attach_file">Документ</string>
     <string name="attach_cancel">Отмена</string>
     <string name="attach_sending">Отправка вложения…</string>
-    <string name="attach_document_metadata">Отправляется. Фото, видео и звук уходят без геометки, модели камеры и имени файла — а документ сохраняет свои метаданные: автора и программу, в которой он сделан.</string>
+    <string name="attach_as_is_title">Отправить как есть?</string>
+    <string name="attach_as_is_body">GasApp сам удаляет метаданные только из фото JPEG, PNG, WebP, GIF и HEIC, видео MP4 и MOV и звука MP3 и M4A. В этом файле его метаданные (автор, программа, геометка, камера) могут остаться — их увидит собеседник.</string>
     <string name="attach_failed">Не удалось отправить вложение</string>
     <string name="attach_too_large">Файл больше 100 МБ</string>
     <string name="attach_unreadable">Не удалось прочитать файл</string>
@@ -851,7 +852,7 @@
     <string name="channel_media_failed">Файл не получен: нет связи, запись удалена либо файл изменён на сервере.</string>
     <string name="channel_attach_limit">В записи — не больше 10 файлов</string>
     <string name="channel_attach_too_large">Файл больше %1$d МБ</string>
-    <string name="channel_attach_document_metadata">Фото и видео публикуются без геометки и модели камеры. У документа остаются его собственные метаданные: автор, история правок.</string>
+    <string name="channel_attach_as_is_body">GasApp сам удаляет метаданные только из фото JPEG, PNG, WebP, GIF и HEIC, видео MP4 и MOV и звука MP3 и M4A. В этом файле его метаданные (автор, программа, геометка, камера) могут остаться — их увидит каждый читатель канала.</string>
     <string name="channel_publishing_files">Файлы шифруются и загружаются…</string>
     <string name="channel_search">Поиск по записям</string>
     <string name="channel_search_hint">Слово или фраза</string>

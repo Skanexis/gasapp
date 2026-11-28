@@ -25,14 +25,9 @@ struct ChannelsScreen: View {
     /// Ссылка на закрытый канал: заявка уходит владельцу с вашим именем —
     /// только после «Отправить».
     @State private var confirmJoin: String?
-    /// Нажатая в чате заявка на администрирование — подтверждение.
-    @State private var appointing: AppointRequest?
-
-    struct AppointRequest: Identifiable {
-        let request: String
-        let channel: FfiChannel
-        var id: String { request }
-    }
+    /// Ссылка на открытый канал, пришедшая снаружи: вступление — только
+    /// после «Вступить» (аудит 2026-11-28).
+    @State private var confirmOpen: String?
 
     struct OpenedChannel: Hashable { let id: String; let title: String }
     /// Объяснение «нужен премиум» — вместо формы, которую всё равно не
@@ -153,28 +148,44 @@ struct ChannelsScreen: View {
                         "The channel owner will see your username and decide whether to accept.",
                         "Il proprietario del canale vedrà il tuo nome utente e deciderà se accettarti."))
         }
-        // Владелец нажал в чате заявку на администрирование — подтвердить.
-        .onChange(of: model.pendingAdminRequest, initial: true) { _, request in
-            guard let request else { return }
-            model.pendingAdminRequest = nil
-            Task { await prepareAppoint(request) }
-        }
-        .sheet(item: $appointing) { pending in
-            NavigationStack {
-                AppointAdminSheet(request: pending.request, channel: pending.channel) {
-                    appointing = nil
-                    opened = OpenedChannel(id: pending.channel.channelId, title: pending.channel.title)
-                }
+        .confirmationDialog(L10n.t("Вступить в канал?", "Join this channel?", "Entrare nel canale?"),
+                            isPresented: Binding(get: { confirmOpen != nil }, set: { if !$0 { confirmOpen = nil } }),
+                            titleVisibility: .visible) {
+            Button(L10n.t("Вступить", "Join", "Entra")) {
+                if let link = confirmOpen { joinOpen(link) }
+                confirmOpen = nil
             }
-            .presentationDetents([.medium])
+        } message: {
+            Text(L10n.t("Ссылку открыли из другого приложения или с сайта. Вступив, вы станете читателем канала — сервер это увидит. Вступайте, только если ждали эту ссылку.",
+                        "The link was opened from another app or a website. Once you join, you become a reader of the channel — the server sees that. Join only if you expected this link.",
+                        "Il link è stato aperto da un’altra app o da un sito. Entrando diventi lettore del canale e il server lo vede. Entra solo se aspettavi questo link."))
         }
-        // Нажали ссылку на канал (в переписке, в другом приложении) — вход
-        // сразу, без «Вступить по ссылке» и вставки.
+        // Нажали ссылку на канал в переписке — вход сразу, без «Вступить
+        // по ссылке» и вставки. 🔐 Пришла снаружи (сайт, другое
+        // приложение) — сначала вопрос: иначе любая страница подписывала
+        // бы человека на канал одним переходом (аудит 2026-11-28).
         .onChange(of: model.pendingChannelLink, initial: true) { _, link in
             guard let link else { return }
+            let outside = model.pendingChannelLinkExternal
             model.pendingChannelLink = nil
+            model.pendingChannelLinkExternal = false
             joinLink = link
-            join()
+            join(fromOutside: outside)
+        }
+    }
+
+    /// Вступление в открытый канал после подтверждения.
+    private func joinOpen(_ link: String) {
+        guard let messenger = try? CoreStore.shared.current() else { return }
+        Task {
+            do {
+                let channel = try await Background.run { try messenger.joinChannel(link: link, nowMillis: CoreStore.nowMillis) }
+                message = nil
+                await sync()
+                opened = OpenedChannel(id: channel.channelId, title: channel.title)
+            } catch {
+                message = L10n.t("Не удалось вступить", "Could not join", "Impossibile entrare")
+            }
         }
     }
 
@@ -189,18 +200,6 @@ struct ChannelsScreen: View {
                 message = L10n.t("Не удалось отправить заявку", "Could not send the request", "Impossibile inviare la richiesta")
             }
         }
-    }
-
-    private func prepareAppoint(_ request: String) async {
-        await reload()
-        let wanted = AppLink.channelId(ofAdminRequest: request)
-        guard let channel = channels.first(where: { $0.channelId.lowercased() == wanted }), channel.role == .owner else {
-            message = L10n.t("Это заявка в канал, которым вы не владеете.",
-                             "This request is for a channel you don’t own.",
-                             "Questa richiesta è per un canale di cui non sei proprietario.")
-            return
-        }
-        appointing = AppointRequest(request: request, channel: channel)
     }
 
     private func reload() async {
@@ -255,7 +254,7 @@ struct ChannelsScreen: View {
         }
     }
 
-    private func join() {
+    private func join(fromOutside: Bool = false) {
         // Веб-ссылка (https://gasapp.eu/c/#…) — в вид для ядра.
         let typed = joinLink.trimmingCharacters(in: .whitespacesAndNewlines)
         let link = ChannelLinks.appLink(from: typed) ?? typed
@@ -269,6 +268,10 @@ struct ChannelsScreen: View {
                     confirmJoin = link
                     return
                 } else if isChannelLink(text: link) {
+                    if fromOutside {
+                        confirmOpen = link
+                        return
+                    }
                     let channel = try await Background.run { try messenger.joinChannel(link: link, nowMillis: CoreStore.nowMillis) }
                     message = nil
                     await sync()
@@ -662,68 +665,6 @@ struct CreateChannelSheet: View {
                 } else {
                     self.error = L10n.t("Нет связи с сервером", "No connection", "Nessuna connessione")
                 }
-            }
-        }
-    }
-}
-
-/// Владелец подтверждает заявку на администрирование, нажатую в чате.
-struct AppointAdminSheet: View {
-    let request: String
-    let channel: FfiChannel
-    let onDone: () -> Void
-
-    init(request: String, channel: FfiChannel, onDone: @escaping () -> Void) {
-        self.request = request
-        self.channel = channel
-        self.onDone = onDone
-    }
-
-    @State private var label = ""
-    @State private var working = false
-    @State private var error: String?
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.t("Сделать администратором «\(channel.title)»?", "Make an admin of “\(channel.title)”?", "Nominare admin di «\(channel.title)»?"))
-                .font(GasFont.text(18, .bold)).foregroundStyle(GasAppColor.textPrimary)
-            Text(L10n.t("Администратор публикует записи в канал. Снять его можно в «Управлении».",
-                        "An admin can publish posts. You can remove them in “Manage”.",
-                        "Un admin può pubblicare post. Puoi rimuoverlo in «Gestisci»."))
-                .font(GasFont.text(14)).foregroundStyle(GasAppColor.textSecondary)
-            Field(title: L10n.t("Как его подписать (видите только вы)", "Name (only you see it)", "Nome (lo vedi solo tu)"),
-                  text: $label, placeholder: "Anna")
-            if let error {
-                Banner(title: L10n.t("Не получилось", "Didn’t work", "Non ha funzionato"), message: error, tone: .error)
-            }
-            GoldButton(title: L10n.t("Назначить", "Appoint", "Nomina"), isLoading: working) { appoint() }
-        }
-        .padding(20)
-        .gasScreen()
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button(L10n.t("Отмена", "Cancel", "Annulla")) { dismiss() } }
-        }
-    }
-
-    private func appoint() {
-        guard let messenger = try? CoreStore.shared.current() else { return }
-        let id = channel.channelId
-        let text = request
-        let name = label.trimmingCharacters(in: .whitespaces)
-        working = true
-        Task {
-            do {
-                _ = try await Background.run {
-                    try messenger.addChannelAdmin(channelId: id, request: text, label: name, nowMillis: CoreStore.nowMillis)
-                }
-                working = false
-                onDone()
-            } catch {
-                working = false
-                self.error = L10n.t("Заявка не подошла или нет связи. Попросите прислать её ещё раз.",
-                                    "The request didn’t work or there’s no connection. Ask them to send it again.",
-                                    "La richiesta non è valida o manca la connessione. Chiedi di inviarla di nuovo.")
             }
         }
     }

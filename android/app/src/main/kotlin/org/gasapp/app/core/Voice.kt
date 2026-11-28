@@ -17,6 +17,12 @@ import java.io.File
  * после чтения: на телефоне голосового не остаётся — оно уходит под
  * сквозным шифрованием, как любое вложение. Метаданные контейнера (время
  * в заголовках) вычищает ядро перед шифрованием.
+ *
+ * Аудит 2026-11-28: запись, брошенная на середине (экран свернули,
+ * приложение заперлось, процесс убит), оставляла `voice-*.m4a` в кеше
+ * открытым звуком. Теперь запись отменяется в `onStop` экрана и при
+ * запирании ([cancelActive]), а остатки прошлых сеансов стираются при
+ * открытии хранилища ([sweep]).
  */
 class VoiceRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
@@ -42,7 +48,7 @@ class VoiceRecorder(private val context: Context) {
     /** Начать запись; не вышло (нет микрофона, занят) — `false`. */
     fun start(): Boolean {
         if (recording) return true
-        val target = File.createTempFile("voice-", ".m4a", context.cacheDir)
+        val target = File.createTempFile(FILE_PREFIX, FILE_SUFFIX, context.cacheDir)
         val created = runCatching {
             newRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -63,6 +69,7 @@ class VoiceRecorder(private val context: Context) {
         }
         recorder = created
         file = target
+        active = this
         samples.clear()
         startedAt = System.currentTimeMillis()
         handler.postDelayed(meter, METER_MS)
@@ -104,6 +111,7 @@ class VoiceRecorder(private val context: Context) {
         runCatching { recorder?.release() }
         recorder = null
         file = null
+        if (active === this) active = null
     }
 
     /** Записанное голосовое. */
@@ -116,6 +124,37 @@ class VoiceRecorder(private val context: Context) {
         private const val MIN_MILLIS = 500L
         private const val MAX_MILLIS = 600_000L
         private const val POINTS = 100
+
+        /** Префикс и расширение временных файлов записи. */
+        private const val FILE_PREFIX = "voice-"
+        private const val FILE_SUFFIX = ".m4a"
+
+        /** Идущая запись — одна на приложение (микрофон один). */
+        @Volatile
+        private var active: VoiceRecorder? = null
+
+        /** 🔐 Отменить идущую запись, где бы она ни шла: при запирании. */
+        fun cancelActive() {
+            active?.cancel()
+        }
+
+        /**
+         * 🔐 Стереть записи, оставшиеся от прошлых сеансов (процесс убит
+         * посреди записи). Вызывается при открытии хранилища и при
+         * удалении аккаунта; идущую запись не трогает.
+         */
+        fun sweep(context: Context): Int {
+            val current = active?.file
+            var removed = 0
+            context.cacheDir.listFiles()?.forEach { file ->
+                if (file.isFile && file.name.startsWith(FILE_PREFIX) && file.name.endsWith(FILE_SUFFIX) &&
+                    file != current && runCatching { file.delete() }.getOrDefault(false)
+                ) {
+                    removed += 1
+                }
+            }
+            return removed
+        }
 
         /** Сжать замеры громкости (0…32767) до `points` значений 0…255. */
         fun waveform(samples: List<Int>, points: Int): ByteArray {

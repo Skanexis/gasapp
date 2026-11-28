@@ -79,6 +79,9 @@ class ChatActivity : AppCompatActivity() {
 
     private val voiceRecorder by lazy { org.gasapp.app.core.VoiceRecorder(this) }
 
+    /** Диалог идущей записи голосового — чтобы закрыть его в [onStop]. */
+    private var voiceDialog: GasAppDialog.Shown? = null
+
     /** Разрешение на микрофон — только когда человек решил записать. */
     private val askMicrophone = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -303,7 +306,7 @@ class ChatActivity : AppCompatActivity() {
             val photo = withContext(Dispatchers.IO) {
                 runCatching { Core.messenger().chatPhotos().firstOrNull { it.chatId == chatId }?.image }
                     .getOrNull()
-                    ?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    ?.let { org.gasapp.app.ui.ProfilePhotos.decode(it) }
             } ?: return@launch
             findViewById<TextView>(R.id.chat_avatar).apply {
                 text = ""
@@ -434,12 +437,13 @@ class ChatActivity : AppCompatActivity() {
             }
         }
         ticker.run()
-        GasAppDialog(this)
+        voiceDialog = GasAppDialog(this)
             .title(R.string.attach_voice)
             .content(label)
             .cancelable(false)
             .secondary(R.string.voice_cancel) { voiceRecorder.cancel() }
             .primary(R.string.voice_send) { voiceRecorder.finish()?.let(::sendVoice) }
+            .onDismiss { voiceDialog = null }
             .show()
     }
 
@@ -551,16 +555,24 @@ class ChatActivity : AppCompatActivity() {
             return
         }
 
-        // 🔐 Из фото, видео и звука метаданные удаляет ядро. Из документов
-        // (PDF, Word) — нет: там они часть формата. Человек должен знать
-        // это до того, как файл уйдёт.
-        val mime = contentResolver.getType(uri)
+        // 🔐 Метаданные ядро удаляет только у известных форматов фото,
+        // видео и звука. Всё прочее (TIFF, FLAC, WebM, PDF, Word…) уйдёт
+        // как есть — сначала спросить (аудит 2026-11-28; так же на iOS).
+        if (AttachmentPrep.isCleanedMime(contentResolver.getType(uri))) {
+            uploadAttachment(uri, kind, device)
+        } else {
+            GasAppDialog(this)
+                .title(R.string.attach_as_is_title)
+                .message(R.string.attach_as_is_body)
+                .secondary()
+                .primary(R.string.send) { uploadAttachment(uri, kind, device) }
+                .show()
+        }
+    }
 
-        GasAppToast.show(
-            this,
-            if (AttachmentPrep.isMediaMime(mime)) R.string.attach_sending else R.string.attach_document_metadata,
-            if (AttachmentPrep.isMediaMime(mime)) GasAppToast.Tone.Info else GasAppToast.Tone.Warning,
-        )
+    /** Читает, готовит и отправляет уже одобренное вложение. */
+    private fun uploadAttachment(uri: Uri, kind: FfiAttachmentKind, device: String) {
+        GasAppToast.show(this, R.string.attach_sending, GasAppToast.Tone.Info)
 
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) {
@@ -697,6 +709,13 @@ class ChatActivity : AppCompatActivity() {
 
         adapter.clear()
         forgetShown()
+
+        // 🔐 Голосовое, брошенное на середине, стирается, а не ждёт
+        // в кеше открытым звуком; играющее — замолкает (аудит 2026-11-28).
+        if (voiceRecorder.recording) voiceRecorder.cancel()
+        voiceDialog?.dismiss()
+        voiceDialog = null
+        org.gasapp.app.core.VoicePlayer.stop()
 
         // ⚠️ Сохранение вложения здесь не отменяется, и это
         // не упущение. Диалог выбора места — полноэкранная

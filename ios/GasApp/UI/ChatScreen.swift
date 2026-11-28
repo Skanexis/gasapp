@@ -215,9 +215,9 @@ struct ChatScreen: View {
                         pendingFile = nil
                     }
                 } message: {
-                    Text(L10n.t("Из фото, видео, звука и PDF GasApp удаляет метаданные сам. В этом файле свойства документа (автор, компания, программа) могут остаться — их видит собеседник.",
-                                "GasApp strips metadata from photos, video, audio and PDF itself. This file may keep document properties (author, company, app) that the recipient can see.",
-                                "GasApp rimuove da solo i metadati da foto, video, audio e PDF. Questo file può conservare le proprietà del documento (autore, azienda, app) visibili al destinatario."))
+                    Text(L10n.t("Из фото, видео и звука GasApp удаляет метаданные сам. В этом файле свойства документа (автор, компания, программа) могут остаться — их видит собеседник.",
+                                "GasApp strips metadata from photos, video and audio itself. This file may keep document properties (author, company, app) that the recipient can see.",
+                                "GasApp rimuove da solo i metadati da foto, video e audio. Questo file può conservare le proprietà del documento (autore, azienda, app) visibili al destinatario."))
                 }
                 .sheet(item: $forwarding) { message in
                     NavigationStack {
@@ -302,13 +302,20 @@ struct ChatScreen: View {
         // входа в адресе и подменные буквы); открыть её решает человек,
         // видя адрес целиком (как на Android).
         // Ссылка в сообщении: контакт — добавить и открыть чат, канал —
-        // вступить; чужая — браузер.
-        .environment(\.openURL, OpenURLAction { url in model.route(url) ? .handled : .systemAction })
+        // вступить; чужая — браузер, но тоже после вопроса с адресом
+        // целиком (аудит 2026-11-28): текст ссылки собеседник выбирает сам,
+        // и одно касание не должно уводить в Safari.
+        .environment(\.openURL, OpenURLAction { url in
+            if model.route(url) { return .handled }
+            guard WebLink.isWeb(url) else { return .discarded }
+            pendingLink = url.absoluteString
+            return .handled
+        })
         .confirmationDialog(L10n.t("Открыть ссылку?", "Open the link?", "Aprire il link?"), isPresented: Binding(
             get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }
         ), titleVisibility: .visible) {
             Button(L10n.t("Открыть", "Open", "Apri")) {
-                if let link = pendingLink, let url = URL(string: link), url.scheme == "https" {
+                if let link = pendingLink, let url = URL(string: link), WebLink.isWeb(url) {
                     UIApplication.shared.open(url)
                 }
                 pendingLink = nil
@@ -605,6 +612,9 @@ struct ChatScreen: View {
     /// Выбран файл: метаданные известных форматов ядро удалит само; у
     /// прочих (Word, Excel…) свойства документа могут остаться — сначала
     /// спросить.
+    ///
+    /// 🔐 PDF — тоже с вопросом (аудит 2026-11-28): ядро чистит его лишь
+    /// отчасти, сжатые потоки объектов и XMP в них остаются.
     private func pickFile(_ url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -617,7 +627,7 @@ struct ChatScreen: View {
             return
         }
         let name = url.lastPathComponent
-        let cleaned: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "m4a", "m4v", "3gp", "mp3", "pdf"]
+        let cleaned: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "m4a", "m4v", "3gp", "mp3"]
         if cleaned.contains(url.pathExtension.lowercased()) {
             sendFile(data, name: name)
         } else {

@@ -266,10 +266,13 @@ struct BotTokenSheet: View {
                         }
                     }
 
+                    // 🔐 Без выделения текста (аудит 2026-11-28): системное
+                    // «Скопировать» кладёт токен в общий буфер навсегда и на
+                    // другие устройства (Handoff). Копирует только кнопка ниже —
+                    // локально и на минуту.
                     Text(token.line)
                         .font(.system(size: 13, design: .monospaced))
                         .foregroundStyle(GasAppColor.textPrimary)
-                        .textSelection(.enabled)
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))
@@ -289,7 +292,6 @@ struct BotTokenSheet: View {
                         Text(command)
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(GasAppColor.textSecondary)
-                            .textSelection(.enabled)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))

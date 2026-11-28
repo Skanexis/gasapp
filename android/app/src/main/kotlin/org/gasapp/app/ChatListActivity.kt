@@ -403,8 +403,9 @@ class ChatListActivity : AppCompatActivity() {
     private fun photoOf(chatId: String, image: ByteArray): android.graphics.Bitmap? {
         val key = chatId + ":" + image.contentHashCode()
         photoCache[key]?.let { return it }
-        val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
-        return android.graphics.BitmapFactory.decodeByteArray(image, 0, image.size, options)
+        // Фото прислал собеседник: размер проверяется до декодирования
+        // (аудит 2026-11-28, см. ProfilePhotos).
+        return org.gasapp.app.ui.ProfilePhotos.decode(image)
             ?.also { photoCache[key] = it }
     }
 

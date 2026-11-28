@@ -16,6 +16,15 @@ import Security
 enum SecureStore {
     private static let service = "org.gasapp.messenger.store"
 
+    /// Когда значение можно прочесть.
+    enum Access {
+        /// Только при разблокированном устройстве — по умолчанию.
+        case whenUnlocked
+        /// После первой разблокировки с загрузки — для того, что нужно
+        /// в фоне и до PIN (мосты Tor). Тоже «только на этом устройстве».
+        case afterFirstUnlock
+    }
+
     static func data(_ key: String) -> Data? {
         #if canImport(Security)
         var query = base(key)
@@ -30,12 +39,17 @@ enum SecureStore {
     }
 
     @discardableResult
-    static func set(_ value: Data, for key: String) -> Bool {
+    static func set(_ value: Data, for key: String, access: Access = .whenUnlocked) -> Bool {
         #if canImport(Security)
         SecItemDelete(base(key) as CFDictionary)
         var item = base(key)
         item[kSecValueData as String] = value
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        switch access {
+        case .whenUnlocked:
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        case .afterFirstUnlock:
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
         #else
         memory[key] = value
@@ -56,9 +70,10 @@ enum SecureStore {
         return Int(Int64(littleEndian: data.withUnsafeBytes { $0.loadUnaligned(as: Int64.self) }))
     }
 
-    static func set(_ value: Int, for key: String) {
+    @discardableResult
+    static func set(_ value: Int, for key: String, access: Access = .whenUnlocked) -> Bool {
         var raw = Int64(value).littleEndian
-        set(Data(bytes: &raw, count: 8), for: key)
+        return set(Data(bytes: &raw, count: 8), for: key, access: access)
     }
 
     /// 🔐 Стирает всё, что приложение держит в Keychain (удаление аккаунта).

@@ -556,46 +556,6 @@ struct ChannelManageScreen: View {
     }
 }
 
-/// Заявка на администрирование для читателя: QR и строка, которые он
-/// показывает владельцу (`channelAdminRequest`). Без сети.
-struct AdminRequestSheet: View {
-    let channelId: String
-    @State private var request: String?
-    @State private var qr: FfiQrMatrix?
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                Text(L10n.t("Отправьте заявку владельцу канала в чат GasApp — он нажмёт её и назначит вас. Или покажите ему этот QR. Секретов в заявке нет, но она называет владельцу ваше устройство.",
-                            "Send the request to the channel owner in a GasApp chat — they tap it and appoint you. Or show them this QR. It has no secrets, but it names your device to the owner.",
-                            "Invia la richiesta al proprietario del canale in una chat GasApp: la tocca e ti nomina. Oppure mostragli questo QR. Non contiene segreti, ma indica al proprietario il tuo dispositivo."))
-                    .font(GasFont.text(15)).foregroundStyle(GasAppColor.textSecondary).multilineTextAlignment(.center)
-                if let qr { QRView(matrix: qr).frame(maxWidth: 260) }
-                if let request {
-                    Text(request).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
-                        .foregroundStyle(GasAppColor.textPrimary).padding(12)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(GasAppColor.bgCard))
-                    ShareLink(item: request) { Label(L10n.t("Отправить", "Send", "Invia"), systemImage: "square.and.arrow.up") }
-                }
-            }
-            .padding(24)
-        }
-        .gasScreen()
-        .navigationTitle(L10n.t("Стать администратором", "Become an admin", "Diventa admin"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.t("Готово", "Done", "Fatto")) { dismiss() } } }
-        .task {
-            guard let messenger = try? CoreStore.shared.current() else { return }
-            let id = channelId
-            request = try? await Background.run { try messenger.channelAdminRequest(channelId: id) }
-            if let request {
-                qr = try? channelAdminRequestQr(request: request)
-            }
-        }
-    }
-}
-
 /// Выбор собеседника из своих контактов — для назначения администратором.
 struct ContactPickerSheet: View {
     let title: String

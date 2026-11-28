@@ -31,8 +31,12 @@
 #   gasapp_keystore, указать пароль и псевдоним (gasapp). Codemagic
 #   отдаёт их сборке переменными CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD,
 #   CM_KEY_ALIAS, CM_KEY_PASSWORD — в репозиторий и журнал они не попадают.
-#   Необязательно: переменная PLAY_SIGNING_CERT_SHA256 (группа android_release)
+#   Для AAB: переменная PLAY_SIGNING_CERT_SHA256 (группа android_release)
 #   — отпечаток ключа Google Play (play-app-signing-sha256.txt с флешки).
+#   Без неё AAB не собирается (аудит 2026-11-28): в нём был бы отпечаток
+#   ключа загрузки, а Google Play переподписывает приложение своим ключом,
+#   и TamperGuard счёл бы подделкой каждую установку из магазина. APK для
+#   сайта (foss) собирается в любом случае.
 
 workflows:
   ios-check:
@@ -127,12 +131,13 @@ workflows:
             printf '%s' "$IOS_APPSTORE_PROFILE" | tr -d '[:space:]' | base64 --decode > /tmp/gasapp.mobileprovision
             # Короткие отпечатки (не секреты) — сравнить с тем, что на флешке.
             echo "  сертификат .p12: $(shasum -a 256 /tmp/dist.p12 | cut -c1-12)"
-            echo "  пароль: ${#P12_PW} знаков, отпечаток $(printf '%s' "$P12_PW" | shasum -a 256 | cut -c1-8)"
             echo "  профиль: $(shasum -a 256 /tmp/gasapp.mobileprovision | cut -c1-12)"
             export P12_PW
             if ! openssl pkcs12 -in /tmp/dist.p12 -passin env:P12_PW -noout 2> /dev/null; then
               echo "⚠ openssl не открыл .p12 этим паролем — вероятно, IOS_DIST_P12_PASSWORD"
               echo "  или IOS_DIST_P12 вставлены не целиком. Сравните отпечатки выше с флешкой."
+              # Длина пароля и отпечаток его хеша в журнал больше не пишутся
+              # (аудит 2026-11-28): по ним короткий пароль перебирается офлайн.
             fi
             keychain add-certificates --certificate /tmp/dist.p12 --certificate-password "$P12_PW"
             rm -f /tmp/dist.p12
@@ -289,9 +294,16 @@ workflows:
           cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleFossRelease "${props[@]}"
-          play=()
-          [ -n "${PLAY_SIGNING_CERT_SHA256:-}" ] && play=(-PgasappSigningCertSha256="$PLAY_SIGNING_CERT_SHA256")
-          ./gradlew --no-daemon bundleGmsRelease "${props[@]}" "${play[@]}"
+          # AAB для Google Play — только с отпечатком ключа Play: иначе
+          # TamperGuard сверял бы подпись с ключом загрузки, а Play
+          # переподписывает своим, и каждая установка из магазина
+          # выглядела бы подделкой (аудит 2026-11-28).
+          if [ -n "${PLAY_SIGNING_CERT_SHA256:-}" ]; then
+            ./gradlew --no-daemon bundleGmsRelease "${props[@]}" -PgasappSigningCertSha256="$PLAY_SIGNING_CERT_SHA256"
+          else
+            echo "⚠ AAB не собран: нет PLAY_SIGNING_CERT_SHA256 (группа android_release,"
+            echo "  play-app-signing-sha256.txt с флешки). APK для сайта собран."
+          fi
       - name: Подпись APK
         script: |
           set -euo pipefail

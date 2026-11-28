@@ -128,7 +128,7 @@ class ProfileActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val bitmap = withContext(Dispatchers.IO) {
                 runCatching { Core.messenger().ownProfilePhoto() }.getOrNull()
-                    ?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    ?.let { org.gasapp.app.ui.ProfilePhotos.decode(it) }
             }
             val avatar = findViewById<TextView>(R.id.profile_avatar)
             if (bitmap != null) {

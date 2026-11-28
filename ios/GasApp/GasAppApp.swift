@@ -50,6 +50,8 @@ struct RootView: View {
             // 🔐 Пока приложение не активно — шторка: снимок экрана для
             // переключателя приложений не покажет переписку. То же — пока
             // экран записывается или транслируется (AirPlay, запись экрана).
+            // Листы и алерты закрывает окно PrivacyShield; эта — запасная,
+            // на случай, если окну не нашлось сцены.
             if model.coverVisible || isCaptured {
                 PrivacyCover()
             }
@@ -62,6 +64,8 @@ struct RootView: View {
         // Ссылки на контакт: Universal Link https://gasapp.eu/add/#… и
         // схема gasapp://contact/… (кнопка на странице сайта).
         .onOpenURL { model.openURL($0) }
+        .onAppear { PrivacyShield.shared.start() }
+        .onChange(of: isCaptured) { _, _ in PrivacyShield.shared.refresh() }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
             if let url = activity.webpageURL { model.openURL(url) }
         }

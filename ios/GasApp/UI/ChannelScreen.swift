@@ -28,6 +28,8 @@ struct ChannelScreen: View {
     @State private var historyEnded = false
     @State private var editing: FfiChannelPost?
     @State private var editText = ""
+    /// Чужая ссылка из записи — откроется в браузере после вопроса.
+    @State private var pendingLink: String?
     @State private var deleting: FfiChannelPost?
     @State private var photos: [PhotosPickerItem] = []
     @State private var attached: [Data] = []
@@ -105,8 +107,26 @@ struct ChannelScreen: View {
         }
         .gasScreen()
         .navigationTitle(title)
-        // Ссылка в записи: GasApp — в приложении, чужая — браузер.
-        .environment(\.openURL, OpenURLAction { url in model.route(url) ? .handled : .systemAction })
+        // Ссылка в записи: GasApp — в приложении, чужая — браузер после
+        // вопроса с адресом целиком (аудит 2026-11-28, как в чате).
+        .environment(\.openURL, OpenURLAction { url in
+            if model.route(url) { return .handled }
+            guard WebLink.isWeb(url) else { return .discarded }
+            pendingLink = url.absoluteString
+            return .handled
+        })
+        .confirmationDialog(L10n.t("Открыть ссылку?", "Open the link?", "Aprire il link?"), isPresented: Binding(
+            get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }
+        ), titleVisibility: .visible) {
+            Button(L10n.t("Открыть", "Open", "Apri")) {
+                if let link = pendingLink, let url = URL(string: link), WebLink.isWeb(url) {
+                    UIApplication.shared.open(url)
+                }
+                pendingLink = nil
+            }
+        } message: {
+            Text(pendingLink ?? "")
+        }
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: L10n.t("Поиск по каналу", "Search the channel", "Cerca nel canale"))
         .onChange(of: query) { _, text in search(text) }
@@ -484,7 +504,6 @@ struct ChannelInfoSheet: View {
     @State private var link: String?
     @State private var qr: FfiQrMatrix?
     @State private var confirmLeave = false
-    @State private var showAdminRequest = false
     @State private var reportReason: UInt8?
     @State private var reportNote: String?
     @Environment(\.dismiss) private var dismiss
@@ -559,9 +578,6 @@ struct ChannelInfoSheet: View {
         } message: {
             Text(L10n.t("Жалоба уйдёт оператору сервера вместе с именем вашего аккаунта. Записи этого канала оператор прочитать не может — если не дать ему доступ. «Отправить с доступом» приложит к жалобе ссылку канала: оператор сможет открыть его и увидеть, на что вы жалуетесь.",
                         "The report goes to the server operator together with your account name. The operator cannot read this channel's posts unless you give access. “Send with access” attaches the channel link to the report, so the operator can open the channel and see what you are reporting.", "La segnalazione arriva all’operatore del server insieme al nome del tuo account. L’operatore non può leggere i post di questo canale se non gli dai accesso. «Invia con accesso» allega il link del canale alla segnalazione, così l’operatore può aprire il canale e vedere cosa segnali."))
-        }
-        .sheet(isPresented: $showAdminRequest) {
-            NavigationStack { AdminRequestSheet(channelId: channelId) }
         }
         .task { await load() }
     }

@@ -89,6 +89,27 @@ final class VoiceRecorder {
         return (data, UInt32(min(duration, Self.maxSeconds) * 1000), Self.waveform(samples, points: 100))
     }
 
+    /// 🔐 Запирание: идущая запись стирается молча, без отклика
+    /// (аудит 2026-11-28 — прежде она переживала блокировку).
+    func discard() {
+        guard recording || url != nil else { return }
+        let file = url
+        stopRecorder()
+        if let file { try? FileManager.default.removeItem(at: file) }
+    }
+
+    /// 🔐 Записи, оставшиеся от прошлых сеансов (приложение закрыли или
+    /// оно упало посреди записи), — стереть. Зовётся при запуске, когда
+    /// записи заведомо нет.
+    nonisolated static func sweepLeftovers() {
+        let manager = FileManager.default
+        guard let items = try? manager.contentsOfDirectory(at: manager.temporaryDirectory,
+                                                           includingPropertiesForKeys: nil) else { return }
+        for item in items where item.lastPathComponent.hasPrefix("voice-") && item.pathExtension == "m4a" {
+            try? manager.removeItem(at: item)
+        }
+    }
+
     /// Передумали — запись стирается.
     func cancel() {
         let file = url

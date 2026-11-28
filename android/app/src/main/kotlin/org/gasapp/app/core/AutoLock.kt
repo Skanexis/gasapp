@@ -170,6 +170,7 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
 
             Core.close()
             SecureClipboard.clear(application)
+            stopVoice()
 
             // 🔐 Экраны с данными закрываются тут же, в фоне.
             //
@@ -201,6 +202,7 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
         // сообщение переживает запирание, и вынуть его оттуда может
         // любое приложение на переднем плане.
         SecureClipboard.clear(activity)
+        stopVoice()
 
         // Экран блокировки бесполезен без аккаунта: расшифровывать
         // нечего, и человек упёрся бы в запрос, который не проходит.
@@ -305,6 +307,15 @@ object AutoLock : Application.ActivityLifecycleCallbacks {
      * чем его держит система, — ровно этого он и призван избежать.
      */
     private val dataScreens = mutableListOf<WeakReference<Activity>>()
+
+    /**
+     * 🔐 Запертое приложение не пишет и не играет голосовых: запись
+     * стирается, проигрыватель замолкает (аудит 2026-11-28).
+     */
+    private fun stopVoice() {
+        runCatching { VoiceRecorder.cancelActive() }
+        runCatching { VoicePlayer.stop() }
+    }
 
     /** Закрывает экраны с данными — при запирании в фоне. */
     private fun finishDataScreens() {

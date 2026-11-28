@@ -85,6 +85,9 @@ object AccountWipe {
             clean = false
         }
 
+        // Недописанные голосовые — тоже в кеше (см. VoiceRecorder.sweep).
+        runCatching { VoiceRecorder.sweep(context) }
+
         runCatching { PinAttempts.forget(context) }
 
         // 🔐 Шифроблобы File Vault — в filesDir/vault, каталогом, и прежде

@@ -56,20 +56,14 @@ enum AppLink: Equatable {
     case channel(String)
     /// Нажатое `@имя` — как ссылка на контакт (см. `LinkText`).
     case mention(String)
-    /// Заявка на администрирование канала, присланная владельцу в чат.
-    case adminRequest(String)
 
-    static let adminRequestPrefix = "gasapp://channel-admin/"
-
-    /// Канал заявки (UUID строчными) — по первой части заявки.
-    static func channelId(ofAdminRequest request: String) -> String? {
-        guard request.lowercased().hasPrefix(adminRequestPrefix) else { return nil }
-        let hex = request.dropFirst(adminRequestPrefix.count).prefix { $0 != "." }.lowercased()
-        guard hex.count == 32, hex.allSatisfy(\.isHexDigit) else { return nil }
-        let chars = Array(hex)
-        let parts = [0..<8, 8..<12, 12..<16, 16..<20, 20..<32].map { String(chars[$0]) }
-        return parts.joined(separator: "-")
-    }
+    /// Прежние заявки на администрирование канала (`gasapp://channel-admin/…`).
+    ///
+    /// 🔐 Аудит 2026-11-28: такая ссылка с любого сайта открывала
+    /// владельцу экран «Назначить администратора». Администратора теперь
+    /// назначают, выбирая собеседника (`appointChannelAdmin`), как на
+    /// Android, — заявки больше не принимаются ниоткуда.
+    static let retiredAdminRequestPrefix = "gasapp://channel-admin/"
 
     /// Схема, которой `LinkText` размечает `@имя` в тексте.
     static let mentionPrefix = "gasapp://mention/"
@@ -77,9 +71,9 @@ enum AppLink: Equatable {
     /// `nil` — чужая ссылка (её открывает система).
     init?(_ url: URL) {
         let text = url.absoluteString
-        if text.lowercased().hasPrefix(Self.adminRequestPrefix) {
-            self = .adminRequest(text)
-            return
+        // Старая заявка — ничто: не в приложение и не системе.
+        if text.lowercased().hasPrefix(Self.retiredAdminRequestPrefix) {
+            return nil
         }
         if text.lowercased().hasPrefix(Self.mentionPrefix) {
             let name = String(text.dropFirst(Self.mentionPrefix.count))
@@ -97,6 +91,14 @@ enum AppLink: Equatable {
     }
 }
 
+/// Чужая ссылка, которую можно отдать браузеру: только http(s).
+enum WebLink {
+    static func isWeb(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "https" || scheme == "http"
+    }
+}
+
 /// Текст сообщения со ссылками, которые можно нажать.
 ///
 /// Ссылки GasApp (контакт, канал) открываются в приложении, остальные
@@ -104,7 +106,7 @@ enum AppLink: Equatable {
 /// размечаются только найденные адреса.
 enum LinkText {
     private static let pattern = try? NSRegularExpression(
-        pattern: #"(gasapp://(contact|channel|channel-join|channel-admin)/[^\s]+|https?://[^\s]+)"#,
+        pattern: #"(gasapp://(contact|channel|channel-join)/[^\s]+|https?://[^\s]+)"#,
         options: [.caseInsensitive]
     )
     /// Знаки, которыми фраза заканчивается, а адрес — нет.

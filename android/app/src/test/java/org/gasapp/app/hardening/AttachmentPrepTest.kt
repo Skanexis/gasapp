@@ -37,15 +37,43 @@ class AttachmentPrepTest {
         assertFalse(AttachmentPrep.isHeif(ByteArray(0)))
     }
 
-    /** Предупреждение о метаданных — для всего, что ядро не чистит само. */
+    /**
+     * Предупреждение о метаданных — для всего, что ядро не чистит само.
+     *
+     * Аудит 2026-11-28: «чистым» считался любой MIME вида image, audio или
+     * video, и TIFF, FLAC, WebM уходили с метаданными без вопроса.
+     */
     @Test
-    fun documents_are_not_media() {
-        assertTrue(AttachmentPrep.isMediaMime("image/jpeg"))
-        assertTrue(AttachmentPrep.isMediaMime("video/mp4"))
-        assertTrue(AttachmentPrep.isMediaMime("audio/mpeg"))
-        // PDF ядро чистит (автор, программа, даты, XMP).
-        assertTrue(AttachmentPrep.isMediaMime("application/pdf"))
-        assertFalse(AttachmentPrep.isMediaMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
-        assertFalse(AttachmentPrep.isMediaMime(null))
+    fun only_formats_the_core_scrubs_count_as_cleaned() {
+        assertTrue(AttachmentPrep.isCleanedMime("image/jpeg"))
+        assertTrue(AttachmentPrep.isCleanedMime("image/png"))
+        assertTrue(AttachmentPrep.isCleanedMime("image/webp"))
+        assertTrue(AttachmentPrep.isCleanedMime("image/gif"))
+        // HEIC/AVIF перекодируются в JPEG.
+        assertTrue(AttachmentPrep.isCleanedMime("image/heic"))
+        assertTrue(AttachmentPrep.isCleanedMime("video/mp4"))
+        assertTrue(AttachmentPrep.isCleanedMime("video/quicktime"))
+        assertTrue(AttachmentPrep.isCleanedMime("audio/mpeg"))
+        assertTrue(AttachmentPrep.isCleanedMime("audio/mp4"))
+        assertTrue(AttachmentPrep.isCleanedMime("Image/JPEG"))
+
+        // Медиа, которые ядро оставляет как есть.
+        assertFalse(AttachmentPrep.isCleanedMime("image/tiff"))
+        assertFalse(AttachmentPrep.isCleanedMime("image/x-adobe-dng"))
+        assertFalse(AttachmentPrep.isCleanedMime("image/svg+xml"))
+        assertFalse(AttachmentPrep.isCleanedMime("audio/flac"))
+        assertFalse(AttachmentPrep.isCleanedMime("audio/ogg"))
+        assertFalse(AttachmentPrep.isCleanedMime("audio/wav"))
+        assertFalse(AttachmentPrep.isCleanedMime("video/x-matroska"))
+        assertFalse(AttachmentPrep.isCleanedMime("video/webm"))
+    }
+
+    @Test
+    fun documents_are_not_cleaned() {
+        // PDF ядро чистит лишь отчасти: сжатые потоки объектов и XMP остаются.
+        assertFalse(AttachmentPrep.isCleanedMime("application/pdf"))
+        assertFalse(AttachmentPrep.isCleanedMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+        assertFalse(AttachmentPrep.isCleanedMime("application/octet-stream"))
+        assertFalse(AttachmentPrep.isCleanedMime(null))
     }
 }
