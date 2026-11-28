@@ -94,10 +94,8 @@ pub async fn dashboard(pool: &PgPool) -> Result<Dashboard, sqlx::Error> {
         closed_channels: count("SELECT count(*) FROM channels WHERE closed").await?,
         posts: count("SELECT count(*) FROM channel_posts").await?,
         subscriptions: count("SELECT count(*) FROM channel_subscribers").await?,
-        reported_accounts: count(
-            "SELECT count(DISTINCT reported_account) FROM sealed_sender_reports",
-        )
-        .await?,
+        reported_accounts: count("SELECT count(DISTINCT reported_account) FROM sealed_sender_reports")
+            .await?,
         reported_channels: count("SELECT count(DISTINCT channel_id) FROM channel_reports").await?,
         devices: count("SELECT count(*) FROM devices").await?,
         envelopes: count("SELECT count(*) FROM envelopes").await?,
@@ -120,17 +118,7 @@ pub async fn dashboard(pool: &PgPool) -> Result<Dashboard, sqlx::Error> {
 // Списки
 
 /// Строка выборки аккаунтов: id, имя, месяц, премиум, бот, устройства, каналы, жалобщики.
-type AccountTuple = (
-    Uuid,
-    String,
-    String,
-    bool,
-    bool,
-    i64,
-    i64,
-    i64,
-    Option<bool>,
-);
+type AccountTuple = (Uuid, String, String, bool, bool, i64, i64, i64, Option<bool>);
 
 /// Строка выборки каналов: id, @имя, владелец, закрыт, создан, подписчики, записи, жалобы.
 type ChannelTuple = (Uuid, Option<String>, String, bool, String, i64, i64, i64);
@@ -147,14 +135,7 @@ pub enum AccountView {
 }
 
 impl AccountView {
-    pub const ALL: [Self; 6] = [
-        Self::All,
-        Self::Premium,
-        Self::Bots,
-        Self::Reported,
-        Self::Restricted,
-        Self::Dormant,
-    ];
+    pub const ALL: [Self; 6] = [Self::All, Self::Premium, Self::Bots, Self::Reported, Self::Restricted, Self::Dormant];
 
     #[must_use]
     pub fn parse(raw: Option<&str>) -> Self {
@@ -264,29 +245,17 @@ pub async fn accounts(
     let rows = rows
         .into_iter()
         .take(usize::try_from(PAGE).unwrap_or(50))
-        .map(
-            |(
-                account_id,
-                username,
-                active_month,
-                premium,
-                bot,
-                devices,
-                channels,
-                reporters,
-                restricted,
-            )| AccountRow {
-                account_id,
-                username,
-                active_month,
-                premium,
-                bot,
-                devices,
-                channels,
-                reporters,
-                restricted,
-            },
-        )
+        .map(|(account_id, username, active_month, premium, bot, devices, channels, reporters, restricted)| AccountRow {
+            account_id,
+            username,
+            active_month,
+            premium,
+            bot,
+            devices,
+            channels,
+            reporters,
+            restricted,
+        })
         .collect();
 
     Ok((rows, more))
@@ -392,20 +361,16 @@ pub async fn channels(
     let rows = rows
         .into_iter()
         .take(usize::try_from(PAGE).unwrap_or(50))
-        .map(
-            |(channel_id, handle, owner, closed, created, subscribers, posts, reports)| {
-                ChannelRow {
-                    channel_id,
-                    handle,
-                    owner,
-                    closed,
-                    created,
-                    subscribers,
-                    posts,
-                    reports,
-                }
-            },
-        )
+        .map(|(channel_id, handle, owner, closed, created, subscribers, posts, reports)| ChannelRow {
+            channel_id,
+            handle,
+            owner,
+            closed,
+            created,
+            subscribers,
+            posts,
+            reports,
+        })
         .collect();
 
     Ok((rows, more))
@@ -440,12 +405,7 @@ pub async fn journal(pool: &PgPool) -> Result<Vec<JournalRow>, sqlx::Error> {
 
     Ok(rows
         .into_iter()
-        .map(|(hour, action, reason, reporters)| JournalRow {
-            hour,
-            action,
-            reason,
-            reporters,
-        })
+        .map(|(hour, action, reason, reporters)| JournalRow { hour, action, reason, reporters })
         .collect())
 }
 
@@ -467,9 +427,7 @@ pub struct Health {
 ///
 /// Ошибка базы.
 pub async fn health(pool: &PgPool) -> Result<Health, sqlx::Error> {
-    let version: String = sqlx::query_scalar("SELECT split_part(version(), ' ', 2)")
-        .fetch_one(pool)
-        .await?;
+    let version: String = sqlx::query_scalar("SELECT split_part(version(), ' ', 2)").fetch_one(pool).await?;
     let uptime: String = sqlx::query_scalar(
         "SELECT CASE WHEN now() - pg_postmaster_start_time() >= interval '1 day'
                      THEN extract(day FROM now() - pg_postmaster_start_time())::int || ' d '
@@ -499,9 +457,7 @@ pub async fn health(pool: &PgPool) -> Result<Health, sqlx::Error> {
         database_bytes: sqlx::query_scalar("SELECT pg_database_size(current_database())")
             .fetch_one(pool)
             .await?,
-        envelopes: sqlx::query_scalar("SELECT count(*) FROM envelopes")
-            .fetch_one(pool)
-            .await?,
+        envelopes: sqlx::query_scalar("SELECT count(*) FROM envelopes").fetch_one(pool).await?,
         oldest_envelope_hours: sqlx::query_scalar(
             "SELECT (extract(epoch FROM now() - min(queued_at)) / 3600)::bigint FROM envelopes",
         )
@@ -536,10 +492,7 @@ fn percent_of(part: i64, whole: i64) -> i64 {
     if whole <= 0 {
         return 0;
     }
-    part.saturating_mul(100)
-        .checked_div(whole)
-        .unwrap_or(0)
-        .clamp(0, 100)
+    part.saturating_mul(100).checked_div(whole).unwrap_or(0).clamp(0, 100)
 }
 
 /// Карточка показателя: иконка, подпись, число, пояснение.
@@ -558,9 +511,7 @@ pub(crate) fn stat(glyph: &str, tone: &str, label: &str, value: &str, hint: &str
 
 /// Аватар-инициалы: цвет по имени, как в приложении (шесть тонов).
 pub(crate) fn avatar(name: &str) -> String {
-    const INKS: [&str; 6] = [
-        "#ffcb2e", "#5ed3c9", "#f59ab8", "#f5b08a", "#c4a9ff", "#7fc4f5",
-    ];
+    const INKS: [&str; 6] = ["#ffcb2e", "#5ed3c9", "#f59ab8", "#f5b08a", "#c4a9ff", "#7fc4f5"];
     let mut hash: i32 = 0;
     for unit in name.encode_utf16() {
         hash = hash.wrapping_mul(31).wrapping_add(i32::from(unit));
@@ -600,10 +551,7 @@ pub fn dashboard_html(d: &Dashboard, bytes: fn(i64) -> String) -> String {
         (
             "hero",
             "alert-triangle",
-            format!(
-                "{queue} case{} waiting for review",
-                if queue == 1 { "" } else { "s" }
-            ),
+            format!("{queue} case{} waiting for review", if queue == 1 { "" } else { "s" }),
             format!(
                 "{} reported account{} and {} reported channel{}. Review within 24 hours.",
                 d.reported_accounts,
@@ -632,40 +580,21 @@ pub fn dashboard_html(d: &Dashboard, bytes: fn(i64) -> String) -> String {
     );
 
     html.push_str("<div class=\"row row-cards mb-4\">");
-    html.push_str(&stat(
-        "users",
-        "info",
-        "Accounts",
-        &grouped(d.accounts),
-        &format!("{} are bots", grouped(d.bots)),
-    ));
+    html.push_str(&stat("users", "info", "Accounts", &grouped(d.accounts), &format!("{} are bots", grouped(d.bots))));
     html.push_str(&stat(
         "activity",
         "ok",
         "Active this month",
         &grouped(d.active_this_month),
-        &format!(
-            "{}% of all accounts",
-            percent_of(d.active_this_month, d.accounts)
-        ),
+        &format!("{}% of all accounts", percent_of(d.active_this_month, d.accounts)),
     ));
-    html.push_str(&stat(
-        "crown",
-        "gold",
-        "Premium",
-        &grouped(d.premium),
-        "can create channels and bots",
-    ));
+    html.push_str(&stat("crown", "gold", "Premium", &grouped(d.premium), "can create channels and bots"));
     html.push_str(&stat(
         "broadcast",
         "pink",
         "Channels",
         &grouped(d.channels),
-        &format!(
-            "{} posts · {} subscriptions",
-            grouped(d.posts),
-            grouped(d.subscriptions)
-        ),
+        &format!("{} posts · {} subscriptions", grouped(d.posts), grouped(d.subscriptions)),
     ));
     html.push_str("</div>");
 
@@ -686,33 +615,13 @@ pub fn dashboard_html(d: &Dashboard, bytes: fn(i64) -> String) -> String {
         backlog_tone,
         "Queued envelopes",
         &grouped(d.envelopes),
-        &d.oldest_envelope_hours.map_or_else(
-            || "queue is empty".to_owned(),
-            |hours| format!("oldest waits {hours} h"),
-        ),
+        &d.oldest_envelope_hours
+            .map_or_else(|| "queue is empty".to_owned(), |hours| format!("oldest waits {hours} h")),
     ));
-    html.push_str(&stat(
-        "paperclip",
-        "info",
-        "Attachments",
-        &grouped(d.attachments),
-        &bytes(d.attachments_bytes),
-    ));
+    html.push_str(&stat("paperclip", "info", "Attachments", &grouped(d.attachments), &bytes(d.attachments_bytes)));
     html.push_str("</div><div class=\"row row-cards mb-3\">");
-    html.push_str(&stat(
-        "database",
-        "info",
-        "Database size",
-        &bytes(d.database_bytes),
-        "including indexes",
-    ));
-    html.push_str(&stat(
-        "device-mobile",
-        "info",
-        "Devices",
-        &grouped(d.devices),
-        "one per account today",
-    ));
+    html.push_str(&stat("database", "info", "Database size", &bytes(d.database_bytes), "including indexes"));
+    html.push_str(&stat("device-mobile", "info", "Devices", &grouped(d.devices), "one per account today"));
     html.push_str(&stat(
         "key",
         "gold",
@@ -725,10 +634,7 @@ pub fn dashboard_html(d: &Dashboard, bytes: fn(i64) -> String) -> String {
         if queue > 0 { "warn" } else { "ok" },
         "Open reports",
         &grouped(queue),
-        &format!(
-            "{} accounts · {} channels",
-            d.reported_accounts, d.reported_channels
-        ),
+        &format!("{} accounts · {} channels", d.reported_accounts, d.reported_channels),
     ));
     html.push_str(
         "</div><p class=\"text-secondary small\">Operational totals only. The server does not retain readable conversations, \
@@ -753,9 +659,7 @@ fn activity_chart(activity: &[(String, i64)]) -> String {
     }
     let peak = activity.iter().map(|(_, n)| *n).max().unwrap_or(1).max(1);
     let last = activity.len().saturating_sub(1);
-    html.push_str(
-        "<div class=\"bars mt-4\" role=\"img\" aria-label=\"Accounts by month of last activity\">",
-    );
+    html.push_str("<div class=\"bars mt-4\" role=\"img\" aria-label=\"Accounts by month of last activity\">");
     for (index, (month, number)) in activity.iter().enumerate() {
         let height = percent_of(*number, peak).max(3);
         let latest = if index == last { " latest" } else { "" };
@@ -778,12 +682,7 @@ fn activity_chart(activity: &[(String, i64)]) -> String {
     html.push_str("</div><details class=\"mt-3\"><summary class=\"text-secondary small\">Show as table</summary>\
                    <table class=\"table table-sm mt-2\"><thead><tr><th>Month</th><th class=\"text-end\">Accounts</th></tr></thead><tbody>");
     for (month, number) in activity {
-        let _ = write!(
-            html,
-            "<tr><td>{}</td><td class=\"text-end num\">{}</td></tr>",
-            escape(month),
-            grouped(*number)
-        );
+        let _ = write!(html, "<tr><td>{}</td><td class=\"text-end num\">{}</td></tr>", escape(month), grouped(*number));
     }
     html.push_str("</tbody></table></details></div></div></div>");
     html
@@ -791,15 +690,9 @@ fn activity_chart(activity: &[(String, i64)]) -> String {
 
 /// Кольцо: доли активности. Три ряда — легенда с числами (цвет не один).
 fn activity_split(d: &Dashboard) -> String {
-    let total = d
-        .active_this_month
-        .saturating_add(d.active_last_month)
-        .saturating_add(d.dormant)
-        .max(1);
+    let total = d.active_this_month.saturating_add(d.active_last_month).saturating_add(d.dormant).max(1);
     let a = percent_of(d.active_this_month, total);
-    let b = percent_of(d.active_last_month, total)
-        .saturating_add(a)
-        .min(100);
+    let b = percent_of(d.active_last_month, total).saturating_add(a).min(100);
     format!(
         "<div class=\"col-lg-5\"><div class=\"card h-100\"><div class=\"card-header\"><h3 class=\"card-title\">Activity split</h3></div>\
          <div class=\"card-body d-flex align-items-center gap-4 flex-wrap\">\
@@ -855,11 +748,7 @@ fn tabs<T: Copy + PartialEq>(
 ) -> String {
     let mut html = String::from("<nav class=\"tabs\" aria-label=\"Filter\">");
     for view in all {
-        let selected = if *view == current {
-            " aria-current=\"page\""
-        } else {
-            ""
-        };
+        let selected = if *view == current { " aria-current=\"page\"" } else { "" };
         let _ = write!(
             html,
             "<a href=\"{base}?view={}&amp;q={}\"{selected}>{}</a>",
@@ -927,24 +816,10 @@ fn pager(base: &str, view: &str, query: &str, page: i64, more: bool) -> String {
 
 /// Страница аккаунтов.
 #[must_use]
-pub fn accounts_html(
-    rows: &[AccountRow],
-    view: AccountView,
-    query: &str,
-    page: i64,
-    more: bool,
-    csrf: &str,
-) -> String {
+pub fn accounts_html(rows: &[AccountRow], view: AccountView, query: &str, page: i64, more: bool, csrf: &str) -> String {
     let mut html = format!(
         "<div class=\"card\"><div class=\"card-header d-flex flex-wrap gap-2\">{}{}</div>",
-        tabs(
-            "/accounts",
-            view,
-            &AccountView::ALL,
-            AccountView::code,
-            AccountView::label,
-            query
-        ),
+        tabs("/accounts", view, &AccountView::ALL, AccountView::code, AccountView::label, query),
         search_form("/accounts", view.code(), query, "Username starts with…"),
     );
 
@@ -968,12 +843,8 @@ pub fn accounts_html(
             badges.push_str(" <span class=\"badge bg-primary-lt ms-1\">premium</span>");
         }
         match row.restricted {
-            Some(true) => {
-                badges.push_str(" <span class=\"badge badge-blocked ms-1\">blocked</span>")
-            }
-            Some(false) => {
-                badges.push_str(" <span class=\"badge badge-frozen ms-1\">frozen</span>")
-            }
+            Some(true) => badges.push_str(" <span class=\"badge badge-blocked ms-1\">blocked</span>"),
+            Some(false) => badges.push_str(" <span class=\"badge badge-frozen ms-1\">frozen</span>"),
             None => {}
         }
         let (value, label, class) = if row.premium {
@@ -982,10 +853,7 @@ pub fn accounts_html(
             ("on", "Grant", "btn btn-sm btn-ghost-warning")
         };
         let reporters = if row.reporters > 0 {
-            format!(
-                "<span class=\"badge bg-danger-lt\">{}</span>",
-                row.reporters
-            )
+            format!("<span class=\"badge bg-danger-lt\">{}</span>", row.reporters)
         } else {
             "<span class=\"text-secondary\">0</span>".to_owned()
         };
@@ -1020,35 +888,15 @@ pub fn accounts_html(
 
 /// Страница каналов.
 #[must_use]
-pub fn channels_html(
-    rows: &[ChannelRow],
-    view: ChannelView,
-    query: &str,
-    page: i64,
-    more: bool,
-) -> String {
+pub fn channels_html(rows: &[ChannelRow], view: ChannelView, query: &str, page: i64, more: bool) -> String {
     let mut html = format!(
         "<div class=\"card\"><div class=\"card-header d-flex flex-wrap gap-2\">{}{}</div>",
-        tabs(
-            "/channels",
-            view,
-            &ChannelView::ALL,
-            ChannelView::code,
-            ChannelView::label,
-            query
-        ),
-        search_form(
-            "/channels",
-            view.code(),
-            query,
-            "@name or owner starts with…"
-        ),
+        tabs("/channels", view, &ChannelView::ALL, ChannelView::code, ChannelView::label, query),
+        search_form("/channels", view.code(), query, "@name or owner starts with…"),
     );
 
     if rows.is_empty() {
-        html.push_str(
-            "<div class=\"empty\"><p class=\"empty-title\">No channels match</p></div></div>",
-        );
+        html.push_str("<div class=\"empty\"><p class=\"empty-title\">No channels match</p></div></div>");
         return html;
     }
 
@@ -1058,32 +906,18 @@ pub fn channels_html(
     );
     for row in rows {
         let name = row.handle.as_ref().map_or_else(
-            || {
-                format!(
-                    "<span class=\"text-secondary\">private · {}</span>",
-                    row.channel_id.to_string().get(..8).unwrap_or("")
-                )
-            },
+            || format!("<span class=\"text-secondary\">private · {}</span>", row.channel_id.to_string().get(..8).unwrap_or("")),
             |handle| format!("<span class=\"fw-medium\">@{}</span>", escape(handle)),
         );
         let access = if row.handle.is_some() {
-            format!(
-                "<span class=\"badge bg-info-lt\">{} public</span>",
-                icon("world")
-            )
+            format!("<span class=\"badge bg-info-lt\">{} public</span>", icon("world"))
         } else if row.closed {
-            format!(
-                "<span class=\"badge bg-success-lt\">{} by request</span>",
-                icon("lock")
-            )
+            format!("<span class=\"badge bg-success-lt\">{} by request</span>", icon("lock"))
         } else {
             format!("<span class=\"badge\">{} by link</span>", icon("link"))
         };
         let reports = if row.reports > 0 {
-            format!(
-                "<a class=\"badge bg-danger-lt\" href=\"/reports\">{}</a>",
-                row.reports
-            )
+            format!("<a class=\"badge bg-danger-lt\" href=\"/reports\">{}</a>", row.reports)
         } else {
             "<span class=\"text-secondary\">0</span>".to_owned()
         };
@@ -1156,36 +990,16 @@ pub fn health_html(h: &Health, bytes: fn(i64) -> String) -> String {
         _ => "ok",
     };
     let mut html = String::from("<div class=\"row row-cards mb-4\">");
-    html.push_str(&stat(
-        "database",
-        "ok",
-        "PostgreSQL",
-        &h.version,
-        &format!("up {}", h.uptime),
-    ));
-    html.push_str(&stat(
-        "server",
-        "info",
-        "Connections",
-        &grouped(h.connections),
-        "to this database",
-    ));
-    html.push_str(&stat(
-        "stack-2",
-        "info",
-        "Database size",
-        &bytes(h.database_bytes),
-        "including indexes",
-    ));
+    html.push_str(&stat("database", "ok", "PostgreSQL", &h.version, &format!("up {}", h.uptime)));
+    html.push_str(&stat("server", "info", "Connections", &grouped(h.connections), "to this database"));
+    html.push_str(&stat("stack-2", "info", "Database size", &bytes(h.database_bytes), "including indexes"));
     html.push_str(&stat(
         "send",
         backlog_tone,
         "Delivery backlog",
         &grouped(h.envelopes),
-        &h.oldest_envelope_hours.map_or_else(
-            || "queue is empty".to_owned(),
-            |hours| format!("oldest waits {hours} h"),
-        ),
+        &h.oldest_envelope_hours
+            .map_or_else(|| "queue is empty".to_owned(), |hours| format!("oldest waits {hours} h")),
     ));
     html.push_str(
         "</div><div class=\"card\"><div class=\"card-header\"><h3 class=\"card-title\">Largest tables</h3></div>\
