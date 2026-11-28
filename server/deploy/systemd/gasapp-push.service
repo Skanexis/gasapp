@@ -20,8 +20,11 @@ StartLimitBurst=5
 
 [Service]
 Type=exec
-User=gasapp-admin
-Group=gasapp-admin
+# 🔐 Свой пользователь, не админ-центра (аудит 2026-11-28, S-10): служба
+# ходит в интернет, и взломанная не прочтёт ни ключ улик, ни токен
+# оператора, ни учётные данные админ-центра.
+User=gasapp-push
+Group=gasapp-push
 ExecStart=/usr/local/bin/gasapp-server-admin push
 Restart=on-failure
 RestartSec=5
@@ -29,8 +32,9 @@ Environment=NO_COLOR=1
 
 # Несекретное: GASAPP_APNS_KEY_ID, GASAPP_APNS_TEAM_ID, GASAPP_APNS_TOPIC.
 EnvironmentFile=-/etc/gasapp/push.env
-# База — тем же сокетом и паролем, что у админ-центра.
-LoadCredential=database_url:/etc/gasapp/credentials/admin_database_url
+# База — сокетом, своей ролью gasapp_push: только push_tokens
+# (deploy/postgres/roles.sql).
+LoadCredential=database_url:/etc/gasapp/credentials/push_database_url
 # 🔐 Ключи провайдеров — каталогом: каждый файл в нём становится
 # учётными данными «gasapp_<имя файла>». Провайдер без файла просто
 # не используется:

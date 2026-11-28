@@ -196,6 +196,45 @@ pub async fn publish_key(pool: &PgPool, key: Option<&EvidenceKey>) -> Result<(),
     Ok(())
 }
 
+/// Как часто админ-центр сверяет ключ улик в базе со своим.
+const KEY_GUARD_PERIOD: std::time::Duration = std::time::Duration::from_mins(5);
+
+/// Сверяет открытый ключ улик в базе со своим — каждые
+/// [`KEY_GUARD_PERIOD`], пока работает админ-центр.
+///
+/// 🔐 Узлы отдают телефонам ключ из `admin_state`. Подменивший его (узел
+/// под старой общей ролью, кто-то в базе) получал бы улики под свой ключ.
+/// Телефоны с закреплённым ключом подмену отвергнут сами, а здесь она
+/// поднимает тревогу в журнале и ключ возвращается свой (аудит
+/// 2026-11-28, S-4).
+pub async fn guard_key(pool: PgPool, own: Option<[u8; 32]>) {
+    let mut ticker = tokio::time::interval(KEY_GUARD_PERIOD);
+    loop {
+        ticker.tick().await;
+        let stored: Result<Option<Vec<u8>>, sqlx::Error> =
+            sqlx::query_scalar("SELECT evidence_key FROM admin_state WHERE id = 1")
+                .fetch_one(&pool)
+                .await;
+        match stored {
+            Ok(stored) if stored.as_deref() == own.as_ref().map(<[u8; 32]>::as_slice) => {}
+            Ok(_) => {
+                tracing::error!(
+                    "ключ улик в базе не совпадает с ключом админ-центра — возвращаю свой; \
+                     проверьте узлы и доступ к базе"
+                );
+                let restored = sqlx::query("UPDATE admin_state SET evidence_key = $1 WHERE id = 1")
+                    .bind(own.map(|key| key.to_vec()))
+                    .execute(&pool)
+                    .await;
+                if restored.is_err() {
+                    tracing::error!("вернуть ключ улик в базу не удалось");
+                }
+            }
+            Err(_) => tracing::warn!("сверить ключ улик с базой не удалось"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------
 // Сигналы и оценка
 

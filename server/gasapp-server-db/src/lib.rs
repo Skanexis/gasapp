@@ -27,6 +27,7 @@ pub mod kt;
 pub mod notify;
 pub mod repo;
 pub mod runtime;
+pub mod schema;
 
 pub use repo::{Account, AccountDeletion, Device, Envelope, PreKeyBundle, RepoError};
 

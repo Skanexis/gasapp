@@ -103,7 +103,7 @@ if [[ "$mode" == install ]]; then
     kit="$(mktemp -d)"
     cp "$binary" "$kit/gasapp-server-admin"
     cp "$DEPLOY/admin-remote.sh" "$kit/install.sh"
-    cp "$DEPLOY/systemd/gasapp-admin.service" "$DEPLOY/systemd/gasapp-reports.service" "$DEPLOY/systemd/gasapp-reports.timer" "$kit/"
+    cp "$DEPLOY/systemd/gasapp-admin.service" "$DEPLOY/systemd/gasapp-migrate.service" "$DEPLOY/systemd/gasapp-reports.service" "$DEPLOY/systemd/gasapp-reports.timer" "$kit/"
     printf '%s  gasapp-server-admin\n' "$sum" > "$kit/expected-sum"
     ssh "$HOST" 'rm -rf ~/admin-kit && mkdir -m 700 ~/admin-kit'
     rsync -a "$kit/" "$HOST:admin-kit/"

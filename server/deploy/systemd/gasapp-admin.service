@@ -14,8 +14,8 @@
 
 [Unit]
 Description=GasApp admin center (loopback only)
-After=network-online.target postgresql.service
-Wants=network-online.target
+After=network-online.target postgresql.service gasapp-migrate.service
+Wants=network-online.target gasapp-migrate.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -30,6 +30,9 @@ RestartSec=2
 Environment=NO_COLOR=1
 
 EnvironmentFile=-/etc/gasapp/admin.env
+# 🔐 Роль gasapp_admin: строки таблиц, без схемы. Миграции применяет
+# gasapp-migrate.service под владельцем; здесь — только сверка (сама
+# служба видит, что менять схему ей нельзя; аудит 2026-11-28, S-10).
 LoadCredential=database_url:/etc/gasapp/credentials/admin_database_url
 LoadCredential=gasapp_admin_token_sha256:/etc/gasapp/credentials/admin_token_sha256
 # Ключ улик к жалобам (X25519): ими владеет только админ-центр, узлы

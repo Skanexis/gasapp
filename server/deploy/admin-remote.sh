@@ -19,8 +19,19 @@ sudo test -s /etc/gasapp/credentials/admin_database_url ||
 # Атомарная замена: служба никогда не видит недописанный файл.
 sudo install -m 755 gasapp-server-admin /usr/local/bin/gasapp-server-admin.new
 sudo mv /usr/local/bin/gasapp-server-admin.new /usr/local/bin/gasapp-server-admin
-sudo install -m 644 gasapp-admin.service gasapp-reports.service gasapp-reports.timer /etc/systemd/system/
+sudo install -m 644 gasapp-admin.service gasapp-migrate.service gasapp-reports.service gasapp-reports.timer /etc/systemd/system/
 ok "программа и службы на месте"
+
+# 🔐 Миграции — под владельцем схемы, отдельной службой (аудит
+# 2026-11-28, S-10). До раздельных ролей строку владельца держал
+# admin_database_url — она же и становится owner_database_url.
+owner_file=/etc/gasapp/credentials/owner_database_url
+if ! sudo test -s "$owner_file"; then
+    sudo grep -q '^postgres://gasapp:' /etc/gasapp/credentials/admin_database_url ||
+        { bad "нет $owner_file, а admin_database_url — не владельца: положите строку владельца в $owner_file"; exit 1; }
+    sudo install -m 600 /etc/gasapp/credentials/admin_database_url "$owner_file"
+    ok "строка владельца схемы: owner_database_url"
+fi
 
 
 token_file=/etc/gasapp/credentials/admin_token_sha256
@@ -52,6 +63,9 @@ else
 fi
 
 sudo systemctl daemon-reload
+sudo systemctl start gasapp-migrate ||
+    { bad "миграции не прошли: sudo journalctl -u gasapp-migrate -n 30"; exit 1; }
+ok "миграции применены (gasapp-migrate)"
 sudo systemctl enable --quiet gasapp-admin
 sudo systemctl restart gasapp-admin
 sleep 2

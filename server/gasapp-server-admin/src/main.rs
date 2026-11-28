@@ -6,6 +6,8 @@
 //! gasapp-server-admin hash-token     # токен со stdin → SHA-256 для окружения
 //! gasapp-server-admin serve          # веб-интерфейс (по умолчанию)
 //! gasapp-server-admin watch-reports  # для cron: уведомить о новых жалобах
+//! gasapp-server-admin migrate        # владелец схемы: миграции и права ролей
+//! gasapp-server-admin evidence-public-key  # открытый ключ улик → release.conf
 //! ```
 //!
 //! Окружение:
@@ -47,10 +49,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "watch-reports" => watch_reports().await,
         "premium" => premium().await,
         "push" => push().await,
+        "migrate" => migrate().await,
+        "evidence-public-key" => evidence_public_key(),
         other => {
             eprintln!(
                 "неизвестная команда «{other}»: hash-token | serve | watch-reports | push | \
-                 premium grant|revoke <имя>"
+                 migrate | evidence-public-key | premium grant|revoke <имя>"
             );
             std::process::exit(2);
         }
@@ -112,9 +116,11 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         .ok_or("не задан или негоден GASAPP_ADMIN_TOKEN_SHA256 (gasapp-server-admin hash-token)")?;
 
     let pool = pool().await?;
-    // Схема та же, что у сервера; миграции идемпотентны и под
-    // блокировкой sqlx — кто бы ни запустился первым.
-    sqlx::migrate!("../migrations").run(&pool).await?;
+    // Схема та же, что у сервера. 🔐 В бою админ-центр (роль
+    // `gasapp_admin`) её не меняет, а сверяет (`GASAPP_DB_MIGRATIONS=check`):
+    // миграции — `gasapp-server-admin migrate` под владельцем (аудит
+    // 2026-11-28, S-10).
+    gasapp_server_db::schema::prepare(&pool, &sqlx::migrate!("../migrations")).await?;
 
     // 🔐 Ключ улик к жалобам — в учётных данных службы; в базу уходит
     // только открытый. Нет ключа — узлы улик не принимают.
@@ -124,6 +130,12 @@ async fn serve() -> Result<(), Box<dyn Error>> {
         tracing::warn!("GASAPP_EVIDENCE_KEY не задан: улики к жалобам не принимаются");
     }
     gasapp_server_admin::cases::publish_key(&pool, evidence.as_ref()).await?;
+    // 🔐 Ключ в базе сверяется со своим и дальше: подменённый (узел,
+    // база) — тревога в журнале и возврат своего (аудит 2026-11-28, S-4).
+    tokio::spawn(gasapp_server_admin::cases::guard_key(
+        pool.clone(),
+        evidence.as_ref().map(|key| *key.public()),
+    ));
 
     let app = router(Arc::new(AdminState {
         pool,
@@ -134,6 +146,36 @@ async fn serve() -> Result<(), Box<dyn Error>> {
     tracing::info!(address = %bind, "админ-центр GasApp слушает петлю");
     axum::serve(listener, app).await?;
 
+    Ok(())
+}
+
+/// Миграции и права ролей — под владельцем схемы (`gasapp-migrate.service`).
+///
+/// 🔐 Аудит 2026-11-28, S-10: службы работают под ролями без права менять
+/// схему; миграции применяет только этот шаг, с машины базы. Права ролей
+/// (`deploy/postgres/roles.sql`) раздаются тем же проходом — таблицы
+/// новых миграций получают их сразу.
+async fn migrate() -> Result<(), Box<dyn Error>> {
+    let pool = pool().await?;
+    sqlx::migrate!("../migrations").run(&pool).await?;
+    if gasapp_server_db::schema::apply_role_grants(&pool).await? {
+        println!("миграции применены, права ролей розданы");
+    } else {
+        println!(
+            "миграции применены; роли gasapp_api, gasapp_admin, gasapp_push не заведены — \
+             права не раздавались (deploy/postgres/create-roles.sh)"
+        );
+    }
+    Ok(())
+}
+
+/// Открытый ключ улик в hex — для `EVIDENCE_KEY` в `tools/release.conf`.
+/// Закрытый — из учётных данных службы; наружу не печатается.
+fn evidence_public_key() -> Result<(), Box<dyn Error>> {
+    let key = gasapp_server_db::runtime::secret("GASAPP_EVIDENCE_KEY")
+        .and_then(|hex| gasapp_server_admin::cases::EvidenceKey::from_hex(&hex))
+        .ok_or("не задан или негоден GASAPP_EVIDENCE_KEY (GASAPP_EVIDENCE_KEY_FILE)")?;
+    println!("{}", hex::encode(key.public()));
     Ok(())
 }
 

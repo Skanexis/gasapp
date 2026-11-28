@@ -1006,3 +1006,68 @@ async fn evidence_has_a_ceiling_and_leaves_with_the_complainant() {
         .unwrap();
     assert_eq!(stored().await, 0, "улики пережили жалобщика");
 }
+
+/// Выполняет запрос под ролью — в транзакции, которая откатывается.
+/// `true` — база отказала.
+async fn denied_as(pool: &PgPool, role: &str, sql: &str) -> bool {
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query(&format!("SET LOCAL ROLE {role}"))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let refused = sqlx::query(sql).execute(&mut *tx).await.is_err();
+    tx.rollback().await.unwrap();
+    refused
+}
+
+/// 🔐 Роли служб получают только своё (аудит 2026-11-28, S-10): узел не
+/// меняет схему и не трогает состояние оператора (в нём ключ улик),
+/// отправщик пушей видит только токены, админ-центр — строки, не схему.
+#[tokio::test]
+async fn service_roles_get_only_their_rights() {
+    let pool = require_pool!();
+    for role in ["gasapp_api", "gasapp_admin", "gasapp_push"] {
+        // Роль — на весь кластер; гонку двух запусков гасит исключение.
+        sqlx::raw_sql(&format!(
+            "DO $$ BEGIN CREATE ROLE {role} NOLOGIN; \
+             EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    assert!(gasapp_server_db::schema::apply_role_grants(&pool)
+        .await
+        .unwrap());
+    // Повторный проход — без ошибок: так он идёт после каждой миграции.
+    assert!(gasapp_server_db::schema::apply_role_grants(&pool)
+        .await
+        .unwrap());
+
+    // Узел.
+    assert!(!denied_as(&pool, "gasapp_api", "SELECT count(*) FROM accounts").await);
+    assert!(!denied_as(&pool, "gasapp_api", "SELECT evidence_key FROM admin_state").await);
+    assert!(!denied_as(&pool, "gasapp_api", "SELECT version FROM _sqlx_migrations").await);
+    assert!(denied_as(&pool, "gasapp_api", "UPDATE admin_state SET evidence_key = NULL").await);
+    assert!(denied_as(&pool, "gasapp_api", "SELECT last_report_seq FROM admin_state").await);
+    assert!(denied_as(&pool, "gasapp_api", "SELECT count(*) FROM admin_actions").await);
+    assert!(denied_as(&pool, "gasapp_api", "DELETE FROM _sqlx_migrations").await);
+    assert!(denied_as(&pool, "gasapp_api", "CREATE TABLE gasapp_api_probe (id int)").await);
+
+    // Отправщик пушей.
+    assert!(!denied_as(&pool, "gasapp_push", "SELECT count(*) FROM push_tokens").await);
+    assert!(!denied_as(&pool, "gasapp_push", "DELETE FROM push_tokens WHERE false").await);
+    assert!(denied_as(&pool, "gasapp_push", "SELECT count(*) FROM accounts").await);
+    assert!(denied_as(&pool, "gasapp_push", "SELECT count(*) FROM envelopes").await);
+
+    // Админ-центр.
+    assert!(
+        !denied_as(
+            &pool,
+            "gasapp_admin",
+            "UPDATE admin_state SET last_report_seq = last_report_seq"
+        )
+        .await
+    );
+    assert!(denied_as(&pool, "gasapp_admin", "CREATE TABLE gasapp_admin_probe (id int)").await);
+}

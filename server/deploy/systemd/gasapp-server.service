@@ -40,6 +40,11 @@ Environment=NO_COLOR=1
 # Несекретная настройка: адрес, путь к сертификату, число узлов.
 EnvironmentFile=/etc/gasapp/server.env
 
+# 🔐 Роль узла gasapp_api — схему не меняет, только сверяет, что все
+# миграции этой сборки уже в базе (их применяет gasapp-migrate.service на
+# машине базы, аудит 2026-11-28, S-10). Схема старше — узел не стартует. Режим
+# служба выбирает сама по правам роли (GASAPP_DB_MIGRATIONS — явно).
+
 # Секреты.
 LoadCredential=database_url:/etc/gasapp/credentials/database_url
 LoadCredential=gasapp_certificate_key:/etc/gasapp/credentials/gasapp_certificate_key
